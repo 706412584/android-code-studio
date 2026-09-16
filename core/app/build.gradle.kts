@@ -42,8 +42,17 @@ buildscript {
   }
 }
 
+// AGP 用 *FileDependencies 任务把 `files(...)` 形式的 jar 依赖 dex 化
+// （本项目有 9 个：jdk-compiler / java-compiler / jaxp / jdt / javapoet 等）。
+// 这些任务曾被上面那条「名字含 desugar 就禁用」的规则连带禁掉，后果是：
+// jar 虽然在运行时 classpath 上，却从未进入 dex 合并输入，导致
+// `openjdk.tools.javac.**`（约 1900 个类）在 APK 中整体缺失，
+// 打开项目做 Gradle 同步时抛 NoClassDefFoundError: openjdk/tools/javac/file/CacheFSInfo。
+//
+// 这里只禁用 l8DexDesugarLib*（core library desugaring 的库 dex 化，
+// 由 com.tom.rv2ide.desugaring 插件接管），不再按名字模糊匹配。
 tasks.configureEach {
-    if (name.contains("desugar", ignoreCase = true)) {
+    if (name.startsWith("l8DexDesugarLib")) {
         enabled = false
     }
 }
@@ -225,6 +234,11 @@ dependencies {
   // TODO: remove this
   implementation("com.github.MiyazKaori:SilentInstaller:1.0.0-alpha")
 
+  // Shizuku：agent 的 shell 后端之一，提供 adb 级权限（pm install / am start / logcat）。
+  // aidl 由 api 传递引入，含 IShizukuService / IRemoteProcess。
+  implementation("dev.rikka.shizuku:api:13.1.5")
+  implementation("dev.rikka.shizuku:provider:13.1.5")
+
   // Git
   implementation(libs.git.jgit)
 
@@ -260,6 +274,12 @@ dependencies {
   implementation(files(rootProject.file("composite-builds/build-deps/libs/javapoet.jar")))
 
   // Local projects here
+  // AI agent stack: tool API contracts, model protocols, tool implementations,
+  // and the multi-turn agent loop. All four are pure java-library modules.
+  implementation(projects.core.aiToolApi)
+  implementation(projects.core.aiProtocol)
+  implementation(projects.core.aiTool)
+  implementation(projects.core.aiAgent)
   implementation(projects.core.projectdata)
   implementation(projects.ideconfigurations)
   implementation(projects.core.actions)

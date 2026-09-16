@@ -68,6 +68,19 @@
   <string name="ai_agent_api_key_summary">输入您的 Google Gemini API 密钥以使用 AI 功能</string>
   <string name="ai_agent_api_key_dialog_title">输入 Gemini API 密钥</string>
 
+  <!-- AI Agent：工具调用循环 -->
+  <string name="ai_agent_mode_title">Agent 模式（工具调用）</string>
+  <string name="ai_agent_mode_summary">允许模型多轮读写文件、执行命令并构建项目</string>
+  <string name="ai_agent_permission_title">工具权限模式</string>
+  <string name="ai_agent_permission_summary">agent 在不询问的情况下可以做到什么程度</string>
+  <string name="ai_agent_shell_backend_title">Shell 后端</string>
+  <string name="ai_agent_shell_backend_summary">由哪个后端执行 shell 命令</string>
+  <string name="ai_agent_custom_group">自定义 OpenAI 兼容端点</string>
+  <string name="ai_agent_custom_base_url">Base URL</string>
+  <string name="ai_agent_custom_api_key">API 密钥</string>
+  <string name="ai_agent_custom_model">模型名</string>
+  <string name="ai_agent_custom_hint">点击设置</string>
+
   <!-- AI Agent Deepseek -->
   <string name="ai_agent_deepseek_api_key">Deepseek API 密钥</string>
   <string name="ai_agent_deepseek_api_key_summary">输入您的 OpenAI API 密钥以使用 AI 功能</string>

@@ -112,6 +112,12 @@ class IDEApplication : TermuxApplication() {
 
     super.onCreate()
 
+    // agent 的协议/工具层是纯 Java 模块，错误默认只写 java.util.logging（Android 上不落 logcat）。
+    // 接到应用日志设施后，模型请求失败、工具执行失败才能在 IDE 日志里看到。
+    com.tom.rv2ide.ai.tool.api.ErrorLog.setSink { type, summary, throwable, details ->
+      log.error("ai[$type] $summary\n$details", throwable)
+    }
+
     if (GeneralPreferences.snowfallOverlay && isSnowfallSeasonActive()) {
       SeasonalEffects.init(this)
       SeasonalEffects.enableChristmas()

@@ -92,6 +92,10 @@ include(
   // ":server:shared",
   
   ":core:actions",
+  ":core:ai-agent",
+  ":core:ai-protocol",
+  ":core:ai-tool",
+  ":core:ai-tool-api",
   ":core:app",
   ":ideconfigurations",
   ":core:common",

@@ -86,7 +86,7 @@ private class CommonConfigurations(
     addPreference(ColorSchemePreference())
     addPreference(NonPrintablePaintingFlags())
     addPreference(FontLigatures())
-    addPreference(autoSave())
+    addPreference(AutoSaveTwo())
     addPreference(keyboardSuggestions())
     addPreference(UseCustomFont())
     addPreference(UseSoftTab())
@@ -153,7 +153,12 @@ private class FontLigatures(
     )
 
 @Parcelize
-private class autoSave(
+// NOTE: named `AutoSaveTwo` (not `autoSave`) to match its key constant AUTO_SAVE_TWO.
+// The previous name differed from the `AutoSave` class in this same file only by the
+// case of its first letter, which is fatal on case-insensitive filesystems (Windows):
+// the two .class files overwrite each other and R8 fails with
+// "Class content provided for type descriptor ...autoSave actually defines class ...AutoSave".
+private class AutoSaveTwo(
     override val key: String = AUTO_SAVE_TWO,
     override val title: Int = string.idepref_editor_autosave_title,
     override val summary: Int? = string.idepref_editor_autosave_summary,

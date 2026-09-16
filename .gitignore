@@ -110,3 +110,10 @@ build.log
 
 external/logwire/build
 external/atc/build
+
+# 新增的纯 Java 模块（core/ai-*）的构建产物。仓库根级的 /build/ 只覆盖根目录，
+# 子模块的 build/ 需要单独忽略。
+core/ai-agent/build/
+core/ai-tool/build/
+core/ai-tool-api/build/
+core/ai-protocol/build/

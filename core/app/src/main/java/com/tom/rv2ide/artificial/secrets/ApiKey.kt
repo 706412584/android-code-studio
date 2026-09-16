@@ -78,6 +78,31 @@ object ApiKey {
         val key = getGrokApiKey()
         return key.isNotBlank() && key.length > 20
     }
+
+    /**
+     * 自定义 OpenAI 兼容端点。
+     *
+     * 用于第三方兼容网关（自建代理、聚合服务等）：它们讲 OpenAI 协议，
+     * 但 baseUrl 与模型名都不是官方取值，无法归入上面任何一个服务商。
+     */
+    fun getCustomBaseUrl(): String {
+        return prefManager.getString("ai_agent_custom_base_url", "")
+    }
+
+    fun getCustomApiKey(): String {
+        return prefManager.getString("ai_agent_custom_api_key", "")
+    }
+
+    fun getCustomModel(): String {
+        return prefManager.getString("ai_agent_custom_model", "")
+    }
+
+    /** 三项都填了才算配置完成——缺任一项都无法发起请求。 */
+    fun hasCustomEndpoint(): Boolean {
+        return getCustomBaseUrl().isNotBlank() &&
+            getCustomApiKey().isNotBlank() &&
+            getCustomModel().isNotBlank()
+    }
     
     // Legacy methods for backward compatibility
     @Deprecated("Use getGeminiApiKey() instead", ReplaceWith("getGeminiApiKey()"))

@@ -63,6 +63,7 @@ class ChatFragment : Fragment() {
     
     private lateinit var codeCompletionManager: CodeCompletionManager
     private lateinit var aiRequestHandler: AIRequestHandler
+    private var agentRequestHandler: com.tom.rv2ide.handlers.AgentRequestHandler? = null
     
     private var typingJob: Job? = null
     private var fileMonitorJob: Job? = null
@@ -182,19 +183,55 @@ class ChatFragment : Fragment() {
     private fun setupListeners() {
         executeBtn.setOnClickListener {
             val userRequest = promptInput.text.toString()
-            
+
             if (userRequest.isBlank()) {
                 showSnackbar("Please enter a request")
                 return@setOnClickListener
             }
-            
+
             codeCompletionManager.clearSuggestion()
-            aiRequestHandler.execute(userRequest)
+            if (agentSettings().isAgentModeEnabled) {
+                ensureAgentHandler().execute(userRequest)
+            } else {
+                aiRequestHandler.execute(userRequest)
+            }
         }
-    
+
+        // 长按执行按钮：切换 agent 模式（工具调用循环）。
+        // 正式设置项后续接入 aiAgentPrefExts，这里先提供可用的切换入口。
+        executeBtn.setOnLongClickListener {
+            val settings = agentSettings()
+            settings.setAgentModeEnabled(!settings.isAgentModeEnabled)
+            showSnackbar(
+                if (settings.isAgentModeEnabled) "Agent 模式已开启（多轮工具调用）"
+                else "已切回经典模式（单次生成）"
+            )
+            true
+        }
+
         clearBtn.setOnClickListener {
             clearConversation()
         }
+    }
+
+    private fun agentSettings() =
+        com.tom.rv2ide.artificial.agent.AgentToolSettings(requireContext())
+
+    private fun ensureAgentHandler(): com.tom.rv2ide.handlers.AgentRequestHandler {
+        return agentRequestHandler ?: com.tom.rv2ide.handlers.AgentRequestHandler(
+            lifecycleScope,
+            requireContext(),
+            userRootProject,
+            statusText,
+            summaryText,
+            summaryCard,
+            progressIndicator,
+            executeBtn,
+            fileModificationAdapter
+        ) {
+            // agent 写完文件后刷新当前编辑器
+            refreshCurrentEditor()
+        }.also { agentRequestHandler = it }
     }
     
     private fun registerPreferenceListener() {
@@ -495,6 +532,7 @@ class ChatFragment : Fragment() {
         fileMonitorJob?.cancel()
         completionStateMonitorJob?.cancel()
         aiRequestHandler.cancel()
+        agentRequestHandler?.cancel()
         unregisterPreferenceListener()
         super.onDestroyView()
     }

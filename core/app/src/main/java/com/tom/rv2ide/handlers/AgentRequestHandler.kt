@@ -1,0 +1,224 @@
+package com.tom.rv2ide.handlers
+
+import android.os.Handler
+import android.os.Looper
+import android.view.View
+import androidx.appcompat.app.AlertDialog
+import androidx.lifecycle.LifecycleCoroutineScope
+import com.google.android.material.button.MaterialButton
+import com.google.android.material.progressindicator.CircularProgressIndicator
+import com.google.android.material.textview.MaterialTextView
+import com.tom.rv2ide.adapters.FileModificationAdapter
+import com.tom.rv2ide.artificial.agent.AgentModelConfigs
+import com.tom.rv2ide.artificial.agent.AgentOrchestrator
+import com.tom.rv2ide.artificial.agent.AgentToolSettings
+import com.tom.rv2ide.artificial.agents.Agents
+import com.tom.rv2ide.ai.agent.AgentEvent
+import com.tom.rv2ide.ai.tool.InMemoryDiffStore
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+
+/**
+ * agent 模式的请求执行器：把用户请求交给 [AgentOrchestrator] 的工具调用循环，
+ * 并把 [AgentEvent] 流渲染到 ChatFragment 现有的状态/摘要控件上。
+ *
+ * 与旧路径 [AIRequestHandler] 的区别：旧路径一次请求只生成文本、按 FILE_TO_MODIFY
+ * 标记写文件；这里由模型自主调用 read/write/shell/build/install/launch/logcat 工具
+ * 多轮完成整个任务。UI 刻意复用同一组控件——过程日志显示在 statusText，
+ * 最终输出在 summaryText，暂不做独立的工具卡片渲染。
+ */
+class AgentRequestHandler(
+    private val lifecycleScope: LifecycleCoroutineScope,
+    private val context: android.content.Context,
+    private val workspacePath: String,
+    private val statusText: MaterialTextView,
+    private val summaryText: MaterialTextView,
+    private val summaryCard: android.view.View,
+    private val progressIndicator: CircularProgressIndicator,
+    private val executeBtn: MaterialButton,
+    private val fileModificationAdapter: FileModificationAdapter,
+    private val onRunFinished: () -> Unit
+) {
+
+    private val settings = AgentToolSettings(context)
+    private val diffStore = InMemoryDiffStore()
+    private var executionJob: Job? = null
+    private var orchestrator: AgentOrchestrator? = null
+
+    fun execute(userRequest: String) {
+        cancel()
+        executionJob = lifecycleScope.launch(Dispatchers.IO) {
+            val orch = AgentOrchestrator(context, diffStore)
+            orch.workspace = java.io.File(workspacePath)
+            orch.settings.setDangerousToolConfirmer(
+                AgentToolSettings.DangerousToolConfirmer { toolName, args ->
+                    askDangerousToolOnMain(toolName, args)
+                }
+            )
+            orchestrator = orch
+
+            val agents = Agents(context)
+            val providerId = agents.getProvider()
+            val modelId = AgentModelConfigs.modelIdFor(providerId, agents.getAgent())
+            val customBaseUrl =
+                if (providerId == "localllm") readDefaultPref("local_llm_base_url") else null
+
+            withContext(Dispatchers.Main) {
+                executeBtn.isEnabled = false
+                progressIndicator.visibility = View.VISIBLE
+                // summaryCard 在布局里默认 gone，必须显式显示，否则最终输出永远看不到
+                summaryCard.visibility = View.VISIBLE
+                statusText.text = "🤖 Agent 模式（$providerId / $modelId）\n"
+                summaryText.text = "（运行中…）"
+            }
+
+            try {
+                val result = orch.run(
+                    providerId,
+                    modelId,
+                    userRequest,
+                    customBaseUrl
+                ) { event -> handleEvent(event) }
+
+                withContext(Dispatchers.Main) {
+                    summaryCard.visibility = View.VISIBLE
+                    summaryText.text = result.output.ifBlank { "（模型没有返回文本）" }
+                    statusText.text =
+                        (if (result.isFailed) "❌ Agent 运行结束（失败）" else "✅ Agent 运行结束") +
+                            "  轮次: ${result.turns}  工具调用: ${result.toolCallCount}"
+                    onRunFinished()
+                }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                // 用户取消：不是错误，静默收尾
+                throw e
+            } catch (e: Throwable) {
+                // 不能让异常只留在日志里——用户需要知道为什么没有结果
+                withContext(Dispatchers.Main) {
+                    statusText.text = "❌ Agent 异常终止"
+                    summaryText.text = "${e.javaClass.simpleName}: ${e.message}"
+                }
+                com.tom.rv2ide.ai.tool.api.ErrorLog.record(
+                    "agent", "Agent 运行抛出异常", e, "provider=$providerId model=$modelId"
+                )
+            } finally {
+                // 必须放在 finally：run() 抛异常或协程被取消时也要恢复 UI，
+                // 否则按钮会永久停留在禁用状态，用户再也发不出请求。
+                withContext(kotlinx.coroutines.NonCancellable) {
+                    withContext(Dispatchers.Main) {
+                        executeBtn.isEnabled = true
+                        progressIndicator.visibility = View.GONE
+                        if (summaryText.text.isNullOrBlank() || summaryText.text == "（运行中…）") {
+                            summaryText.text = "（未产生输出）"
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private fun handleEvent(event: AgentEvent) {
+        when (event.type) {
+            AgentEvent.Type.TURN_STARTED ->
+                appendStatus("— 第 ${event.message.removePrefix("turn ")} 轮")
+            AgentEvent.Type.TOOL_STARTED -> {
+                val call = event.toolCall
+                appendStatus("🔧 ${call.name} ${summarizeArgs(call.arguments)}")
+            }
+            AgentEvent.Type.TOOL_FINISHED -> {
+                val result = event.toolResult
+                val call = event.toolCall
+                if (call != null && !result.isError &&
+                    call.name in FILE_WRITE_TOOLS
+                ) {
+                    lifecycleScope.launch(Dispatchers.Main) {
+                        fileModificationAdapter.addItem(java.io.File(
+                            parsePathArg(call.arguments) ?: return@launch
+                        ).name)
+                    }
+                }
+                if (result.isError) {
+                    appendStatus("   ↳ 失败: ${result.content.take(200)}")
+                }
+            }
+            AgentEvent.Type.FAILED -> appendStatus("⚠️ ${event.message}")
+            else -> {}
+        }
+    }
+
+    private fun appendStatus(line: String) {
+        lifecycleScope.launch(Dispatchers.Main) {
+            statusText.text = statusText.text.toString() + line + "\n"
+        }
+    }
+
+    /**
+     * 从 executor 后台线程调用，切主线程弹窗等待用户决定。
+     * fragment 不可见或超时则拒绝，宁可让工具失败也不无确认执行。
+     */
+    private fun askDangerousToolOnMain(toolName: String, args: String?): Boolean {
+        if (Looper.myLooper() == Looper.getMainLooper()) return false
+        val latch = java.util.concurrent.CountDownLatch(1)
+        var accepted = false
+        Handler(Looper.getMainLooper()).post {
+            try {
+                AlertDialog.Builder(context)
+                    .setTitle("Agent 请求执行危险操作")
+                    .setMessage("模型请求调用工具：$toolName\n\n${args?.take(500) ?: ""}")
+                    .setCancelable(false)
+                    .setPositiveButton("允许（本次运行）") { _, _ ->
+                        accepted = true
+                        latch.countDown()
+                    }
+                    .setNeutralButton("始终允许") { _, _ ->
+                        accepted = true
+                        settings.confirmDangerousTools(true)
+                        latch.countDown()
+                    }
+                    .setNegativeButton("拒绝") { _, _ -> latch.countDown() }
+                    .show()
+            } catch (e: Exception) {
+                latch.countDown()
+            }
+        }
+        latch.await(120, java.util.concurrent.TimeUnit.SECONDS)
+        return accepted
+    }
+
+    fun cancel() {
+        orchestrator?.cancel()
+        executionJob?.cancel()
+        executionJob = null
+    }
+
+    companion object {
+        private val FILE_WRITE_TOOLS = setOf("file_write", "file_edit")
+
+        private fun summarizeArgs(args: String?): String {
+            if (args.isNullOrBlank()) return ""
+            return try {
+                val obj = org.json.JSONObject(args)
+                obj.keys().asSequence()
+                    .map { "$it=${obj.optString(it).take(60)}" }
+                    .joinToString(" ")
+            } catch (e: Exception) {
+                args.take(100)
+            }
+        }
+
+        private fun parsePathArg(args: String?): String? {
+            if (args.isNullOrBlank()) return null
+            return try {
+                org.json.JSONObject(args).optString("file_path").ifBlank { null }
+            } catch (e: Exception) {
+                null
+            }
+        }
+    }
+
+    private fun readDefaultPref(key: String): String? {
+        return androidx.preference.PreferenceManager
+            .getDefaultSharedPreferences(context).getString(key, null)
+    }
+}
