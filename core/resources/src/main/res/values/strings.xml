@@ -121,6 +121,13 @@
   <string name="ai_agent_api_key_unset">Not set</string>
   <string name="ai_agent_api_key_set">API key: %1$s…</string>
 
+  <!-- Long-term memory -->
+  <string name="ai_agent_memory_title">Long-term memory</string>
+  <string name="ai_agent_memory_summary">Facts the assistant remembers across conversations</string>
+  <string name="ai_agent_memory_none">No memory saved yet</string>
+  <string name="ai_agent_memory_count">%1$d entr(y/ies) saved — tap to review or delete</string>
+  <string name="ai_agent_memory_clear_all">Clear all</string>
+
   <!-- MCP servers -->
   <string name="ai_agent_mcp_title">MCP servers</string>
   <string name="ai_agent_mcp_summary">Connect external MCP tool servers</string>

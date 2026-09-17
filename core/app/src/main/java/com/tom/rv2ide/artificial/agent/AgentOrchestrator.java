@@ -90,6 +90,14 @@ public final class AgentOrchestrator {
   /** 单次对话允许的工具调用次数上限。防止模型陷入循环消耗额度。 */
   private static final int DEFAULT_TOOL_CALL_LIMIT = 100;
 
+  /**
+   * 每次运行最多注入多少条记忆。
+   *
+   * <p>取 8：记忆的价值在于「精准补充」，注入过多会占满上下文并稀释当前任务的焦点。
+   * 宁少勿滥——检索不到相关记忆时不如不注入。
+   */
+  private static final int MAX_MEMORIES_PER_RUN = 8;
+
   private final Context appContext;
   private final AgentToolSettings settings;
   private final DiffStore diffStore;
@@ -114,6 +122,14 @@ public final class AgentOrchestrator {
    */
   private final TodoStateStore todoStore;
 
+  /**
+   * 长期记忆存储，跨会话保留。
+   *
+   * <p>与待办的区别：待办是本次任务的进度（任务结束即无用），记忆是跨任务的知识
+   * （项目约定、用户偏好、环境特性）。
+   */
+  private final com.tom.rv2ide.ai.tool.memory.MemoryStore memoryStore;
+
   /** 当前工作区根目录，由 {@link #setWorkspace} 设置。 */
   private File workspace;
 
@@ -137,8 +153,19 @@ public final class AgentOrchestrator {
     this.diffStore = diffStore;
     this.conversationStore = conversationStore;
     this.todoStore = new com.tom.rv2ide.ai.tool.FileTodoStateStore(defaultTodoFile(appContext));
+    this.memoryStore = new com.tom.rv2ide.ai.tool.memory.MemoryStore(defaultMemoryFile(appContext));
     this.chatModeStore = new PrefsChatModeStore(appContext);
     this.promptBuilder = new AgentPromptBuilder("ACS AI Agent", new PrefsPromptTemplateStore(appContext));
+  }
+
+  /** 记忆文件：{@code filesDir/ai/memories.json}。 */
+  private static File defaultMemoryFile(Context context) {
+    return new File(new File(context.getFilesDir(), "ai"), "memories.json");
+  }
+
+  /** 长期记忆存储，供设置界面查看与删除。 */
+  public com.tom.rv2ide.ai.tool.memory.MemoryStore getMemoryStore() {
+    return memoryStore;
   }
 
   /** 对话模式存储，供设置界面读写。 */
@@ -257,6 +284,9 @@ public final class AgentOrchestrator {
 
     // 任务计划：把模型的计划外化成可见状态，使长任务不丢进度。
     registry.register(new TodoUpdateTool(todoStore));
+
+    // 长期记忆：跨会话保留的项目约定与用户偏好。
+    registry.register(new com.tom.rv2ide.ai.tool.memory.MemoryUpdateTool(memoryStore));
 
     // 网络：先搜索定位页面，再抓取正文。
     AppHttpPort http = new AppHttpPort();
@@ -399,6 +429,16 @@ public final class AgentOrchestrator {
             chatMode,
             new AgentPromptBuilder.ModelInfo(
                 providerId, modelId, config.getProtocolType().getLabel()));
+
+    // 相关记忆追加在系统提示词之后。
+    // 用本次用户请求作为检索词：记忆条数可能上百，全量注入会占满上下文并稀释重点，
+    // 而「与当前任务相关」正是检索能提供的价值。
+    String relevantMemories =
+        memoryStore.renderForPrompt(userRequest, MAX_MEMORIES_PER_RUN);
+    if (!relevantMemories.isEmpty()) {
+      systemPrompt =
+          systemPrompt + "\n\n[ 已知信息 ]\n" + relevantMemories;
+    }
 
     ToolContext toolContext =
         ToolContext.builder()

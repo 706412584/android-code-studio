@@ -121,6 +121,13 @@
   <string name="ai_agent_api_key_unset">未设置</string>
   <string name="ai_agent_api_key_set">密钥：%1$s…</string>
 
+  <!-- 长期记忆 -->
+  <string name="ai_agent_memory_title">长期记忆</string>
+  <string name="ai_agent_memory_summary">助手跨会话记住的事实</string>
+  <string name="ai_agent_memory_none">尚未保存任何记忆</string>
+  <string name="ai_agent_memory_count">已保存 %1$d 条 — 点击查看或删除</string>
+  <string name="ai_agent_memory_clear_all">全部清空</string>
+
   <!-- MCP 服务端 -->
   <string name="ai_agent_mcp_title">MCP 服务端</string>
   <string name="ai_agent_mcp_summary">接入外部 MCP 工具服务</string>

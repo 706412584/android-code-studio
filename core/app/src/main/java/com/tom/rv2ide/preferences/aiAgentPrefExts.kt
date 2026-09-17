@@ -104,6 +104,7 @@ private class AgentToolingGroup(
     addPreference(PermissionModePreference())
     addPreference(AuthorizedToolsPreference())
     addPreference(PromptTemplatePreference())
+    addPreference(MemoriesPreference())
     addPreference(McpServersPreference())
     addPreference(ShellBackendPreference())
     addPreference(
@@ -378,6 +379,79 @@ private class PromptTemplatePreference(
         }
         .setNegativeButton(android.R.string.cancel, null)
         .show()
+  }
+}
+
+/**
+ * 长期记忆：查看、删除、清空。
+ *
+ * <p><b>为什么必须有查看与删除入口</b>：记忆会进入后续每一轮的提示词。用户看不到
+ * 里面存了什么，就无法理解「AI 为什么知道这件事」，也无法纠正一条记错的内容——
+ * 而错误的记忆会持续影响所有后续对话。
+ */
+@Parcelize
+private class MemoriesPreference(
+    override val key: String = "memories",
+    override val title: Int = R.string.ai_agent_memory_title,
+    override val summary: Int? = R.string.ai_agent_memory_summary,
+) : BasePreference() {
+
+  override fun onCreatePreference(context: Context): Preference {
+    val count = memoryStore(context).size()
+    return androidx.preference.Preference(context).apply {
+      key = "memories"
+      title = context.getString(R.string.ai_agent_memory_title)
+      summary =
+          if (count == 0) context.getString(R.string.ai_agent_memory_none)
+          else context.getString(R.string.ai_agent_memory_count, count)
+    }
+  }
+
+  override fun onPreferenceClick(preference: Preference): Boolean {
+    showList(preference.context, preference)
+    return true
+  }
+
+  private fun memoryStore(context: Context) =
+      com.tom.rv2ide.ai.tool.memory.MemoryStore(
+          java.io.File(java.io.File(context.filesDir, "ai"), "memories.json"))
+
+  private fun showList(
+      context: Context,
+      preference: Preference,
+  ) {
+    val store = memoryStore(context)
+    val entries = store.all()
+    if (entries.isEmpty()) {
+      com.google.android.material.dialog.MaterialAlertDialogBuilder(context)
+          .setTitle(R.string.ai_agent_memory_title)
+          .setMessage(R.string.ai_agent_memory_none)
+          .setPositiveButton(android.R.string.ok, null)
+          .show()
+      return
+    }
+
+    val labels = entries.map { it.toLine() }.toTypedArray()
+    com.google.android.material.dialog.MaterialAlertDialogBuilder(context)
+        .setTitle(R.string.ai_agent_memory_title)
+        .setItems(labels) { _, which ->
+          // 点选即删除。记忆条目通常很短，选中即意味着「这条不对」，
+          // 再弹一层确认只会多一次点击。
+          store.remove(entries[which].getId())
+          preference.summary = refreshSummary(context)
+        }
+        .setNeutralButton(R.string.ai_agent_memory_clear_all) { _, _ ->
+          store.clear()
+          preference.summary = refreshSummary(context)
+        }
+        .setNegativeButton(android.R.string.cancel, null)
+        .show()
+  }
+
+  private fun refreshSummary(context: Context): String {
+    val count = memoryStore(context).size()
+    return if (count == 0) context.getString(R.string.ai_agent_memory_none)
+    else context.getString(R.string.ai_agent_memory_count, count)
   }
 }
 
