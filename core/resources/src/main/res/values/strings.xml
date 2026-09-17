@@ -121,6 +121,14 @@
   <string name="ai_agent_authorized_count">%1$d authorization rule(s) saved</string>
   <string name="ai_agent_authorized_clear_all">Revoke all</string>
 
+  <!-- Diff revert in the assistant panel -->
+  <string name="ai_assistant_file_changed">✎ Changed %1$s</string>
+  <string name="ai_assistant_unknown_file">a file</string>
+  <string name="ai_assistant_revert">Undo this change</string>
+  <string name="ai_assistant_revert_done">Undone</string>
+  <string name="ai_assistant_revert_ok">Undo succeeded — %1$s</string>
+  <string name="ai_assistant_revert_failed">Undo failed — %1$s</string>
+
   <!-- Floating AI assistant on the main screen -->
   <string name="ai_assistant_open">Open AI assistant</string>
   <string name="ai_assistant_title">AI Assistant</string>

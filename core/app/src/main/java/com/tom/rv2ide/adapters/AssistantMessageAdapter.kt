@@ -47,19 +47,64 @@ class AssistantMessageAdapter : RecyclerView.Adapter<AssistantMessageAdapter.VH>
    *
    * @param id 稳定标识：流式更新末条消息时 id 不变，DiffUtil 才能识别为"同一项内容变了"
    * @param text 正文
+   * @param diffId 该消息对应一次可回滚的文件改动；null 表示不可回滚（多数消息如此）
+   * @param reverted 该改动是否已被撤销。撤销后按钮要变成不可再点的状态——
+   *   否则用户会重复点击并收到「已经回滚过了」的错误
    */
-  data class Message(val id: Long, val role: Role, val text: String)
+  data class Message(
+      val id: Long,
+      val role: Role,
+      val text: String,
+      val diffId: String? = null,
+      val reverted: Boolean = false,
+  )
 
   private val messages = mutableListOf<Message>()
   private var nextId = 0L
 
+  /**
+   * 撤销按钮的点击回调；由视图层注入（回滚需要工作区上下文才能安全执行）。
+   *
+   * <p>同时传消息 id 与 diffId：调用方需要前者把该条标记为已撤销，后者去执行回滚。
+   * 让按钮自己按 diffId 反查消息会引入一次线性查找，而绑定处本来就知道是哪一条。
+   */
+  private var onRevert: ((Long, String) -> Unit)? = null
+
+  fun setOnRevertClickListener(listener: (Long, String) -> Unit) {
+    this.onRevert = listener
+  }
+
   /** 追加一条消息并返回它的 id；流式更新用该 id 定位。 */
-  fun append(role: Role, text: String): Long {
+  fun append(role: Role, text: String): Long = append(role, text, null)
+
+  /** 追加一条可回滚的消息。 */
+  fun append(role: Role, text: String, diffId: String?): Long {
     val id = nextId++
-    messages.add(Message(id, role, text))
+    messages.add(Message(id, role, text, diffId))
     notifyItemInserted(messages.size - 1)
     return id
   }
+
+  /**
+   * 把某条消息标记为已撤销。
+   *
+   * <p>只改状态不删消息：撤销是用户可见的动作，消息凭空消失会让人以为列表出了问题。
+   */
+  fun markReverted(id: Long) {
+    val index = messages.indexOfFirst { it.id == id }
+    if (index < 0) {
+      return
+    }
+    val old = messages[index]
+    if (old.reverted) {
+      return
+    }
+    messages[index] = old.copy(reverted = true)
+    notifyItemChanged(index)
+  }
+
+  /** 按 id 取消息；不存在返回 null。 */
+  fun find(id: Long): Message? = messages.firstOrNull { it.id == id }
 
   /**
    * 覆盖指定消息的正文。
@@ -114,14 +159,15 @@ class AssistantMessageAdapter : RecyclerView.Adapter<AssistantMessageAdapter.VH>
   }
 
   override fun onBindViewHolder(holder: VH, position: Int) {
-    holder.bind(messages[position])
+    val message = messages[position]
+    holder.bind(message, onRevert)
   }
 
   override fun getItemCount(): Int = messages.size
 
   class VH(private val binding: ItemAssistantMessageBinding) : RecyclerView.ViewHolder(binding.root) {
 
-    fun bind(message: Message) {
+    fun bind(message: Message, onRevert: ((Long, String) -> Unit)?) {
       val context = binding.root.context
       val card = binding.messageCard
 
@@ -156,6 +202,23 @@ class AssistantMessageAdapter : RecyclerView.Adapter<AssistantMessageAdapter.VH>
       val textColor = MaterialColors.getColor(card, onContainer)
       binding.messageRole.setTextColor(textColor)
       binding.messageText.setTextColor(textColor)
+
+      // 撤销按钮：只有携带 diffId 的消息才显示。已撤销时改为禁用并换文案——
+      // 让按钮消失会让用户怀疑自己是否点到了，禁用态能明确传达「已经生效了」。
+      val diffId = message.diffId
+      if (diffId == null) {
+        binding.messageRevert.visibility = android.view.View.GONE
+      } else {
+        binding.messageRevert.visibility = android.view.View.VISIBLE
+        binding.messageRevert.isEnabled = !message.reverted
+        binding.messageRevert.setText(
+            if (message.reverted) string.ai_assistant_revert_done
+            else string.ai_assistant_revert
+        )
+        binding.messageRevert.setOnClickListener {
+          onRevert?.invoke(message.id, diffId)
+        }
+      }
     }
   }
 }

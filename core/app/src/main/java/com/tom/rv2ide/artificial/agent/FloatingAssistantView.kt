@@ -74,7 +74,14 @@ class FloatingAssistantView(
 
   private val adapter = AssistantMessageAdapter()
   private val settings = AgentToolSettings(context)
-  private val diffStore = com.tom.rv2ide.ai.tool.InMemoryDiffStore()
+
+  /**
+   * 持久化 diff 存储。
+   *
+   * <p>用文件实现而非 InMemoryDiffStore：回滚的价值在于「事后反悔」，而事后往往就是
+   * 下一次打开应用；内存实现重启后记录全丢，用户点了撤销却找不到记录。
+   */
+  private val diffStore = AgentOrchestrator.defaultDiffStore(context)
 
   private var executionJob: Job? = null
   private var workspace: java.io.File? = null
@@ -129,6 +136,8 @@ class FloatingAssistantView(
 
     binding.assistantMessages.layoutManager = LinearLayoutManager(context)
     binding.assistantMessages.adapter = adapter
+
+    adapter.setOnRevertClickListener { messageId, diffId -> revertDiff(messageId, diffId) }
 
     fabBinding.assistantFab.setOnClickListener { open() }
     binding.assistantClose.setOnClickListener { close() }
@@ -350,9 +359,17 @@ class FloatingAssistantView(
       }
       com.tom.rv2ide.ai.agent.AgentEvent.Type.TOOL_FINISHED -> {
         val result = event.toolResult
-        if (result.isError) {
-          lifecycleScope.launch(Dispatchers.Main) {
+        val call = event.toolCall
+        lifecycleScope.launch(Dispatchers.Main) {
+          if (result.isError) {
             appendTrace(context.getString(string.ai_assistant_tool_failed, result.content.take(300)))
+            return@launch
+          }
+          // 有 diffId 说明这次调用改了文件。插一条**带撤销按钮**的条目——
+          // 这是用户能真正看到「AI 改了什么、怎么改回来」的唯一入口。
+          val diffId = result.diffId
+          if (diffId.isNotEmpty()) {
+            appendChangedFile(call?.name.orEmpty(), call?.arguments, diffId)
           }
         }
       }
@@ -396,6 +413,50 @@ class FloatingAssistantView(
   private fun appendAssistant(text: String) {
     adapter.append(AssistantMessageAdapter.Role.ASSISTANT, text)
     scrollToBottom()
+  }
+
+  /**
+   * 记录一次文件改动，并挂上撤销按钮。
+   *
+   * <p>路径从工具参数里取：工具结果本身不带路径（{@code ToolResult} 只有 diffId），
+   * 而用户需要看到「改的是哪个文件」才能判断要不要撤销。
+   */
+  private fun appendChangedFile(toolName: String, arguments: String?, diffId: String) {
+    val path = parsePathArg(arguments) ?: context.getString(string.ai_assistant_unknown_file)
+    adapter.append(
+        AssistantMessageAdapter.Role.TRACE,
+        context.getString(string.ai_assistant_file_changed, path),
+        diffId,
+    )
+    scrollToBottom()
+  }
+
+  /**
+   * 执行撤销。
+   *
+   * <p>在 IO 线程做（要读写文件），结果回主线程提示。成功后把对应消息标为已撤销，
+   * 使按钮进入禁用态——否则用户会重复点击并收到「已经回滚过了」。
+   */
+  private fun revertDiff(messageId: Long, diffId: String) {
+    val ws = workspace
+    if (ws == null || !ws.exists()) {
+      appendTrace(context.getString(string.ai_assistant_no_workspace))
+      return
+    }
+    lifecycleScope.launch(Dispatchers.IO) {
+      val toolContext =
+          com.tom.rv2ide.ai.tool.ToolContext.builder().homePath(ws.absolutePath).build()
+      val result =
+          com.tom.rv2ide.ai.tool.DiffReverter(diffStore).revert(diffId, toolContext)
+      withContext(Dispatchers.Main) {
+        if (result.isSuccess) {
+          adapter.markReverted(messageId)
+          appendTrace(context.getString(string.ai_assistant_revert_ok, result.message))
+        } else {
+          appendTrace(context.getString(string.ai_assistant_revert_failed, result.message))
+        }
+      }
+    }
   }
 
   private fun appendTrace(text: String) {
@@ -505,6 +566,26 @@ class FloatingAssistantView(
             .joinToString(" ")
       } catch (e: Exception) {
         args.orEmpty().take(100)
+      }
+    }
+
+    /**
+     * 从工具参数里取目标路径。
+     *
+     * <p>覆盖三种参数形态：{@code file_path}（写/改）、{@code paths} 数组（删除）、
+     * {@code path}（部分工具）。取不到返回 null，由调用方显示「未知文件」。
+     */
+    private fun parsePathArg(args: String?): String? {
+      if (TextUtils.isEmpty(args)) {
+        return null
+      }
+      return try {
+        val obj = org.json.JSONObject(args!!)
+        obj.optString("file_path").ifBlank { null }
+            ?: obj.optJSONArray("paths")?.optString(0)?.ifBlank { null }
+            ?: obj.optString("path").ifBlank { null }
+      } catch (e: Exception) {
+        null
       }
     }
   }

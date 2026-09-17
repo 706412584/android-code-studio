@@ -103,6 +103,11 @@ public final class AgentOrchestrator {
     this(context, diffStore, new FileConversationStore(defaultConversationDir(context)));
   }
 
+  /** 用默认存储（持久化会话 + 持久化 diff）构造。 */
+  public AgentOrchestrator(Context context) {
+    this(context, defaultDiffStore(context));
+  }
+
   public AgentOrchestrator(Context context, DiffStore diffStore, ConversationStore conversationStore) {
     this.appContext = context.getApplicationContext();
     this.settings = new AgentToolSettings(appContext);
@@ -113,6 +118,23 @@ public final class AgentOrchestrator {
   /** 会话日志目录：{@code filesDir/ai/conversations}。 */
   private static File defaultConversationDir(Context context) {
     return new File(new File(context.getFilesDir(), "ai"), "conversations");
+  }
+
+  /**
+   * 默认的 diff 存储：{@code filesDir/ai/diffs.jsonl}，跨进程存活。
+   *
+   * <p>刻意用文件实现而非 {@link com.tom.rv2ide.ai.tool.InMemoryDiffStore}：后者的记录
+   * 只活在内存里，用户关掉应用再打开就无法回滚之前的改动。回滚的价值恰恰在于「事后反悔」，
+   * 而事后往往就是下一次打开应用。
+   */
+  public static DiffStore defaultDiffStore(Context context) {
+    return new com.tom.rv2ide.ai.tool.FileDiffStore(
+        new File(new File(context.getFilesDir(), "ai"), "diffs.jsonl"));
+  }
+
+  /** 获取 diff 存储，供 UI 层展示改动与执行回滚。 */
+  public DiffStore getDiffStore() {
+    return diffStore;
   }
 
   public ConversationStore getConversationStore() {

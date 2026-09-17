@@ -47,6 +47,27 @@
         android:textIsSelectable="true"
         tools:text="已读取 build.gradle，正在检查依赖…" />
 
+      <!--
+        撤销按钮。只在「该消息对应一次可回滚的文件改动」时出现。
+
+        刻意做成行内小按钮而不是长按菜单：改错文件是高频且需要立刻处理的事，
+        藏在长按菜单里会让人找不到，而找不到的撤销功能等于没有。
+      -->
+      <com.google.android.material.button.MaterialButton
+        android:id="@+id/messageRevert"
+        style="@style/Widget.Material3.Button.TextButton"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="2dp"
+        android:minWidth="0dp"
+        android:minHeight="0dp"
+        android:paddingTop="4dp"
+        android:paddingBottom="4dp"
+        android:textAppearance="@style/TextAppearance.Material3.LabelMedium"
+        android:visibility="gone"
+        tools:text="撤销这次改动"
+        tools:visibility="visible" />
+
     </LinearLayout>
 
   </com.google.android.material.card.MaterialCardView>

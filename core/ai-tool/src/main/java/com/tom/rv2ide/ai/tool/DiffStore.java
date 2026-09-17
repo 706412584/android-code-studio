@@ -25,17 +25,13 @@ import java.util.Collections;
 import java.util.List;
 
 /**
- * 差异记录的持久化接口。
+ * 差异记录的存储接口：记录改动、查询历史链、回滚标记、审查标记。
  *
- * <p><b>与上游的差异</b>：LineCode Pro 的 {@code DiffStore} 还包含回滚
- * （{@code revertDiff} / {@code markReverted}）与审查标记（{@code setReview}），
- * 并依赖 {@code data} 模块的 {@code DiffRepository.RevertResult} 类型。
+ * <p><b>回滚的实现位置</b>：本接口只负责「找出该恢复成什么」与「标记状态」，
+ * 真正的文件写入由 {@link DiffReverter} 完成。这样存储实现（内存 / 文件 / 数据库）
+ * 不必各自重复一遍路径校验与写文件逻辑，也不会因为某个实现漏了校验而绕过安全边界。
  *
- * <p>本移植只保留工具执行路径真正需要的两个方法：写入前查历史链、写入后记录。
- * 回滚与审查由 app 层在 {@link DiffRecord} 之上自行实现（例如接入 IDE 已有的
- * 撤销/版本控制能力），避免工具模块依赖具体的数据层实现。
- *
- * <p>实现方需保证线程安全：工具可能并发执行。
+ * <p>实现方需保证线程安全：工具可能并发执行，回滚也可能与新的写入并发。
  */
 public interface DiffStore {
 
@@ -57,5 +53,49 @@ public interface DiffStore {
    */
   default List<DiffRecord> getDiffChain(String filePath) {
     return Collections.emptyList();
+  }
+
+  /**
+   * 按 id 查一条记录。
+   *
+   * <p>回滚与审查都从 id 出发（工具结果里带的是 diffId），因此这是回滚路径的入口。
+   * 默认返回 null，使不支持的实现方行为明确（调用方须判空）。
+   */
+  default DiffRecord findById(String diffId) {
+    return null;
+  }
+
+  /** 全部记录，按时间正序。供审查列表与「回滚本次运行的全部改动」使用。 */
+  default List<DiffRecord> getAll() {
+    return Collections.emptyList();
+  }
+
+  /**
+   * 标记某条记录已回滚。
+   *
+   * <p>只改状态、不动文件——文件恢复由 {@link DiffReverter} 负责。分开的理由是
+   * 状态更新是存储的职责、文件操作是文件系统的职责；混在一起会让「文件写失败但状态已改」
+   * 这种不一致无法表达。
+   *
+   * @return 更新后的记录；id 不存在时返回 null
+   */
+  default DiffRecord markReverted(String diffId) {
+    return null;
+  }
+
+  /**
+   * 设置审查状态。
+   *
+   * @param reviewState 见 {@link DiffRecord#REVIEW_PENDING} 等常量
+   * @return 更新后的记录；id 不存在时返回 null
+   */
+  default DiffRecord setReview(String diffId, String reviewState, String reviewMessage) {
+    return null;
+  }
+
+  /** 某个文件最近一条改动；无记录时返回 null。用于「撤销上一次写入」。 */
+  default DiffRecord latestFor(String filePath) {
+    List<DiffRecord> chain = getDiffChain(filePath);
+    return chain.isEmpty() ? null : chain.get(chain.size() - 1);
   }
 }

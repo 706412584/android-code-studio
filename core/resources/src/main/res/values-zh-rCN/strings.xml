@@ -121,6 +121,14 @@
   <string name="ai_agent_authorized_count">已保存 %1$d 条授权规则</string>
   <string name="ai_agent_authorized_clear_all">全部撤销</string>
 
+  <!-- 助手面板中的改动撤销 -->
+  <string name="ai_assistant_file_changed">✎ 已改动 %1$s</string>
+  <string name="ai_assistant_unknown_file">某个文件</string>
+  <string name="ai_assistant_revert">撤销这次改动</string>
+  <string name="ai_assistant_revert_done">已撤销</string>
+  <string name="ai_assistant_revert_ok">撤销成功 — %1$s</string>
+  <string name="ai_assistant_revert_failed">撤销失败 — %1$s</string>
+
   <!-- 主界面悬浮 AI 助手 -->
   <string name="ai_assistant_open">打开 AI 助手</string>
   <string name="ai_assistant_title">AI 助手</string>

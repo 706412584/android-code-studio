@@ -15,7 +15,6 @@ import com.tom.rv2ide.artificial.agent.AgentToolSettings
 import com.tom.rv2ide.artificial.agents.Agents
 import com.tom.rv2ide.ai.agent.AgentEvent
 import com.tom.rv2ide.ai.tool.DangerousToolDecision
-import com.tom.rv2ide.ai.tool.InMemoryDiffStore
 import com.tom.rv2ide.resources.R.string
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -45,7 +44,14 @@ class AgentRequestHandler(
 ) {
 
     private val settings = AgentToolSettings(context)
-    private val diffStore = InMemoryDiffStore()
+
+    /**
+     * 持久化 diff 存储（与悬浮助手共用同一份）。
+     *
+     * <p>用文件实现而非 InMemoryDiffStore：回滚的价值在于「事后反悔」，而事后往往就是
+     * 下一次打开应用；内存实现重启后记录全丢，用户点了撤销却找不到记录。
+     */
+    private val diffStore = AgentOrchestrator.defaultDiffStore(context)
     private var executionJob: Job? = null
 
     /**
