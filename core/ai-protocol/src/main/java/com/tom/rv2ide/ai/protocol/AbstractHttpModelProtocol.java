@@ -24,7 +24,6 @@ package com.tom.rv2ide.ai.protocol;
 import com.tom.rv2ide.ai.protocol.ModelCompletionException;
 import com.tom.rv2ide.ai.protocol.ModelCancellationToken;
 import com.tom.rv2ide.ai.tool.api.ErrorLog;
-import com.tom.rv2ide.ai.protocol.ErrorLogRedactor;
 import com.tom.rv2ide.ai.protocol.AiBehaviorSettings;
 import com.tom.rv2ide.ai.protocol.UrlPolicy;
 import java.io.BufferedReader;
@@ -305,7 +304,7 @@ abstract class AbstractHttpModelProtocol implements ModelProtocol {
         builder.append("Request headers:\n").append(headers == null ? "{}" : headers.toString()).append("\n\n");
         builder.append("Request body:\n").append(body == null ? "" : body.toString()).append("\n\n");
         builder.append("Response:\n").append(response == null ? "" : response);
-        ErrorLog.record(type, throwable == null ? type : throwable.getMessage(), throwable, ErrorLogRedactor.redact(builder.toString()));
+        ErrorLog.record(type, throwable == null ? type : throwable.getMessage(), throwable, builder.toString());
     }
 
     protected void logParseError(String type, String rawResponse, Throwable throwable) {

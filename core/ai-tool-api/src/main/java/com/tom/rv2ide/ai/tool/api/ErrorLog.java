@@ -62,23 +62,39 @@ public final class ErrorLog {
   /**
    * 记录一条错误。签名与上游保持一致。
    *
+   * <p><b>四个字段全部先脱敏再落地</b>，调用方不必记得处理：
+   * <ul>
+   *   <li>{@code summary} 常直接取 {@code throwable.getMessage()}，而异常消息里可能带
+   *       含密钥的 URL 或服务端回显的请求头；
+   *   <li>{@code throwable} 的消息同样可能含密钥，包装后再传；
+   *   <li>{@code details} 在工具层是**原始工具输出**（文件内容、命令输出），
+   *       用户文件里写着 {@code api_key = "..."} 是常事。
+   * </ul>
+   * 把脱敏放在这个唯一入口，是因为「每个调用方都记得脱敏」在现实中做不到——
+   * 漏一处就是一次凭据泄露，而日志会被贴进 issue、被上报、被截图。
+   *
    * @param type 错误分类，例如 {@code "api"}、{@code "parse"}
    * @param summary 简短描述
    * @param throwable 原始异常，可为 {@code null}
-   * @param details 已脱敏的详细信息
+   * @param details 详细信息
    */
   public static void record(String type, String summary, Throwable throwable, String details) {
+    String safeType = ErrorLogRedactor.redact(type);
+    String safeSummary = ErrorLogRedactor.redact(summary);
+    Throwable safeThrowable = ErrorLogRedactor.redactThrowable(throwable);
+    String safeDetails = ErrorLogRedactor.redact(details);
+
     Sink current = sink;
     if (current != null) {
       try {
-        current.record(type, summary, throwable, details);
+        current.record(safeType, safeSummary, safeThrowable, safeDetails);
       } catch (RuntimeException ignored) {
         // 日志失败不得影响主流程；退回到默认通道
-        logToFallback(type, summary, throwable, details);
+        logToFallback(safeType, safeSummary, safeThrowable, safeDetails);
       }
       return;
     }
-    logToFallback(type, summary, throwable, details);
+    logToFallback(safeType, safeSummary, safeThrowable, safeDetails);
   }
 
   private static void logToFallback(
