@@ -45,19 +45,41 @@ class AgentRequestHandler(
     private val settings = AgentToolSettings(context)
     private val diffStore = InMemoryDiffStore()
     private var executionJob: Job? = null
-    private var orchestrator: AgentOrchestrator? = null
 
-    fun execute(userRequest: String) {
-        cancel()
-        executionJob = lifecycleScope.launch(Dispatchers.IO) {
-            val orch = AgentOrchestrator(context, diffStore)
-            orch.workspace = java.io.File(workspacePath)
-            orch.settings.setDangerousToolConfirmer(
+    /**
+     * 复用同一个 orchestrator 跨请求。
+     *
+     * <p>必须复用而非每次新建：orchestrator 持有当前会话 id，新建会让它丢失，
+     * 于是每条消息都开一个新会话，历史永远无法续接。
+     */
+    private val orchestrator: AgentOrchestrator by lazy {
+        AgentOrchestrator(context, diffStore).apply {
+            workspace = java.io.File(workspacePath)
+            settings.setDangerousToolConfirmer(
                 AgentToolSettings.DangerousToolConfirmer { toolName, args ->
                     askDangerousToolOnMain(toolName, args)
                 }
             )
-            orchestrator = orch
+        }
+    }
+
+    /** 新建会话：之后的请求不再续接旧历史。 */
+    fun startNewConversation() {
+        orchestrator.newConversation()
+    }
+
+    /** 列出全部会话摘要，供会话列表展示。 */
+    fun listConversations() = orchestrator.listConversations()
+
+    /** 切换到既有会话，之后的请求会在其历史上续接。 */
+    fun openConversation(conversationId: String) {
+        orchestrator.openConversation(conversationId)
+    }
+
+    fun execute(userRequest: String) {
+        cancel()
+        executionJob = lifecycleScope.launch(Dispatchers.IO) {
+            val orch = orchestrator
 
             val agents = Agents(context)
             val providerId = agents.getProvider()
@@ -187,7 +209,7 @@ class AgentRequestHandler(
     }
 
     fun cancel() {
-        orchestrator?.cancel()
+        orchestrator.cancel()
         executionJob?.cancel()
         executionJob = null
     }

@@ -81,6 +81,21 @@
   <string name="ai_agent_custom_model">Model name</string>
   <string name="ai_agent_custom_hint">Click to set</string>
 
+  <!-- AI Agent: conversation persistence -->
+  <string name="ai_status_conversation_ready">New conversation. Ready for your request.</string>
+  <string name="ai_snack_new_conversation">Started a new conversation</string>
+  <string name="ai_snack_clear_failed">Failed to clear: %1$s</string>
+  <string name="ai_conversation_untitled">Untitled conversation</string>
+  <string name="ai_conversation_new">New conversation</string>
+  <string name="ai_conversation_rename">Rename</string>
+  <string name="ai_conversation_delete">Delete</string>
+  <string name="ai_conversation_delete_confirm">Delete this conversation? This cannot be undone.</string>
+  <string name="ai_conversation_rename_hint">Conversation title</string>
+  <string name="ai_conversation_empty">No conversations yet</string>
+  <string name="ai_conversation_message_count">%1$d messages</string>
+  <string name="ai_conversation_deleted">Conversation deleted</string>
+  <string name="ai_conversation_renamed">Conversation renamed</string>
+
   <!-- AI Agent Deepseek -->
   <string name="ai_agent_deepseek_api_key">Deepseek API Key</string>
   <string name="ai_agent_deepseek_api_key_summary">Enter your Deepseek API key to use AI features</string>

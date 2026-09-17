@@ -457,16 +457,26 @@ class ChatFragment : Fragment() {
                 typingJob?.cancel()
                 codeCompletionManager.clearSuggestion()
                 aiAgent.clearConversation()
-                
+
+                // agent 路径：开一个新会话而不是丢掉历史——旧会话仍在磁盘上，
+                // 可从会话列表切回。语义上「新会话」比「清空」更准确。
+                agentRequestHandler?.let { handler ->
+                    try {
+                        handler.startNewConversation()
+                    } catch (e: Exception) {
+                        // 新建失败不应阻断清空流程，旧路径的状态已重置
+                    }
+                }
+
                 promptInput.text?.clear()
-                statusText.text = "Conversation cleared. Ready for new request."
+                statusText.text = getString(R.string.ai_status_conversation_ready)
                 fileModificationList.visibility = View.GONE
                 summaryCard.visibility = View.GONE
                 fileModificationAdapter.clear()
-                
-                showSnackbar("Conversation cleared")
+
+                showSnackbar(getString(R.string.ai_snack_new_conversation))
             } catch (e: Exception) {
-                showSnackbar("Error clearing: ${e.message}")
+                showSnackbar(getString(R.string.ai_snack_clear_failed, e.message ?: ""))
             }
         }
     }

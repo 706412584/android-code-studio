@@ -81,6 +81,21 @@
   <string name="ai_agent_custom_model">模型名</string>
   <string name="ai_agent_custom_hint">点击设置</string>
 
+  <!-- AI Agent: conversation persistence -->
+  <string name="ai_status_conversation_ready">新会话，可以开始提问了。</string>
+  <string name="ai_snack_new_conversation">已新建会话</string>
+  <string name="ai_snack_clear_failed">清空失败：%1$s</string>
+  <string name="ai_conversation_untitled">未命名会话</string>
+  <string name="ai_conversation_new">新建会话</string>
+  <string name="ai_conversation_rename">重命名</string>
+  <string name="ai_conversation_delete">删除</string>
+  <string name="ai_conversation_delete_confirm">确定删除该会话？此操作无法撤销。</string>
+  <string name="ai_conversation_rename_hint">会话标题</string>
+  <string name="ai_conversation_empty">暂无会话</string>
+  <string name="ai_conversation_message_count">%1$d 条消息</string>
+  <string name="ai_conversation_deleted">会话已删除</string>
+  <string name="ai_conversation_renamed">会话已重命名</string>
+
   <!-- AI Agent Deepseek -->
   <string name="ai_agent_deepseek_api_key">Deepseek API 密钥</string>
   <string name="ai_agent_deepseek_api_key_summary">输入您的 OpenAI API 密钥以使用 AI 功能</string>

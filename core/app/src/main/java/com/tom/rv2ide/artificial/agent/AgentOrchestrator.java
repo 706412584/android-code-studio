@@ -22,9 +22,20 @@ import com.tom.rv2ide.ai.agent.AgentEvent;
 import com.tom.rv2ide.ai.agent.AgentPromptBuilder;
 import com.tom.rv2ide.ai.agent.AgentRunResult;
 import com.tom.rv2ide.ai.agent.AgentSession;
+import com.tom.rv2ide.ai.agent.conversation.ConversationEntry;
+import com.tom.rv2ide.ai.agent.conversation.ConversationHistory;
+import com.tom.rv2ide.ai.agent.conversation.ConversationLog;
+import com.tom.rv2ide.ai.agent.conversation.ConversationStore;
+import com.tom.rv2ide.ai.agent.conversation.ConversationSummary;
+import com.tom.rv2ide.ai.agent.conversation.FileConversationStore;
+import com.tom.rv2ide.ai.agent.conversation.SessionMetaEntry;
+import com.tom.rv2ide.ai.agent.conversation.ToolResultEntry;
+import com.tom.rv2ide.ai.agent.conversation.UserMessageEntry;
+import com.tom.rv2ide.ai.agent.conversation.AssistantMessageEntry;
 import com.tom.rv2ide.ai.protocol.ModelCancellationToken;
 import com.tom.rv2ide.ai.protocol.ModelClient;
 import com.tom.rv2ide.ai.protocol.ModelConfig;
+import com.tom.rv2ide.ai.protocol.ModelMessage;
 import com.tom.rv2ide.ai.tool.DiffStore;
 import com.tom.rv2ide.ai.tool.FileDeleteTool;
 import com.tom.rv2ide.ai.tool.FileEditTool;
@@ -44,6 +55,7 @@ import com.tom.rv2ide.artificial.agent.tool.LaunchAppTool;
 import com.tom.rv2ide.artificial.agent.tool.LogcatReadTool;
 import com.tom.rv2ide.ai.tool.api.ToolInfo;
 import java.io.File;
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -57,8 +69,8 @@ import java.util.List;
  *   <li>不持有 Activity，可安全地在后台线程运行
  * </ul>
  *
- * <p>每次 {@link #run} 都新建一次循环，不做跨请求的状态保持；会话历史的维护
- * 由调用方决定（当前 ChatFragment 走单轮，未保留历史）。
+ * <p>会话持久化：每轮结束后把助手消息与工具结果追加到 JSONL 日志，下次请求折叠为
+ * 历史传入循环。落盘在监听器里完成，循环本身不知道存储的存在。
  */
 public final class AgentOrchestrator {
 
@@ -68,17 +80,79 @@ public final class AgentOrchestrator {
   private final Context appContext;
   private final AgentToolSettings settings;
   private final DiffStore diffStore;
+  private final ConversationStore conversationStore;
   private final AgentPromptBuilder promptBuilder = new AgentPromptBuilder();
 
   /** 当前工作区根目录，由 {@link #setWorkspace} 设置。 */
   private File workspace;
 
+  /** 当前会话 id；为 null 时 {@link #run} 会新建一个。 */
+  private String activeConversationId;
+
   private volatile ModelCancellationToken activeCancellation;
 
   public AgentOrchestrator(Context context, DiffStore diffStore) {
+    this(context, diffStore, new FileConversationStore(defaultConversationDir(context)));
+  }
+
+  public AgentOrchestrator(Context context, DiffStore diffStore, ConversationStore conversationStore) {
     this.appContext = context.getApplicationContext();
     this.settings = new AgentToolSettings(appContext);
     this.diffStore = diffStore;
+    this.conversationStore = conversationStore;
+  }
+
+  /** 会话日志目录：{@code filesDir/ai/conversations}。 */
+  private static File defaultConversationDir(Context context) {
+    return new File(new File(context.getFilesDir(), "ai"), "conversations");
+  }
+
+  public ConversationStore getConversationStore() {
+    return conversationStore;
+  }
+
+  /** 列出全部会话摘要（列表页用）。 */
+  public List<ConversationSummary> listConversations() throws IOException {
+    return conversationStore.list();
+  }
+
+  /** 切换到既有会话；之后的请求会在其历史上续接。 */
+  public void openConversation(String conversationId) {
+    this.activeConversationId = conversationId;
+  }
+
+  /** @return 当前会话 id，可能为 null（尚未开始任何会话）。 */
+  public String getActiveConversationId() {
+    return activeConversationId;
+  }
+
+  /**
+   * 新建会话并切过去。
+   *
+   * @return 新会话摘要
+   */
+  public ConversationSummary newConversation() throws IOException {
+    ConversationSummary summary =
+        conversationStore.create(
+            null,
+            workspace == null ? "" : workspace.getAbsolutePath(),
+            "",
+            settings.getPermissionMode());
+    activeConversationId = summary.getId();
+    return summary;
+  }
+
+  /** 重命名会话。实现为追加标题条目，历史不变。 */
+  public void renameConversation(String conversationId, String title) throws IOException {
+    conversationStore.rename(conversationId, title);
+  }
+
+  /** 删除会话；若删的是当前会话则清空当前指向。 */
+  public void deleteConversation(String conversationId) throws IOException {
+    conversationStore.delete(conversationId);
+    if (conversationId != null && conversationId.equals(activeConversationId)) {
+      activeConversationId = null;
+    }
   }
 
   /** 设置工作区根目录。工具只能在此目录内操作。 */
@@ -195,15 +269,122 @@ public final class AgentOrchestrator {
             .settings(settings)
             .build();
 
+    // 确保有会话：无则新建，使消息有落盘之处。
+    String conversationId = ensureConversation();
+    List<ModelMessage> history = loadHistory(conversationId);
+
+    // 落盘与 UI 渲染共用同一事件流：先持久化（不受 UI 影响），再转发给调用方。
+    AgentEvent.Listener persistingListener =
+        new PersistingListener(conversationId, userRequest, listener);
+
     ModelCancellationToken cancellation = new ModelCancellationToken();
     activeCancellation = cancellation;
 
     try {
       AgentSession session = new AgentSession(modelClient, registry, executor);
       return session.run(
-          config, systemPrompt, userRequest, toolContext, cancellation, listener);
+          config, systemPrompt, userRequest, history, toolContext, cancellation, persistingListener);
     } finally {
       activeCancellation = null;
+    }
+  }
+
+  /** @return 当前会话 id；若尚无会话则新建一个。 */
+  private String ensureConversation() {
+    String existing = activeConversationId;
+    if (existing != null && conversationStore.exists(existing)) {
+      return existing;
+    }
+    try {
+      ConversationSummary created =
+          conversationStore.create(
+              null,
+              workspace.getAbsolutePath(),
+              "",
+              settings.getPermissionMode());
+      activeConversationId = created.getId();
+      return created.getId();
+    } catch (IOException e) {
+      // 落盘失败不应阻断对话本身——退化为无历史的内存会话。
+      return "";
+    }
+  }
+
+  /**
+   * 折叠既有会话为可续接的历史。
+   *
+   * <p>读取或折叠失败时返回空历史：宁可丢掉上下文，也不该让用户发不出消息。
+   */
+  private List<ModelMessage> loadHistory(String conversationId) {
+    if (conversationId == null || conversationId.isEmpty()) {
+      return new ArrayList<>();
+    }
+    try {
+      return ConversationHistory.fold(conversationStore.read(conversationId));
+    } catch (IOException | RuntimeException e) {
+      return new ArrayList<>();
+    }
+  }
+
+  /**
+   * 把事件流同时写入会话日志。
+   *
+   * <p>用户消息在会话开始时就落盘（而非结束时），这样即使进程被杀，用户输入也不会丢。
+   * 助手消息与工具结果在各自完成时落盘。
+   */
+  private final class PersistingListener implements AgentEvent.Listener {
+
+    private final String conversationId;
+    private final AgentEvent.Listener downstream;
+
+    PersistingListener(String conversationId, String userRequest, AgentEvent.Listener downstream) {
+      this.conversationId = conversationId;
+      this.downstream = downstream;
+      appendEntry(UserMessageEntry.create(null, System.currentTimeMillis(), userRequest));
+    }
+
+    @Override
+    public void onEvent(AgentEvent event) {
+      persist(event);
+      if (downstream != null) {
+        downstream.onEvent(event);
+      }
+    }
+
+    private void persist(AgentEvent event) {
+      if (event == null) {
+        return;
+      }
+      switch (event.getType()) {
+        case TURN_FINISHED:
+          appendEntry(
+              AssistantMessageEntry.create(
+                  null,
+                  System.currentTimeMillis(),
+                  event.getMessage(),
+                  "",
+                  event.getToolCalls()));
+          break;
+        case TOOL_FINISHED:
+          if (event.getToolResult() != null) {
+            appendEntry(
+                ToolResultEntry.create(null, System.currentTimeMillis(), event.getToolResult()));
+          }
+          break;
+        default:
+          break;
+      }
+    }
+
+    private void appendEntry(ConversationEntry entry) {
+      if (conversationId == null || conversationId.isEmpty()) {
+        return;
+      }
+      try {
+        conversationStore.append(conversationId, entry);
+      } catch (IOException | RuntimeException e) {
+        // 单条落盘失败不应中断对话；内存中的会话仍在继续。
+      }
     }
   }
 
