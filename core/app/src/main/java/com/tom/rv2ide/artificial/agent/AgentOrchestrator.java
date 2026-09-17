@@ -52,6 +52,11 @@ import com.tom.rv2ide.ai.tool.FileWriteTool;
 import com.tom.rv2ide.ai.tool.GlobTool;
 import com.tom.rv2ide.ai.tool.ListDirectoryTool;
 import com.tom.rv2ide.ai.tool.ToolContext;
+import com.tom.rv2ide.ai.tool.TodoStateStore;
+import com.tom.rv2ide.ai.tool.TodoUpdateTool;
+import com.tom.rv2ide.ai.tool.WebFetchTool;
+import com.tom.rv2ide.ai.tool.WebSearchTool;
+import com.tom.rv2ide.ai.tool.RssSearchProvider;
 import com.tom.rv2ide.ai.tool.ToolExecutor;
 import com.tom.rv2ide.ai.tool.ToolPermissionService;
 import com.tom.rv2ide.ai.tool.ShellBackendRegistry;
@@ -91,6 +96,14 @@ public final class AgentOrchestrator {
   private final ConversationStore conversationStore;
   private final AgentPromptBuilder promptBuilder = new AgentPromptBuilder();
 
+  /**
+   * 待办列表存储，跨运行保留。
+   *
+   * <p>必须持久化：待办是模型「记住自己做到哪一步」的依据，只在内存里的话进程被回收后
+   * 模型会从头再来一遍，用户看到的是重复劳动。
+   */
+  private final TodoStateStore todoStore;
+
   /** 当前工作区根目录，由 {@link #setWorkspace} 设置。 */
   private File workspace;
 
@@ -113,6 +126,12 @@ public final class AgentOrchestrator {
     this.settings = new AgentToolSettings(appContext);
     this.diffStore = diffStore;
     this.conversationStore = conversationStore;
+    this.todoStore = new com.tom.rv2ide.ai.tool.FileTodoStateStore(defaultTodoFile(appContext));
+  }
+
+  /** 待办文件：{@code filesDir/ai/todos.json}。 */
+  private static File defaultTodoFile(Context context) {
+    return new File(new File(context.getFilesDir(), "ai"), "todos.json");
   }
 
   /** 会话日志目录：{@code filesDir/ai/conversations}。 */
@@ -219,6 +238,14 @@ public final class AgentOrchestrator {
     registry.register(new LaunchAppTool(appContext));
     registry.register(new LogcatReadTool(appContext));
 
+    // 任务计划：把模型的计划外化成可见状态，使长任务不丢进度。
+    registry.register(new TodoUpdateTool(todoStore));
+
+    // 网络：先搜索定位页面，再抓取正文。
+    AppHttpPort http = new AppHttpPort();
+    registry.register(new WebFetchTool(http));
+    registry.register(new WebSearchTool(new RssSearchProvider(http)));
+
     return registry;
   }
 
@@ -291,7 +318,11 @@ public final class AgentOrchestrator {
     // 协议支持原生工具调用时不注入 XML 兜底格式，否则会诱导模型改用文本调用。
     ModelClient modelClient = new ModelClient();
     boolean nativeTools = modelClient.supportsNativeTools(config);
-    String systemPrompt = promptBuilder.build(workspace.getAbsolutePath(), tools, nativeTools);
+    // 待办状态注入提示词：只存不读等于没记——模型必须在每轮都看到「我做到哪了」，
+    // 才能在几十轮工具调用之后不丢失进度。
+    String systemPrompt =
+        promptBuilder.build(
+            workspace.getAbsolutePath(), tools, nativeTools, todoStore.renderForPrompt());
 
     ToolContext toolContext =
         ToolContext.builder()

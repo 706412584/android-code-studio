@@ -73,6 +73,20 @@ public final class AgentPromptBuilder {
    * @param nativeTools 协议是否支持原生工具调用；true 时不注入 XML 兜底格式说明
    */
   public String build(String homePath, List<ToolInfo> tools, boolean nativeTools) {
+    return build(homePath, tools, nativeTools, null);
+  }
+
+  /**
+   * 生成系统提示词（含待办状态）。
+   *
+   * <p><b>为什么待办要进提示词</b>：{@code todo_update} 把计划外化成列表，但模型只有在
+   * 提示词里看到它，才能在几十轮调用之后仍知道「我做到哪一步、还剩什么」。
+   * 只存不读等于没记。
+   *
+   * @param todoState 已渲染的待办文本；null 或空表示无待办，此时不注入该段落
+   */
+  public String build(
+      String homePath, List<ToolInfo> tools, boolean nativeTools, String todoState) {
     StringBuilder sb = new StringBuilder();
 
     sb.append("你是 ").append(identity).append("，一个 Android 项目的编码助手。\n\n");
@@ -90,6 +104,14 @@ public final class AgentPromptBuilder {
       sb.append("工具只允许访问根目录内的文件；越界路径会被拒绝。\n");
     }
     sb.append('\n');
+
+    // 待办段落刻意放在工具列表之前：模型先看到「当前进度」，再看到可用手段。
+    // 无待办时不输出空标题，避免提示词里出现一段没有内容的段落。
+    if (todoState != null && !todoState.trim().isEmpty()) {
+      sb.append("[ 当前待办 ]\n");
+      sb.append(todoState.trim()).append('\n');
+      sb.append("继续推进未完成的项；每完成一项就用 todo_update 更新状态。\n\n");
+    }
 
     sb.append("[ 可用工具 ]\n");
     if (tools == null || tools.isEmpty()) {

@@ -320,11 +320,61 @@ LCP 的 `LineTheme` 移植（改用 ACS 现有主题）。这些属于「工具�
 flush 幂等、reset、pending 追踪、200 增量下的刷新次数上界与下界）。
 五个模块共 249 条全绿。
 
+### 3.7 P0-6 补齐内置工具（#8）
+
+**新增工具**（`core/ai-tool`）：
+
+| 工具 | 说明 |
+|---|---|
+| `todo_update` | 维护任务待办列表；整表覆盖，状态同义词归一 |
+| `web_fetch` | 抓取网页并剥离为可读文本 |
+| `web_search` | 搜索网页；provider 可替换 |
+
+**新增支撑**（`core/ai-tool`）：`TodoItem`、`TodoStateStore`（+ `inMemory`/`none`）、
+`FileTodoStateStore`、`HtmlTextExtractor`、`HttpPort`（窄接口）、`RssSearchProvider`。
+**app 层**：`AppHttpPort`（适配既有 `SimpleHttpClient`）；`AgentOrchestrator` 注册三个
+工具、构造 `FileTodoStateStore`、把待办状态注入系统提示词；
+`AgentPromptBuilder.build` 新增 `todoState` 参数。
+
+**关键设计决策**：
+
+- **`HttpPort` 收窄成接口而非直接依赖 `ai-protocol`**：`ai-tool` 要保持零依赖（除
+  org.json）以便 JVM 单测。适配放在 app 层，安全边界仍只有一处——URL 策略、代理、
+  超时都由既有的 `SimpleHttpClient` 处理，不会因为新增工具就绕过 `UrlPolicy`。
+- **`HttpPort` 不提供 POST**：当前只有读取需求。不预留用不上的能力，免得日后有人拿它
+  发未审查的写入请求。
+- **待办必须进提示词**：只存不读等于没记。`renderForPrompt()` 返回空串时调用方跳过
+  注入，避免提示词里出现没有内容的段落。
+- **待办持久化但不用 append-only**：待办是「当前状态」而非「历史事件」，整表覆盖即可，
+  保留历史无意义。与 `FileDiffStore` 的取舍相反，因为数据性质不同。
+- **待办状态做同义词归一**：模型常写 `done`/`完成`/`doing`。严格拒绝会让它反复重试
+  同一次调用；无法识别时退回 `pending` 而非报错——待办是辅助手段，不值得为它中断任务。
+- **待办上限 50 条**：防止模型把整个需求文档逐条列进来把上下文撑爆。
+- **`web_search` 默认给免密钥的 RSS provider**：需要 API key 意味着多数用户永远用不上
+  （装好应用 → 搜索不可用 → 要先去注册拿 key）。RSS 端点结果质量不如商业 API，但让
+  功能开箱可用；需要更好效果的用户可换 provider。
+  **默认端点未经实测验证**（开发机无网络），端点可替换、解析器同时兼容 RSS 与 Atom。
+- **HTML 剥离手写而非引入解析器**：只为一件事（取文本）引入 jsoup 不值得。
+  两个真实 bug 由测试暴露并修复：①裸 `&lt;` 会吞掉到下一个 `&gt;` 之间的正文
+  （「a &lt; b then done」丢掉 done）；②`&amp;` 先于其它实体解码会造成双重解码。
+- **`script`/`style` 内容整体丢弃**：它们不是给人读的正文，回灌既占上下文又干扰理解。
+- **空抓取结果要明说**：全靠 JS 渲染的页面抓下来是空壳，必须告诉模型「该页面依赖
+  JavaScript」，否则它以为页面本来就是空的。
+- **搜索区分「无结果」与「失败」**：前者模型应换关键词，后者应报告故障。
+
+**未做**（`DETAILS.md` 列为中/低优先级，且各自依赖未完成项）：
+`memory_update`（依赖 #12）、`agent`/`agent_pipeline`/`agent_output`（依赖 #4）、
+`image_understanding`/`image_generation`（低优先级）。`Phone*` 与
+`CustomAgentExtensionTool` 按原计划不移植。
+
+**测试**：`HtmlTextExtractorTest` 15 条 + `NewBuiltinToolsTest` 34 条。
+五个模块共 298 条全绿。
+
 ---
 
-## 4. 待办（10 项未完成 / 16 项总计）
+## 4. 待办（9 项未完成 / 16 项总计）
 
-任务定义已迁入本会话 `TaskList`（#2、#3、#5、#15、#16、#17 已完成，其余 pending）。
+任务定义已迁入本会话 `TaskList`（#2、#3、#5、#8、#15、#16、#17 已完成，其余 pending）。
 
 ### P0 — 缺了 agent 能力不完整
 
@@ -337,7 +387,7 @@ flush 幂等、reset、pending 追踪、200 增量下的刷新次数上界与下
 | #14 | P0-5 MCP 客户端 | pending | — | 纯客户端 HTTP JSON-RPC，可独立做 |
 | #16 | P1-9 会话 UI 渲染层 | **已完成** | — | 见 §3.6 |
 | #10 | P0-7 提示词模板系统 + 聊天模式 | pending | — | 占位符机制可先做，收益立竿见影 |
-| #8 | P0-6 补齐内置工具 | pending | #16 | 高优先级部分(todo/web)**实际无依赖** |
+| #8 | P0-6 补齐内置工具 | **已完成** | — | 见 §3.7；memory/agent/image 系列归各自依赖项 |
 | #12 | P0-8 长期记忆 + 本地 RAG | pending | #2 | |
 
 ### P1 / P2
@@ -384,8 +434,7 @@ flush 幂等、reset、pending 追踪、200 增量下的刷新次数上界与下
 - **#14 MCP 客户端**——纯 Java 可独立单测，与 UI 无耦合，适合先做。
 - **#11 服务商预设表与模型目录**——改动小、收益直接（新增服务商不必改代码）。
 - **#10 提示词模板系统**——占位符机制可先做，收益立竿见影。
-- **#8 补齐内置工具**（todo/web 系列）——**实际无依赖**，卡片已能通用渲染。
-- **#12 长期记忆 + 本地 RAG**——需要会话索引，依赖已就绪。
+- **#12 长期记忆 + 本地 RAG**——需要会话索引，依赖已就绪（也是 `memory_update` 的前置）。
 
 ### 未提交 / 待决
 
