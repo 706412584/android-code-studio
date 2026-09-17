@@ -112,4 +112,20 @@
     android:id="@+id/diagnosticInfo"
     layout="@layout/layout_diagnostic_info" />
 
+  <!--
+    悬浮 AI 助手的宿主。
+
+    必须是 FrameLayout：FloatingAssistantView 用 FrameLayout.LayoutParams 定位
+    （可拖动需要连续的 left/top 偏移，gravity 只有 9 个离散值表达不了），
+    直接塞进外层的 CoordinatorLayout 会因 LayoutParams 类型不符抛
+    ClassCastException。
+
+    放在最后 = 绘制在最上层，包括盖住 bottom_sheet。
+  -->
+  <FrameLayout
+    android:id="@+id/assistantContainer"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:clipChildren="false" />
+
 </androidx.coordinatorlayout.widget.CoordinatorLayout>

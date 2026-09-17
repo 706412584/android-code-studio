@@ -75,6 +75,7 @@ import com.tom.rv2ide.actions.ActionItem.Location.EDITOR_FILE_TABS
 import com.tom.rv2ide.adapters.DiagnosticsAdapter
 import com.tom.rv2ide.adapters.SearchListAdapter
 import com.tom.rv2ide.app.EdgeToEdgeIDEActivity
+import com.tom.rv2ide.artificial.agent.FloatingAssistantView
 import com.tom.rv2ide.databinding.ActivityEditorBinding
 import com.tom.rv2ide.databinding.ContentEditorBinding
 import com.tom.rv2ide.databinding.LayoutDiagnosticInfoBinding
@@ -184,6 +185,9 @@ abstract class BaseEditorActivity :
   val binding: ActivityEditorBinding
     get() = checkNotNull(_binding) { "Activity has been destroyed" }
 
+  /** 编辑界面的悬浮 AI 助手。 */
+  private var floatingAssistant: FloatingAssistantView? = null
+
   val content: ContentEditorBinding
     get() = binding.content
 
@@ -193,6 +197,11 @@ abstract class BaseEditorActivity :
   private val onBackPressedCallback: OnBackPressedCallback =
       object : OnBackPressedCallback(true) {
         override fun handleOnBackPressed() {
+          // 悬浮助手展开时优先收起它：它盖在最上层，用户按返回的意图是「关掉眼前这个面板」，
+          // 而不是退出项目。
+          if (floatingAssistant?.collapseIfOpen() == true) {
+            return
+          }
           if (binding.root.isDrawerOpen(GravityCompat.START)) {
             binding.root.closeDrawer(GravityCompat.START)
           } else if (editorBottomSheet?.state != BottomSheetBehavior.STATE_COLLAPSED) {
@@ -613,7 +622,10 @@ abstract class BaseEditorActivity :
       }
       editorActivityScope.cancelIfActive("Activity is being destroyed")
     }
-    
+
+    // 取消进行中的 agent 运行：它的回调会往已销毁的控件里写数据。
+    floatingAssistant?.dispose()
+    floatingAssistant = null
   }
 
   protected open fun postDestroy() {
@@ -706,7 +718,8 @@ override fun onApplySystemBarInsets(insets: Insets) {
 
     setupContainers()
     setupDiagnosticInfo()
-    
+    setupFloatingAssistant()
+
     ViewCompat.setOnApplyWindowInsetsListener(binding.root) { view, windowInsets ->
         val systemBars = windowInsets.getInsets(WindowInsetsCompat.Type.systemBars())
 
@@ -1445,6 +1458,27 @@ override fun onApplySystemBarInsets(insets: Insets) {
       viewContainer.viewTreeObserver.addOnGlobalLayoutListener(observer)
       bottomSheet.setOffsetAnchor(editorAppBarLayout)
     }
+  }
+
+  /**
+   * 在编辑界面挂上悬浮 AI 助手。
+   *
+   * <p>工作区取当前打开的项目目录——编辑界面里这个值是确定的，不像主屏要靠「最近打开」
+   * 去猜。
+   *
+   * <p>用 lifecycleScope 而不是 editorActivityScope：后者是普通的
+   * `CoroutineScope(Dispatchers.Default)`，不随 Activity 销毁取消，用它会在界面已销毁后
+   * 继续往控件里写数据。
+   */
+  private fun setupFloatingAssistant() {
+    val container = content.assistantContainer
+    val assistant = FloatingAssistantView(this, lifecycleScope, container)
+    // 折叠态的 bottom sheet 常驻屏幕底部，默认落点要避开它，否则一进来就被压住。
+    assistant.defaultBottomOffsetPx =
+        resources.getDimensionPixelSize(R.dimen.editor_sheet_collapsed_height)
+    assistant.attach()
+    assistant.setWorkspace(IProjectManager.getInstance().projectDir)
+    floatingAssistant = assistant
   }
 
   private fun setupDiagnosticInfo() {

@@ -827,6 +827,86 @@ JDK 内部跳转，不再回到校验点。一个正常的公网地址回
 
 ---
 
+### 3.18 编辑界面三项 UI 修正（#19/#20/#21）
+
+**#20 侧栏底部按钮行被系统导航栏遮挡**
+
+实机测量（黑鲨 SKW-A0 / Android 10）：系统导航键画在 y=2262..2293，
+侧栏图标行画在 y=2172..2309——同一水平带，重叠。
+
+根因是 inset 有两条来源、**两条都不生效**：
+
+1. `BaseEditorActivity.onApplySystemBarInsets` 在 `decorView.doOnAttach` 时调用
+   `EditorSidebarFragment.onApplyWindowInsets`，那是**一次性**回调。抽屉里的侧栏是
+   懒加载的，视图创建晚于该回调，此时 `_binding` 仍为 null，inset 被静默丢弃。
+   控件树佐证：`fragmentContainer` 顶边在 75（= 状态栏高度），而 `title` 顶边在 0
+   ——顶部 inset 同样丢了。
+2. 视图自己的 insets 回调兜不住：根布局 `activity_editor.xml` 带
+   `android:fitsSystemWindows="true"`，edge-to-edge 下它先消费掉 insets，
+   子视图收到的 `systemBars.bottom` 恒为 0，padding 加了等于没加。
+
+修法两条并用：`onApplyWindowInsets` 把 inset 存进 `pendingInsets`，视图创建后补上；
+补不上时从 `getRootWindowInsets` 取（根窗口的 insets 不受子视图消费影响）。
+
+实机验证：`navigation` 行高 68px → 198px（+130 = 导航栏高度）。
+
+> ⚠️ **`layout_editor_bottom_sheet.xml` 的 `space_bottom` 不是 bug，别再改它。**
+> 它的 `wrap_content`（运行时高度 0）是**有意**的：底部空间由
+> `EditorBottomSheet.setOffsetAnchor` 通过
+> `binding.root.updatePadding(bottom = anchorOffset + insetBottom)` 预留，
+> `layout_above` 是相对**内边距内**的底边定位的。我一度把它当 bug 改成固定高度，
+> 那会造成双重预留、把输出面板压窄。已在布局里写明注释。
+
+**#19 编辑界面中文化**
+
+编辑器界面里唯一残留的英文是侧栏的「Asset Studio」——根因是 **core/app 模块此前
+根本没有 `values-zh-rCN` 目录**，只有 `values/strings.xml`，所以 app 模块自己的
+字符串（Asset Studio / Sub-Module Maker / Terminal）全部没有中文。
+（`core/resources` 模块反而是齐的：890 条中仅 2 条未译，且都是有意的。）
+
+新增 `core/app/src/main/res/values-zh-rCN/strings.xml`，并清掉三类**真实**
+`android:text`（不是 `tools:` 预览）：
+
+- `fragment_ai_preferences.xml`：Auto-Switch Provider / Code Completion /
+  Provider: / Model: / Not set 共 7 处。
+- `dialog_ai_permissions.xml`：5 处。该对话框目前**零调用点**，但改掉比留着强。
+- `ChatFragment`：`loadProject` / `openFileInEditor` / 空输入校验 / agent 模式切换
+  共 9 处 `showSnackbar` 与 `statusText` 的字面量。
+- `AIAgentSidebarAction.subtitle` 的硬编码 `"v0.1-preview"`、`ArtificialFragment`
+  的 `"Chat"/"History"` 与两个 Snackbar。
+
+> 新增字符串沿用既有命名 `ai_status_*` / `ai_snack_*` / `ai_permission_*`。
+> 「Not set」单独用 `ai_agent_value_unset`，**不**复用 `ai_agent_api_key_unset`
+> ——后者语义是「API 密钥未设置」，用在服务商/模型上会误导。
+
+实机验证：侧栏末位图标显示「素材工作室」，界面内已无英文。
+
+**#21 悬浮助手迁到编辑界面 + 可拖动**
+
+`FloatingAssistantView` 从 `MainFragment` 复制到 `BaseEditorActivity`（主页那份保留，
+两处用途不同）。宿主是 `content_editor.xml` 新增的 `assistantContainer`——
+**必须是 FrameLayout**：该视图用 `FrameLayout.LayoutParams` 定位（拖动需要连续的
+left/top 偏移，`gravity` 只有 9 个离散值表达不了），直接塞进外层 CoordinatorLayout
+会因 LayoutParams 类型不符抛 `ClassCastException`。
+
+拖动实现要点：
+
+- **拖动与点击的区分**：按下后先不判定，位移超过 `touchSlop` 才进入拖动模式，
+  否则抬手时走 `open()`。若在 `ACTION_DOWN` 就启动拖动，轻点会变成「拖动 0 像素」，
+  面板再也打不开。也因此**不能再设 `OnClickListener`**——`OnTouchListener` 会消费
+  全部事件，click 永不触发。
+- **位置持久化**：存 `leftMargin`/`topMargin` 到默认 SharedPreferences。
+  恢复放在 `parent.post {}` 里，否则 `parent.width/height` 还是 0，钳制会把位置压到左上角。
+- **边距钳制**：四周留 8dp，底部额外减去导航栏高度。贴到 0 会让圆角与屏幕边缘相切、
+  看起来像被裁掉，且贴边后很难再按住拖回来。
+- **默认落点**：`defaultBottomOffsetPx` 由调用方传入折叠态 bottom sheet 高度，
+  避免把编辑界面的布局细节写进这个通用视图。不设的话按钮会正好压在折叠卡片上。
+
+实机验证：拖动后按钮从 (882,1858) 移到左上角；重装后位置恢复为 (22,97)
+（8dp 边距生效）；点击展开面板、全中文、发送按钮可用。
+
+---
+
 ## 4. 待办（0 项未完成 / 16 项总计）
 
 16 项全部完成。各任务中**明确未做**的部分已在对应小节列出（如 pipeline、

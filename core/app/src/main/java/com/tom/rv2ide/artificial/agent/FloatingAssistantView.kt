@@ -135,6 +135,14 @@ class FloatingAssistantView(
   val isOpen: Boolean
     get() = binding.assistantOverlay.isVisible
 
+  /**
+   * 首次显示时按钮距底边的额外距离。
+   *
+   * <p>编辑界面底部常驻一个折叠态的 bottom sheet（约 56dp + 导航栏），默认落点若只留
+   * 16dp 会正好压在上面。由调用方传入该高度，避免把编辑界面的布局细节写进这个通用视图。
+   */
+  var defaultBottomOffsetPx: Int = 0
+
   /** 把两个视图挂到父容器上。父容器应是 `FrameLayout`（FAB 靠 gravity 定位）。 */
   fun attach() {
     // FAB 在 XML 里只有固定尺寸、没有 gravity；放进 FrameLayout 时必须显式给右下角，
@@ -143,10 +151,12 @@ class FloatingAssistantView(
         FrameLayout.LayoutParams(dp(56), dp(56)).apply {
           gravity = Gravity.END or Gravity.BOTTOM
           marginEnd = dp(16)
-          bottomMargin = dp(16)
+          bottomMargin = dp(16) + defaultBottomOffsetPx
         }
     parent.addView(fabBinding.root)
     parent.addView(binding.assistantOverlay)
+
+    setUpDragging()
 
     applyMode(Mode.SIDEBAR)
 
@@ -155,7 +165,8 @@ class FloatingAssistantView(
 
     adapter.setOnRevertClickListener { messageId, diffId -> revertDiff(messageId, diffId) }
 
-    fabBinding.assistantFab.setOnClickListener { open() }
+    // 不设 OnClickListener：拖动用的 OnTouchListener 会消费全部事件，click 永远不会触发。
+    // 打开面板的动作用 ACTION_UP 且未进入拖动时手动调用 open()（见 setUpDragging）。
     binding.assistantClose.setOnClickListener { close() }
     binding.assistantLayoutToggle.setOnClickListener {
       applyMode(if (mode == Mode.FULLSCREEN) Mode.SIDEBAR else Mode.FULLSCREEN)
@@ -186,6 +197,122 @@ class FloatingAssistantView(
   fun setWorkspace(workspace: java.io.File?) {
     this.workspace = workspace
     orchestrator.workspace = workspace
+  }
+
+  /**
+   * 让悬浮按钮可拖动，并把位置持久化。
+   *
+   * <p><b>为什么用绝对坐标 + FrameLayout 而非继续用 gravity</b>：拖动后要停留在用户
+   * 松手的位置，gravity 只有 9 个离散值，表达不了。改成 LEFT|TOP + margin 后位置连续可调。
+   *
+   * <p><b>拖动与点击的区分</b>：按下后先不判定，只有当位移超过 touchSlop 才进入拖动模式，
+   * 否则抬手时仍走 click 打开面板。若直接用 ACTION_DOWN 启动拖动，轻点就会变成「拖动 0 像素」，
+   * 面板再也打不开。
+   *
+   * <p><b>边界钳制</b>：拖动范围限制在父容器内，且底部额外留出系统导航栏高度——否则用户能把
+   * 按钮拖到导航键下面，之后既看不见也点不到。
+   */
+  private fun setUpDragging() {
+    val fab = fabBinding.root
+    val touchSlop = android.view.ViewConfiguration.get(context).scaledTouchSlop
+    var downRawX = 0f
+    var downRawY = 0f
+    var startX = 0
+    var startY = 0
+    var dragging = false
+
+    restoreFabPosition()
+
+    fab.setOnTouchListener { _, event ->
+      when (event.actionMasked) {
+        android.view.MotionEvent.ACTION_DOWN -> {
+          downRawX = event.rawX
+          downRawY = event.rawY
+          val lp = fab.layoutParams as FrameLayout.LayoutParams
+          startX = lp.leftMargin
+          startY = lp.topMargin
+          dragging = false
+          true
+        }
+        android.view.MotionEvent.ACTION_MOVE -> {
+          val dx = event.rawX - downRawX
+          val dy = event.rawY - downRawY
+          if (!dragging && (kotlin.math.abs(dx) > touchSlop || kotlin.math.abs(dy) > touchSlop)) {
+            dragging = true
+          }
+          if (dragging) {
+            moveFabTo(startX + dx.toInt(), startY + dy.toInt())
+          }
+          true
+        }
+        android.view.MotionEvent.ACTION_UP, android.view.MotionEvent.ACTION_CANCEL -> {
+          if (dragging) {
+            // 拖动结束不回弹，直接记住落点——用户摆哪儿就是哪儿。
+            persistFabPosition()
+          } else {
+            open()
+          }
+          dragging = false
+          true
+        }
+        else -> false
+      }
+    }
+  }
+
+  /**
+   * 把按钮移到父容器内的 (x, y)，越界则钳制到合法范围。
+   *
+   * <p>四周留 [EDGE_MARGIN_DP] 的边距：贴到 0 会让按钮的圆角与屏幕边缘相切，
+   * 看起来像被裁掉了，而且贴边后很难再按住拖回来。
+   */
+  private fun moveFabTo(x: Int, y: Int) {
+    val fab = fabBinding.root
+    val lp = fab.layoutParams as FrameLayout.LayoutParams
+    lp.gravity = Gravity.START or Gravity.TOP
+    val margin = dp(EDGE_MARGIN_DP)
+    val minX = margin
+    val minY = margin
+    val maxX = (parent.width - fab.width - margin).coerceAtLeast(minX)
+    val maxY = (parent.height - fab.height - bottomInset() - margin).coerceAtLeast(minY)
+    lp.leftMargin = x.coerceIn(minX, maxX)
+    lp.topMargin = y.coerceIn(minY, maxY)
+    fab.layoutParams = lp
+  }
+
+  /** 底部安全距离：系统导航栏高度。取不到时退回 0。 */
+  private fun bottomInset(): Int =
+      androidx.core.view.ViewCompat.getRootWindowInsets(parent)
+          ?.getInsets(androidx.core.view.WindowInsetsCompat.Type.systemBars())
+          ?.bottom ?: 0
+
+  private fun fabPrefs() =
+      androidx.preference.PreferenceManager.getDefaultSharedPreferences(context)
+
+  /** 保存落点。存的是相对父容器左上角的像素偏移。 */
+  private fun persistFabPosition() {
+    val lp = fabBinding.root.layoutParams as FrameLayout.LayoutParams
+    fabPrefs()
+        .edit()
+        .putInt(PREF_FAB_X, lp.leftMargin)
+        .putInt(PREF_FAB_Y, lp.topMargin)
+        .apply()
+  }
+
+  /**
+   * 恢复上次的落点。
+   *
+   * <p>在布局完成后再恢复：此时 parent.width/height 才有真实值，否则钳制会按 0 计算，
+   * 位置一律被压到左上角。
+   */
+  private fun restoreFabPosition() {
+    val prefs = fabPrefs()
+    if (!prefs.contains(PREF_FAB_X)) {
+      return
+    }
+    val x = prefs.getInt(PREF_FAB_X, 0)
+    val y = prefs.getInt(PREF_FAB_Y, 0)
+    parent.post { moveFabTo(x, y) }
   }
 
   fun open() {
@@ -716,6 +843,14 @@ class FloatingAssistantView(
   }
 
   companion object {
+
+    /** 悬浮按钮落点（相对父容器左上角的像素）。 */
+    private const val PREF_FAB_X = "ai_assistant_fab_x"
+    private const val PREF_FAB_Y = "ai_assistant_fab_y"
+
+    /** 拖动时四周保留的最小边距（dp）。 */
+    private const val EDGE_MARGIN_DP = 8
+
     private fun summarizeArgs(args: String?): String {
       if (TextUtils.isEmpty(args)) {
         return ""
