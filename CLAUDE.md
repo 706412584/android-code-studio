@@ -94,14 +94,104 @@
 - AGP 8.13.0 / Kotlin 2.1.0 / Gradle 8.13 / JDK 17
 - 依赖版本集中在 `gradle/libs.versions.toml`
 - 本机无 Android SDK 完整环境时，优先依赖 CodeGraph 静态分析而非实际编译验证
+- 构建命令必须带 `JAVA_HOME="C:/Users/70641/.gradle/jdks/eclipse_adoptium-21-amd64-windows.2"`
+  与 `--offline`；中文 Windows 控制台是 GBK，输出要过 `iconv -f GBK -t UTF-8 -c`
 
-## AI Agent 模块（`core/app/.../artificial/`）
+### 打包到实机（必读，别再重复踩）
 
-改动此模块前注意：
+`core/app/build.gradle.kts:90` 从**环境变量**读签名密码，而仓库内
+`signing/signing-key.jks` 的密码只存在于 GitHub secret（`SIGNING_STORE_PASSWORD`），
+本机无法还原。不带环境变量直接 `assembleDebug` 会在 `:core:app:packageDebug`
+报 `keystore password was incorrect`。
 
-- 6 个 provider（Gemini/OpenAI/Anthropic/Grok/DeepSeek/LocalLLM），各为独立类实现 `AIAgent` 接口
+**本机实机测试用的密钥**（黑鲨设备上装的包就是用它签的）：
+
+```
+C:/Users/70641/AppData/Local/Temp/debug-signing.jks
+别名 AndroidCS / 密码 android / SHA-1 83abb7381685a06dbdae877ded4a207f4919c1da
+```
+
+```bash
+JAVA_HOME="C:/Users/70641/.gradle/jdks/eclipse_adoptium-21-amd64-windows.2" \
+SIGNING_STORE_FILE="C:/Users/70641/AppData/Local/Temp/debug-signing.jks" \
+SIGNING_STORE_PASSWORD=android SIGNING_KEY_PASSWORD=android SIGNING_KEY_ALIAS=AndroidCS \
+./gradlew :core:app:assembleDebug --offline
+```
+
+产出 `core/app/build/outputs/apk/debug/` 下按 ABI 分包的 APK；黑鲨是 `arm64-v8a`。
+
+**可以覆盖安装，不要卸载**（卸载会丢 3.7G 数据：2.3G Android SDK + 626M Termux rootfs
++ 配置）。判断签名是否一致**必须用 `apksigner verify --print-certs` 比对 APK 证书**，
+不能看 `dumpsys package` 里的 `signatures=[xxxxxxxx]`——那是系统内部哈希，
+与证书指纹无关，照它判断会得出「签名不同、必须卸载」的错误结论。
+
+```bash
+/d/android/platform-tools/adb.exe -s 9c18cb30 install -r -d <apk>
+```
+
+Git Bash 下 adb 的远端路径会被 MSYS 改写，涉及 `/sdcard` 等路径时先
+`export MSYS_NO_PATHCONV=1 MSYS2_ARG_CONV_EXCL='*'`。
+
+### 设备
+
+| 设备 | adb serial | 系统 |
+|---|---|---|
+| 黑鲨 SKW-A0 | `9c18cb30` | Android 10 / SDK 29（**实机测试用这台**） |
+| 另一台 | `adb-ad843de-OS8vOG._adb-tls-connect._tcp` | Android 16 / SDK 36 |
+
+`minSdk=26`，`targetSdk=28`，`compileSdk=34`。
+
+## AI Agent 模块
+
+**存在两代实现并存，改动前必须先确认你要改的是哪一代。** 计划与进度见
+`docs/ai-agent-port/{PLAN,PROGRESS,DETAILS,P0-1-design}.md`（PROGRESS.md 是最新的进度锚点）。
+
+### 旧路径（经典模式，仍是默认）
+
+`core/app/src/main/java/com/tom/rv2ide/artificial/`
+
+- 6 个 provider（Gemini/OpenAI/Anthropic/Grok/DeepSeek/LocalLLM），各为独立类实现 `AIAgent` 接口，
+  由 `AIAgentRegistry` 注册、`AIAgentManager` 调度
 - 协议核心：`WritingRules.kt` 定义的 `FILE_TO_MODIFY:` 标记 + `SnippetParser` 解析
-- 上下文注入方式为**全项目文件全量灌入**（`ProjectData.showProjectTree` + `readRelevantFiles`），
+- 上下文注入为**全项目文件全量灌入**（`ProjectData.showProjectTree` + `readRelevantFiles`），
   无检索、无裁剪、无 token 预算控制
 - 权限开关在 `AIAgentManager` 构造时被强制设为 `write=true, confirm=false`（`AIAgentManager.kt:57-58`），
   `AIPermissionDialog` 的确认弹窗当前无调用点
+- 一次请求只生成文本并按标记写文件，无多轮工具调用
+
+### 新路径（工具调用 agent，架构上已取代旧路径）
+
+四个**纯 Java、零 Android 依赖**模块，因此可在 JVM 上单测（563 条测试全绿）：
+
+| 模块 | 职责 |
+|---|---|
+| `core/ai-tool-api` | 工具契约：`ToolCall`/`ToolResult`/`ToolInfo`/`ToolNames`/`ToolCallTextParser`/`ErrorLog`（含脱敏） |
+| `core/ai-protocol` | 协议层：OpenAI 兼容 + Anthropic Messages、重试、流式解析、reasoning 策略 |
+| `core/ai-tool` | 工具执行：注册表、执行器、权限判定、文件工具、shell 抽象、MCP/memory/skill |
+| `core/ai-agent` | 循环本体 `AgentSession` + 会话持久化 + 上下文裁剪与压缩 |
+
+app 层接入点：
+
+- `artificial/agent/AgentOrchestrator.java` — 装配全部工具并驱动一次运行
+- `artificial/agent/ProviderPresets.java` — **14 个服务商预设，新增同类服务商只需加一行**
+- `artificial/agent/AgentToolSettings.java` — 权限/后端/模式偏好；默认 `PERMISSION_CONFIRM`
+- `artificial/agent/FloatingAssistantView.kt` — 项目界面悬浮助手（直接走新路径）
+- `handlers/AgentRequestHandler.kt` — ChatFragment 的 agent 模式渲染器
+- `preferences/aiAgentPrefExts.kt` — 设置项
+
+新路径已具备（旧路径没有的）：多轮工具调用循环、构建→安装→启动→读日志闭环、
+token 预算与历史压缩、JSONL append-only 会话持久化、三级危险工具授权（全局/规则/本次运行）、
+diff 回滚、MCP 客户端、长期记忆、Skill、子 agent、自定义 agent、斜杠命令、提示词模板、4 种对话模式。
+
+### 关键陷阱
+
+- **新路径默认未启用**：`ChatFragment.kt:184` 的发送按钮走旧 `AIRequestHandler`，
+  需**长按**执行按钮才切到 agent 模式（`AgentToolSettings.KEY_AGENT_MODE`）。
+  主屏悬浮助手则直接用新路径。
+- **`ConversationStore` 用 JSONL 而非 SQLite**：ACS 全仓库无任何数据库设施，
+  会话日志是 append-only JSONL（`filesDir/ai/conversations`），刻意不引入 Room。
+- **上下文裁剪在循环内、压缩在入口**：裁剪每轮都做（消息随轮次增长），
+  压缩需条目序号且结果必须落盘，只能做一次。两条消息不可裁：系统提示词与**本次用户请求**。
+- **`ProviderPresets.DEFAULT_PROVIDER_ID` 是 `deepseek`**：协议层只实现了
+  `OPENAI_COMPATIBLE` 与 `ANTHROPIC_MESSAGES` 两种，Gemini 自有协议未实现，
+  因此不能把默认值指向它（否则首次使用者配好密钥也发不出消息）。

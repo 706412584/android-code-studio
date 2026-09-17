@@ -22,6 +22,7 @@
   <string name="updater_download">下载</string>
   <string name="updater_view_in_browser">在浏览器中查看</string>
   <string name="updater_later">稍后</string>
+  <string name="updater_skip_version">跳过此版本</string>
   <string name="updater_cancel">取消</string>
   <string name="updater_downloading_update">下载更新</string>
 

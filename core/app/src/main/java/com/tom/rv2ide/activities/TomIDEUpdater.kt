@@ -42,9 +42,22 @@ class TomIDEUpdater(private val context: Context) {
 
   companion object {
     private const val TAG = "TomIDEUpdater"
+
+    /**
+     * 更新清单地址。
+     *
+     * <p>指向**本仓库**而非上游 AndroidCSOfficial：本 fork 的版本号与发布产物由自己维护，
+     * 拉上游清单会拿别人的 versionCode 与下载地址来比对，结果是「版本永远落后」
+     * 或「下载到别人的包」。改成自己的仓库后，只要 `updater.json` 里的 versionCode 与
+     * `PROJECT_CONFIG_KT_BASE_VERSION_CODE` 同步，就不会误报。
+     */
     private const val UPDATE_JSON_URL =
-        "https://raw.githubusercontent.com/AndroidCSOfficial/android-code-studio/refs/heads/dev/updater.json"
+        "https://raw.githubusercontent.com/706412584/android-code-studio/refs/heads/dev/updater.json"
+
     private const val DOWNLOAD_NOTIFICATION_ID = 1001
+
+    /** 偏好键：用户点「跳过此版本」后记下的 versionCode。 */
+    private const val PREF_SKIPPED_VERSION = "updater_skipped_version_code"
   }
 
   data class ArchVariant(val versionCode: Int, val versionName: String, val apkUrl: String)
@@ -182,6 +195,21 @@ class TomIDEUpdater(private val context: Context) {
     return text
   }
 
+  /** 用户已选择跳过的版本号；未跳过时返回 -1。 */
+  private fun skippedVersionCode(): Int =
+      context
+          .getSharedPreferences("com.tom.rv2ide_preferences", Context.MODE_PRIVATE)
+          .getInt(PREF_SKIPPED_VERSION, -1)
+
+  /** 记下「跳过此版本」。 */
+  private fun rememberSkippedVersion(versionCode: Int) {
+    context
+        .getSharedPreferences("com.tom.rv2ide_preferences", Context.MODE_PRIVATE)
+        .edit()
+        .putInt(PREF_SKIPPED_VERSION, versionCode)
+        .apply()
+  }
+
   private fun isUpdateAvailable(updateInfo: UpdateInfo): Boolean {
     return try {
       val currentVersionCode =
@@ -202,6 +230,12 @@ class TomIDEUpdater(private val context: Context) {
                 currentArch,
             ),
         )
+        // 用户点过「跳过此版本」就不再提示同一个版本——否则每次启动都弹同一个窗，
+        // 用户只能反复点「稍后」，弹窗就变成了噪声。
+        if (availableVariant.versionCode == skippedVersionCode()) {
+          Log.d(TAG, "Skipping version ${availableVariant.versionCode} (user skipped it)")
+          return false
+        }
         availableVariant.versionCode > currentVersionCode
       } else {
         Log.w(TAG, context.getString(R.string.updater_no_compatible_variant, currentArch))
@@ -311,21 +345,23 @@ class TomIDEUpdater(private val context: Context) {
       append(changelog)
     }
 
-    val dialog =
-        MaterialAlertDialogBuilder(context)
-            .setTitle(context.getString(R.string.updater_update_available))
-            .setMessage(message)
-            .setPositiveButton(context.getString(R.string.updater_download)) { _, _ ->
-              downloadAndInstall(availableVariant.apkUrl)
-            }
-            .setNeutralButton(context.getString(R.string.updater_view_in_browser)) { _, _ ->
-              openInBrowser(availableVariant.apkUrl)
-            }
-            .setNegativeButton(context.getString(R.string.updater_later), null)
-            .setCancelable(true)
-            .create()
-
-    dialog.show()
+    MaterialAlertDialogBuilder(context)
+        .setTitle(context.getString(R.string.updater_update_available))
+        .setMessage(message)
+        .setPositiveButton(context.getString(R.string.updater_download)) { _, _ ->
+          downloadAndInstall(availableVariant.apkUrl)
+        }
+        .setNeutralButton(context.getString(R.string.updater_view_in_browser)) { _, _ ->
+          openInBrowser(availableVariant.apkUrl)
+        }
+        // 「稍后」与「跳过此版本」的区别很重要：稍后下次启动还会弹，
+        // 跳过则记下版本号不再提示，直到出现更新的版本。只给「稍后」时，
+        // 用户面对同一个不想装的版本只能每次启动都点一遍，弹窗就成了噪声。
+        .setNegativeButton(context.getString(R.string.updater_skip_version)) { _, _ ->
+          rememberSkippedVersion(availableVariant.versionCode)
+        }
+        .setCancelable(true)
+        .show()
   }
 
   private fun downloadAndInstall(apkUrl: String) {
