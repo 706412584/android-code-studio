@@ -38,7 +38,92 @@ public final class SimpleHttpClient {
 
     public static final long MAX_RESPONSE_BODY_BYTES = 32L * 1024 * 1024;
 
+    /** 最多跟随的重定向跳数。超过即判定为环或恶意跳转。 */
+    private static final int MAX_REDIRECTS = 5;
+
     private SimpleHttpClient() {
+    }
+
+    /**
+     * 建立连接并**逐跳**校验重定向，返回已就绪的最终连接（调用方负责读流并 disconnect）。
+     *
+     * <p><b>为什么不能交给 {@code setInstanceFollowRedirects(true)}</b>：自动跟随只在
+     * 初始 URL 上过了一次 {@link UrlPolicy}，之后每一跳都是 JDK 内部直接跳转，
+     * 不再回到这里。于是一个正常的公网地址只要回一个
+     * {@code 302 Location: http://192.168.1.1/}，请求就会打到内网设备上，
+     * 而调用方以为自己在读公网文档。这类「用可信地址做跳板」是 SSRF 的常规形态。
+     *
+     * <p>手动跟随的代价是要自己处理方法与请求体的关系，规则如下：
+     * <ul>
+     *   <li>303，以及 301/302 对 POST——按 HTTP 语义降级为 GET 并丢弃请求体
+     *       （浏览器与 JDK 都这么做）；</li>
+     *   <li>307/308——保持原方法与请求体不变。</li>
+     * </ul>
+     *
+     * <p>Location 可能是相对路径，因此用 {@code new URL(当前地址, Location)} 解析，
+     * 这样相对跳转也能被正确拼成绝对地址再校验。
+     */
+    private static HttpURLConnection openFollowingRedirects(
+            String url, String method, byte[] body, int connectTimeoutMs, int readTimeoutMs,
+            Map<String, String> headers) throws Exception {
+        String currentUrl = url;
+        String currentMethod = method;
+        byte[] currentBody = body;
+        for (int hop = 0; hop <= MAX_REDIRECTS; hop++) {
+            // 每一跳都重新校验：这是本方法存在的全部意义。
+            String safeUrl = UrlPolicy.requireHttpOrLocalCleartextUrl(currentUrl, "URL");
+            java.net.URL target = new java.net.URL(safeUrl);
+            HttpURLConnection connection = null;
+            boolean keep = false;
+            try {
+                connection = (HttpURLConnection) target.openConnection(AppProxy.proxyFor(target.getHost()));
+                connection.setRequestMethod(currentMethod);
+                connection.setConnectTimeout(connectTimeoutMs);
+                connection.setReadTimeout(readTimeoutMs);
+                // 关闭自动跟随，改由本循环逐跳校验
+                connection.setInstanceFollowRedirects(false);
+                connection.setRequestProperty("User-Agent", "LineCode/1.0");
+                if (headers != null) {
+                    for (Map.Entry<String, String> entry : headers.entrySet()) {
+                        connection.setRequestProperty(entry.getKey(), entry.getValue());
+                    }
+                }
+                if (currentBody != null) {
+                    connection.setDoOutput(true);
+                    connection.setFixedLengthStreamingMode(currentBody.length);
+                    OutputStream output = connection.getOutputStream();
+                    try {
+                        output.write(currentBody);
+                    } finally {
+                        output.close();
+                    }
+                }
+                int code = connection.getResponseCode();
+                String location = connection.getHeaderField("Location");
+                boolean isRedirect = code == 301 || code == 302 || code == 303 || code == 307 || code == 308;
+                if (!isRedirect || location == null || location.trim().isEmpty()) {
+                    // 非重定向（或 3xx 但没有 Location）：交给调用方处理
+                    keep = true;
+                    return connection;
+                }
+                if (hop == MAX_REDIRECTS) {
+                    throw new Exception("Too many redirects (>" + MAX_REDIRECTS + ")");
+                }
+                // 解析相对 Location，并在下一轮循环开头重新校验
+                currentUrl = new java.net.URL(target, location.trim()).toString();
+                boolean keepMethod =
+                        code == 307 || code == 308 || !"POST".equalsIgnoreCase(currentMethod);
+                if (!keepMethod) {
+                    currentMethod = "GET";
+                    currentBody = null;
+                }
+            } finally {
+                if (!keep && connection != null) {
+                    connection.disconnect();
+                }
+            }
+        }
+        throw new Exception("Too many redirects (>" + MAX_REDIRECTS + ")");
     }
 
     public static String postJson(String url, String jsonBody, int connectTimeoutMs, int readTimeoutMs) throws Exception {
@@ -94,16 +179,10 @@ public final class SimpleHttpClient {
     /** 带进度回调的下载（大文件场景：rootfs 等）。 */
     public static DownloadResult downloadWithProgress(String url, int connectTimeoutMs, int readTimeoutMs,
                                                       DownloadProgressListener progress) throws Exception {
-        String safeUrl = UrlPolicy.requireHttpOrLocalCleartextUrl(url, "URL");
         HttpURLConnection connection = null;
         try {
-            java.net.URL target = new URL(safeUrl);
-            connection = (HttpURLConnection) target.openConnection(AppProxy.proxyFor(target.getHost()));
-            connection.setRequestMethod("GET");
-            connection.setConnectTimeout(connectTimeoutMs);
-            connection.setReadTimeout(readTimeoutMs);
-            connection.setInstanceFollowRedirects(true);
-            connection.setRequestProperty("User-Agent", "LineCode/1.0");
+            connection =
+                    openFollowingRedirects(url, "GET", null, connectTimeoutMs, readTimeoutMs, null);
             int code = connection.getResponseCode();
             if (code < 200 || code >= 300) {
                 throw new Exception("HTTP download failed: " + code);
@@ -143,16 +222,10 @@ public final class SimpleHttpClient {
     }
 
     public static DownloadResult download(String url, int connectTimeoutMs, int readTimeoutMs, int maxBytes) throws Exception {
-        String safeUrl = UrlPolicy.requireHttpOrLocalCleartextUrl(url, "URL");
         HttpURLConnection connection = null;
         try {
-            java.net.URL target = new URL(safeUrl);
-            connection = (HttpURLConnection) target.openConnection(AppProxy.proxyFor(target.getHost()));
-            connection.setRequestMethod("GET");
-            connection.setConnectTimeout(connectTimeoutMs);
-            connection.setReadTimeout(readTimeoutMs);
-            connection.setInstanceFollowRedirects(true);
-            connection.setRequestProperty("User-Agent", "LineCode/1.0");
+            connection =
+                    openFollowingRedirects(url, "GET", null, connectTimeoutMs, readTimeoutMs, null);
             int code = connection.getResponseCode();
             if (code < 200 || code >= 300) {
                 throw new Exception("HTTP download failed: " + code);
@@ -175,31 +248,20 @@ public final class SimpleHttpClient {
     }
 
     public static Response execute(Request request) throws Exception {
-        String safeUrl = UrlPolicy.requireHttpOrLocalCleartextUrl(request.url, "URL");
         HttpURLConnection connection = null;
         try {
-            java.net.URL target = new URL(safeUrl);
-            connection = (HttpURLConnection) target.openConnection(AppProxy.proxyFor(target.getHost()));
-            connection.setRequestMethod(request.method);
-            connection.setConnectTimeout(request.connectTimeoutMs);
-            connection.setReadTimeout(request.readTimeoutMs);
-            connection.setInstanceFollowRedirects(true);
-            for (Map.Entry<String, String> entry : request.headers.entrySet()) {
-                connection.setRequestProperty(entry.getKey(), entry.getValue());
-            }
             byte[] requestBytes = request.bodyBytes != null
                     ? request.bodyBytes
                     : request.body == null ? null : request.body.getBytes(StandardCharsets.UTF_8);
-            if (requestBytes != null) {
-                connection.setDoOutput(true);
-                connection.setFixedLengthStreamingMode(requestBytes.length);
-                OutputStream output = connection.getOutputStream();
-                try {
-                    output.write(requestBytes);
-                } finally {
-                    output.close();
-                }
-            }
+            // 逐跳校验重定向；请求头与请求体交给它按跳转语义决定是否保留
+            connection =
+                    openFollowingRedirects(
+                            request.url,
+                            request.method,
+                            requestBytes,
+                            request.connectTimeoutMs,
+                            request.readTimeoutMs,
+                            request.headers);
             int code = connection.getResponseCode();
             InputStream stream = code >= 400 ? connection.getErrorStream() : connection.getInputStream();
             String contentType = connection.getContentType();

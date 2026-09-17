@@ -46,11 +46,21 @@ public final class ErrorLogRedactor {
   /** 单次脱敏的安全输入上限。 */
   private static final int MAX_SAFE_LENGTH = 1 << 20;
 
+  /**
+   * {@code Authorization: Bearer xxx} 头。
+   *
+   * <p><b>量词必须贪婪</b>：{@code +?} 会在匹配到一个字符后立刻收手，于是
+   * {@code Authorization: Bearer sk-abcdef} 变成 {@code Authorization: Bearer [REDACTED]k-abcdef}
+   * ——密钥只是掉了第一个字符，其余原样写进日志。而「整串是否还在」这类断言看不出问题
+   * （整串确实不在了），测试因此给出虚假保证。贪婪匹配靠 {@code [^\r\n,}]} 收尾，
+   * 既吃掉整个值，又不会越过换行或 JSON 分隔符。
+   */
   private static final Pattern AUTHORIZATION =
-      Pattern.compile("(?i)(Authorization\\s*[:=]\\s*)(Bearer\\s+)?[^\\r\\n,}]+?");
+      Pattern.compile("(?i)(Authorization\\s*[:=]\\s*)(Bearer\\s+)?[^\\r\\n,}]+");
 
+  /** {@code x-api-key: xxx} 头。贪婪量词的理由同上。 */
   private static final Pattern API_KEY_HEADER =
-      Pattern.compile("(?i)((x-api-key|api-key)\\s*[:=]\\s*)[^\\r\\n,}]+?");
+      Pattern.compile("(?i)((x-api-key|api-key)\\s*[:=]\\s*)[^\\r\\n,}]+");
 
   private static final Pattern JSON_SECRET =
       Pattern.compile(

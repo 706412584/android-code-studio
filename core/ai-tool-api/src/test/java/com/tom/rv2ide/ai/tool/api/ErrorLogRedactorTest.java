@@ -34,29 +34,56 @@ import org.junit.jupiter.api.Test;
  */
 final class ErrorLogRedactorTest {
 
+  /**
+   * 断言密钥**没有以任何形式残留**。
+   *
+   * <p>只断言「整串不存在」是不够的：量词写成惰性时，输出会是
+   * {@code [REDACTED]k-abcdef...}——整串确实不在了，但密钥只掉了第一个字符。
+   * 因此这里同时检查去掉首字符后的片段与尾部，任何一段都不许留下。
+   */
+  private static void assertSecretGone(String output, String secret) {
+    assertFalse(output.contains(secret), "整串残留：" + output);
+    assertFalse(output.contains(secret.substring(1)), "尾段残留（脱敏只吃掉一个字符）：" + output);
+    assertFalse(output.contains(secret.substring(secret.length() - 8)), "尾部残留：" + output);
+  }
+
   @Test
   void redactsAuthorizationHeader() {
     String input = "Authorization: Bearer sk-abcdef1234567890\nmore";
 
     String output = ErrorLogRedactor.redact(input);
 
-    assertFalse(output.contains("sk-abcdef1234567890"), output);
+    assertSecretGone(output, "sk-abcdef1234567890");
     assertTrue(output.contains("[REDACTED]"));
+    // 换行后的内容不受影响
+    assertTrue(output.contains("more"), output);
   }
 
   @Test
   void redactsAuthorizationWithoutBearerPrefix() {
-    String output = ErrorLogRedactor.redact("Authorization: sk-abcdef1234567890");
-
-    assertFalse(output.contains("sk-abcdef1234567890"), output);
+    assertSecretGone(
+        ErrorLogRedactor.redact("Authorization: sk-abcdef1234567890"), "sk-abcdef1234567890");
   }
 
   @Test
   void redactsApiKeyHeaders() {
     // 两种大小写写法都要覆盖：不同客户端用的形式不同。
-    assertFalse(ErrorLogRedactor.redact("x-api-key: secret1234567890").contains("secret1234567890"));
-    assertFalse(ErrorLogRedactor.redact("api-key=secret1234567890").contains("secret1234567890"));
-    assertFalse(ErrorLogRedactor.redact("X-API-KEY: secret1234567890").contains("secret1234567890"));
+    assertSecretGone(ErrorLogRedactor.redact("x-api-key: secret1234567890"), "secret1234567890");
+    assertSecretGone(ErrorLogRedactor.redact("api-key=secret1234567890"), "secret1234567890");
+    assertSecretGone(ErrorLogRedactor.redact("X-API-KEY: secret1234567890"), "secret1234567890");
+  }
+
+  @Test
+  void redactsSecretInTheShapeTheCodeItselfProduces() {
+    // AbstractHttpModelProtocol 把 headers.toString()（即 {Authorization=Bearer sk-...}）
+    // 塞进 details 再交给 ErrorLog。这是最现实的输入形态，必须整段吃掉。
+    String input = "{Authorization=Bearer sk-abcdef1234567890, Content-Type=application/json}";
+
+    String output = ErrorLogRedactor.redact(input);
+
+    assertSecretGone(output, "sk-abcdef1234567890");
+    // 非敏感头保留，否则日志失去诊断价值
+    assertTrue(output.contains("Content-Type=application/json"), output);
   }
 
   @Test

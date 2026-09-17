@@ -72,7 +72,7 @@ public final class FileDeleteTool extends BaseTool {
 
     @Override
     public ToolResult execute(JSONObject input, ToolContext context) {
-        ArrayList<String> paths = paths(input);
+        ArrayList<String> paths = collectPaths(input);
         String reason = input.optString("reason").trim();
         if (reason.length() == 0) {
             return error(ToolMessages.FILE_DELETE_REASON_EMPTY);
@@ -118,7 +118,18 @@ public final class FileDeleteTool extends BaseTool {
         return isError ? error(content) : ok(content);
     }
 
-    private ArrayList<String> paths(JSONObject input) {
+    /**
+     * 收集本次调用将删除的全部路径。
+     *
+     * <p><b>为什么是 public static</b>：授权判定（{@link ToolPermissionRule}）必须用与
+     * 执行完全相同的口径来提取路径。此前授权只看 {@code paths} 数组，而本方法还接受
+     * {@code file_path} / {@code path}——模型在 {@code paths:["A"]} 之外再塞一个
+     * {@code file_path:"B"}，就能让「始终允许删除 A」这条规则连带放行删除 B。
+     * 把提取逻辑收敛到一处，授权与执行就不可能再漂移。
+     *
+     * <p>返回顺序固定为 paths 数组 → file_path → path，使同一次调用产生稳定的授权键。
+     */
+    public static ArrayList<String> collectPaths(JSONObject input) {
         ArrayList<String> values = new ArrayList<>();
         JSONArray array = input.optJSONArray("paths");
         if (array != null) {
