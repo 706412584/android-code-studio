@@ -51,6 +51,7 @@ private class AIAgentConfig(
   @IgnoredOnParcel private var openAIApiKeyPref: OpenAIApiKey? = null
   @IgnoredOnParcel private var anthropicApiKeyPref: AnthropicApiKey? = null
   @IgnoredOnParcel private var grokApiKeyPref: GrokApiKey? = null
+  @IgnoredOnParcel private var openAiCompatibleApiKeyPref: OpenAiCompatibleApiKey? = null
 
   init {
     val aiAgentEnabled = AIAgentEnabled { isEnabled -> updateApiKeyPreferencesState(isEnabled) }
@@ -60,6 +61,7 @@ private class AIAgentConfig(
     openAIApiKeyPref = OpenAIApiKey()
     anthropicApiKeyPref = AnthropicApiKey()
     grokApiKeyPref = GrokApiKey()
+    openAiCompatibleApiKeyPref = OpenAiCompatibleApiKey()
 
     addPreference(aiAgentEnabled)
     addPreference(geminiApiKeyPref!!)
@@ -67,6 +69,7 @@ private class AIAgentConfig(
     addPreference(openAIApiKeyPref!!)
     addPreference(anthropicApiKeyPref!!)
     addPreference(grokApiKeyPref!!)
+    addPreference(openAiCompatibleApiKeyPref!!)
     addPreference(AgentToolingGroup())
   }
 
@@ -76,6 +79,7 @@ private class AIAgentConfig(
     openAIApiKeyPref?.setEnabled(isEnabled)
     anthropicApiKeyPref?.setEnabled(isEnabled)
     grokApiKeyPref?.setEnabled(isEnabled)
+    openAiCompatibleApiKeyPref?.setEnabled(isEnabled)
   }
 }
 
@@ -378,6 +382,69 @@ private class AIAgentEnabled(
   }
 }
 
+
+/**
+ * 通用 OpenAI 兼容服务商的密钥（Groq / 智谱 / Kimi / 通义千问 / MiniMax / 硅基流动 / OpenRouter）。
+ *
+ * <p>它们讲同一种协议，只是 baseUrl 与模型名不同，因此共用一个密钥槽位。为每个服务商
+ * 各开一个偏好键会让「加一个服务商」变成「改三处代码」——而这正是预设表要消除的成本。
+ * 当前使用哪个服务商由 {@code ai_provider_name} 决定。
+ */
+@Parcelize
+private class OpenAiCompatibleApiKey(
+    override val key: String = "ai_agent_openai_compatible_api_key",
+    override val title: Int = R.string.ai_agent_openai_compatible_api_key,
+) : BasePreference() {
+
+  @IgnoredOnParcel private var preference: Preference? = null
+
+  override fun onCreatePreference(context: Context): Preference {
+    preference =
+        androidx.preference.Preference(context).apply {
+          key = "ai_agent_openai_compatible_api_key"
+          title = context.getString(R.string.ai_agent_openai_compatible_api_key)
+          summary = getSummaryText(context)
+          isEnabled = prefManager.getBoolean("ai_agent_enabled", false)
+        }
+    return preference!!
+  }
+
+  override fun onPreferenceClick(preference: Preference): Boolean {
+    val context = preference.context
+
+    val editText = android.widget.EditText(context)
+    editText.setText(prefManager.getString("ai_agent_openai_compatible_api_key", ""))
+    editText.hint = context.getString(R.string.ai_agent_openai_compatible_api_key_hint)
+
+    com.google.android.material.dialog.MaterialAlertDialogBuilder(context)
+        .setTitle(R.string.ai_agent_openai_compatible_api_key)
+        .setMessage(R.string.ai_agent_openai_compatible_api_key_summary)
+        .setView(editText)
+        .setPositiveButton(android.R.string.ok) { _, _ ->
+          prefManager.putString(
+              "ai_agent_openai_compatible_api_key",
+              editText.text.toString().trim(),
+          )
+          preference.summary = getSummaryText(context)
+        }
+        .setNegativeButton(android.R.string.cancel, null)
+        .show()
+    return true
+  }
+
+  fun setEnabled(enabled: Boolean) {
+    preference?.isEnabled = enabled
+  }
+
+  private fun getSummaryText(context: Context): String {
+    val apiKey = prefManager.getString("ai_agent_openai_compatible_api_key", "")
+    return if (apiKey.isBlank()) {
+      context.getString(R.string.ai_agent_api_key_unset)
+    } else {
+      context.getString(R.string.ai_agent_api_key_set, apiKey.take(8))
+    }
+  }
+}
 
 @Parcelize
 private class GrokApiKey(

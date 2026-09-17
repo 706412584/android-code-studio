@@ -114,6 +114,13 @@
   <!-- AI Agent grok -->
   <string name="ai_agent_grok_api_key">Grok API 密钥</string>
 
+  <!-- OpenAI 兼容服务商共用的密钥（Groq / 智谱 / Kimi / 通义千问 / MiniMax / 硅基流动 / OpenRouter） -->
+  <string name="ai_agent_openai_compatible_api_key">OpenAI 兼容服务商密钥</string>
+  <string name="ai_agent_openai_compatible_api_key_summary">供 Groq、智谱 GLM、Kimi、通义千问、MiniMax、硅基流动、OpenRouter 共用。在 AI 设置页选择具体服务商，它们共用这一份密钥。</string>
+  <string name="ai_agent_openai_compatible_api_key_hint">sk-…</string>
+  <string name="ai_agent_api_key_unset">未设置</string>
+  <string name="ai_agent_api_key_set">密钥：%1$s…</string>
+
   <!-- 危险工具的持久化授权规则 -->
   <string name="ai_agent_authorized_title">已授权的危险工具</string>
   <string name="ai_agent_authorized_summary">查看或撤销「始终允许」保存的规则</string>

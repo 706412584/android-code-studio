@@ -370,11 +370,52 @@ flush 幂等、reset、pending 追踪、200 增量下的刷新次数上界与下
 **测试**：`HtmlTextExtractorTest` 15 条 + `NewBuiltinToolsTest` 34 条。
 五个模块共 298 条全绿。
 
+### 3.8 P1-12 服务商预设表与模型目录（#11）
+
+**新文件**：`artificial/agent/ProviderPresets.java`（预设表 + 端点解析 + 模型反查）。
+
+**改动**：`AgentModelConfigs` 不再持有服务商清单，`endpointFor` 委托给预设表；
+`Agents` 的模型列表、`providerForModel`、默认 provider 与推荐模型改为读预设表；
+`AIPreferencesFragment` 的服务商列表/显示名改为读预设表，并新增自定义端点的配置弹窗；
+`ApiKey` 新增通用 OpenAI 兼容密钥槽位；设置页新增对应输入项。
+
+**覆盖的服务商**（14 个）：claude、openai、grok、groq、deepseek、glm（智谱）、
+kimi、qwen（通义千问）、minimax、siliconflow、openrouter、localllm、custom。
+其中 12 个是 OpenAI 兼容协议——**新增同类服务商只需在预设表加一行**。
+
+**关键设计决策**：
+
+- **集中到一张表**。此前服务商信息散落在四处（端点映射、密钥读取、模型列表、UI 显示名），
+  加一个服务商要同时改四处，漏掉任一处都表现为「设置里能选但请求失败」或「列表里看不到」。
+- **`ProviderPresets` 不依赖 Android**：密钥通过 `ApiKeyLookup` 回调注入，因此预设表
+  可在 JVM 上单测（21 条）。
+- **修复了一个既有缺陷：默认服务商 `gemini` 无法工作。** 协议层只注册了
+  `OPENAI_COMPATIBLE` 与 `ANTHROPIC_MESSAGES` 两种协议，而 Gemini 讲 Google 自有协议
+  （`generateContent`）。默认值指向它意味着首次使用者在配好密钥后仍然**一条消息都发不
+  出去**。默认改为 `deepseek`（OpenAI 兼容、国内可直连、有免费额度），并有测试钉住
+  「默认服务商必须有已实现的协议」。
+- **通用 OpenAI 兼容密钥共用一个槽位**：为 12 个兼容服务商各开一个偏好键会让「加一个
+  服务商」重新变成改三处。具体用哪个由 `ai_provider_name` 决定。
+- **`setAgent` 不再擅自重置服务商**：原实现在模型名匹配不到硬编码列表时把 provider
+  重置为 `gemini`，于是用户选好新服务商后只要模型名不在旧列表里，provider 就被悄悄
+  改掉——表现为「设置里显示的服务商不是自己选的那个」。
+- **本地模型不要求密钥**：llama.cpp / Ollama / LM Studio 通常无鉴权。但仍填入占位值，
+  避免请求头出现空 `Authorization`。
+- **未实现 CODEX_RESPONSES 协议，因此不提供 `codex` 预设**：`ModelProtocolType` 里有这个
+  枚举值，但 `ModelProtocolFactory` 未注册实现（未注册会静默回退到 OpenAI 兼容协议）。
+  提供一个实际走错协议的预设比不提供更糟——用户会拿到难以归因的失败。
+- **未做远程模型目录拉取**：需要新增网络调用与缓存，收益（模型列表自动更新）相对改动
+  规模偏低；预设表已覆盖当前主流模型。
+
+**测试**：`ProviderPresetsTest` 21 条（id 唯一、baseUrl/模型非空、远程必须要求密钥、
+默认服务商有协议实现且仅凭密钥可用、本地无需密钥、自定义端点需用户填 baseUrl、
+模型列表只读、标签回退）。两个 app 测试类共 31 条全绿。
+
 ---
 
-## 4. 待办（9 项未完成 / 16 项总计）
+## 4. 待办（8 项未完成 / 16 项总计）
 
-任务定义已迁入本会话 `TaskList`（#2、#3、#5、#8、#15、#16、#17 已完成，其余 pending）。
+任务定义已迁入本会话 `TaskList`（#2、#3、#5、#8、#11、#15、#16、#17 已完成，其余 pending）。
 
 ### P0 — 缺了 agent 能力不完整
 
@@ -395,7 +436,7 @@ flush 幂等、reset、pending 追踪、200 增量下的刷新次数上界与下
 | # | 任务 | 状态 | 阻塞于 |
 |---|---|---|---|
 | #4 | P1-11 子 agent / pipeline | pending | — |
-| #11 | P1-12 服务商预设表与模型目录 | pending | — |
+| #11 | P1-12 服务商预设表与模型目录 | **已完成** | — | 见 §3.8；远程模型目录拉取未做 |
 | #6 | P1-13 Skill 系统 | pending | — |
 | #13 | P1-10 消息操作与导出 | pending | #16 |
 | #7 | P1-14 自定义 Agent 扩展 + P1-15 Slash 命令 | pending | — |

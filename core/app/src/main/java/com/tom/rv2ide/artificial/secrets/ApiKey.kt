@@ -80,6 +80,23 @@ object ApiKey {
     }
 
     /**
+     * 通用 OpenAI 兼容服务商的密钥。
+     *
+     * <p>Groq / 智谱 GLM / Kimi / 通义千问 / MiniMax / 硅基流动 / OpenRouter 等都讲
+     * OpenAI 兼容协议，只是 baseUrl 与模型名不同。为每个服务商各开一个偏好键会让
+     * 「加一个服务商」变成「改三处代码」，因此它们共用一个密钥槽位——
+     * 服务商本身通过 `ai_provider_name` 区分。
+     */
+    fun getOpenAICompatibleApiKey(): String {
+        return prefManager.getString("ai_agent_openai_compatible_api_key", "")
+    }
+
+    fun hasOpenAICompatibleKey(): Boolean {
+        val key = getOpenAICompatibleApiKey()
+        return key.isNotBlank() && key.length > 20
+    }
+
+    /**
      * 自定义 OpenAI 兼容端点。
      *
      * 用于第三方兼容网关（自建代理、聚合服务等）：它们讲 OpenAI 协议，

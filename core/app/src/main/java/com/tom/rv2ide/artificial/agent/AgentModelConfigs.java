@@ -43,7 +43,7 @@ public final class AgentModelConfigs {
     public final String baseUrl;
     public final String apiKey;
 
-    ProviderEndpoint(
+    public ProviderEndpoint(
         String id, String label, ModelProtocolType protocolType, String baseUrl, String apiKey) {
       this.id = id;
       this.label = label;
@@ -54,78 +54,50 @@ public final class AgentModelConfigs {
   }
 
   /**
-   * 解析指定服务商的端点信息；未配置密钥时返回 null。
+   * 解析指定服务商的端点信息；未配置密钥或 baseUrl 时返回 null。
    *
-   * @param providerId 服务商标识，与 {@code Agents} 中的取值一致
-   * @param customBaseUrl 自定义 baseUrl，仅 {@code localllm} 使用
+   * <p>端点信息全部来自 {@link ProviderPresets} 的预设表——本类不再持有服务商清单，
+   * 新增服务商只需在预设表里加一行。
+   *
+   * @param providerId 服务商标识
+   * @param customBaseUrl 覆盖预设的 baseUrl（本地模型与自定义端点需要）
    */
   public static ProviderEndpoint endpointFor(String providerId, String customBaseUrl) {
-    if (providerId == null) {
-      return null;
-    }
-    switch (providerId) {
-      case "openai": {
-        String key = ApiKey.INSTANCE.getOpenAIApiKey();
-        return key.isEmpty()
-            ? null
-            : new ProviderEndpoint(
-                "openai", "OpenAI", ModelProtocolType.OPENAI_COMPATIBLE,
-                "https://api.openai.com/v1", key);
-      }
-      case "deepseek": {
-        String key = ApiKey.INSTANCE.getDeepseekApiKey();
-        return key.isEmpty()
-            ? null
-            : new ProviderEndpoint(
-                "deepseek", "DeepSeek", ModelProtocolType.OPENAI_COMPATIBLE,
-                "https://api.deepseek.com/v1", key);
-      }
-      case "grok": {
-        String key = ApiKey.INSTANCE.getGrokApiKey();
-        return key.isEmpty()
-            ? null
-            : new ProviderEndpoint(
-                "grok", "Grok", ModelProtocolType.OPENAI_COMPATIBLE,
-                "https://api.x.ai/v1", key);
-      }
-      case "claude": {
-        String key = ApiKey.INSTANCE.getAnthropicApiKey();
-        return key.isEmpty()
-            ? null
-            : new ProviderEndpoint(
-                "claude", "Anthropic Claude", ModelProtocolType.ANTHROPIC_MESSAGES,
-                "https://api.anthropic.com", key);
-      }
-      case "localllm": {
-        // 本地模型通常是无鉴权的 OpenAI 兼容服务（llama.cpp / Ollama / LM Studio），
-        // 因此只要填了 baseUrl 就视为可用。
-        if (customBaseUrl == null || customBaseUrl.trim().isEmpty()) {
-          return null;
-        }
-        return new ProviderEndpoint(
-            "localllm", "Local LLM", ModelProtocolType.OPENAI_COMPATIBLE,
-            customBaseUrl.trim(), "local");
-      }
-      case "custom": {
-        // 第三方 OpenAI 兼容网关：baseUrl / key / model 全部由用户填写。
-        if (!ApiKey.INSTANCE.hasCustomEndpoint()) {
-          return null;
-        }
-        String baseUrl = ApiKey.INSTANCE.getCustomBaseUrl().trim();
-        return new ProviderEndpoint(
-            "custom", "自定义端点", ModelProtocolType.OPENAI_COMPATIBLE,
-            baseUrl, ApiKey.INSTANCE.getCustomApiKey());
-      }
-      default:
-        return null;
-    }
+    return ProviderPresets.endpointFor(providerId, customBaseUrl, API_KEY_LOOKUP);
   }
+
+  /** 把偏好存储里的密钥接到预设表上。 */
+  private static final ProviderPresets.ApiKeyLookup API_KEY_LOOKUP =
+      new ProviderPresets.ApiKeyLookup() {
+        @Override
+        public String keyFor(String providerId) {
+          if (providerId == null) {
+            return "";
+          }
+          switch (providerId) {
+            case "openai":
+              return ApiKey.INSTANCE.getOpenAIApiKey();
+            case "deepseek":
+              return ApiKey.INSTANCE.getDeepseekApiKey();
+            case "grok":
+              return ApiKey.INSTANCE.getGrokApiKey();
+            case "claude":
+              return ApiKey.INSTANCE.getAnthropicApiKey();
+            case "custom":
+              return ApiKey.INSTANCE.getCustomApiKey();
+            default:
+              // 预设表里的其它服务商（glm / kimi / qwen / groq / openrouter 等）都是
+              // OpenAI 兼容端点，密钥存在通用槽位里——它们是同一个协议的不同入口，
+              // 不值得为每个服务商各开一个偏好键。
+              return ApiKey.INSTANCE.getOpenAICompatibleApiKey();
+          }
+        }
+      };
 
   /**
    * 解析自定义端点使用的模型名。
    *
-   * <p>自定义端点的模型名不能从 {@code Agents} 的预置列表取（那里没有用户自填的值），
-   * 因此单独提供入口。
+   * <p>自定义端点的模型名不能从预设表取（那里没有用户自填的值），因此单独提供入口。
    */
   public static String modelIdFor(String providerId, String modelId) {
     if ("custom".equals(providerId)) {
@@ -133,6 +105,18 @@ public final class AgentModelConfigs {
       return custom.trim().isEmpty() ? modelId : custom.trim();
     }
     return modelId;
+  }
+
+  /**
+   * 兜底模型名：未指定模型时按服务商取推荐值。
+   *
+   * <p>取不到时返回空串而不是抛异常——让请求带着空模型名发出去并由服务端报错，
+   * 比在本地静默换一个用户没选的模型更容易排查。
+   */
+  public static String defaultModelFor(String providerId) {
+    return ProviderPresets.find(providerId) == null
+        ? ""
+        : ProviderPresets.find(providerId).getDefaultModel();
   }
 
   /**

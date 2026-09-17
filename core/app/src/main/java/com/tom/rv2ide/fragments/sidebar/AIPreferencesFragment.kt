@@ -14,9 +14,11 @@ import com.google.android.material.snackbar.Snackbar
 import com.google.android.material.textfield.TextInputLayout
 import com.google.android.material.textview.MaterialTextView
 import com.tom.rv2ide.R
+import com.tom.rv2ide.artificial.agent.ProviderPresets
 import com.tom.rv2ide.artificial.agents.AIAgentManager
 import com.tom.rv2ide.artificial.agents.Agents
 import com.tom.rv2ide.artificial.dialogs.ProviderSwitchDialog
+import com.tom.rv2ide.artificial.secrets.ApiKey
 import com.tom.rv2ide.managers.CodeCompletionManager
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -83,33 +85,70 @@ class AIPreferencesFragment(
     }
 
     private fun setupProviderDropdown() {
-        val providerMap = mapOf(
-            "gemini" to "Google Gemini",
-            "openai" to "OpenAI",
-            "claude" to "Anthropic Claude",
-            "deepseek" to "DeepSeek",
-            "grok" to "xAI Grok",
-            "localllm" to "Local LLM"
-        )
-        
-        val allProviderIds = listOf("gemini", "openai", "claude", "deepseek", "grok", "localllm")
-        val providerNames = allProviderIds.map { providerMap[it] ?: it }
-        
+        // 服务商清单来自预设表：新增服务商只需在 ProviderPresets 里加一行，
+        // 不必同时改这里、端点映射、模型列表与密钥读取四处。
+        val allProviderIds = ProviderPresets.allIds()
+        val providerNames = allProviderIds.map { ProviderPresets.labelFor(it) }
+
         val adapter = ArrayAdapter(requireContext(), android.R.layout.simple_dropdown_item_1line, providerNames)
         providerDropdown.setAdapter(adapter)
-        
+
         updateProviderDropdownSelection()
-        
+
         providerDropdown.setOnItemClickListener { _, _, position, _ ->
             val selectedProviderId = allProviderIds[position]
             val selectedProviderName = providerNames[position]
-            
-            if (selectedProviderId == "localllm") {
-                showLocalLLMConfigDialog(selectedProviderName)
-            } else {
-                handleProviderChange(selectedProviderId, selectedProviderName)
+
+            when (selectedProviderId) {
+                "localllm" -> showLocalLLMConfigDialog(selectedProviderName)
+                "custom" -> showCustomEndpointDialog(selectedProviderName)
+                else -> handleProviderChange(selectedProviderId, selectedProviderName)
             }
         }
+    }
+
+    /**
+     * 自定义端点的配置入口。
+     *
+     * <p>预设表里有 "custom" 这一项，但它的 baseUrl / key / model 全部要用户填写。
+     * 没有这个入口时选中它只会切过去却什么都填不了，请求必然失败。
+     */
+    private fun showCustomEndpointDialog(providerName: String) {
+        val context = requireContext()
+        val container = android.widget.LinearLayout(context).apply {
+            orientation = android.widget.LinearLayout.VERTICAL
+            setPadding(48, 24, 48, 0)
+        }
+        val baseUrlField = com.google.android.material.textfield.TextInputEditText(context).apply {
+            hint = "https://your-gateway.example.com/v1"
+            setText(ApiKey.getCustomBaseUrl())
+        }
+        val apiKeyField = com.google.android.material.textfield.TextInputEditText(context).apply {
+            hint = "sk-..."
+            setText(ApiKey.getCustomApiKey())
+        }
+        val modelField = com.google.android.material.textfield.TextInputEditText(context).apply {
+            hint = "e.g. agnes-2.5-flash"
+            setText(ApiKey.getCustomModel())
+        }
+        container.addView(baseUrlField)
+        container.addView(apiKeyField)
+        container.addView(modelField)
+
+        com.google.android.material.dialog.MaterialAlertDialogBuilder(context)
+            .setTitle(providerName)
+            .setView(container)
+            .setPositiveButton(android.R.string.ok) { _, _ ->
+                val prefs = androidx.preference.PreferenceManager.getDefaultSharedPreferences(context)
+                prefs.edit()
+                    .putString("ai_agent_custom_base_url", baseUrlField.text?.toString()?.trim().orEmpty())
+                    .putString("ai_agent_custom_api_key", apiKeyField.text?.toString()?.trim().orEmpty())
+                    .putString("ai_agent_custom_model", modelField.text?.toString()?.trim().orEmpty())
+                    .apply()
+                handleProviderChange("custom", providerName)
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
     }
     
     private fun showLocalLLMConfigDialog(providerName: String) {
@@ -120,37 +159,17 @@ class AIPreferencesFragment(
     }
     
     private fun updateProviderDropdownSelection() {
-        val providerMap = mapOf(
-            "gemini" to "Google Gemini",
-            "openai" to "OpenAI",
-            "claude" to "Anthropic Claude",
-            "deepseek" to "DeepSeek",
-            "grok" to "xAI Grok",
-            "localllm" to "Local LLM"
-        )
-        
         val currentProviderId = agents.getProvider()
-        val currentProviderName = providerMap[currentProviderId] ?: currentProviderId
-        providerDropdown.setText(currentProviderName, false)
+        providerDropdown.setText(ProviderPresets.labelFor(currentProviderId), false)
     }
-    
+
     private fun updateCurrentStatus() {
         val currentProvider = agents.getProvider()
         val currentModel = agents.getAgent()
-        
+
         android.util.Log.d("AIPreferences", "Current provider: $currentProvider, model: $currentModel")
-        
-        val providerDisplayName = when(currentProvider) {
-            "gemini" -> "Google Gemini"
-            "openai" -> "OpenAI"
-            "claude" -> "Anthropic Claude"
-            "deepseek" -> "DeepSeek"
-            "grok" -> "xAI Grok"
-            "localllm" -> "Local LLM"
-            else -> currentProvider.uppercase()
-        }
-        
-        currentProviderText.text = providerDisplayName
+
+        currentProviderText.text = ProviderPresets.labelFor(currentProvider)
         currentModelText.text = currentModel
     }
 

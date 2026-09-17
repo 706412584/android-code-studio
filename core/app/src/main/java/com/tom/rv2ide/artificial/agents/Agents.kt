@@ -145,8 +145,14 @@ class Agents(ctx: Context) {
   )
   
   val ai_agents = openai_models + claude_models + gemini_models + deepseek_models + grok_models + localllm_models
-  
+
   fun getModelsForProvider(providerId: String): Array<String> {
+    // 模型清单的唯一来源是预设表（ProviderPresets）。这里保留硬编码列表只为兼容
+    // 既有调用方与旧偏好值；预设表里已注册的服务商以预设为准。
+    val preset = com.tom.rv2ide.artificial.agent.ProviderPresets.modelsFor(providerId)
+    if (preset.isNotEmpty()) {
+      return preset.toTypedArray()
+    }
     return when(providerId) {
       "openai" -> openai_models
       "gemini" -> gemini_models
@@ -157,8 +163,13 @@ class Agents(ctx: Context) {
       else -> gemini_models
     }
   }
-  
+
   fun getProviderForModel(modelName: String): String? {
+    // 预设表优先：它覆盖了 gemini 之外的全部服务商。
+    val fromPresets = com.tom.rv2ide.artificial.agent.ProviderPresets.providerForModel(modelName)
+    if (fromPresets != null) {
+      return fromPresets
+    }
     return when {
       modelName in openai_models -> "openai"
       modelName in gemini_models -> "gemini"
@@ -169,43 +180,49 @@ class Agents(ctx: Context) {
       else -> null
     }
   }
-  
+
   fun setAgent(name: String) {
-      val provider = when {
-          name in openai_models -> "openai"
-          name in gemini_models -> "gemini"
-          name in claude_models -> "claude"
-          name in deepseek_models -> "deepseek"
-          name in grok_models -> "grok"
-          else -> sp.getString(PROVIDER_KEY, "gemini") ?: "gemini"
+      // 只切换模型名，不擅自改服务商——除非这个模型明确属于另一个服务商。
+      // 之前的实现会在模型名匹配不到任何服务商时把 provider 重置为 gemini，
+      // 于是用户选了一个新服务商后只要模型名不在硬编码列表里，provider 就被悄悄改掉，
+      // 表现为「设置里显示的服务商不是自己选的那个」。
+      val detected = getProviderForModel(name)
+      if (detected != null) {
+        sp.edit().putString(PROVIDER_KEY, detected).apply()
       }
-      
-      sp.edit().putString(PROVIDER_KEY, provider).apply()
       sp.edit().putString(AGENT_KEY, name).apply()
   }
-  
+
   fun getAgent(): String {
     val savedModel = sp.getString(AGENT_KEY, null)
-    if (savedModel != null) return savedModel
-    
-    return when (getProvider()) {
+    if (!savedModel.isNullOrBlank()) return savedModel
+
+    // 未选过模型时取该服务商的推荐值（预设表首项）。
+    val provider = getProvider()
+    val presetModels = com.tom.rv2ide.artificial.agent.ProviderPresets.modelsFor(provider)
+    if (presetModels.isNotEmpty()) {
+      return presetModels[0]
+    }
+    return when (provider) {
       "openai" -> "gpt-4o"
-      "gemini" -> "gemini-2.5-pro"
       "claude" -> "claude-sonnet-4-20250514"
       "deepseek" -> "deepseek-chat"
-      "grok" -> "grok-beta"
-      else -> "gemini-2.5-pro"
+      "grok" -> "grok-3"
+      else -> "deepseek-chat"
     }
   }
-  
+
   fun setProvider(provider: String) {
     sp.edit().putString(PROVIDER_KEY, provider).apply()
   }
-  
+
   fun getProvider(): String {
-    return sp.getString(PROVIDER_KEY, "gemini") ?: "gemini"
+    // 默认值取自预设表，而不是写死 "gemini"：协议层没有 Gemini 的实现，
+    // 默认指向它会让首次使用者在配好密钥后仍然一条消息都发不出去。
+    val fallback = com.tom.rv2ide.artificial.agent.ProviderPresets.DEFAULT_PROVIDER_ID
+    return sp.getString(PROVIDER_KEY, fallback) ?: fallback
   }
-  
+
   fun isValidModelForProvider(modelName: String, providerId: String): Boolean {
     return modelName in getModelsForProvider(providerId)
   }

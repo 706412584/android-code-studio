@@ -114,6 +114,13 @@
   <!-- AI Agent grok -->
   <string name="ai_agent_grok_api_key">Grok API Key</string>
 
+  <!-- Shared key for OpenAI-compatible providers (Groq / GLM / Kimi / Qwen / MiniMax / SiliconFlow / OpenRouter) -->
+  <string name="ai_agent_openai_compatible_api_key">OpenAI-compatible API key</string>
+  <string name="ai_agent_openai_compatible_api_key_summary">Used by Groq, GLM, Kimi, Qwen, MiniMax, SiliconFlow and OpenRouter. Pick the provider in the AI preferences screen; all of them share this key.</string>
+  <string name="ai_agent_openai_compatible_api_key_hint">sk-…</string>
+  <string name="ai_agent_api_key_unset">Not set</string>
+  <string name="ai_agent_api_key_set">API key: %1$s…</string>
+
   <!-- Persistent authorization rules for dangerous agent tools -->
   <string name="ai_agent_authorized_title">Authorized dangerous tools</string>
   <string name="ai_agent_authorized_summary">Review or revoke rules saved by “Always allow”</string>
