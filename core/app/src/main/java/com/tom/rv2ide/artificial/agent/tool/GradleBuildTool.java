@@ -151,6 +151,9 @@ public final class GradleBuildTool extends BaseTool {
     // 已有构建在进行时直接拒绝而非排队：并发构建会争用 Tooling API 连接，
     // 且用户可能正在手动构建。
     if (service.isBuildInProgress()) {
+      // 早退也要登记为一次失败的构建尝试，否则 lastBuildOutcome 会保留上一次的
+      // 成功记录，产物核验据此放行安装旧 APK（真机实测正是如此）。
+      service.recordRejectedBuildAttempt();
       return error("已有构建正在进行，请等待其完成后再试。");
     }
 
@@ -181,6 +184,8 @@ public final class GradleBuildTool extends BaseTool {
       } catch (RuntimeException cancelError) {
         log.warn("取消构建失败", cancelError);
       }
+      // 超时的构建被取消了，产物不可信，登记为失败
+      service.recordRejectedBuildAttempt();
       return error("构建超时（" + (timeout / 1000) + " 秒），已请求取消。");
     } catch (InterruptedException e) {
       Thread.currentThread().interrupt();

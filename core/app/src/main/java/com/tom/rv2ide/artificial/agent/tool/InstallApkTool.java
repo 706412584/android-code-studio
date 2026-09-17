@@ -18,11 +18,14 @@
 package com.tom.rv2ide.artificial.agent.tool;
 
 import android.content.Context;
+import com.tom.rv2ide.ai.tool.ApkFreshnessCheck;
 import com.tom.rv2ide.ai.tool.BaseTool;
 import com.tom.rv2ide.ai.tool.ToolContext;
 import com.tom.rv2ide.ai.tool.api.ToolCategory;
 import com.tom.rv2ide.ai.tool.api.ToolDisplayCategory;
 import com.tom.rv2ide.ai.tool.api.ToolResult;
+import com.tom.rv2ide.projects.builder.BuildOutcome;
+import com.tom.rv2ide.projects.builder.BuildService;
 import io.github.miyazkaori.silentinstaller.SilentInstaller;
 import java.io.File;
 import java.util.concurrent.CountDownLatch;
@@ -118,6 +121,14 @@ public final class InstallApkTool extends BaseTool {
       return error("指定的文件不是 APK: " + apkPath);
     }
 
+    // 独立核验产物是否可信，不采信模型的自述。
+    // 实测：模型删掉编译错误后没有重新构建，却报告「构建成功、APK 已生成」，
+    // 并引用了 9 小时前的旧 APK。装旧包会让后续测试在错误的产物上给出「通过」。
+    ApkFreshnessCheck.Result freshness = checkFreshness(apk);
+    if (!freshness.isInstallable()) {
+      return error(freshness.getMessage());
+    }
+
     boolean preferShizuku = input.optBoolean("useShizuku", true);
 
     if (context != null) {
@@ -136,6 +147,48 @@ public final class InstallApkTool extends BaseTool {
     }
 
     return installViaSystemInstaller(apk);
+  }
+
+  /**
+   * 核验 APK 是否为最近一次构建的产物。
+   *
+   * <p>构建服务不可用时（如未打开项目）不阻断——此时也无从判断，交由安装本身报错。
+   */
+  private ApkFreshnessCheck.Result checkFreshness(File apk) {
+    BuildService service = lookupBuildService();
+    if (service == null) {
+      return ApkFreshnessCheck.Result.ok();
+    }
+    BuildOutcome outcome;
+    try {
+      outcome = service.getLastBuildOutcome();
+    } catch (RuntimeException e) {
+      log.debug("读取构建结果失败，跳过产物核验", e);
+      return ApkFreshnessCheck.Result.ok();
+    }
+    if (outcome == null) {
+      log.info("产物核验：无构建记录，放行 {}", apk.getName());
+      return ApkFreshnessCheck.Result.ok();
+    }
+    ApkFreshnessCheck.Result result =
+        ApkFreshnessCheck.check(
+            apk.lastModified(), outcome.getSuccessful(), outcome.getStartedAtMs());
+    log.info(
+        "产物核验：apkModified={} buildOk={} buildStartedAt={} installable={}",
+        apk.lastModified(),
+        outcome.getSuccessful(),
+        outcome.getStartedAtMs(),
+        result.isInstallable());
+    return result;
+  }
+
+  private static BuildService lookupBuildService() {
+    try {
+      return com.tom.rv2ide.lookup.Lookup.getDefault()
+          .lookup(BuildService.KEY_BUILD_SERVICE);
+    } catch (RuntimeException e) {
+      return null;
+    }
   }
 
   /** Shizuku 静默安装的结果。 */

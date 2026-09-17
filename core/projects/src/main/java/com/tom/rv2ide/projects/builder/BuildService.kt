@@ -87,6 +87,38 @@ interface BuildService {
    */
   val buildOutput: BuildOutputBuffer
 
+  /**
+   * 最近一次构建的结果，供 agent 判断产物是否可信。
+   *
+   * <p>模型会谎报构建成功——真机实测：它删掉编译错误后没有重新构建，却报告
+   * 「构建成功，APK 已生成」并引用旧 APK 路径。安装旧包会让自动化测试在错误的
+   * 产物上给出「通过」，因此需要能独立核验，而不是采信模型的自述。
+   *
+   * @return `null` 表示本次进程内还没有构建记录（如用户手动构建过）
+   */
+  val lastBuildOutcome: BuildOutcome?
+
+  /**
+   * 记录一次<b>未提交到 Gradle</b> 的失败构建尝试。
+   *
+   * <p><b>为什么需要</b>：agent 触发的构建可能在前置检查就被拒绝（已有构建在进行、
+   * 工具服务未启动等），此时根本不会走到 [executeTasks]，[lastBuildOutcome] 会保留
+   * 上一次的记录。后果是：agent 明明看到构建失败，产物核验却读到「上次构建成功」
+   * 而放行安装旧 APK——真机实测正是如此。
+   *
+   * <p>因此调用方在早退路径上也要登记，使 [lastBuildOutcome] 始终反映
+   * 「最近一次构建尝试」而非「最近一次提交给 Gradle 的构建」。
+   */
+  fun recordRejectedBuildAttempt()
+
   /** Cancel any running build. */
   fun cancelCurrentBuild(): CompletableFuture<BuildCancellationRequestResult>
 }
+
+/**
+ * 一次构建的结果记录。
+ *
+ * @param successful 构建是否成功
+ * @param startedAtMs 构建开始时间（用于判断 APK 是否由这次构建产出）
+ */
+data class BuildOutcome(val successful: Boolean, val startedAtMs: Long)

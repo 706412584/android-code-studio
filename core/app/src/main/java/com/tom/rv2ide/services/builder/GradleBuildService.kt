@@ -35,6 +35,7 @@ import com.tom.rv2ide.lookup.Lookup
 import com.tom.rv2ide.managers.ToolsManager
 import com.tom.rv2ide.preferences.internal.BuildPreferences
 import com.tom.rv2ide.preferences.internal.DevOpsPreferences
+import com.tom.rv2ide.projects.builder.BuildOutcome
 import com.tom.rv2ide.projects.builder.BuildOutputBuffer
 import com.tom.rv2ide.projects.builder.BuildService
 import com.tom.rv2ide.projects.internal.ProjectManagerImpl
@@ -95,6 +96,22 @@ class GradleBuildService :
    * 就只能靠反复试错（实测一次构建失败烧掉 30 次工具调用）。
    */
   override val buildOutput = BuildOutputBuffer()
+
+  @Volatile private var _lastBuildOutcome: BuildOutcome? = null
+
+  /**
+   * 最近一次构建的结果，供 agent 核验 APK 是否为本次产物。
+   *
+   * 模型会谎报构建成功（实测：删掉编译错误后未重新构建，却称「构建成功、APK 已生成」），
+   * 因此需要独立记录，而不是采信模型自述。
+   */
+  override val lastBuildOutcome: BuildOutcome?
+    get() = _lastBuildOutcome
+
+  override fun recordRejectedBuildAttempt() {
+    // 以「刚发生」为开始时间，使任何既有 APK 都被判定为陈旧产物
+    _lastBuildOutcome = BuildOutcome(false, System.currentTimeMillis())
+  }
 
   /**
    * We do not provide direct access to GradleBuildService instance to the Tooling API launcher as
@@ -501,7 +518,13 @@ class GradleBuildService :
   override fun executeTasks(vararg tasks: String): CompletableFuture<TaskExecutionResult> {
     checkServerStarted()
     val message = TaskExecutionMessage(listOf(*tasks))
+    val startedAt = System.currentTimeMillis()
     return performBuildTasks(server!!.executeTasks(message))
+        .whenComplete { result, error ->
+          // 记录结果供 agent 核验 APK 是否可信。异常路径也要记，否则失败会被当成「无记录」而放行。
+          val successful = error == null && result != null && result.isSuccessful
+          _lastBuildOutcome = BuildOutcome(successful, startedAt)
+        }
   }
 
   override fun cancelCurrentBuild(): CompletableFuture<BuildCancellationRequestResult> {
@@ -530,6 +553,8 @@ class GradleBuildService :
     }
     // 新一轮构建开始，丢弃上一轮的输出，避免 agent 读到陈旧错误
     buildOutput.clear()
+    // 清掉上一轮结果：构建进行中不应让 agent 拿旧结论判断产物
+    _lastBuildOutcome = null
     isBuildInProgress = true
   }
 

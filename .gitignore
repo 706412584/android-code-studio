@@ -117,3 +117,6 @@ core/ai-agent/build/
 core/ai-tool/build/
 core/ai-tool-api/build/
 core/ai-protocol/build/
+
+# CodeGraph 语义索引（本机生成，约 390MB，含绝对路径，不应入库）
+.codegraph/
