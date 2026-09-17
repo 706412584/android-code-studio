@@ -129,11 +129,62 @@ agent 已能在真机上完成「读文件 → 改文件 → 构建 → 安装 �
 **测试**：`TokenEstimatorTest` 14 + `TokenUsageTrackerTest` 14 + `ContextTrimmerTest` 17
 + `ContextCompactorTest` 20 + `ConversationCompactionTest` 22 + `RunContextManagerTest` 12。
 
+### 3.3 项目界面 AI 悬浮助手 + 界面文案中文化（#17）
+
+**新文件**（`core/app`）：
+
+| 文件 | 职责 |
+|---|---|
+| `artificial/agent/FloatingAssistantView.kt` | 悬浮入口 + 面板装配、事件流渲染、危险工具确认 |
+| `adapters/AssistantMessageAdapter.kt` | 消息列表；按位置精确通知，不整表刷新 |
+| `res/layout/layout_ai_assistant.xml` | 面板布局（形态由 LayoutParams 切换，不复制两套） |
+| `res/layout/layout_ai_assistant_fab.xml` | 收起点：圆形入口（刻意不用 FAB，避免抢主操作注意力） |
+| `res/layout/item_assistant_message.xml` | 单条消息卡片 |
+
+**挂载点**：`fragment_main.xml` 新增最后一个子 `FrameLayout@assistantContainer`。
+必须是最后一个子 View——`ConstraintLayout` 反向分发触摸，放最后才能让面板盖在动作列表之上；
+容器自身不可点击，收起时触摸穿透到列表。
+
+**关键设计决策**：
+
+- **直接持有 `AgentOrchestrator`，不复用 `AgentRequestHandler`**。后者是
+  `ChatFragment` 的控件渲染器：它把事件塞进 `statusText`/`summaryText` 两个 TextView，
+  还要求传 `FileModificationAdapter` 与编辑器刷新回调，且**完全忽略 `TEXT_DELTA`**。
+  这里的界面是消息列表，需要的是事件流本身。两者 UI 契约不同，强行复用会把
+  ChatFragment 的控件假设带进来。
+- **orchestrator 只创建一次并跨请求复用**。它持有当前会话 id，每次新建都会让历史断掉
+  （与 P0-1 的会话续接直接冲突）。
+- **`TURN_FINISHED` 用规范输出覆盖流式累积**。模型可能把工具调用写成正文文本形态，
+  累积的增量里含标记，而事件里的 `message` 已经过 `ToolCallTextParser` 剥离。
+  同时用 `streamedThisRun` 标志避免收尾时再补一条——否则同一段回答出现两遍。
+- **流式首段新建消息而非复用末条**。模型可能在正文前先输出工具调用文本形态，
+  此时 `TOOL_STARTED` 已往列表插过过程条目；复用末条会把过程信息当正文覆盖掉。
+- **协程作用域必须用 `viewLifecycleOwner.lifecycleScope`**。
+  `BaseFragment.viewLifecycleScope` 只是普通 `CoroutineScope(Dispatchers.Default)`，
+  不随视图销毁取消，用它会在视图 detach 后继续写控件。
+- **返回键用 `OnBackPressedCallback` 注册在 `viewLifecycleOwner` 上**。Activity 自己
+  注册了一个（切屏幕用），dispatcher 按后进先出分发，后注册的先拿到事件；
+  面板收起后返回 false，继续落到 Activity 的 callback。
+- **工作区从 `GeneralPreferences.lastOpenedProject` 推得**。主屏本身没有"当前项目"
+  概念；prefs 里没有可用项目时传 null，助手提示"请先打开项目"而非静默失败。
+- **危险工具确认走 `CountDownLatch(1)` + 120s 超时**，已在主线程则直接拒绝——
+  宁可让工具失败也不无确认执行。
+
+**中文化范围**（gradle/git 指令本身不译，符合用户要求）：
+
+| 位置 | 处理 |
+|---|---|
+| `bottomsheet_project_list.xml:32` | `"import project"` → `@string/import_project` |
+| `item_project.xml:31,55` | 设计期占位文案改 `tools:text`（原本 `android:text` 会在无数据时显示英文） |
+| `MainFragment.kt` 对话框硬编码 | 备份/删除/项目选项共 12 处 → `string.*` 资源 |
+| `COMMON_GIT_OPTIONS` | chip **描述**本地化（`git_opt_*`）；**flag 保持英文**（`--depth 1` 等） |
+| `values-zh-rCN/strings.xml` | 补 `btn_idecfg`；新增 42 条中文翻译 |
+
 ---
 
-## 4. 待办（14 项未完成 / 16 项总计）
+## 4. 待办（13 项未完成 / 16 项总计）
 
-任务定义已迁入本会话 `TaskList`（#2 已完成，#3 进行中，其余 pending）。
+任务定义已迁入本会话 `TaskList`（#2、#3、#17 已完成，其余 pending）。
 
 ### P0 — 缺了 agent 能力不完整
 
@@ -159,7 +210,7 @@ agent 已能在真机上完成「读文件 → 改文件 → 构建 → 安装 �
 | #13 | P1-10 消息操作与导出 | pending | #16 |
 | #7 | P1-14 自定义 Agent 扩展 + P1-15 Slash 命令 | pending | — |
 | #9 | P2 收尾项（日志/归档/代理/输入/主题） | pending | — |
-| #17 | 项目界面 AI 悬浮助手 + 界面文案中文化 | pending | — |
+| #17 | 项目界面 AI 悬浮助手 + 界面文案中文化 | **已完成** | — | 见 §3.3 |
 
 > **依赖修正记录**：任务 #8（原 #22）最初被设为 `blockedBy=[20,23,24]`，但
 > `todo_update`/`web_fetch`/`web_search` 三个工具的实现本身不需要 UI 或记忆，已放宽。
@@ -175,7 +226,7 @@ agent 已能在真机上完成「读文件 → 改文件 → 构建 → 安装 �
 #15 权限确认 ───┴──> #16（确认交互在卡片里）
 #5 Diff 回滚 ───────> #16（回滚按钮在卡片里）
 #14 MCP ────────────> 独立（但卡片需能渲染 MCP 工具）
-#17 悬浮助手 ───────> 独立（纯 UI + 复用 AgentOrchestrator）
+#17 悬浮助手 ───────> 独立（纯 UI + 复用 AgentOrchestrator）  ✔ 已完成
 ```
 
 **关键结论**：`#5/#15/#16` 强耦合。逐项做会反复改同一批 UI 代码，

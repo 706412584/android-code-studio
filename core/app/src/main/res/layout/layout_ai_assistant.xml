@@ -1,0 +1,175 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  悬浮 AI 助手面板。
+
+  两种形态由代码切换 LayoutParams 实现（不复制两套布局，避免改一处漏一处）：
+  - 全屏：占满可用区域，只留少量边距
+  - 侧栏：固定宽度贴右侧，露出主屏内容
+
+  刻意不做成 BottomSheetDialog：bottom sheet 是模态的，展开时会挡住项目列表，
+  而这个面板的用途恰恰是"看着主屏问问题"。用平级 overlay 才能两者并存。
+-->
+<androidx.constraintlayout.widget.ConstraintLayout
+  xmlns:android="http://schemas.android.com/apk/res/android"
+  xmlns:app="http://schemas.android.com/apk/res-auto"
+  xmlns:tools="http://schemas.android.com/tools"
+  android:id="@+id/assistantOverlay"
+  android:layout_width="match_parent"
+  android:layout_height="match_parent"
+  android:visibility="gone"
+  tools:visibility="visible">
+
+  <com.google.android.material.card.MaterialCardView
+    android:id="@+id/assistantCard"
+    android:layout_width="0dp"
+    android:layout_height="0dp"
+    android:layout_margin="12dp"
+    app:cardCornerRadius="20dp"
+    app:cardElevation="8dp"
+    app:cardBackgroundColor="?attr/colorSurface"
+    app:layout_constraintBottom_toBottomOf="parent"
+    app:layout_constraintEnd_toEndOf="parent"
+    app:layout_constraintStart_toStartOf="parent"
+    app:layout_constraintTop_toTopOf="parent">
+
+    <LinearLayout
+      android:layout_width="match_parent"
+      android:layout_height="match_parent"
+      android:orientation="vertical">
+
+      <!-- 标题栏 -->
+      <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:paddingStart="16dp"
+        android:paddingEnd="8dp"
+        android:paddingTop="8dp"
+        android:paddingBottom="4dp">
+
+        <TextView
+          android:layout_width="0dp"
+          android:layout_height="wrap_content"
+          android:layout_weight="1"
+          android:text="@string/ai_assistant_title"
+          android:textAppearance="@style/TextAppearance.Material3.TitleMedium"
+          android:textStyle="bold" />
+
+        <com.google.android.material.button.MaterialButton
+          android:id="@+id/assistantLayoutToggle"
+          style="@style/Widget.Material3.Button.TextButton"
+          android:layout_width="wrap_content"
+          android:layout_height="wrap_content"
+          android:minWidth="0dp"
+          android:text="@string/ai_assistant_side" />
+
+        <com.google.android.material.button.MaterialButton
+          android:id="@+id/assistantNewConversation"
+          style="@style/Widget.Material3.Button.TextButton"
+          android:layout_width="wrap_content"
+          android:layout_height="wrap_content"
+          android:minWidth="0dp"
+          android:text="@string/ai_assistant_new_conversation" />
+
+        <com.google.android.material.button.MaterialButton
+          android:id="@+id/assistantClose"
+          style="@style/Widget.Material3.Button.TextButton"
+          android:layout_width="wrap_content"
+          android:layout_height="wrap_content"
+          android:minWidth="0dp"
+          android:text="@string/ai_assistant_close" />
+
+      </LinearLayout>
+
+      <!-- 当前服务商/模型与运行状态 -->
+      <TextView
+        android:id="@+id/assistantStatus"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:paddingStart="16dp"
+        android:paddingEnd="16dp"
+        android:paddingBottom="8dp"
+        android:textAppearance="@style/TextAppearance.Material3.BodySmall"
+        android:textColor="?android:textColorSecondary"
+        tools:text="deepseek / deepseek-chat" />
+
+      <View
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:background="?attr/colorOutlineVariant" />
+
+      <!-- 对话区 -->
+      <FrameLayout
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1">
+
+        <androidx.recyclerview.widget.RecyclerView
+          android:id="@+id/assistantMessages"
+          android:layout_width="match_parent"
+          android:layout_height="match_parent"
+          android:clipToPadding="false"
+          android:paddingTop="8dp"
+          android:paddingBottom="8dp" />
+
+        <TextView
+          android:id="@+id/assistantEmpty"
+          android:layout_width="match_parent"
+          android:layout_height="wrap_content"
+          android:layout_gravity="center"
+          android:padding="32dp"
+          android:text="@string/ai_assistant_empty_hint"
+          android:textAlignment="center"
+          android:textColor="?android:textColorSecondary"
+          android:textAppearance="@style/TextAppearance.Material3.BodyMedium" />
+
+        <com.google.android.material.progressindicator.LinearProgressIndicator
+          android:id="@+id/assistantProgress"
+          android:layout_width="match_parent"
+          android:layout_height="wrap_content"
+          android:layout_gravity="top"
+          android:visibility="gone"
+          android:indeterminate="true" />
+
+      </FrameLayout>
+
+      <!-- 输入区 -->
+      <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="bottom"
+        android:padding="8dp">
+
+        <com.google.android.material.textfield.TextInputLayout
+          android:layout_width="0dp"
+          android:layout_height="wrap_content"
+          android:layout_weight="1"
+          style="@style/Widget.Material3.TextInputLayout.OutlinedBox">
+
+          <com.google.android.material.textfield.TextInputEditText
+            android:id="@+id/assistantInput"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="@string/ai_assistant_input_hint"
+            android:inputType="textMultiLine|textCapSentences"
+            android:maxLines="5"
+            android:imeOptions="actionSend" />
+
+        </com.google.android.material.textfield.TextInputLayout>
+
+        <com.google.android.material.button.MaterialButton
+          android:id="@+id/assistantSend"
+          android:layout_width="wrap_content"
+          android:layout_height="wrap_content"
+          android:layout_marginStart="8dp"
+          android:text="@string/ai_assistant_send" />
+
+      </LinearLayout>
+
+    </LinearLayout>
+
+  </com.google.android.material.card.MaterialCardView>
+
+</androidx.constraintlayout.widget.ConstraintLayout>

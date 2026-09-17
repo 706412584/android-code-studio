@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  一条对话消息。
+
+  用户与助手共用此布局，靠背景色/对齐区分角色——两套布局会重复维护同一批
+  内边距与字号，且改一处忘一处时界面立刻不一致。
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+  xmlns:app="http://schemas.android.com/apk/res-auto"
+  xmlns:tools="http://schemas.android.com/tools"
+  android:layout_width="match_parent"
+  android:layout_height="wrap_content"
+  android:orientation="vertical"
+  android:paddingStart="12dp"
+  android:paddingEnd="12dp"
+  android:paddingTop="4dp"
+  android:paddingBottom="4dp">
+
+  <com.google.android.material.card.MaterialCardView
+    android:id="@+id/messageCard"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    app:cardCornerRadius="14dp"
+    app:cardElevation="0dp"
+    app:strokeWidth="0dp">
+
+    <LinearLayout
+      android:layout_width="match_parent"
+      android:layout_height="wrap_content"
+      android:orientation="vertical"
+      android:padding="12dp">
+
+      <TextView
+        android:id="@+id/messageRole"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:textAppearance="@style/TextAppearance.Material3.LabelSmall"
+        android:textStyle="bold"
+        tools:text="助手" />
+
+      <TextView
+        android:id="@+id/messageText"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="4dp"
+        android:textAppearance="@style/TextAppearance.Material3.BodyMedium"
+        android:textIsSelectable="true"
+        tools:text="已读取 build.gradle，正在检查依赖…" />
+
+    </LinearLayout>
+
+  </com.google.android.material.card.MaterialCardView>
+
+</LinearLayout>

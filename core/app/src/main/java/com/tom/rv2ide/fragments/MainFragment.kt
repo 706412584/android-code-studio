@@ -23,8 +23,11 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.TextView
+import androidx.activity.OnBackPressedCallback
+import androidx.annotation.StringRes
 import androidx.appcompat.app.AlertDialog
 import androidx.fragment.app.viewModels
+import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.bottomsheet.BottomSheetDialog
@@ -41,10 +44,12 @@ import com.tom.rv2ide.activities.TerminalActivity
 import com.tom.rv2ide.adapters.MainActionsListAdapter
 import com.tom.rv2ide.app.BaseApplication
 import com.tom.rv2ide.app.BaseIDEActivity
+import com.tom.rv2ide.artificial.agent.FloatingAssistantView
 import com.tom.rv2ide.common.databinding.LayoutDialogProgressBinding
 import com.tom.rv2ide.databinding.BottomsheetGitCloneBinding
 import com.tom.rv2ide.databinding.FragmentMainBinding
 import com.tom.rv2ide.models.MainScreenAction
+import com.tom.rv2ide.preferences.internal.GeneralPreferences
 import com.tom.rv2ide.resources.R.string
 import com.tom.rv2ide.tasks.runOnUiThread
 import com.tom.rv2ide.templates.preferences.WizardPreferences
@@ -78,21 +83,44 @@ class MainFragment : BaseFragment() {
   private val viewModel by viewModels<MainViewModel>(ownerProducer = { requireActivity() })
   private var binding: FragmentMainBinding? = null
 
+  /** 主屏悬浮 AI 助手；随视图创建/销毁。 */
+  private var assistant: FloatingAssistantView? = null
+
+  /**
+   * 返回键先收面板。
+   *
+   * <p>用 dispatcher 而不是覆写 `onBackPressed`：Activity 自己注册了一个 callback
+   * （切屏幕用），dispatcher 按后进先出分发，后注册的这个先拿到事件，面板收起后
+   * 返回 false 让它继续落到 Activity 的 callback。
+   */
+  private val backCallback =
+      object : OnBackPressedCallback(false) {
+        override fun handleOnBackPressed() {
+          assistant?.collapseIfOpen()
+        }
+      }
+
   companion object {
     private val log = LoggerFactory.getLogger(MainFragment::class.java)
 
-    // Common git clone options
+    /**
+     * 常用 git clone 选项。
+     *
+     * <p>description 是界面文案（走中文字符串资源）；flag 是原样传给 git 的参数，
+     * 按用户要求保持英文，且不翻译。
+     */
     private val COMMON_GIT_OPTIONS =
         listOf(
-            GitOption("--depth 1", "Shallow clone (faster)"),
-            GitOption("--single-branch", "Clone single branch only"),
-            GitOption("--recursive", "Clone with submodules"),
-            GitOption("--no-tags", "Don't fetch tags"),
-            GitOption("--bare", "Create bare repository"),
+            GitOption("--depth 1", string.git_opt_depth1),
+            GitOption("--single-branch", string.git_opt_single_branch),
+            GitOption("--recursive", string.git_opt_recursive),
+            GitOption("--no-tags", string.git_opt_no_tags),
+            GitOption("--bare", string.git_opt_bare),
         )
   }
 
-  data class GitOption(val flag: String, val description: String)
+  /** @param flag 原样传给 git 的参数（英文，不翻译）；@param description 界面文案的字符串资源 */
+  data class GitOption(val flag: String, @StringRes val description: Int)
 
   override fun onCreateView(
       inflater: LayoutInflater,
@@ -141,10 +169,48 @@ class MainFragment : BaseFragment() {
         }
 
     binding!!.actions.adapter = MainActionsListAdapter(actions)
+
+    setUpAssistant()
+  }
+
+  /**
+   * 装配悬浮 AI 助手。
+   *
+   * <p>工作区从"最近打开的项目"推得——主屏本身没有当前项目概念，用户在这里选项目
+   * 或直接进编辑器。prefs 里没有可用项目时传 null，助手会提示"请先打开项目"而不是
+   * 静默失败。
+   */
+  private fun setUpAssistant() {
+    val root = binding?.root ?: return
+    val container = root.findViewById<android.widget.FrameLayout>(R.id.assistantContainer) ?: return
+
+    // 必须用 viewLifecycleOwner.lifecycleScope：BaseFragment.viewLifecycleScope 只是
+    // 一个普通 CoroutineScope（Dispatchers.Default），不会随视图销毁自动取消，用它会在
+    // 视图销毁后继续往已 detach 的控件里写数据。
+    val view = FloatingAssistantView(requireContext(), viewLifecycleOwner.lifecycleScope, container)
+    view.attach()
+    view.setWorkspace(currentWorkspace())
+    assistant = view
+
+    backCallback.isEnabled = true
+    requireActivity().onBackPressedDispatcher.addCallback(viewLifecycleOwner, backCallback)
+  }
+
+  /** 当前工作区；无可用项目时返回 null。 */
+  private fun currentWorkspace(): File? {
+    val path = GeneralPreferences.lastOpenedProject
+    if (path.isEmpty() || path == GeneralPreferences.NO_OPENED_PROJECT) {
+      return null
+    }
+    val dir = File(path)
+    return if (dir.exists() && dir.isDirectory) dir else null
   }
 
   override fun onDestroyView() {
     super.onDestroyView()
+    backCallback.isEnabled = false
+    assistant?.dispose()
+    assistant = null
     binding = null
   }
 
@@ -284,7 +350,12 @@ class MainFragment : BaseFragment() {
   }
 
   private fun showProjectOptionsDialog(project: File, onActionComplete: () -> Unit) {
-    val options = arrayOf("Backup project", "Delete project", "Rename")
+    val options =
+        arrayOf(
+            getString(string.project_options_backup),
+            getString(string.project_options_delete),
+            getString(string.rename),
+        )
 
     val builder = DialogUtils.newMaterialDialogBuilder(requireContext())
     builder.setTitle(project.name)
@@ -444,11 +515,11 @@ class MainFragment : BaseFragment() {
     val binding = LayoutDialogProgressBinding.inflate(layoutInflater)
 
     binding.message.visibility = View.VISIBLE
-    binding.message.text = "Backing up project..."
+    binding.message.text = getString(string.backup_progress_label)
     binding.progress.isIndeterminate = true
 
-    builder.setTitle("Backup in Progress")
-    builder.setMessage("Creating backup of ${project.name}")
+    builder.setTitle(getString(string.backup_in_progress_title))
+    builder.setMessage(getString(string.backup_in_progress_message, project.name))
     builder.setView(binding.root)
     builder.setCancelable(false)
 
@@ -483,11 +554,11 @@ class MainFragment : BaseFragment() {
           dialog.dismiss()
 
           val successBuilder = DialogUtils.newMaterialDialogBuilder(requireContext())
-          successBuilder.setTitle("Backup Completed")
+          successBuilder.setTitle(getString(string.backup_completed_title))
           successBuilder.setMessage(
-              "Project backed up successfully!\n\nLocation:\n${backupFile.absolutePath}"
+              getString(string.backup_completed_message, backupFile.absolutePath)
           )
-          successBuilder.setPositiveButton("OK") { d, _ ->
+          successBuilder.setPositiveButton(android.R.string.ok) { d, _ ->
             d.dismiss()
             onComplete()
           }
@@ -499,9 +570,9 @@ class MainFragment : BaseFragment() {
           dialog.dismiss()
 
           val errorBuilder = DialogUtils.newMaterialDialogBuilder(requireContext())
-          errorBuilder.setTitle("Backup Failed")
-          errorBuilder.setMessage("Failed to backup project: ${e.localizedMessage}")
-          errorBuilder.setPositiveButton("OK", null)
+          errorBuilder.setTitle(getString(string.backup_failed_title))
+          errorBuilder.setMessage(getString(string.backup_failed_message, e.localizedMessage))
+          errorBuilder.setPositiveButton(android.R.string.ok, null)
           errorBuilder.show()
         }
       }
@@ -527,11 +598,11 @@ class MainFragment : BaseFragment() {
     val binding = LayoutDialogProgressBinding.inflate(layoutInflater)
 
     binding.message.visibility = View.VISIBLE
-    binding.message.text = "Deleting project..."
+    binding.message.text = getString(string.delete_progress_label)
     binding.progress.isIndeterminate = true
 
-    builder.setTitle("Delete in Progress")
-    builder.setMessage("Deleting ${project.name}")
+    builder.setTitle(getString(string.delete_in_progress_title))
+    builder.setMessage(getString(string.delete_in_progress_message, project.name))
     builder.setView(binding.root)
     builder.setCancelable(false)
 
@@ -602,7 +673,7 @@ class MainFragment : BaseFragment() {
 
     COMMON_GIT_OPTIONS.forEach { option ->
       val chip = Chip(requireContext())
-      chip.text = option.description
+      chip.text = getString(option.description)
       chip.isCheckable = true
       chip.isCheckedIconVisible = true
       chip.tag = option.flag

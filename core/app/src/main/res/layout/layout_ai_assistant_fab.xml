@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  悬浮 AI 助手的收起点：一个小圆形按钮。
+
+  刻意不用 FloatingActionButton：它的阴影 + 主题色会与主屏动作列表抢注意力，
+  而这里的定位是"随时可叫出来的助手"，不是主操作。
+-->
+<com.google.android.material.card.MaterialCardView
+  xmlns:android="http://schemas.android.com/apk/res/android"
+  xmlns:app="http://schemas.android.com/apk/res-auto"
+  xmlns:tools="http://schemas.android.com/tools"
+  android:id="@+id/assistantFab"
+  android:layout_width="56dp"
+  android:layout_height="56dp"
+  android:clickable="true"
+  android:focusable="true"
+  android:contentDescription="@string/ai_assistant_open"
+  app:cardCornerRadius="28dp"
+  app:cardElevation="6dp"
+  app:cardBackgroundColor="?attr/colorPrimaryContainer"
+  app:strokeWidth="0dp"
+  tools:ignore="UnusedAttribute">
+
+  <ImageView
+    android:layout_width="28dp"
+    android:layout_height="28dp"
+    android:layout_gravity="center"
+    android:src="@drawable/ic_ai_agent"
+    android:contentDescription="@null"
+    app:tint="?attr/colorOnPrimaryContainer" />
+
+</com.google.android.material.card.MaterialCardView>

@@ -55,5 +55,20 @@
     app:layout_constraintTop_toBottomOf="@id/greetingText"
     app:layoutManager="androidx.recyclerview.widget.LinearLayoutManager"
     tools:listitem="@layout/layout_main_action_item" />
-    
+
+  <!--
+    悬浮 AI 助手的挂载点。
+
+    必须是最后一个子 View：ConstraintLayout 按添加顺序反向分发触摸，放最后才能让
+    FAB / 面板盖在动作列表之上。容器自身不可点击，因此面板收起时触摸会穿透到列表。
+  -->
+  <FrameLayout
+    android:id="@+id/assistantContainer"
+    android:layout_width="0dp"
+    android:layout_height="0dp"
+    app:layout_constraintBottom_toBottomOf="parent"
+    app:layout_constraintEnd_toEndOf="parent"
+    app:layout_constraintStart_toStartOf="parent"
+    app:layout_constraintTop_toTopOf="parent" />
+
 </androidx.constraintlayout.widget.ConstraintLayout>

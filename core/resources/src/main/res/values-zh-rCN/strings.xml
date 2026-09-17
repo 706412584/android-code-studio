@@ -114,6 +114,55 @@
   <!-- AI Agent grok -->
   <string name="ai_agent_grok_api_key">Grok API 密钥</string>
 
+  <!-- 主界面悬浮 AI 助手 -->
+  <string name="ai_assistant_open">打开 AI 助手</string>
+  <string name="ai_assistant_title">AI 助手</string>
+  <string name="ai_assistant_side">侧栏</string>
+  <string name="ai_assistant_fullscreen">全屏</string>
+  <string name="ai_assistant_new_conversation">新会话</string>
+  <string name="ai_assistant_close">关闭</string>
+  <string name="ai_assistant_empty_hint">让 AI 读取、修改或构建你的项目。\n例如：“读取 app/build.gradle 并列出其中的依赖”。</string>
+  <string name="ai_assistant_input_hint">描述你的需求…</string>
+  <string name="ai_assistant_send">发送</string>
+  <string name="ai_assistant_role_user">你</string>
+  <string name="ai_assistant_role_assistant">助手</string>
+  <string name="ai_assistant_role_trace">过程</string>
+  <string name="ai_assistant_status_running">正在运行 %1$s / %2$s…</string>
+  <string name="ai_assistant_status_done">已完成 · %1$d 轮 · %2$d 次工具调用</string>
+  <string name="ai_assistant_status_failed">已中止 · %1$d 轮 · %2$d 次工具调用</string>
+  <string name="ai_assistant_no_output">（模型没有返回文本）</string>
+  <string name="ai_assistant_no_workspace">尚未打开项目，请先打开或新建一个项目。</string>
+  <string name="ai_assistant_tool_started">▶ %1$s %2$s</string>
+  <string name="ai_assistant_tool_failed">✖ 工具执行失败：%1$s</string>
+  <string name="ai_assistant_error">出错了：%1$s — %2$s</string>
+  <string name="ai_assistant_dangerous_title">确认执行工具</string>
+  <string name="ai_assistant_dangerous_message">助手想要执行可能有风险的工具：\n\n%1$s\n\n参数：\n%2$s</string>
+  <string name="ai_assistant_dangerous_allow_once">仅允许本次</string>
+  <string name="ai_assistant_dangerous_allow_always">始终允许</string>
+  <string name="ai_assistant_dangerous_deny">拒绝</string>
+
+  <!-- 主界面：项目列表、备份与删除对话框 -->
+  <string name="import_project">导入项目</string>
+  <string name="project_options_backup">备份项目</string>
+  <string name="project_options_delete">删除项目</string>
+  <string name="backup_progress_label">正在备份项目…</string>
+  <string name="backup_in_progress_title">正在备份</string>
+  <string name="backup_in_progress_message">正在创建 %1$s 的备份</string>
+  <string name="backup_completed_title">备份完成</string>
+  <string name="backup_completed_message">项目备份成功！\n\n位置：\n%1$s</string>
+  <string name="backup_failed_title">备份失败</string>
+  <string name="backup_failed_message">备份项目失败：%1$s</string>
+  <string name="delete_progress_label">正在删除项目…</string>
+  <string name="delete_in_progress_title">正在删除</string>
+  <string name="delete_in_progress_message">正在删除 %1$s</string>
+
+  <!-- Git 克隆选项说明（参数本身保持英文） -->
+  <string name="git_opt_depth1">浅克隆（更快）</string>
+  <string name="git_opt_single_branch">只克隆单个分支</string>
+  <string name="git_opt_recursive">同时克隆子模块</string>
+  <string name="git_opt_no_tags">不拉取标签</string>
+  <string name="git_opt_bare">创建裸仓库</string>
+
   <string name="no_acs_title">ACS 组件缺失</string>
   <string name="no_acs_summary">该应用程序似乎不完整或非官方，因为它缺少所需的 ACS 构建系统。要获得完整功能，请从可信来源安装官方 Android Code Studio。</string>
 
@@ -467,6 +516,7 @@
   <string name="idepref_editor_useSoftTabs_title">使用空格代替制表符</string>
   <string name="idepref_editor_useSoftTabs_summary">设置是否使用多个空格代替制表符 (\\t)</string>
   <string name="btn_donate">捐助</string>
+  <string name="btn_idecfg">IDE 配置</string>
   <string name="btn_docs">文档</string>
   <string name="btn_close">关闭</string>
   <string name="msg_ignore_case">忽略大小写</string>

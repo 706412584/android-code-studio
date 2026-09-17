@@ -114,6 +114,55 @@
   <!-- AI Agent grok -->
   <string name="ai_agent_grok_api_key">Grok API Key</string>
 
+  <!-- Floating AI assistant on the main screen -->
+  <string name="ai_assistant_open">Open AI assistant</string>
+  <string name="ai_assistant_title">AI Assistant</string>
+  <string name="ai_assistant_side">Side panel</string>
+  <string name="ai_assistant_fullscreen">Full screen</string>
+  <string name="ai_assistant_new_conversation">New</string>
+  <string name="ai_assistant_close">Close</string>
+  <string name="ai_assistant_empty_hint">Ask the AI to read, edit or build your project.\nExample: “read app/build.gradle and list its dependencies”.</string>
+  <string name="ai_assistant_input_hint">Describe your request…</string>
+  <string name="ai_assistant_send">Send</string>
+  <string name="ai_assistant_role_user">You</string>
+  <string name="ai_assistant_role_assistant">Assistant</string>
+  <string name="ai_assistant_role_trace">Process</string>
+  <string name="ai_assistant_status_running">Running %1$s / %2$s…</string>
+  <string name="ai_assistant_status_done">Finished · %1$d turns · %2$d tool calls</string>
+  <string name="ai_assistant_status_failed">Stopped · %1$d turns · %2$d tool calls</string>
+  <string name="ai_assistant_no_output">(the model returned no text)</string>
+  <string name="ai_assistant_no_workspace">No project is open. Open or create a project first.</string>
+  <string name="ai_assistant_tool_started">▶ %1$s %2$s</string>
+  <string name="ai_assistant_tool_failed">✖ tool failed: %1$s</string>
+  <string name="ai_assistant_error">Error: %1$s — %2$s</string>
+  <string name="ai_assistant_dangerous_title">Confirm tool execution</string>
+  <string name="ai_assistant_dangerous_message">The assistant wants to run a potentially dangerous tool:\n\n%1$s\n\nArguments:\n%2$s</string>
+  <string name="ai_assistant_dangerous_allow_once">Allow once</string>
+  <string name="ai_assistant_dangerous_allow_always">Always allow</string>
+  <string name="ai_assistant_dangerous_deny">Deny</string>
+
+  <!-- Main screen: project list, backup and delete dialogs -->
+  <string name="import_project">Import project</string>
+  <string name="project_options_backup">Backup project</string>
+  <string name="project_options_delete">Delete project</string>
+  <string name="backup_progress_label">Backing up project…</string>
+  <string name="backup_in_progress_title">Backup in progress</string>
+  <string name="backup_in_progress_message">Creating a backup of %1$s</string>
+  <string name="backup_completed_title">Backup completed</string>
+  <string name="backup_completed_message">Project backed up successfully!\n\nLocation:\n%1$s</string>
+  <string name="backup_failed_title">Backup failed</string>
+  <string name="backup_failed_message">Failed to back up project: %1$s</string>
+  <string name="delete_progress_label">Deleting project…</string>
+  <string name="delete_in_progress_title">Deleting project</string>
+  <string name="delete_in_progress_message">Deleting %1$s</string>
+
+  <!-- Git clone option descriptions (the flags themselves stay in English) -->
+  <string name="git_opt_depth1">Shallow clone (faster)</string>
+  <string name="git_opt_single_branch">Clone a single branch only</string>
+  <string name="git_opt_recursive">Clone with submodules</string>
+  <string name="git_opt_no_tags">Don\'t fetch tags</string>
+  <string name="git_opt_bare">Create a bare repository</string>
+
   <string name="no_acs_title">ACS Components Missing</string>
   <string name="no_acs_summary">This application appears to be incomplete or unofficial, as it is missing the required ACS build system. For full functionality, please install the official Android Code Studio from a trusted source.</string>
 
