@@ -115,6 +115,13 @@ public final class AgentOrchestrator {
   private final PrefsChatModeStore chatModeStore;
 
   /**
+   * 用户自定义 agent 存储。
+   *
+   * <p>每次运行读取：用户改完定义后下一次运行即生效，不必重启。
+   */
+  private final com.tom.rv2ide.ai.agent.command.CustomAgentStore customAgentStore;
+
+  /**
    * 待办列表存储，跨运行保留。
    *
    * <p>必须持久化：待办是模型「记住自己做到哪一步」的依据，只在内存里的话进程被回收后
@@ -155,7 +162,19 @@ public final class AgentOrchestrator {
     this.todoStore = new com.tom.rv2ide.ai.tool.FileTodoStateStore(defaultTodoFile(appContext));
     this.memoryStore = new com.tom.rv2ide.ai.tool.memory.MemoryStore(defaultMemoryFile(appContext));
     this.chatModeStore = new PrefsChatModeStore(appContext);
+    this.customAgentStore =
+        new com.tom.rv2ide.ai.agent.command.CustomAgentStore(defaultCustomAgentsFile(appContext));
     this.promptBuilder = new AgentPromptBuilder("ACS AI Agent", new PrefsPromptTemplateStore(appContext));
+  }
+
+  /** 自定义 agent 文件：{@code filesDir/ai/custom_agents.json}。 */
+  private static File defaultCustomAgentsFile(Context context) {
+    return new File(new File(context.getFilesDir(), "ai"), "custom_agents.json");
+  }
+
+  /** 自定义 agent 存储，供设置界面管理。 */
+  public com.tom.rv2ide.ai.agent.command.CustomAgentStore getCustomAgentStore() {
+    return customAgentStore;
   }
 
   /** 记忆文件：{@code filesDir/ai/memories.json}。 */
@@ -418,15 +437,24 @@ public final class AgentOrchestrator {
     ModelCancellationToken cancellation = new ModelCancellationToken();
     activeCancellation = cancellation;
 
-    registry.register(
-        new com.tom.rv2ide.ai.tool.AgentTool(
-            new SubAgentRunnerImpl(
-                endpoint,
-                modelId,
-                workspace.getAbsolutePath(),
-                settings,
-                cancellation,
-                diffStore)));
+    SubAgentRunnerImpl subAgentRunner =
+        new SubAgentRunnerImpl(
+            endpoint,
+            modelId,
+            workspace.getAbsolutePath(),
+            settings,
+            cancellation,
+            diffStore);
+    registry.register(new com.tom.rv2ide.ai.tool.AgentTool(subAgentRunner));
+
+    // 用户自定义 agent：固定的角色提示词，模型只需给出要处理什么。
+    for (com.tom.rv2ide.ai.agent.command.CustomAgent custom : customAgentStore.usable()) {
+      CustomAgentTool tool = new CustomAgentTool(custom, subAgentRunner, 0);
+      // 名字冲突时跳过：覆盖会让另一个自定义 agent 静默消失。
+      if (registry.get(tool.getName()) == null) {
+        registry.register(tool);
+      }
+    }
 
     List<ToolInfo> tools = new ArrayList<>(registry.getAll());
     // 协议支持原生工具调用时不注入 XML 兜底格式，否则会诱导模型改用文本调用。

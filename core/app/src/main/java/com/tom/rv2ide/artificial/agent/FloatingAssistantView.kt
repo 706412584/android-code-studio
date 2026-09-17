@@ -250,7 +250,69 @@ class FloatingAssistantView(
       return
     }
     binding.assistantInput.setText("")
+
+    // 斜杠命令是纯本地操作：不发给模型、不消耗额度。
+    // 只有已知命令名才算命令——「/etc/hosts 是干什么的」是普通消息（见 SlashCommandCatalog）。
+    val parsed = com.tom.rv2ide.ai.agent.command.SlashCommandCatalog.parse(request)
+    if (parsed.isCommand) {
+      handleCommand(parsed)
+      return
+    }
     execute(request)
+  }
+
+  /** 执行一条斜杠命令。 */
+  private fun handleCommand(parsed: com.tom.rv2ide.ai.agent.command.SlashCommandCatalog.Parsed) {
+    val kind = parsed.kind
+    if (kind == com.tom.rv2ide.ai.agent.command.SlashCommandCatalog.Kind.INVALID) {
+      appendTrace("⚠️ ${parsed.error}")
+      return
+    }
+    when (kind) {
+      com.tom.rv2ide.ai.agent.command.SlashCommandCatalog.Kind.HELP ->
+          appendTrace(com.tom.rv2ide.ai.agent.command.SlashCommandCatalog.helpText())
+
+      com.tom.rv2ide.ai.agent.command.SlashCommandCatalog.Kind.MODE -> {
+        val mode = parsed.modeOrNull()
+        if (mode == null) {
+          appendTrace("⚠️ ${parsed.error}")
+          return
+        }
+        // 写进偏好：模式是持久设置，下次打开应用仍然生效。
+        com.tom.rv2ide.artificial.agent.PrefsChatModeStore(context).set(mode)
+        appendTrace(context.getString(string.ai_assistant_mode_changed, mode.label))
+      }
+
+      com.tom.rv2ide.ai.agent.command.SlashCommandCatalog.Kind.MODEL -> {
+        // 模型名必须在当前服务商的预设列表里，否则请求必然失败。
+        // 用户手打一个模型名很可能拼错，这里直接拒绝并给出可用值。
+        val provider = Agents(context).getProvider()
+        val models = ProviderPresets.modelsFor(provider)
+        if (models.contains(parsed.argument)) {
+          Agents(context).setAgent(parsed.argument)
+          appendTrace(context.getString(string.ai_assistant_model_changed, parsed.argument))
+        } else {
+          appendTrace(
+              context.getString(
+                  string.ai_assistant_model_unknown,
+                  parsed.argument,
+                  provider,
+                  models.take(8).joinToString(", "),
+              ))
+        }
+      }
+
+      com.tom.rv2ide.ai.agent.command.SlashCommandCatalog.Kind.NEW_CONVERSATION ->
+          startNewConversation()
+
+      com.tom.rv2ide.ai.agent.command.SlashCommandCatalog.Kind.CLEAR -> {
+        cancel()
+        adapter.clear()
+        updateEmptyState()
+      }
+
+      else -> {}
+    }
   }
 
   private fun execute(userRequest: String) {

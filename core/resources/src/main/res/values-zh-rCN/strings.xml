@@ -121,6 +121,20 @@
   <string name="ai_agent_api_key_unset">未设置</string>
   <string name="ai_agent_api_key_set">密钥：%1$s…</string>
 
+  <!-- 自定义 agent -->
+  <string name="ai_agent_custom_agents_title">自定义 Agent</string>
+  <string name="ai_agent_custom_agents_summary">带固定指令的可复用角色</string>
+  <string name="ai_agent_custom_agents_none">尚未定义自定义 Agent</string>
+  <string name="ai_agent_custom_agents_count">已启用 %1$d / %2$d 个</string>
+  <string name="ai_agent_custom_agents_add">新增 Agent…</string>
+  <string name="ai_agent_custom_agents_edit">编辑 Agent</string>
+  <string name="ai_agent_custom_agents_name_hint">名字（如 reviewer）</string>
+  <string name="ai_agent_custom_agents_description_hint">模型何时该用它？（可选）</string>
+  <string name="ai_agent_custom_agents_prompt_hint">指令 —— 职责与要求</string>
+  <string name="ai_agent_custom_agents_hint">该 Agent 会变成一个名为 agentx_&lt;名字&gt; 的工具。它的指令是固定的，模型只需说明要处理什么。</string>
+  <string name="ai_agent_custom_agents_enable">启用</string>
+  <string name="ai_agent_custom_agents_disable">停用</string>
+
   <!-- 长期记忆 -->
   <string name="ai_agent_memory_title">长期记忆</string>
   <string name="ai_agent_memory_summary">助手跨会话记住的事实</string>
@@ -172,6 +186,11 @@
   <string name="ai_assistant_export_copied">已复制 %1$d 个字符到剪贴板</string>
   <string name="ai_assistant_export_empty">还没有可复制的内容</string>
   <string name="ai_assistant_export_failed">复制失败：剪贴板不可用</string>
+
+  <!-- 斜杠命令 -->
+  <string name="ai_assistant_mode_changed">已切换到模式：%1$s</string>
+  <string name="ai_assistant_model_changed">已切换到模型：%1$s</string>
+  <string name="ai_assistant_model_unknown">服务商 %2$s 下没有模型「%1$s」。可用：%3$s…</string>
 
   <!-- 工具调用卡片 -->
   <string name="ai_assistant_tool_input">输入</string>

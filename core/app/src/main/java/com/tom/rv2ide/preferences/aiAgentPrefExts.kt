@@ -101,6 +101,7 @@ private class AgentToolingGroup(
   init {
     addPreference(AgentModeSwitch())
     addPreference(ChatModePreference())
+    addPreference(CustomAgentsPreference())
     addPreference(PermissionModePreference())
     addPreference(AuthorizedToolsPreference())
     addPreference(PromptTemplatePreference())
@@ -379,6 +380,152 @@ private class PromptTemplatePreference(
         }
         .setNegativeButton(android.R.string.cancel, null)
         .show()
+  }
+}
+
+/**
+ * 自定义 agent：新增、编辑、启停、删除。
+ *
+ * <p><b>为什么需要它</b>：内置提示词只能覆盖通用场景。用户对自己的项目有特定要求
+ * （「审查时必须检查是否遗漏了 i18n 字符串」），把它固化成一个自定义 agent 后，
+ * 模型可以通过 {@code agentx_<名字>} 工具调用它，用户不必每次在对话里重复说明。
+ */
+@Parcelize
+private class CustomAgentsPreference(
+    override val key: String = "custom_agents",
+    override val title: Int = R.string.ai_agent_custom_agents_title,
+    override val summary: Int? = R.string.ai_agent_custom_agents_summary,
+) : BasePreference() {
+
+  override fun onCreatePreference(context: Context): Preference {
+    val agents = customAgentStore(context).all()
+    return androidx.preference.Preference(context).apply {
+      key = "custom_agents"
+      title = context.getString(R.string.ai_agent_custom_agents_title)
+      summary =
+          if (agents.isEmpty()) context.getString(R.string.ai_agent_custom_agents_none)
+          else
+              context.getString(
+                  R.string.ai_agent_custom_agents_count,
+                  agents.count { it.isUsable() },
+                  agents.size,
+              )
+    }
+  }
+
+  override fun onPreferenceClick(preference: Preference): Boolean {
+    showList(preference.context, preference)
+    return true
+  }
+
+  private fun customAgentStore(context: Context) =
+      com.tom.rv2ide.ai.agent.command.CustomAgentStore(
+          java.io.File(java.io.File(context.filesDir, "ai"), "custom_agents.json"))
+
+  private fun showList(
+      context: Context,
+      preference: Preference,
+  ) {
+    val store = customAgentStore(context)
+    val agents = store.all()
+
+    val labels =
+        agents
+            .map { agent ->
+              val state = if (agent.isUsable()) "✓" else "✗"
+              "$state ${agent.name}"
+            }
+            .toMutableList()
+    labels.add(context.getString(R.string.ai_agent_custom_agents_add))
+
+    com.google.android.material.dialog.MaterialAlertDialogBuilder(context)
+        .setTitle(R.string.ai_agent_custom_agents_title)
+        .setItems(labels.toTypedArray()) { _, which ->
+          if (which == agents.size) {
+            edit(context, store, null, preference)
+          } else {
+            edit(context, store, agents[which], preference)
+          }
+        }
+        .setNegativeButton(android.R.string.cancel, null)
+        .show()
+  }
+
+  /** 编辑一个 agent；existing 为 null 表示新建。 */
+  private fun edit(
+      context: Context,
+      store: com.tom.rv2ide.ai.agent.command.CustomAgentStore,
+      existing: com.tom.rv2ide.ai.agent.command.CustomAgent?,
+      preference: Preference,
+  ) {
+    val container = android.widget.LinearLayout(context).apply {
+      orientation = android.widget.LinearLayout.VERTICAL
+      setPadding(48, 24, 48, 0)
+    }
+    val nameField = com.google.android.material.textfield.TextInputEditText(context).apply {
+      hint = context.getString(R.string.ai_agent_custom_agents_name_hint)
+      setText(existing?.name.orEmpty())
+      isEnabled = existing == null // 名字是工具的标识，改名等于换一个工具
+    }
+    val descriptionField = com.google.android.material.textfield.TextInputEditText(context).apply {
+      hint = context.getString(R.string.ai_agent_custom_agents_description_hint)
+      setText(existing?.description.orEmpty())
+    }
+    val promptField = com.google.android.material.textfield.TextInputEditText(context).apply {
+      hint = context.getString(R.string.ai_agent_custom_agents_prompt_hint)
+      setText(existing?.prompt.orEmpty())
+      inputType =
+          android.text.InputType.TYPE_CLASS_TEXT or
+              android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE
+      gravity = android.view.Gravity.TOP or android.view.Gravity.START
+      minLines = 6
+    }
+    container.addView(nameField)
+    container.addView(descriptionField)
+    container.addView(promptField)
+
+    val builder =
+        com.google.android.material.dialog.MaterialAlertDialogBuilder(context)
+            .setTitle(
+                if (existing == null) R.string.ai_agent_custom_agents_add
+                else R.string.ai_agent_custom_agents_edit)
+            .setMessage(R.string.ai_agent_custom_agents_hint)
+            .setView(android.widget.ScrollView(context).apply { addView(container) })
+            .setPositiveButton(android.R.string.ok) { _, _ ->
+              val agent =
+                  com.tom.rv2ide.ai.agent.command.CustomAgent(
+                      nameField.text?.toString().orEmpty(),
+                      descriptionField.text?.toString().orEmpty(),
+                      promptField.text?.toString().orEmpty(),
+                      existing?.isEnabled ?: true,
+                  )
+              val error = store.save(agent)
+              if (error.isNotEmpty()) {
+                android.widget.Toast.makeText(context, error, android.widget.Toast.LENGTH_LONG)
+                    .show()
+              }
+              preference.summary = refreshSummary(context)
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+
+    if (existing != null) {
+      builder.setNeutralButton(
+          if (existing.isEnabled) R.string.ai_agent_custom_agents_disable
+          else R.string.ai_agent_custom_agents_enable) { _, _ ->
+        store.save(existing.withEnabled(!existing.isEnabled))
+        preference.summary = refreshSummary(context)
+      }
+    }
+
+    builder.show()
+  }
+
+  private fun refreshSummary(context: Context): String {
+    val agents = customAgentStore(context).all()
+    return if (agents.isEmpty()) context.getString(R.string.ai_agent_custom_agents_none)
+    else
+        context.getString(
+            R.string.ai_agent_custom_agents_count, agents.count { it.isUsable() }, agents.size)
   }
 }
 

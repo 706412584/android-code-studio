@@ -121,6 +121,20 @@
   <string name="ai_agent_api_key_unset">Not set</string>
   <string name="ai_agent_api_key_set">API key: %1$s…</string>
 
+  <!-- Custom agents -->
+  <string name="ai_agent_custom_agents_title">Custom agents</string>
+  <string name="ai_agent_custom_agents_summary">Reusable roles with fixed instructions</string>
+  <string name="ai_agent_custom_agents_none">No custom agent defined</string>
+  <string name="ai_agent_custom_agents_count">%1$d of %2$d enabled</string>
+  <string name="ai_agent_custom_agents_add">Add agent…</string>
+  <string name="ai_agent_custom_agents_edit">Edit agent</string>
+  <string name="ai_agent_custom_agents_name_hint">Name (e.g. reviewer)</string>
+  <string name="ai_agent_custom_agents_description_hint">When should the model use it? (optional)</string>
+  <string name="ai_agent_custom_agents_prompt_hint">Instructions — the role and requirements</string>
+  <string name="ai_agent_custom_agents_hint">The agent becomes a tool named agentx_&lt;name&gt;. Its instructions are fixed, so the model only supplies what to work on.</string>
+  <string name="ai_agent_custom_agents_enable">Enable</string>
+  <string name="ai_agent_custom_agents_disable">Disable</string>
+
   <!-- Long-term memory -->
   <string name="ai_agent_memory_title">Long-term memory</string>
   <string name="ai_agent_memory_summary">Facts the assistant remembers across conversations</string>
@@ -172,6 +186,11 @@
   <string name="ai_assistant_export_copied">Copied %1$d characters to the clipboard</string>
   <string name="ai_assistant_export_empty">Nothing to copy yet</string>
   <string name="ai_assistant_export_failed">Copy failed: clipboard unavailable</string>
+
+  <!-- Slash commands -->
+  <string name="ai_assistant_mode_changed">Mode switched to: %1$s</string>
+  <string name="ai_assistant_model_changed">Model switched to: %1$s</string>
+  <string name="ai_assistant_model_unknown">Unknown model “%1$s” for provider %2$s. Available: %3$s…</string>
 
   <!-- Tool call cards -->
   <string name="ai_assistant_tool_input">Input</string>
