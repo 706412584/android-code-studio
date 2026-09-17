@@ -75,6 +75,14 @@
     android:layout_height="wrap_content"
     android:layout_below="@id/cardView" />
 
+  <!--
+    底部占位：pager / clear_fab / share_output_fab 都以 layout_above="@id/space_bottom"
+    定位。这里 wrap_content（Space 无内容 → 运行时高度 0）是**有意**的，不要改成具体高度：
+    底部空间由 EditorBottomSheet.setOffsetAnchor 在运行时通过
+    binding.root.updatePadding(bottom = anchorOffset + insetBottom) 预留，
+    layout_above 是相对内边距内的底边定位的。若在此再给固定高度会双重预留，
+    把输出面板压窄。tools:layout_height 仅供预览，不参与运行时布局。
+  -->
   <androidx.legacy.widget.Space
     android:id="@+id/space_bottom"
     android:layout_width="match_parent"

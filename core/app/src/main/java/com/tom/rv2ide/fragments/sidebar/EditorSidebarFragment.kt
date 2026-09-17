@@ -40,7 +40,17 @@ import com.tom.rv2ide.utils.EditorSidebarActions
 class EditorSidebarFragment :
     FragmentWithBinding<FragmentEditorSidebarBinding>(FragmentEditorSidebarBinding::inflate) {
 
+  /**
+   * 活动回调送来的系统栏 inset。
+   *
+   * <p>活动在 decorView attach 时调 [onApplyWindowInsets]，而本 Fragment 是懒加载的——
+   * 那时 [_binding] 还是 null。若直接丢弃，侧栏就永远拿不到底部 inset（图标会被系统导航栏
+   * 盖住）。因此先存下来，等视图创建后再补上。
+   */
+  private var pendingInsets: Insets? = null
+
   internal fun onApplyWindowInsets(insets: Insets) {
+    pendingInsets = insets
     _binding?.apply {
       title.updateLayoutParams<MarginLayoutParams> {
         updateMarginsRelative(
@@ -64,13 +74,49 @@ class EditorSidebarFragment :
   override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
     super.onViewCreated(view, savedInstanceState)
 
+    // 底部导航行必须避开系统导航栏，但 inset 有两条来源都不能直接用：
+    //
+    // 1) BaseEditorActivity.onApplySystemBarInsets 在 decorView attach 时调用
+    //    onApplyWindowInsets()，那是**一次性**回调。抽屉里的侧栏 Fragment 是懒加载的，
+    //    视图创建晚于该回调，此时 _binding 仍为 null，inset 被静默丢弃。
+    // 2) 本视图自己的 insets 回调兜不住：根布局 activity_editor.xml 带
+    //    android:fitsSystemWindows="true"，edge-to-edge 下它会先消费掉 insets，
+    //    子视图收到的 systemBars.bottom 恒为 0，padding 加了等于没加。
+    //
+    // 所以这里在视图创建后主动补一次：优先用活动回调已存下的 inset，
+    // 没有则从**根窗口**取（根窗口 insets 不受子视图消费影响）。
+    // 回调保留下来，以应对旋转、导航栏模式切换等后续变化。
+    val pending = pendingInsets
+    if (pending != null) {
+      onApplyWindowInsets(pending)
+    } else {
+      applyNavigationBarInset(view)
+    }
+
     ViewCompat.setOnApplyWindowInsetsListener(binding.navigation) { v, insets ->
-      val systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
-      v.updatePadding(bottom = systemBars.bottom)
+      val consumed = insets.getInsets(WindowInsetsCompat.Type.systemBars()).bottom
+      val bottom =
+          if (consumed > 0) {
+            consumed
+          } else {
+            ViewCompat.getRootWindowInsets(v)
+                ?.getInsets(WindowInsetsCompat.Type.systemBars())
+                ?.bottom ?: 0
+          }
+      v.updatePadding(bottom = bottom)
       insets
     }
 
     EditorSidebarActions.setup(this)
+  }
+
+  /** 从根窗口取系统栏 inset 并补到导航行上，使图标不被系统导航栏遮挡。 */
+  private fun applyNavigationBarInset(view: View) {
+    val bottom =
+        ViewCompat.getRootWindowInsets(view)
+            ?.getInsets(WindowInsetsCompat.Type.systemBars())
+            ?.bottom ?: 0
+    _binding?.navigation?.updatePadding(bottom = bottom)
   }
 
   /** Get the (nullable) binding object for this fragment. */
