@@ -75,6 +75,18 @@ interface BuildService {
    */
   fun executeTasks(vararg tasks: String): CompletableFuture<TaskExecutionResult>
 
+  /**
+   * 最近一次构建的输出缓冲。
+   *
+   * <p>供 AI agent 在 [executeTasks] 失败后读取真实错误。`TaskExecutionResult` 只带
+   * `Failure` 枚举（如 `BUILD_FAILED`），不含任何错误文本；模型据此无法自我修正，
+   * 只能靠反复试错去猜。
+   *
+   * <p>与 `EventListener` 的区别：后者是单槽位、由 UI 构建面板占用；这里是旁路缓冲，
+   * 两者互不影响。实现方需保证线程安全（构建输出来自 tooling 线程）。
+   */
+  val buildOutput: BuildOutputBuffer
+
   /** Cancel any running build. */
   fun cancelCurrentBuild(): CompletableFuture<BuildCancellationRequestResult>
 }

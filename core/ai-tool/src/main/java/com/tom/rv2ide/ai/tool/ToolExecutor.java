@@ -91,7 +91,9 @@ public final class ToolExecutor {
     }
 
     String callId = toolCall.getId();
-    String toolName = toolCall.getName();
+    // 模型可能用别名（如 read 而非 file_read）。权限判定与工具自检都按规范名，
+    // 因此这里先归一，后续一律使用规范名。
+    String toolName = ToolRegistry.canonicalName(toolCall.getName());
 
     BaseTool tool = registry.get(toolName);
     if (tool == null) {

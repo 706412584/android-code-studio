@@ -35,6 +35,7 @@ import com.tom.rv2ide.lookup.Lookup
 import com.tom.rv2ide.managers.ToolsManager
 import com.tom.rv2ide.preferences.internal.BuildPreferences
 import com.tom.rv2ide.preferences.internal.DevOpsPreferences
+import com.tom.rv2ide.projects.builder.BuildOutputBuffer
 import com.tom.rv2ide.projects.builder.BuildService
 import com.tom.rv2ide.projects.internal.ProjectManagerImpl
 import com.tom.rv2ide.resources.R
@@ -85,6 +86,15 @@ class GradleBuildService :
   private var isToolingServerStarted = false
   override var isBuildInProgress = false
     private set
+
+  /**
+   * 构建输出的旁路缓冲，供 AI agent 读取失败原因。
+   *
+   * 与 [eventListener] 并存：输出照常流向 IDE 构建面板，同时留一份副本给 agent。
+   * `TaskExecutionResult` 只带 `Failure` 枚举，不含错误文本，模型拿不到真实报错
+   * 就只能靠反复试错（实测一次构建失败烧掉 30 次工具调用）。
+   */
+  override val buildOutput = BuildOutputBuffer()
 
   /**
    * We do not provide direct access to GradleBuildService instance to the Tooling API launcher as
@@ -350,6 +360,8 @@ class GradleBuildService :
 
   override fun logOutput(line: String) {
     eventListener?.onOutput(line)
+    // 旁路留一份给 AI agent，让它能看到真实错误而非只有 BUILD_FAILED
+    buildOutput.append(line)
   }
 
   override fun prepareBuild(buildInfo: BuildInfo) {
@@ -516,6 +528,8 @@ class GradleBuildService :
       logBuildInProgress()
       throw BuildInProgressException()
     }
+    // 新一轮构建开始，丢弃上一轮的输出，避免 agent 读到陈旧错误
+    buildOutput.clear()
     isBuildInProgress = true
   }
 

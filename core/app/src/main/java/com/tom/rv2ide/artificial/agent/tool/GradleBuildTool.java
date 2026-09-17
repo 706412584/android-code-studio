@@ -18,6 +18,7 @@
 package com.tom.rv2ide.artificial.agent.tool;
 
 import com.tom.rv2ide.ai.tool.BaseTool;
+import com.tom.rv2ide.ai.tool.BuildErrorExtractor;
 import com.tom.rv2ide.ai.tool.ToolContext;
 import com.tom.rv2ide.ai.tool.api.ToolCategory;
 import com.tom.rv2ide.ai.tool.api.ToolDisplayCategory;
@@ -27,6 +28,7 @@ import com.tom.rv2ide.models.ApkMetadata;
 import com.tom.rv2ide.projects.IProjectManager;
 import com.tom.rv2ide.projects.IWorkspace;
 import com.tom.rv2ide.projects.android.AndroidModule;
+import com.tom.rv2ide.projects.builder.BuildOutputBuffer;
 import com.tom.rv2ide.projects.builder.BuildService;
 import com.tom.rv2ide.tooling.api.messages.result.TaskExecutionResult;
 import com.tom.rv2ide.tooling.api.models.BasicAndroidVariantMetadata;
@@ -191,9 +193,17 @@ public final class GradleBuildTool extends BaseTool {
       return error("构建未返回结果。");
     }
     if (!result.isSuccessful()) {
-      return error(
-          "构建失败"
-              + (result.getFailure() == null ? "" : ": " + result.getFailure()));
+      StringBuilder sb = new StringBuilder();
+      sb.append("构建失败");
+      if (result.getFailure() != null) {
+        sb.append(": ").append(result.getFailure());
+      }
+      sb.append('\n');
+      // TaskExecutionResult 只带 Failure 枚举，不含任何错误文本。没有下面这段，
+      // 模型只知道「失败了」而不知「为什么」，只能靠反复试错去猜
+      // （实测一次构建失败烧掉 30 次工具调用）。
+      appendBuildErrorDetail(sb, service);
+      return error(sb.toString());
     }
 
     StringBuilder sb = new StringBuilder();
@@ -211,6 +221,27 @@ public final class GradleBuildTool extends BaseTool {
       sb.append("applicationId: ").append(applicationId).append('\n');
     }
     return ok(sb.toString());
+  }
+
+  /**
+   * 把构建输出的关键部分附加到失败信息里。
+   *
+   * <p>提取策略见 {@link BuildErrorExtractor}（在纯 Java 模块中，便于单测）。
+   */
+  private static void appendBuildErrorDetail(StringBuilder sb, BuildService service) {
+    List<String> all;
+    try {
+      all = service.getBuildOutput().tail(BuildOutputBuffer.DEFAULT_CAPACITY);
+    } catch (RuntimeException e) {
+      log.debug("读取构建输出失败", e);
+      return;
+    }
+    String detail = BuildErrorExtractor.extract(all);
+    if (detail.isEmpty()) {
+      sb.append("(未能获取构建输出)\n");
+      return;
+    }
+    sb.append(detail);
   }
 
   /**

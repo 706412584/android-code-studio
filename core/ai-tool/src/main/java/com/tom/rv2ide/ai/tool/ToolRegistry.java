@@ -46,6 +46,41 @@ import org.json.JSONArray;
  */
 public final class ToolRegistry {
 
+  /**
+   * 工具名别名 → 规范名。
+   *
+   * <p><b>为什么需要</b>：模型的工具命名先验来自训练语料里大量 `read` / `write` / `edit` /
+   * `bash` 风格的调用，即使 tools 定义里写的是 `file_read`，它仍会时不时发出 `read`。
+   * 实测一次构建排障中，模型连续 5 次调用不存在的 `read`，每次白烧一轮。
+   *
+   * <p>这里只做<b>查找期</b>归一，不改变对外暴露的规范名——规范名与移植源保持一致，
+   * 而模型用哪套名字都能跑通。别名不会遮蔽同名工具：精确匹配优先。
+   */
+  private static final Map<String, String> ALIASES =
+      Map.ofEntries(
+          Map.entry("read", ToolNames.FILE_READ),
+          Map.entry("read_file", ToolNames.FILE_READ),
+          Map.entry("write", ToolNames.FILE_WRITE),
+          Map.entry("write_file", ToolNames.FILE_WRITE),
+          Map.entry("create_file", ToolNames.FILE_WRITE),
+          Map.entry("edit", ToolNames.FILE_EDIT),
+          Map.entry("edit_file", ToolNames.FILE_EDIT),
+          Map.entry("replace", ToolNames.FILE_EDIT),
+          Map.entry("delete", ToolNames.FILE_DELETE),
+          Map.entry("delete_file", ToolNames.FILE_DELETE),
+          Map.entry("rm", ToolNames.FILE_DELETE),
+          Map.entry("ls", ToolNames.LIST_DIR),
+          Map.entry("list", ToolNames.LIST_DIR),
+          Map.entry("list_files", ToolNames.LIST_DIR),
+          Map.entry("list_directory", ToolNames.LIST_DIR),
+          Map.entry("find", ToolNames.GLOB),
+          Map.entry("search_files", ToolNames.GLOB),
+          Map.entry("bash", ToolNames.SHELL_EXECUTE),
+          Map.entry("shell", ToolNames.SHELL_EXECUTE),
+          Map.entry("run", ToolNames.SHELL_EXECUTE),
+          Map.entry("exec", ToolNames.SHELL_EXECUTE),
+          Map.entry("run_command", ToolNames.SHELL_EXECUTE));
+
   private final Map<String, BaseTool> tools = new LinkedHashMap<>();
   private final Map<String, ToolDisplayCategory> displayCategoryCache = new LinkedHashMap<>();
   private final ReentrantReadWriteLock lock = new ReentrantReadWriteLock();
@@ -76,14 +111,35 @@ public final class ToolRegistry {
     }
   }
 
-  /** 按名字查找工具；不存在返回 null。 */
+  /**
+   * 按名字查找工具；不存在返回 null。
+   *
+   * <p>精确匹配优先；未命中时尝试别名归一（如模型发 `read` → {@code file_read}）。
+   */
   public BaseTool get(String name) {
+    if (name == null) {
+      return null;
+    }
     lock.readLock().lock();
     try {
-      return tools.get(name);
+      BaseTool exact = tools.get(name);
+      if (exact != null) {
+        return exact;
+      }
+      String canonical = ALIASES.get(name);
+      return canonical == null ? null : tools.get(canonical);
     } finally {
       lock.readLock().unlock();
     }
+  }
+
+  /** 把可能的别名归一为规范名；无法归一或已是规范名时原样返回。 */
+  public static String canonicalName(String name) {
+    if (name == null) {
+      return null;
+    }
+    String canonical = ALIASES.get(name);
+    return canonical == null ? name : canonical;
   }
 
   /** 取缓存的展示分类；未登记时回退为 {@link ToolDisplayCategory#GENERIC}。 */
