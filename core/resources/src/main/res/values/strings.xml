@@ -58,6 +58,12 @@
 
   <!-- AI Agent Gemini -->
   <string name="ai_agent_title">AI Agent</string>
+  <string name="ai_agent_subtitle">v0.1-preview</string>
+  <string name="ai_agent_tab_chat">Chat</string>
+  <string name="ai_agent_tab_history">History</string>
+  <string name="ai_agent_undo">Undo</string>
+  <string name="ai_agent_undo_done">Last modification undone</string>
+  <string name="ai_agent_undo_none">Nothing to undo</string>
   <string name="ai_agent_description">Get AI-powered code generation using AI Agent</string>
   <string name="ai_agent_prompt_hint">Describe what code you want to generate...</string>
   <string name="ai_agent_send">Send</string>

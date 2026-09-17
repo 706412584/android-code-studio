@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ~  This file is part of AndroidCodeStudio.
+  ~
+  ~  AndroidCodeStudio is free software: you can redistribute it and/or modify
+  ~  it under the terms of the GNU General Public License as published by
+  ~  the Free Software Foundation, either version 3 of the License, or
+  ~  (at your option) any later version.
+  ~
+  ~  AndroidCodeStudio is distributed in the hope that it will be useful,
+  ~  but WITHOUT ANY WARRANTY; without even the implied warranty of
+  ~  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  ~  GNU General Public License for more details.
+  ~
+  ~  You should have received a copy of the GNU General Public License
+  ~   along with AndroidCodeStudio.  If not, see <https://www.gnu.org/licenses/>.
+  -->
+
+<resources xmlns:tools="http://schemas.android.com/tools"
+  tools:ignore="MissingTranslation">
+
+  <!--
+    app 模块的中文翻译。
+
+    这里只放 core/app 自己的字符串（Asset Studio、Sub-Module Maker、Terminal 等）。
+    绝大多数字符串位于 core/resources 模块，翻译在
+    core/resources/src/main/res/values-zh-rCN/strings.xml —— 两个模块各有一套 values
+    目录，不要混用。
+  -->
+
+  <!-- Asset Studio -->
+  <string name="asset_studio_title">素材工作室</string>
+  <string name="asset_studio_subtitle">图形与图标制作</string>
+  <string name="asset_studio_launch">启动工作室</string>
+  <string name="asset_studio_create_drawable">新建图形</string>
+  <string name="asset_studio_create_icon">新建图标</string>
+  <string name="asset_studio_import_image">导入图片</string>
+  <string name="asset_studio_recent_assets">最近素材</string>
+  <string name="asset_studio_quick_actions">快捷操作</string>
+  <string name="asset_studio_launch_description">打开完整的素材工作室界面</string>
+
+  <!-- Sub-Module Maker -->
+  <string name="sub_module_maker_title">子模块生成器</string>
+  <string name="sub_module_maker_subtitle">为项目创建新的子模块</string>
+  <string name="sub_module_configuration">模块配置</string>
+  <string name="sub_module_language">编程语言</string>
+  <string name="sub_module_name_hint">输入模块名（例如 feature、utils）</string>
+  <string name="sub_module_name_valid">模块名可用</string>
+  <string name="sub_module_name_invalid">模块名无效</string>
+  <string name="sub_module_create">创建模块</string>
+  <string name="sub_module_created_success">模块「%1$s」创建成功！</string>
+  <string name="sub_module_created_error">创建模块失败：%1$s</string>
+  <string name="sub_module_info_title">关于子模块</string>
+  <string name="sub_module_info_description">子模块可以把项目拆分成更小、更好管理的部分。每个模块都可以有自己的依赖和构建配置。</string>
+
+  <!-- Terminal -->
+  <string name="title_terminal">终端</string>
+  <string name="terminal_bstab">终端</string>
+  <string name="terminal_new_session">新建终端</string>
+  <string name="terminal_close_session">关闭终端</string>
+  <string name="terminal_empty_state">没有终端会话</string>
+  <string name="terminal_empty_message">当前没有打开的终端会话。新建一个会话即可开始。</string>
+  <string name="terminal_create_first">新建终端</string>
+
+  <string name="edit">编辑</string>
+
+</resources>

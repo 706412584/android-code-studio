@@ -106,8 +106,8 @@ class ArtificialFragment(
     
         TabLayoutMediator(tabLayout, viewPager) { tab, position ->
             tab.text = when (position) {
-                0 -> "Chat"
-                1 -> "History"
+                0 -> getString(R.string.ai_agent_tab_chat)
+                1 -> getString(R.string.ai_agent_tab_history)
                 else -> ""
             }
         }.attach()
@@ -218,12 +218,12 @@ class ArtificialFragment(
             val success = aiAgent.undoLastModification()
             if (success) {
                 view?.let {
-                    Snackbar.make(it, "Last modification undone", Snackbar.LENGTH_SHORT).show()
+                    Snackbar.make(it, R.string.ai_agent_undo_done, Snackbar.LENGTH_SHORT).show()
                 }
                 undoFab.visibility = View.GONE
             } else {
                 view?.let {
-                    Snackbar.make(it, "Nothing to undo", Snackbar.LENGTH_SHORT).show()
+                    Snackbar.make(it, R.string.ai_agent_undo_none, Snackbar.LENGTH_SHORT).show()
                 }
             }
         }

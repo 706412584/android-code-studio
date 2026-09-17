@@ -58,6 +58,12 @@
 
   <!-- AI Agent Gemini -->
   <string name="ai_agent_title">AI 助手</string>
+  <string name="ai_agent_subtitle">v0.1-预览版</string>
+  <string name="ai_agent_tab_chat">对话</string>
+  <string name="ai_agent_tab_history">历史</string>
+  <string name="ai_agent_undo">撤销</string>
+  <string name="ai_agent_undo_done">已撤销上次修改</string>
+  <string name="ai_agent_undo_none">没有可撤销的修改</string>
   <string name="ai_agent_description">使用 AI 助手 生成由 AI 驱动的代码</string>
   <string name="ai_agent_prompt_hint">描述你想要生成什么代码…</string>
   <string name="ai_agent_send">发送</string>

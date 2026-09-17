@@ -41,7 +41,8 @@ class AIAgentSidebarAction(context: Context, override val order: Int) : Abstract
 
   init {
     label = context.getString(R.string.ai_agent_title)
-    subtitle = "v0.1-preview"
+    // 副标题也走资源：写死英文会在中文界面里露出「v0.1-preview」。
+    subtitle = context.getString(R.string.ai_agent_subtitle)
     icon = ContextCompat.getDrawable(context, R.drawable.ic_ai_agent)
     iconRes = R.drawable.ic_ai_agent
   }
