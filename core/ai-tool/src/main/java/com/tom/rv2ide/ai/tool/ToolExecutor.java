@@ -82,6 +82,24 @@ public final class ToolExecutor {
     return result;
   }
 
+  /**
+   * 按规则判定是否放行一次危险调用，必要时才询问用户。
+   *
+   * <p>判定顺序是刻意的：先查已持久化的规则，命中就直接放行。规则按「工具 + 参数粒度」
+   * 匹配（见 {@link ToolPermissionRule}），因此用户对 {@code git status} 点过「始终允许」
+   * 不会顺带放行 {@code git push --force}。
+   *
+   * <p>「本次运行内已确认」的记忆交由实现方的 {@code confirmDangerousTool} 维护——
+   * 那里能同时记录工具名与参数粒度，比在这里再放一个粗粒度布尔更精确。
+   */
+  private boolean confirmViaRules(ToolSettingsPort settings, String toolName, String arguments) {
+    String ruleKey = ToolPermissionRule.keyFor(toolName, arguments);
+    if (!ruleKey.isEmpty() && settings.hasDangerousToolRule(ruleKey)) {
+      return true;
+    }
+    return settings.confirmDangerousTool(toolName, arguments);
+  }
+
   private ToolResult executeTool(ToolCall toolCall, ToolContext context, boolean confirmed) {
     if (toolCall == null) {
       return ToolResult.error("工具调用为空");
@@ -109,7 +127,7 @@ public final class ToolExecutor {
       // 带上工具名与参数询问，用户才能判断要放行的是什么。
       ToolSettingsPort callSettings =
           context == null ? ToolSettingsPort.defaults() : context.getSettings();
-      if (!callSettings.confirmDangerousTool(toolName, toolCall.getArguments())) {
+      if (!confirmViaRules(callSettings, toolName, toolCall.getArguments())) {
         return ToolResult.of(
             callId, toolName, "用户拒绝执行工具 " + toolName + "（或未确认）。", true);
       }

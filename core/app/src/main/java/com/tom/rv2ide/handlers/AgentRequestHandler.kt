@@ -14,7 +14,9 @@ import com.tom.rv2ide.artificial.agent.AgentOrchestrator
 import com.tom.rv2ide.artificial.agent.AgentToolSettings
 import com.tom.rv2ide.artificial.agents.Agents
 import com.tom.rv2ide.ai.agent.AgentEvent
+import com.tom.rv2ide.ai.tool.DangerousToolDecision
 import com.tom.rv2ide.ai.tool.InMemoryDiffStore
+import com.tom.rv2ide.resources.R.string
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
@@ -186,19 +188,33 @@ class AgentRequestHandler(
         Handler(Looper.getMainLooper()).post {
             try {
                 AlertDialog.Builder(context)
-                    .setTitle("Agent 请求执行危险操作")
-                    .setMessage("模型请求调用工具：$toolName\n\n${args?.take(500) ?: ""}")
+                    .setTitle(string.ai_assistant_dangerous_title)
+                    .setMessage(
+                        context.getString(
+                            string.ai_assistant_dangerous_message,
+                            toolName,
+                            args?.take(500) ?: "",
+                        )
+                    )
                     .setCancelable(false)
-                    .setPositiveButton("允许（本次运行）") { _, _ ->
+                    .setPositiveButton(string.ai_assistant_dangerous_allow_once) { _, _ ->
                         accepted = true
                         latch.countDown()
                     }
-                    .setNeutralButton("始终允许") { _, _ ->
+                    .setNeutralButton(string.ai_assistant_dangerous_allow_always) { _, _ ->
+                        // 写的是「工具 + 参数粒度」规则，不是全局放行——
+                        // 对 git status 点「始终允许」不应顺带放行 git push --force。
+                        settings.applyDecision(
+                            toolName,
+                            args,
+                            DangerousToolDecision.ALLOW_ALWAYS,
+                        )
                         accepted = true
-                        settings.confirmDangerousTools(true)
                         latch.countDown()
                     }
-                    .setNegativeButton("拒绝") { _, _ -> latch.countDown() }
+                    .setNegativeButton(string.ai_assistant_dangerous_deny) { _, _ ->
+                        latch.countDown()
+                    }
                     .show()
             } catch (e: Exception) {
                 latch.countDown()

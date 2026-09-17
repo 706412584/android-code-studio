@@ -97,6 +97,7 @@ private class AgentToolingGroup(
   init {
     addPreference(AgentModeSwitch())
     addPreference(PermissionModePreference())
+    addPreference(AuthorizedToolsPreference())
     addPreference(ShellBackendPreference())
     addPreference(
         CustomEndpointField(
@@ -196,6 +197,72 @@ private class PermissionModePreference(
         .setNegativeButton(android.R.string.cancel, null)
         .show()
     return true
+  }
+}
+
+/**
+ * 已持久化的危险工具授权规则：查看与逐条撤销。
+ *
+ * <p><b>为什么必须有这个入口</b>：用户在弹窗里点「始终允许」时只看到一条命令，
+ * 不可能记住自己后来放行了什么。没有撤销入口，规则只会越积越多，最终等同于关掉确认——
+ * 而用户对此毫无感知。这里让授权可见、可撤销，才使「始终允许」是一个负责任的选择。
+ */
+@Parcelize
+private class AuthorizedToolsPreference(
+    override val key: String = "dangerous_rules",
+    override val title: Int = R.string.ai_agent_authorized_title,
+    override val summary: Int? = R.string.ai_agent_authorized_summary,
+) : BasePreference() {
+
+  override fun onCreatePreference(context: Context): Preference {
+    val rules = persistedRules(context)
+    return androidx.preference.Preference(context).apply {
+      key = "dangerous_rules"
+      title = context.getString(R.string.ai_agent_authorized_title)
+      summary =
+          if (rules.isEmpty()) context.getString(R.string.ai_agent_authorized_none)
+          else context.getString(R.string.ai_agent_authorized_count, rules.size)
+    }
+  }
+
+  override fun onPreferenceClick(preference: Preference): Boolean {
+    val context = preference.context
+    val rules = persistedRules(context).toTypedArray()
+    if (rules.isEmpty()) {
+      com.google.android.material.dialog.MaterialAlertDialogBuilder(context)
+          .setTitle(R.string.ai_agent_authorized_title)
+          .setMessage(R.string.ai_agent_authorized_none)
+          .setPositiveButton(android.R.string.ok, null)
+          .show()
+      return true
+    }
+
+    val shown =
+        rules.map { com.tom.rv2ide.ai.tool.ToolPermissionRule.describe(it) }.toTypedArray()
+    com.google.android.material.dialog.MaterialAlertDialogBuilder(context)
+        .setTitle(R.string.ai_agent_authorized_title)
+        .setItems(shown) { _, which ->
+          // 单条撤销：不提供「全部清空」之外的批量操作，避免误触清掉全部授权后
+          // 用户不知道哪些被清掉了。
+          com.tom.rv2ide.artificial.agent.AgentToolSettings(context)
+              .forgetDangerousToolRule(rules[which])
+          preference.summary = context.getString(R.string.ai_agent_authorized_count, rules.size - 1)
+        }
+        .setNeutralButton(R.string.ai_agent_authorized_clear_all) { _, _ ->
+          com.tom.rv2ide.artificial.agent.AgentToolSettings(context).clearDangerousToolRules()
+          preference.summary = context.getString(R.string.ai_agent_authorized_none)
+        }
+        .setNegativeButton(android.R.string.cancel, null)
+        .show()
+    return true
+  }
+
+  private fun persistedRules(context: Context): List<String> {
+    // 排序只为让列表稳定：SharedPreferences 的 StringSet 顺序不保证，
+    // 不排序时每次打开设置项的展示顺序都可能不同。
+    return com.tom.rv2ide.artificial.agent.AgentToolSettings(context)
+        .getDangerousToolRules()
+        .sorted()
   }
 }
 

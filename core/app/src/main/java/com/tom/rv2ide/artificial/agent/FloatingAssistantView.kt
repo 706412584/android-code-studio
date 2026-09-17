@@ -468,8 +468,14 @@ class FloatingAssistantView(
                   latch.countDown()
                 }
                 .setNeutralButton(string.ai_assistant_dangerous_allow_always) { _, _ ->
+                  // 写的是「工具 + 参数粒度」规则，不是全局放行——
+                  // 对 git status 点「始终允许」不应顺带放行 git push --force。
+                  settings.applyDecision(
+                      toolName,
+                      args,
+                      com.tom.rv2ide.ai.tool.DangerousToolDecision.ALLOW_ALWAYS,
+                  )
                   accepted = true
-                  settings.confirmDangerousTools(true)
                   latch.countDown()
                 }
                 .setNegativeButton(string.ai_assistant_dangerous_deny) { _, _ -> latch.countDown() }

@@ -114,6 +114,13 @@
   <!-- AI Agent grok -->
   <string name="ai_agent_grok_api_key">Grok API Key</string>
 
+  <!-- Persistent authorization rules for dangerous agent tools -->
+  <string name="ai_agent_authorized_title">Authorized dangerous tools</string>
+  <string name="ai_agent_authorized_summary">Review or revoke rules saved by “Always allow”</string>
+  <string name="ai_agent_authorized_none">No tool has been permanently authorized</string>
+  <string name="ai_agent_authorized_count">%1$d authorization rule(s) saved</string>
+  <string name="ai_agent_authorized_clear_all">Revoke all</string>
+
   <!-- Floating AI assistant on the main screen -->
   <string name="ai_assistant_open">Open AI assistant</string>
   <string name="ai_assistant_title">AI Assistant</string>

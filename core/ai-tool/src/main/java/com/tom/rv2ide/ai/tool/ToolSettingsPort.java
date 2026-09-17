@@ -58,12 +58,38 @@ public interface ToolSettingsPort {
   }
 
   /**
-   * 危险工具（shell 执行、安装、启动等）是否已被用户持久确认。
+   * 危险工具（shell 执行、安装、启动等）是否已被用户**全局**放行。
    *
-   * <p>为 true 时，确认类工具直接放行，不再逐次询问；用户可在设置里撤销。
+   * <p>这是粗粒度开关，为 true 时确认类工具全部直接放行。精细授权请用
+   * {@link #hasDangerousToolRule(String)}——两者是「全部放行」与「按规则放行」的关系。
    */
   default boolean areDangerousToolsConfirmed() {
     return false;
+  }
+
+  /**
+   * 是否已存在匹配该调用的持久化授权规则。
+   *
+   * <p>匹配粒度由 {@link ToolPermissionRule#keyFor(String, String)} 决定
+   * （shell 按命令首词、文件写按路径）。实现方负责持久化与比对。
+   *
+   * <p>默认返回 false，即未接入规则存储的实现方行为不变（仍逐次询问）。
+   *
+   * @param ruleKey {@link ToolPermissionRule#keyFor} 产出的规则键
+   */
+  default boolean hasDangerousToolRule(String ruleKey) {
+    return false;
+  }
+
+  /**
+   * 持久化一条授权规则，使后续同粒度的调用不再询问。
+   *
+   * <p>默认空实现，未接入存储的实现方调用后无副作用。
+   *
+   * @param ruleKey {@link ToolPermissionRule#keyFor} 产出的规则键
+   */
+  default void rememberDangerousToolRule(String ruleKey) {
+    // 默认不持久化。
   }
 
   /**

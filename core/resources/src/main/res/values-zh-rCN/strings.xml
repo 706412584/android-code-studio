@@ -114,6 +114,13 @@
   <!-- AI Agent grok -->
   <string name="ai_agent_grok_api_key">Grok API 密钥</string>
 
+  <!-- 危险工具的持久化授权规则 -->
+  <string name="ai_agent_authorized_title">已授权的危险工具</string>
+  <string name="ai_agent_authorized_summary">查看或撤销「始终允许」保存的规则</string>
+  <string name="ai_agent_authorized_none">尚未永久授权任何工具</string>
+  <string name="ai_agent_authorized_count">已保存 %1$d 条授权规则</string>
+  <string name="ai_agent_authorized_clear_all">全部撤销</string>
+
   <!-- 主界面悬浮 AI 助手 -->
   <string name="ai_assistant_open">打开 AI 助手</string>
   <string name="ai_assistant_title">AI 助手</string>
