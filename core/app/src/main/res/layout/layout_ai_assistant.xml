@@ -65,6 +65,14 @@
           android:text="@string/ai_assistant_side" />
 
         <com.google.android.material.button.MaterialButton
+          android:id="@+id/assistantExport"
+          style="@style/Widget.Material3.Button.TextButton"
+          android:layout_width="wrap_content"
+          android:layout_height="wrap_content"
+          android:minWidth="0dp"
+          android:text="@string/ai_assistant_export" />
+
+        <com.google.android.material.button.MaterialButton
           android:id="@+id/assistantNewConversation"
           style="@style/Widget.Material3.Button.TextButton"
           android:layout_width="wrap_content"

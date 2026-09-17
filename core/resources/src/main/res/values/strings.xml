@@ -167,6 +167,12 @@
   <string name="ai_assistant_revert_ok">Undo succeeded — %1$s</string>
   <string name="ai_assistant_revert_failed">Undo failed — %1$s</string>
 
+  <!-- Conversation export -->
+  <string name="ai_assistant_export">Copy</string>
+  <string name="ai_assistant_export_copied">Copied %1$d characters to the clipboard</string>
+  <string name="ai_assistant_export_empty">Nothing to copy yet</string>
+  <string name="ai_assistant_export_failed">Copy failed: clipboard unavailable</string>
+
   <!-- Tool call cards -->
   <string name="ai_assistant_tool_input">Input</string>
   <string name="ai_assistant_tool_output">Output</string>

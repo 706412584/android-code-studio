@@ -161,6 +161,7 @@ class FloatingAssistantView(
       applyMode(if (mode == Mode.FULLSCREEN) Mode.SIDEBAR else Mode.FULLSCREEN)
     }
     binding.assistantNewConversation.setOnClickListener { startNewConversation() }
+    binding.assistantExport.setOnClickListener { copyConversation() }
     binding.assistantSend.setOnClickListener { sendFromInput() }
 
     // 回车即发送：面板输入框是多行的，若不拦截回车，用户按回车只会换行。
@@ -586,6 +587,71 @@ class FloatingAssistantView(
   private fun readDefaultPref(key: String): String? =
       androidx.preference.PreferenceManager.getDefaultSharedPreferences(context)
           .getString(key, null)
+
+  /**
+   * 把当前对话复制到剪贴板。
+   *
+   * <p>导出的内容取自列表里已有的消息（含工具卡片），而不是重新读会话日志：
+   * 用户看到的就是他要导出的，两者必须一致。
+   */
+  private fun copyConversation() {
+    val markdown = buildMarkdownExport()
+    if (markdown.isBlank()) {
+      appendTrace(context.getString(string.ai_assistant_export_empty))
+      return
+    }
+    val clipboard =
+        context.getSystemService(android.content.Context.CLIPBOARD_SERVICE)
+            as? android.content.ClipboardManager
+    if (clipboard == null) {
+      appendTrace(context.getString(string.ai_assistant_export_failed))
+      return
+    }
+    clipboard.setPrimaryClip(android.content.ClipData.newPlainText("AI 对话", markdown))
+    appendTrace(context.getString(string.ai_assistant_export_copied, markdown.length))
+  }
+
+  /** 按当前列表内容拼出 Markdown。 */
+  private fun buildMarkdownExport(): String {
+    val snapshot = adapter.snapshot()
+    if (snapshot.isEmpty()) {
+      return ""
+    }
+    val sb = StringBuilder()
+    sb.append("# AI 对话\n\n")
+    for (item in snapshot) {
+      when (item) {
+        is AssistantMessageAdapter.Message ->
+            sb.append("**")
+                .append(
+                    context.getString(
+                        when (item.role) {
+                          AssistantMessageAdapter.Role.USER -> string.ai_assistant_role_user
+                          AssistantMessageAdapter.Role.ASSISTANT ->
+                              string.ai_assistant_role_assistant
+                          AssistantMessageAdapter.Role.TRACE -> string.ai_assistant_role_trace
+                        }))
+                .append("**\n\n")
+                .append(item.text)
+                .append("\n\n")
+        is AssistantMessageAdapter.ToolCall -> {
+          sb.append("- ")
+              .append(if (item.status == AssistantMessageAdapter.ToolStatus.FAILED) "✗ " else "✓ ")
+              .append(item.toolName)
+          if (item.output.isNotBlank()) {
+            // 截断：工具输出可能极大，导出是给人读的。
+            val preview = item.output.take(2000)
+            sb.append("：").append(preview)
+            if (item.output.length > 2000) {
+              sb.append("…（已截断，共 ").append(item.output.length).append(" 字符）")
+            }
+          }
+          sb.append('\n')
+        }
+      }
+    }
+    return sb.toString().trim()
+  }
 
   companion object {
     private fun summarizeArgs(args: String?): String {
