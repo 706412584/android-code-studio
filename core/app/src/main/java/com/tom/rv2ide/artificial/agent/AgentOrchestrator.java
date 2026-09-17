@@ -410,6 +410,24 @@ public final class AgentOrchestrator {
     ToolExecutor executor =
         new ToolExecutor(registry, permissions, diffStore == null ? null : newDiffRecorder());
 
+    // 子 agent：把「需要读很多文件」的调查隔离到独立上下文里。
+    //
+    // 注册在这里而不是 buildRegistry 里，因为它需要本次运行的 endpoint / 模型 / 取消令牌。
+    // 取消令牌必须在 AgentSession 之前创建：子 agent 要挂在它上面才能随父级一起停——
+    // 否则用户点了取消，主循环停了而子 agent 仍在烧额度。
+    ModelCancellationToken cancellation = new ModelCancellationToken();
+    activeCancellation = cancellation;
+
+    registry.register(
+        new com.tom.rv2ide.ai.tool.AgentTool(
+            new SubAgentRunnerImpl(
+                endpoint,
+                modelId,
+                workspace.getAbsolutePath(),
+                settings,
+                cancellation,
+                diffStore)));
+
     List<ToolInfo> tools = new ArrayList<>(registry.getAll());
     // 协议支持原生工具调用时不注入 XML 兜底格式，否则会诱导模型改用文本调用。
     ModelClient modelClient = new ModelClient();
@@ -468,9 +486,6 @@ public final class AgentOrchestrator {
     // 入口处先做一次压缩：把"每次运行都要丢弃同一段早期历史"变成"只摘要一次并落盘"。
     // 这一步在循环之外，因为压缩结果需要持久化，而循环不接触存储。
     maybeCompact(persistingListener, entries, history, config, overhead);
-
-    ModelCancellationToken cancellation = new ModelCancellationToken();
-    activeCancellation = cancellation;
 
     try {
       AgentSession session = new AgentSession(modelClient, registry, executor);
