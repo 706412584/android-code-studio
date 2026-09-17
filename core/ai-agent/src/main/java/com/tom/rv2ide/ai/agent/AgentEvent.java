@@ -48,6 +48,13 @@ public final class AgentEvent {
     TOOL_STARTED,
     /** 一个工具调用执行完成。 */
     TOOL_FINISHED,
+    /**
+     * 早期历史被压缩为摘要，替换掉了更早的消息。
+     *
+     * <p>必须作为事件上报：压缩是**有损**的，用户有权知道"模型已经看不到某些早期对话了"。
+     * 静默压缩会让用户困惑于模型为何遗忘先前说过的要求。
+     */
+    CONTEXT_COMPACTED,
     /** 循环正常结束（模型不再请求工具）。 */
     COMPLETED,
     /** 循环因取消、超预算或错误而终止。 */
@@ -95,6 +102,21 @@ public final class AgentEvent {
 
   public static AgentEvent completed(String finalText) {
     return new AgentEvent(Type.COMPLETED, finalText, null, null, null);
+  }
+
+  /**
+   * 早期历史已被压缩为摘要。
+   *
+   * @param replacedMessages 被摘要取代的消息条数
+   * @param summaryTokens 摘要占用的估算 token 数
+   */
+  public static AgentEvent contextCompacted(int replacedMessages, int summaryTokens) {
+    return new AgentEvent(
+        Type.CONTEXT_COMPACTED,
+        "已压缩 " + replacedMessages + " 条早期消息为摘要（" + summaryTokens + " tokens）",
+        null,
+        null,
+        null);
   }
 
   public static AgentEvent failed(String reason) {

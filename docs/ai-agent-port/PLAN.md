@@ -174,4 +174,5 @@ MCP 客户端、补齐内置工具（todo/web/agent 系列）、提示词模板�
 
 - [`DETAILS.md`](./DETAILS.md) — 逐项实现细节、文件清单、移植要点
 - [`PROGRESS.md`](./PROGRESS.md) — 进度快照：已完成范围、测试实数、未提交改动、设备状态、下一步
+- [`P0-1-design.md`](./P0-1-design.md) — 会话持久化方案（JSONL append-only，不引入 SQLite）
 - 项目根 [`CLAUDE.md`](../../CLAUDE.md) — 代码检索约定

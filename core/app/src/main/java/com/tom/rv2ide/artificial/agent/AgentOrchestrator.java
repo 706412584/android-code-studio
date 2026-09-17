@@ -22,6 +22,12 @@ import com.tom.rv2ide.ai.agent.AgentEvent;
 import com.tom.rv2ide.ai.agent.AgentPromptBuilder;
 import com.tom.rv2ide.ai.agent.AgentRunResult;
 import com.tom.rv2ide.ai.agent.AgentSession;
+import com.tom.rv2ide.ai.agent.context.ContextCompactor;
+import com.tom.rv2ide.ai.agent.context.RunContextManager;
+import com.tom.rv2ide.ai.agent.context.TokenEstimator;
+import com.tom.rv2ide.ai.agent.context.TokenUsageTracker;
+import com.tom.rv2ide.ai.agent.conversation.CompactionEntry;
+import com.tom.rv2ide.ai.agent.conversation.ConversationCompaction;
 import com.tom.rv2ide.ai.agent.conversation.ConversationEntry;
 import com.tom.rv2ide.ai.agent.conversation.ConversationHistory;
 import com.tom.rv2ide.ai.agent.conversation.ConversationLog;
@@ -34,8 +40,10 @@ import com.tom.rv2ide.ai.agent.conversation.UserMessageEntry;
 import com.tom.rv2ide.ai.agent.conversation.AssistantMessageEntry;
 import com.tom.rv2ide.ai.protocol.ModelCancellationToken;
 import com.tom.rv2ide.ai.protocol.ModelClient;
+import com.tom.rv2ide.ai.protocol.ModelCompletionResponse;
 import com.tom.rv2ide.ai.protocol.ModelConfig;
 import com.tom.rv2ide.ai.protocol.ModelMessage;
+import com.tom.rv2ide.ai.protocol.UserModelMessage;
 import com.tom.rv2ide.ai.tool.DiffStore;
 import com.tom.rv2ide.ai.tool.FileDeleteTool;
 import com.tom.rv2ide.ai.tool.FileEditTool;
@@ -271,11 +279,26 @@ public final class AgentOrchestrator {
 
     // 确保有会话：无则新建，使消息有落盘之处。
     String conversationId = ensureConversation();
-    List<ModelMessage> history = loadHistory(conversationId);
+    List<ConversationLog.EntryLocation> entries = loadEntries(conversationId);
+    List<ModelMessage> history =
+        entries.isEmpty() ? new ArrayList<>() : ConversationHistory.fold(entries);
 
     // 落盘与 UI 渲染共用同一事件流：先持久化（不受 UI 影响），再转发给调用方。
-    AgentEvent.Listener persistingListener =
+    PersistingListener persistingListener =
         new PersistingListener(conversationId, userRequest, listener);
+
+    // 上下文管理（P0-2）：预算里必须扣掉系统提示词与工具定义——它们不占历史预算
+    // 但确实占窗口；协议不支持原生工具时工具定义不随请求发出，也就不该扣。
+    int overhead =
+        TokenEstimator.estimate(systemPrompt)
+            + (nativeTools ? TokenEstimator.estimateTools(tools) : 0);
+    RunContextManager contextManager =
+        new RunContextManager(
+            new TokenUsageTracker(ConversationCompaction.contextSizeOf(config)), overhead);
+
+    // 入口处先做一次压缩：把"每次运行都要丢弃同一段早期历史"变成"只摘要一次并落盘"。
+    // 这一步在循环之外，因为压缩结果需要持久化，而循环不接触存储。
+    maybeCompact(persistingListener, entries, history, config, overhead);
 
     ModelCancellationToken cancellation = new ModelCancellationToken();
     activeCancellation = cancellation;
@@ -283,10 +306,90 @@ public final class AgentOrchestrator {
     try {
       AgentSession session = new AgentSession(modelClient, registry, executor);
       return session.run(
-          config, systemPrompt, userRequest, history, toolContext, cancellation, persistingListener);
+          config,
+          systemPrompt,
+          userRequest,
+          history,
+          toolContext,
+          cancellation,
+          persistingListener,
+          contextManager);
     } finally {
       activeCancellation = null;
     }
+  }
+
+  /**
+   * 若历史已超硬阈值，摘要最旧的一段并追加压缩条目。
+   *
+   * <p>摘要结果**必须落盘**：{@link ConversationHistory#fold} 靠 {@code CompactionEntry}
+   * 跳过被覆盖的条目，只把摘要放进历史。不落盘的话下次运行会重新摘要同一段——
+   * 每次都要付一次模型调用，且摘要会越来越长。
+   *
+   * <p>失败一律静默降级为不压缩：压缩是优化，不能因为它失败让用户发不出消息。
+   */
+  private void maybeCompact(
+      PersistingListener persistingListener,
+      List<ConversationLog.EntryLocation> entries,
+      List<ModelMessage> history,
+      ModelConfig config,
+      int overhead) {
+    if (entries == null || entries.isEmpty() || history.isEmpty()) {
+      return;
+    }
+    TokenUsageTracker tracker =
+        new TokenUsageTracker(ConversationCompaction.contextSizeOf(config));
+    tracker.record(overhead + TokenEstimator.estimate(history), 0);
+    if (!tracker.shouldHardCompact()) {
+      return;
+    }
+
+    int budget = ConversationCompaction.historyBudget(config, overhead);
+    ConversationCompaction.Selection selection = ConversationCompaction.select(entries, budget);
+    if (selection.isEmpty()) {
+      return;
+    }
+
+    ContextCompactor.Summarizer summarizer = buildSummarizer(config);
+    if (summarizer == null) {
+      return;
+    }
+    String summary = ContextCompactor.compact(selection.getMessages(), summarizer);
+    if (summary == null || summary.trim().isEmpty()) {
+      return;
+    }
+
+    persistingListener.appendEntry(
+        CompactionEntry.create(
+            null, System.currentTimeMillis(), summary.trim(), selection.getUpToOrdinal()));
+
+    // 压缩是有损的：必须让用户看到"模型已经看不到某些早期对话了"，否则会困惑于
+    // 模型为何遗忘先前说过的要求。走同一事件流即可——persist() 对 CONTEXT_COMPACTED
+    // 无动作（CompactionEntry 已是持久化记录），只有下游 UI 需要看到它。
+    persistingListener.onEvent(
+        AgentEvent.contextCompacted(
+            selection.getMessages().size(), TokenEstimator.estimate(summary)));
+  }
+
+  /**
+   * 摘要用的模型调用。
+   *
+   * <p>用独立的压缩模型（若配置了且非自动）而不是主模型：摘要任务简单，用小模型省钱；
+   * 但同一会话的摘要风格应稳定，因此只在配置明确指定时才换模型。
+   */
+  private ContextCompactor.Summarizer buildSummarizer(ModelConfig config) {
+    if (config == null) {
+      return null;
+    }
+    final ModelClient client = new ModelClient();
+    final ModelConfig summarizerConfig = config.withModelId(config.getEffectiveCompressionModelId());
+    return prompt -> {
+      List<ModelMessage> messages = new ArrayList<>();
+      messages.add(new UserModelMessage(prompt));
+      ModelCompletionResponse response =
+          client.complete(summarizerConfig, messages);
+      return response == null ? null : response.getText();
+    };
   }
 
   /** @return 当前会话 id；若尚无会话则新建一个。 */
@@ -311,16 +414,18 @@ public final class AgentOrchestrator {
   }
 
   /**
-   * 折叠既有会话为可续接的历史。
+   * 读取既有会话的全部条目。
    *
-   * <p>读取或折叠失败时返回空历史：宁可丢掉上下文，也不该让用户发不出消息。
+   * <p>读取失败时返回空列表：宁可丢掉上下文，也不该让用户发不出消息。
+   *
+   * <p>返回**条目**而非折叠后的消息：压缩需要按序号决定边界，而序号只存在于条目层。
    */
-  private List<ModelMessage> loadHistory(String conversationId) {
+  private List<ConversationLog.EntryLocation> loadEntries(String conversationId) {
     if (conversationId == null || conversationId.isEmpty()) {
       return new ArrayList<>();
     }
     try {
-      return ConversationHistory.fold(conversationStore.read(conversationId));
+      return conversationStore.read(conversationId);
     } catch (IOException | RuntimeException e) {
       return new ArrayList<>();
     }

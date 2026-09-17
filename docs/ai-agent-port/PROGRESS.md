@@ -3,17 +3,18 @@
 > **用途**：跨会话的进度锚点。每次开工先读本文确认当前状态，收工前更新。
 > 计划与缺口清单见 [`PLAN.md`](./PLAN.md)，逐项实现细节见 [`DETAILS.md`](./DETAILS.md)。
 >
-> **本次快照**：2026-09-17（分支 `dev`，最近提交 `e32b20a`）
+> **本次快照**：2026-09-18（分支 `dev`，P0-1 已提交 `7c677bd`，P0-2 见下）
 
 ---
 
 ## 1. 一句话状态
 
-**工具循环已跑通（W0–W5 完成），UI 渲染层与数据层地基未开始。**
+**工具循环已跑通（W0–W5），数据层地基已完成（P0-1 + P0-2），UI 渲染层未开始。**
 agent 已能在真机上完成「读文件 → 改文件 → 构建 → 安装 → 启动 → 读日志」闭环，
-但对话界面仍是纯文本 `statusText`，无消息模型、无持久化、无工具卡片。
+会话可持久化并跨进程续接，长对话有 token 预算与压缩；
+但对话界面仍是纯文本 `statusText`，无消息模型、无工具卡片。
 
-覆盖率约 **25%**（已移植约 115 / LCP 相关 440–470 文件）。
+覆盖率约 **30%**（已移植约 130 / LCP 相关 440–470 文件）。
 
 ---
 
@@ -26,9 +27,9 @@ agent 已能在真机上完成「读文件 → 改文件 → 构建 → 安装 �
 | `core/ai-tool-api` | 15 | 1517 | 工具契约：`ToolCall`/`ToolResult`(50KB 中段截断)/`ToolInfo`/`ToolNames`/`ToolCallTextParser`/`ErrorLog` |
 | `core/ai-protocol` | 50 | 5461 | 协议层：OpenAI 兼容 + Anthropic Messages、重试、流式解析、7 个 reasoning 策略、`SimpleHttpClient`/`UrlPolicy` |
 | `core/ai-tool` | 27 | 3506 | 工具执行：注册表(RW 锁)、执行器(错误即结果)、权限判定、6 个文件工具、shell 抽象、`BuildErrorExtractor`、`ApkFreshnessCheck` |
-| `core/ai-agent` | 4 | 636 | 循环本体：`AgentEvent`/`AgentSession`/`AgentRunResult`/`AgentPromptBuilder` |
+| `core/ai-agent` | 24 | 3276 | 循环本体 + 会话持久化 + 上下文管理 |
 
-**合计 96 个主源文件 / 11120 行**，全部零 Android 依赖——这是移植期能快速验证的关键。
+**合计 116 个主源文件 / 13760 行**，全部零 Android 依赖——这是移植期能快速验证的关键。
 
 ### 2.2 app 层接入
 
@@ -51,14 +52,14 @@ agent 已能在真机上完成「读文件 → 改文件 → 构建 → 安装 �
 
 ### 2.3 验证状态
 
-**单元测试：58 项，0 失败，1 跳过**（跳过项是联网网关测试，需 `-Dai.live.apiKey=...`）
+**单元测试：200 项，0 失败，1 跳过**（跳过项是联网网关测试，需 `-Dai.live.apiKey=...`）
 
 | 模块 | tests | failures | skipped |
 |---|---|---|---|
 | `ai-tool-api` | 5 | 0 | 0 |
 | `ai-protocol` | 4 | 0 | 0 |
 | `ai-tool` | 37 | 0 | 0 |
-| `ai-agent` | 12 | 0 | 1 |
+| `ai-agent` | 154 | 0 | 1 |
 
 **真机验证通过**（黑鲨 SKW-A0 / Android 10 / arm64-v8a）：
 文件读写、shell 执行、构建 → 安装 → 启动 → 读日志全链路。
@@ -87,88 +88,112 @@ agent 已能在真机上完成「读文件 → 改文件 → 构建 → 安装 �
 
 ---
 
-## 3. 未提交改动（工作区）
+## 3. 数据层地基（阶段一）已提交范围
 
-`git status` 过滤掉 build 产物后的真实改动：
+### 3.1 P0-1 会话持久化与多会话（4 个提交）
 
-**已修改（4 个，属"APK 新鲜度核验"这一功能，未提交）**
-
-| 文件 | 改动 |
+| 提交 | 内容 |
 |---|---|
-| `core/projects/.../builder/BuildService.kt` | 接口新增 `lastBuildOutcome: BuildOutcome?` + `recordRejectedBuildAttempt()` |
-| `core/app/.../services/builder/GradleBuildService.kt` | 记录构建开始时间与结果；构建中清空上轮结论 |
-| `core/app/.../agent/tool/GradleBuildTool.java` | 构建失败时记录被拒尝试，使既有 APK 判定为陈旧 |
-| `core/app/.../agent/tool/InstallApkTool.java` | 安装前校验 APK 时间戳晚于构建开始时间 |
+| `a7600f5` | 会话日志的 append-only 持久化基础：条目信封、`ConversationLog`、JSONL 读写 |
+| `cb04ee6` | `ConversationStore` 窄接口 + `FileConversationStore`（含残缺尾部处理、指纹窗口判变） |
+| `b1df5ee` | `ConversationHistory.fold` 折叠为可续接消息；`CompactionEntry` 预留 |
+| `7c677bd` | 接入 agent 路径：`AgentOrchestrator` 用会话历史作为循环起点 |
 
-**新增未跟踪**
+### 3.2 P0-2 上下文管理与压缩
 
-- `core/ai-tool/.../ApkFreshnessCheck.java` + `ApkFreshnessCheckTest.java`（5 项测试，已跑绿）
-- `docs/ai-agent-port/`（本文档所在目录）
-- `CLAUDE.md`（CodeGraph 检索规则）
-- `core/ai-{protocol,tool-api,tool}/port.sh`（移植脚本，**建议删除或移出仓库**）
-- `.codegraph/`（**390MB 索引库，必须加进 `.gitignore`** —— 当前未加）
+**五个新类**（`core/ai-agent/.../agent/context/`）：
+
+| 类 | 职责 |
+|---|---|
+| `TokenEstimator` | 估算消息/工具定义的 token；CJK 约 1 token/字，其余约 4 字符/token |
+| `TokenUsageTracker` | 用量跟踪 + 软(0.5)/硬(0.8)压缩阈值判定 |
+| `ContextTrimmer` | 按工具调用组裁剪消息（调用与结果不拆散） |
+| `ContextCompactor` | 把消息段摘要为字符串（纯字符串进、字符串出，便于单测） |
+| `RunContextManager` | **一次运行内的预算**：每次请求前裁剪，钉住系统提示词与本次请求 |
+
+**`ConversationCompaction`**（`conversation` 包）：决定"压缩哪一段"，产出 `CompactionEntry`。
+
+**关键设计决策**：
+
+- **裁剪在循环内、压缩在入口**。裁剪必须每轮做（消息随轮次增长，一次读大文件就可能超限）；
+  压缩需要条目序号且结果必须落盘，只能在入口做一次——放循环里会每次运行重复摘要同一段。
+- **两条消息不可裁**：系统提示词与**本次用户请求**。`ContextTrimmer` 从最旧开始丢，
+  而本次请求恰好排在历史之后，放任裁剪会把它丢掉，模型便"不知道自己在做什么"。
+- **`ContextTrimmer.trim` 把 `budgetTokens <= 0` 解释为"不限"**——语义本身合理
+  （未配置预算不该清空历史），但调用方算出 0 预算时会静默失效。`RunContextManager`
+  两处都显式绕开（轮次传 `max(1,...)`，历史用 `remaining > 0` 判断）。
+- **压缩是回溯性标记**：`CompactionEntry` 出现在被覆盖条目**之后**，因此
+  `ConversationHistory.fold` 必须两趟处理（先找最大覆盖序号与全部摘要，再追加未被覆盖的条目）。
+- **`maybeCompact` 失败一律静默降级**：压缩是优化，不能因为它失败让用户发不出消息。
+
+**测试**：`TokenEstimatorTest` 14 + `TokenUsageTrackerTest` 14 + `ContextTrimmerTest` 17
++ `ContextCompactorTest` 20 + `ConversationCompactionTest` 22 + `RunContextManagerTest` 12。
 
 ---
 
-## 4. 待办 15 项
+## 4. 待办（14 项未完成 / 16 项总计）
 
-任务定义在**旧会话**的任务目录（`~/.claude/tasks/6a437c2c-.../{15..29}.json`），
-本会话的 `TaskList` 为空——需要迁移或按本表重建。
+任务定义已迁入本会话 `TaskList`（#2 已完成，#3 进行中，其余 pending）。
 
 ### P0 — 缺了 agent 能力不完整
 
 | # | 任务 | 状态 | 阻塞于 | 关键依赖说明 |
 |---|---|---|---|---|
-| 15 | P0-1 会话持久化与多会话 | pending | — | **所有 P0 的地基** |
-| 16 | P0-2 上下文管理与压缩 | pending | 15 | 压缩需有历史 |
-| 17 | P0-3 权限确认分级与持久化 | pending | — | 当前只有全局布尔 |
-| 18 | P0-4 Diff 回滚与审查 | pending | 15 | 移植时主动砍掉了 `revertDiff`/`setReview` |
-| 19 | P0-5 MCP 客户端 | pending | — | 纯客户端 HTTP JSON-RPC，可独立做 |
-| 20 | P1-9 会话 UI 渲染层 | pending | 15 | **最大缺口** |
-| 21 | P0-7 提示词模板系统 + 聊天模式 | pending | — | 占位符机制可先做，收益立竿见影 |
-| 22 | P0-6 补齐内置工具 | pending | 20, 23, 24 | 高优先级部分(todo/web)**实际无依赖** |
-| 23 | P0-8 长期记忆 + 本地 RAG | pending | 15 | |
+| #2 | P0-1 会话持久化与多会话 | **已完成** | — | 4 个提交 |
+| #3 | P0-2 上下文管理与压缩 | **已完成** | — | 见 §3.2 |
+| #15 | P0-3 权限确认分级与持久化 | pending | — | 当前只有全局布尔 |
+| #5 | P0-4 Diff 回滚与审查 | pending | #2 | 移植时主动砍掉了 `revertDiff`/`setReview` |
+| #14 | P0-5 MCP 客户端 | pending | — | 纯客户端 HTTP JSON-RPC，可独立做 |
+| #16 | P1-9 会话 UI 渲染层 | pending | #2 | **最大缺口** |
+| #10 | P0-7 提示词模板系统 + 聊天模式 | pending | — | 占位符机制可先做，收益立竿见影 |
+| #8 | P0-6 补齐内置工具 | pending | #16 | 高优先级部分(todo/web)**实际无依赖** |
+| #12 | P0-8 长期记忆 + 本地 RAG | pending | #2 | |
 
 ### P1 / P2
 
 | # | 任务 | 状态 | 阻塞于 |
 |---|---|---|---|
-| 24 | P1-11 子 agent / pipeline | pending | — |
-| 25 | P1-12 服务商预设表与模型目录 | pending | — |
-| 26 | P1-13 Skill 系统 | pending | — |
-| 27 | P1-10 消息操作与导出 | pending | 20 |
-| 28 | P1-14 自定义 Agent 扩展 + P1-15 Slash 命令 | pending | — |
-| 29 | P2 收尾项（日志/归档/代理/输入/主题） | pending | — |
+| #4 | P1-11 子 agent / pipeline | pending | — |
+| #11 | P1-12 服务商预设表与模型目录 | pending | — |
+| #6 | P1-13 Skill 系统 | pending | — |
+| #13 | P1-10 消息操作与导出 | pending | #16 |
+| #7 | P1-14 自定义 Agent 扩展 + P1-15 Slash 命令 | pending | — |
+| #9 | P2 收尾项（日志/归档/代理/输入/主题） | pending | — |
+| #17 | 项目界面 AI 悬浮助手 + 界面文案中文化 | pending | — |
 
-> **依赖修正记录**：任务 #22 最初被设为 `blockedBy=[20,23,24]`，但 `todo_update`/`web_fetch`/`web_search`
-> 三个工具的实现本身不需要 UI 或记忆，已放宽。只有卡片渲染依赖 #20。
+> **依赖修正记录**：任务 #8（原 #22）最初被设为 `blockedBy=[20,23,24]`，但
+> `todo_update`/`web_fetch`/`web_search` 三个工具的实现本身不需要 UI 或记忆，已放宽。
+> 只有卡片渲染依赖 #16。
 
 ### 依赖图（决定实施顺序）
 
 ```
-#15 会话持久化 ──┬──> #16 上下文压缩
-                 ├──> #20 会话 UI（渲染需要消息模型）
-                 ├──> #18 Diff 回滚
-                 └──> #23 长期记忆（记忆需要会话索引）
-#17 权限确认 ────┴──> #20（确认交互在卡片里）
-#18 Diff 回滚 ───────> #20（回滚按钮在卡片里）
-#19 MCP ─────────────> 独立（但卡片需能渲染 MCP 工具）
+#2 会话持久化 ──┬──> #3 上下文压缩   ✔ 两者均已完成
+                ├──> #16 会话 UI（渲染需要消息模型）
+                ├──> #5 Diff 回滚
+                └──> #12 长期记忆（记忆需要会话索引）
+#15 权限确认 ───┴──> #16（确认交互在卡片里）
+#5 Diff 回滚 ───────> #16（回滚按钮在卡片里）
+#14 MCP ────────────> 独立（但卡片需能渲染 MCP 工具）
+#17 悬浮助手 ───────> 独立（纯 UI + 复用 AgentOrchestrator）
 ```
 
-**关键结论**：`#15/#16/#17/#18` 与 `#20` 强耦合。逐项做会反复改同一批 UI 代码，
-**应合并为两次改动**：先"数据层地基"（#15+#16），再"渲染层+交互"一次做完（#20+#17+#18）。
+**关键结论**：`#5/#15/#16` 强耦合。逐项做会反复改同一批 UI 代码，
+**应合并为一次改动**（渲染层 + 交互）。
 
 ---
 
 ## 5. 建议的下一步
 
-按 `PLAN.md` 的阶段划分，当前处在**阶段一（数据层地基）的起点**。
+阶段一（数据层地基）**已完成**（#2 + #3）。下一批可选：
 
-### 立即（可选，二选一）
+- **#16 会话 UI 渲染层**——最大缺口，且 #5/#15 都挂在它下面；先做它能一次收掉三项。
+- **#14 MCP 客户端**——纯 Java 可独立单测，与 UI 无耦合，适合并行。
+- **#17 悬浮助手**——纯 UI，可直接复用已完成的 `AgentOrchestrator`。
 
-- **A. 先提交现有成果**：`ApkFreshnessCheck` 那批改动已验证（5 测试绿），且与后续工作正交。
-  提交前需处理：`.codegraph/` 加 `.gitignore`、`port.sh` 决定去留。
-- **B. 直接开始 #15**：建立 `conversations` + `messages` 最小集，跑通"重启不丢消息"。
+### 未提交 / 待决
+
+- `core/ai-{protocol,tool-api,tool}/port.sh` —— 移植期一次性脚本，尚未决定是否入库
 
 ### 未验证项（做后续工作时应顺带补齐）
 
@@ -177,7 +202,37 @@ agent 已能在真机上完成「读文件 → 改文件 → 构建 → 安装 �
 | ShizukuShellBackend 端到端 | 黑鲨已装 Shizuku，**需启动服务后重测** |
 | 构建闭环四件套在真机的完整 agent 驱动 | 四件套各自验证过，**未经 agent 串起来跑** |
 | agnes 网关端到端 | 有 key 与端点，`AgentLiveGatewayTest` 默认跳过，未跑 |
-| `AIHistoryFragment` 与新 agent 循环 | 有 UI 骨架，走**旧** `AIAgentManager` 路径，与新循环不通 |
+| **上下文压缩的真实触发** | 单测覆盖边界逻辑，但**未经真机长对话触发**（需历史超硬阈值） |
+
+### P0-1 前置调研结论（2026-09-17 核实，影响存储选型）
+
+**更正 `PLAN.md` 的一处描述**：它写 `AIHistoryFragment`「有会话历史的 UI 骨架」。
+实际核实 `AIHistoryFragment.kt:85` → `AIAgentManager.getConversationHistory()` →
+`getModificationHistory()`，它列出的是 **`UnifiedModificationAttempt`（文件改动记录）**，
+**不是对话消息**。所以那是"文件改动历史"，与 P0-1 的会话/消息模型无关，**不能复用为会话列表入口**。
+
+**ACS 无任何数据库设施**（已彻底核实）：
+- 全仓库无 `SQLiteOpenHelper` / `RoomDatabase` / `@Database` / `androidx.room` 依赖
+- 唯一命中是 `GroovyAutoComplete.java:57-63` 的补全字符串清单，不是实际使用
+- 无 `openOrCreateDatabase` / `getDatabasePath` 调用
+- 现有持久化只有：SharedPreferences（含 `EncryptedSharedPreferences`）+ 文件
+
+**LCP 的 schema 自带逃生口**：`conversations`/`messages`/`message_blocks`/`tool_calls`/`tool_results`
+**每张表都有 `raw_json` 列**。即 LCP 已是「规范列（可查询）+ JSON（保真）」的混合模式。
+
+**存储选型已定**（方案见 [`P0-1-design.md`](./P0-1-design.md)）：
+
+**JSONL 为唯一真源（append-only），不引入 SQLite/Room。** 参考 `C:\Users\70641\cc-haha`
+的 `src/server/services/localIndex/`——那套机制把 JSONL 当 source of truth，SQLite 只作可重建的派生索引。
+借其 8 个机制（append-only 一会话一文件、条目自描述信封、字节偏移索引、增量水位线、
+残缺尾部处理、指纹窗口判变、摘要由 fold 派生、摘要缓存独立）。
+
+关键推论：**重命名 = 追加一条 `custom-title` 条目**，永不回写历史；
+**`compaction` 条目现在只定义不实现**，为 P0-2 预留——压缩时只追加该条目，
+读取端跳过被压缩区间，无需改写历史。这把 P0-2 的改动面压到最小。
+
+分 4 步（1a 模型+日志 / 1b Store / 1c AgentSession 历史重载 / 1d 最小会话列表），
+前 3 步纯 Java 单测闭环。
 
 ### 已知可复用资产（避免重复造）
 

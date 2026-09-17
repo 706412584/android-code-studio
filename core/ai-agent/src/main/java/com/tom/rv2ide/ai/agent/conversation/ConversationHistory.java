@@ -92,26 +92,38 @@ public final class ConversationHistory {
   }
 
   private static void append(ConversationEntry entry, List<ModelMessage> messages) {
+    ModelMessage message = toMessage(entry);
+    if (message != null) {
+      messages.add(message);
+    }
+  }
+
+  /**
+   * 把单条条目映射为模型消息；不参与模型对话的条目返回 {@code null}。
+   *
+   * <p>公开此方法是为了让压缩的预算计算能取到**单条**条目的成本——{@link #fold} 只给
+   * 整体列表，而选择压缩边界需要逐条累加。
+   */
+  public static ModelMessage toMessage(ConversationEntry entry) {
     if (entry instanceof UserMessageEntry) {
       UserMessageEntry user = (UserMessageEntry) entry;
       // meta 条目是系统注入，不进入模型对话
-      if (!user.isMeta()) {
-        messages.add(new UserModelMessage(user.getContent()));
-      }
-    } else if (entry instanceof AssistantMessageEntry) {
-      AssistantMessageEntry assistant = (AssistantMessageEntry) entry;
-      messages.add(
-          new AssistantModelMessage(
-              assistant.getContent(), assistant.getReasoningContent(), assistant.getToolCalls()));
-    } else if (entry instanceof ToolResultEntry) {
-      ToolResultEntry result = (ToolResultEntry) entry;
-      messages.add(
-          new ToolModelMessage(
-              result.getContent(),
-              result.getToolCallId(),
-              result.getToolName(),
-              result.isError()));
+      return user.isMeta() ? null : new UserModelMessage(user.getContent());
     }
-    // SessionMetaEntry / TitleEntry 不参与模型对话
+    if (entry instanceof AssistantMessageEntry) {
+      AssistantMessageEntry assistant = (AssistantMessageEntry) entry;
+      return new AssistantModelMessage(
+          assistant.getContent(), assistant.getReasoningContent(), assistant.getToolCalls());
+    }
+    if (entry instanceof ToolResultEntry) {
+      ToolResultEntry result = (ToolResultEntry) entry;
+      return new ToolModelMessage(
+          result.getContent(),
+          result.getToolCallId(),
+          result.getToolName(),
+          result.isError());
+    }
+    // SessionMetaEntry / TitleEntry / CompactionEntry 不参与模型对话
+    return null;
   }
 }

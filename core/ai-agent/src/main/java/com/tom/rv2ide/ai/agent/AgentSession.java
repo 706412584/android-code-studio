@@ -31,6 +31,7 @@ import com.tom.rv2ide.ai.protocol.ModelMessage;
 import com.tom.rv2ide.ai.protocol.ModelRequestOptions;
 import com.tom.rv2ide.ai.protocol.ModelStreamCallback;
 import com.tom.rv2ide.ai.protocol.SystemModelMessage;
+import com.tom.rv2ide.ai.agent.context.RunContextManager;
 import com.tom.rv2ide.ai.tool.api.ToolCallTextParser;
 import com.tom.rv2ide.ai.protocol.ToolModelMessage;
 import com.tom.rv2ide.ai.protocol.UserModelMessage;
@@ -124,6 +125,28 @@ public final class AgentSession {
       ToolContext toolContext,
       ModelCancellationToken cancellationToken,
       AgentEvent.Listener listener) {
+    return run(
+        config, systemPrompt, userRequest, history, toolContext, cancellationToken, listener, null);
+  }
+
+  /**
+   * 带上下文管理的运行重载——P0-2。
+   *
+   * <p><b>为什么上下文管理在循环内部而不在入口</b>：一轮对话里消息持续增长，入口处
+   * 算好的预算在若干轮后可能已不足（尤其是一次读入大文件之后）。把裁剪放进循环，
+   * 每次请求前都保证请求能发出去，长任务才不会跑到一半因超限失败。
+   *
+   * @param contextManager 上下文管理器；为 {@code null} 时不做裁剪与压缩（旧行为）
+   */
+  public AgentRunResult run(
+      ModelConfig config,
+      String systemPrompt,
+      String userRequest,
+      List<ModelMessage> history,
+      ToolContext toolContext,
+      ModelCancellationToken cancellationToken,
+      AgentEvent.Listener listener,
+      RunContextManager contextManager) {
 
     List<ModelMessage> messages = new ArrayList<>();
     messages.add(new SystemModelMessage(systemPrompt == null ? "" : systemPrompt));
@@ -131,6 +154,8 @@ public final class AgentSession {
       messages.addAll(history);
     }
     messages.add(new UserModelMessage(userRequest == null ? "" : userRequest));
+    // 本次请求的下标：裁剪必须保住它，否则模型不知道自己在做什么。
+    final int historyEnd = messages.size() - 1;
 
     List<ToolInfo> tools = new ArrayList<>(registry.getAll());
 
@@ -157,6 +182,13 @@ public final class AgentSession {
         return finish(listener, AgentEvent.failed(message), lastOutput, toolCallCount, turnIndex);
       }
 
+      // 每次请求前裁剪：预算在轮次之间会因新增消息而变得不足。
+      if (contextManager != null) {
+        List<ModelMessage> fitted = contextManager.fit(messages, historyEnd);
+        messages.clear();
+        messages.addAll(fitted);
+      }
+
       turnIndex++;
       emit(listener, AgentEvent.turnStarted(turnIndex));
 
@@ -166,6 +198,12 @@ public final class AgentSession {
       } catch (ModelCompletionException e) {
         String reason = "模型请求失败: " + e.getMessage();
         return finish(listener, AgentEvent.failed(reason), lastOutput, toolCallCount, turnIndex);
+      }
+
+      // 服务端 usage 是最可靠的用量来源（含工具定义等本地估算看不到的部分），
+      // 拿它校准下一轮的裁剪判断。
+      if (contextManager != null) {
+        contextManager.recordResponse(response.getInputTokens());
       }
 
       if (isCancelled(cancellationToken)) {
