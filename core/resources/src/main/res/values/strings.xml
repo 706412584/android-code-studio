@@ -121,6 +121,18 @@
   <string name="ai_agent_api_key_unset">Not set</string>
   <string name="ai_agent_api_key_set">API key: %1$s…</string>
 
+  <!-- Chat mode and prompt templates -->
+  <string name="ai_agent_chat_mode_title">Chat mode</string>
+  <string name="ai_agent_chat_mode_summary">How much the assistant is allowed to do</string>
+  <string name="ai_agent_prompt_template_title">System prompt template</string>
+  <string name="ai_agent_prompt_template_summary">Edit the prompt text without rebuilding the app</string>
+  <string name="ai_agent_prompt_template_default">Using default templates</string>
+  <string name="ai_agent_prompt_template_customized">%1$d template(s) customized</string>
+  <string name="ai_agent_prompt_template_reset">Reset this template</string>
+  <string name="ai_agent_prompt_template_reset_all">Reset all</string>
+  <string name="ai_agent_prompt_template_placeholders">Available placeholders:</string>
+  <string name="ai_agent_prompt_template_unknown">Not recognized (will render as empty):</string>
+
   <!-- Persistent authorization rules for dangerous agent tools -->
   <string name="ai_agent_authorized_title">Authorized dangerous tools</string>
   <string name="ai_agent_authorized_summary">Review or revoke rules saved by “Always allow”</string>

@@ -94,7 +94,17 @@ public final class AgentOrchestrator {
   private final AgentToolSettings settings;
   private final DiffStore diffStore;
   private final ConversationStore conversationStore;
-  private final AgentPromptBuilder promptBuilder = new AgentPromptBuilder();
+
+  /**
+   * 提示词构建器。
+   *
+   * <p>持有模板存储（而非每次新建），使用户在设置里改完提示词后**下一次运行即生效**——
+   * 不必重启应用，也不必重新编译。
+   */
+  private final AgentPromptBuilder promptBuilder;
+
+  /** 对话模式存储，跨运行保留。 */
+  private final PrefsChatModeStore chatModeStore;
 
   /**
    * 待办列表存储，跨运行保留。
@@ -127,6 +137,13 @@ public final class AgentOrchestrator {
     this.diffStore = diffStore;
     this.conversationStore = conversationStore;
     this.todoStore = new com.tom.rv2ide.ai.tool.FileTodoStateStore(defaultTodoFile(appContext));
+    this.chatModeStore = new PrefsChatModeStore(appContext);
+    this.promptBuilder = new AgentPromptBuilder("ACS AI Agent", new PrefsPromptTemplateStore(appContext));
+  }
+
+  /** 对话模式存储，供设置界面读写。 */
+  public PrefsChatModeStore getChatModeStore() {
+    return chatModeStore;
   }
 
   /** 待办文件：{@code filesDir/ai/todos.json}。 */
@@ -318,11 +335,21 @@ public final class AgentOrchestrator {
     // 协议支持原生工具调用时不注入 XML 兜底格式，否则会诱导模型改用文本调用。
     ModelClient modelClient = new ModelClient();
     boolean nativeTools = modelClient.supportsNativeTools(config);
+    // 对话模式决定提示词里给出多少行动授权。
+    com.tom.rv2ide.ai.agent.prompt.ChatMode chatMode = chatModeStore.get();
+
     // 待办状态注入提示词：只存不读等于没记——模型必须在每轮都看到「我做到哪了」，
     // 才能在几十轮工具调用之后不丢失进度。
+    // 模式与模型信息同样注入，使模板能按模式/模型差异化措辞。
     String systemPrompt =
         promptBuilder.build(
-            workspace.getAbsolutePath(), tools, nativeTools, todoStore.renderForPrompt());
+            workspace.getAbsolutePath(),
+            tools,
+            nativeTools,
+            todoStore.renderForPrompt(),
+            chatMode,
+            new AgentPromptBuilder.ModelInfo(
+                providerId, modelId, config.getProtocolType().getLabel()));
 
     ToolContext toolContext =
         ToolContext.builder()

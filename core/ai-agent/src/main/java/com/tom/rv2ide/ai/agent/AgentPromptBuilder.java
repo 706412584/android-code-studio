@@ -17,38 +17,50 @@
 
 package com.tom.rv2ide.ai.agent;
 
+import com.tom.rv2ide.ai.agent.prompt.ChatMode;
+import com.tom.rv2ide.ai.agent.prompt.PromptRenderer;
+import com.tom.rv2ide.ai.agent.prompt.PromptTemplateStore;
+import com.tom.rv2ide.ai.agent.prompt.PromptTemplates;
 import com.tom.rv2ide.ai.tool.api.ToolInfo;
+import java.util.HashMap;
 import java.util.List;
-import org.json.JSONException;
+import java.util.Map;
 
 /**
- * 组装 agent 的系统提示词。
+ * 生成 agent 的系统提示词。
  *
- * <p>提示词承担两件事：
- * <ol>
- *   <li>说明可用工具及其调用格式——这是<b>不支持原生工具调用的模型</b>唯一的工具信息来源。
- *       支持原生调用的模型也能从 tools 字段拿到定义，两处一致不冲突。
- *   <li>给出工作区约定（路径规则、只读/写入范围），减少模型臆造路径。
- * </ol>
+ * <p><b>从硬编码改为模板 + 占位符</b>：此前提示词的每一句话都写在代码里，改一个措辞
+ * 要重新编译。现在文本是数据（{@link PromptTemplates}），由
+ * {@link PromptTemplateStore} 覆盖，因此用户可以在设置界面里改提示词并立刻生效。
  *
- * <p><b>与上游的差异</b>：LineCode Pro 从 assets 目录加载 {@code prompts/*.txt} 模板并支持
- * 用户在设置里覆盖。本移植先采用内置模板，去掉模板加载与覆盖机制——那需要 Android 的
- * assets 访问。若后续需要可定制，把模板文本作为构造参数传入即可。
+ * <p>渲染语义见 {@link PromptRenderer}：单趟替换、未提供的占位符变空串。
+ *
+ * <p>本类不引用 Android 类型，可单测。
  */
 public final class AgentPromptBuilder {
 
   private final String identity;
+  private final PromptTemplateStore templates;
 
   public AgentPromptBuilder() {
-    this("ACS AI Agent");
+    this("ACS AI Agent", PromptTemplateStore.defaults());
   }
 
   public AgentPromptBuilder(String identity) {
-    this.identity = identity == null || identity.isEmpty() ? "ACS AI Agent" : identity;
+    this(identity, PromptTemplateStore.defaults());
   }
 
   /**
-   * 生成系统提示词。
+   * @param identity 助手身份，填入 {@code {{MODEL_IDENTITY}}}
+   * @param templates 模板存储；null 表示始终使用默认模板
+   */
+  public AgentPromptBuilder(String identity, PromptTemplateStore templates) {
+    this.identity = identity == null || identity.isEmpty() ? "ACS AI Agent" : identity;
+    this.templates = templates == null ? PromptTemplateStore.defaults() : templates;
+  }
+
+  /**
+   * 生成系统提示词（默认模式）。
    *
    * @param homePath 工作区根目录，模型据此构造相对路径
    * @param tools 可用工具列表
@@ -87,64 +99,109 @@ public final class AgentPromptBuilder {
    */
   public String build(
       String homePath, List<ToolInfo> tools, boolean nativeTools, String todoState) {
-    StringBuilder sb = new StringBuilder();
+    return build(homePath, tools, nativeTools, todoState, ChatMode.DEFAULT, null);
+  }
 
-    sb.append("你是 ").append(identity).append("，一个 Android 项目的编码助手。\n\n");
+  /**
+   * 生成系统提示词（完整参数）。
+   *
+   * @param homePath 工作区根目录
+   * @param tools 可用工具列表
+   * @param nativeTools 协议是否支持原生工具调用
+   * @param todoState 待办文本；null 或空表示无待办
+   * @param chatMode 对话模式；null 视作默认模式
+   * @param modelInfo 模型信息（服务商 / 模型名 / 协议），用于填充对应占位符；可为 null
+   */
+  public String build(
+      String homePath,
+      List<ToolInfo> tools,
+      boolean nativeTools,
+      String todoState,
+      ChatMode chatMode,
+      ModelInfo modelInfo) {
 
-    sb.append("[ 工作方式 ]\n");
-    sb.append("你可以调用工具来读写文件、执行命令。请通过调用工具完成任务，");
-    sb.append("不要只在回复里描述你打算怎么做。\n");
-    sb.append("一次可以请求多个工具调用；系统会执行它们并把结果回传给你，");
-    sb.append("然后你可以继续下一步，直到任务完成。\n\n");
+    ChatMode mode = chatMode == null ? ChatMode.DEFAULT : chatMode;
+    Map<String, String> values = new HashMap<>();
 
-    sb.append("[ 工作区 ]\n");
-    if (homePath != null && !homePath.isEmpty()) {
-      sb.append("根目录: ").append(homePath).append('\n');
-      sb.append("工具路径参数请使用相对于根目录的路径（如 src/main/App.kt）。\n");
-      sb.append("工具只允许访问根目录内的文件；越界路径会被拒绝。\n");
-    }
-    sb.append('\n');
+    // 身份与模型
+    values.put("MODEL_IDENTITY", identity);
+    values.put("MODEL_PROVIDER", modelInfo == null ? "" : modelInfo.providerId);
+    values.put("MODEL_NAME", modelInfo == null ? "" : modelInfo.modelId);
+    values.put("MODEL_PROTOCOL", modelInfo == null ? "" : modelInfo.protocolLabel);
 
-    // 待办段落刻意放在工具列表之前：模型先看到「当前进度」，再看到可用手段。
-    // 无待办时不输出空标题，避免提示词里出现一段没有内容的段落。
-    if (todoState != null && !todoState.trim().isEmpty()) {
-      sb.append("[ 当前待办 ]\n");
-      sb.append(todoState.trim()).append('\n');
-      sb.append("继续推进未完成的项；每完成一项就用 todo_update 更新状态。\n\n");
-    }
+    // 环境
+    values.put("HOME_PATH", homePath == null ? "" : homePath);
+    values.put(
+        "WORKSPACE_CONTEXT",
+        homePath == null || homePath.isEmpty()
+            ? ""
+            : PromptRenderer.render(templates.resolve(PromptTemplates.WORKSPACE_CONTEXT), values));
 
-    sb.append("[ 可用工具 ]\n");
+    // 模式
+    values.put("CHAT_MODE", mode.getId());
+    values.put(
+        "CHAT_MODE_CONTEXT",
+        PromptRenderer.render(
+            templates.resolve(PromptTemplates.chatModeTemplateId(mode)), values));
+
+    // 工具
+    // 空列表时仍渲染该段落：{@code renderToolList} 会给出「当前没有可用工具」，
+    // 这比整段消失更有信息量——模型能据此知道「不是我不该用工具，而是确实没有」。
+    values.put("TOOL_LIST", renderToolList(tools));
+    // CHAT 模式明确不给工具清单：模型看不到工具名，就不会去「顺手调用」。
+    values.put(
+        "TOOLS_CONTEXT",
+        mode.allowsTools()
+            ? PromptRenderer.render(templates.resolve(PromptTemplates.TOOLS_CONTEXT), values)
+            : "");
+
+    // 文本工具调用格式：仅在不支持原生工具调用且当前模式允许工具时给出。
+    // 对支持原生工具的端点注入这段会诱导模型改用 XML（见方法注释）。
+    values.put(
+        "TOOL_CALL_FORMAT",
+        !nativeTools && mode.allowsTools()
+            ? PromptRenderer.render(templates.resolve(PromptTemplates.TOOL_CALL_FORMAT), values)
+            : "");
+
+    // 任务状态：清单正文与「标题 + 清单 + 提示」的完整段落是两个不同的占位符。
+    // 若两者同名，段落模板里的 {{TODO_LIST}} 会解析到段落自身，清单永远注入不进去。
+    values.put("TODO_LIST", todoState == null ? "" : todoState.trim());
+    values.put(
+        "TODO_SECTION",
+        todoState == null || todoState.trim().isEmpty()
+            ? ""
+            : PromptRenderer.render(templates.resolve(PromptTemplates.TODO_SECTION), values));
+
+    // 收尾注意事项
+    values.put(
+        "NOTES", PromptRenderer.render(templates.resolve(PromptTemplates.NOTES), values));
+
+    // 当前未使用的占位符（角色、语气、历史、摘要、任务描述）显式置空：
+    // 模板里若引用了它们，渲染结果为空串而不是留下字面量。
+    values.put("ROLE_PROMPT", "");
+    values.put("TONE_CONTEXT", "");
+    values.put("HISTORY_SECTION", "");
+    values.put("SUMMARY", "");
+    values.put("TASK_DESCRIPTION", "");
+
+    String template = templates.resolve(PromptTemplates.SYSTEM_PROMPT);
+    return PromptRenderer.renderAndTidy(template, values);
+  }
+
+  /** 工具清单正文：每行 {@code - name: description}，附补充说明。 */
+  private static String renderToolList(List<ToolInfo> tools) {
     if (tools == null || tools.isEmpty()) {
-      sb.append("(当前没有可用工具)\n");
-    } else {
-      for (ToolInfo tool : tools) {
-        sb.append("- ").append(tool.getName()).append(": ").append(tool.getDescription()).append('\n');
-        String supplement = safePromptSupplement(tool);
-        if (supplement != null && !supplement.isEmpty()) {
-          sb.append("  ").append(supplement.replace("\n", "\n  ")).append('\n');
-        }
-      }
-      sb.append('\n');
-      // 仅对拿不到 tools 字段的模型给出文本调用格式；对原生支持的端点注入这段会
-      // 诱导模型改用 XML，反而降低成功率（见 build 方法的说明）。
-      if (!nativeTools) {
-        sb.append("[ 工具调用格式 ]\n");
-        sb.append("用下面的 XML 形式表达工具调用（可以一次多个）：\n");
-        sb.append("<tool_calls>\n");
-        sb.append("<tool_call name=\"file_read\">\n");
-        sb.append("<argument name=\"file_path\">app/build.gradle.kts</argument>\n");
-        sb.append("</tool_call>\n");
-        sb.append("</tool_calls>\n");
-        sb.append("工具调用之外可以写文字说明；两者可以同时出现在一次回复里。\n\n");
+      return "(当前没有可用工具)";
+    }
+    StringBuilder sb = new StringBuilder();
+    for (ToolInfo tool : tools) {
+      sb.append("- ").append(tool.getName()).append(": ").append(tool.getDescription()).append('\n');
+      String supplement = safePromptSupplement(tool);
+      if (supplement != null && !supplement.isEmpty()) {
+        sb.append("  ").append(supplement.replace("\n", "\n  ")).append('\n');
       }
     }
-
-    sb.append("[ 注意 ]\n");
-    sb.append("- 修改文件前先读取其当前内容，不要凭猜测覆盖。\n");
-    sb.append("- 工具返回错误时，阅读错误信息并调整做法，不要重复同样的调用。\n");
-    sb.append("- 任务完成后用简洁的文字说明你做了什么。\n");
-
-    return sb.toString();
+    return sb.toString().trim();
   }
 
   private static String safePromptSupplement(ToolInfo tool) {
@@ -152,6 +209,19 @@ public final class AgentPromptBuilder {
       return tool.promptSupplement("");
     } catch (RuntimeException e) {
       return null;
+    }
+  }
+
+  /** 模型信息，用于填充 {@code MODEL_*} 占位符。 */
+  public static final class ModelInfo {
+    public final String providerId;
+    public final String modelId;
+    public final String protocolLabel;
+
+    public ModelInfo(String providerId, String modelId, String protocolLabel) {
+      this.providerId = providerId == null ? "" : providerId;
+      this.modelId = modelId == null ? "" : modelId;
+      this.protocolLabel = protocolLabel == null ? "" : protocolLabel;
     }
   }
 }

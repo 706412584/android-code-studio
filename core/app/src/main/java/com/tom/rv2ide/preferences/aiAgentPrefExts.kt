@@ -100,8 +100,10 @@ private class AgentToolingGroup(
 
   init {
     addPreference(AgentModeSwitch())
+    addPreference(ChatModePreference())
     addPreference(PermissionModePreference())
     addPreference(AuthorizedToolsPreference())
+    addPreference(PromptTemplatePreference())
     addPreference(ShellBackendPreference())
     addPreference(
         CustomEndpointField(
@@ -201,6 +203,180 @@ private class PermissionModePreference(
         .setNegativeButton(android.R.string.cancel, null)
         .show()
     return true
+  }
+}
+
+/**
+ * 对话模式选择。
+ *
+ * <p>模式决定提示词里给出多少行动授权：对话（不调用工具）、计划（只读调查 + 出方案）、
+ * 执行（默认，可读写）、受控执行（危险操作先确认）。用户对「AI 能做什么」的期待在不同
+ * 场景差别很大，一个「是否允许写文件」的开关表达不了。
+ */
+@Parcelize
+private class ChatModePreference(
+    override val key: String = "chat_mode",
+    override val title: Int = R.string.ai_agent_chat_mode_title,
+    override val summary: Int? = R.string.ai_agent_chat_mode_summary,
+) : BasePreference() {
+
+  override fun onCreatePreference(context: Context): Preference {
+    val current = com.tom.rv2ide.artificial.agent.PrefsChatModeStore(context).get()
+    return androidx.preference.Preference(context).apply {
+      key = "chat_mode"
+      title = context.getString(R.string.ai_agent_chat_mode_title)
+      summary = "${current.label} — ${current.description}"
+    }
+  }
+
+  override fun onPreferenceClick(preference: Preference): Boolean {
+    val context = preference.context
+    val store = com.tom.rv2ide.artificial.agent.PrefsChatModeStore(context)
+    val modes = com.tom.rv2ide.ai.agent.prompt.ChatMode.all()
+    val shown = modes.map { "${it.label} — ${it.description}" }.toTypedArray()
+    val checked = modes.indexOf(store.get()).coerceAtLeast(0)
+
+    com.google.android.material.dialog.MaterialAlertDialogBuilder(context)
+        .setTitle(R.string.ai_agent_chat_mode_title)
+        .setSingleChoiceItems(shown, checked) { dialog, which ->
+          val selected = modes[which]
+          store.set(selected)
+          preference.summary = "${selected.label} — ${selected.description}"
+          dialog.dismiss()
+        }
+        .setNegativeButton(android.R.string.cancel, null)
+        .show()
+    return true
+  }
+}
+
+/**
+ * 系统提示词模板编辑。
+ *
+ * <p><b>为什么需要这个入口</b>：提示词直接决定模型的行为风格。此前它硬编码在
+ * {@code AgentPromptBuilder} 里，改一个措辞要重新编译整个应用。现在文本是数据，
+ * 用户可在这里改并立刻生效。
+ *
+ * <p>编辑界面同时给出**可用占位符清单**：写错占位符名不会报错，只会静默变成空串，
+ * 表现为「模型行为莫名其妙」——这是最难排查的一类问题，因此必须在编辑处就可见。
+ */
+@Parcelize
+private class PromptTemplatePreference(
+    override val key: String = "prompt_template",
+    override val title: Int = R.string.ai_agent_prompt_template_title,
+    override val summary: Int? = R.string.ai_agent_prompt_template_summary,
+) : BasePreference() {
+
+  override fun onCreatePreference(context: Context): Preference {
+    val store = com.tom.rv2ide.artificial.agent.PrefsPromptTemplateStore(context)
+    val customized = store.readAll().size
+    return androidx.preference.Preference(context).apply {
+      key = "prompt_template"
+      title = context.getString(R.string.ai_agent_prompt_template_title)
+      summary =
+          if (customized == 0) context.getString(R.string.ai_agent_prompt_template_default)
+          else context.getString(R.string.ai_agent_prompt_template_customized, customized)
+    }
+  }
+
+  override fun onPreferenceClick(preference: Preference): Boolean {
+    val context = preference.context
+    val store = com.tom.rv2ide.artificial.agent.PrefsPromptTemplateStore(context)
+
+    val templates =
+        listOf(
+            com.tom.rv2ide.ai.agent.prompt.PromptTemplates.SYSTEM_PROMPT,
+            com.tom.rv2ide.ai.agent.prompt.PromptTemplates.WORKSPACE_CONTEXT,
+            com.tom.rv2ide.ai.agent.prompt.PromptTemplates.TOOLS_CONTEXT,
+            com.tom.rv2ide.ai.agent.prompt.PromptTemplates.TOOL_CALL_FORMAT,
+            com.tom.rv2ide.ai.agent.prompt.PromptTemplates.TODO_SECTION,
+            com.tom.rv2ide.ai.agent.prompt.PromptTemplates.NOTES,
+            com.tom.rv2ide.ai.agent.prompt.PromptTemplates.chatModeTemplateId(
+                com.tom.rv2ide.ai.agent.prompt.ChatMode.CHAT),
+            com.tom.rv2ide.ai.agent.prompt.PromptTemplates.chatModeTemplateId(
+                com.tom.rv2ide.ai.agent.prompt.ChatMode.PLAN),
+            com.tom.rv2ide.ai.agent.prompt.PromptTemplates.chatModeTemplateId(
+                com.tom.rv2ide.ai.agent.prompt.ChatMode.AGENT),
+            com.tom.rv2ide.ai.agent.prompt.PromptTemplates.chatModeTemplateId(
+                com.tom.rv2ide.ai.agent.prompt.ChatMode.CONTROL),
+        )
+
+    val labels =
+        templates
+            .map { id ->
+              val mark = if (store.isCustomized(id)) " ●" else ""
+              id + mark
+            }
+            .toTypedArray()
+
+    com.google.android.material.dialog.MaterialAlertDialogBuilder(context)
+        .setTitle(R.string.ai_agent_prompt_template_title)
+        .setItems(labels) { _, which -> editTemplate(context, store, templates[which], preference) }
+        .setNeutralButton(R.string.ai_agent_prompt_template_reset_all) { _, _ ->
+          templates.forEach { store.reset(it) }
+          preference.summary = context.getString(R.string.ai_agent_prompt_template_default)
+        }
+        .setNegativeButton(android.R.string.cancel, null)
+        .show()
+    return true
+  }
+
+  /** 编辑单个模板：预填当前内容（自定义或默认），并展示可用占位符。 */
+  private fun editTemplate(
+      context: Context,
+      store: com.tom.rv2ide.artificial.agent.PrefsPromptTemplateStore,
+      templateId: String,
+      preference: Preference,
+  ) {
+    val current = store.resolve(templateId)
+    val unknown = com.tom.rv2ide.ai.agent.prompt.PromptRenderer.unknownPlaceholders(current)
+
+    val editText =
+        android.widget.EditText(context).apply {
+          setText(current)
+          // 多行 + 等宽：提示词是带换行的结构化文本，单行输入框没法用。
+          inputType =
+              android.text.InputType.TYPE_CLASS_TEXT or
+                  android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE
+          gravity = android.view.Gravity.TOP or android.view.Gravity.START
+          minLines = 8
+          typeface = android.graphics.Typeface.MONOSPACE
+          setHorizontallyScrolling(false)
+        }
+    val scroll = android.widget.ScrollView(context).apply { addView(editText) }
+
+    // 校验提示：拼错的占位符会静默变空串，必须在保存前让用户看到。
+    val hint =
+        buildString {
+          append(context.getString(R.string.ai_agent_prompt_template_placeholders))
+          append('\n')
+          append(com.tom.rv2ide.ai.agent.prompt.PromptPlaceholders.all().joinToString("  ") { "{{$it}}" })
+          if (unknown.isNotEmpty()) {
+            append("\n\n")
+            append(context.getString(R.string.ai_agent_prompt_template_unknown))
+            append('\n')
+            append(unknown.joinToString("  ") { "{{$it}}" })
+          }
+        }
+
+    com.google.android.material.dialog.MaterialAlertDialogBuilder(context)
+        .setTitle(templateId)
+        .setMessage(hint)
+        .setView(scroll)
+        .setPositiveButton(android.R.string.ok) { _, _ ->
+          store.write(templateId, editText.text?.toString().orEmpty())
+          preference.summary =
+              context.getString(
+                  R.string.ai_agent_prompt_template_customized,
+                  store.readAll().size,
+              )
+        }
+        .setNeutralButton(R.string.ai_agent_prompt_template_reset) { _, _ ->
+          store.reset(templateId)
+          preference.summary = context.getString(R.string.ai_agent_prompt_template_default)
+        }
+        .setNegativeButton(android.R.string.cancel, null)
+        .show()
   }
 }
 

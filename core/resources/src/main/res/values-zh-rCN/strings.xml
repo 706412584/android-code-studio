@@ -121,6 +121,18 @@
   <string name="ai_agent_api_key_unset">未设置</string>
   <string name="ai_agent_api_key_set">密钥：%1$s…</string>
 
+  <!-- 对话模式与提示词模板 -->
+  <string name="ai_agent_chat_mode_title">对话模式</string>
+  <string name="ai_agent_chat_mode_summary">助手被允许做到什么程度</string>
+  <string name="ai_agent_prompt_template_title">系统提示词模板</string>
+  <string name="ai_agent_prompt_template_summary">直接编辑提示词文本，无需重新编译应用</string>
+  <string name="ai_agent_prompt_template_default">正在使用默认模板</string>
+  <string name="ai_agent_prompt_template_customized">已自定义 %1$d 个模板</string>
+  <string name="ai_agent_prompt_template_reset">恢复此模板默认值</string>
+  <string name="ai_agent_prompt_template_reset_all">全部恢复默认</string>
+  <string name="ai_agent_prompt_template_placeholders">可用占位符：</string>
+  <string name="ai_agent_prompt_template_unknown">无法识别（将渲染为空）：</string>
+
   <!-- 危险工具的持久化授权规则 -->
   <string name="ai_agent_authorized_title">已授权的危险工具</string>
   <string name="ai_agent_authorized_summary">查看或撤销「始终允许」保存的规则</string>
