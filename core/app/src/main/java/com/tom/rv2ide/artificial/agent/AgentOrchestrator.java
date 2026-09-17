@@ -137,6 +137,14 @@ public final class AgentOrchestrator {
    */
   private final com.tom.rv2ide.ai.tool.memory.MemoryStore memoryStore;
 
+  /**
+   * skill 注册表。
+   *
+   * <p>构造时加载一次：skill 是磁盘上的静态文档，运行期间不会变化；每次运行重新扫描
+   * 目录既无必要（用户改完文件重启应用即可）也浪费 I/O。
+   */
+  private final com.tom.rv2ide.ai.tool.skill.SkillRegistry skillRegistry;
+
   /** 当前工作区根目录，由 {@link #setWorkspace} 设置。 */
   private File workspace;
 
@@ -161,6 +169,8 @@ public final class AgentOrchestrator {
     this.conversationStore = conversationStore;
     this.todoStore = new com.tom.rv2ide.ai.tool.FileTodoStateStore(defaultTodoFile(appContext));
     this.memoryStore = new com.tom.rv2ide.ai.tool.memory.MemoryStore(defaultMemoryFile(appContext));
+    this.skillRegistry =
+        com.tom.rv2ide.ai.tool.skill.SkillRegistry.load(defaultSkillsDir(appContext));
     this.chatModeStore = new PrefsChatModeStore(appContext);
     this.customAgentStore =
         new com.tom.rv2ide.ai.agent.command.CustomAgentStore(defaultCustomAgentsFile(appContext));
@@ -180,6 +190,16 @@ public final class AgentOrchestrator {
   /** 记忆文件：{@code filesDir/ai/memories.json}。 */
   private static File defaultMemoryFile(Context context) {
     return new File(new File(context.getFilesDir(), "ai"), "memories.json");
+  }
+
+  /** skill 目录：{@code filesDir/ai/skills}。 */
+  private static File defaultSkillsDir(Context context) {
+    return new File(new File(context.getFilesDir(), "ai"), "skills");
+  }
+
+  /** skill 注册表，供设置界面查看。 */
+  public com.tom.rv2ide.ai.tool.skill.SkillRegistry getSkillRegistry() {
+    return skillRegistry;
   }
 
   /** 长期记忆存储，供设置界面查看与删除。 */
@@ -306,6 +326,9 @@ public final class AgentOrchestrator {
 
     // 长期记忆：跨会话保留的项目约定与用户偏好。
     registry.register(new com.tom.rv2ide.ai.tool.memory.MemoryUpdateTool(memoryStore));
+
+    // skill：按需加载的说明文档。提示词里只放名字与一句话说明（渐进披露）。
+    registry.register(new com.tom.rv2ide.ai.tool.skill.SkillTool(skillRegistry));
 
     // 网络：先搜索定位页面，再抓取正文。
     AppHttpPort http = new AppHttpPort();
@@ -484,6 +507,18 @@ public final class AgentOrchestrator {
     if (!relevantMemories.isEmpty()) {
       systemPrompt =
           systemPrompt + "\n\n[ 已知信息 ]\n" + relevantMemories;
+    }
+
+    // skill 清单：**只有名字与一句话说明**，正文按需用 skill 工具加载。
+    // 这正是渐进披露的关键——几十个 skill 的常驻成本只有几百 token，
+    // 全部展开会把上下文占满，而其中绝大多数与当前任务无关。
+    String skillList = skillRegistry.renderForPrompt();
+    if (!skillList.isEmpty()) {
+      systemPrompt =
+          systemPrompt
+              + "\n\n[ 可用 skill ]\n"
+              + skillList
+              + "\n\n与当前任务相关时，用 skill 工具加载其完整内容。";
     }
 
     ToolContext toolContext =

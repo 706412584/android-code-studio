@@ -105,6 +105,7 @@ private class AgentToolingGroup(
     addPreference(PermissionModePreference())
     addPreference(AuthorizedToolsPreference())
     addPreference(PromptTemplatePreference())
+    addPreference(SkillsPreference())
     addPreference(MemoriesPreference())
     addPreference(McpServersPreference())
     addPreference(ShellBackendPreference())
@@ -527,6 +528,68 @@ private class CustomAgentsPreference(
         context.getString(
             R.string.ai_agent_custom_agents_count, agents.count { it.isUsable() }, agents.size)
   }
+}
+
+/**
+ * skill：查看已加载的 skill 与所在目录。
+ *
+ * <p><b>为什么需要查看入口</b>：skill 是用户自己放进目录的文档，而「放进去了但没生效」
+ * 是最常见的困惑——文件名不对、frontmatter 格式错、正文为空都会导致它被静默跳过。
+ * 这里展示实际加载到的名字与目录路径，让用户能自行定位问题。
+ */
+@Parcelize
+private class SkillsPreference(
+    override val key: String = "skills",
+    override val title: Int = R.string.ai_agent_skills_title,
+    override val summary: Int? = R.string.ai_agent_skills_summary,
+) : BasePreference() {
+
+  override fun onCreatePreference(context: Context): Preference {
+    val count = skillRegistry(context).size()
+    return androidx.preference.Preference(context).apply {
+      key = "skills"
+      title = context.getString(R.string.ai_agent_skills_title)
+      summary =
+          if (count == 0) context.getString(R.string.ai_agent_skills_none)
+          else context.getString(R.string.ai_agent_skills_count, count)
+    }
+  }
+
+  override fun onPreferenceClick(preference: Preference): Boolean {
+    val context = preference.context
+    val registry = skillRegistry(context)
+    val skills = registry.all()
+
+    val message =
+        buildString {
+          append(context.getString(R.string.ai_agent_skills_dir))
+          append('\n')
+          append(skillsDir(context).absolutePath)
+          append("\n\n")
+          if (skills.isEmpty()) {
+            append(context.getString(R.string.ai_agent_skills_none))
+            append("\n\n")
+            append(context.getString(R.string.ai_agent_skills_format))
+          } else {
+            for (skill in skills) {
+              append(skill.toPromptLine()).append('\n')
+            }
+          }
+        }
+
+    com.google.android.material.dialog.MaterialAlertDialogBuilder(context)
+        .setTitle(R.string.ai_agent_skills_title)
+        .setMessage(message)
+        .setPositiveButton(android.R.string.ok, null)
+        .show()
+    return true
+  }
+
+  private fun skillsDir(context: Context) =
+      java.io.File(java.io.File(context.filesDir, "ai"), "skills")
+
+  private fun skillRegistry(context: Context) =
+      com.tom.rv2ide.ai.tool.skill.SkillRegistry.load(skillsDir(context))
 }
 
 /**

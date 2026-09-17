@@ -135,6 +135,14 @@
   <string name="ai_agent_custom_agents_enable">启用</string>
   <string name="ai_agent_custom_agents_disable">停用</string>
 
+  <!-- Skill -->
+  <string name="ai_agent_skills_title">Skill</string>
+  <string name="ai_agent_skills_summary">按需加载的参考文档</string>
+  <string name="ai_agent_skills_none">未找到任何 skill</string>
+  <string name="ai_agent_skills_count">已加载 %1$d 个 skill</string>
+  <string name="ai_agent_skills_dir">Skill 目录：</string>
+  <string name="ai_agent_skills_format">在该目录放一个 Markdown 文件（如 api-conventions.md），或放一个含 SKILL.md 的文件夹。可选的 frontmatter 用于指定名字与说明：\n\n---\nname: api-conventions\ndescription: REST 接口的命名与错误码约定\n---\n（正文指令）</string>
+
   <!-- 长期记忆 -->
   <string name="ai_agent_memory_title">长期记忆</string>
   <string name="ai_agent_memory_summary">助手跨会话记住的事实</string>

@@ -135,6 +135,14 @@
   <string name="ai_agent_custom_agents_enable">Enable</string>
   <string name="ai_agent_custom_agents_disable">Disable</string>
 
+  <!-- Skills -->
+  <string name="ai_agent_skills_title">Skills</string>
+  <string name="ai_agent_skills_summary">Reference documents loaded on demand</string>
+  <string name="ai_agent_skills_none">No skill found</string>
+  <string name="ai_agent_skills_count">%1$d skill(s) loaded</string>
+  <string name="ai_agent_skills_dir">Skill directory:</string>
+  <string name="ai_agent_skills_format">Put a Markdown file there (e.g. api-conventions.md), or a folder with SKILL.md. An optional frontmatter block sets the name and description:\n\n---\nname: api-conventions\ndescription: REST naming and error-code conventions\n---\n(instructions)</string>
+
   <!-- Long-term memory -->
   <string name="ai_agent_memory_title">Long-term memory</string>
   <string name="ai_agent_memory_summary">Facts the assistant remembers across conversations</string>
