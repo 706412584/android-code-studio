@@ -129,6 +129,17 @@
   <string name="ai_assistant_revert_ok">Undo succeeded — %1$s</string>
   <string name="ai_assistant_revert_failed">Undo failed — %1$s</string>
 
+  <!-- Tool call cards -->
+  <string name="ai_assistant_tool_input">Input</string>
+  <string name="ai_assistant_tool_output">Output</string>
+  <string name="ai_assistant_tool_running">Running…</string>
+  <string name="ai_assistant_tool_done">Done</string>
+  <string name="ai_assistant_tool_failed_short">Failed</string>
+  <string name="ai_assistant_tool_empty">(none)</string>
+  <string name="ai_assistant_tool_expand">▸</string>
+  <string name="ai_assistant_tool_collapse">▾</string>
+  <string name="ai_assistant_tool_cancelled">Cancelled by user</string>
+
   <!-- Floating AI assistant on the main screen -->
   <string name="ai_assistant_open">Open AI assistant</string>
   <string name="ai_assistant_title">AI Assistant</string>

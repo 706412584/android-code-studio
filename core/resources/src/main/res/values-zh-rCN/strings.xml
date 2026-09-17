@@ -129,6 +129,17 @@
   <string name="ai_assistant_revert_ok">撤销成功 — %1$s</string>
   <string name="ai_assistant_revert_failed">撤销失败 — %1$s</string>
 
+  <!-- 工具调用卡片 -->
+  <string name="ai_assistant_tool_input">输入</string>
+  <string name="ai_assistant_tool_output">输出</string>
+  <string name="ai_assistant_tool_running">运行中…</string>
+  <string name="ai_assistant_tool_done">完成</string>
+  <string name="ai_assistant_tool_failed_short">失败</string>
+  <string name="ai_assistant_tool_empty">（无）</string>
+  <string name="ai_assistant_tool_expand">▸</string>
+  <string name="ai_assistant_tool_collapse">▾</string>
+  <string name="ai_assistant_tool_cancelled">已被用户取消</string>
+
   <!-- 主界面悬浮 AI 助手 -->
   <string name="ai_assistant_open">打开 AI 助手</string>
   <string name="ai_assistant_title">AI 助手</string>

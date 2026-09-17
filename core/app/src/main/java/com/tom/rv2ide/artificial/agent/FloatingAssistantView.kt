@@ -90,6 +90,22 @@ class FloatingAssistantView(
   private var streamingMessageId: Long? = null
 
   /**
+   * 流式刷新节流。
+   *
+   * <p>模型按 token 吐字，一段回答会产生上百个增量。每个都刷一次会让列表重排上百次：
+   * 滚动抖动、掉帧，而人眼分辨不出这个粒度。
+   */
+  private val throttle = StreamingThrottle()
+
+  /**
+   * 最近一张「运行中」的工具卡片 id。
+   *
+   * <p>TOOL_STARTED / TOOL_FINISHED 成对出现且顺序执行，因此用「最近一张」即可关联，
+   * 不必让协议层额外传 id。完成后置空，避免迟到的结果回填到错误的卡片。
+   */
+  private var lastToolCardId: Long? = null
+
+  /**
    * 本次运行是否已经通过事件流写出过文本。
    *
    * <p>决定收尾时要不要再补一条最终输出：已经流式显示过就不能再追加，否则同一段回答
@@ -250,6 +266,7 @@ class FloatingAssistantView(
     adapter.append(AssistantMessageAdapter.Role.USER, userRequest)
     streamingMessageId = null
     streamedThisRun = false
+    lastToolCardId = null
 
     executionJob =
         lifecycleScope.launch(Dispatchers.IO) {
@@ -327,7 +344,19 @@ class FloatingAssistantView(
         if (delta.isEmpty()) {
           return
         }
-        lifecycleScope.launch(Dispatchers.Main) { appendStreamingDelta(delta) }
+        // 累积始终发生在数据层（不能丢内容），只有界面刷新被节流。
+        lifecycleScope.launch(Dispatchers.Main) {
+          val id = streamingMessageId
+          if (id == null) {
+            streamingMessageId =
+                adapter.append(AssistantMessageAdapter.Role.ASSISTANT, delta)
+          } else {
+            adapter.appendTo(id, delta)
+          }
+          if (throttle.onDelta()) {
+            scrollToBottom()
+          }
+        }
       }
       com.tom.rv2ide.ai.agent.AgentEvent.Type.TURN_FINISHED -> {
         // 用轮次的**规范输出**覆盖流式累积：模型可能把工具调用写成正文文本形态，
@@ -348,27 +377,36 @@ class FloatingAssistantView(
       com.tom.rv2ide.ai.agent.AgentEvent.Type.TOOL_STARTED -> {
         val call = event.toolCall
         lifecycleScope.launch(Dispatchers.Main) {
-          appendTrace(
-              context.getString(
-                  string.ai_assistant_tool_started,
-                  call.name,
-                  summarizeArgs(call.arguments),
+          // 卡片替代原来的纯文本过程行：折叠态给摘要，展开看完整输入输出。
+          // 展开时展示**原始**参数 JSON 而不做美化：参数里可能有含换行的长内容
+          // （例如要写入的文件正文），重新序列化会改变转义形式，用户拿它对照文件
+          // 内容时会对不上。
+          val id =
+              adapter.appendToolCall(
+                  toolName = call.name,
+                  summary = summarizeArgs(call.arguments),
+                  input = call.arguments.orEmpty(),
               )
-          )
+          lastToolCardId = id
+          scrollToBottom()
         }
       }
       com.tom.rv2ide.ai.agent.AgentEvent.Type.TOOL_FINISHED -> {
         val result = event.toolResult
         val call = event.toolCall
         lifecycleScope.launch(Dispatchers.Main) {
-          if (result.isError) {
-            appendTrace(context.getString(string.ai_assistant_tool_failed, result.content.take(300)))
-            return@launch
+          // 回填到最近的卡片。TOOL_STARTED / TOOL_FINISHED 成对出现，
+          // 用「最近一张仍在运行中的卡片」关联即可，无需在协议层传 id。
+          val cardId = lastToolCardId ?: adapter.lastToolCallId()
+          if (cardId != null) {
+            adapter.completeToolCall(cardId, result.content, result.isError)
           }
+          lastToolCardId = null
+
           // 有 diffId 说明这次调用改了文件。插一条**带撤销按钮**的条目——
           // 这是用户能真正看到「AI 改了什么、怎么改回来」的唯一入口。
           val diffId = result.diffId
-          if (diffId.isNotEmpty()) {
+          if (!result.isError && diffId.isNotEmpty()) {
             appendChangedFile(call?.name.orEmpty(), call?.arguments, diffId)
           }
         }
@@ -380,6 +418,10 @@ class FloatingAssistantView(
       com.tom.rv2ide.ai.agent.AgentEvent.Type.FAILED -> {
         lifecycleScope.launch(Dispatchers.Main) {
           streamedThisRun = true
+          // 仍在「运行中」的卡片要收尾，否则会永久停在运行态，用户以为还在跑。
+          for (id in adapter.runningToolCallIds()) {
+            adapter.failToolCall(id, event.message)
+          }
           appendTrace("⚠️ ${event.message}")
         }
       }
@@ -387,26 +429,13 @@ class FloatingAssistantView(
     }
   }
 
-  /**
-   * 流式增量：首段创建一条助手消息，之后追加。
-   *
-   * <p>之所以要区分"首段"：模型可能在正文之前先输出工具调用的文本形态，此时
-   * [com.tom.rv2ide.ai.agent.AgentEvent.Type.TOOL_STARTED] 已经往列表里插过过程条目。
-   * 若不新建而是复用末条，过程信息会被当成助手正文覆盖掉。
-   */
-  private fun appendStreamingDelta(delta: String) {
-    val id = streamingMessageId
-    if (id == null) {
-      val newId = adapter.append(AssistantMessageAdapter.Role.ASSISTANT, delta)
-      streamingMessageId = newId
-    } else {
-      adapter.appendTo(id, delta)
-    }
-    scrollToBottom()
-  }
-
   /** 结束流式段：下一次增量会新建一条消息。 */
   private fun finishStreaming() {
+    // 末尾必刷：被节流合并掉的最后一段内容必须补出去，否则看起来像回答被截断了。
+    if (throttle.flush()) {
+      scrollToBottom()
+    }
+    throttle.reset()
     streamingMessageId = null
   }
 
@@ -499,6 +528,11 @@ class FloatingAssistantView(
     executionJob?.cancel()
     executionJob = null
     finishStreaming()
+    lastToolCardId = null
+    // 取消时仍在运行的卡片要收尾，否则会永久停在运行态。
+    for (id in adapter.runningToolCallIds()) {
+      adapter.failToolCall(id, context.getString(string.ai_assistant_tool_cancelled))
+    }
   }
 
   /**

@@ -263,6 +263,13 @@ dependencies {
   implementation(libs.google.material)
   implementation(libs.google.flexbox)
 
+  // Markdown rendering for assistant replies. markwon 4.6.2 was already declared in
+  // libs.versions.toml and used by the termux modules, so this adds no new dependency
+  // to the build — only a new consumer.
+  implementation(libs.common.markwon.core)
+  implementation(libs.common.markwon.extStrikethrough)
+  implementation(libs.common.markwon.linkify)
+
   // Kotlin
   implementation(libs.androidx.core.ktx)
   implementation(libs.common.kotlin)
@@ -320,5 +327,9 @@ dependencies {
   // This is to build the tooling-api-impl project before the app is built
   // So we always copy the latest JAR file to assets
   compileOnly(projects.tooling.impl)
-  
+
+  // JVM unit tests for the pure-logic pieces of the AI assistant UI (streaming throttle).
+  // Deliberately no Robolectric: the tested classes have no Android dependencies, and
+  // pulling in Robolectric would slow every test run for no gain.
+  testImplementation(libs.tests.junit)
 }

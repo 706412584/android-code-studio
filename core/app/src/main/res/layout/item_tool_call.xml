@@ -1,0 +1,132 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  一次工具调用的卡片。
+
+  折叠态只显示「工具名 + 参数摘要 + 状态」，展开后显示完整输入与输出。
+
+  刻意做成「默认折叠」：一个长任务会产生几十次工具调用，全部展开会把真正的回答
+  挤出屏幕。折叠态的摘要足以让用户判断「这一步在做什么」，需要细节时再展开。
+-->
+<com.google.android.material.card.MaterialCardView
+  xmlns:android="http://schemas.android.com/apk/res/android"
+  xmlns:app="http://schemas.android.com/apk/res-auto"
+  xmlns:tools="http://schemas.android.com/tools"
+  android:id="@+id/toolCard"
+  android:layout_width="match_parent"
+  android:layout_height="wrap_content"
+  android:layout_marginStart="12dp"
+  android:layout_marginEnd="12dp"
+  android:layout_marginTop="3dp"
+  android:layout_marginBottom="3dp"
+  android:clickable="true"
+  android:focusable="true"
+  app:cardCornerRadius="10dp"
+  app:cardElevation="0dp"
+  app:strokeWidth="1dp">
+
+  <LinearLayout
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:paddingStart="12dp"
+    android:paddingEnd="12dp"
+    android:paddingTop="8dp"
+    android:paddingBottom="8dp">
+
+    <!-- 折叠态可见：工具名 + 状态 -->
+    <LinearLayout
+      android:layout_width="match_parent"
+      android:layout_height="wrap_content"
+      android:orientation="horizontal"
+      android:gravity="center_vertical">
+
+      <TextView
+        android:id="@+id/toolName"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:textAppearance="@style/TextAppearance.Material3.LabelMedium"
+        android:textStyle="bold"
+        tools:text="file_write" />
+
+      <TextView
+        android:id="@+id/toolStatus"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:layout_marginStart="8dp"
+        android:textAppearance="@style/TextAppearance.Material3.LabelSmall"
+        android:ellipsize="end"
+        android:maxLines="1"
+        tools:text="完成" />
+
+      <TextView
+        android:id="@+id/toolChevron"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="4dp"
+        android:textAppearance="@style/TextAppearance.Material3.LabelSmall"
+        tools:text="▸" />
+
+    </LinearLayout>
+
+    <!-- 折叠态可见：参数摘要 -->
+    <TextView
+      android:id="@+id/toolSummary"
+      android:layout_width="match_parent"
+      android:layout_height="wrap_content"
+      android:layout_marginTop="2dp"
+      android:textAppearance="@style/TextAppearance.Material3.BodySmall"
+      android:ellipsize="end"
+      android:maxLines="2"
+      tools:text="file_path=/sdcard/proj/app/build.gradle" />
+
+    <!-- 展开后可见：完整输入与输出 -->
+    <LinearLayout
+      android:id="@+id/toolDetails"
+      android:layout_width="match_parent"
+      android:layout_height="wrap_content"
+      android:layout_marginTop="6dp"
+      android:orientation="vertical"
+      android:visibility="gone"
+      tools:visibility="visible">
+
+      <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="@string/ai_assistant_tool_input"
+        android:textAppearance="@style/TextAppearance.Material3.LabelSmall"
+        android:textStyle="bold" />
+
+      <TextView
+        android:id="@+id/toolInput"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="2dp"
+        android:fontFamily="monospace"
+        android:textAppearance="@style/TextAppearance.Material3.BodySmall"
+        android:textIsSelectable="true"
+        tools:text="{\n  &quot;file_path&quot;: &quot;app/build.gradle&quot;,\n  &quot;content&quot;: &quot;...&quot;\n}" />
+
+      <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:text="@string/ai_assistant_tool_output"
+        android:textAppearance="@style/TextAppearance.Material3.LabelSmall"
+        android:textStyle="bold" />
+
+      <TextView
+        android:id="@+id/toolOutput"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="2dp"
+        android:fontFamily="monospace"
+        android:textAppearance="@style/TextAppearance.Material3.BodySmall"
+        android:textIsSelectable="true"
+        tools:text="已写入 app/build.gradle（42 行）" />
+
+    </LinearLayout>
+
+  </LinearLayout>
+
+</com.google.android.material.card.MaterialCardView>
