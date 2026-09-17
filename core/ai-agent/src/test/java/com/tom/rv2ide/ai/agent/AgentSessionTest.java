@@ -399,6 +399,54 @@ final class AgentSessionTest {
   }
 
   @Test
+  void continuesFromProvidedHistory(@TempDir Path workspace) {
+    // 续接既有会话：历史应出现在本轮请求里，且位于 system 之后、新用户消息之前
+    ScriptedProtocol protocol = new ScriptedProtocol(true).enqueue("接着回答", List.of());
+    List<ModelMessage> history =
+        List.of(
+            new com.tom.rv2ide.ai.protocol.UserModelMessage("上一轮的问题"),
+            new com.tom.rv2ide.ai.protocol.AssistantModelMessage("上一轮的回答"));
+
+    new AgentSession(
+            clientWith(protocol), fileRegistry(), new ToolExecutor(fileRegistry(), null, null))
+        .run(
+            config(10),
+            "系统提示",
+            "本轮新问题",
+            history,
+            ToolContext.builder().homePath(workspace.toString()).build(),
+            null,
+            null);
+
+    List<ModelMessage> sent = protocol.receivedMessages.get(0);
+    assertEquals(4, sent.size(), "system + 历史2条 + 新用户消息");
+    assertEquals("system", sent.get(0).getRole());
+    assertEquals("上一轮的问题", sent.get(1).getContent());
+    assertEquals("上一轮的回答", sent.get(2).getContent());
+    assertEquals("本轮新问题", sent.get(3).getContent());
+  }
+
+  @Test
+  void emptyHistoryBehavesLikeSingleTurn(@TempDir Path workspace) {
+    // 空历史与旧签名等价，保证既有调用方不受影响
+    ScriptedProtocol protocol = new ScriptedProtocol(true).enqueue("回答", List.of());
+
+    new AgentSession(
+            clientWith(protocol), fileRegistry(), new ToolExecutor(fileRegistry(), null, null))
+        .run(
+            config(10),
+            "系统提示",
+            "问题",
+            List.of(),
+            ToolContext.builder().homePath(workspace.toString()).build(),
+            null,
+            null);
+
+    List<ModelMessage> sent = protocol.receivedMessages.get(0);
+    assertEquals(2, sent.size(), "system + 用户消息");
+  }
+
+  @Test
   void promptHandlesEmptyToolList() {
     String prompt = new AgentPromptBuilder().build("/w", List.of());
 

@@ -103,9 +103,33 @@ public final class AgentSession {
       ToolContext toolContext,
       ModelCancellationToken cancellationToken,
       AgentEvent.Listener listener) {
+    return run(
+        config, systemPrompt, userRequest, null, toolContext, cancellationToken, listener);
+  }
+
+  /**
+   * 带历史的运行重载——用于续接既有会话。
+   *
+   * <p><b>为什么历史由调用方传入而非本类持有</b>：循环只负责"再跑一轮"的决策，
+   * 不该知道消息从哪来（内存、文件、数据库）。持久化由调用方用 {@code listener}
+   * 的事件流完成——每轮结束追加条目即可，循环无需改动。
+   *
+   * @param history 既有对话消息（由 {@code ConversationHistory.fold} 折叠而来），可为 null 或空
+   */
+  public AgentRunResult run(
+      ModelConfig config,
+      String systemPrompt,
+      String userRequest,
+      List<ModelMessage> history,
+      ToolContext toolContext,
+      ModelCancellationToken cancellationToken,
+      AgentEvent.Listener listener) {
 
     List<ModelMessage> messages = new ArrayList<>();
     messages.add(new SystemModelMessage(systemPrompt == null ? "" : systemPrompt));
+    if (history != null) {
+      messages.addAll(history);
+    }
     messages.add(new UserModelMessage(userRequest == null ? "" : userRequest));
 
     List<ToolInfo> tools = new ArrayList<>(registry.getAll());
