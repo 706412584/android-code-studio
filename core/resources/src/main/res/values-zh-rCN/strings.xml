@@ -121,6 +121,18 @@
   <string name="ai_agent_api_key_unset">未设置</string>
   <string name="ai_agent_api_key_set">密钥：%1$s…</string>
 
+  <!-- MCP 服务端 -->
+  <string name="ai_agent_mcp_title">MCP 服务端</string>
+  <string name="ai_agent_mcp_summary">接入外部 MCP 工具服务</string>
+  <string name="ai_agent_mcp_none">尚未配置 MCP 服务端</string>
+  <string name="ai_agent_mcp_count">已启用 %1$d / %2$d 个</string>
+  <string name="ai_agent_mcp_add">添加服务端…</string>
+  <string name="ai_agent_mcp_add_hint">填写 MCP 服务端的 HTTP 地址。它的工具会以 mcpx_&lt;名字&gt; 的形式出现，且始终需要确认。</string>
+  <string name="ai_agent_mcp_label_hint">备注名（可选）</string>
+  <string name="ai_agent_mcp_enable">启用</string>
+  <string name="ai_agent_mcp_disable">停用</string>
+  <string name="ai_agent_mcp_remove">删除</string>
+
   <!-- 对话模式与提示词模板 -->
   <string name="ai_agent_chat_mode_title">对话模式</string>
   <string name="ai_agent_chat_mode_summary">助手被允许做到什么程度</string>

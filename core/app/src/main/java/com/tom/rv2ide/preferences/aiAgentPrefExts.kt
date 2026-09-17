@@ -104,6 +104,7 @@ private class AgentToolingGroup(
     addPreference(PermissionModePreference())
     addPreference(AuthorizedToolsPreference())
     addPreference(PromptTemplatePreference())
+    addPreference(McpServersPreference())
     addPreference(ShellBackendPreference())
     addPreference(
         CustomEndpointField(
@@ -377,6 +378,149 @@ private class PromptTemplatePreference(
         }
         .setNegativeButton(android.R.string.cancel, null)
         .show()
+  }
+}
+
+/**
+ * MCP server 配置：添加、查看、删除。
+ *
+ * <p><b>为什么需要这个入口</b>：MCP 的价值在于「接入任意现成的工具服务而不改本项目
+ * 代码」，但如果没有配置界面，用户无从告诉应用去连哪个 server——功能等于不存在。
+ *
+ * <p>列表里显示每个 server 的地址与启用状态；删除即从配置中移除。启用/禁用通过重新
+ * 添加控制（保留地址），避免用户为了临时关掉一个 server 而丢掉它的配置。
+ */
+@Parcelize
+private class McpServersPreference(
+    override val key: String = "mcp_servers",
+    override val title: Int = R.string.ai_agent_mcp_title,
+    override val summary: Int? = R.string.ai_agent_mcp_summary,
+) : BasePreference() {
+
+  override fun onCreatePreference(context: Context): Preference {
+    val servers = com.tom.rv2ide.artificial.agent.McpServers(context).all()
+    return androidx.preference.Preference(context).apply {
+      key = "mcp_servers"
+      title = context.getString(R.string.ai_agent_mcp_title)
+      summary =
+          if (servers.isEmpty()) context.getString(R.string.ai_agent_mcp_none)
+          else context.getString(R.string.ai_agent_mcp_count, servers.count { it.enabled }, servers.size)
+    }
+  }
+
+  override fun onPreferenceClick(preference: Preference): Boolean {
+    showList(preference.context, preference)
+    return true
+  }
+
+  private fun showList(
+      context: Context,
+      preference: Preference,
+  ) {
+    val store = com.tom.rv2ide.artificial.agent.McpServers(context)
+    val servers = store.all()
+
+    val labels =
+        servers
+            .map { server ->
+              val state = if (server.enabled) "✓" else "✗"
+              "$state ${server.displayName()}"
+            }
+            .toMutableList()
+    labels.add(context.getString(R.string.ai_agent_mcp_add))
+
+    com.google.android.material.dialog.MaterialAlertDialogBuilder(context)
+        .setTitle(R.string.ai_agent_mcp_title)
+        .setItems(labels.toTypedArray()) { _, which ->
+          if (which == servers.size) {
+            showAddDialog(context, preference)
+          } else {
+            showServerActions(context, preference, servers[which])
+          }
+        }
+        .setNegativeButton(android.R.string.cancel, null)
+        .show()
+  }
+
+  private fun showServerActions(
+      context: Context,
+      preference: Preference,
+      server: com.tom.rv2ide.artificial.agent.McpServers.Server,
+  ) {
+    val store = com.tom.rv2ide.artificial.agent.McpServers(context)
+    val actions =
+        arrayOf(
+            context.getString(
+                if (server.enabled) R.string.ai_agent_mcp_disable
+                else R.string.ai_agent_mcp_enable),
+            context.getString(R.string.ai_agent_mcp_remove),
+        )
+
+    com.google.android.material.dialog.MaterialAlertDialogBuilder(context)
+        .setTitle(server.displayName())
+        .setItems(actions) { _, which ->
+          when (which) {
+            0 -> {
+              val updated = store.all()
+              val next = mutableListOf<com.tom.rv2ide.artificial.agent.McpServers.Server>()
+              for (item in updated) {
+                next.add(
+                    if (item.url == server.url)
+                        com.tom.rv2ide.artificial.agent.McpServers.Server(
+                            item.url, item.label, !item.enabled)
+                    else item)
+              }
+              store.save(next)
+            }
+            1 -> store.remove(server.url)
+          }
+          preference.summary = refreshSummary(context)
+        }
+        .setNegativeButton(android.R.string.cancel, null)
+        .show()
+  }
+
+  private fun showAddDialog(
+      context: Context,
+      preference: Preference,
+  ) {
+    val container = android.widget.LinearLayout(context).apply {
+      orientation = android.widget.LinearLayout.VERTICAL
+      setPadding(48, 24, 48, 0)
+    }
+    val urlField = com.google.android.material.textfield.TextInputEditText(context).apply {
+      hint = "https://mcp.example.com/mcp"
+      inputType =
+          android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_URI
+    }
+    val labelField = com.google.android.material.textfield.TextInputEditText(context).apply {
+      hint = context.getString(R.string.ai_agent_mcp_label_hint)
+    }
+    container.addView(urlField)
+    container.addView(labelField)
+
+    com.google.android.material.dialog.MaterialAlertDialogBuilder(context)
+        .setTitle(R.string.ai_agent_mcp_add)
+        .setMessage(R.string.ai_agent_mcp_add_hint)
+        .setView(container)
+        .setPositiveButton(android.R.string.ok) { _, _ ->
+          val url = urlField.text?.toString()?.trim().orEmpty()
+          if (url.isNotEmpty()) {
+            com.tom.rv2ide.artificial.agent.McpServers(context)
+                .add(
+                    com.tom.rv2ide.artificial.agent.McpServers.Server(
+                        url, labelField.text?.toString()?.trim().orEmpty(), true))
+            preference.summary = refreshSummary(context)
+          }
+        }
+        .setNegativeButton(android.R.string.cancel, null)
+        .show()
+  }
+
+  private fun refreshSummary(context: Context): String {
+    val servers = com.tom.rv2ide.artificial.agent.McpServers(context).all()
+    return if (servers.isEmpty()) context.getString(R.string.ai_agent_mcp_none)
+    else context.getString(R.string.ai_agent_mcp_count, servers.count { it.enabled }, servers.size)
   }
 }
 

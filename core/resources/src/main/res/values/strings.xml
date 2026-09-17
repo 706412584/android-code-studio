@@ -121,6 +121,18 @@
   <string name="ai_agent_api_key_unset">Not set</string>
   <string name="ai_agent_api_key_set">API key: %1$s…</string>
 
+  <!-- MCP servers -->
+  <string name="ai_agent_mcp_title">MCP servers</string>
+  <string name="ai_agent_mcp_summary">Connect external MCP tool servers</string>
+  <string name="ai_agent_mcp_none">No MCP server configured</string>
+  <string name="ai_agent_mcp_count">%1$d of %2$d enabled</string>
+  <string name="ai_agent_mcp_add">Add server…</string>
+  <string name="ai_agent_mcp_add_hint">Enter the HTTP endpoint of an MCP server. Its tools will appear as mcpx_&lt;name&gt; and always require confirmation.</string>
+  <string name="ai_agent_mcp_label_hint">Label (optional)</string>
+  <string name="ai_agent_mcp_enable">Enable</string>
+  <string name="ai_agent_mcp_disable">Disable</string>
+  <string name="ai_agent_mcp_remove">Remove</string>
+
   <!-- Chat mode and prompt templates -->
   <string name="ai_agent_chat_mode_title">Chat mode</string>
   <string name="ai_agent_chat_mode_summary">How much the assistant is allowed to do</string>

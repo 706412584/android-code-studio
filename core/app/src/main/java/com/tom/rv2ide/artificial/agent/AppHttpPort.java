@@ -54,4 +54,24 @@ public final class AppHttpPort implements HttpPort {
         SimpleHttpClient.download(url, CONNECT_TIMEOUT_MS, READ_TIMEOUT_MS);
     return new BinaryResponse(result.mimeType, result.bytes);
   }
+
+  @Override
+  public TextResponse postJson(String url, String jsonBody, Map<String, String> headers)
+      throws Exception {
+    // 走 execute 而非 postJson 便捷方法：后者丢弃响应头，而 MCP 的会话 id 正是从
+    // Mcp-Session-Id 响应头下发的，拿不到就无法建立会话。
+    SimpleHttpClient.Request request = new SimpleHttpClient.Request(url, "POST", jsonBody);
+    request.connectTimeoutMs = CONNECT_TIMEOUT_MS;
+    request.readTimeoutMs = READ_TIMEOUT_MS;
+    request.headers.put("Content-Type", "application/json");
+    request.headers.put("Accept", "application/json");
+    if (headers != null) {
+      request.headers.putAll(headers);
+    }
+    SimpleHttpClient.Response response = SimpleHttpClient.execute(request);
+    if (response.code < 200 || response.code >= 300) {
+      throw new Exception("HTTP " + response.code + ": " + response.body);
+    }
+    return new TextResponse(response.body, response.headers);
+  }
 }

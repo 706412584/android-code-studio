@@ -263,7 +263,56 @@ public final class AgentOrchestrator {
     registry.register(new WebFetchTool(http));
     registry.register(new WebSearchTool(new RssSearchProvider(http)));
 
+    // 外部 MCP server 提供的工具。
+    registerMcpTools(registry, http);
+
     return registry;
+  }
+
+  /**
+   * 把已配置的 MCP server 的工具注册进来。
+   *
+   * <p><b>失败一律跳过</b>：MCP 是可选扩展，某个 server 连不上不该让整个 AI 功能不可用。
+   * 拉取失败时记一条错误日志（供排查），但不阻断本次运行。
+   *
+   * <p><b>每次运行重新拉取</b>：工具列表可能随 server 升级而变化，缓存会让用户改了
+   * server 后看不到新工具。代价是每次运行多一次网络往返——但只在配置了 server 时才发生，
+   * 且 {@link McpToolInfo} 的拉取很轻。
+   */
+  private void registerMcpTools(ToolRegistry registry, AppHttpPort http) {
+    java.util.List<McpServers.Server> servers;
+    try {
+      servers = new McpServers(appContext).enabled();
+    } catch (RuntimeException e) {
+      return;
+    }
+    if (servers.isEmpty()) {
+      return;
+    }
+
+    java.util.Set<String> usedNames = new java.util.HashSet<>();
+    for (ToolInfo existing : registry.getAll()) {
+      usedNames.add(existing.getName());
+    }
+
+    for (McpServers.Server server : servers) {
+      try {
+        com.tom.rv2ide.ai.tool.mcp.McpClient client =
+            new com.tom.rv2ide.ai.tool.mcp.McpClient(http, server.url);
+        for (com.tom.rv2ide.ai.tool.mcp.McpToolInfo info : client.listTools()) {
+          com.tom.rv2ide.ai.tool.mcp.McpToolAdapter adapter =
+              new com.tom.rv2ide.ai.tool.mcp.McpToolAdapter(client, info, server.displayName());
+          // 名字冲突时跳过而不是覆盖：覆盖会让内置工具静默消失，比缺少一个远程工具更糟。
+          if (!usedNames.add(adapter.getName())) {
+            continue;
+          }
+          registry.register(adapter);
+        }
+      } catch (Exception e) {
+        com.tom.rv2ide.ai.tool.api.ErrorLog.record(
+            "mcp", "拉取 MCP 工具列表失败: " + server.url, e, null);
+      }
+    }
   }
 
   /**

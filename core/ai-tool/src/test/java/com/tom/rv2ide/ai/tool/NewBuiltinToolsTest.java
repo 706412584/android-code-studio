@@ -229,6 +229,11 @@ final class NewBuiltinToolsTest {
     public BinaryResponse getBytes(String url, Map<String, String> headers) {
       return new BinaryResponse("application/octet-stream", new byte[0]);
     }
+
+    @Override
+    public TextResponse postJson(String url, String jsonBody, Map<String, String> headers) {
+      return new TextResponse("", Collections.<String, String>emptyMap());
+    }
   }
 
   @Test

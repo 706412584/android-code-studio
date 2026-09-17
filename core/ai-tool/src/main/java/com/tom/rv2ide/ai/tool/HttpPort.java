@@ -57,6 +57,62 @@ public interface HttpPort {
    */
   BinaryResponse getBytes(String url, Map<String, String> headers) throws Exception;
 
+  /**
+   * 发起 POST 请求（JSON 请求体），返回响应正文**与响应头**。
+   *
+   * <p><b>为什么需要响应头</b>：MCP 的会话 id 走 {@code Mcp-Session-Id} 响应头下发，
+   * 后续请求必须回传它。只返回正文的接口拿不到这个值，会话就无法建立。
+   *
+   * <p><b>为什么必须有 POST</b>：MCP 用 JSON-RPC over POST。此前的 {@link #getText}
+   * 只够读取类工具使用；为 MCP 新增这一个方法是实际需要，而非预留能力。
+   *
+   * @param url 完整 URL
+   * @param jsonBody JSON 请求体
+   * @param headers 附加请求头，可为空
+   */
+  TextResponse postJson(String url, String jsonBody, Map<String, String> headers) throws Exception;
+
+  /** 文本响应：正文 + 响应头。 */
+  final class TextResponse {
+    private final String body;
+    private final Map<String, String> headers;
+
+    public TextResponse(String body, Map<String, String> headers) {
+      this.body = body == null ? "" : body;
+      this.headers = headers == null ? Collections.<String, String>emptyMap() : headers;
+    }
+
+    public String getBody() {
+      return body;
+    }
+
+    public Map<String, String> getHeaders() {
+      return headers;
+    }
+
+    /**
+     * 按名字取响应头（大小写不敏感）。
+     *
+     * <p>HTTP 头名不区分大小写，而不同实现回传的大小写不一致
+     * （{@code Mcp-Session-Id} / {@code mcp-session-id}）。调用方按小写查询即可。
+     */
+    public String header(String name) {
+      if (name == null) {
+        return "";
+      }
+      String direct = headers.get(name);
+      if (direct != null) {
+        return direct;
+      }
+      for (Map.Entry<String, String> entry : headers.entrySet()) {
+        if (entry.getKey() != null && entry.getKey().equalsIgnoreCase(name)) {
+          return entry.getValue() == null ? "" : entry.getValue();
+        }
+      }
+      return "";
+    }
+  }
+
   /** 二进制响应。 */
   final class BinaryResponse {
     private final String mimeType;
@@ -90,6 +146,12 @@ public interface HttpPort {
 
       @Override
       public BinaryResponse getBytes(String url, Map<String, String> headers) throws Exception {
+        throw new Exception("当前环境未配置网络访问。");
+      }
+
+      @Override
+      public TextResponse postJson(String url, String jsonBody, Map<String, String> headers)
+          throws Exception {
         throw new Exception("当前环境未配置网络访问。");
       }
     };
