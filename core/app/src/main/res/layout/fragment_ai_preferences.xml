@@ -65,13 +65,13 @@
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="Auto-Switch Provider"
+                    android:text="@string/ai_agent_auto_switch"
                     android:textAppearance="?attr/textAppearanceBodyLarge" />
 
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="Automatically switch provider on errors"
+                    android:text="@string/ai_agent_auto_switch_summary"
                     android:textAppearance="?attr/textAppearanceBodySmall"
                     android:textColor="?attr/colorOnSurfaceVariant" />
 
@@ -106,13 +106,13 @@
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="Code Completion"
+                    android:text="@string/ai_agent_code_completion"
                     android:textAppearance="?attr/textAppearanceBodyLarge" />
 
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="Enable AI-powered code suggestions"
+                    android:text="@string/ai_agent_code_completion_summary"
                     android:textAppearance="?attr/textAppearanceBodySmall"
                     android:textColor="?attr/colorOnSurfaceVariant" />
 
@@ -137,7 +137,7 @@
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
-                android:text="Provider:"
+                android:text="@string/ai_agent_provider_label"
                 android:textAppearance="?attr/textAppearanceBodyMedium"
                 android:textColor="?attr/colorOnSurfaceVariant" />
 
@@ -145,7 +145,7 @@
                 android:id="@+id/currentProviderText"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="Not set"
+                android:text="@string/ai_agent_value_unset"
                 android:textAppearance="?attr/textAppearanceBodyMedium" />
 
         </LinearLayout>
@@ -160,7 +160,7 @@
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
-                android:text="Model:"
+                android:text="@string/ai_agent_model_label"
                 android:textAppearance="?attr/textAppearanceBodyMedium"
                 android:textColor="?attr/colorOnSurfaceVariant" />
 
@@ -168,7 +168,7 @@
                 android:id="@+id/currentModelText"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="Not set"
+                android:text="@string/ai_agent_value_unset"
                 android:textAppearance="?attr/textAppearanceBodyMedium" />
 
         </LinearLayout>

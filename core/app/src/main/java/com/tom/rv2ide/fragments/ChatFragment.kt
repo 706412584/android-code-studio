@@ -185,7 +185,7 @@ class ChatFragment : Fragment() {
             val userRequest = promptInput.text.toString()
 
             if (userRequest.isBlank()) {
-                showSnackbar("Please enter a request")
+                showSnackbar(getString(R.string.ai_snack_enter_request))
                 return@setOnClickListener
             }
 
@@ -203,8 +203,8 @@ class ChatFragment : Fragment() {
             val settings = agentSettings()
             settings.setAgentModeEnabled(!settings.isAgentModeEnabled)
             showSnackbar(
-                if (settings.isAgentModeEnabled) "Agent 模式已开启（多轮工具调用）"
-                else "已切回经典模式（单次生成）"
+                if (settings.isAgentModeEnabled) getString(R.string.ai_snack_agent_mode_on)
+                else getString(R.string.ai_snack_agent_mode_off)
             )
             true
         }
@@ -295,12 +295,12 @@ class ChatFragment : Fragment() {
                 val success = aiAgent.setProjectRoot(userRootProject)
                 
                 if (success) {
-                    statusText.text = "Project loaded successfully"
+                    statusText.text = getString(R.string.ai_status_project_loaded)
                 } else {
-                    statusText.text = "Failed to load project"
+                    statusText.text = getString(R.string.ai_status_project_load_failed)
                 }
             } catch (e: Exception) {
-                statusText.text = "Error loading project: ${e.message}"
+                statusText.text = getString(R.string.ai_status_project_load_error, e.message ?: "")
             }
         }
     }
@@ -388,7 +388,7 @@ class ChatFragment : Fragment() {
 
     private fun openFileInEditor(fileName: String) {
         if (userRootProject.isBlank()) {
-            showSnackbar("Project path not set")
+            showSnackbar(getString(R.string.ai_snack_project_path_not_set))
             return
         }
         
@@ -396,21 +396,21 @@ class ChatFragment : Fragment() {
             try {
                 val file = findFileInProject(File(userRootProject), fileName)
                 if (file == null) {
-                    showSnackbar("File not found: $fileName")
+                    showSnackbar(getString(R.string.ai_snack_file_not_found, fileName))
                     return@launch
                 }
                 
                 val activity = requireActivity()
                 if (activity is EditorHandlerActivity) {
                     activity.openFile(file)
-                    showSnackbar("Opened: ${file.name}")
+                    showSnackbar(getString(R.string.ai_snack_file_opened, file.name))
                     
                     lastMonitoredFile = file
                     delay(500)
                     setupCodeCompletionForCurrentFile()
                 }
             } catch (e: Exception) {
-                showSnackbar("Error opening file: ${e.message}")
+                showSnackbar(getString(R.string.ai_snack_file_open_error, e.message ?: ""))
             }
         }
     }
