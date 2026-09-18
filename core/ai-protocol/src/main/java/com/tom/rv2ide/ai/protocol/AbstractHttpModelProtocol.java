@@ -71,7 +71,73 @@ abstract class AbstractHttpModelProtocol implements ModelProtocol {
         return postJson(url, body, headers, null);
     }
 
+    /**
+     * 带重试的 POST。
+     *
+     * <p><b>为什么重试放在这一层</b>：这是所有协议实现（OpenAI 兼容 / Anthropic）的
+     * 共同出口，放在这里两类协议自动都获得重试能力，不必各自实现一遍。
+     *
+     * <p><b>只重试「请求创建阶段」的失败</b>：一旦拿到 2xx 并开始读 body，重试的语义就
+     * 变了（已消费的流无法回退），那属于流中断恢复，由 {@code StreamIdleWatchdog} 与
+     * 上层的断流处理负责。这里判据用 {@link RetryPolicy}。
+     *
+     * <p>退避用 {@link BackoffPolicy}：500ms 起指数增长、cap 32s、带抖动；
+     * 服务端给了 {@code Retry-After} 时直接采用且绕过上限。
+     */
     protected String postJson(
+            String url,
+            JSONObject body,
+            Map<String, String> headers,
+            ModelCancellationToken cancellationToken
+    ) throws ModelCompletionException {
+        RetryPolicy retryPolicy = new RetryPolicy();
+        BackoffPolicy backoff = new BackoffPolicy();
+        ModelCompletionException last = null;
+        for (int attempt = 0; attempt <= retryPolicy.maxRetries(); attempt++) {
+            if (cancellationToken != null && cancellationToken.isCancelled()) {
+                throw new ModelCompletionException("请求已取消");
+            }
+            try {
+                return postJsonOnce(url, body, headers, cancellationToken);
+            } catch (ModelCompletionException e) {
+                last = e;
+                // 有 HTTP 状态码时按状态码分类（服务端已明确表态）；
+                // 没有状态码说明是连接层失败，按异常分类（连接错误可重试）。
+                int status = e.httpStatus();
+                RetryPolicy.ErrorCategory category =
+                        status > 0
+                                ? RetryPolicy.classifyStatus(status)
+                                : RetryPolicy.classify(e, false);
+                if (!retryPolicy.canRetry(category) || attempt == retryPolicy.maxRetries()) {
+                    throw e;
+                }
+                long delayMs = backoff.delayMs(attempt + 1, e.retryAfterMs());
+                sleepQuietly(delayMs, cancellationToken);
+            }
+        }
+        throw last == null ? new ModelCompletionException("请求失败") : last;
+    }
+
+    /** 退避等待。被取消时立刻返回，不把取消变成一次完整睡眠。 */
+    private static void sleepQuietly(long delayMs, ModelCancellationToken cancellationToken) {
+        if (delayMs <= 0) {
+            return;
+        }
+        long deadline = System.currentTimeMillis() + delayMs;
+        while (System.currentTimeMillis() < deadline) {
+            if (cancellationToken != null && cancellationToken.isCancelled()) {
+                return;
+            }
+            try {
+                Thread.sleep(Math.min(200L, Math.max(1L, deadline - System.currentTimeMillis())));
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return;
+            }
+        }
+    }
+
+    private String postJsonOnce(
             String url,
             JSONObject body,
             Map<String, String> headers,
