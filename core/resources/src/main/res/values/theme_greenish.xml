@@ -64,6 +64,8 @@
   <color name="_greenish_light_colorSurfaceContainer">#ffe6f2e6</color>
   <color name="_greenish_light_colorSurfaceContainerHigh">#ffe1efdf</color>
   <color name="_greenish_light_colorSurfaceContainerHighest">#ffdcecd8</color>
+  <color name="_greenish_light_colorcodeBackground">#ffe5f1e5</color>
+  <color name="_greenish_light_colorcodeHeaderBackground">#ffdfeedc</color>
   <color name="_greenish_light_colorOutlineVariant">#ffb6bfb9</color>
   <color name="_greenish_light_colorSurfaceBright">#fff1f8f4</color>
   <color name="_greenish_light_colorSurfaceDim">#ffd9dfdc</color>
@@ -109,6 +111,8 @@
     <item name="colorSurfaceContainerHigh">@color/_greenish_light_colorSurfaceContainerHigh</item>
     <item name="colorSurfaceContainerHighest">@color/_greenish_light_colorSurfaceContainerHighest</item>
     <item name="colorOutlineVariant">@color/_greenish_light_colorOutlineVariant</item>
+    <item name="colorCodeBackground">@color/_greenish_light_colorcodeBackground</item>
+    <item name="colorCodeHeaderBackground">@color/_greenish_light_colorcodeHeaderBackground</item>
     <item name="colorSurfaceBright">@color/_greenish_light_colorSurfaceBright</item>
     <item name="colorSurfaceDim">@color/_greenish_light_colorSurfaceDim</item>
   </style>
@@ -159,6 +163,8 @@
   <color name="_greenish_dark_colorSurfaceContainer">#ff2c322d</color>
   <color name="_greenish_dark_colorSurfaceContainerHigh">#ff353e36</color>
   <color name="_greenish_dark_colorSurfaceContainerHighest">#ff3e4940</color>
+  <color name="_greenish_dark_colorcodeBackground">#ff101110</color>
+  <color name="_greenish_dark_colorcodeHeaderBackground">#ff0c0d0c</color>
   <color name="_greenish_dark_colorOutlineVariant">#ff4c554e</color>
   <color name="_greenish_dark_colorSurfaceBright">#ff313331</color>
   <color name="_greenish_dark_colorSurfaceDim">#ff121412</color>
@@ -196,6 +202,8 @@
     <item name="colorSurfaceContainerHigh">@color/_greenish_dark_colorSurfaceContainerHigh</item>
     <item name="colorSurfaceContainerHighest">@color/_greenish_dark_colorSurfaceContainerHighest</item>
     <item name="colorOutlineVariant">@color/_greenish_dark_colorOutlineVariant</item>
+    <item name="colorCodeBackground">@color/_greenish_dark_colorcodeBackground</item>
+    <item name="colorCodeHeaderBackground">@color/_greenish_dark_colorcodeHeaderBackground</item>
     <item name="colorSurfaceBright">@color/_greenish_dark_colorSurfaceBright</item>
     <item name="colorSurfaceDim">@color/_greenish_dark_colorSurfaceDim</item>
     <item name="colorOnSurfaceInverse">@color/_greenish_dark_colorOnSurfaceInverse</item>

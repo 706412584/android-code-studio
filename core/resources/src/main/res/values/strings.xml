@@ -237,6 +237,12 @@
   <string name="ai_assistant_export_copied">Copied %1$d characters to the clipboard</string>
   <string name="ai_assistant_export_empty">Nothing to copy yet</string>
   <string name="ai_assistant_export_failed">Copy failed: clipboard unavailable</string>
+  <string name="ai_assistant_code_copy">Copy</string>
+  <string name="ai_assistant_code_copied">Copied</string>
+  <string name="ai_assistant_code_expand">Show all %1$d lines</string>
+  <string name="ai_assistant_code_collapse">Collapse</string>
+  <string name="ai_assistant_code_plaintext">TEXT</string>
+  <string name="ai_assistant_code_lines">%1$d lines</string>
 
   <!-- Slash commands -->
   <string name="ai_assistant_mode_changed">Mode switched to: %1$s</string>

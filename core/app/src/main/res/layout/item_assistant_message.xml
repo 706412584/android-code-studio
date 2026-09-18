@@ -61,13 +61,22 @@
         tools:text="过程"
         tools:visibility="visible" />
 
-      <TextView
-        android:id="@+id/messageText"
+      <!--
+        内容容器。
+
+        一条助手回复可能混排多段文字与多个代码块（「说明 → 代码 → 再说明」），
+        因此这里是一个纵向容器，由适配器按 CodeFenceParser 的拆分结果动态填充：
+        文本段 inflate item_assistant_text.xml，代码块 inflate item_assistant_code.xml。
+
+        为什么不直接在 XML 里放一个 TextView 再让 markwon 渲染整段：
+        markwon 的代码块只是带背景色的 Spannable，做不出语言标签、复制按钮、
+        超长折叠——那三样是控件，不是文字属性。
+      -->
+      <LinearLayout
+        android:id="@+id/messageContent"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:textAppearance="@style/TextAppearance.Material3.BodyMedium"
-        android:textIsSelectable="true"
-        tools:text="已读取 build.gradle，正在检查依赖…" />
+        android:orientation="vertical" />
 
       <!--
         撤销按钮。只在「该消息对应一次可回滚的文件改动」时出现。

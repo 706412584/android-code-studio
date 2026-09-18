@@ -1,0 +1,146 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  助手回复里的一个代码块。
+
+  结构照参考项目（cc-haha 的 CodeViewer）：
+  ┌─────────────────────────────┐
+  │ KOTLIN            12 lines  复制 │  ← 信息栏
+  ├─────────────────────────────┤
+  │ val x = 1                    │  ← 代码区（横向可滚）
+  └─────────────────────────────┘
+  │      展开全部 48 行            │  ← 超过 20 行时才出现
+
+  为什么代码块要独立成一个 item，而不是让 markwon 在文本流里渲染：
+  markwon 的代码块最终只是一个带背景色的 Spannable，做不出「语言标签 + 复制按钮 +
+  超长折叠」——这三样都是独立控件，不是文字属性。
+
+  为什么代码用横向滚动而不是换行：
+  助手面板最窄只有 260dp，一行 80 字符的代码换行后会折成 5、6 行，缩进层级完全看不出来，
+  读代码时最依赖的「一行的结构」就丢了。横向滚动牺牲一次滑动，换回代码的可读性。
+
+  为什么折叠按「内容行数」截断，而不是给代码区设 maxHeight + 内部纵向滚动：
+  纵向滚动会形成「RecyclerView → 横向滚动 → 纵向滚动」三层嵌套，触摸事件要在三层之间
+  仲裁，实机上很容易出现「内层滚不动」或「外层被卡住」。直接截断字符串（只把前 20 行
+  交给 TextView）不产生第三层滚动，行为可预测。
+-->
+<com.google.android.material.card.MaterialCardView
+  xmlns:android="http://schemas.android.com/apk/res/android"
+  xmlns:app="http://schemas.android.com/apk/res-auto"
+  xmlns:tools="http://schemas.android.com/tools"
+  android:id="@+id/codeCard"
+  android:layout_width="match_parent"
+  android:layout_height="wrap_content"
+  android:layout_marginTop="6dp"
+  android:layout_marginBottom="6dp"
+  app:cardCornerRadius="12dp"
+  app:cardElevation="0dp"
+  app:strokeWidth="1dp"
+  app:strokeColor="?attr/colorOutline"
+  app:cardBackgroundColor="?attr/colorCodeBackground">
+
+  <LinearLayout
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical">
+
+    <!-- 信息栏：语言标签（左）+ 行数 + 复制按钮（右） -->
+    <LinearLayout
+      android:layout_width="match_parent"
+      android:layout_height="wrap_content"
+      android:orientation="horizontal"
+      android:gravity="center_vertical"
+      android:background="?attr/colorCodeHeaderBackground"
+      android:paddingStart="12dp"
+      android:paddingEnd="4dp"
+      android:paddingTop="2dp"
+      android:paddingBottom="2dp">
+
+      <!--
+        语言标签全大写 + 加宽字距。全大写是代码块信息栏的通用写法（GitHub、VS Code、
+        cc-haha 都这样），好处是它一眼就不像代码内容本身——不会被误读成第一行代码。
+      -->
+      <TextView
+        android:id="@+id/codeLanguage"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:letterSpacing="0.14"
+        android:textAllCaps="true"
+        android:textAppearance="@style/TextAppearance.Material3.LabelSmall"
+        android:textColor="?attr/colorOnSurfaceVariant"
+        android:textStyle="bold"
+        tools:text="KOTLIN" />
+
+      <TextView
+        android:id="@+id/codeLines"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:layout_marginStart="8dp"
+        android:ellipsize="end"
+        android:maxLines="1"
+        android:textAppearance="@style/TextAppearance.Material3.LabelSmall"
+        android:textColor="?attr/colorOnSurfaceVariant"
+        tools:text="12 lines" />
+
+      <!--
+        复制按钮用文字而不是图标：文字能直接变成「已复制」作为反馈，不需要再加一个
+        对勾图标和一段动画；而且「复制」两个字比一个图标更不容易被误认成别的东西。
+        反馈时长 1.5s，与参考项目一致。
+      -->
+      <com.google.android.material.button.MaterialButton
+        android:id="@+id/codeCopy"
+        style="@style/Widget.Material3.Button.TextButton"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:minWidth="0dp"
+        android:minHeight="36dp"
+        android:insetTop="0dp"
+        android:insetBottom="0dp"
+        android:paddingStart="10dp"
+        android:paddingEnd="10dp"
+        android:text="@string/ai_assistant_code_copy"
+        android:textAppearance="@style/TextAppearance.Material3.LabelSmall" />
+
+    </LinearLayout>
+
+    <!--
+      代码区。android:scrollbars="horizontal" 且单行不换行：靠
+      setHorizontallyScrolling 让 TextView 按最长行测量，外层 HorizontalScrollView 负责滚动。
+    -->
+    <HorizontalScrollView
+      android:layout_width="match_parent"
+      android:layout_height="wrap_content"
+      android:scrollbars="none">
+
+      <TextView
+        android:id="@+id/codeText"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:fontFamily="monospace"
+        android:lineSpacingMultiplier="1.35"
+        android:paddingStart="12dp"
+        android:paddingEnd="12dp"
+        android:paddingTop="10dp"
+        android:paddingBottom="10dp"
+        android:textColor="?attr/colorOnSurface"
+        android:textIsSelectable="true"
+        android:textSize="13sp"
+        tools:text="val x = 1" />
+
+    </HorizontalScrollView>
+
+    <!-- 超过阈值行数时才显示。默认 gone。 -->
+    <com.google.android.material.button.MaterialButton
+      android:id="@+id/codeToggle"
+      style="@style/Widget.Material3.Button.TextButton"
+      android:layout_width="match_parent"
+      android:layout_height="wrap_content"
+      android:minHeight="40dp"
+      android:textAppearance="@style/TextAppearance.Material3.LabelMedium"
+      android:visibility="gone"
+      tools:text="展开全部 48 行"
+      tools:visibility="visible" />
+
+  </LinearLayout>
+
+</com.google.android.material.card.MaterialCardView>

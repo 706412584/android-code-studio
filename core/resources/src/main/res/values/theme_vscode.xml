@@ -63,6 +63,8 @@
   <color name="_vscode_light_colorSurfaceContainer">#fff9f9f9</color>
   <color name="_vscode_light_colorSurfaceContainerHigh">#fff6f6f6</color>
   <color name="_vscode_light_colorSurfaceContainerHighest">#fff3f3f3</color>
+  <color name="_vscode_light_colorcodeBackground">#fff8f8f8</color>
+  <color name="_vscode_light_colorcodeHeaderBackground">#fff5f5f5</color>
   <color name="_vscode_light_colorOutlineVariant">#ffe1e1e1</color>
   <color name="_vscode_light_colorSurfaceBright">#ffffffff</color>
   <color name="_vscode_light_colorSurfaceDim">#ffe6e6e6</color>
@@ -108,6 +110,8 @@
     <item name="colorSurfaceContainerHigh">@color/_vscode_light_colorSurfaceContainerHigh</item>
     <item name="colorSurfaceContainerHighest">@color/_vscode_light_colorSurfaceContainerHighest</item>
     <item name="colorOutlineVariant">@color/_vscode_light_colorOutlineVariant</item>
+    <item name="colorCodeBackground">@color/_vscode_light_colorcodeBackground</item>
+    <item name="colorCodeHeaderBackground">@color/_vscode_light_colorcodeHeaderBackground</item>
     <item name="colorSurfaceBright">@color/_vscode_light_colorSurfaceBright</item>
     <item name="colorSurfaceDim">@color/_vscode_light_colorSurfaceDim</item>
   </style>
@@ -158,6 +162,8 @@
   <color name="_vscode_dark_colorSurfaceContainer">#ff222222</color>
   <color name="_vscode_dark_colorSurfaceContainerHigh">#ff232324</color>
   <color name="_vscode_dark_colorSurfaceContainerHighest">#ff252526</color>
+  <color name="_vscode_dark_colorcodeBackground">#ff131313</color>
+  <color name="_vscode_dark_colorcodeHeaderBackground">#ff0e0e0e</color>
   <color name="_vscode_dark_colorOutlineVariant">#ff2c2c2e</color>
   <color name="_vscode_dark_colorSurfaceBright">#ff343434</color>
   <color name="_vscode_dark_colorSurfaceDim">#ff151515</color>
@@ -195,6 +201,8 @@
     <item name="colorSurfaceContainerHigh">@color/_vscode_dark_colorSurfaceContainerHigh</item>
     <item name="colorSurfaceContainerHighest">@color/_vscode_dark_colorSurfaceContainerHighest</item>
     <item name="colorOutlineVariant">@color/_vscode_dark_colorOutlineVariant</item>
+    <item name="colorCodeBackground">@color/_vscode_dark_colorcodeBackground</item>
+    <item name="colorCodeHeaderBackground">@color/_vscode_dark_colorcodeHeaderBackground</item>
     <item name="colorSurfaceBright">@color/_vscode_dark_colorSurfaceBright</item>
     <item name="colorSurfaceDim">@color/_vscode_dark_colorSurfaceDim</item>
     <item name="colorOnSurfaceInverse">@color/_vscode_dark_colorOnSurfaceInverse</item>

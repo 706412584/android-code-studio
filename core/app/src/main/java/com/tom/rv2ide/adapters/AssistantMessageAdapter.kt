@@ -17,6 +17,9 @@
 
 package com.tom.rv2ide.adapters
 
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
 import android.content.res.ColorStateList
 import android.graphics.Color
 import android.view.Gravity
@@ -24,11 +27,15 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.LinearLayout
+import android.widget.TextView
 import androidx.core.view.isVisible
 import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.color.MaterialColors
+import com.tom.rv2ide.R
 import com.tom.rv2ide.ai.tool.api.ToolDisplayCategory
+import com.tom.rv2ide.artificial.agent.AssistantCodeHighlighter
 import com.tom.rv2ide.artificial.agent.AssistantMarkdown
+import com.tom.rv2ide.artificial.agent.CodeFenceParser
 import com.tom.rv2ide.databinding.ItemAssistantMessageBinding
 import com.tom.rv2ide.databinding.ItemAssistantThinkingBinding
 import com.tom.rv2ide.databinding.ItemToolCallBinding
@@ -376,6 +383,7 @@ class AssistantMessageAdapter : RecyclerView.Adapter<RecyclerView.ViewHolder>() 
     }
   }
 
+
   override fun onBindViewHolder(holder: RecyclerView.ViewHolder, position: Int) {
     when (val item = items[position]) {
       is Message -> (holder as MessageVH).bind(item, onRevert)
@@ -403,12 +411,19 @@ class AssistantMessageAdapter : RecyclerView.Adapter<RecyclerView.ViewHolder>() 
               }
           )
 
-      // 只有助手正文走 Markdown。用户输入与过程日志保持纯文本：
-      // 过程日志里大量出现路径与命令，渲染器会把下划线、星号当标记处理导致显示变形。
-      if (message.role == Role.ASSISTANT && AssistantMarkdown.looksLikeMarkdown(message.text)) {
-        AssistantMarkdown.render(binding.messageText, message.text)
+      // 正文渲染。
+      //
+      // 只有助手回复需要拆段（代码块要独立成控件）。用户输入与过程日志保持纯文本：
+      // 过程日志里大量出现路径与命令，渲染器会把下划线、星号当标记处理导致显示变形；
+      // 用户输入同理，用户打的字应该原样显示。
+      val content = binding.messageContent
+      content.removeAllViews()
+      if (message.role == Role.ASSISTANT) {
+        renderAssistantContent(content, message.text)
       } else {
-        binding.messageText.text = message.text
+        val text = inflateText(content)
+        text.text = message.text
+        content.addView(text)
       }
 
       // 角色差异：对齐方向、气泡、宽度上限、配色。四件事一起设——它们共同表达
@@ -429,11 +444,14 @@ class AssistantMessageAdapter : RecyclerView.Adapter<RecyclerView.ViewHolder>() 
       // 用户气泡的宽度上限。纯 WRAP_CONTENT 遇到一条长消息会顶满整个面板宽度，
       // 与助手消息在视觉上分不开；限到 90% 才能看出「这是我说的话」。
       // 助手消息不限宽——代码块越宽越好读。
-      if (isUser) {
-        val maxWidth = (parent.width * USER_BUBBLE_MAX_WIDTH_RATIO).toInt()
-        binding.messageText.maxWidth = maxOf(maxWidth - dp(card, 28), dp(card, 160))
-      } else {
-        binding.messageText.maxWidth = Int.MAX_VALUE
+      //
+      // 上限设在文本段上：LinearLayout 没有 maxWidth，而用户消息的内容只有一个
+      // 文本段（用户输入不走拆段，见上面的渲染分支）。助手消息不限宽——代码块越宽越好读。
+      val bubbleMaxWidth =
+          maxOf((parent.width * USER_BUBBLE_MAX_WIDTH_RATIO).toInt() - dp(card, 28), dp(card, 160))
+      for (i in 0 until content.childCount) {
+        (content.getChildAt(i) as? TextView)?.maxWidth =
+            if (isUser) bubbleMaxWidth else Int.MAX_VALUE
       }
 
       // 色值必须走 Material 库的 attr：本项目 app 模块的 R.attr 里没有这些主题属性。
@@ -462,7 +480,14 @@ class AssistantMessageAdapter : RecyclerView.Adapter<RecyclerView.ViewHolder>() 
       }
       val textColor = MaterialColors.getColor(card, onContainer)
       binding.messageRole.setTextColor(textColor)
-      binding.messageText.setTextColor(textColor)
+      // 正文颜色只给文本段，不给代码块：代码块有自己的底色与 token 配色，
+      // 统一染成气泡的前景色会把语法高亮整片覆盖掉。
+      for (i in 0 until content.childCount) {
+        val child = content.getChildAt(i)
+        if (child is TextView) {
+          child.setTextColor(textColor)
+        }
+      }
 
       // 角色标签只在过程信息上显示，见布局注释。
       binding.messageRole.visibility = if (message.role == Role.TRACE) View.VISIBLE else View.GONE
@@ -494,6 +519,105 @@ class AssistantMessageAdapter : RecyclerView.Adapter<RecyclerView.ViewHolder>() 
 
     private fun dp(view: View, value: Int): Int =
         (value * view.resources.displayMetrics.density).toInt()
+
+    /** inflate 一个正文段。样式与 item_assistant_message.xml 里的正文完全一致。 */
+    private fun inflateText(parent: ViewGroup): TextView =
+        LayoutInflater.from(parent.context)
+            .inflate(R.layout.item_assistant_text, parent, false) as TextView
+
+    /**
+     * 把助手回复按代码围栏拆段后渲染。
+     *
+     * <p>没有围栏（绝大多数短回复）时退化为「一个正文段」，不做额外工作——
+     * 拆分本身是 O(n) 的字符串扫描，但每次流式刷新都跑一遍，能省则省。
+     */
+    private fun renderAssistantContent(content: LinearLayout, text: String) {
+      if (!text.contains("```") && !text.contains("~~~")) {
+        val view = inflateText(content)
+        AssistantMarkdown.renderOrPlain(view, text)
+        content.addView(view)
+        return
+      }
+
+      for (segment in CodeFenceParser.split(text)) {
+        when (segment) {
+          is CodeFenceParser.Segment.Text -> {
+            // 空白段（围栏之间的换行）不渲染，否则代码块之间会多出空行。
+            if (segment.markdown.isBlank()) {
+              continue
+            }
+            val view = inflateText(content)
+            AssistantMarkdown.renderOrPlain(view, segment.markdown.trimEnd('\n'))
+            content.addView(view)
+          }
+          is CodeFenceParser.Segment.Code -> {
+            val card =
+                LayoutInflater.from(content.context)
+                    .inflate(R.layout.item_assistant_code, content, false)
+            bindCodeBlock(card, segment.language, segment.code)
+            content.addView(card)
+          }
+        }
+      }
+    }
+
+    /**
+     * 绑定一个代码块：语言标签、行数、高亮、复制、超长折叠。
+     *
+     * <p>折叠是**截断字符串**而不是给代码区设 maxHeight：后者会形成
+     * 「RecyclerView → 横向滚动 → 纵向滚动」三层嵌套，触摸仲裁在实机上很容易出问题
+     * （内层滚不动 / 外层被卡住）。截断只把前 N 行交给 TextView，不产生第三层滚动。
+     */
+    private fun bindCodeBlock(card: View, language: String, code: String) {
+      val context = card.context
+      val languageView = card.findViewById<TextView>(R.id.codeLanguage)
+      val linesView = card.findViewById<TextView>(R.id.codeLines)
+      val textView = card.findViewById<TextView>(R.id.codeText)
+      val copyButton = card.findViewById<com.google.android.material.button.MaterialButton>(R.id.codeCopy)
+      val toggle = card.findViewById<com.google.android.material.button.MaterialButton>(R.id.codeToggle)
+
+      val allLines = code.split('\n')
+      val collapsed = allLines.size > CODE_COLLAPSE_THRESHOLD
+
+      // 语言标签：模型没标注时显示「纯文本」而不是留空——空着的信息栏看起来像渲染出错。
+      val displayLanguage =
+          if (language.isBlank()) context.getString(string.ai_assistant_code_plaintext)
+          else language
+      languageView.text = displayLanguage
+      linesView.text = context.getString(string.ai_assistant_code_lines, allLines.size)
+
+      // 折叠态：按「可读行数」留一行省略提示，让用户知道下面还有内容。
+      val visibleCode =
+          if (collapsed) allLines.take(CODE_COLLAPSE_THRESHOLD).joinToString("\n") else code
+      AssistantCodeHighlighter.highlightInto(textView, language, visibleCode)
+
+      // 代码必须能横向滚动，否则长行会被强制换行、缩进层级全丢。
+      textView.setHorizontallyScrolling(true)
+
+      copyButton.setOnClickListener {
+        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
+        clipboard?.setPrimaryClip(ClipData.newPlainText(displayLanguage, code))
+        copyButton.setText(string.ai_assistant_code_copied)
+        // 1.5s 后复原，与参考项目一致：短到不干扰阅读，长到能看清。
+        copyButton.postDelayed(
+            { copyButton.setText(string.ai_assistant_code_copy) },
+            CODE_COPIED_RESET_MS,
+        )
+      }
+
+      if (collapsed) {
+        toggle.visibility = View.VISIBLE
+        toggle.setText(context.getString(string.ai_assistant_code_expand, allLines.size))
+        toggle.setOnClickListener {
+          // 展开后隐藏按钮而不是换成「收起」：代码块在消息流里，收起与否不影响
+          // 上下文，留一个收起按钮只会多占一行。要看全文才展开，展开后就是终态。
+          AssistantCodeHighlighter.highlightInto(textView, language, code)
+          toggle.visibility = View.GONE
+        }
+      } else {
+        toggle.visibility = View.GONE
+      }
+    }
   }
 
   /** 工具调用卡片：折叠显示摘要，展开显示完整输入输出。 */
@@ -608,5 +732,16 @@ class AssistantMessageAdapter : RecyclerView.Adapter<RecyclerView.ViewHolder>() 
      * 限太窄（如 0.75）则中文长句会频繁换行，读起来费劲。
      */
     private const val USER_BUBBLE_MAX_WIDTH_RATIO = 0.90f
+
+    /**
+     * 代码块折叠阈值（行）。
+     *
+     * <p>取 20 与参考项目一致。低于这个数不折叠——折叠本身要占一行按钮，
+     * 一个 8 行的代码块折叠后只省下几行，反而多了一次点击。
+     */
+    private const val CODE_COLLAPSE_THRESHOLD = 20
+
+    /** 复制按钮反馈的持续时间。1.5s：短到不干扰阅读，长到能看清。 */
+    private const val CODE_COPIED_RESET_MS = 1500L
   }
 }

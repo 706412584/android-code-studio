@@ -23,6 +23,23 @@
         format="color"
         name="colorSuccess" />
 
+    <!--
+      代码块背景 / 信息栏背景。
+
+      单独定义而不是复用 colorSurfaceVariant：代码块需要与正文**明显**分层，
+      而 surfaceVariant 在浅色主题下与页面底色只差一点点，代码块会和正文糊在一起。
+      参考项目（cc-haha）也是给代码块独立色，且深色下比页面底色更暗
+      （代码 #1A1813 vs 页面 #2B271F）——深色界面里"更暗"比"更亮"更能表达
+      "这是一块嵌入的区域"，因为正文区本身已经是亮的了。
+    -->
+    <attr
+        format="color"
+        name="colorCodeBackground" />
+
+    <attr
+        format="color"
+        name="colorCodeHeaderBackground" />
+
     <declare-styleable name="VectorMasterView">
         <attr
             format="reference"

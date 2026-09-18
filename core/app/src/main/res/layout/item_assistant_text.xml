@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  消息里的一段正文。
+
+  单独一个文件是为了能在代码里按需 inflate：一条助手回复可能是
+  「文字 → 代码块 → 文字 → 代码块」，每段文字都从这份模板生成，
+  样式（字号、可选中等）与直接写在 item_assistant_message.xml 里完全一致。
+-->
+<TextView xmlns:android="http://schemas.android.com/apk/res/android"
+  xmlns:tools="http://schemas.android.com/tools"
+  android:id="@+id/segmentText"
+  android:layout_width="wrap_content"
+  android:layout_height="wrap_content"
+  android:textAppearance="@style/TextAppearance.Material3.BodyMedium"
+  android:textIsSelectable="true"
+  tools:text="已读取 build.gradle，正在检查依赖…" />

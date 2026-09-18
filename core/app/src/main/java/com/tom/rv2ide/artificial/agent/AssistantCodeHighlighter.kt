@@ -21,6 +21,7 @@ import android.content.Context
 import android.text.SpannableStringBuilder
 import android.text.Spanned
 import android.text.style.ForegroundColorSpan
+import android.widget.TextView
 import androidx.annotation.ColorInt
 import io.noties.markwon.AbstractMarkwonPlugin
 import io.noties.markwon.MarkwonConfiguration
@@ -240,6 +241,26 @@ class AssistantCodeHighlighter(private val context: Context) : SyntaxHighlight {
   }
 
   companion object {
+
+    /**
+     * 按 Context 缓存的高亮器。
+     *
+     * <p>构造 [Prism4j] 会解析并建立语法表，代价不小；列表滚动时每个代码块都新建一个
+     * 会明显卡顿。按 Context 缓存，主题切换后 Context 变化、缓存自然失效。
+     */
+    private val cache = java.util.WeakHashMap<Context, AssistantCodeHighlighter>()
+
+    /**
+     * 直接给 [TextView] 上色。
+     *
+     * <p>供独立的代码块控件调用——那条路径不经过 markwon，拿不到 [SyntaxHighlight]
+     * 挂钩点。与 [highlight] 共用同一套语法表与配色，保证代码在两处颜色一致。
+     */
+    @JvmStatic
+    fun highlightInto(view: TextView, language: String?, code: String) {
+      val highlighter = cache.getOrPut(view.context) { AssistantCodeHighlighter(view.context) }
+      view.text = highlighter.highlight(language, code)
+    }
 
     /**
      * 语言名别名 → Prism4j 语法表里的注册名。

@@ -232,6 +232,12 @@
   <string name="ai_assistant_export_copied">已复制 %1$d 个字符到剪贴板</string>
   <string name="ai_assistant_export_empty">还没有可复制的内容</string>
   <string name="ai_assistant_export_failed">复制失败：剪贴板不可用</string>
+  <string name="ai_assistant_code_copy">复制</string>
+  <string name="ai_assistant_code_copied">已复制</string>
+  <string name="ai_assistant_code_expand">展开全部 %1$d 行</string>
+  <string name="ai_assistant_code_collapse">收起</string>
+  <string name="ai_assistant_code_plaintext">纯文本</string>
+  <string name="ai_assistant_code_lines">%1$d 行</string>
 
   <!-- 斜杠命令 -->
   <string name="ai_assistant_mode_changed">已切换到模式：%1$s</string>

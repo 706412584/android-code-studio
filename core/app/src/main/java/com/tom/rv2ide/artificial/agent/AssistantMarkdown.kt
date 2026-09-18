@@ -66,6 +66,20 @@ object AssistantMarkdown {
   }
 
   /**
+   * 按内容决定走 Markdown 还是纯文本。
+   *
+   * <p>把「判断」与「渲染」放在一起，调用方就不必自己判断——否则容易出现
+   * 「这里判了、那里忘了判」，同一段文本在两处渲染出不同结果。
+   */
+  fun renderOrPlain(view: TextView, text: String) {
+    if (looksLikeMarkdown(text)) {
+      render(view, text)
+    } else {
+      view.text = text
+    }
+  }
+
+  /**
    * 判断文本是否值得走 Markdown 渲染。
    *
    * <p>过程日志（工具调用摘要、错误提示）是纯文本，且量大。对它们跑一遍解析器纯属浪费，
