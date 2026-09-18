@@ -270,6 +270,11 @@ dependencies {
   implementation(libs.common.markwon.extStrikethrough)
   implementation(libs.common.markwon.linkify)
 
+  // 代码块语法高亮。见 libs.versions.toml 中 prism4j 的说明——用 Nekogram 分支
+  // （32 种语言内嵌、无 kapt），代价是不能用 markwon 官方的 syntax-highlight 扩展，
+  // 高亮由 AssistantCodeHighlighter 自己实现。
+  implementation(libs.common.prism4j)
+
   // Kotlin
   implementation(libs.androidx.core.ktx)
   implementation(libs.common.kotlin)

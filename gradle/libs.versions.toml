@@ -18,6 +18,17 @@ androidx-work = "2.9.0"
 androidx-espresso = "3.5.1"
 retrofit = "3.0.0"
 markwon = "4.6.2"
+# Prism4j：代码块语法高亮。
+#
+# 刻意用 app.nekogram.prism4j 而非官方 io.noties.prism4j:2.0.0——官方核心 jar 不含
+# 任何语言语法（prism4j-languages 从未发布到 Maven Central），必须配合 kapt +
+# prism4j-bundler 在编译期生成语法表。Nekogram 这一支（维护中的 Telegram 客户端分支）
+# 把 32 种语言直接打进 jar：无注解处理、无额外制品、88KB。
+#
+# 代价：它重构过 API（Grammar/Token 提升为顶层类），与 markwon 官方的 syntax-highlight
+# 扩展二进制不兼容。因此高亮由本仓库自己实现——AssistantCodeHighlighter 实现 markwon 的
+# SyntaxHighlight 单方法接口，反而比官方插件更可控（配色可直接跟随 ACS 主题）。
+prism4j = "2.1.0"
 logback = "1.5.3"
 realm = "10.18.0"
 benchmark = "1.2.4"
@@ -96,6 +107,7 @@ common-markwon-core = { module = "io.noties.markwon:core", version.ref = "markwo
 common-markwon-extStrikethrough = { module = "io.noties.markwon:ext-strikethrough", version.ref = "markwon" }
 common-markwon-linkify = { module = "io.noties.markwon:linkify", version.ref = "markwon" }
 common-markwon-recycler = { module = "io.noties.markwon:recycler", version.ref = "markwon" }
+common-prism4j = { module = "app.nekogram.prism4j:prism4j", version.ref = "prism4j" }
 common-hiddenApiBypass = { module = "org.lsposed.hiddenapibypass:hiddenapibypass", version = "6.1" }
 common-termuxAmLib = { module = "com.termux:termux-am-library", version = "v2.0.0" }
 common-charts = { module = "com.github.AppDevNext:AndroidChart", version = "3.1.0.21" }

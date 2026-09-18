@@ -45,6 +45,9 @@ object AssistantMarkdown {
             .usePlugin(StrikethroughPlugin.create())
             // 链接：让 URL 可点，而不是一段无法操作的纯文本
             .usePlugin(LinkifyPlugin.create())
+            // 代码块语法高亮。没有语言标注或语言不认识时高亮器原样返回，
+            // markwon 仍会按普通代码块渲染（等宽 + 底色）。
+            .usePlugin(AssistantCodeHighlighter.Plugin(AssistantCodeHighlighter(view.context)))
             .build()
       }
 
