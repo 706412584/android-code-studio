@@ -108,11 +108,18 @@ scripts/
 build.log
 .androidide
 
-external/logwire/build
-external/atc/build
+# external/ 与 composite-builds/ 下各子模块的构建产物。
+#
+# 用通配符而不是逐个列举：仓库根级的 /build/ 只覆盖根目录，子模块的 build/ 必须单独写。
+# 原先只列了 external/logwire 与 external/atc 两个特例，导致 external/acsprovider/build/
+# 一直没被忽略——每次构建都会往工作区里塞 200 多个中间文件，提交时得逐个挑。
+#
+# 通配符只匹配名为 build 的**目录**，不会误伤源码里含 build 的路径
+# （如 tooling/builder-model-impl/src/main/java/com/android/build/）。
+external/*/build/
+composite-builds/*/build/
 
-# 新增的纯 Java 模块（core/ai-*）的构建产物。仓库根级的 /build/ 只覆盖根目录，
-# 子模块的 build/ 需要单独忽略。
+# 新增的纯 Java 模块（core/ai-*）的构建产物。
 core/ai-agent/build/
 core/ai-tool/build/
 core/ai-tool-api/build/
