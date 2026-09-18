@@ -907,6 +907,96 @@ left/top 偏移，`gravity` 只有 9 个离散值表达不了），直接塞进�
 
 ---
 
+### 3.19 实机全链路测试与四个真实缺陷
+
+在黑鲨 SKW-A0（Android 10 / SDK 29）上用 `custom` 服务商 + `agnes-2.5-flash`
+跑完整 AI 助手功能，发现并修掉四个缺陷。前两个让功能**完全不可用**，
+后两个是「编译与单测都通过、真机才暴露」的 API 兼容问题。
+
+**H1 — `custom` 服务商的 baseUrl 从未被读取**（功能完全不可用）
+
+`custom` 与 `localllm` 的 baseUrl 都不在预设表里（预设里是空串），必须由调用方传入。
+但这段判断在两个地方各写了一份——`FloatingAssistantView` 与 `AgentRequestHandler`——
+**两份都只处理 `localllm`，都漏了 `custom`**。
+
+后果链条：`endpointFor` 见 baseUrl 为空 → 返回 null → `AgentOrchestrator` 把 null
+统一解释成「未配置有效的 API 密钥」。用户填了密钥却被提示密钥有问题，排查方向被完全带偏。
+
+修法不是「两处都补上 custom」，而是抽成
+`AgentOrchestrator.customBaseUrlFor(context, providerId)` 单一定义。
+同时让错误信息区分失败原因（`diagnoseEndpointFailure`）：缺 baseUrl 说缺 baseUrl，
+缺密钥说缺密钥。
+
+**H2 — `Matcher.appendReplacement(StringBuilder, ...)` 是 Java 9 API**
+
+`PromptRenderer.render` 用 `StringBuilder` 接收 `appendReplacement`。该重载 Java 9 才加入，
+Android 上直到 **API 34** 才有。设备是 SDK 29，实测抛：
+
+```
+NoSuchMethodError: No virtual method appendReplacement(Ljava/lang/StringBuilder;Ljava/lang/String;)
+  Ljava/util/regex/Matcher; in class Ljava/util/regex/Matcher;
+```
+
+这类问题**编译期不报错**（JDK 17 有该重载）、**JVM 单测也全绿**，只在真机上崩。
+改成 `StringBuffer`（老重载自 Java 1.4 就有）。同文件另两处 `ToolCallTextParser` /
+`StringTemplate` 本来就用 `StringBuffer`，是对的。
+
+**H3 — `Map.ofEntries(Map.entry(...))` 同样是 Java 9 API**
+
+`ToolRegistry.ALIASES` 用 `Map.ofEntries` 构造 22 条别名。改为静态块逐个 `put`
++ `Collections.unmodifiableMap`。这个缺陷是**加了 H4 的防护机制后立刻抓到的**
+（见下），说明机制有效。
+
+**H4 — `TURN_FINISHED` 无条件覆盖正文，会把已显示的内容抹掉**
+
+`FloatingAssistantView` 的 `TURN_FINISHED` 分支无条件执行
+`adapter.update(id, text)`。而该轮的 `output` 为空是**常见情况**：模型这一轮只发起
+工具调用、没写正文，`output` 被 `ToolCallTextParser` 剥掉标记后就是空串。
+无条件覆盖会把已经流式显示出来的正文抹成空，用户看到气泡突然变空。
+
+改成只在 `text.isNotBlank()` 时覆盖。同时修正 `streamedThisRun` 的语义——
+原先无条件置 `true`，导致「没有流式增量且 text 为空」时既没追加本轮输出、
+又让收尾逻辑以为「已经显示过」，整轮回答在界面上彻底消失。
+
+**防复发机制（重要）**
+
+四个纯 Java 模块（`ai-tool-api` / `ai-protocol` / `ai-tool` / `ai-agent`）是
+`java-library`，用 JDK 17 编译却跑在 Android 上。javac 默认按 JDK 17 的 API 面编译，
+因此 Java 9+ 的 API 能通过编译与 JVM 单测，只在真机上抛 `NoSuchMethodError`。
+
+给四个模块的 **`compileJava`（仅 main 源码）** 加 `options.release = 8`，
+让 javac 按 Java 8 的 API 面校验，这类调用直接编译失败。
+
+> ⚠️ 不要改成 `sourceCompatibility` / `targetCompatibility`——那两个只约束语法与
+> 字节码版本，**不检查 API**，挡不住这个问题。必须是 `options.release`。
+>
+> 只约束 main：测试代码跑在开发机 JVM、不进 APK，用 Java 9+ 的集合工厂构造测试数据
+> 是安全的，没必要跟着受限（否则 `OpenAiToolCallStreamTest` 等会编译失败）。
+
+**实测通过的能力**（同一轮验证）
+
+| 能力 | 结果 |
+|---|---|
+| 读文件 | 正确解析 `build.gradle` 依赖列表 |
+| 写文件 | 落盘验证通过 |
+| 改文件 + 撤销 | `MODIFIED_BY_AI` → 恢复 `ORIGINAL_CONTENT_12345` |
+| 新建文件 + 撤销 | 文件被正确删除 |
+| shell 执行 | 输出正确回传 |
+| 危险工具弹窗 | 「始终允许 / 拒绝 / 仅允许本次」三选项 |
+| 拒绝路径 | 模型理解并回复「未执行，因为未获确认」 |
+| 「始终允许」粒度 | 存为 `shell_execute\0date`；换 `whoami` 仍询问（H2 修复的验证点） |
+| 「仅允许本次」 | 不写入持久规则 |
+| 多轮工具调用 | 10 轮 / 18 次调用，含 Markdown 代码块渲染 |
+| 导出到剪贴板 | 3890 字符 |
+| 新会话 | 清空列表 + 新建日志文件，旧会话保留在磁盘 |
+
+> **测试环境的一个坑**：`ai_agent_tools.xml` 里若残留 `dangerous_confirmed=true`
+> （早期会话留下的全局放行标志），所有危险工具都会静默执行、不弹窗。
+> 排查「为什么没弹确认框」时先看这个键。它目前**没有 UI 入口可关**，
+> 只能靠 `AgentToolSettings.confirmDangerousTools(false)` 或直接改 prefs。
+
+---
+
 ## 4. 待办（0 项未完成 / 16 项总计）
 
 16 项全部完成。各任务中**明确未做**的部分已在对应小节列出（如 pipeline、

@@ -463,8 +463,7 @@ class FloatingAssistantView(
           val agents = Agents(context)
           val providerId = agents.getProvider()
           val modelId = AgentModelConfigs.modelIdFor(providerId, agents.getAgent())
-          val customBaseUrl =
-              if (providerId == "localllm") readDefaultPref("local_llm_base_url") else null
+          val customBaseUrl = AgentOrchestrator.customBaseUrlFor(context, providerId)
 
           withContext(Dispatchers.Main) {
             binding.assistantSend.isEnabled = false
@@ -553,10 +552,21 @@ class FloatingAssistantView(
         // 累积的增量里含标记，而事件里的 message 已经过 ToolCallTextParser 剥离。
         val text = event.message
         lifecycleScope.launch(Dispatchers.Main) {
-          streamedThisRun = true
           val id = streamingMessageId
+          // streamedThisRun 只在**确实往列表里写过内容**时置位。
+          // 原先无条件置 true 会掩盖一条路径：没有流式增量（非流式响应）时 id 为 null，
+          // 此时若 text 恰好为空，就既没追加本轮输出、又让收尾逻辑以为「已经显示过」，
+          // 于是整轮回答在界面上彻底消失。
+          if (id != null || text.isNotBlank()) {
+            streamedThisRun = true
+          }
           if (id != null) {
-            adapter.update(id, text)
+            // 只有非空才覆盖。该轮的规范输出为空是常见情况——模型这一轮只发起工具调用、
+            // 没写正文（output 已被 ToolCallTextParser 剥掉标记后变成空串）。
+            // 无条件覆盖会把已经流式显示出来的正文抹掉，用户看到气泡突然变空。
+            if (text.isNotBlank()) {
+              adapter.update(id, text)
+            }
           } else if (text.isNotBlank()) {
             appendAssistant(text)
           }
@@ -772,10 +782,6 @@ class FloatingAssistantView(
     latch.await(120, java.util.concurrent.TimeUnit.SECONDS)
     return accepted
   }
-
-  private fun readDefaultPref(key: String): String? =
-      androidx.preference.PreferenceManager.getDefaultSharedPreferences(context)
-          .getString(key, null)
 
   /**
    * 把当前对话复制到剪贴板。

@@ -26,6 +26,7 @@ import com.tom.rv2ide.ai.tool.api.ToolInfo;
 import com.tom.rv2ide.ai.tool.api.ToolNames;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -56,30 +57,37 @@ public final class ToolRegistry {
    * <p>这里只做<b>查找期</b>归一，不改变对外暴露的规范名——规范名与移植源保持一致，
    * 而模型用哪套名字都能跑通。别名不会遮蔽同名工具：精确匹配优先。
    */
-  private static final Map<String, String> ALIASES =
-      Map.ofEntries(
-          Map.entry("read", ToolNames.FILE_READ),
-          Map.entry("read_file", ToolNames.FILE_READ),
-          Map.entry("write", ToolNames.FILE_WRITE),
-          Map.entry("write_file", ToolNames.FILE_WRITE),
-          Map.entry("create_file", ToolNames.FILE_WRITE),
-          Map.entry("edit", ToolNames.FILE_EDIT),
-          Map.entry("edit_file", ToolNames.FILE_EDIT),
-          Map.entry("replace", ToolNames.FILE_EDIT),
-          Map.entry("delete", ToolNames.FILE_DELETE),
-          Map.entry("delete_file", ToolNames.FILE_DELETE),
-          Map.entry("rm", ToolNames.FILE_DELETE),
-          Map.entry("ls", ToolNames.LIST_DIR),
-          Map.entry("list", ToolNames.LIST_DIR),
-          Map.entry("list_files", ToolNames.LIST_DIR),
-          Map.entry("list_directory", ToolNames.LIST_DIR),
-          Map.entry("find", ToolNames.GLOB),
-          Map.entry("search_files", ToolNames.GLOB),
-          Map.entry("bash", ToolNames.SHELL_EXECUTE),
-          Map.entry("shell", ToolNames.SHELL_EXECUTE),
-          Map.entry("run", ToolNames.SHELL_EXECUTE),
-          Map.entry("exec", ToolNames.SHELL_EXECUTE),
-          Map.entry("run_command", ToolNames.SHELL_EXECUTE));
+  // 用静态块逐个 put，而不是 Map.ofEntries(Map.entry(...))：后者是 Java 9 API，
+  // Android 上直到 API 30 才有。这类问题编译期（JDK 17）与 JVM 单测都发现不了，
+  // 只在真机上抛 NoSuchMethodError。模块已配 options.release = 8 来拦住它。
+  private static final Map<String, String> ALIASES;
+
+  static {
+    Map<String, String> aliases = new LinkedHashMap<>();
+    aliases.put("read", ToolNames.FILE_READ);
+    aliases.put("read_file", ToolNames.FILE_READ);
+    aliases.put("write", ToolNames.FILE_WRITE);
+    aliases.put("write_file", ToolNames.FILE_WRITE);
+    aliases.put("create_file", ToolNames.FILE_WRITE);
+    aliases.put("edit", ToolNames.FILE_EDIT);
+    aliases.put("edit_file", ToolNames.FILE_EDIT);
+    aliases.put("replace", ToolNames.FILE_EDIT);
+    aliases.put("delete", ToolNames.FILE_DELETE);
+    aliases.put("delete_file", ToolNames.FILE_DELETE);
+    aliases.put("rm", ToolNames.FILE_DELETE);
+    aliases.put("ls", ToolNames.LIST_DIR);
+    aliases.put("list", ToolNames.LIST_DIR);
+    aliases.put("list_files", ToolNames.LIST_DIR);
+    aliases.put("list_directory", ToolNames.LIST_DIR);
+    aliases.put("find", ToolNames.GLOB);
+    aliases.put("search_files", ToolNames.GLOB);
+    aliases.put("bash", ToolNames.SHELL_EXECUTE);
+    aliases.put("shell", ToolNames.SHELL_EXECUTE);
+    aliases.put("run", ToolNames.SHELL_EXECUTE);
+    aliases.put("exec", ToolNames.SHELL_EXECUTE);
+    aliases.put("run_command", ToolNames.SHELL_EXECUTE);
+    ALIASES = Collections.unmodifiableMap(aliases);
+  }
 
   private final Map<String, BaseTool> tools = new LinkedHashMap<>();
   private final Map<String, ToolDisplayCategory> displayCategoryCache = new LinkedHashMap<>();

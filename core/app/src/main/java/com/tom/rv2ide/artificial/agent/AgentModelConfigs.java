@@ -66,8 +66,13 @@ public final class AgentModelConfigs {
     return ProviderPresets.endpointFor(providerId, customBaseUrl, API_KEY_LOOKUP);
   }
 
-  /** 把偏好存储里的密钥接到预设表上。 */
-  private static final ProviderPresets.ApiKeyLookup API_KEY_LOOKUP =
+  /**
+   * 把偏好存储里的密钥接到预设表上。
+   *
+   * <p>包内可见而非 private：{@code AgentOrchestrator.diagnoseEndpointFailure} 需要用它
+   * 判断失败原因究竟是「缺密钥」还是「缺 baseUrl」，否则只能给出含糊的提示。
+   */
+  static final ProviderPresets.ApiKeyLookup API_KEY_LOOKUP =
       new ProviderPresets.ApiKeyLookup() {
         @Override
         public String keyFor(String providerId) {

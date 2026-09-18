@@ -80,7 +80,11 @@ public final class RunContextManager {
     ModelMessage system = messages.get(0);
     if (messages.size() == 1) {
       tracker.record(TokenEstimator.estimate(system) + overheadTokens, 0);
-      return new ArrayList<>(List.of(system));
+      // 不用 List.of：它是 Java 9 API，Android 上直到 API 30 才有。
+      // 这类问题编译期与 JVM 单测都发现不了，只在真机上抛 NoSuchMethodError。
+      List<ModelMessage> onlySystem = new ArrayList<>(1);
+      onlySystem.add(system);
+      return onlySystem;
     }
 
     int requestIndex = Math.max(1, Math.min(historyEnd, messages.size() - 1));

@@ -65,7 +65,12 @@ public final class PromptRenderer {
       return "";
     }
     Matcher matcher = PLACEHOLDER.matcher(template);
-    StringBuilder sb = new StringBuilder(template.length());
+    // 必须是 StringBuffer 而非 StringBuilder：Matcher.appendReplacement(StringBuilder, ...)
+    // 是 Java 9 才加的 API，Android 上直到 API 34 才有。用 StringBuilder 的后果是
+    // 编译期（JDK 17）不报错、JVM 单测也全绿，但真机一执行就抛
+    // NoSuchMethodError: No virtual method appendReplacement(Ljava/lang/StringBuilder;...)
+    // ——Android 10 实测必崩。
+    StringBuffer sb = new StringBuffer(template.length());
     while (matcher.find()) {
       String name = matcher.group(1) == null ? "" : matcher.group(1).trim();
       String replacement = values == null ? null : values.get(name);

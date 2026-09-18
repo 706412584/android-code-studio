@@ -92,8 +92,7 @@ class AgentRequestHandler(
             val agents = Agents(context)
             val providerId = agents.getProvider()
             val modelId = AgentModelConfigs.modelIdFor(providerId, agents.getAgent())
-            val customBaseUrl =
-                if (providerId == "localllm") readDefaultPref("local_llm_base_url") else null
+            val customBaseUrl = AgentOrchestrator.customBaseUrlFor(context, providerId)
 
             withContext(Dispatchers.Main) {
                 executeBtn.isEnabled = false
@@ -261,8 +260,4 @@ class AgentRequestHandler(
         }
     }
 
-    private fun readDefaultPref(key: String): String? {
-        return androidx.preference.PreferenceManager
-            .getDefaultSharedPreferences(context).getString(key, null)
-    }
 }

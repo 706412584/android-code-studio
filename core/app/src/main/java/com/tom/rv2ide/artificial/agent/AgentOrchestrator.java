@@ -63,6 +63,7 @@ import com.tom.rv2ide.ai.tool.ShellBackendRegistry;
 import com.tom.rv2ide.ai.tool.ShellExecuteTool;
 import com.tom.rv2ide.ai.tool.ToolRegistry;
 import com.tom.rv2ide.artificial.agent.tool.GradleBuildTool;
+import com.tom.rv2ide.artificial.secrets.ApiKey;
 import com.tom.rv2ide.artificial.agent.tool.InstallApkTool;
 import com.tom.rv2ide.artificial.agent.tool.LaunchAppTool;
 import com.tom.rv2ide.artificial.agent.tool.LogcatReadTool;
@@ -413,6 +414,58 @@ public final class AgentOrchestrator {
   }
 
   /**
+   * 解析需要用户自填 baseUrl 的服务商的端点地址。
+   *
+   * <p>只有 {@code custom} 与 {@code localllm} 两个预设的 baseUrl 是空的（其余预设都自带
+   * 官方地址）。漏传的后果不是「走默认地址」，而是 {@code endpointFor} 判定 baseUrl 为空后
+   * 直接返回 null，调用方再把 null 报成配置错误——用户明明填了密钥却被提示密钥有问题。
+   *
+   * <p>做成静态方法而非各处自行判断：这段逻辑原先在 {@link
+   * com.tom.rv2ide.handlers.AgentRequestHandler} 与悬浮助手里各写了一份，而两份都只处理了
+   * {@code localllm}、都漏了 {@code custom}。同一个判断写两遍就会漂移。
+   *
+   * @return 自定义 baseUrl；该服务商不需要自填时返回 {@code null}
+   */
+  public static String customBaseUrlFor(Context context, String providerId) {
+    if (providerId == null) {
+      return null;
+    }
+    switch (providerId) {
+      case "custom":
+        return ApiKey.INSTANCE.getCustomBaseUrl();
+      case "localllm":
+        return androidx.preference.PreferenceManager.getDefaultSharedPreferences(context)
+            .getString("local_llm_base_url", null);
+      default:
+        return null;
+    }
+  }
+
+  /**
+   * 判断端点解析失败的**真实**原因，用于给出可操作的错误信息。
+   *
+   * @return 面向用户的原因描述（不含服务商名前缀）
+   */
+  private static String diagnoseEndpointFailure(String providerId, String customBaseUrl) {
+    ProviderPresets.Preset preset = ProviderPresets.find(providerId);
+    if (preset == null) {
+      return "不在预设表中，无法识别。";
+    }
+    String baseUrl = preset.getBaseUrl();
+    if (customBaseUrl != null && !customBaseUrl.trim().isEmpty()) {
+      baseUrl = customBaseUrl.trim();
+    }
+    if (baseUrl.isEmpty()) {
+      return "未配置端点地址（baseUrl），请在 AI 设置中填写。";
+    }
+    String apiKey = AgentModelConfigs.API_KEY_LOOKUP.keyFor(providerId);
+    if (apiKey == null || apiKey.isEmpty()) {
+      return "未配置有效的 API 密钥。";
+    }
+    return "配置无法解析。";
+  }
+
+  /**
    * 执行一次用户请求。
    *
    * @param providerId 服务商标识（openai / deepseek / grok / claude / localllm）
@@ -440,8 +493,14 @@ public final class AgentOrchestrator {
     AgentModelConfigs.ProviderEndpoint endpoint =
         AgentModelConfigs.endpointFor(providerId, customBaseUrl);
     if (endpoint == null) {
+      // endpointFor 返回 null 有多种原因，必须分开报——否则用户会照着错误提示去改
+      // 根本没问题的东西。曾经这里统一说「未配置有效的 API 密钥」，而真实原因是
+      // 自定义端点没传 baseUrl，排查方向被完全带偏。
       return new AgentRunResult(
-          "服务商 " + providerId + " 未配置有效的 API 密钥。", 0, 0, true);
+          "服务商 " + providerId + " " + diagnoseEndpointFailure(providerId, customBaseUrl),
+          0,
+          0,
+          true);
     }
 
     ModelConfig config =
