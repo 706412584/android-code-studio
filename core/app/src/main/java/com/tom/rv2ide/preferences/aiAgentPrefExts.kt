@@ -35,16 +35,38 @@ class AIAgentPreferencesScreen(
 ) : IPreferenceScreen() {
 
   init {
-    addPreference(AIAgentConfig())
+    // 四个二级页，而不是把 27 个条目平铺在一页里。
+    //
+    // 原先只有一个分组（AgentToolingGroup）装了 15 项，加上密钥区的 7 项，
+    // 一页要滚动很久才能看完，且「密钥」与「技能」这类毫不相干的配置挨在一起。
+    // 拆页粒度参照参考项目：顶层 4 个入口、每页 ≤8 项、每个分组 ≤6 项。
+    addPreference(ProvidersPage())
+    addPreference(ToolsPage())
+    addPreference(CapabilitiesPage())
+    addPreference(AdvancedPage())
   }
 }
 
+/*
+ * 二级页统一用 [IPreferenceScreen] 而不是 [IPreferenceGroup]。
+ *
+ * Screen 的 children 会被 `IDEPreferencesFragment` 展开成一个**可点击入口**，
+ * 点进去用同一个 Fragment 渲染它的 children——因此二级页不需要新的 Activity 或 Fragment。
+ * Group 则渲染成 `PreferenceCategory`（不可点，只作分组标题），语义不对。
+ *
+ * 四个页面各自直接实现接口，没有抽公共基类：`@Parcelize` 不支持抽象类
+ * （编译期报 "'Parcelable' should not be an 'abstract' class"），
+ * 而基类里本来也只有三个属性，抽出来省不下什么。
+ */
+
+/** 服务商与密钥：启用开关 + 6 个服务商的密钥 + 自定义端点三件套。 */
 @Parcelize
-private class AIAgentConfig(
-    override val key: String = "idepref_ai_agent_config",
-    override val title: Int = string.ai_agent_title,
+private class ProvidersPage(
+    override val key: String = "idepref_ai_agent_providers",
+    override val title: Int = R.string.ai_agent_page_providers_title,
+    override val summary: Int? = R.string.ai_agent_page_providers_summary,
     override val children: List<IPreference> = mutableListOf(),
-) : IPreferenceGroup() {
+) : IPreferenceScreen() {
 
   @IgnoredOnParcel private var geminiApiKeyPref: GeminiApiKey? = null
   @IgnoredOnParcel private var deepseekApiKeyPref: DeepseekApiKey? = null
@@ -70,54 +92,8 @@ private class AIAgentConfig(
     addPreference(anthropicApiKeyPref!!)
     addPreference(grokApiKeyPref!!)
     addPreference(openAiCompatibleApiKeyPref!!)
-    addPreference(AgentToolingGroup())
-  }
 
-  private fun updateApiKeyPreferencesState(isEnabled: Boolean) {
-    geminiApiKeyPref?.setEnabled(isEnabled)
-    deepseekApiKeyPref?.setEnabled(isEnabled)
-    openAIApiKeyPref?.setEnabled(isEnabled)
-    anthropicApiKeyPref?.setEnabled(isEnabled)
-    grokApiKeyPref?.setEnabled(isEnabled)
-    openAiCompatibleApiKeyPref?.setEnabled(isEnabled)
-  }
-}
-
-/**
- * Agent 工具调用循环的相关设置。
- *
- * 这些配置存在独立的 "ai_agent_tools" SharedPreferences 里（由 AgentToolSettings 读取），
- * 而不是主 prefManager——工具层刻意不依赖 Android，配置通过窄接口注入，
- * 这里只是把同一份存储暴露到设置界面。
- */
-@Parcelize
-private class AgentToolingGroup(
-    override val key: String = "idepref_ai_agent_tooling",
-    // 用专门的组名，不复用 ai_agent_mode_title：那个字符串同时是组内 AgentModeSwitch
-    // 的标题，复用会让分组标题与开关项文字完全一样，看起来像同一项重复出现。
-    override val title: Int = R.string.ai_agent_tooling_group_title,
-    // 分组不设 summary：它是组名而非设置项，副标题会与组内第一项的副标题挤在一起。
-    override val summary: Int? = null,
-    override val children: List<IPreference> = mutableListOf(),
-) : IPreferenceGroup() {
-
-  init {
-    // 「Agent 模式（工具调用）」开关已移除：它原先只决定 ChatFragment 走旧路径
-    // （单发生成 + FILE_TO_MODIFY）还是新路径（工具调用循环）。ChatFragment 与旧路径
-    // 一并删除后，悬浮助手**始终**走工具调用循环，这个开关没有任何东西可切换——
-    // 留着会让用户以为关掉它能让助手变成纯对话，实际毫无作用。
-    // 「助手被允许做到什么程度」由下面的对话模式（ChatModePreference）表达。
-    addPreference(ChatModePreference())
-    addPreference(CodeCompletionSwitch())
-    addPreference(AutoSwitchProviderSwitch())
-    addPreference(CustomAgentsPreference())
-    addPreference(PermissionModePreference())
-    addPreference(AuthorizedToolsPreference())
-    addPreference(PromptTemplatePreference())
-    addPreference(SkillsPreference())
-    addPreference(MemoriesPreference())
-    addPreference(McpServersPreference())
-    addPreference(ShellBackendPreference())
+    // 自定义端点。三个字段读写逻辑相同，只有 key/标题/提示语不同。
     addPreference(
         CustomEndpointField(
             key = "ai_agent_custom_base_url",
@@ -138,24 +114,74 @@ private class AgentToolingGroup(
         ))
   }
 
-  /**
-   * 必须返回 [androidx.preference.PreferenceCategory]。
-   *
-   * <p>本类是 [IPreferenceGroup]，而 `IDEPreferencesFragment.addChildren` 对 Group 的处理是
-   * `preference as PreferenceCategory`（IDEPreferencesFragment.kt:109）。原先这里返回普通
-   * `Preference`，展开到这个分组时必然抛
-   * `ClassCastException: Preference cannot be cast to PreferenceCategory`。
-   *
-   * <p>这不是新入口引入的问题——**从 IDE 设置首页点「AI 助手」同样会崩**，
-   * 只是此前没人走过这条路径。类名与 `IPreferenceGroup` 基类的契约就是「我是一组设置」，
-   * 返回普通 Preference 是在类型上撒谎。
-   */
-  override fun onCreatePreference(context: Context): Preference {
-    // 只负责返回正确类型。**不要在这里设 key/title/summary**：
-    // BasePreference.onCreateView 会在调用本方法后无条件用 this.key / this.title /
-    // this.summary 覆写它们（BasePreference.kt:36-40），在这里设的值会被静默冲掉。
-    // 标题要改就改类的 title 属性。
-    return androidx.preference.PreferenceCategory(context)
+  private fun updateApiKeyPreferencesState(isEnabled: Boolean) {
+    geminiApiKeyPref?.setEnabled(isEnabled)
+    deepseekApiKeyPref?.setEnabled(isEnabled)
+    openAIApiKeyPref?.setEnabled(isEnabled)
+    anthropicApiKeyPref?.setEnabled(isEnabled)
+    grokApiKeyPref?.setEnabled(isEnabled)
+    openAiCompatibleApiKeyPref?.setEnabled(isEnabled)
+  }
+}
+
+/**
+ * 工具与权限：助手被允许做到什么程度，以及命令怎么执行。
+ *
+ * <p>这些配置存在独立的 "ai_agent_tools" SharedPreferences 里（由 AgentToolSettings 读取），
+ * 而不是主 prefManager——工具层刻意不依赖 Android，配置通过窄接口注入，
+ * 这里只是把同一份存储暴露到设置界面。
+ */
+@Parcelize
+private class ToolsPage(
+    override val key: String = "idepref_ai_agent_tools",
+    override val title: Int = R.string.ai_agent_page_tools_title,
+    override val summary: Int? = R.string.ai_agent_page_tools_summary,
+    override val children: List<IPreference> = mutableListOf(),
+) : IPreferenceScreen() {
+
+  init {
+    // 「Agent 模式（工具调用）」开关已移除：它原先只决定 ChatFragment 走旧路径
+    // （单发生成 + FILE_TO_MODIFY）还是新路径（工具调用循环）。ChatFragment 与旧路径
+    // 一并删除后，悬浮助手**始终**走工具调用循环，这个开关没有任何东西可切换——
+    // 留着会让用户以为关掉它能让助手变成纯对话，实际毫无作用。
+    // 「助手被允许做到什么程度」由对话模式（ChatModePreference）表达。
+    addPreference(ChatModePreference())
+    addPreference(PermissionModePreference())
+    addPreference(AuthorizedToolsPreference())
+    addPreference(ShellBackendPreference())
+    addPreference(CodeCompletionSwitch())
+  }
+}
+
+/** 能力：自定义 Agent、技能、长期记忆、MCP 服务。都是「扩展助手能做什么」的配置。 */
+@Parcelize
+private class CapabilitiesPage(
+    override val key: String = "idepref_ai_agent_capabilities",
+    override val title: Int = R.string.ai_agent_page_capabilities_title,
+    override val summary: Int? = R.string.ai_agent_page_capabilities_summary,
+    override val children: List<IPreference> = mutableListOf(),
+) : IPreferenceScreen() {
+
+  init {
+    addPreference(CustomAgentsPreference())
+    addPreference(SkillsPreference())
+    addPreference(MemoriesPreference())
+    addPreference(McpServersPreference())
+  }
+}
+
+/** 高级：提示词模板与自动切换服务商。改动频率低，但出问题时要能找到。 */
+@Parcelize
+private class AdvancedPage(
+    override val key: String = "idepref_ai_agent_advanced",
+    override val title: Int = R.string.ai_agent_page_advanced_title,
+    override val summary: Int? = R.string.ai_agent_page_advanced_summary,
+    override val children: List<IPreference> = mutableListOf(),
+) : IPreferenceScreen() {
+
+  init {
+    addPreference(PromptTemplatePreference())
+    addPreference(AutoSwitchProviderSwitch())
   }
 }
 

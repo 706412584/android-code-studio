@@ -1,0 +1,17 @@
+<!--
+  最小化。收起为右下角的圆形入口按钮。
+
+  与「关闭」的区别：关闭是收起面板（再点 FAB 还能打开），最小化也是收起，
+  但语义上更接近「缩到角落」。两者都保留面板状态，只是入口不同——
+  参考项目把它们放在一起，这里照做，避免用户找不到「收起来」的入口。
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24"
+    android:tint="?attr/colorOnSurfaceVariant">
+  <path
+      android:fillColor="@android:color/white"
+      android:pathData="M19,13H5v-2h14v2z"/>
+</vector>

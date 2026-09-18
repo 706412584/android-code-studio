@@ -78,6 +78,16 @@
 
   <!-- AI Agent：工具调用循环 -->
   <string name="ai_agent_tooling_group_title">工具与权限</string>
+
+  <!-- AI 助手设置的二级页 -->
+  <string name="ai_agent_page_providers_title">服务商与密钥</string>
+  <string name="ai_agent_page_providers_summary">API 密钥、自定义端点、启用开关</string>
+  <string name="ai_agent_page_tools_title">工具与权限</string>
+  <string name="ai_agent_page_tools_summary">对话模式、权限级别、Shell 后端、代码补全</string>
+  <string name="ai_agent_page_capabilities_title">能力</string>
+  <string name="ai_agent_page_capabilities_summary">自定义 Agent、技能、长期记忆、MCP 服务</string>
+  <string name="ai_agent_page_advanced_title">高级</string>
+  <string name="ai_agent_page_advanced_summary">提示词模板、自动切换服务商</string>
   <string name="ai_agent_permission_title">工具权限模式</string>
   <string name="ai_agent_permission_summary">agent 在不询问的情况下可以做到什么程度</string>
   <string name="ai_agent_shell_backend_title">Shell 后端</string>
@@ -245,6 +255,7 @@
   <string name="ai_assistant_side">侧栏</string>
   <string name="ai_assistant_fullscreen">全屏</string>
   <string name="ai_assistant_new_conversation">新会话</string>
+  <string name="ai_assistant_minimize">最小化</string>
   <string name="ai_assistant_close">关闭</string>
   <string name="ai_assistant_empty_hint">让 AI 读取、修改或构建你的项目。\n例如：“读取 app/build.gradle 并列出其中的依赖”。</string>
   <string name="ai_assistant_input_hint">描述你的需求…</string>

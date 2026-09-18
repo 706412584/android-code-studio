@@ -51,59 +51,73 @@
       <!--
         标题栏。
 
-        只放高频操作，其余收进溢出菜单。侧栏模式下可用宽度只有屏幕的 88%，
-        原先 5 个文字按钮（全屏/复制/新会话/关闭）会把标题挤到换行甚至截断成
-        「AI 助…」。
+        布局：左「菜单」+ 居中标题 + 右侧三键（全屏 / 最小化 / 关闭）。
 
-        三个入口都用图标按钮而不是文字按钮：文字宽度随语言变化
-        （英文 "Conversations" 比中文「会话」宽一倍），在窄面板里会挤掉标题；
-        图标按钮宽度恒定，不受语言影响。
+        左菜单点击从左侧滑出会话列表抽屉。做成抽屉而不是整页互斥切换：
+        抽屉保留了「当前对话还在右边」的视觉连续性，用户滑出列表找一条旧会话时
+        不会觉得自己离开了对话；整页切换则会让对话内容整个消失，回来时位置也丢了。
+
+        右侧三键用图标而不是文字：文字宽度随语言变化（英文 "Minimize" 比中文
+        「最小化」宽一倍），在窄面板里会把标题挤成省略号。图标宽度恒定。
+        全屏/侧栏切换从溢出菜单移到这里——它本来就是高频操作，藏在菜单里多余。
       -->
       <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="horizontal"
         android:gravity="center_vertical"
-        android:paddingStart="16dp"
+        android:paddingStart="4dp"
         android:paddingEnd="4dp"
         android:paddingTop="4dp"
         android:paddingBottom="2dp">
 
+        <com.google.android.material.button.MaterialButton
+          android:id="@+id/assistantMenu"
+          style="@style/Widget.Material3.Button.IconButton"
+          android:layout_width="wrap_content"
+          android:layout_height="wrap_content"
+          android:contentDescription="@string/ai_conversation_list_title"
+          app:icon="@drawable/ic_menu"
+          app:iconTint="?attr/colorOnSurfaceVariant" />
+
+        <!-- 标题居中：两侧按钮数量不等（左 1 右 3），靠 weight 均分会偏。
+             用 weight=1 + 居中文字让标题落在剩余空间的中间。 -->
         <TextView
           android:layout_width="0dp"
           android:layout_height="wrap_content"
           android:layout_weight="1"
           android:ellipsize="end"
+          android:gravity="center"
           android:maxLines="1"
           android:text="@string/ai_assistant_title"
           android:textAppearance="@style/TextAppearance.Material3.TitleMedium"
           android:textStyle="bold" />
 
         <com.google.android.material.button.MaterialButton
-          android:id="@+id/assistantConversationsToggle"
+          android:id="@+id/assistantFullscreen"
           style="@style/Widget.Material3.Button.IconButton"
           android:layout_width="wrap_content"
           android:layout_height="wrap_content"
-          android:contentDescription="@string/ai_conversation_list_title"
-          app:icon="@drawable/ic_history"
+          android:contentDescription="@string/ai_assistant_fullscreen"
+          app:icon="@drawable/ic_fullscreen"
           app:iconTint="?attr/colorOnSurfaceVariant" />
 
         <com.google.android.material.button.MaterialButton
-          android:id="@+id/assistantNewConversation"
+          android:id="@+id/assistantMinimize"
           style="@style/Widget.Material3.Button.IconButton"
           android:layout_width="wrap_content"
           android:layout_height="wrap_content"
-          android:contentDescription="@string/ai_assistant_new_conversation"
-          app:icon="@drawable/ic_add"
+          android:contentDescription="@string/ai_assistant_minimize"
+          app:icon="@drawable/ic_minimize"
           app:iconTint="?attr/colorOnSurfaceVariant" />
 
         <com.google.android.material.button.MaterialButton
-          android:id="@+id/assistantOverflow"
+          android:id="@+id/assistantClose"
           style="@style/Widget.Material3.Button.IconButton"
           android:layout_width="wrap_content"
           android:layout_height="wrap_content"
-          android:contentDescription="@string/ai_assistant_more"
-          app:icon="@drawable/ic_menu"
+          android:contentDescription="@string/ai_assistant_close"
+          app:icon="@drawable/ic_close"
           app:iconTint="?attr/colorOnSurfaceVariant" />
 
       </LinearLayout>
@@ -212,44 +226,6 @@
           android:visibility="gone"
           android:indeterminate="true" />
 
-        <!--
-          会话列表。与消息列表互斥显示（同一 FrameLayout 内切换 visibility）：
-          用互斥而不是并排，是因为面板本身不宽（侧栏模式只占屏幕 88%），
-          再切一列会把两边都挤得不可用。
-        -->
-        <LinearLayout
-          android:id="@+id/assistantConversationPanel"
-          android:layout_width="match_parent"
-          android:layout_height="match_parent"
-          android:orientation="vertical"
-          android:background="?attr/colorSurface"
-          android:visibility="gone"
-          tools:visibility="visible">
-
-          <androidx.recyclerview.widget.RecyclerView
-            android:id="@+id/assistantConversations"
-            android:layout_width="match_parent"
-            android:layout_height="0dp"
-            android:layout_weight="1"
-            android:clipToPadding="false"
-            android:paddingTop="4dp"
-            android:paddingBottom="8dp" />
-
-          <TextView
-            android:id="@+id/assistantConversationsEmpty"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_gravity="center"
-            android:padding="32dp"
-            android:text="@string/ai_conversation_empty"
-            android:textAlignment="center"
-            android:textAppearance="@style/TextAppearance.Material3.BodyMedium"
-            android:textColor="?android:textColorSecondary"
-            android:visibility="gone"
-            tools:visibility="visible" />
-
-        </LinearLayout>
-
       </FrameLayout>
 
       <!--
@@ -319,5 +295,143 @@
     </LinearLayout>
 
   </com.google.android.material.card.MaterialCardView>
+
+  <!--
+    会话列表抽屉。
+
+    放在 assistantCard **之后**（同级、兄弟节点）：ConstraintLayout 里后声明的子视图
+    绘制在上层，因此抽屉能盖住面板。放进面板内部做不到这一点——抽屉需要从面板
+    左边缘滑出并盖住整个面板宽度，而面板内部的空间会被标题栏/消息列表挤占。
+
+    整层是一个 FrameLayout：遮罩与抽屉叠在一起，点遮罩即关闭。
+  -->
+  <FrameLayout
+    android:id="@+id/assistantDrawerOverlay"
+    android:layout_width="0dp"
+    android:layout_height="0dp"
+    android:visibility="gone"
+    tools:visibility="visible"
+    app:layout_constraintBottom_toBottomOf="@id/assistantCard"
+    app:layout_constraintEnd_toEndOf="@id/assistantCard"
+    app:layout_constraintStart_toStartOf="@id/assistantCard"
+    app:layout_constraintTop_toTopOf="@id/assistantCard">
+
+    <!--
+      遮罩。半透明黑而不是纯透明：抽屉浮在对话之上，没有遮罩时用户分不清
+      「列表是浮层」还是「对话被换掉了」。点击关闭。
+    -->
+    <View
+      android:id="@+id/assistantDrawerScrim"
+      android:layout_width="match_parent"
+      android:layout_height="match_parent"
+      android:background="#80000000"
+      android:clickable="true"
+      android:focusable="true" />
+
+    <!--
+      抽屉本体。宽度 240dp 且不超过容器的 78%：窄面板（贴边形态可能只有 300dp）上
+      固定 240dp 会盖掉几乎全部对话，比例上限保证右侧始终露出一条对话区。
+    -->
+    <LinearLayout
+      android:id="@+id/assistantDrawer"
+      android:layout_width="240dp"
+      android:layout_height="match_parent"
+      android:layout_gravity="start"
+      android:background="?attr/colorSurface"
+      android:orientation="vertical"
+      android:elevation="8dp">
+
+      <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:paddingStart="16dp"
+        android:paddingEnd="16dp"
+        android:paddingTop="16dp"
+        android:paddingBottom="8dp"
+        android:text="@string/ai_conversation_list_title"
+        android:textAppearance="@style/TextAppearance.Material3.TitleSmall"
+        android:textStyle="bold" />
+
+      <View
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:background="?attr/colorOutline" />
+
+      <androidx.recyclerview.widget.RecyclerView
+        android:id="@+id/assistantConversations"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:clipToPadding="false"
+        android:paddingTop="4dp"
+        android:paddingBottom="4dp" />
+
+      <TextView
+        android:id="@+id/assistantConversationsEmpty"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:padding="24dp"
+        android:text="@string/ai_conversation_empty"
+        android:textAlignment="center"
+        android:textAppearance="@style/TextAppearance.Material3.BodySmall"
+        android:textColor="?android:textColorSecondary"
+        android:visibility="gone"
+        tools:visibility="visible" />
+
+      <View
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:background="?attr/colorOutline" />
+
+      <!--
+        抽屉底部的两个动作。
+
+        新建会话与设置放在这里而不是标题栏：标题栏右侧已有三个按钮，再加会挤掉标题；
+        而这两个动作的使用场景恰好都是「打开列表时顺手做」（找会话时想开新的、
+        或想去调配置），放抽屉里比放标题栏更贴合意图。
+
+        溢出菜单因此取消——它原先只承载「全屏/设置/复制/关闭」四项，
+        全屏移到标题栏、设置移到此处、关闭移到标题栏，只剩「复制」无处可去，
+        也一并移到这里。
+      -->
+      <com.google.android.material.button.MaterialButton
+        android:id="@+id/assistantNewConversation"
+        style="@style/Widget.Material3.Button.TextButton"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="start|center_vertical"
+        android:minHeight="48dp"
+        android:text="@string/ai_assistant_new_conversation"
+        app:icon="@drawable/ic_add"
+        app:iconGravity="textStart"
+        app:iconTint="?attr/colorOnSurfaceVariant" />
+
+      <com.google.android.material.button.MaterialButton
+        android:id="@+id/assistantCopyConversation"
+        style="@style/Widget.Material3.Button.TextButton"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="start|center_vertical"
+        android:minHeight="48dp"
+        android:text="@string/ai_assistant_export"
+        app:icon="@drawable/ic_content_copy"
+        app:iconGravity="textStart"
+        app:iconTint="?attr/colorOnSurfaceVariant" />
+
+      <com.google.android.material.button.MaterialButton
+        android:id="@+id/assistantSettings"
+        style="@style/Widget.Material3.Button.TextButton"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="start|center_vertical"
+        android:minHeight="48dp"
+        android:text="@string/ai_assistant_settings"
+        app:icon="@drawable/ic_settings"
+        app:iconGravity="textStart"
+        app:iconTint="?attr/colorOnSurfaceVariant" />
+
+    </LinearLayout>
+
+  </FrameLayout>
 
 </androidx.constraintlayout.widget.ConstraintLayout>

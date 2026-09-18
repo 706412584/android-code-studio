@@ -217,13 +217,31 @@ class FloatingAssistantView(
 
     // 不设 OnClickListener：拖动用的 OnTouchListener 会消费全部事件，click 永远不会触发。
     // 打开面板的动作用 ACTION_UP 且未进入拖动时手动调用 open()（见 setUpDragging）。
-    binding.assistantNewConversation.setOnClickListener { startNewConversation() }
     binding.assistantSend.setOnClickListener { sendFromInput() }
-    binding.assistantConversationsToggle.setOnClickListener { toggleConversationPanel() }
-    binding.assistantOverflow.setOnClickListener { showOverflowMenu() }
     binding.assistantModelBar.setOnClickListener {
       AssistantModelPicker.show(context) { refreshModelLabel() }
     }
+
+    // 标题栏：左菜单开抽屉，右侧全屏/最小化/关闭。
+    binding.assistantMenu.setOnClickListener { toggleConversationPanel() }
+    binding.assistantFullscreen.setOnClickListener { toggleFullscreen() }
+    // 最小化与关闭都是收起面板（再点 FAB 可打开），行为一致，语义不同：
+    // 关闭是「我不需要它了」，最小化是「先收起来，等下还要用」。
+    // 两者都保留面板状态，不做额外区分——差别只在用户的预期，不在实现。
+    binding.assistantMinimize.setOnClickListener { close() }
+    binding.assistantClose.setOnClickListener { close() }
+
+    // 抽屉遮罩点击关闭。
+    binding.assistantDrawerScrim.setOnClickListener { toggleConversationPanel() }
+
+    // 抽屉底部的三个动作（原溢出菜单的去处）。
+    binding.assistantNewConversation.setOnClickListener {
+      toggleConversationPanel()
+      startNewConversation()
+    }
+    binding.assistantCopyConversation.setOnClickListener { copyConversation() }
+    binding.assistantSettings.setOnClickListener { openAssistantSettings() }
+
     refreshModelLabel()
 
     // 会话列表
@@ -403,13 +421,29 @@ class FloatingAssistantView(
     cancel()
   }
 
+  /**
+   * 在全屏与「常态」之间切换。
+   *
+   * <p>常态是宿主的初始形态（主页 SIDEBAR、编辑器 DOCKED），不是写死的 SIDEBAR：
+   * 编辑器里退出全屏必须回到贴边形态，回到浮层会让面板又变成盖在代码上的卡片。
+   */
+  private fun toggleFullscreen() {
+    applyMode(if (mode == Mode.FULLSCREEN) defaultMode else Mode.FULLSCREEN)
+  }
+
   private fun applyMode(newMode: Mode) {
     mode = newMode
     val card = binding.assistantCard
     val params = card.layoutParams as ConstraintLayout.LayoutParams
 
-    // 形态切换的文案不再由按钮承载——全屏/侧栏已收进溢出菜单，
-    // 菜单项文案在 showOverflowMenu() 里按当前形态动态生成。
+    // 全屏按钮的语义随当前形态翻转：全屏时说「退出全屏」，否则说「全屏」。
+    // 写进 contentDescription 而不是按钮文字（按钮是图标），无障碍服务读它。
+    binding.assistantFullscreen.contentDescription =
+        context.getString(
+            if (newMode == Mode.FULLSCREEN) string.ai_assistant_side
+            else string.ai_assistant_fullscreen
+        )
+
     when (newMode) {
       Mode.FULLSCREEN -> {
         params.width = ViewGroup.LayoutParams.MATCH_PARENT
@@ -442,20 +476,22 @@ class FloatingAssistantView(
         // 「这是一张盖在内容上的卡片」，而编辑器需要的是「这是界面的一半」。
         // 留白和圆角会立刻把面板变回弹窗观感——这正是之前"割裂感"的来源之一。
         //
-        // 宽度：屏幕的 60%，并夹在 [240dp, min(400dp, 屏宽-140dp)] 之间。
-        // 三个约束各解决一件事：
-        // - 240dp 下限：再窄则对话里的代码块与路径频繁换行，读不了
-        // - 400dp 上限：平板上不限宽会让面板宽到像全屏，失去"贴在一边"的意义
-        // - 屏宽-140dp：手机竖屏下必须给编辑器留出可见宽度，否则用户看不见自己
-        //   在改哪个文件。这条在小屏上通常是最紧的约束。
+        // 宽度：屏幕的 68%，并夹在 [260dp, min(420dp, 屏宽-100dp)] 之间。
+        // 四个约束各解决一件事：
+        // - 260dp 下限：标题栏有 1 个左按钮 + 3 个右按钮，每个都是 48dp 的可点区域
+        //   （无障碍最小触控尺寸，不能再压），共 192dp。低于 260dp 时标题会被挤成
+        //   「AI …」——实测 236dp 面板就是这样。
+        // - 420dp 上限：平板上不限宽会让面板宽到像全屏，失去"贴在一边"的意义
+        // - 屏宽-100dp：手机竖屏下要给编辑器留出可见宽度，否则用户看不见自己在改
+        //   哪个文件。这条在小屏上通常是最紧的约束。
         //
-        // 下限必须再对上限取一次 min：窄屏上「屏宽-140dp」可能小于 240dp，
-        // 直接 coerceIn(240dp, 那个值) 会抛
+        // 下限必须再对上限取一次 min：窄屏上「屏宽-100dp」可能小于 260dp，
+        // 直接 coerceIn(260dp, 那个值) 会抛
         // IllegalArgumentException: Cannot coerce value to an empty range。
         val screenWidth = parent.resources.displayMetrics.widthPixels
-        val upper = minOf(dp(400), screenWidth - dp(140))
-        val lower = minOf(dp(240), upper)
-        params.width = (screenWidth * 0.60f).toInt().coerceIn(lower, upper)
+        val upper = minOf(dp(420), screenWidth - dp(100))
+        val lower = minOf(dp(260), upper)
+        params.width = (screenWidth * 0.68f).toInt().coerceIn(lower, upper)
         params.height = ViewGroup.LayoutParams.MATCH_PARENT
         params.marginStart = 0
         params.marginEnd = 0
@@ -860,47 +896,6 @@ class FloatingAssistantView(
     }
   }
 
-  /**
-   * 标题栏溢出菜单。
-   *
-   * <p>全屏/复制/关闭都是低频操作，但侧栏模式下标题栏放不下这么多文字按钮
-   * （会把标题挤到换行甚至截断）。收进菜单后标题有空间，操作仍然可达。
-   */
-  private fun showOverflowMenu() {
-    val popup = androidx.appcompat.widget.PopupMenu(context, binding.assistantOverflow)
-    // 文案写「点击后会变成什么」而不是「当前是什么」：菜单项是动作，不是状态显示。
-    popup.menu.add(
-        0,
-        MENU_LAYOUT,
-        0,
-        if (mode == Mode.FULLSCREEN) string.ai_assistant_side else string.ai_assistant_fullscreen,
-    )
-    popup.menu.add(0, MENU_SETTINGS, 1, string.ai_assistant_settings)
-    popup.menu.add(0, MENU_EXPORT, 2, string.ai_assistant_export)
-    popup.menu.add(0, MENU_CLOSE, 3, string.ai_assistant_close)
-    popup.setOnMenuItemClickListener { item ->
-      when (item.itemId) {
-        MENU_LAYOUT -> {
-          applyMode(if (mode == Mode.FULLSCREEN) Mode.SIDEBAR else Mode.FULLSCREEN)
-          true
-        }
-        MENU_SETTINGS -> {
-          openAssistantSettings()
-          true
-        }
-        MENU_EXPORT -> {
-          copyConversation()
-          true
-        }
-        MENU_CLOSE -> {
-          close()
-          true
-        }
-        else -> false
-      }
-    }
-    popup.show()
-  }
 
   /**
    * 打开 AI 助手设置。
@@ -947,15 +942,59 @@ class FloatingAssistantView(
   // ---- 会话列表 ----
 
   /** 切换会话列表的显示。与消息列表互斥——面板不宽，并排会把两边都挤得不可用。 */
+  /**
+   * 开关会话抽屉。
+   *
+   * <p>抽屉从左侧滑出（`translationX` 从 `-width` 到 `0`），而不是直接切 visibility：
+   * 滑动给了「它是从侧边拉出来的」这一空间暗示，用户知道点遮罩或再点菜单能收回去。
+   * 直接显隐则像内容被替换，用户会去找返回键。
+   */
   private fun toggleConversationPanel() {
-    val showList = binding.assistantConversationPanel.isVisible.not()
-    binding.assistantConversationPanel.isVisible = showList
-    binding.assistantMessages.isVisible = !showList
-    binding.assistantEmpty.isVisible = !showList && adapter.isEmpty()
-    if (showList) {
+    // 每次切换都递增。关闭动画的收尾回调会比对它，只有仍是最新一轮才真正隐藏——
+    // 否则「关到一半又点开」时，迟到的收尾回调会把刚打开的抽屉隐藏掉。
+    drawerGeneration++
+    val generation = drawerGeneration
+    val drawer = binding.assistantDrawer
+    val overlay = binding.assistantDrawerOverlay
+
+    if (!overlay.isVisible) {
+      overlay.isVisible = true
+      // 宽度与初始位移都必须在布局完成后算：
+      // - 抽屉宽度上限 = 容器的 78%。贴边形态下面板可能只有 260dp，固定 240dp
+      //   会盖掉几乎全部对话，右侧留一条对话区才能提示「后面还有内容」。
+      // - 滑入动画要先把抽屉移到容器外，需要 drawer.width。
+      // 点击发生的时刻 overlay 刚可见、宽高仍是 0，此时计算会得到 0 上限而静默失效，
+      // 因此统一放进 post{}。
+      drawer.post {
+        if (generation != drawerGeneration) {
+          return@post
+        }
+        val maxWidth = (overlay.width * 0.78f).toInt()
+        if (maxWidth > 0 && drawer.width > maxWidth) {
+          drawer.layoutParams =
+              (drawer.layoutParams as FrameLayout.LayoutParams).apply { width = maxWidth }
+        }
+        drawer.translationX = -drawer.width.toFloat()
+        drawer.animate().translationX(0f).setDuration(DRAWER_ANIM_MS).start()
+      }
       reloadConversations()
+    } else {
+      drawer
+          .animate()
+          .translationX(-drawer.width.toFloat())
+          .setDuration(DRAWER_ANIM_MS)
+          .withEndAction {
+            if (generation == drawerGeneration) {
+              overlay.isVisible = false
+              drawer.translationX = 0f
+            }
+          }
+          .start()
     }
   }
+
+  /** 抽屉开关的轮次号，见 [toggleConversationPanel]。 */
+  private var drawerGeneration = 0
 
   /** 重新拉取会话列表。每次展开都重拉：会话可能被另一处（如另一个面板实例）改动过。 */
   private fun reloadConversations() {
@@ -992,9 +1031,10 @@ class FloatingAssistantView(
         lastOpenedConversationId = summary.getId()
         replayMessages(messages)
         conversationAdapter.setActive(summary.getId())
-        // 打开后自动切回消息视图：用户的意图是「看这个会话」，不是继续浏览列表。
-        binding.assistantConversationPanel.isVisible = false
-        binding.assistantMessages.isVisible = true
+        // 打开后自动收起抽屉：用户的意图是「看这个会话」，不是继续浏览列表。
+        if (binding.assistantDrawerOverlay.isVisible) {
+          toggleConversationPanel()
+        }
       }
     }
   }
@@ -1253,11 +1293,8 @@ class FloatingAssistantView(
     /** 拖动时四周保留的最小边距（dp）。 */
     private const val EDGE_MARGIN_DP = 8
 
-    /** 溢出菜单项 id。用本地常量而非菜单资源：只有几项，建 XML 反而多一个文件。 */
-    private const val MENU_LAYOUT = 1
-    private const val MENU_SETTINGS = 2
-    private const val MENU_EXPORT = 3
-    private const val MENU_CLOSE = 4
+    /** 会话抽屉滑入/滑出的时长。够快不拖沓，又不至于快到看不出方向。 */
+    private const val DRAWER_ANIM_MS = 200L
 
     private fun summarizeArgs(args: String?): String {
       if (TextUtils.isEmpty(args)) {

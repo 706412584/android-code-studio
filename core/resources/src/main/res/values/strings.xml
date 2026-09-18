@@ -78,6 +78,21 @@
 
   <!-- AI Agent: tool-calling loop -->
   <string name="ai_agent_tooling_group_title">Tools and permissions</string>
+
+  <!--
+    AI 助手设置的二级页。
+
+    原先 27 个条目平铺在一页里（其中一个分组 15 项），滚动很长且分组混杂。
+    拆成四个入口后每页不超过 8 项，与参考项目的组织粒度一致。
+  -->
+  <string name="ai_agent_page_providers_title">Providers and keys</string>
+  <string name="ai_agent_page_providers_summary">API keys, custom endpoint, enable switch</string>
+  <string name="ai_agent_page_tools_title">Tools and permissions</string>
+  <string name="ai_agent_page_tools_summary">Chat mode, permission level, shell backend, code completion</string>
+  <string name="ai_agent_page_capabilities_title">Capabilities</string>
+  <string name="ai_agent_page_capabilities_summary">Custom agents, skills, long-term memory, MCP servers</string>
+  <string name="ai_agent_page_advanced_title">Advanced</string>
+  <string name="ai_agent_page_advanced_summary">Prompt template, auto-switch provider</string>
   <string name="ai_agent_permission_title">Tool permission mode</string>
   <string name="ai_agent_permission_summary">How much the agent may do without asking</string>
   <string name="ai_agent_shell_backend_title">Shell backend</string>
@@ -245,6 +260,7 @@
   <string name="ai_assistant_side">Side panel</string>
   <string name="ai_assistant_fullscreen">Full screen</string>
   <string name="ai_assistant_new_conversation">New</string>
+  <string name="ai_assistant_minimize">Minimize</string>
   <string name="ai_assistant_close">Close</string>
   <string name="ai_assistant_empty_hint">Ask the AI to read, edit or build your project.\nExample: “read app/build.gradle and list its dependencies”.</string>
   <string name="ai_assistant_input_hint">Describe your request…</string>
