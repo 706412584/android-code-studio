@@ -94,6 +94,77 @@ final class FileToolsTest {
     assertEquals("hello there\n", Files.readString(workspace.resolve("f.txt")));
   }
 
+  // ---- 行尾归一化（回归：CRLF 文件曾导致 file_edit 恒失败）----
+
+  @Test
+  void editMatchesLfOldStringAgainstCrlfFile(@TempDir Path workspace) throws IOException {
+    // 实测场景：模型给 LF 的 old_string，而文件是 CRLF。
+    // 修复前 content.contains(oldString) 恒 false，工具报「No matching text found」，
+    // 模型无法据此推断原因是行尾差异，只会反复重试或改用 file_write 整文件覆盖。
+    ToolContext ctx = context(workspace);
+    Files.writeString(workspace.resolve("f.txt"), "line1\r\nline2\r\nline3\r\n");
+
+    ToolResult result =
+        new FileEditTool()
+            .execute(
+                args("file_path", "f.txt", "old_string", "line2\n", "new_string", "LINE2\n"),
+                ctx);
+
+    assertFalse(result.isError(), "LF 的 old_string 应能匹配 CRLF 文件: " + result.getContent());
+    // 行尾风格必须保持不变——一次编辑不该把整个文件转成 LF。
+    assertEquals("line1\r\nLINE2\r\nline3\r\n", Files.readString(workspace.resolve("f.txt")));
+  }
+
+  @Test
+  void editPreservesCrlfWhenOldStringIsCrlf(@TempDir Path workspace) throws IOException {
+    ToolContext ctx = context(workspace);
+    Files.writeString(workspace.resolve("f.txt"), "a\r\nb\r\n");
+
+    ToolResult result =
+        new FileEditTool()
+            .execute(
+                args("file_path", "f.txt", "old_string", "a\r\n", "new_string", "A\r\n"), ctx);
+
+    assertFalse(result.isError(), "CRLF 的 old_string 也应正常: " + result.getContent());
+    assertEquals("A\r\nb\r\n", Files.readString(workspace.resolve("f.txt")));
+  }
+
+  @Test
+  void editKeepsLfFileAsLf(@TempDir Path workspace) throws IOException {
+    // 反向保护：LF 文件不能被写成 CRLF。
+    ToolContext ctx = context(workspace);
+    Files.writeString(workspace.resolve("f.txt"), "a\nb\n");
+
+    ToolResult result =
+        new FileEditTool()
+            .execute(args("file_path", "f.txt", "old_string", "a\n", "new_string", "A\n"), ctx);
+
+    assertFalse(result.isError(), "LF 文件应正常编辑: " + result.getContent());
+    assertEquals("A\nb\n", Files.readString(workspace.resolve("f.txt")));
+  }
+
+  @Test
+  void editMultiLineCrlfBlockWithLfOldString(@TempDir Path workspace) throws IOException {
+    // 多行块——这是实际失败的三次调用的形态（old_string 是连续多行）。
+    ToolContext ctx = context(workspace);
+    Files.writeString(
+        workspace.resolve("f.txt"), "#include <EGL/egl.h>\r\n#include <memory>\r\n\r\n#include \"Model.h\"\r\n");
+
+    ToolResult result =
+        new FileEditTool()
+            .execute(
+                args(
+                    "file_path", "f.txt",
+                    "old_string", "#include <EGL/egl.h>\n#include <memory>\n\n#include \"Model.h\"\n",
+                    "new_string", "#include <EGL/egl.h>\n#include <memory>\n\n#include \"Game.h\"\n"),
+                ctx);
+
+    assertFalse(result.isError(), "多行 LF 块应能匹配 CRLF 文件: " + result.getContent());
+    assertEquals(
+        "#include <EGL/egl.h>\r\n#include <memory>\r\n\r\n#include \"Game.h\"\r\n",
+        Files.readString(workspace.resolve("f.txt")));
+  }
+
   @Test
   void editFailsWhenOldStringAbsentWithoutThrowing(@TempDir Path workspace) throws IOException {
     ToolContext ctx = context(workspace);
