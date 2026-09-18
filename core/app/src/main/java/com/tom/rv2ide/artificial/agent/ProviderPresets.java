@@ -60,6 +60,8 @@ public final class ProviderPresets {
     private final List<String> models;
     private final boolean requiresApiKey;
     private final String apiKeyHelpUrl;
+    /** 4 槽位默认模型（main/haiku/sonnet/opus 顺序）。 */
+    private final String[] slotModels;
 
     Preset(
         String id,
@@ -76,6 +78,12 @@ public final class ProviderPresets {
       this.models = Collections.unmodifiableList(new ArrayList<>(models));
       this.requiresApiKey = requiresApiKey;
       this.apiKeyHelpUrl = apiKeyHelpUrl == null ? "" : apiKeyHelpUrl;
+      // 槽位默认值由模型清单推导：main 取首项，其余留空表示「与 main 相同」。
+      // 不在这里硬编码四份模型名——那样每加一个模型要改两处，且两处很容易不一致。
+      this.slotModels =
+          new String[] {
+            getDefaultModel(), "", "", "",
+          };
     }
 
     /** 稳定标识，写入偏好与用于查找。 */
@@ -114,6 +122,15 @@ public final class ProviderPresets {
     /** 获取密钥的页面地址，供 UI 提示用户去哪里申请。 */
     public String getApiKeyHelpUrl() {
       return apiKeyHelpUrl;
+    }
+
+    /**
+     * 4 槽位默认模型（main/haiku/sonnet/opus 顺序）。
+     *
+     * <p>供「从预设添加服务商」时预填表单，以及旧数据迁移时生成初始记录。
+     */
+    public String[] getSlotModels() {
+      return slotModels.clone();
     }
   }
 

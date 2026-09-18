@@ -56,14 +56,65 @@ public final class AgentModelConfigs {
   /**
    * 解析指定服务商的端点信息；未配置密钥或 baseUrl 时返回 null。
    *
-   * <p>端点信息全部来自 {@link ProviderPresets} 的预设表——本类不再持有服务商清单，
-   * 新增服务商只需在预设表里加一行。
+   * <p><b>查找顺序是「用户记录优先，预设兜底」</b>：用户可以在服务商管理界面增删改
+   * 服务商（含 baseUrl / 协议 / 密钥 / 模型），记录存在 {@code providers.json}；
+   * 预设表退化为「快速填充模板」，只在新记录尚未创建时提供默认值。
+   *
+   * <p>这个顺序解决了旧实现的一个硬伤：此前 7 个 OpenAI 兼容服务商共用一个密钥槽位，
+   * 配了 A 的密钥切到 B 时会拿着 A 的密钥去请求。改成记录后密钥随记录走。
    *
    * @param providerId 服务商标识
-   * @param customBaseUrl 覆盖预设的 baseUrl（本地模型与自定义端点需要）
+   * @param customBaseUrl 覆盖 baseUrl（自定义端点需要；记录里已有值时以记录为准）
    */
   public static ProviderEndpoint endpointFor(String providerId, String customBaseUrl) {
+    ProviderConfig record = recordFor(providerId);
+    if (record != null) {
+      return fromRecord(record, customBaseUrl);
+    }
     return ProviderPresets.endpointFor(providerId, customBaseUrl, API_KEY_LOOKUP);
+  }
+
+  /**
+   * 取用户配置的服务商记录；没有则返回 null。
+   *
+   * <p>读盘失败或存储不可用时返回 null，让调用方回退到预设——这样即使
+   * {@code providers.json} 损坏，助手仍能用预设跑起来，而不是彻底不可用。
+   */
+  public static ProviderConfig recordFor(String providerId) {
+    if (providerId == null || providerId.isEmpty()) {
+      return null;
+    }
+    try {
+      android.content.Context ctx = com.tom.rv2ide.app.BaseApplication.getBaseInstance();
+      if (ctx == null) {
+        return null;
+      }
+      return new ProviderConfigStore(ctx).find(providerId);
+    } catch (Throwable e) {
+      return null;
+    }
+  }
+
+  /** 把用户记录转成端点信息。 */
+  private static ProviderEndpoint fromRecord(ProviderConfig record, String customBaseUrl) {
+    String baseUrl = record.getBaseUrl();
+    // 自定义端点的 baseUrl 由用户在表单里填；记录里为空时接受调用方传入的覆盖值。
+    if (baseUrl.isEmpty() && customBaseUrl != null && !customBaseUrl.trim().isEmpty()) {
+      baseUrl = customBaseUrl.trim();
+    }
+    if (baseUrl.isEmpty()) {
+      return null;
+    }
+
+    String apiKey = record.getApiKey();
+    if (apiKey.isEmpty()) {
+      // 本地服务（Ollama / LM Studio）无鉴权，但请求仍需一个非空 Authorization 占位。
+      // 判据与预设路径一致：不强制要求密钥，只要求 baseUrl 与模型齐备。
+      apiKey = "local";
+    }
+
+    return new ProviderEndpoint(
+        record.getId(), record.getLabel(), record.getProtocolType(), baseUrl, apiKey);
   }
 
   /**
@@ -116,6 +167,15 @@ public final class AgentModelConfigs {
    * <p>自定义端点的模型名不能从预设表取（那里没有用户自填的值），因此单独提供入口。
    */
   public static String modelIdFor(String providerId, String modelId) {
+    // 用户记录里的槽位模型优先。传进来的 modelId 可能带上下文后缀
+    // （如 glm-5.2[1m]），必须剥离后再发给 API——后缀是本地元数据。
+    ProviderConfig record = recordFor(providerId);
+    if (record != null) {
+      String fromRecord = record.resolveSlot(ProviderConfig.SLOT_MAIN);
+      if (!fromRecord.isEmpty()) {
+        return ContextSizeParser.stripSuffix(fromRecord);
+      }
+    }
     if ("custom".equals(providerId)) {
       String custom = ApiKey.INSTANCE.getCustomModel();
       return custom.trim().isEmpty() ? modelId : custom.trim();
@@ -130,9 +190,14 @@ public final class AgentModelConfigs {
    * 比在本地静默换一个用户没选的模型更容易排查。
    */
   public static String defaultModelFor(String providerId) {
-    return ProviderPresets.find(providerId) == null
-        ? ""
-        : ProviderPresets.find(providerId).getDefaultModel();
+    // 用户记录里的主模型优先于预设的推荐值：用户显式配过的模型才是他想要的，
+    // 预设首项只是「没配过时的建议」。
+    ProviderConfig record = recordFor(providerId);
+    if (record != null && !record.getMainModel().isEmpty()) {
+      return ContextSizeParser.stripSuffix(record.getMainModel());
+    }
+    ProviderPresets.Preset preset = ProviderPresets.find(providerId);
+    return preset == null ? "" : preset.getDefaultModel();
   }
 
   /**

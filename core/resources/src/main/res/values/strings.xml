@@ -86,6 +86,36 @@
     拆成四个入口后每页不超过 8 项，与参考项目的组织粒度一致。
   -->
   <string name="ai_agent_page_providers_title">Providers and keys</string>
+  <string name="ai_agent_providers_title">Providers</string>
+  <string name="ai_agent_providers_summary">Add, edit or remove providers; each keeps its own API key</string>
+  <string name="ai_agent_provider_add">Add provider</string>
+  <string name="ai_agent_provider_empty">No providers configured yet. Tap “Add provider”.</string>
+  <string name="ai_agent_provider_edit">Edit</string>
+  <string name="ai_agent_provider_delete">Delete</string>
+  <string name="ai_agent_provider_delete_confirm">Delete “%1$s”? Its API key will be removed too.</string>
+  <string name="ai_agent_provider_name">Name</string>
+  <string name="ai_agent_provider_base_url">Base URL</string>
+  <string name="ai_agent_provider_protocol">Protocol</string>
+  <string name="ai_agent_provider_api_key">API key</string>
+  <string name="ai_agent_provider_api_key_keep">Leave empty to keep the current key</string>
+  <string name="ai_agent_provider_slots">Model slots</string>
+  <string name="ai_agent_provider_slot_main">Main</string>
+  <string name="ai_agent_provider_slot_haiku">Fast</string>
+  <string name="ai_agent_provider_slot_sonnet">Balanced</string>
+  <string name="ai_agent_provider_slot_opus">Powerful</string>
+  <string name="ai_agent_provider_slot_hint_same">Same as main</string>
+  <string name="ai_agent_provider_slot_hint_main">e.g. deepseek-chat or glm-5.2[1m]</string>
+  <string name="ai_agent_provider_fetch_models">Fetch model list</string>
+  <string name="ai_agent_provider_fetching">Fetching…</string>
+  <string name="ai_agent_provider_fetch_ok">Fetched %1$d models</string>
+  <string name="ai_agent_provider_fetch_empty">Could not fetch models — fill in manually</string>
+  <string name="ai_agent_provider_pick_model">Pick a model</string>
+  <string name="ai_agent_provider_save">Save</string>
+  <string name="ai_agent_provider_required">Name, base URL and the main model are required</string>
+  <string name="ai_agent_provider_from_preset">Start from a preset</string>
+  <string name="ai_agent_provider_ready">ready</string>
+  <string name="ai_agent_provider_no_key">no API key</string>
+  <string name="ai_agent_provider_incomplete">incomplete</string>
   <string name="ai_agent_page_providers_summary">API keys, custom endpoint, enable switch</string>
   <string name="ai_agent_page_tools_title">Tools and permissions</string>
   <string name="ai_agent_page_tools_summary">Chat mode, permission level, shell backend, code completion</string>

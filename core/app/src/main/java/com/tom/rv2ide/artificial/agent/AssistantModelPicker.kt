@@ -72,8 +72,14 @@ object AssistantModelPicker {
       val currentModel = agents.getAgent()
 
       providerList.removeAllViews()
-      for (providerId in ProviderPresets.allIds()) {
-        val label = ProviderPresets.labelFor(providerId)
+      // 用户记录优先、预设兜底，且按 id 去重：用户可能给某个预设服务商建了记录
+      // （改了 baseUrl 或密钥），此时只需显示一条，标签用用户自己起的名字。
+      val records = ProviderConfigStore(context).load()
+      val recordIds = records.map { it.getId() }
+      val orderedIds = recordIds + ProviderPresets.allIds().filterNot { recordIds.contains(it) }
+      for (providerId in orderedIds) {
+        val record = records.firstOrNull { it.getId() == providerId }
+        val label = record?.getLabel() ?: ProviderPresets.labelFor(providerId)
         // 「可用」的判据复用发请求时那条路径（AgentModelConfigs.endpointFor），
         // 而不是在这里另判一次「密钥非空」：后者会漏掉自定义端点
         // （无密钥、但需要 baseUrl），更糟的是会在界面说「可用」而请求仍失败。
@@ -168,6 +174,16 @@ object AssistantModelPicker {
    * provider，若先写 provider 就会被这个反查覆盖回去。
    */
   private fun switchProvider(context: Context, agents: Agents, providerId: String) {
+    // 用户记录里的模型优先：那是用户在服务商管理界面显式配过的值。
+    // 预设只是「没配过时的建议」，不该覆盖用户的配置。
+    val record = AgentModelConfigs.recordFor(providerId)
+    val fromRecord = record?.getMainModel().orEmpty()
+    if (fromRecord.isNotEmpty()) {
+      agents.setAgent(ContextSizeParser.stripSuffix(fromRecord))
+      agents.setProvider(providerId)
+      return
+    }
+
     val models = ProviderPresets.modelsFor(providerId)
     if (models.isNotEmpty()) {
       agents.setAgent(models[0])
@@ -181,8 +197,22 @@ object AssistantModelPicker {
     }
   }
 
-  /** 当前服务商的模型清单；自定义端点回退到用户已填的模型名（可能为空）。 */
+  /** 当前服务商的模型清单；用户记录优先，其次预设，最后回退到当前值。 */
   private fun modelsFor(providerId: String, currentModel: String): List<String> {
+    // 记录里的非空槽位都列出来，让用户在助手面板里就能在 main/haiku/sonnet/opus
+    // 之间切——否则配了 4 个槽位却只能用到 main，等于白配。
+    val record = AgentModelConfigs.recordFor(providerId)
+    if (record != null) {
+      val fromSlots =
+          ProviderConfig.SLOT_ORDER.map { record.resolveSlot(it) }
+              .filter { it.isNotBlank() }
+              .distinct()
+              .map { ContextSizeParser.stripSuffix(it) }
+      if (fromSlots.isNotEmpty()) {
+        return fromSlots
+      }
+    }
+
     val preset = ProviderPresets.modelsFor(providerId)
     if (preset.isNotEmpty()) {
       return preset

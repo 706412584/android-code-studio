@@ -59,7 +59,16 @@ class AIAgentPreferencesScreen(
  * 而基类里本来也只有三个属性，抽出来省不下什么。
  */
 
-/** 服务商与密钥：启用开关 + 6 个服务商的密钥 + 自定义端点三件套。 */
+/**
+ * 服务商与密钥。
+ *
+ * <p><b>从「一排固定密钥框」改为「服务商管理」</b>：旧实现为 6 个服务商各写死一个
+ * 偏好键，其余 7 个 OpenAI 兼容服务商共用一个键——配了 GLM 的密钥切到 Kimi 时会
+ * 拿着 GLM 的密钥去请求，而且两个服务商无法同时配置。
+ *
+ * <p>现在密钥随服务商记录走（{@code providers.json}），每份互不干扰；
+ * 增删改都在 [ProviderManagementPreference] 里完成。
+ */
 @Parcelize
 private class ProvidersPage(
     override val key: String = "idepref_ai_agent_providers",
@@ -68,59 +77,9 @@ private class ProvidersPage(
     override val children: List<IPreference> = mutableListOf(),
 ) : IPreferenceScreen() {
 
-  @IgnoredOnParcel private var geminiApiKeyPref: GeminiApiKey? = null
-  @IgnoredOnParcel private var deepseekApiKeyPref: DeepseekApiKey? = null
-  @IgnoredOnParcel private var openAIApiKeyPref: OpenAIApiKey? = null
-  @IgnoredOnParcel private var anthropicApiKeyPref: AnthropicApiKey? = null
-  @IgnoredOnParcel private var grokApiKeyPref: GrokApiKey? = null
-  @IgnoredOnParcel private var openAiCompatibleApiKeyPref: OpenAiCompatibleApiKey? = null
-
   init {
-    val aiAgentEnabled = AIAgentEnabled { isEnabled -> updateApiKeyPreferencesState(isEnabled) }
-
-    geminiApiKeyPref = GeminiApiKey()
-    deepseekApiKeyPref = DeepseekApiKey()
-    openAIApiKeyPref = OpenAIApiKey()
-    anthropicApiKeyPref = AnthropicApiKey()
-    grokApiKeyPref = GrokApiKey()
-    openAiCompatibleApiKeyPref = OpenAiCompatibleApiKey()
-
-    addPreference(aiAgentEnabled)
-    addPreference(geminiApiKeyPref!!)
-    addPreference(deepseekApiKeyPref!!)
-    addPreference(openAIApiKeyPref!!)
-    addPreference(anthropicApiKeyPref!!)
-    addPreference(grokApiKeyPref!!)
-    addPreference(openAiCompatibleApiKeyPref!!)
-
-    // 自定义端点。三个字段读写逻辑相同，只有 key/标题/提示语不同。
-    addPreference(
-        CustomEndpointField(
-            key = "ai_agent_custom_base_url",
-            title = R.string.ai_agent_custom_base_url,
-            hint = "https://your-gateway.example.com/v1",
-        ))
-    addPreference(
-        CustomEndpointField(
-            key = "ai_agent_custom_api_key",
-            title = R.string.ai_agent_custom_api_key,
-            hint = "sk-...",
-        ))
-    addPreference(
-        CustomEndpointField(
-            key = "ai_agent_custom_model",
-            title = R.string.ai_agent_custom_model,
-            hint = "e.g. agnes-2.5-flash",
-        ))
-  }
-
-  private fun updateApiKeyPreferencesState(isEnabled: Boolean) {
-    geminiApiKeyPref?.setEnabled(isEnabled)
-    deepseekApiKeyPref?.setEnabled(isEnabled)
-    openAIApiKeyPref?.setEnabled(isEnabled)
-    anthropicApiKeyPref?.setEnabled(isEnabled)
-    grokApiKeyPref?.setEnabled(isEnabled)
-    openAiCompatibleApiKeyPref?.setEnabled(isEnabled)
+    addPreference(AIAgentEnabled())
+    addPreference(ProviderManagementPreference())
   }
 }
 

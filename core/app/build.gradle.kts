@@ -333,8 +333,13 @@ dependencies {
   // So we always copy the latest JAR file to assets
   compileOnly(projects.tooling.impl)
 
-  // JVM unit tests for the pure-logic pieces of the AI assistant UI (streaming throttle).
+  // JVM unit tests for the pure-logic pieces of the AI assistant UI (streaming throttle,
+  // code fence parser, provider config).
   // Deliberately no Robolectric: the tested classes have no Android dependencies, and
   // pulling in Robolectric would slow every test run for no gain.
+  //
+  // org.json 在单测里要显式依赖：运行时它由 Android 框架提供，而 JVM 单测跑在桩实现上
+  // （每个方法抛 "not mocked"）。ProviderConfig 的序列化要用真实实现才测得了。
   testImplementation(libs.tests.junit)
+  testImplementation(libs.org.json)
 }
