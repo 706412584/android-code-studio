@@ -1,0 +1,134 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  任务卡片：显示 agent 当前的任务清单与进度，位于输入区上方。
+
+  结构（折叠态只占一行）：
+  ┌──────────────────────────────────┐
+  │ ▸ 任务 · 2/5 完成            ▾   │  ← 折叠头，整行可点
+  ├──────────────────────────────────┤
+  │ ✓ 读取 build.gradle              │  ← 展开后的清单
+  │ ◐ 修改 compileSdk                │
+  │ ○ 运行构建                       │
+  └──────────────────────────────────┘
+
+  默认折叠：任务清单通常 5-10 条，默认展开会持续占掉面板 1/3 的高度，
+  而用户多数时候只关心「还剩几条」，不关心每条的具体措辞。
+  进度数字（2/5）在折叠态就能回答那个问题。
+
+  放在输入区上方而不是消息流里：任务清单是**跨轮次持续存在**的状态，
+  而消息流是append-only 的历史。把清单塞进消息流会让它随对话滚走，
+  用户往回翻时看到的是「当时的清单」而不是「现在的清单」。
+-->
+<com.google.android.material.card.MaterialCardView
+  xmlns:android="http://schemas.android.com/apk/res/android"
+  xmlns:app="http://schemas.android.com/apk/res-auto"
+  xmlns:tools="http://schemas.android.com/tools"
+  android:id="@+id/todoCard"
+  android:layout_width="match_parent"
+  android:layout_height="wrap_content"
+  android:layout_marginStart="12dp"
+  android:layout_marginEnd="12dp"
+  android:layout_marginTop="4dp"
+  android:layout_marginBottom="4dp"
+  app:cardCornerRadius="12dp"
+  app:cardElevation="0dp"
+  app:strokeWidth="1dp"
+  app:strokeColor="?attr/colorOutline"
+  app:cardBackgroundColor="?attr/colorSurfaceVariant"
+  android:visibility="gone"
+  tools:visibility="visible">
+
+  <LinearLayout
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical">
+
+    <!-- 折叠头：整行可点，展开/收起清单 -->
+    <LinearLayout
+      android:id="@+id/todoHeader"
+      android:layout_width="match_parent"
+      android:layout_height="wrap_content"
+      android:orientation="horizontal"
+      android:gravity="center_vertical"
+      android:background="?attr/selectableItemBackground"
+      android:clickable="true"
+      android:focusable="true"
+      android:paddingStart="12dp"
+      android:paddingEnd="12dp"
+      android:paddingTop="8dp"
+      android:paddingBottom="8dp">
+
+      <ImageView
+        android:layout_width="16dp"
+        android:layout_height="16dp"
+        android:contentDescription="@null"
+        android:src="@drawable/ic_tool_todo"
+        app:tint="?attr/colorOnSurfaceVariant" />
+
+      <TextView
+        android:id="@+id/todoTitle"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:layout_marginStart="8dp"
+        android:ellipsize="end"
+        android:maxLines="1"
+        android:textAppearance="@style/TextAppearance.Material3.LabelLarge"
+        tools:text="任务 · 2/5 完成" />
+
+      <!--
+        进度条。这里用进度条是恰当的：任务条数是**已知总量**，
+        完成比例是真实的进度（不同于 agent 运行时长那种不可预估的等待）。
+      -->
+      <com.google.android.material.progressindicator.LinearProgressIndicator
+        android:id="@+id/todoProgress"
+        android:layout_width="64dp"
+        android:layout_height="wrap_content"
+        android:layout_marginEnd="8dp"
+        app:trackThickness="4dp"
+        tools:progress="40" />
+
+      <TextView
+        android:id="@+id/todoChevron"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="▸"
+        android:textColor="?attr/colorOnSurfaceVariant"
+        android:textSize="12sp" />
+
+    </LinearLayout>
+
+    <View
+      android:id="@+id/todoDivider"
+      android:layout_width="match_parent"
+      android:layout_height="1dp"
+      android:background="?attr/colorOutline"
+      android:visibility="gone" />
+
+    <!--
+      清单本体。限高可滚：任务可能几十条（大重构），不限高会把输入区顶出屏幕。
+    -->
+    <com.tom.rv2ide.ui.BoundedScrollView
+      android:id="@+id/todoScroll"
+      android:layout_width="match_parent"
+      android:layout_height="wrap_content"
+      android:maxHeight="180dp"
+      android:scrollbars="vertical"
+      android:visibility="gone"
+      tools:visibility="visible">
+
+      <LinearLayout
+        android:id="@+id/todoList"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:paddingStart="12dp"
+        android:paddingEnd="12dp"
+        android:paddingTop="6dp"
+        android:paddingBottom="10dp" />
+
+    </com.tom.rv2ide.ui.BoundedScrollView>
+
+  </LinearLayout>
+
+</com.google.android.material.card.MaterialCardView>

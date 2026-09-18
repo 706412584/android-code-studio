@@ -23,9 +23,11 @@ import android.view.Gravity
 import android.view.LayoutInflater
 import android.view.ViewGroup
 import android.widget.FrameLayout
+import android.widget.TextView
 import androidx.appcompat.app.AlertDialog
 import androidx.constraintlayout.widget.ConstraintLayout
 import androidx.core.view.isVisible
+import com.google.android.material.color.MaterialColors
 import androidx.lifecycle.LifecycleCoroutineScope
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.tom.rv2ide.adapters.AssistantMessageAdapter
@@ -224,6 +226,7 @@ class FloatingAssistantView(
 
     // 标题栏：左菜单开抽屉，右侧全屏/最小化/关闭。
     binding.assistantMenu.setOnClickListener { toggleConversationPanel() }
+    binding.assistantTodos.todoHeader.setOnClickListener { toggleTodos() }
     binding.assistantFullscreen.setOnClickListener { toggleFullscreen() }
     // 最小化与关闭都是收起面板（再点 FAB 可打开），行为一致，语义不同：
     // 关闭是「我不需要它了」，最小化是「先收起来，等下还要用」。
@@ -399,8 +402,44 @@ class FloatingAssistantView(
     // 服务商/模型可能刚在设置页被改过，打开时重读一次。只在 attach 时读会让
     // 「设置里改了、回到面板显示的还是旧值」。
     refreshModelLabel()
+    // 首次打开时回放已恢复的会话。放在 open() 而不是 attach()：
+    // attach 发生在 Activity onCreate 期间，此时读磁盘会拖慢启动；
+    // 而用户看到面板时再加载，感知上反而更快。
+    restoreConversationIfNeeded()
+    refreshTodos()
     updateEmptyState()
   }
+
+  /**
+   * 首次打开面板时，把「本工作区上次打开的会话」回放到列表。
+   *
+   * <p>只在首次做：后续 open/close 不该重复回放——那会把用户当前正在进行的
+   * 对话重置回历史状态，看起来像消息凭空消失。
+   */
+  private fun restoreConversationIfNeeded() {
+    if (restoredOnce) {
+      return
+    }
+    restoredOnce = true
+    val id = orchestrator.activeConversationId
+    if (id.isNullOrEmpty() || adapter.itemCount > 0) {
+      return
+    }
+    lifecycleScope.launch(Dispatchers.IO) {
+      val messages = orchestrator.loadConversationMessages(id)
+      if (messages.isEmpty()) {
+        return@launch
+      }
+      withContext(Dispatchers.Main) {
+        replayMessages(messages)
+        lastOpenedConversationId = id
+        updateEmptyState()
+      }
+    }
+  }
+
+  /** 是否已尝试过恢复会话；避免每次 open() 都回放。 */
+  private var restoredOnce = false
 
   fun close() {
     binding.assistantOverlay.isVisible = false
@@ -585,7 +624,43 @@ class FloatingAssistantView(
         updateEmptyState()
       }
 
+      com.tom.rv2ide.ai.agent.command.SlashCommandCatalog.Kind.COMPACT ->
+          compactConversation()
+
       else -> {}
+    }
+  }
+
+  /**
+   * 手动压缩当前会话的上下文。
+   *
+   * <p>与参考项目（cc-haha）一致，触发方式是发一条 `/compact` 命令而不是单独的 API——
+   * 压缩本身由 {@code AgentOrchestrator} 内部的 ContextCompactor 完成，这里只负责
+   * 发起与呈现结果。
+   *
+   * <p>运行中不允许压缩：压缩要重写会话历史，而正在进行的运行还在往历史里追加，
+   * 两者并发会写出错乱的记录。
+   */
+  private fun compactConversation() {
+    if (executionJob?.isActive == true) {
+      appendTrace(context.getString(string.ai_assistant_compact_busy))
+      return
+    }
+    lifecycleScope.launch(Dispatchers.IO) {
+      val result =
+          try {
+            orchestrator.compactActiveConversation()
+          } catch (e: Exception) {
+            com.tom.rv2ide.ai.tool.api.ErrorLog.record("agent", "手动压缩失败", e, null)
+            null
+          }
+      withContext(Dispatchers.Main) {
+        if (result == null) {
+          appendTrace(context.getString(string.ai_assistant_compact_failed))
+          return@withContext
+        }
+        appendTrace(context.getString(string.ai_assistant_compact_done, result))
+      }
     }
   }
 
@@ -615,7 +690,6 @@ class FloatingAssistantView(
 
           withContext(Dispatchers.Main) {
             binding.assistantSend.isEnabled = false
-            binding.assistantProgress.isVisible = true
             // 运行中清空摘要行：上一次的「已完成 · 3 轮」留在那里会与正在进行的运行
             // 混在一起，看起来像这次已经结束了。运行状态由下方的 WorkingStatusView 承担。
             setStatus(null)
@@ -671,7 +745,6 @@ class FloatingAssistantView(
             withContext(kotlinx.coroutines.NonCancellable) {
               withContext(Dispatchers.Main) {
                 binding.assistantSend.isEnabled = true
-                binding.assistantProgress.isVisible = false
                 // 状态条同理：不在这里停，取消/异常后动画会一直转，
                 // 看起来像还在跑。
                 binding.assistantWorking.stopWorking()
@@ -804,6 +877,12 @@ class FloatingAssistantView(
           if (!result.isError && diffId.isNotEmpty()) {
             appendChangedFile(call?.name.orEmpty(), call?.arguments, diffId)
           }
+
+          // 每次工具结束都刷新任务卡片。看起来比必要的频繁，但 todo_update 是
+          // 唯一会改清单的工具，而这里无法预知下一个调用是不是它——按名字判断
+          // 会把「工具改名」变成静默失效（卡片不再更新，且没有报错）。
+          // 读的是内存中的清单，代价只有一次列表拷贝。
+          refreshTodos()
         }
       }
       com.tom.rv2ide.ai.agent.AgentEvent.Type.CONTEXT_COMPACTED -> {
@@ -1126,6 +1205,71 @@ class FloatingAssistantView(
   private fun updateEmptyState() {
     binding.assistantEmpty.isVisible = adapter.isEmpty()
   }
+
+  /**
+   * 刷新任务卡片。
+   *
+   * <p>没有任务时整卡隐藏，而不是显示一个空卡片——空卡片会长期占据输入区上方
+   * 的空间，而「没有任务」是常态（普通问答不产生任务清单）。
+   */
+  private fun refreshTodos() {
+    val todos = orchestrator.todos
+    val card = binding.assistantTodos.todoCard
+    if (todos.isEmpty()) {
+      card.isVisible = false
+      return
+    }
+    card.isVisible = true
+
+    val total = todos.size
+    val done = todos.count { it.status == com.tom.rv2ide.ai.tool.TodoItem.STATUS_COMPLETED }
+    binding.assistantTodos.todoTitle.text =
+        context.getString(string.ai_assistant_todo_progress, done, total)
+    binding.assistantTodos.todoProgress.max = total
+    binding.assistantTodos.todoProgress.setProgressCompat(done, true)
+
+    // 重建清单。条目数通常个位数，全量重建比 diff 更简单且不会错——
+    // 这里没有列表复用，重建代价是一次几次 View 的创建。
+    val list = binding.assistantTodos.todoList
+    list.removeAllViews()
+    for (item in todos) {
+      val row = TextView(context).apply {
+        text = todoGlyph(item.status) + " " + item.content
+        textSize = 13f
+        setPadding(0, dp(4), 0, dp(4))
+        // 已完成的条目弱化：视线应落在「还没做的」上。
+        setTextColor(
+            MaterialColors.getColor(
+                list,
+                if (item.status == com.tom.rv2ide.ai.tool.TodoItem.STATUS_COMPLETED)
+                    com.google.android.material.R.attr.colorOnSurfaceVariant
+                else com.google.android.material.R.attr.colorOnSurface,
+            )
+        )
+      }
+      list.addView(row)
+    }
+  }
+
+  /**
+   * 任务卡片的展开/收起。默认折叠——清单通常 5-10 条，默认展开会持续占掉
+   * 面板约 1/3 高度，而折叠态的进度数字（2/5）已能回答「还剩几条」。
+   */
+  private fun toggleTodos() {
+    val b = binding.assistantTodos
+    val expand = !b.todoScroll.isVisible
+    b.todoScroll.isVisible = expand
+    b.todoDivider.isVisible = expand
+    b.todoChevron.text = if (expand) "▾" else "▸"
+  }
+
+  /** 任务状态 → 前缀符号。用符号而非图标：一行一条，符号更紧凑且不打断文字阅读。 */
+  private fun todoGlyph(status: String): String =
+      when (status) {
+        com.tom.rv2ide.ai.tool.TodoItem.STATUS_COMPLETED -> "✓"
+        com.tom.rv2ide.ai.tool.TodoItem.STATUS_IN_PROGRESS -> "◐"
+        else -> "○"
+      }
 
   private fun startNewConversation() {
     cancel()

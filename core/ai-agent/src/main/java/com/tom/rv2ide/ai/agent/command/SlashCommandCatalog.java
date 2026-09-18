@@ -54,6 +54,8 @@ public final class SlashCommandCatalog {
     NEW_CONVERSATION,
     /** 清空当前会话。 */
     CLEAR,
+    /** 手动压缩当前会话的上下文。 */
+    COMPACT,
     /** 列出可用命令。 */
     HELP,
     /** 是命令但参数不合法。 */
@@ -152,6 +154,7 @@ public final class SlashCommandCatalog {
               new Definition("model", "/model <模型名>", "切换当前服务商的模型"),
               new Definition("new", "/new", "开始一个新会话"),
               new Definition("clear", "/clear", "清空当前会话的消息"),
+              new Definition("compact", "/compact", "压缩上下文以释放 token 空间"),
               new Definition("help", "/help", "列出可用命令")));
 
   private SlashCommandCatalog() {}
@@ -237,6 +240,8 @@ public final class SlashCommandCatalog {
         return new Parsed(Kind.NEW_CONVERSATION, "", "", raw);
       case "clear":
         return new Parsed(Kind.CLEAR, "", "", raw);
+      case "compact":
+        return new Parsed(Kind.COMPACT, "", "", raw);
       case "help":
         return new Parsed(Kind.HELP, "", "", raw);
       default:

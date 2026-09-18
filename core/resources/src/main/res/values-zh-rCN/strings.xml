@@ -269,6 +269,10 @@
   <string name="ai_assistant_code_collapse">收起</string>
   <string name="ai_assistant_code_plaintext">纯文本</string>
   <string name="ai_assistant_code_lines">%1$d 行</string>
+  <string name="ai_assistant_compact_busy">正在运行中，暂时无法压缩上下文。</string>
+  <string name="ai_assistant_compact_failed">没有可压缩的内容，或压缩失败。</string>
+  <string name="ai_assistant_compact_done">上下文已压缩：%1$s</string>
+  <string name="ai_assistant_todo_progress">任务 · %1$d/%2$d 完成</string>
 
   <!-- 斜杠命令 -->
   <string name="ai_assistant_mode_changed">已切换到模式：%1$s</string>

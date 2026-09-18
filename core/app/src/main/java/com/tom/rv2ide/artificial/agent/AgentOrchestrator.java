@@ -46,6 +46,7 @@ import com.tom.rv2ide.ai.protocol.ModelMessage;
 import com.tom.rv2ide.ai.protocol.UserModelMessage;
 import com.tom.rv2ide.ai.tool.DiffStore;
 import com.tom.rv2ide.ai.tool.api.ErrorLog;
+import com.tom.rv2ide.artificial.agents.Agents;
 import com.tom.rv2ide.ai.tool.FileDeleteTool;
 import com.tom.rv2ide.ai.tool.FileEditTool;
 import com.tom.rv2ide.ai.tool.FileReadTool;
@@ -253,6 +254,8 @@ public final class AgentOrchestrator {
   /** 切换到既有会话；之后的请求会在其历史上续接。 */
   public void openConversation(String conversationId) {
     this.activeConversationId = conversationId;
+    // 立刻持久化：用户从历史列表选了某条，下次重开应用就该停在这条。
+    persistActiveConversation();
   }
 
   /**
@@ -295,6 +298,7 @@ public final class AgentOrchestrator {
             "",
             settings.getPermissionMode());
     activeConversationId = summary.getId();
+    persistActiveConversation();
     return summary;
   }
 
@@ -308,16 +312,129 @@ public final class AgentOrchestrator {
     conversationStore.delete(conversationId);
     if (conversationId != null && conversationId.equals(activeConversationId)) {
       activeConversationId = null;
+      // 同步清掉持久化记录。不清的话下次启动会恢复到一个已删除的 id，
+      // 虽然 restoreLastConversationForWorkspace 有 exists 校验兜底，
+      // 但让存储里留着悬空引用没有意义。
+      if (workspace != null) {
+        androidx.preference.PreferenceManager.getDefaultSharedPreferences(appContext)
+            .edit()
+            .remove(lastConversationKey(workspace))
+            .apply();
+      }
     }
   }
 
-  /** 设置工作区根目录。工具只能在此目录内操作。 */
+  /**
+   * 设置工作区根目录。工具只能在此目录内操作。
+   *
+   * <p><b>切换工作区时恢复该工作区上次打开的会话</b>：用户进入项目后期待接着上次继续，
+   * 而不是每次面对一个空会话、还要去历史列表里翻。持久化的键含工作区绝对路径——
+   * 用全局单一「上次会话」会让两个项目互相覆盖，用户切回 A 项目却看到 B 的对话。
+   */
   public void setWorkspace(File workspace) {
     this.workspace = workspace;
+    restoreLastConversationForWorkspace();
+  }
+
+  /**
+   * 取回本工作区上次打开的会话 id。
+   *
+   * <p>只存 id 不存内容——会话内容本来就在 {@link ConversationStore} 里，
+   * 重复存储会产生两份真相。
+   *
+   * <p>取回时校验该会话**仍然存在**：用户可能已在历史列表里删了它，
+   * 此时返回 null 让上层开新会话，而不是指向已删除的 id 导致后续写入失败。
+   */
+  private void restoreLastConversationForWorkspace() {
+    if (workspace == null) {
+      return;
+    }
+    String saved =
+        androidx.preference.PreferenceManager.getDefaultSharedPreferences(appContext)
+            .getString(lastConversationKey(workspace), null);
+    if (saved != null && !saved.isEmpty()) {
+      try {
+        if (conversationStore.exists(saved)) {
+          activeConversationId = saved;
+          return;
+        }
+      } catch (RuntimeException e) {
+        // exists 抛异常时按「不存在」继续走下面的兜底，不影响后续对话。
+      }
+    }
+    // 兜底：没有记录（首次升级到本版本的用户）或记录已失效时，取最近修改的会话。
+    // 否则老用户升级后会看到空会话、还得去历史列表里翻——而会话其实一条都没丢。
+    restoreMostRecentConversation();
+  }
+
+  /**
+   * 兜底恢复：取最近修改的、非空的会话。
+   *
+   * <p>不按 cwd 过滤是因为 {@link ConversationSummary} 不含 cwd，反查需要逐个读
+   * 会话文件。主路径（显式记录）已保证工作区隔离，这条只在升级后第一次生效，
+   * 宽松一点可接受。
+   */
+  private void restoreMostRecentConversation() {
+    List<ConversationSummary> all;
+    try {
+      all = conversationStore.list();
+    } catch (IOException | RuntimeException e) {
+      return;
+    }
+    ConversationSummary best = null;
+    for (ConversationSummary summary : all) {
+      if (summary.getMessageCount() <= 0) {
+        continue;
+      }
+      if (best == null || summary.getModifiedAt() > best.getModifiedAt()) {
+        best = summary;
+      }
+    }
+    if (best == null) {
+      return;
+    }
+    activeConversationId = best.getId();
+    // 立刻落盘，之后就走精确路径。
+    persistActiveConversation();
+  }
+
+  /** 记住本工作区当前打开的会话。 */
+  private void persistActiveConversation() {
+    if (workspace == null || activeConversationId == null || activeConversationId.isEmpty()) {
+      return;
+    }
+    androidx.preference.PreferenceManager.getDefaultSharedPreferences(appContext)
+        .edit()
+        .putString(lastConversationKey(workspace), activeConversationId)
+        .apply();
+  }
+
+  /**
+   * 按工作区隔离的偏好键。
+   *
+   * <p>工作区路径直接进键名：SharedPreferences 的键允许任意字符串，
+   * 路径里的 `/` 不影响查找。
+   */
+  private static String lastConversationKey(File workspace) {
+    return "ai_agent_last_conversation:" + workspace.getAbsolutePath();
   }
 
   public File getWorkspace() {
     return workspace;
+  }
+
+  /**
+   * 当前任务清单（供界面渲染任务卡片）。
+   *
+   * <p>返回副本而不是内部列表：界面在别的线程读，直接给出内部引用会在
+   * {@code todo_update} 写入时产生并发修改。
+   */
+  public List<com.tom.rv2ide.ai.tool.TodoItem> getTodos() {
+    try {
+      return todoStore.getItems();
+    } catch (RuntimeException e) {
+      return new ArrayList<>();
+    }
   }
 
   public AgentToolSettings getSettings() {
@@ -648,6 +765,94 @@ public final class AgentOrchestrator {
   }
 
   /**
+   * 手动压缩当前会话（对应 `/compact` 命令）。
+   *
+   * <p><b>与 {@link #maybeCompact} 的区别</b>：那个由 token 硬阈值自动触发、只压到刚好
+   * 低于阈值；这个由用户显式发起，因此**压到最低限度**——用户点它就是要腾出尽可能多的
+   * 空间，压一半等于没解决问题。
+   *
+   * <p>与自动压缩共用 {@link ConversationCompaction#select} 与 {@link ContextCompactor}，
+   * 只是传入的预算不同。不另写一套：两条路径产出的压缩条目格式必须一致，否则
+   * {@link ConversationHistory#fold} 会解不出来。
+   *
+   * @return 面向用户的简短结果描述（压掉多少条 / 摘要多少 token）；无可压缩内容或失败时
+   *     返回 null，由调用方给出提示。**不抛异常**——压缩是优化，不该让界面崩。
+   */
+  public String compactActiveConversation() {
+    String conversationId = activeConversationId;
+    if (conversationId == null || conversationId.isEmpty()) {
+      return null;
+    }
+    ModelConfig config = resolveConfigForCompaction();
+    if (config == null) {
+      return null;
+    }
+    List<ConversationLog.EntryLocation> entries;
+    try {
+      entries = conversationStore.read(conversationId);
+    } catch (IOException | RuntimeException e) {
+      return null;
+    }
+    if (entries == null || entries.isEmpty()) {
+      return null;
+    }
+    List<ModelMessage> history = ConversationHistory.fold(entries);
+    if (history.isEmpty()) {
+      return null;
+    }
+    // 手动压缩压到「最小保留预算」：保留最近的若干轮以便对话能续上，其余全部摘要。
+    //
+    // 取自动压缩预算的 1/4：自动压缩只需压到刚好低于阈值（否则每次都要重压），
+    // 而用户点手动压缩是明确要腾空间，压得越干净越好；但不能压到 0——
+    // 完全不留最近上下文会让模型立刻丢失用户正在做的事。
+    int autoBudget = ConversationCompaction.historyBudget(config, 0);
+    int keepBudget = autoBudget == Integer.MAX_VALUE ? Integer.MAX_VALUE : Math.max(1, autoBudget / 4);
+    ConversationCompaction.Selection selection =
+        ConversationCompaction.select(entries, keepBudget);
+    if (selection.isEmpty()) {
+      return null;
+    }
+    ContextCompactor.Summarizer summarizer = buildSummarizer(config);
+    if (summarizer == null) {
+      return null;
+    }
+    String summary = ContextCompactor.compact(selection.getMessages(), summarizer);
+    if (summary == null || summary.trim().isEmpty()) {
+      return null;
+    }
+    try {
+      conversationStore.append(
+          conversationId,
+          CompactionEntry.create(
+              null, System.currentTimeMillis(), summary.trim(), selection.getUpToOrdinal()));
+    } catch (IOException e) {
+      ErrorLog.record("agent", "手动压缩写入失败", e, null);
+      return null;
+    }
+    return selection.getMessages().size() + " 条消息 → 摘要 " + TokenEstimator.estimate(summary) + " token";
+  }
+
+  /** 取压缩用的模型配置；拿不到时返回 null（调用方据此提示失败）。 */
+  private ModelConfig resolveConfigForCompaction() {
+    try {
+      Agents agents = new Agents(appContext);
+      String providerId = agents.getProvider();
+      String modelId = agents.getAgent();
+      if (providerId == null || providerId.isEmpty() || modelId == null || modelId.isEmpty()) {
+        return null;
+      }
+      AgentModelConfigs.ProviderEndpoint endpoint =
+          AgentModelConfigs.endpointFor(providerId, customBaseUrlFor(appContext, providerId));
+      if (endpoint == null) {
+        return null;
+      }
+      return AgentModelConfigs.build(endpoint, modelId, DEFAULT_TOOL_CALL_LIMIT);
+    } catch (RuntimeException e) {
+      return null;
+    }
+  }
+
+  /**
    * 若历史已超硬阈值，摘要最旧的一段并追加压缩条目。
    *
    * <p>摘要结果**必须落盘**：{@link ConversationHistory#fold} 靠 {@code CompactionEntry}
@@ -734,6 +939,7 @@ public final class AgentOrchestrator {
               "",
               settings.getPermissionMode());
       activeConversationId = created.getId();
+      persistActiveConversation();
       return created.getId();
     } catch (IOException e) {
       // 落盘失败不应阻断对话本身——退化为无历史的内存会话。

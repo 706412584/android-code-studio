@@ -218,21 +218,22 @@
           android:textColor="?android:textColorSecondary"
           android:textAppearance="@style/TextAppearance.Material3.BodyMedium" />
 
-        <com.google.android.material.progressindicator.LinearProgressIndicator
-          android:id="@+id/assistantProgress"
-          android:layout_width="match_parent"
-          android:layout_height="wrap_content"
-          android:layout_gravity="top"
-          android:visibility="gone"
-          android:indeterminate="true" />
-
       </FrameLayout>
 
       <!--
-        「思考中…」/「处理中…」状态条。
+        「思考中…」/「处理中…」状态行。
 
-        放在消息列表与输入框之间：这是用户等待时视线停留的位置（刚按下发送、
-        目光还在输入框附近），比顶部标题栏更容易被注意到。
+        **位置**：消息列表下方、输入框上方——即紧贴「它正在描述的那条输出」，
+        这也是参考项目（cc-haha）的位置。参考项目的注释明确否决了把它放进输入框：
+        输入框区域只保留「停止」按钮，状态行属于对话流而不属于输入控件。
+
+        **为什么删掉了顶部的 LinearProgressIndicator**：那是一条横向进度条，
+        但它表达的是「未知时长的等待」——进度条在用户认知里意味着「快到 100% 了」，
+        而 agent 工作可能持续几分钟且无法预估，进度条会持续给出错误预期。
+        改用文字 + 点阵动画（WorkingStatusView）只表达「在动」，不承诺进度。
+        另外它在顶部（`layout_gravity="top"`），与用户等待时视线停留的位置
+        （输入框附近）相距最远。
+
         默认 gone，由 startWorking/stopWorking 控制。
       -->
       <com.tom.rv2ide.artificial.agent.WorkingStatusView
@@ -245,6 +246,14 @@
         android:paddingBottom="4dp"
         android:visibility="gone"
         tools:visibility="visible" />
+
+      <!--
+        任务卡片。放在状态行与输入区之间——「agent 在做什么」与「还有哪些任务」
+        是同一类信息，相邻显示便于对照。默认折叠，见 layout_assistant_todos.xml。
+      -->
+      <include
+        android:id="@+id/assistantTodos"
+        layout="@layout/layout_assistant_todos" />
 
       <!--
         输入区。
