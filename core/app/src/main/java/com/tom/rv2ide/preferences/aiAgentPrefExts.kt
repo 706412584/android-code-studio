@@ -102,7 +102,11 @@ private class AgentToolingGroup(
 ) : IPreferenceGroup() {
 
   init {
-    addPreference(AgentModeSwitch())
+    // 「Agent 模式（工具调用）」开关已移除：它原先只决定 ChatFragment 走旧路径
+    // （单发生成 + FILE_TO_MODIFY）还是新路径（工具调用循环）。ChatFragment 与旧路径
+    // 一并删除后，悬浮助手**始终**走工具调用循环，这个开关没有任何东西可切换——
+    // 留着会让用户以为关掉它能让助手变成纯对话，实际毫无作用。
+    // 「助手被允许做到什么程度」由下面的对话模式（ChatModePreference）表达。
     addPreference(ChatModePreference())
     addPreference(CodeCompletionSwitch())
     addPreference(AutoSwitchProviderSwitch())
@@ -158,30 +162,6 @@ private class AgentToolingGroup(
 /** 读写 "ai_agent_tools" 存储的助手。 */
 private fun agentPrefs(context: Context) =
     context.applicationContext.getSharedPreferences("ai_agent_tools", Context.MODE_PRIVATE)
-
-@Parcelize
-private class AgentModeSwitch(
-    override val key: String = "agent_mode",
-    override val title: Int = R.string.ai_agent_mode_title,
-    override val summary: Int? = R.string.ai_agent_mode_summary,
-) : SwitchPreference(
-    setValue = { enabled -> },
-    getValue = { false },
-) {
-  override fun onCreatePreference(context: Context): Preference {
-    val prefs = agentPrefs(context)
-    return androidx.preference.SwitchPreference(context).apply {
-      key = "agent_mode"
-      title = context.getString(R.string.ai_agent_mode_title)
-      summary = context.getString(R.string.ai_agent_mode_summary)
-      isChecked = prefs.getBoolean("agent_mode", false)
-      setOnPreferenceChangeListener { _, newValue ->
-        prefs.edit().putBoolean("agent_mode", newValue as Boolean).apply()
-        true
-      }
-    }
-  }
-}
 
 @Parcelize
 private class PermissionModePreference(

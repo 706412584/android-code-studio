@@ -17,7 +17,6 @@ import com.tom.rv2ide.actions.ActionItem
 import com.tom.rv2ide.actions.ActionsRegistry
 import com.tom.rv2ide.actions.SidebarActionItem
 import com.tom.rv2ide.actions.internal.DefaultActionsRegistry
-import com.tom.rv2ide.actions.sidebar.AIAgentSidebarAction
 import com.tom.rv2ide.actions.sidebar.AssetStudioSidebarAction
 import com.tom.rv2ide.actions.sidebar.BuildVariantsSidebarAction
 import com.tom.rv2ide.actions.sidebar.CloseProjectSidebarAction
@@ -83,7 +82,10 @@ internal object EditorSidebarActions {
     registry.registerAction(FileTreeSidebarAction(context, ++order))
     registry.registerAction(BuildVariantsSidebarAction(context, ++order))
     registry.registerAction(GitClientAction(context, ++order))
-    registry.registerAction(AIAgentSidebarAction(context, ++order))
+    // AI 助手不再作为侧栏标签页：它已改为编辑界面上的悬浮助手（FloatingAssistantView），
+    // 由 BaseEditorActivity.setupFloatingAssistant() 挂载。侧栏那一份是旧路径
+    // （单发生成 + FILE_TO_MODIFY 标记），与悬浮助手共用同一套设置与数据源但界面重复，
+    // 保留会让用户看到两套不一致的对话界面。
     registry.registerAction(AssetStudioSidebarAction(context, ++order))
     registry.registerAction(SubModuleSidebarAction(context, ++order))
     registry.registerAction(PreferencesSidebarAction(context, ++order))

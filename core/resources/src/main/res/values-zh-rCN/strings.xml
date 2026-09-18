@@ -58,22 +58,13 @@
 
   <!-- AI Agent Gemini -->
   <string name="ai_agent_title">AI 助手</string>
-  <string name="ai_agent_subtitle">v0.1-预览版</string>
   <string name="ai_assistant_thinking_running">思考中…</string>
   <string name="ai_assistant_thinking_done">思考过程</string>
   <string name="ai_assistant_working">处理中…</string>
-  <string name="ai_agent_tab_chat">对话</string>
-  <string name="ai_agent_tab_history">历史</string>
   <string name="ai_agent_auto_switch">自动切换服务商</string>
   <string name="ai_agent_auto_switch_summary">出错时自动切换到其它服务商</string>
   <string name="ai_agent_code_completion">代码补全</string>
   <string name="ai_agent_code_completion_summary">启用 AI 驱动的代码建议</string>
-  <string name="ai_agent_provider_label">服务商：</string>
-  <string name="ai_agent_model_label">模型：</string>
-  <string name="ai_agent_value_unset">未设置</string>
-  <string name="ai_agent_undo">撤销</string>
-  <string name="ai_agent_undo_done">已撤销上次修改</string>
-  <string name="ai_agent_undo_none">没有可撤销的修改</string>
   <string name="ai_agent_description">使用 AI 助手 生成由 AI 驱动的代码</string>
   <string name="ai_agent_prompt_hint">描述你想要生成什么代码…</string>
   <string name="ai_agent_send">发送</string>
@@ -86,9 +77,7 @@
   <string name="ai_agent_api_key_dialog_title">输入 Gemini API 密钥</string>
 
   <!-- AI Agent：工具调用循环 -->
-  <string name="ai_agent_mode_title">Agent 模式（工具调用）</string>
   <string name="ai_agent_tooling_group_title">工具与权限</string>
-  <string name="ai_agent_mode_summary">允许模型多轮读写文件、执行命令并构建项目</string>
   <string name="ai_agent_permission_title">工具权限模式</string>
   <string name="ai_agent_permission_summary">agent 在不询问的情况下可以做到什么程度</string>
   <string name="ai_agent_shell_backend_title">Shell 后端</string>
@@ -288,6 +277,7 @@
   <string name="ai_assistant_provider_needs_key">%1$s 还没有配置密钥，请先在设置里填写。</string>
   <string name="ai_assistant_configure_provider">配置 %1$s</string>
   <string name="ai_assistant_custom_model_hint">你的网关所提供的模型名</string>
+  <string name="ai_assistant_configure_local">配置本地模型</string>
 
   <!-- 主界面：项目列表、备份与删除对话框 -->
   <string name="import_project">导入项目</string>

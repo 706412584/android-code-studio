@@ -131,6 +131,21 @@ object AssistantModelPicker {
                 onClick = { promptCustomModel(context, agents, onChanged, sheet) },
             ))
       }
+
+      // 本地模型需要 baseUrl + 模型名，两个值都只有用户知道。原先这个入口在旧侧栏的
+      // 设置页里（LocalLLMConfigDialog），移除侧栏后没有别处能设——不在这里补上，
+      // 「本地模型」会是一个选中即失败的选项。
+      if (currentProvider == "localllm") {
+        modelList.addView(
+            pickerRow(
+                context = context,
+                container = modelList,
+                title = context.getString(string.ai_assistant_configure_local),
+                subtitle = localModelSummary(context),
+                selected = false,
+                onClick = { promptLocalModel(context, agents, onChanged, sheet) },
+            ))
+      }
     }
 
     root.findViewById<View>(R.id.pickerSettings).setOnClickListener {
@@ -205,6 +220,86 @@ object AssistantModelPicker {
         .show()
   }
 
+  /** 本地模型的当前配置，作为配置行的副标题。未配置时返回 null（不显示副标题）。 */
+  private fun localModelSummary(context: Context): String? {
+    val baseUrl = localPrefs(context).getString(KEY_LOCAL_BASE_URL, null)
+    val model = localPrefs(context).getString(KEY_LOCAL_MODEL_NAME, null)
+    if (baseUrl.isNullOrBlank() || model.isNullOrBlank()) {
+      return null
+    }
+    return "$baseUrl · $model"
+  }
+
+  /**
+   * 编辑本地模型配置（baseUrl + 模型名）。
+   *
+   * <p>用两个输入框而不是复用 [com.tom.rv2ide.artificial.dialogs.LocalLLMConfigDialog]：
+   * 那是个 `BottomSheetDialogFragment`，从 BottomSheet 里再弹 BottomSheet 会叠两层
+   * 遮罩，且它依赖 `parentFragmentManager`——悬浮助手是从 Activity 起的，没有
+   * FragmentManager 可用。
+   */
+  private fun promptLocalModel(
+      context: Context,
+      agents: Agents,
+      onChanged: () -> Unit,
+      sheet: BottomSheetDialog,
+  ) {
+    val prefs = localPrefs(context)
+    val baseUrlInput =
+        android.widget.EditText(context).apply {
+          setText(prefs.getString(KEY_LOCAL_BASE_URL, DEFAULT_LOCAL_BASE_URL))
+          hint = context.getString(string.ai_agent_custom_base_url)
+          setSingleLine(true)
+        }
+    val modelInput =
+        android.widget.EditText(context).apply {
+          setText(prefs.getString(KEY_LOCAL_MODEL_NAME, DEFAULT_LOCAL_MODEL))
+          hint = context.getString(string.ai_agent_custom_model)
+          setSingleLine(true)
+        }
+    val container =
+        android.widget.LinearLayout(context).apply {
+          orientation = android.widget.LinearLayout.VERTICAL
+          setPadding(dp(context, 24), dp(context, 8), dp(context, 24), 0)
+          addView(baseUrlInput)
+          addView(modelInput)
+        }
+
+    com.google.android.material.dialog.MaterialAlertDialogBuilder(context)
+        .setTitle(string.ai_assistant_configure_local)
+        .setView(container)
+        .setPositiveButton(android.R.string.ok) { _, _ ->
+          val baseUrl = baseUrlInput.text.toString().trim()
+          val model = modelInput.text.toString().trim()
+          prefs.edit()
+              .putString(KEY_LOCAL_BASE_URL, baseUrl)
+              .putString(KEY_LOCAL_MODEL_NAME, model)
+              .apply()
+          // 模型名也写进 agents：请求取的是 Agents.getAgent()，
+          // 而本地模型的模型名不属于任何预设，必须显式同步过去。
+          if (model.isNotEmpty()) {
+            agents.setAgent(model)
+          }
+          onChanged()
+          sheet.dismiss()
+        }
+        .setNegativeButton(android.R.string.cancel, null)
+        .show()
+  }
+
+  /**
+   * 本地模型配置的存储。
+   *
+   * <p>刻意用默认偏好存储（与 `LocalLLM` 的 `BaseApplication.prefManager` 同一份），
+   * 而不是新建一份：`LocalLLM.hasValidApiKey` 与 `initialize` 都从这里读，
+   * 写成别的存储会让配置看起来保存了但实际不生效。
+   */
+  private fun localPrefs(context: Context) =
+      androidx.preference.PreferenceManager.getDefaultSharedPreferences(context)
+
+  private fun dp(context: Context, value: Int): Int =
+      (value * context.resources.displayMetrics.density).toInt()
+
   /** 一行选项。选中态用勾 + 主色标题表示（仅描边在深色主题下不够明显）。 */
   private fun pickerRow(
       context: Context,
@@ -232,6 +327,14 @@ object AssistantModelPicker {
     binding.root.setOnClickListener { onClick() }
     return binding.root
   }
+
+  /** 本地模型配置的偏好键。与 `LocalLLM` 读取的键一致。 */
+  private const val KEY_LOCAL_BASE_URL = "local_llm_base_url"
+  private const val KEY_LOCAL_MODEL_NAME = "local_llm_model_name"
+
+  /** 与 `LocalLLMConfigDialog` 里的默认值保持一致。 */
+  private const val DEFAULT_LOCAL_BASE_URL = "http://localhost:1234"
+  private const val DEFAULT_LOCAL_MODEL = "local-model"
 
   /** 面板标题栏上的「服务商 / 模型」文案。 */
   fun summaryLabel(context: Context): String {

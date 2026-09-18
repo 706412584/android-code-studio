@@ -188,6 +188,15 @@ abstract class BaseEditorActivity :
   /** 编辑界面的悬浮 AI 助手。 */
   private var floatingAssistant: FloatingAssistantView? = null
 
+  /**
+   * 编辑器内联 AI 补全的托管。
+   *
+   * <p>放在 Activity 而不是某个 Fragment 里：补全只取决于「当前打开哪个文件」，
+   * 与任何面板是否显示无关。此前它挂在 ChatFragment 上，而那个 Fragment 只能由
+   * 旧侧栏 AI 标签页创建，于是移除侧栏会让补全静默失效。
+   */
+  private var codeCompletion: com.tom.rv2ide.artificial.completion.CodeCompletionController? = null
+
   val content: ContentEditorBinding
     get() = binding.content
 
@@ -626,6 +635,10 @@ abstract class BaseEditorActivity :
     // 取消进行中的 agent 运行：它的回调会往已销毁的控件里写数据。
     floatingAssistant?.dispose()
     floatingAssistant = null
+
+    // 补全：编辑器视图即将销毁，彻底释放，避免监听器泄漏。
+    codeCompletion?.dispose()
+    codeCompletion = null
   }
 
   protected open fun postDestroy() {
@@ -1006,6 +1019,10 @@ override fun onApplySystemBarInsets(insets: Insets) {
 
     this.isDestroying = isFinishing
     getFileTreeFragment()?.saveTreeState()
+
+    // 只停轮询与监听，不 cleanup：Activity 可能只是暂时不可见（切后台、
+    // 弹出别的界面），补全监听挂在编辑器上，回来时仍然有效。
+    codeCompletion?.stop()
   }
 
   override fun onResume() {
@@ -1032,6 +1049,25 @@ override fun onApplySystemBarInsets(insets: Insets) {
     } catch (th: Throwable) {
       log.error("Failed to update files list", th)
       flashError(string.msg_failed_list_files)
+    }
+
+    // 代码补全：补全挂载在编辑器视图上，重新可见时恢复轮询与偏好监听。
+    //
+    // 需要 IEditorHandler 才能取到「当前编辑器」。本项目里 BaseEditorActivity 的唯一
+    // 子类链就是 EditorHandlerActivity，但这里仍然做类型检查而不是强制转换——子类层级
+    // 变动时应当降级为「没有补全」，而不是在 onResume 抛 ClassCastException 让界面崩掉。
+    val completionHost = this as? com.tom.rv2ide.interfaces.IEditorHandler
+    if (completionHost != null) {
+      (codeCompletion
+              ?: com.tom.rv2ide.artificial.completion.CodeCompletionController(
+                      this,
+                      object : com.tom.rv2ide.artificial.completion.CodeCompletionController.Host {
+                        override fun currentCodeEditor() = completionHost.getCurrentEditor()
+                      },
+                      lifecycleScope,
+                  )
+                  .also { codeCompletion = it })
+          .start()
     }
   }
 
