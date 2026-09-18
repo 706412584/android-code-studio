@@ -99,6 +99,7 @@
   <string name="ai_agent_provider_api_key">API key</string>
   <string name="ai_agent_provider_api_key_keep">Leave empty to keep the current key</string>
   <string name="ai_agent_provider_slots">Model slots</string>
+  <string name="ai_agent_provider_slots_hint">Leave the other slots empty to reuse the main model.</string>
   <string name="ai_agent_provider_slot_main">Main</string>
   <string name="ai_agent_provider_slot_haiku">Fast</string>
   <string name="ai_agent_provider_slot_sonnet">Balanced</string>

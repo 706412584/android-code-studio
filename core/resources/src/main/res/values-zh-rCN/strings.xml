@@ -94,6 +94,7 @@
   <string name="ai_agent_provider_api_key">API 密钥</string>
   <string name="ai_agent_provider_api_key_keep">留空表示保留当前密钥</string>
   <string name="ai_agent_provider_slots">模型槽位</string>
+  <string name="ai_agent_provider_slots_hint">其余槽位留空表示与主模型相同。</string>
   <string name="ai_agent_provider_slot_main">主模型</string>
   <string name="ai_agent_provider_slot_haiku">快速</string>
   <string name="ai_agent_provider_slot_sonnet">均衡</string>

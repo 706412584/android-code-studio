@@ -19,17 +19,12 @@ package com.tom.rv2ide.preferences
 
 import android.app.AlertDialog
 import android.content.Context
+import android.view.LayoutInflater
 import android.view.View
-import android.widget.AdapterView
-import android.widget.ArrayAdapter
-import android.widget.Button
 import android.widget.EditText
-import android.widget.LinearLayout
-import android.widget.ScrollView
-import android.widget.Spinner
-import android.widget.TextView
 import android.widget.Toast
 import androidx.preference.Preference
+import com.tom.rv2ide.databinding.DialogProviderFormBinding
 import com.tom.rv2ide.ai.protocol.ModelProtocolType
 import com.tom.rv2ide.artificial.agent.ModelCatalogFetcher
 import com.tom.rv2ide.artificial.agent.ProviderConfig
@@ -147,11 +142,14 @@ internal class ProviderManagementPreference(
   /**
    * 添加 / 编辑表单。
    *
-   * <p>用代码构建而不是 XML：字段里有 4 个结构相同的槽位输入框，写 XML 要重复四段
-   * 几乎一样的块，改一处必漏三处。
+   * <p>用 XML 布局（{@code dialog_provider_form.xml}）而不是代码构建：本仓库其它
+   * 对话框（dialog_add_remote / dialog_clone / dialog_branch_name）统一用
+   * TextInputLayout + OutlinedBox，标签浮动在边框上。代码构建的裸 EditText
+   * 加一行独立 TextView 标签，看起来像另一种设计语言，且输入后标签不会浮动、
+   * 看不出哪个框已填。
    *
-   * <p>新建与编辑共用同一段构建逻辑，差异只有两点：新建多一个「从预设开始」的下拉，
-   * 编辑时密钥框提示「留空表示保留当前密钥」。
+   * <p>新建与编辑共用同一份布局，差异只有两处：新建时显示「从预设开始」下拉，
+   * 编辑时隐藏它、并把密钥框提示改成「留空表示保留当前密钥」。
    */
   private fun showForm(context: Context, existing: ProviderConfig?, onChanged: () -> Unit) {
     val isNew = existing == null
@@ -161,122 +159,76 @@ internal class ProviderManagementPreference(
             ?: presets.firstOrNull()?.let { ProviderConfigStore.presetToConfig(it, "") }
             ?: ProviderConfig("", "", ModelProtocolType.OPENAI_COMPATIBLE, "", "", emptyArray())
 
-    val density = context.resources.displayMetrics.density
-    val root = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
-    fun label(res: Int) {
-      root.addView(
-          TextView(context).apply {
-            setText(res)
-            setPadding(0, (12 * density).toInt(), 0, (2 * density).toInt())
-          })
-    }
-    fun field(initial: String, hintText: String = ""): EditText =
-        EditText(context).apply {
-          setText(initial)
-          if (hintText.isNotEmpty()) hint = hintText
-          setSingleLine(true)
-        }.also { root.addView(it) }
+    val binding = DialogProviderFormBinding.inflate(LayoutInflater.from(context))
+    val protocolTypes = ModelProtocolType.entries
+    val slotInputs =
+        listOf(
+            binding.providerSlotMain,
+            binding.providerSlotHaiku,
+            binding.providerSlotSonnet,
+            binding.providerSlotOpus,
+        )
 
-    // ---- 从预设开始（仅新建）----
-    // 预设是「快速填充」而不是「唯一来源」：选中后只把连接信息与模型填进下面的输入框，
-    // 用户仍可随意改。常见服务商一键可用，特殊网关也能配。
-    var presetSpinner: Spinner? = null
+    // 预设下拉（仅新建）。预设是「快速填充」而不是唯一来源：选中只覆盖连接信息，
+    // 不动密钥——用户可能已经输入了密钥。
+    val presetLabels = presets.map { it.getLabel() }
     if (isNew) {
-      label(R.string.ai_agent_provider_from_preset)
-      presetSpinner =
-          Spinner(context)
-              .apply {
-                adapter =
-                    ArrayAdapter(
-                        context,
-                        android.R.layout.simple_spinner_dropdown_item,
-                        presets.map { it.getLabel() },
-                    )
-              }
-              .also { root.addView(it) }
+      binding.providerPreset.setSimpleItems(presetLabels.toTypedArray())
+      binding.providerPreset.setText(presetLabels.firstOrNull().orEmpty(), false)
+      binding.providerPreset.setOnItemClickListener { _, _, position, _ ->
+        val preset = presets.getOrNull(position) ?: return@setOnItemClickListener
+        binding.providerName.setText(preset.getId())
+        binding.providerBaseUrl.setText(preset.getBaseUrl())
+        // 协议必须跟着预设走：Anthropic Messages 与 OpenAI 兼容是两套完全不同的
+        // 请求格式，选了 Grok 却留着 Anthropic 协议，请求必然失败。
+        val index = protocolTypes.indexOf(preset.getProtocolType())
+        if (index >= 0) {
+          binding.providerProtocol.setText(protocolTypes[index].getLabel(), false)
+        }
+        preset.getSlotModels().forEachIndexed { i, model ->
+          slotInputs.getOrNull(i)?.setText(model)
+        }
+      }
+    } else {
+      binding.presetLayout.visibility = View.GONE
     }
 
-    label(R.string.ai_agent_provider_name)
-    val nameInput = field(seed.getId())
+    binding.providerName.setText(seed.getId())
+    binding.providerBaseUrl.setText(seed.getBaseUrl())
+    if (!isNew) {
+      binding.providerApiKey.hint = context.getString(R.string.ai_agent_provider_api_key_keep)
+    }
+    binding.providerProtocol.setSimpleItems(
+        protocolTypes.map { it.getLabel() }.toTypedArray()
+    )
+    binding.providerProtocol.setText(seed.getProtocolType().getLabel(), false)
+    seed.getSlotModels().forEachIndexed { i, model -> slotInputs.getOrNull(i)?.setText(model) }
 
-    label(R.string.ai_agent_provider_base_url)
-    val urlInput = field(seed.getBaseUrl())
-
-    label(R.string.ai_agent_provider_api_key)
-    // 编辑时密钥框留空 = 保留原密钥，用户不必为了改 baseUrl 而重打一遍密钥。
-    val keyInput =
-        field("", if (isNew) "" else context.getString(R.string.ai_agent_provider_api_key_keep))
-
-    label(R.string.ai_agent_provider_protocol)
-    val protocolSpinner = protocolSelector(context, seed.getProtocolType())
-    root.addView(protocolSpinner)
-
-    label(R.string.ai_agent_provider_slots)
-    val slotInputs = ProviderConfig.SLOT_ORDER.map { slotInput(context, seed, it) }
-    slotInputs.forEach { root.addView(it) }
-
-    val fetchButton = Button(context).apply { setText(R.string.ai_agent_provider_fetch_models) }
-    root.addView(fetchButton)
-
-    /** 读表单成草稿。空密钥沿用 seed 的（编辑场景）。 */
+    /** 读表单成草稿。密钥框留空时沿用 seed 的密钥（编辑场景）。 */
     fun readDraft(): ProviderConfig {
-      val typedKey = keyInput.text.toString().trim()
+      val typedKey = binding.providerApiKey.text?.toString()?.trim().orEmpty()
       val key = if (typedKey.isEmpty()) seed.getApiKey() else typedKey
-      val id = nameInput.text.toString().trim()
+      val id = binding.providerName.text?.toString()?.trim().orEmpty()
+      val selectedProtocol =
+          protocolTypes.getOrElse(protocolTypes.indexOfFirst { it.getLabel() == binding.providerProtocol.text.toString() }) {
+            ModelProtocolType.OPENAI_COMPATIBLE
+          }
       // ProviderConfig 是 Java 类，只能按位置传参。
       return ProviderConfig(
           id,
           id,
-          ModelProtocolType.entries.getOrElse(protocolSpinner.selectedItemPosition) {
-            ModelProtocolType.OPENAI_COMPATIBLE
-          },
-          urlInput.text.toString().trim(),
+          selectedProtocol,
+          binding.providerBaseUrl.text?.toString()?.trim().orEmpty(),
           key,
-          slotInputs.map { it.text.toString().trim() }.toTypedArray(),
+          slotInputs.map { it.text?.toString()?.trim().orEmpty() }.toTypedArray(),
       )
     }
 
-    wireFetch(context, fetchButton, slotInputs) { readDraft() }
-
-    presetSpinner?.onItemSelectedListener =
-        object : AdapterView.OnItemSelectedListener {
-          override fun onItemSelected(
-              parent: AdapterView<*>?,
-              view: View?,
-              position: Int,
-              id: Long,
-          ) {
-            val preset = presets.getOrNull(position) ?: return
-            // 只覆盖连接信息，不动密钥——用户可能已经输入了密钥。
-            nameInput.setText(preset.getId())
-            urlInput.setText(preset.getBaseUrl())
-            // 协议也必须跟着预设走：Anthropic Messages 与 OpenAI 兼容是两套完全不同的
-            // 请求格式，选了 Grok 却留着 Anthropic 协议，请求必然失败。
-            val types = ModelProtocolType.entries
-            val protocolIndex = types.indexOf(preset.getProtocolType())
-            if (protocolIndex >= 0) {
-              protocolSpinner.setSelection(protocolIndex)
-            }
-            val slots = preset.getSlotModels()
-            slotInputs.forEachIndexed { index, input ->
-              input.setText(slots.getOrElse(index) { "" })
-            }
-          }
-
-          override fun onNothingSelected(parent: AdapterView<*>?) = Unit
-        }
-
-    val scroll =
-        ScrollView(context).apply {
-          // 内边距加在容器上而不是表单：ScrollView 只有一层子视图，
-          // padding 放这里才能让内容与对话框边缘留出空白。
-          setPadding((20 * density).toInt(), (8 * density).toInt(), (20 * density).toInt(), 0)
-          addView(root)
-        }
+    wireFetch(context, binding.providerFetchModels, slotInputs) { readDraft() }
 
     AlertDialog.Builder(context)
         .setTitle(if (isNew) R.string.ai_agent_provider_add else R.string.ai_agent_provider_edit)
-        .setView(scroll)
+        .setView(binding.root)
         .setPositiveButton(R.string.ai_agent_provider_save) { _, _ ->
           val draft = readDraft()
           // 校验放在提交时而不是禁用按钮：AlertDialog 的按钮在 show 之前拿不到。
@@ -294,44 +246,6 @@ internal class ProviderManagementPreference(
   }
 
   /**
-   * 一个槽位输入框。
-   *
-   * <p>提示语写「角色 · 说明」而不是只写说明：四个框结构完全一样，只靠位置区分
-   * 的话用户分不清哪一行是主模型（必填）哪一行可以留空。
-   */
-  private fun slotInput(context: Context, seed: ProviderConfig, slot: String): EditText {
-    val index = ProviderConfig.SLOT_ORDER.indexOf(slot)
-    val labelRes =
-        when (slot) {
-          ProviderConfig.SLOT_MAIN -> R.string.ai_agent_provider_slot_main
-          ProviderConfig.SLOT_HAIKU -> R.string.ai_agent_provider_slot_haiku
-          ProviderConfig.SLOT_SONNET -> R.string.ai_agent_provider_slot_sonnet
-          else -> R.string.ai_agent_provider_slot_opus
-        }
-    val hintRes =
-        if (slot == ProviderConfig.SLOT_MAIN) R.string.ai_agent_provider_slot_hint_main
-        else R.string.ai_agent_provider_slot_hint_same
-    return EditText(context).apply {
-      setText(seed.getSlotModels().getOrElse(index) { "" })
-      hint = context.getString(labelRes) + " · " + context.getString(hintRes)
-      setSingleLine(true)
-    }
-  }
-
-  private fun protocolSelector(context: Context, current: ModelProtocolType): Spinner =
-      Spinner(context).apply {
-        val types = ModelProtocolType.entries
-        adapter =
-            ArrayAdapter(
-                context,
-                android.R.layout.simple_spinner_dropdown_item,
-                types.map { it.getLabel() },
-            )
-        val index = types.indexOf(current)
-        if (index >= 0) setSelection(index)
-      }
-
-  /**
    * 接上「拉取模型列表」按钮。
    *
    * <p>拉取成功后把每个槽位输入框变成可点的选择器——用户从服务端返回的真实列表里挑，
@@ -340,7 +254,7 @@ internal class ProviderManagementPreference(
    */
   private fun wireFetch(
       context: Context,
-      button: Button,
+      button: com.google.android.material.button.MaterialButton,
       slotInputs: List<EditText>,
       readDraft: () -> ProviderConfig,
   ) {

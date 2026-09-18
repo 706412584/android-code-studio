@@ -1,0 +1,219 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  添加 / 编辑服务商表单。
+
+  遵循本仓库其它对话框（dialog_add_remote / dialog_clone / dialog_branch_name）的约定：
+  TextInputLayout + OutlinedBox，提示语就是标签（浮动到边框上），不再另加一行 TextView。
+
+  这样做不只是"统一风格"，还解决三个实际问题：
+  - 标签与输入框分离时，用户输入后标签仍在，但看不出哪个框填完了；
+    浮动标签会缩到边框上，一眼能看出哪些字段已有内容。
+  - 密码/密钥用 endIconMode="password_toggle"，避免密钥在设置页被肩窥。
+  - Base URL 用 textUri 输入类型，键盘直接给 .com / / 等快捷键。
+
+  槽位那 4 个框结构相同但必须逐个写：它们是独立的输入目标，用 include 会让
+  每个实例的 id 相同，代码里拿不到各自的引用。
+-->
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+  xmlns:app="http://schemas.android.com/apk/res-auto"
+  android:layout_width="match_parent"
+  android:layout_height="wrap_content"
+  android:paddingStart="24dp"
+  android:paddingEnd="24dp"
+  android:paddingTop="8dp">
+
+  <LinearLayout
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical">
+
+    <!-- 从预设开始（仅新建时可见）。预设是「快速填充」而不是唯一来源。 -->
+    <com.google.android.material.textfield.TextInputLayout
+      android:id="@+id/presetLayout"
+      style="@style/Widget.Material3.TextInputLayout.OutlinedBox.ExposedDropdownMenu"
+      android:layout_width="match_parent"
+      android:layout_height="wrap_content"
+      android:hint="@string/ai_agent_provider_from_preset">
+
+      <com.google.android.material.textfield.MaterialAutoCompleteTextView
+        android:id="@+id/providerPreset"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:inputType="none" />
+
+    </com.google.android.material.textfield.TextInputLayout>
+
+    <com.google.android.material.textfield.TextInputLayout
+      android:layout_width="match_parent"
+      android:layout_height="wrap_content"
+      android:layout_marginTop="12dp"
+      android:hint="@string/ai_agent_provider_name"
+      style="@style/Widget.Material3.TextInputLayout.OutlinedBox">
+
+      <com.google.android.material.textfield.TextInputEditText
+        android:id="@+id/providerName"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:inputType="text"
+        android:singleLine="true" />
+
+    </com.google.android.material.textfield.TextInputLayout>
+
+    <com.google.android.material.textfield.TextInputLayout
+      android:layout_width="match_parent"
+      android:layout_height="wrap_content"
+      android:layout_marginTop="12dp"
+      android:hint="@string/ai_agent_provider_base_url"
+      style="@style/Widget.Material3.TextInputLayout.OutlinedBox">
+
+      <com.google.android.material.textfield.TextInputEditText
+        android:id="@+id/providerBaseUrl"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:inputType="textUri"
+        android:singleLine="true" />
+
+    </com.google.android.material.textfield.TextInputLayout>
+
+    <com.google.android.material.textfield.TextInputLayout
+      android:layout_width="match_parent"
+      android:layout_height="wrap_content"
+      android:layout_marginTop="12dp"
+      android:hint="@string/ai_agent_provider_api_key"
+      app:endIconMode="password_toggle"
+      style="@style/Widget.Material3.TextInputLayout.OutlinedBox">
+
+      <com.google.android.material.textfield.TextInputEditText
+        android:id="@+id/providerApiKey"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:inputType="textPassword"
+        android:singleLine="true" />
+
+    </com.google.android.material.textfield.TextInputLayout>
+
+    <com.google.android.material.textfield.TextInputLayout
+      style="@style/Widget.Material3.TextInputLayout.OutlinedBox.ExposedDropdownMenu"
+      android:layout_width="match_parent"
+      android:layout_height="wrap_content"
+      android:layout_marginTop="12dp"
+      android:hint="@string/ai_agent_provider_protocol">
+
+      <com.google.android.material.textfield.MaterialAutoCompleteTextView
+        android:id="@+id/providerProtocol"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:inputType="none" />
+
+    </com.google.android.material.textfield.TextInputLayout>
+
+    <!--
+      模型槽位分组标题。
+
+      四个槽位用同一套样式，没有标题的话用户看不出这是一组相关字段，
+      也不知道「主模型必填、其余可留空」这个约定。
+    -->
+    <TextView
+      android:layout_width="match_parent"
+      android:layout_height="wrap_content"
+      android:layout_marginTop="20dp"
+      android:text="@string/ai_agent_provider_slots"
+      android:textAppearance="@style/TextAppearance.Material3.TitleSmall"
+      android:textColor="?attr/colorOnSurface" />
+
+    <TextView
+      android:layout_width="match_parent"
+      android:layout_height="wrap_content"
+      android:layout_marginTop="2dp"
+      android:text="@string/ai_agent_provider_slots_hint"
+      android:textAppearance="@style/TextAppearance.Material3.BodySmall"
+      android:textColor="?attr/colorOnSurfaceVariant" />
+
+    <com.google.android.material.textfield.TextInputLayout
+      android:layout_width="match_parent"
+      android:layout_height="wrap_content"
+      android:layout_marginTop="12dp"
+      android:hint="@string/ai_agent_provider_slot_main"
+      app:helperTextEnabled="true"
+      app:helperText="@string/ai_agent_provider_slot_hint_main"
+      style="@style/Widget.Material3.TextInputLayout.OutlinedBox">
+
+      <com.google.android.material.textfield.TextInputEditText
+        android:id="@+id/providerSlotMain"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:fontFamily="monospace"
+        android:inputType="text"
+        android:singleLine="true" />
+
+    </com.google.android.material.textfield.TextInputLayout>
+
+    <com.google.android.material.textfield.TextInputLayout
+      android:layout_width="match_parent"
+      android:layout_height="wrap_content"
+      android:layout_marginTop="12dp"
+      android:hint="@string/ai_agent_provider_slot_haiku"
+      style="@style/Widget.Material3.TextInputLayout.OutlinedBox">
+
+      <com.google.android.material.textfield.TextInputEditText
+        android:id="@+id/providerSlotHaiku"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:fontFamily="monospace"
+        android:inputType="text"
+        android:singleLine="true" />
+
+    </com.google.android.material.textfield.TextInputLayout>
+
+    <com.google.android.material.textfield.TextInputLayout
+      android:layout_width="match_parent"
+      android:layout_height="wrap_content"
+      android:layout_marginTop="12dp"
+      android:hint="@string/ai_agent_provider_slot_sonnet"
+      style="@style/Widget.Material3.TextInputLayout.OutlinedBox">
+
+      <com.google.android.material.textfield.TextInputEditText
+        android:id="@+id/providerSlotSonnet"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:fontFamily="monospace"
+        android:inputType="text"
+        android:singleLine="true" />
+
+    </com.google.android.material.textfield.TextInputLayout>
+
+    <com.google.android.material.textfield.TextInputLayout
+      android:layout_width="match_parent"
+      android:layout_height="wrap_content"
+      android:layout_marginTop="12dp"
+      android:hint="@string/ai_agent_provider_slot_opus"
+      style="@style/Widget.Material3.TextInputLayout.OutlinedBox">
+
+      <com.google.android.material.textfield.TextInputEditText
+        android:id="@+id/providerSlotOpus"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:fontFamily="monospace"
+        android:inputType="text"
+        android:singleLine="true" />
+
+    </com.google.android.material.textfield.TextInputLayout>
+
+    <!--
+      拉取目录用 OutlinedButton 而不是实心按钮：它是这个表单里的辅助动作，
+      主操作是底部的「保存」。两个实心按钮会互相抢注意力。
+    -->
+    <com.google.android.material.button.MaterialButton
+      android:id="@+id/providerFetchModels"
+      style="@style/Widget.Material3.Button.OutlinedButton"
+      android:layout_width="match_parent"
+      android:layout_height="wrap_content"
+      android:layout_marginTop="16dp"
+      android:layout_marginBottom="8dp"
+      android:text="@string/ai_agent_provider_fetch_models"
+      app:icon="@drawable/ic_search"
+      app:iconGravity="textStart" />
+
+  </LinearLayout>
+
+</ScrollView>
