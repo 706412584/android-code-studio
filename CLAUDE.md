@@ -107,15 +107,33 @@
 **本机实机测试用的密钥**（黑鲨设备上装的包就是用它签的）：
 
 ```
-C:/Users/70641/AppData/Local/Temp/debug-signing.jks
+D:/android/keys/acs-debug-signing.jks          <- 正式存放位置（持久）
+C:/Users/70641/AppData/Local/Temp/debug-signing.jks  <- 原位置（临时目录，会被清理）
 别名 AndroidCS / 密码 android / SHA-1 83abb7381685a06dbdae877ded4a207f4919c1da
 ```
 
+⚠️ **这把密钥全盘只有这一份，丢了就无法再构建能覆盖安装的 APK**，
+只能卸载重装并丢掉设备上 3.7G 数据。它原先只存在于 Windows 临时目录
+（`AppData/Local/Temp`），会被磁盘清理/存储感知删除，因此已复制到
+`D:/android/keys/`（该目录不在任何 git 仓库内，不会被误提交）。
+
+它**不是** `signing/signing-key.jks`（仓库内那把是 upstream 官方密钥，密码只在
+GitHub secret 里，本机无法还原），也**不是** `orangeplayer/app/smlieapp.jks`
+（那把 SHA-1 是 `B1F50B31…`，是多个无关项目共用的模板密钥）。
+
 ```bash
 JAVA_HOME="C:/Users/70641/.gradle/jdks/eclipse_adoptium-21-amd64-windows.2" \
-SIGNING_STORE_FILE="C:/Users/70641/AppData/Local/Temp/debug-signing.jks" \
+SIGNING_STORE_FILE="D:/android/keys/acs-debug-signing.jks" \
 SIGNING_STORE_PASSWORD=android SIGNING_KEY_PASSWORD=android SIGNING_KEY_ALIAS=AndroidCS \
 ./gradlew :core:app:assembleDebug --offline
+```
+
+Release 包同理，但要额外跳过 lint 并补一个缺失目录（CI 里也有这一步）：
+
+```bash
+mkdir -p core/app/build/intermediates/l8_art_profile/release/l8DexDesugarLibRelease && \
+touch core/app/build/intermediates/l8_art_profile/release/l8DexDesugarLibRelease/baseline-prof.txt
+# 然后 ./gradlew :core:app:assembleRelease --offline -x lintVitalRelease
 ```
 
 产出 `core/app/build/outputs/apk/debug/` 下按 ABI 分包的 APK；黑鲨是 `arm64-v8a`。
