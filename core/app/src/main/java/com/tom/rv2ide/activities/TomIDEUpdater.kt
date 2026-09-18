@@ -112,25 +112,54 @@ class TomIDEUpdater(private val context: Context) {
     }
   }
 
+  /**
+   * 展开清单 URL 里的占位符。
+   *
+   * <p>`updater.json` 里写的是 `{baseUrl}/android-code-studio-…-{versionName}.apk`，
+   * 而 [ArchVariant.apkUrl] 会被直接交给 `URL()` 去下载。**不展开就会拿这个字面量
+   * 当网址请求**，更新功能整个失效——而且失败发生在下载阶段，用户只看到「下载失败」，
+   * 不会知道是清单格式的问题。
+   *
+   * <p>展开放在解析里而不是使用处：apkUrl 有两个消费点（下载、在浏览器打开），
+   * 在使用处各展开一次必然漏掉一个。
+   *
+   * <p>只做纯字符串替换，不做 URL 校验——校验留给 `URL()` 抛异常，那样错误信息里
+   * 会带上实际的值，比在这里抛一个笼统的「格式错误」更好排查。
+   */
+  private fun expandUrl(template: String, baseUrl: String, versionName: String): String =
+      template.replace("{baseUrl}", baseUrl).replace("{versionName}", versionName)
+
   private fun parseUpdateInfo(jsonString: String): UpdateInfo? {
     return try {
       val jsonObject = JSONObject(jsonString)
       val variantsJson = jsonObject.getJSONObject("variants")
       val variants = mutableMapOf<String, ArchVariant>()
 
+      // baseUrl 自身也含占位符（`…/download/v{versionName}`），先展开它，
+      // 再用展开后的结果去展开各变体的 apkUrl。
+      val rawBaseUrl = jsonObject.optString("baseUrl", "")
+      val baseVersionName = jsonObject.getString("baseVersionName")
+      val baseUrl = if (rawBaseUrl.isEmpty()) "" else expandUrl(rawBaseUrl, "", baseVersionName)
+
       for (key in variantsJson.keys()) {
         val variantJson = variantsJson.getJSONObject(key)
+        val variantVersionName = variantJson.getString("versionName")
         variants[key] =
             ArchVariant(
                 versionCode = variantJson.getInt("versionCode"),
-                versionName = variantJson.getString("versionName"),
-                apkUrl = variantJson.getString("apkUrl"),
+                versionName = variantVersionName,
+                apkUrl =
+                    expandUrl(
+                        variantJson.getString("apkUrl"),
+                        baseUrl,
+                        variantVersionName,
+                    ),
             )
       }
 
       UpdateInfo(
           baseVersionCode = jsonObject.getInt("baseVersionCode"),
-          baseVersionName = jsonObject.getString("baseVersionName"),
+          baseVersionName = baseVersionName,
           variants = variants,
           changelogUrl = jsonObject.getString("changelog"),
       )
