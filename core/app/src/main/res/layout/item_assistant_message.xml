@@ -2,8 +2,18 @@
 <!--
   一条对话消息。
 
-  用户与助手共用此布局，靠背景色/对齐区分角色——两套布局会重复维护同一批
-  内边距与字号，且改一处忘一处时界面立刻不一致。
+  结构照参考项目（LineCode Pro）的聊天列表对齐：
+  - 用户消息：右对齐气泡，圆角 18dp，有背景色，宽度上限 90%
+  - 助手消息：**不加气泡**，Markdown 直接铺满可用宽度（背景/描边在代码里清掉）
+  - 过程信息：弱化的小卡片，最低对比度
+
+  为什么助手消息不要气泡：助手回复经常包含代码块、列表、表格，这些东西需要横向空间。
+  套进一个窄气泡里会被压成竖长条，代码块频繁换行。参考项目的做法是
+  「用户的话是气泡，助手的回答是文档」——这条边界值得照搬。
+
+  角色差异（对齐方向、圆角、是否显示气泡、宽度上限、配色）全部由
+  AssistantMessageAdapter 在 bind() 里按 role 设置：放在 XML 里要写三套布局，
+  改一处必漏两处。
 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
   xmlns:app="http://schemas.android.com/apk/res-auto"
@@ -11,16 +21,16 @@
   android:layout_width="match_parent"
   android:layout_height="wrap_content"
   android:orientation="vertical"
-  android:paddingStart="12dp"
-  android:paddingEnd="12dp"
+  android:paddingStart="16dp"
+  android:paddingEnd="16dp"
   android:paddingTop="4dp"
   android:paddingBottom="4dp">
 
   <com.google.android.material.card.MaterialCardView
     android:id="@+id/messageCard"
-    android:layout_width="match_parent"
+    android:layout_width="wrap_content"
     android:layout_height="wrap_content"
-    app:cardCornerRadius="14dp"
+    app:cardCornerRadius="18dp"
     app:cardElevation="0dp"
     app:strokeWidth="0dp">
 
@@ -28,21 +38,33 @@
       android:layout_width="match_parent"
       android:layout_height="wrap_content"
       android:orientation="vertical"
-      android:padding="12dp">
+      android:paddingStart="14dp"
+      android:paddingEnd="14dp"
+      android:paddingTop="10dp"
+      android:paddingBottom="10dp">
 
+      <!--
+        角色标签只给「过程」用。
+
+        用户消息靠右对齐、助手消息铺满，两者的归属一眼可辨，再加「用户」/「助手」
+        标签是冗余噪音。但过程信息（工具摘要、系统提示）没有方向性线索，
+        必须显式标注，否则用户分不清这句话是谁说的。
+      -->
       <TextView
         android:id="@+id/messageRole"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
+        android:layout_marginBottom="2dp"
         android:textAppearance="@style/TextAppearance.Material3.LabelSmall"
         android:textStyle="bold"
-        tools:text="助手" />
+        android:visibility="gone"
+        tools:text="过程"
+        tools:visibility="visible" />
 
       <TextView
         android:id="@+id/messageText"
-        android:layout_width="match_parent"
+        android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_marginTop="4dp"
         android:textAppearance="@style/TextAppearance.Material3.BodyMedium"
         android:textIsSelectable="true"
         tools:text="已读取 build.gradle，正在检查依赖…" />
@@ -50,8 +72,9 @@
       <!--
         撤销按钮。只在「该消息对应一次可回滚的文件改动」时出现。
 
-        刻意做成行内小按钮而不是长按菜单：改错文件是高频且需要立刻处理的事，
-        藏在长按菜单里会让人找不到，而找不到的撤销功能等于没有。
+        默认隐藏，长按消息才显形（照参考项目的做法）：改错文件需要立刻处理，
+        但常驻会在每条消息下方多出一行，把对话拉得很长。长按唤起既随时可达，
+        又不占常驻空间。
       -->
       <com.google.android.material.button.MaterialButton
         android:id="@+id/messageRevert"

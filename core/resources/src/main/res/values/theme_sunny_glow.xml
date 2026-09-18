@@ -55,6 +55,18 @@
 
   <color name="_sunny_glow_light_colorOutline">#ff7a7572</color>
 
+  <!-- M3 角色补齐：这些角色原先未定义，会取到 Material 库默认的紫调中性色，
+       与自定义色板不匹配（也导致弹出菜单/对话框配色对不上主题）。
+       取值由 surface / surfaceVariant / outline 推导，保证同族。 -->
+  <color name="_sunny_glow_light_colorSurfaceContainerLowest">#fffffbff</color>
+  <color name="_sunny_glow_light_colorSurfaceContainerLow">#fff9f4f6</color>
+  <color name="_sunny_glow_light_colorSurfaceContainer">#fff4eeee</color>
+  <color name="_sunny_glow_light_colorSurfaceContainerHigh">#ffeee8e6</color>
+  <color name="_sunny_glow_light_colorSurfaceContainerHighest">#ffe8e1dd</color>
+  <color name="_sunny_glow_light_colorOutlineVariant">#ffc3bfc0</color>
+  <color name="_sunny_glow_light_colorSurfaceBright">#fffffbff</color>
+  <color name="_sunny_glow_light_colorSurfaceDim">#ffe6e2e6</color>
+
   <style name="Theme.AndroidIDE.SunnyGlow" parent="Theme.AndroidIDE">
     <item name="colorPrimary">@color/_sunny_glow_light_colorPrimary</item>
     <item name="colorPrimaryContainer">@color/_sunny_glow_light_colorPrimaryContainer</item>
@@ -90,6 +102,14 @@
     <item name="colorOnSurfaceVariant">@color/_sunny_glow_light_colorOnSurfaceVariant</item>
 
     <item name="colorOutline">@color/_sunny_glow_light_colorOutline</item>
+    <item name="colorSurfaceContainerLowest">@color/_sunny_glow_light_colorSurfaceContainerLowest</item>
+    <item name="colorSurfaceContainerLow">@color/_sunny_glow_light_colorSurfaceContainerLow</item>
+    <item name="colorSurfaceContainer">@color/_sunny_glow_light_colorSurfaceContainer</item>
+    <item name="colorSurfaceContainerHigh">@color/_sunny_glow_light_colorSurfaceContainerHigh</item>
+    <item name="colorSurfaceContainerHighest">@color/_sunny_glow_light_colorSurfaceContainerHighest</item>
+    <item name="colorOutlineVariant">@color/_sunny_glow_light_colorOutlineVariant</item>
+    <item name="colorSurfaceBright">@color/_sunny_glow_light_colorSurfaceBright</item>
+    <item name="colorSurfaceDim">@color/_sunny_glow_light_colorSurfaceDim</item>
   </style>
 
   <!--========================================================-->
@@ -130,6 +150,18 @@
 
   <color name="_sunny_glow_dark_colorOutline">#ff95908d</color>
 
+  <!-- M3 角色补齐：这些角色原先未定义，会取到 Material 库默认的紫调中性色，
+       与自定义色板不匹配（也导致弹出菜单/对话框配色对不上主题）。
+       取值由 surface / surfaceVariant / outline 推导，保证同族。 -->
+  <color name="_sunny_glow_dark_colorSurfaceContainerLowest">#ff1e1b19</color>
+  <color name="_sunny_glow_dark_colorSurfaceContainerLow">#ff292624</color>
+  <color name="_sunny_glow_dark_colorSurfaceContainer">#ff34302e</color>
+  <color name="_sunny_glow_dark_colorSurfaceContainerHigh">#ff3f3b39</color>
+  <color name="_sunny_glow_dark_colorSurfaceContainerHighest">#ff4a4644</color>
+  <color name="_sunny_glow_dark_colorOutlineVariant">#ff54504d</color>
+  <color name="_sunny_glow_dark_colorSurfaceBright">#ff343230</color>
+  <color name="_sunny_glow_dark_colorSurfaceDim">#ff151312</color>
+
   <style name="Theme.AndroidIDE.SunnyGlow.Dark" parent="Theme.AndroidIDE.SunnyGlow">
     <item name="colorPrimary">@color/_sunny_glow_dark_colorPrimary</item>
     <item name="colorPrimaryDark">@color/_sunny_glow_dark_colorPrimaryDark</item>
@@ -157,6 +189,14 @@
     <item name="colorSurfaceVariant">@color/_sunny_glow_dark_colorSurfaceVariant</item>
     <item name="colorOnSurfaceVariant">@color/_sunny_glow_dark_colorOnSurfaceVariant</item>
     <item name="colorOutline">@color/_sunny_glow_dark_colorOutline</item>
+    <item name="colorSurfaceContainerLowest">@color/_sunny_glow_dark_colorSurfaceContainerLowest</item>
+    <item name="colorSurfaceContainerLow">@color/_sunny_glow_dark_colorSurfaceContainerLow</item>
+    <item name="colorSurfaceContainer">@color/_sunny_glow_dark_colorSurfaceContainer</item>
+    <item name="colorSurfaceContainerHigh">@color/_sunny_glow_dark_colorSurfaceContainerHigh</item>
+    <item name="colorSurfaceContainerHighest">@color/_sunny_glow_dark_colorSurfaceContainerHighest</item>
+    <item name="colorOutlineVariant">@color/_sunny_glow_dark_colorOutlineVariant</item>
+    <item name="colorSurfaceBright">@color/_sunny_glow_dark_colorSurfaceBright</item>
+    <item name="colorSurfaceDim">@color/_sunny_glow_dark_colorSurfaceDim</item>
     <item name="colorOnSurfaceInverse">@color/_sunny_glow_dark_colorOnSurfaceInverse</item>
     <item name="colorSurfaceInverse">@color/_sunny_glow_dark_colorSurfaceInverse</item>
     <item name="colorPrimaryInverse">@color/_sunny_glow_dark_colorPrimaryInverse</item>

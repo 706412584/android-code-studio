@@ -18,9 +18,13 @@
 package com.tom.rv2ide.adapters
 
 import android.content.res.ColorStateList
+import android.graphics.Color
+import android.view.Gravity
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.widget.LinearLayout
+import androidx.core.view.isVisible
 import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.color.MaterialColors
 import com.tom.rv2ide.ai.tool.api.ToolDisplayCategory
@@ -407,43 +411,89 @@ class AssistantMessageAdapter : RecyclerView.Adapter<RecyclerView.ViewHolder>() 
         binding.messageText.text = message.text
       }
 
-      // 角色靠配色区分：用户用主色容器、助手用次级容器、过程信息用最低对比度。
+      // 角色差异：对齐方向、气泡、宽度上限、配色。四件事一起设——它们共同表达
+      // 「谁在说话」，拆到 XML 里做会变成三套布局，改一处必漏两处。
+      //
+      // 边界取自参考项目：用户的话是气泡（右对齐、有底色、限宽），
+      // 助手的回答是文档（铺满、无底色、不限宽）。助手回复里的代码块与表格
+      // 需要横向空间，塞进窄气泡会被压成竖长条。
+      val parent = binding.root as ViewGroup
+      val isUser = message.role == Role.USER
+      val params = card.layoutParams as LinearLayout.LayoutParams
+      params.gravity = if (isUser) Gravity.END else Gravity.START
+      params.width =
+          if (isUser) ViewGroup.LayoutParams.WRAP_CONTENT
+          else ViewGroup.LayoutParams.MATCH_PARENT
+      card.layoutParams = params
+
+      // 用户气泡的宽度上限。纯 WRAP_CONTENT 遇到一条长消息会顶满整个面板宽度，
+      // 与助手消息在视觉上分不开；限到 90% 才能看出「这是我说的话」。
+      // 助手消息不限宽——代码块越宽越好读。
+      if (isUser) {
+        val maxWidth = (parent.width * USER_BUBBLE_MAX_WIDTH_RATIO).toInt()
+        binding.messageText.maxWidth = maxOf(maxWidth - dp(card, 28), dp(card, 160))
+      } else {
+        binding.messageText.maxWidth = Int.MAX_VALUE
+      }
+
       // 色值必须走 Material 库的 attr：本项目 app 模块的 R.attr 里没有这些主题属性。
+      // 助手消息不给底色（透明 + 无描边），让 Markdown 直接落在面板底色上。
       val (container, onContainer) =
           when (message.role) {
             Role.USER ->
                 com.google.android.material.R.attr.colorPrimaryContainer to
                     com.google.android.material.R.attr.colorOnPrimaryContainer
-            Role.ASSISTANT ->
-                com.google.android.material.R.attr.colorSecondaryContainer to
-                    com.google.android.material.R.attr.colorOnSecondaryContainer
+            Role.ASSISTANT -> null to com.google.android.material.R.attr.colorOnSurface
+            // 过程信息用 surfaceVariant：本仓库主题里**没有定义** colorSurfaceContainer* 系列，
+            // 写那些角色会取到 M3 库默认的紫调，与自定义色板不匹配。
             Role.TRACE ->
-                com.google.android.material.R.attr.colorSurfaceContainerHighest to
+                com.google.android.material.R.attr.colorSurfaceVariant to
                     com.google.android.material.R.attr.colorOnSurfaceVariant
           }
 
-      card.setCardBackgroundColor(
-          ColorStateList.valueOf(MaterialColors.getColor(card, container))
-      )
+      if (container == null) {
+        card.setCardBackgroundColor(ColorStateList.valueOf(Color.TRANSPARENT))
+        card.strokeWidth = 0
+      } else {
+        card.setCardBackgroundColor(
+            ColorStateList.valueOf(MaterialColors.getColor(card, container))
+        )
+        card.strokeWidth = 0
+      }
       val textColor = MaterialColors.getColor(card, onContainer)
       binding.messageRole.setTextColor(textColor)
       binding.messageText.setTextColor(textColor)
 
-      // 撤销按钮：只有携带 diffId 的消息才显示。已撤销时改为禁用并换文案——
-      // 让按钮消失会让用户怀疑自己是否点到了，禁用态能明确传达「已经生效了」。
+      // 角色标签只在过程信息上显示，见布局注释。
+      binding.messageRole.visibility = if (message.role == Role.TRACE) View.VISIBLE else View.GONE
+
+      // 撤销按钮：只有携带 diffId 的消息才可能显示，且默认收起、长按才展开。
+      // 已撤销时改为禁用并换文案——让按钮消失会让用户怀疑自己是否点到了，
+      // 禁用态能明确传达「已经生效了」。
       val diffId = message.diffId
       if (diffId == null) {
         binding.messageRevert.visibility = View.GONE
+        card.setOnLongClickListener(null)
+        card.isLongClickable = false
       } else {
-        binding.messageRevert.visibility = View.VISIBLE
         binding.messageRevert.isEnabled = !message.reverted
         binding.messageRevert.setText(
             if (message.reverted) string.ai_assistant_revert_done
             else string.ai_assistant_revert
         )
         binding.messageRevert.setOnClickListener { onRevert?.invoke(message.id, diffId) }
+        // 长按切换撤销按钮。收起是默认态，避免每条改过文件的消息都多占一行。
+        card.isLongClickable = true
+        card.setOnLongClickListener {
+          binding.messageRevert.visibility =
+              if (binding.messageRevert.isVisible) View.GONE else View.VISIBLE
+          true
+        }
       }
     }
+
+    private fun dp(view: View, value: Int): Int =
+        (value * view.resources.displayMetrics.density).toInt()
   }
 
   /** 工具调用卡片：折叠显示摘要，展开显示完整输入输出。 */
@@ -550,5 +600,13 @@ class AssistantMessageAdapter : RecyclerView.Adapter<RecyclerView.ViewHolder>() 
     private const val TYPE_MESSAGE = 0
     private const val TYPE_TOOL_CALL = 1
     private const val TYPE_THINKING = 2
+
+    /**
+     * 用户气泡的宽度上限（占面板可用宽度的比例）。
+     *
+     * 取自参考项目的 0.90。不限宽的话长消息会顶满面板，与助手消息在视觉上分不开；
+     * 限太窄（如 0.75）则中文长句会频繁换行，读起来费劲。
+     */
+    private const val USER_BUBBLE_MAX_WIDTH_RATIO = 0.90f
   }
 }

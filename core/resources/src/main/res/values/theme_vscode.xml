@@ -55,6 +55,18 @@
 
   <color name="_vscode_light_colorOutline">#ffbdbdbd</color>
 
+  <!-- M3 角色补齐：这些角色原先未定义，会取到 Material 库默认的紫调中性色，
+       与自定义色板不匹配（也导致弹出菜单/对话框配色对不上主题）。
+       取值由 surface / surfaceVariant / outline 推导，保证同族。 -->
+  <color name="_vscode_light_colorSurfaceContainerLowest">#ffffffff</color>
+  <color name="_vscode_light_colorSurfaceContainerLow">#fffcfcfc</color>
+  <color name="_vscode_light_colorSurfaceContainer">#fff9f9f9</color>
+  <color name="_vscode_light_colorSurfaceContainerHigh">#fff6f6f6</color>
+  <color name="_vscode_light_colorSurfaceContainerHighest">#fff3f3f3</color>
+  <color name="_vscode_light_colorOutlineVariant">#ffe1e1e1</color>
+  <color name="_vscode_light_colorSurfaceBright">#ffffffff</color>
+  <color name="_vscode_light_colorSurfaceDim">#ffe6e6e6</color>
+
   <style name="Theme.AndroidIDE.VSCode" parent="Theme.AndroidIDE">
     <item name="colorPrimary">@color/_vscode_light_colorPrimary</item>
     <item name="colorPrimaryContainer">@color/_vscode_light_colorPrimaryContainer</item>
@@ -90,6 +102,14 @@
     <item name="colorOnSurfaceVariant">@color/_vscode_light_colorOnSurfaceVariant</item>
 
     <item name="colorOutline">@color/_vscode_light_colorOutline</item>
+    <item name="colorSurfaceContainerLowest">@color/_vscode_light_colorSurfaceContainerLowest</item>
+    <item name="colorSurfaceContainerLow">@color/_vscode_light_colorSurfaceContainerLow</item>
+    <item name="colorSurfaceContainer">@color/_vscode_light_colorSurfaceContainer</item>
+    <item name="colorSurfaceContainerHigh">@color/_vscode_light_colorSurfaceContainerHigh</item>
+    <item name="colorSurfaceContainerHighest">@color/_vscode_light_colorSurfaceContainerHighest</item>
+    <item name="colorOutlineVariant">@color/_vscode_light_colorOutlineVariant</item>
+    <item name="colorSurfaceBright">@color/_vscode_light_colorSurfaceBright</item>
+    <item name="colorSurfaceDim">@color/_vscode_light_colorSurfaceDim</item>
   </style>
 
   <!--========================================================-->
@@ -130,6 +150,18 @@
 
   <color name="_vscode_dark_colorOutline">#ff3e3e42</color>
 
+  <!-- M3 角色补齐：这些角色原先未定义，会取到 Material 库默认的紫调中性色，
+       与自定义色板不匹配（也导致弹出菜单/对话框配色对不上主题）。
+       取值由 surface / surfaceVariant / outline 推导，保证同族。 -->
+  <color name="_vscode_dark_colorSurfaceContainerLowest">#ff1e1e1e</color>
+  <color name="_vscode_dark_colorSurfaceContainerLow">#ff202020</color>
+  <color name="_vscode_dark_colorSurfaceContainer">#ff222222</color>
+  <color name="_vscode_dark_colorSurfaceContainerHigh">#ff232324</color>
+  <color name="_vscode_dark_colorSurfaceContainerHighest">#ff252526</color>
+  <color name="_vscode_dark_colorOutlineVariant">#ff2c2c2e</color>
+  <color name="_vscode_dark_colorSurfaceBright">#ff343434</color>
+  <color name="_vscode_dark_colorSurfaceDim">#ff151515</color>
+
   <style name="Theme.AndroidIDE.VSCode.Dark" parent="Theme.AndroidIDE.VSCode">
     <item name="colorPrimary">@color/_vscode_dark_colorPrimary</item>
     <item name="colorPrimaryDark">@color/_vscode_dark_colorPrimaryDark</item>
@@ -157,6 +189,14 @@
     <item name="colorSurfaceVariant">@color/_vscode_dark_colorSurfaceVariant</item>
     <item name="colorOnSurfaceVariant">@color/_vscode_dark_colorOnSurfaceVariant</item>
     <item name="colorOutline">@color/_vscode_dark_colorOutline</item>
+    <item name="colorSurfaceContainerLowest">@color/_vscode_dark_colorSurfaceContainerLowest</item>
+    <item name="colorSurfaceContainerLow">@color/_vscode_dark_colorSurfaceContainerLow</item>
+    <item name="colorSurfaceContainer">@color/_vscode_dark_colorSurfaceContainer</item>
+    <item name="colorSurfaceContainerHigh">@color/_vscode_dark_colorSurfaceContainerHigh</item>
+    <item name="colorSurfaceContainerHighest">@color/_vscode_dark_colorSurfaceContainerHighest</item>
+    <item name="colorOutlineVariant">@color/_vscode_dark_colorOutlineVariant</item>
+    <item name="colorSurfaceBright">@color/_vscode_dark_colorSurfaceBright</item>
+    <item name="colorSurfaceDim">@color/_vscode_dark_colorSurfaceDim</item>
     <item name="colorOnSurfaceInverse">@color/_vscode_dark_colorOnSurfaceInverse</item>
     <item name="colorSurfaceInverse">@color/_vscode_dark_colorSurfaceInverse</item>
     <item name="colorPrimaryInverse">@color/_vscode_dark_colorPrimaryInverse</item>

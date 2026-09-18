@@ -24,6 +24,7 @@ import android.view.LayoutInflater
 import android.view.ViewGroup
 import android.widget.FrameLayout
 import androidx.appcompat.app.AlertDialog
+import androidx.constraintlayout.widget.ConstraintLayout
 import androidx.core.view.isVisible
 import androidx.lifecycle.LifecycleCoroutineScope
 import androidx.recyclerview.widget.LinearLayoutManager
@@ -60,12 +61,28 @@ class FloatingAssistantView(
     private val context: Context,
     private val lifecycleScope: LifecycleCoroutineScope,
     private val parent: ViewGroup,
+    /**
+     * 初始形态。主页传 [Mode.SIDEBAR]（浮层，露出项目列表），
+     * 编辑器传 [Mode.DOCKED]（贴右侧满高，与文件树抽屉左右对称）。
+     */
+    private val defaultMode: Mode = Mode.SIDEBAR,
 ) {
 
   /** 面板形态。 */
   enum class Mode {
+    /** 占满可用区域，只留少量边距。 */
     FULLSCREEN,
-    SIDEBAR
+
+    /** 固定宽度贴右侧的浮层，露出主屏内容。主页用这个。 */
+    SIDEBAR,
+
+    /**
+     * 贴右侧满高、无外边距无圆角。编辑器用这个。
+     *
+     * 编辑器已经有自己的侧栏抽屉（文件树）与底部构建面板，再叠一张居中的浮层卡片
+     * 会与它们争夺空间，观感上也不像编辑器的一部分。贴边后它与文件树抽屉左右对称。
+     */
+    DOCKED
   }
 
   private val fabBinding =
@@ -140,7 +157,7 @@ class FloatingAssistantView(
    */
   private var streamedThisRun = false
 
-  private var mode = Mode.SIDEBAR
+  private var mode = defaultMode
 
   /**
    * 复用一个 orchestrator 跨请求。
@@ -185,7 +202,7 @@ class FloatingAssistantView(
 
     setUpDragging()
 
-    applyMode(Mode.SIDEBAR)
+    applyMode(defaultMode)
 
     binding.assistantMessages.layoutManager = LinearLayoutManager(context)
     binding.assistantMessages.adapter = adapter
@@ -389,7 +406,7 @@ class FloatingAssistantView(
   private fun applyMode(newMode: Mode) {
     mode = newMode
     val card = binding.assistantCard
-    val params = card.layoutParams as ViewGroup.MarginLayoutParams
+    val params = card.layoutParams as ConstraintLayout.LayoutParams
 
     // 形态切换的文案不再由按钮承载——全屏/侧栏已收进溢出菜单，
     // 菜单项文案在 showOverflowMenu() 里按当前形态动态生成。
@@ -399,6 +416,10 @@ class FloatingAssistantView(
         params.height = ViewGroup.LayoutParams.MATCH_PARENT
         params.marginStart = dp(8)
         params.marginEnd = dp(8)
+        params.topMargin = dp(12)
+        params.bottomMargin = dp(12)
+        card.radius = dp(20).toFloat()
+        card.strokeWidth = dp(1)
       }
       Mode.SIDEBAR -> {
         // 侧栏宽度取屏幕的 88%，至少 280dp：窄屏上纯比例会挤到不可用，
@@ -409,8 +430,52 @@ class FloatingAssistantView(
         params.height = ViewGroup.LayoutParams.MATCH_PARENT
         params.marginStart = dp(8)
         params.marginEnd = dp(8)
+        params.topMargin = dp(12)
+        params.bottomMargin = dp(12)
+        card.radius = dp(20).toFloat()
+        card.strokeWidth = dp(1)
+      }
+      Mode.DOCKED -> {
+        // 贴右侧满高、无外边距、无圆角。
+        //
+        // 与 SIDEBAR 的区别不只是宽度：浮层形态（圆角 + 四周留白）传达的是
+        // 「这是一张盖在内容上的卡片」，而编辑器需要的是「这是界面的一半」。
+        // 留白和圆角会立刻把面板变回弹窗观感——这正是之前"割裂感"的来源之一。
+        //
+        // 宽度：屏幕的 60%，并夹在 [240dp, min(400dp, 屏宽-140dp)] 之间。
+        // 三个约束各解决一件事：
+        // - 240dp 下限：再窄则对话里的代码块与路径频繁换行，读不了
+        // - 400dp 上限：平板上不限宽会让面板宽到像全屏，失去"贴在一边"的意义
+        // - 屏宽-140dp：手机竖屏下必须给编辑器留出可见宽度，否则用户看不见自己
+        //   在改哪个文件。这条在小屏上通常是最紧的约束。
+        //
+        // 下限必须再对上限取一次 min：窄屏上「屏宽-140dp」可能小于 240dp，
+        // 直接 coerceIn(240dp, 那个值) 会抛
+        // IllegalArgumentException: Cannot coerce value to an empty range。
+        val screenWidth = parent.resources.displayMetrics.widthPixels
+        val upper = minOf(dp(400), screenWidth - dp(140))
+        val lower = minOf(dp(240), upper)
+        params.width = (screenWidth * 0.60f).toInt().coerceIn(lower, upper)
+        params.height = ViewGroup.LayoutParams.MATCH_PARENT
+        params.marginStart = 0
+        params.marginEnd = 0
+        params.topMargin = 0
+        params.bottomMargin = 0
+        card.radius = 0f
+        // 保留 1dp 描边：面板与编辑器内容用的是同一个 colorSurface，
+        // 不画边界时两者连成一片，看不出面板从哪里开始。
+        // 描边在上下右三边正好压在屏幕边缘（不可见），实际只起左分界线的作用。
+        card.strokeWidth = dp(1)
       }
     }
+
+    // 水平对齐方向。
+    //
+    // 面板在 ConstraintLayout 里同时被 start/end 约束，宽度固定时**默认居中**——
+    // DOCKED 形态不设 bias 会落在屏幕中间，看起来还是浮窗而不是贴边面板。
+    // 这里显式指定：DOCKED 靠右，其余两种都占满宽度、bias 无影响（设 0.5 保持一致）。
+    params.horizontalBias = if (newMode == Mode.DOCKED) 1f else 0.5f
+
     card.layoutParams = params
   }
 

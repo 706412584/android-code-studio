@@ -133,4 +133,21 @@
 
 </style>
 
+  <!--
+    助手面板的输入框。
+
+    独立一份而不是复用上面的 Dropdown.Filled：那一份是给 cmake/ndk 布局里的
+    下拉选择器用的（ExposedDropdownMenu 语义，且 colorSurfaceContainerHigh 在本仓库
+    主题里未定义、会取到 M3 库默认的紫调）。改那一份会连带改掉那两处。
+  -->
+  <style name="AppTheme.TextInputLayout.AssistantInput" parent="Widget.Material3.TextInputLayout.FilledBox">
+    <item name="boxBackgroundMode">filled</item>
+    <item name="boxStrokeWidth">0sp</item>
+    <item name="boxBackgroundColor">?attr/colorSurfaceVariant</item>
+    <item name="boxCornerRadiusTopStart">16dp</item>
+    <item name="boxCornerRadiusTopEnd">16dp</item>
+    <item name="boxCornerRadiusBottomStart">16dp</item>
+    <item name="boxCornerRadiusBottomEnd">16dp</item>
+  </style>
+
 </resources>

@@ -2,12 +2,21 @@
 <!--
   悬浮 AI 助手面板。
 
-  两种形态由代码切换 LayoutParams 实现（不复制两套布局，避免改一处漏一处）：
-  - 全屏：占满可用区域，只留少量边距
-  - 侧栏：固定宽度贴右侧，露出主屏内容
+  三种形态由代码切换 LayoutParams 实现（不复制三套布局，避免改一处漏一处）：
+  - FULLSCREEN：占满可用区域，只留少量边距
+  - SIDEBAR：固定宽度贴右侧，露出主屏内容（主页用）
+  - DOCKED：贴右侧满高、无外边距无圆角（编辑器用，看起来是编辑器的一半）
 
   刻意不做成 BottomSheetDialog：bottom sheet 是模态的，展开时会挡住项目列表，
   而这个面板的用途恰恰是"看着主屏问问题"。用平级 overlay 才能两者并存。
+
+  背景色：?attr/colorSurface + cardElevation=0。
+
+  这两个条件是绑定的，不能只改一个。MaterialCardView 在 elevation > 0 时会把
+  colorSurfaceTint（本仓库主题未定义，回退到 colorPrimary）以约 12% 透明度叠加到
+  colorSurface 上——实测 VSCODE 浅色下得到 #E1EFF9 的淡蓝面板，而编辑器是 #FFFFFF，
+  这就是"面板像另一个应用"的直接来源。要保留边界而不要染色，就得把 elevation 归零、
+  用 1dp 的 colorOutline 描边。
 -->
 <androidx.constraintlayout.widget.ConstraintLayout
   xmlns:android="http://schemas.android.com/apk/res/android"
@@ -25,8 +34,10 @@
     android:layout_height="0dp"
     android:layout_margin="12dp"
     app:cardCornerRadius="20dp"
-    app:cardElevation="8dp"
+    app:cardElevation="0dp"
     app:cardBackgroundColor="?attr/colorSurface"
+    app:strokeWidth="1dp"
+    app:strokeColor="?attr/colorOutline"
     app:layout_constraintBottom_toBottomOf="parent"
     app:layout_constraintEnd_toEndOf="parent"
     app:layout_constraintStart_toStartOf="parent"
@@ -37,24 +48,27 @@
       android:layout_height="match_parent"
       android:orientation="vertical">
 
-      <!-- 标题栏 -->
+      <!--
+        标题栏。
+
+        只放高频操作，其余收进溢出菜单。侧栏模式下可用宽度只有屏幕的 88%，
+        原先 5 个文字按钮（全屏/复制/新会话/关闭）会把标题挤到换行甚至截断成
+        「AI 助…」。
+
+        三个入口都用图标按钮而不是文字按钮：文字宽度随语言变化
+        （英文 "Conversations" 比中文「会话」宽一倍），在窄面板里会挤掉标题；
+        图标按钮宽度恒定，不受语言影响。
+      -->
       <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="horizontal"
         android:gravity="center_vertical"
         android:paddingStart="16dp"
-        android:paddingEnd="8dp"
-        android:paddingTop="8dp"
-        android:paddingBottom="4dp">
+        android:paddingEnd="4dp"
+        android:paddingTop="4dp"
+        android:paddingBottom="2dp">
 
-        <!--
-          标题栏布局原则：只放高频操作，其余收进溢出菜单。
-
-          侧栏模式下可用宽度只有屏幕的 88%，原先 5 个文字按钮（全屏/复制/新会话/关闭）
-          会把标题挤到换行甚至截断成「AI 助…」。改成「标题 + 会话 + 新会话 + ⋮」后，
-          标题有足够空间，而全屏/复制/关闭这些低频操作收进菜单仍然可达。
-        -->
         <TextView
           android:layout_width="0dp"
           android:layout_height="wrap_content"
@@ -67,19 +81,21 @@
 
         <com.google.android.material.button.MaterialButton
           android:id="@+id/assistantConversationsToggle"
-          style="@style/Widget.Material3.Button.TextButton"
+          style="@style/Widget.Material3.Button.IconButton"
           android:layout_width="wrap_content"
           android:layout_height="wrap_content"
-          android:minWidth="0dp"
-          android:text="@string/ai_conversation_list_title" />
+          android:contentDescription="@string/ai_conversation_list_title"
+          app:icon="@drawable/ic_history"
+          app:iconTint="?attr/colorOnSurfaceVariant" />
 
         <com.google.android.material.button.MaterialButton
           android:id="@+id/assistantNewConversation"
-          style="@style/Widget.Material3.Button.TextButton"
+          style="@style/Widget.Material3.Button.IconButton"
           android:layout_width="wrap_content"
           android:layout_height="wrap_content"
-          android:minWidth="0dp"
-          android:text="@string/ai_assistant_new_conversation" />
+          android:contentDescription="@string/ai_assistant_new_conversation"
+          app:icon="@drawable/ic_add"
+          app:iconTint="?attr/colorOnSurfaceVariant" />
 
         <com.google.android.material.button.MaterialButton
           android:id="@+id/assistantOverflow"
@@ -135,12 +151,12 @@
           android:textColor="?attr/colorOnSurfaceVariant"
           tools:text="DeepSeek / deepseek-chat" />
 
-        <TextView
-          android:layout_width="wrap_content"
-          android:layout_height="wrap_content"
-          android:text="▾"
-          android:textColor="?attr/colorOnSurfaceVariant"
-          android:textSize="12sp" />
+        <ImageView
+          android:layout_width="16dp"
+          android:layout_height="16dp"
+          android:contentDescription="@null"
+          android:src="@drawable/ic_chevron_down"
+          app:tint="?attr/colorOnSurfaceVariant" />
 
       </LinearLayout>
 
@@ -161,7 +177,7 @@
       <View
         android:layout_width="match_parent"
         android:layout_height="1dp"
-        android:background="?attr/colorOutlineVariant" />
+        android:background="?attr/colorOutline" />
 
       <!-- 对话区 -->
       <FrameLayout
@@ -254,25 +270,36 @@
         android:visibility="gone"
         tools:visibility="visible" />
 
-      <!-- 输入区 -->
+      <!--
+        输入区。
+
+        用「输入框在上、发送按钮在下」的两行结构，而不是并排一行：
+        侧栏模式下面板宽度只有屏幕的 88%，并排时输入框会被发送按钮挤掉近三分之一宽，
+        中文长句（「把 build.gradle 里的 compileSdk 改成 34」）一屏看不全。
+        发送按钮独立成行后输入框拿满宽度。
+
+        输入框用 Filled 而不是 Outlined：OutlinedBox 的方角描边在窄容器里显得很"表单"，
+        而 Filled 的圆角底与面板整体的圆角语言一致。
+      -->
       <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:orientation="horizontal"
-        android:gravity="bottom"
-        android:padding="8dp">
+        android:orientation="vertical"
+        android:paddingStart="12dp"
+        android:paddingEnd="12dp"
+        android:paddingTop="6dp"
+        android:paddingBottom="10dp">
 
         <com.google.android.material.textfield.TextInputLayout
-          android:layout_width="0dp"
+          android:layout_width="match_parent"
           android:layout_height="wrap_content"
-          android:layout_weight="1"
-          style="@style/Widget.Material3.TextInputLayout.OutlinedBox">
+          style="@style/AppTheme.TextInputLayout.AssistantInput"
+          android:hint="@string/ai_assistant_input_hint">
 
           <com.google.android.material.textfield.TextInputEditText
             android:id="@+id/assistantInput"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:hint="@string/ai_assistant_input_hint"
             android:inputType="textMultiLine|textCapSentences"
             android:maxLines="5"
             android:imeOptions="actionSend" />
@@ -281,9 +308,10 @@
 
         <com.google.android.material.button.MaterialButton
           android:id="@+id/assistantSend"
-          android:layout_width="wrap_content"
+          android:layout_width="match_parent"
           android:layout_height="wrap_content"
-          android:layout_marginStart="8dp"
+          android:layout_marginTop="6dp"
+          android:minHeight="44dp"
           android:text="@string/ai_assistant_send" />
 
       </LinearLayout>

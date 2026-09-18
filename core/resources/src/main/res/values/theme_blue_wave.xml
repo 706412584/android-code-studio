@@ -49,6 +49,18 @@
   <color name="_blue_wave_light_colorOnSurfaceVariant">#ff44464f</color>
   <color name="_blue_wave_light_colorOutline">#ff74767f</color>
 
+  <!-- M3 角色补齐：这些角色原先未定义，会取到 Material 库默认的紫调中性色，
+       与自定义色板不匹配（也导致弹出菜单/对话框配色对不上主题）。
+       取值由 surface / surfaceVariant / outline 推导，保证同族。 -->
+  <color name="_blue_wave_light_colorSurfaceContainerLowest">#fffefbff</color>
+  <color name="_blue_wave_light_colorSurfaceContainerLow">#fff7f5fa</color>
+  <color name="_blue_wave_light_colorSurfaceContainer">#fff0eef6</color>
+  <color name="_blue_wave_light_colorSurfaceContainerHigh">#ffe8e8f1</color>
+  <color name="_blue_wave_light_colorSurfaceContainerHighest">#ffe1e2ec</color>
+  <color name="_blue_wave_light_colorOutlineVariant">#ffc0bfc5</color>
+  <color name="_blue_wave_light_colorSurfaceBright">#fffefbff</color>
+  <color name="_blue_wave_light_colorSurfaceDim">#ffe5e2e6</color>
+
   <style name="Theme.AndroidIDE.BlueWave" parent="Theme.AndroidIDE">
     <item name="colorPrimary">@color/_blue_wave_light_colorPrimary</item>
     <item name="colorPrimaryContainer">@color/_blue_wave_light_colorPrimaryContainer</item>
@@ -84,6 +96,14 @@
     <item name="colorOnSurfaceVariant">@color/_blue_wave_light_colorOnSurfaceVariant</item>
 
     <item name="colorOutline">@color/_blue_wave_light_colorOutline</item>
+    <item name="colorSurfaceContainerLowest">@color/_blue_wave_light_colorSurfaceContainerLowest</item>
+    <item name="colorSurfaceContainerLow">@color/_blue_wave_light_colorSurfaceContainerLow</item>
+    <item name="colorSurfaceContainer">@color/_blue_wave_light_colorSurfaceContainer</item>
+    <item name="colorSurfaceContainerHigh">@color/_blue_wave_light_colorSurfaceContainerHigh</item>
+    <item name="colorSurfaceContainerHighest">@color/_blue_wave_light_colorSurfaceContainerHighest</item>
+    <item name="colorOutlineVariant">@color/_blue_wave_light_colorOutlineVariant</item>
+    <item name="colorSurfaceBright">@color/_blue_wave_light_colorSurfaceBright</item>
+    <item name="colorSurfaceDim">@color/_blue_wave_light_colorSurfaceDim</item>
   </style>
 
   <!--========================================================-->
@@ -117,6 +137,18 @@
   <color name="_blue_wave_dark_colorOnSurfaceInverse">#ff303034</color>
   <color name="_blue_wave_dark_colorOnSurfaceVariant">#ffc5c6d0</color>
   <color name="_blue_wave_dark_colorOutline">#ff8f9099</color>
+
+  <!-- M3 角色补齐：这些角色原先未定义，会取到 Material 库默认的紫调中性色，
+       与自定义色板不匹配（也导致弹出菜单/对话框配色对不上主题）。
+       取值由 surface / surfaceVariant / outline 推导，保证同族。 -->
+  <color name="_blue_wave_dark_colorSurfaceContainerLowest">#ff1b1b1f</color>
+  <color name="_blue_wave_dark_colorSurfaceContainerLow">#ff25262b</color>
+  <color name="_blue_wave_dark_colorSurfaceContainer">#ff303037</color>
+  <color name="_blue_wave_dark_colorSurfaceContainerHigh">#ff3a3b43</color>
+  <color name="_blue_wave_dark_colorSurfaceContainerHighest">#ff44464f</color>
+  <color name="_blue_wave_dark_colorOutlineVariant">#ff4f5056</color>
+  <color name="_blue_wave_dark_colorSurfaceBright">#ff323235</color>
+  <color name="_blue_wave_dark_colorSurfaceDim">#ff131316</color>
 
   <style name="Theme.AndroidIDE.BlueWave.Dark" parent="Theme.AndroidIDE.BlueWave">
     <item name="colorPrimary">@color/_blue_wave_dark_colorPrimary</item>
@@ -153,6 +185,14 @@
     <item name="colorOnSurfaceVariant">@color/_blue_wave_dark_colorOnSurfaceVariant</item>
 
     <item name="colorOutline">@color/_blue_wave_dark_colorOutline</item>
+    <item name="colorSurfaceContainerLowest">@color/_blue_wave_dark_colorSurfaceContainerLowest</item>
+    <item name="colorSurfaceContainerLow">@color/_blue_wave_dark_colorSurfaceContainerLow</item>
+    <item name="colorSurfaceContainer">@color/_blue_wave_dark_colorSurfaceContainer</item>
+    <item name="colorSurfaceContainerHigh">@color/_blue_wave_dark_colorSurfaceContainerHigh</item>
+    <item name="colorSurfaceContainerHighest">@color/_blue_wave_dark_colorSurfaceContainerHighest</item>
+    <item name="colorOutlineVariant">@color/_blue_wave_dark_colorOutlineVariant</item>
+    <item name="colorSurfaceBright">@color/_blue_wave_dark_colorSurfaceBright</item>
+    <item name="colorSurfaceDim">@color/_blue_wave_dark_colorSurfaceDim</item>
   </style>
 
 </resources>

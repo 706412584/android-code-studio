@@ -56,6 +56,18 @@
 
   <color name="_greenish_light_colorOutline">#ff6e7971</color>
 
+  <!-- M3 角色补齐：这些角色原先未定义，会取到 Material 库默认的紫调中性色，
+       与自定义色板不匹配（也导致弹出菜单/对话框配色对不上主题）。
+       取值由 surface / surfaceVariant / outline 推导，保证同族。 -->
+  <color name="_greenish_light_colorSurfaceContainerLowest">#fff1f8f4</color>
+  <color name="_greenish_light_colorSurfaceContainerLow">#ffecf5ed</color>
+  <color name="_greenish_light_colorSurfaceContainer">#ffe6f2e6</color>
+  <color name="_greenish_light_colorSurfaceContainerHigh">#ffe1efdf</color>
+  <color name="_greenish_light_colorSurfaceContainerHighest">#ffdcecd8</color>
+  <color name="_greenish_light_colorOutlineVariant">#ffb6bfb9</color>
+  <color name="_greenish_light_colorSurfaceBright">#fff1f8f4</color>
+  <color name="_greenish_light_colorSurfaceDim">#ffd9dfdc</color>
+
   <style name="Theme.AndroidIDE.Greenish" parent="Theme.AndroidIDE">
     <item name="colorPrimary">@color/_greenish_light_colorPrimary</item>
     <item name="colorPrimaryContainer">@color/_greenish_light_colorPrimaryContainer</item>
@@ -91,6 +103,14 @@
     <item name="colorOnSurfaceVariant">@color/_greenish_light_colorOnSurfaceVariant</item>
 
     <item name="colorOutline">@color/_greenish_light_colorOutline</item>
+    <item name="colorSurfaceContainerLowest">@color/_greenish_light_colorSurfaceContainerLowest</item>
+    <item name="colorSurfaceContainerLow">@color/_greenish_light_colorSurfaceContainerLow</item>
+    <item name="colorSurfaceContainer">@color/_greenish_light_colorSurfaceContainer</item>
+    <item name="colorSurfaceContainerHigh">@color/_greenish_light_colorSurfaceContainerHigh</item>
+    <item name="colorSurfaceContainerHighest">@color/_greenish_light_colorSurfaceContainerHighest</item>
+    <item name="colorOutlineVariant">@color/_greenish_light_colorOutlineVariant</item>
+    <item name="colorSurfaceBright">@color/_greenish_light_colorSurfaceBright</item>
+    <item name="colorSurfaceDim">@color/_greenish_light_colorSurfaceDim</item>
   </style>
 
   <!--========================================================-->
@@ -131,6 +151,18 @@
 
   <color name="_greenish_dark_colorOutline">#ff899a8e</color>
 
+  <!-- M3 角色补齐：这些角色原先未定义，会取到 Material 库默认的紫调中性色，
+       与自定义色板不匹配（也导致弹出菜单/对话框配色对不上主题）。
+       取值由 surface / surfaceVariant / outline 推导，保证同族。 -->
+  <color name="_greenish_dark_colorSurfaceContainerLowest">#ff1a1c1a</color>
+  <color name="_greenish_dark_colorSurfaceContainerLow">#ff232724</color>
+  <color name="_greenish_dark_colorSurfaceContainer">#ff2c322d</color>
+  <color name="_greenish_dark_colorSurfaceContainerHigh">#ff353e36</color>
+  <color name="_greenish_dark_colorSurfaceContainerHighest">#ff3e4940</color>
+  <color name="_greenish_dark_colorOutlineVariant">#ff4c554e</color>
+  <color name="_greenish_dark_colorSurfaceBright">#ff313331</color>
+  <color name="_greenish_dark_colorSurfaceDim">#ff121412</color>
+
   <style name="Theme.AndroidIDE.Greenish.Dark" parent="Theme.AndroidIDE.Greenish">
     <item name="colorPrimary">@color/_greenish_dark_colorPrimary</item>
     <item name="colorPrimaryDark">@color/_greenish_dark_colorPrimaryDark</item>
@@ -158,6 +190,14 @@
     <item name="colorSurfaceVariant">@color/_greenish_dark_colorSurfaceVariant</item>
     <item name="colorOnSurfaceVariant">@color/_greenish_dark_colorOnSurfaceVariant</item>
     <item name="colorOutline">@color/_greenish_dark_colorOutline</item>
+    <item name="colorSurfaceContainerLowest">@color/_greenish_dark_colorSurfaceContainerLowest</item>
+    <item name="colorSurfaceContainerLow">@color/_greenish_dark_colorSurfaceContainerLow</item>
+    <item name="colorSurfaceContainer">@color/_greenish_dark_colorSurfaceContainer</item>
+    <item name="colorSurfaceContainerHigh">@color/_greenish_dark_colorSurfaceContainerHigh</item>
+    <item name="colorSurfaceContainerHighest">@color/_greenish_dark_colorSurfaceContainerHighest</item>
+    <item name="colorOutlineVariant">@color/_greenish_dark_colorOutlineVariant</item>
+    <item name="colorSurfaceBright">@color/_greenish_dark_colorSurfaceBright</item>
+    <item name="colorSurfaceDim">@color/_greenish_dark_colorSurfaceDim</item>
     <item name="colorOnSurfaceInverse">@color/_greenish_dark_colorOnSurfaceInverse</item>
     <item name="colorSurfaceInverse">@color/_greenish_dark_colorSurfaceInverse</item>
     <item name="colorPrimaryInverse">@color/_greenish_dark_colorPrimaryInverse</item>

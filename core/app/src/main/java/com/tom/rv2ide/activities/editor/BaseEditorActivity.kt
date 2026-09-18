@@ -1508,7 +1508,16 @@ override fun onApplySystemBarInsets(insets: Insets) {
    */
   private fun setupFloatingAssistant() {
     val container = content.assistantContainer
-    val assistant = FloatingAssistantView(this, lifecycleScope, container)
+    // 编辑器里用 DOCKED：贴右侧满高、无外边距无圆角。
+    // 编辑器已经有自己的左侧文件树抽屉与底部构建面板，再叠一张居中的浮层卡片
+    // 会与它们争夺空间，观感上也不像编辑器的一部分——这正是之前"割裂感"的来源。
+    val assistant =
+        FloatingAssistantView(
+            this,
+            lifecycleScope,
+            container,
+            FloatingAssistantView.Mode.DOCKED,
+        )
     // 折叠态的 bottom sheet 常驻屏幕底部，默认落点要避开它，否则一进来就被压住。
     assistant.defaultBottomOffsetPx =
         resources.getDimensionPixelSize(R.dimen.editor_sheet_collapsed_height)
