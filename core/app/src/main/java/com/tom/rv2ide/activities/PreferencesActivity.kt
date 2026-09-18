@@ -26,6 +26,7 @@ import com.tom.rv2ide.app.EdgeToEdgeIDEActivity
 import com.tom.rv2ide.databinding.ActivityPreferencesBinding
 import com.tom.rv2ide.fragments.IDEPreferencesFragment
 import com.tom.rv2ide.preferences.IDEPreferences as prefs
+import com.tom.rv2ide.preferences.IPreference
 import com.tom.rv2ide.preferences.addRootPreferences
 import com.tom.rv2ide.utils.Environment
 import kotlin.system.exitProcess
@@ -58,13 +59,37 @@ class PreferencesActivity : EdgeToEdgeIDEActivity() {
 
     (prefs.children as MutableList?)?.clear()
 
-    prefs.addRootPreferences()
+    // 直达模式：调用方指定要显示的屏，就不挂根列表。
+    //
+    // 用途：悬浮助手里的「设置」入口。AI 设置挂在「配置 → AI 助手」下，
+    // 从助手面板点进去要逐层展开三层——用户点「设置」的意图是改 AI 配置，
+    // 不是浏览全部 IDE 设置。直达后返回键回到助手面板，路径更短。
+    //
+    // 传的是**要显示的 children 列表**而不是单个 IPreferenceScreen：后者会被
+    // IDEPreferencesFragment 当作「入口」渲染（点击后再展开一层），而我们要的是
+    // 直接看到内容。传 children 让每一层都按自己的类型正常展开。
+    @Suppress("DEPRECATION")
+    val direct = intent?.getParcelableArrayListExtra<IPreference>(EXTRA_DIRECT_CHILDREN)
+    if (direct != null && direct.isNotEmpty()) {
+      intent.getStringExtra(EXTRA_DIRECT_TITLE)?.let { supportActionBar!!.title = it }
+      direct.forEach { prefs.addPreference(it) }
+    } else {
+      prefs.addRootPreferences()
+    }
 
     val args = Bundle()
     args.putParcelableArrayList(IDEPreferencesFragment.EXTRA_CHILDREN, ArrayList(prefs.children))
 
     rootFragment.arguments = args
     loadFragment(rootFragment)
+  }
+
+  companion object {
+    /** 要直达的偏好屏内容（children 列表）。为空时显示完整设置树。 */
+    const val EXTRA_DIRECT_CHILDREN = "ide.preferences.direct_children"
+
+    /** 直达模式下的标题文本。 */
+    const val EXTRA_DIRECT_TITLE = "ide.preferences.direct_title"
   }
 
   override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {

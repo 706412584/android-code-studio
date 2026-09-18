@@ -802,12 +802,17 @@ class FloatingAssistantView(
         0,
         if (mode == Mode.FULLSCREEN) string.ai_assistant_side else string.ai_assistant_fullscreen,
     )
-    popup.menu.add(0, MENU_EXPORT, 1, string.ai_assistant_export)
-    popup.menu.add(0, MENU_CLOSE, 2, string.ai_assistant_close)
+    popup.menu.add(0, MENU_SETTINGS, 1, string.ai_assistant_settings)
+    popup.menu.add(0, MENU_EXPORT, 2, string.ai_assistant_export)
+    popup.menu.add(0, MENU_CLOSE, 3, string.ai_assistant_close)
     popup.setOnMenuItemClickListener { item ->
       when (item.itemId) {
         MENU_LAYOUT -> {
           applyMode(if (mode == Mode.FULLSCREEN) Mode.SIDEBAR else Mode.FULLSCREEN)
+          true
+        }
+        MENU_SETTINGS -> {
+          openAssistantSettings()
           true
         }
         MENU_EXPORT -> {
@@ -822,6 +827,39 @@ class FloatingAssistantView(
       }
     }
     popup.show()
+  }
+
+  /**
+   * 打开 AI 助手设置。
+   *
+   * <p>直达 AI 设置屏，而不是打开设置首页：AI 设置挂在「配置 → AI 助手」下，
+   * 从助手面板点进去要逐层展开三层。用户点「设置」的意图是改 AI 配置，
+   * 不是浏览全部 IDE 设置。
+   *
+   * <p>复用 [com.tom.rv2ide.preferences.AIAgentPreferencesScreen] 而不是新建一套设置界面：
+   * 那里已有 10 个设置项（权限模式、Shell 后端、MCP、记忆、Skill、自定义 agent、
+   * 授权规则、提示词模板…），再造一份就是第三份实现。
+   */
+  private fun openAssistantSettings() {
+    // 传「AI 设置屏的 children」而不是屏幕本身。
+    //
+    // IDEPreferencesFragment 在顶层只接受两种类型：IPreferenceScreen（渲染成可点击入口）
+    // 与 IPreferenceGroup（渲染成 PreferenceCategory）。直接传 AIAgentPreferencesScreen
+    // 会在展开其 children 时抛 ClassCastException——那层 children 是普通 Preference，
+    // 而 addChildren 对非 Screen/Group 的分支仍按 Group 处理。
+    // 把 children 展开到顶层则每一层都符合上述两种类型。
+    val screen = com.tom.rv2ide.preferences.AIAgentPreferencesScreen()
+    val intent =
+        android.content.Intent(context, com.tom.rv2ide.activities.PreferencesActivity::class.java)
+    intent.putParcelableArrayListExtra(
+        com.tom.rv2ide.activities.PreferencesActivity.EXTRA_DIRECT_CHILDREN,
+        ArrayList(screen.children),
+    )
+    intent.putExtra(
+        com.tom.rv2ide.activities.PreferencesActivity.EXTRA_DIRECT_TITLE,
+        context.getString(screen.title),
+    )
+    context.startActivity(intent)
   }
 
   // ---- 会话列表 ----
@@ -1133,10 +1171,11 @@ class FloatingAssistantView(
     /** 拖动时四周保留的最小边距（dp）。 */
     private const val EDGE_MARGIN_DP = 8
 
-    /** 溢出菜单项 id。用本地常量而非菜单资源：只有三项，建 XML 反而多一个文件。 */
+    /** 溢出菜单项 id。用本地常量而非菜单资源：只有几项，建 XML 反而多一个文件。 */
     private const val MENU_LAYOUT = 1
-    private const val MENU_EXPORT = 2
-    private const val MENU_CLOSE = 3
+    private const val MENU_SETTINGS = 2
+    private const val MENU_EXPORT = 3
+    private const val MENU_CLOSE = 4
 
     private fun summarizeArgs(args: String?): String {
       if (TextUtils.isEmpty(args)) {

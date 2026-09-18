@@ -93,8 +93,11 @@ private class AIAgentConfig(
 @Parcelize
 private class AgentToolingGroup(
     override val key: String = "idepref_ai_agent_tooling",
-    override val title: Int = R.string.ai_agent_mode_title,
-    override val summary: Int? = R.string.ai_agent_mode_summary,
+    // 用专门的组名，不复用 ai_agent_mode_title：那个字符串同时是组内 AgentModeSwitch
+    // 的标题，复用会让分组标题与开关项文字完全一样，看起来像同一项重复出现。
+    override val title: Int = R.string.ai_agent_tooling_group_title,
+    // 分组不设 summary：它是组名而非设置项，副标题会与组内第一项的副标题挤在一起。
+    override val summary: Int? = null,
     override val children: List<IPreference> = mutableListOf(),
 ) : IPreferenceGroup() {
 
@@ -129,12 +132,24 @@ private class AgentToolingGroup(
         ))
   }
 
+  /**
+   * 必须返回 [androidx.preference.PreferenceCategory]。
+   *
+   * <p>本类是 [IPreferenceGroup]，而 `IDEPreferencesFragment.addChildren` 对 Group 的处理是
+   * `preference as PreferenceCategory`（IDEPreferencesFragment.kt:109）。原先这里返回普通
+   * `Preference`，展开到这个分组时必然抛
+   * `ClassCastException: Preference cannot be cast to PreferenceCategory`。
+   *
+   * <p>这不是新入口引入的问题——**从 IDE 设置首页点「AI 助手」同样会崩**，
+   * 只是此前没人走过这条路径。类名与 `IPreferenceGroup` 基类的契约就是「我是一组设置」，
+   * 返回普通 Preference 是在类型上撒谎。
+   */
   override fun onCreatePreference(context: Context): Preference {
-    return androidx.preference.Preference(context).apply {
-      key = "idepref_ai_agent_tooling"
-      title = context.getString(R.string.ai_agent_mode_title)
-      summary = context.getString(R.string.ai_agent_mode_summary)
-    }
+    // 只负责返回正确类型。**不要在这里设 key/title/summary**：
+    // BasePreference.onCreateView 会在调用本方法后无条件用 this.key / this.title /
+    // this.summary 覆写它们（BasePreference.kt:36-40），在这里设的值会被静默冲掉。
+    // 标题要改就改类的 title 属性。
+    return androidx.preference.PreferenceCategory(context)
   }
 }
 
