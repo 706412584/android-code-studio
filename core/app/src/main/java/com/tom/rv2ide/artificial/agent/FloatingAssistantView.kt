@@ -106,6 +106,14 @@ class FloatingAssistantView(
   private var lastToolCardId: Long? = null
 
   /**
+   * 当前正在累积的思维链块 id。
+   *
+   * <p>同一轮推理的增量要落到同一块里；一旦发生工具调用就置空，让下一段推理另起一块
+   * ——中间隔着工具调用，合并成一块会让「这段推理属于哪一步」看不出来。
+   */
+  private var lastThinkingId: Long? = null
+
+  /**
    * 本次运行是否已经通过事件流写出过文本。
    *
    * <p>决定收尾时要不要再补一条最终输出：已经流式显示过就不能再追加，否则同一段回答
@@ -457,6 +465,7 @@ class FloatingAssistantView(
     streamingMessageId = null
     streamedThisRun = false
     lastToolCardId = null
+    lastThinkingId = null
 
     executionJob =
         lifecycleScope.launch(Dispatchers.IO) {
@@ -528,6 +537,18 @@ class FloatingAssistantView(
 
   private fun handleEvent(event: com.tom.rv2ide.ai.agent.AgentEvent) {
     when (event.type) {
+      com.tom.rv2ide.ai.agent.AgentEvent.Type.REASONING_DELTA -> {
+        val delta = event.message
+        if (delta.isEmpty()) {
+          return
+        }
+        lifecycleScope.launch(Dispatchers.Main) {
+          lastThinkingId = adapter.appendThinking(delta, lastThinkingId)
+          if (throttle.onDelta()) {
+            scrollToBottom()
+          }
+        }
+      }
       com.tom.rv2ide.ai.agent.AgentEvent.Type.TEXT_DELTA -> {
         val delta = event.message
         if (delta.isEmpty()) {
@@ -570,6 +591,10 @@ class FloatingAssistantView(
           } else if (text.isNotBlank()) {
             appendAssistant(text)
           }
+          // 本轮推理到此结束。AgentSession 的事件顺序是 TURN_FINISHED 先于该轮的
+          // TOOL_STARTED，所以在这里收尾最准；置空后，工具之后的新推理会另起一块。
+          lastThinkingId?.let { adapter.finishThinking(it) }
+          lastThinkingId = null
           finishStreaming()
           scrollToBottom()
         }
@@ -588,6 +613,11 @@ class FloatingAssistantView(
                   input = call.arguments.orEmpty(),
               )
           lastToolCardId = id
+          // 发生工具调用意味着「这一段推理结束了」：把思维链块收尾并断开，
+          // 让工具之后的新推理另起一块。否则整轮的推理会堆在同一块里，
+          // 看不出哪段推理导致了哪次调用。
+          lastThinkingId?.let { adapter.finishThinking(it) }
+          lastThinkingId = null
           scrollToBottom()
         }
       }
@@ -622,6 +652,9 @@ class FloatingAssistantView(
           for (id in adapter.runningToolCallIds()) {
             adapter.failToolCall(id, event.message)
           }
+          // 思维链同理：失败时标题必须从「思考中…」切走，否则看起来像还在等。
+          adapter.finishAllThinking()
+          lastThinkingId = null
           appendTrace("⚠️ ${event.message}")
         }
       }
@@ -712,6 +745,7 @@ class FloatingAssistantView(
     adapter.clear()
     streamingMessageId = null
     streamedThisRun = false
+    lastThinkingId = null
     updateEmptyState()
     lifecycleScope.launch(Dispatchers.IO) {
       try {
@@ -729,10 +763,14 @@ class FloatingAssistantView(
     executionJob = null
     finishStreaming()
     lastToolCardId = null
+    lastThinkingId = null
     // 取消时仍在运行的卡片要收尾，否则会永久停在运行态。
     for (id in adapter.runningToolCallIds()) {
       adapter.failToolCall(id, context.getString(string.ai_assistant_tool_cancelled))
     }
+    // 仍在流式的思维链块也要收尾：否则标题会永远停在「思考中…」，
+    // 用户以为模型还在工作。
+    adapter.finishAllThinking()
   }
 
   /**
@@ -829,6 +867,17 @@ class FloatingAssistantView(
                 .append("**\n\n")
                 .append(item.text)
                 .append("\n\n")
+        is AssistantMessageAdapter.Thinking -> {
+          // 推理内容要进导出：它是「模型为什么这么做」的唯一记录，
+          // 缺了它，导出的对话在复盘时看不出决策依据。
+          if (item.text.isNotBlank()) {
+            sb.append("<details><summary>")
+                .append(context.getString(string.ai_assistant_thinking_done))
+                .append("</summary>\n\n")
+                .append(item.text)
+                .append("\n\n</details>\n\n")
+          }
+        }
         is AssistantMessageAdapter.ToolCall -> {
           sb.append("- ")
               .append(if (item.status == AssistantMessageAdapter.ToolStatus.FAILED) "✗ " else "✓ ")

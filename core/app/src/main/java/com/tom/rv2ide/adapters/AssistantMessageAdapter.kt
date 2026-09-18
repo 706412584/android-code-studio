@@ -25,6 +25,7 @@ import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.color.MaterialColors
 import com.tom.rv2ide.artificial.agent.AssistantMarkdown
 import com.tom.rv2ide.databinding.ItemAssistantMessageBinding
+import com.tom.rv2ide.databinding.ItemAssistantThinkingBinding
 import com.tom.rv2ide.databinding.ItemToolCallBinding
 import com.tom.rv2ide.resources.R.string
 
@@ -75,6 +76,25 @@ class AssistantMessageAdapter : RecyclerView.Adapter<RecyclerView.ViewHolder>() 
       val text: String,
       val diffId: String? = null,
       val reverted: Boolean = false,
+  ) : Item()
+
+  /**
+   * 一段模型推理过程（思维链）。
+   *
+   * <p><b>为什么要单独一种 item 而不是塞进 [Message]</b>：推理与正文的展示规则完全不同
+   * ——推理默认折叠、限高、弱化配色，正文则完整展开。混在一起会让「折叠哪个」这件事
+   * 无法表达。
+   *
+   * @param text 累积的推理文本。流式期间不断追加
+   * @param streaming 是否仍在生成。决定标题文案与进度指示器
+   * @param expanded 展开状态。**存在数据里而不是 ViewHolder 里**——RecyclerView 会复用
+   *   ViewHolder，把展开状态放在控件上会导致滚动后「展开的是另一条」
+   */
+  data class Thinking(
+      override val id: Long,
+      val text: String,
+      val streaming: Boolean = true,
+      val expanded: Boolean = false,
   ) : Item()
 
   /**
@@ -203,6 +223,59 @@ class AssistantMessageAdapter : RecyclerView.Adapter<RecyclerView.ViewHolder>() 
     notifyItemChanged(index)
   }
 
+  // ---- 思维链 ----
+
+  /**
+   * 追加一段推理增量，返回承载它的思维链块 id。
+   *
+   * <p>[lastThinkingId] 为 null 时新建一块。一次运行里的多轮推理会各建一块——
+   * 因为中间隔着工具调用，合并成一块会让「这段推理属于哪一步」看不出来。
+   */
+  fun appendThinking(delta: String, lastThinkingId: Long?): Long {
+    if (lastThinkingId != null) {
+      val index = indexOf(lastThinkingId)
+      val old = items.getOrNull(index) as? Thinking
+      if (old != null) {
+        items[index] = old.copy(text = old.text + delta)
+        notifyItemChanged(index)
+        return lastThinkingId
+      }
+    }
+    val id = nextId++
+    items.add(Thinking(id, delta, streaming = true, expanded = false))
+    notifyItemInserted(items.size - 1)
+    return id
+  }
+
+  /** 结束流式：标题从「思考中」切到「已完成思考」，进度指示器隐藏。 */
+  fun finishThinking(id: Long) {
+    val index = indexOf(id)
+    val old = items.getOrNull(index) as? Thinking ?: return
+    if (!old.streaming) {
+      return
+    }
+    items[index] = old.copy(streaming = false)
+    notifyItemChanged(index)
+  }
+
+  fun toggleThinkingExpanded(id: Long) {
+    val index = indexOf(id)
+    val old = items.getOrNull(index) as? Thinking ?: return
+    items[index] = old.copy(expanded = !old.expanded)
+    notifyItemChanged(index)
+  }
+
+  /** 把仍在流式的思维链块全部收尾（运行结束或失败时调用）。 */
+  fun finishAllThinking() {
+    for (i in items.indices) {
+      val old = items[i] as? Thinking ?: continue
+      if (old.streaming) {
+        items[i] = old.copy(streaming = false)
+        notifyItemChanged(i)
+      }
+    }
+  }
+
   /** 把指定的工具卡片标记为失败（例如循环被取消时仍在运行的那张）。 */
   fun failToolCall(id: Long, reason: String) {
     val index = indexOf(id)
@@ -242,14 +315,15 @@ class AssistantMessageAdapter : RecyclerView.Adapter<RecyclerView.ViewHolder>() 
       when (items[position]) {
         is Message -> TYPE_MESSAGE
         is ToolCall -> TYPE_TOOL_CALL
+        is Thinking -> TYPE_THINKING
       }
 
   override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): RecyclerView.ViewHolder {
     val inflater = LayoutInflater.from(parent.context)
-    return if (viewType == TYPE_TOOL_CALL) {
-      ToolCallVH(ItemToolCallBinding.inflate(inflater, parent, false), this)
-    } else {
-      MessageVH(ItemAssistantMessageBinding.inflate(inflater, parent, false))
+    return when (viewType) {
+      TYPE_TOOL_CALL -> ToolCallVH(ItemToolCallBinding.inflate(inflater, parent, false), this)
+      TYPE_THINKING -> ThinkingVH(ItemAssistantThinkingBinding.inflate(inflater, parent, false), this)
+      else -> MessageVH(ItemAssistantMessageBinding.inflate(inflater, parent, false))
     }
   }
 
@@ -257,6 +331,7 @@ class AssistantMessageAdapter : RecyclerView.Adapter<RecyclerView.ViewHolder>() 
     when (val item = items[position]) {
       is Message -> (holder as MessageVH).bind(item, onRevert)
       is ToolCall -> (holder as ToolCallVH).bind(item)
+      is Thinking -> (holder as ThinkingVH).bind(item)
     }
   }
 
@@ -376,8 +451,45 @@ class AssistantMessageAdapter : RecyclerView.Adapter<RecyclerView.ViewHolder>() 
     }
   }
 
+  /**
+   * 思维链折叠块。
+   *
+   * <p>推理文本量大且通常只在等待期间有参考价值，因此默认折叠、限高 220dp。
+   * 标题随 [Thinking.streaming] 切换文案——用户在等待时需要确认模型确实在工作，
+   * 一个始终不变的标题会让人怀疑是不是卡住了。
+   */
+  class ThinkingVH(
+      private val binding: ItemAssistantThinkingBinding,
+      private val adapter: AssistantMessageAdapter,
+  ) : RecyclerView.ViewHolder(binding.root) {
+
+    fun bind(thinking: Thinking) {
+      val context = binding.root.context
+      binding.thinkingLabel.setText(
+          if (thinking.streaming) string.ai_assistant_thinking_running
+          else string.ai_assistant_thinking_done
+      )
+      binding.thinkingProgress.visibility =
+          if (thinking.streaming) View.VISIBLE else View.GONE
+
+      // 折叠态不写文本：推理可能几千字，即使不可见也会参与测量。
+      binding.thinkingText.text = if (thinking.expanded) thinking.text else ""
+      binding.thinkingScroll.visibility = if (thinking.expanded) View.VISIBLE else View.GONE
+      binding.thinkingDivider.visibility = if (thinking.expanded) View.VISIBLE else View.GONE
+      binding.thinkingChevron.text =
+          context.getString(
+              if (thinking.expanded) string.ai_assistant_tool_collapse
+              else string.ai_assistant_tool_expand
+          )
+
+      // 整行可点：只有箭头可点会让折叠区很难命中。
+      binding.thinkingHeader.setOnClickListener { adapter.toggleThinkingExpanded(thinking.id) }
+    }
+  }
+
   companion object {
     private const val TYPE_MESSAGE = 0
     private const val TYPE_TOOL_CALL = 1
+    private const val TYPE_THINKING = 2
   }
 }

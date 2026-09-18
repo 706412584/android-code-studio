@@ -59,6 +59,9 @@
   <!-- AI Agent Gemini -->
   <string name="ai_agent_title">AI 助手</string>
   <string name="ai_agent_subtitle">v0.1-预览版</string>
+  <string name="ai_assistant_thinking_running">思考中…</string>
+  <string name="ai_assistant_thinking_done">思考过程</string>
+  <string name="ai_assistant_working">处理中…</string>
   <string name="ai_agent_tab_chat">对话</string>
   <string name="ai_agent_tab_history">历史</string>
   <string name="ai_agent_auto_switch">自动切换服务商</string>

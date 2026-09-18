@@ -1,0 +1,122 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  思维链（模型推理过程）的折叠块。
+
+  设计要点：
+  - 折叠态只占一行（标题 + 箭头），展开才占空间。推理内容通常比正文还长，
+    默认展开会把真正要看的答案挤出屏幕。
+  - 标题文字随流式状态切换（"思考中…" → "已完成思考"），让用户在等待期间
+    知道模型确实在动，而不是卡住了。
+  - 内容区用可滚动容器限高：推理可能几千字，不限高会把整个消息列表撑得无法浏览。
+-->
+<com.google.android.material.card.MaterialCardView
+  xmlns:android="http://schemas.android.com/apk/res/android"
+  xmlns:app="http://schemas.android.com/apk/res-auto"
+  xmlns:tools="http://schemas.android.com/tools"
+  android:id="@+id/thinkingCard"
+  android:layout_width="match_parent"
+  android:layout_height="wrap_content"
+  android:layout_marginTop="4dp"
+  android:layout_marginBottom="4dp"
+  app:cardCornerRadius="12dp"
+  app:cardElevation="0dp"
+  app:strokeWidth="1dp"
+  app:strokeColor="?attr/colorOutlineVariant"
+  app:cardBackgroundColor="?attr/colorSurfaceContainerLow">
+
+  <LinearLayout
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical">
+
+    <!-- 折叠标题行：整行可点 -->
+    <LinearLayout
+      android:id="@+id/thinkingHeader"
+      android:layout_width="match_parent"
+      android:layout_height="wrap_content"
+      android:orientation="horizontal"
+      android:gravity="center_vertical"
+      android:background="?attr/selectableItemBackground"
+      android:paddingStart="12dp"
+      android:paddingEnd="12dp"
+      android:paddingTop="10dp"
+      android:paddingBottom="10dp">
+
+      <ImageView
+        android:layout_width="16dp"
+        android:layout_height="16dp"
+        android:src="@drawable/ic_ai_agent"
+        android:contentDescription="@null"
+        app:tint="?attr/colorOnSurfaceVariant" />
+
+      <TextView
+        android:id="@+id/thinkingLabel"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:layout_marginStart="8dp"
+        android:textAppearance="@style/TextAppearance.Material3.LabelMedium"
+        android:textColor="?attr/colorOnSurfaceVariant"
+        tools:text="已完成思考" />
+
+      <!-- 流式进行中的小进度条，完成后隐藏 -->
+      <com.google.android.material.progressindicator.CircularProgressIndicator
+        android:id="@+id/thinkingProgress"
+        android:layout_width="14dp"
+        android:layout_height="14dp"
+        android:layout_marginEnd="8dp"
+        android:indeterminate="true"
+        android:visibility="gone"
+        app:indicatorSize="14dp"
+        app:trackThickness="2dp"
+        tools:visibility="visible" />
+
+      <TextView
+        android:id="@+id/thinkingChevron"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="▸"
+        android:textColor="?attr/colorOnSurfaceVariant"
+        android:textSize="12sp" />
+
+    </LinearLayout>
+
+    <View
+      android:id="@+id/thinkingDivider"
+      android:layout_width="match_parent"
+      android:layout_height="1dp"
+      android:background="?attr/colorOutlineVariant"
+      android:visibility="gone" />
+
+    <!--
+      内容区限高。用 ScrollView 而不是让 TextView 自由撑开：推理动辄几千字，
+      不限高会让单条消息占满好几屏，用户得滑很久才能看到答案。
+    -->
+    <com.tom.rv2ide.ui.BoundedScrollView
+      android:id="@+id/thinkingScroll"
+      android:layout_width="match_parent"
+      android:layout_height="wrap_content"
+      android:maxHeight="220dp"
+      android:paddingStart="12dp"
+      android:paddingEnd="12dp"
+      android:paddingTop="8dp"
+      android:paddingBottom="10dp"
+      android:visibility="gone"
+      android:scrollbars="vertical"
+      tools:visibility="visible">
+
+      <TextView
+        android:id="@+id/thinkingText"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:textAppearance="@style/TextAppearance.Material3.BodySmall"
+        android:textColor="?attr/colorOnSurfaceVariant"
+        android:textIsSelectable="true"
+        android:lineSpacingMultiplier="1.15"
+        tools:text="用户想要一个斐波那契函数。我需要考虑边界情况：n=0 返回 0，n=1 返回 1…" />
+
+    </com.tom.rv2ide.ui.BoundedScrollView>
+
+  </LinearLayout>
+
+</com.google.android.material.card.MaterialCardView>

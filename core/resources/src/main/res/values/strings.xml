@@ -59,6 +59,9 @@
   <!-- AI Agent Gemini -->
   <string name="ai_agent_title">AI Agent</string>
   <string name="ai_agent_subtitle">v0.1-preview</string>
+  <string name="ai_assistant_thinking_running">Thinking…</string>
+  <string name="ai_assistant_thinking_done">Thought process</string>
+  <string name="ai_assistant_working">Working…</string>
   <string name="ai_agent_tab_chat">Chat</string>
   <string name="ai_agent_tab_history">History</string>
   <string name="ai_agent_auto_switch">Auto-Switch Provider</string>
