@@ -277,6 +277,18 @@
   <string name="ai_assistant_dangerous_allow_always">Always allow</string>
   <string name="ai_assistant_dangerous_deny">Deny</string>
 
+  <!-- Model / provider picker of the floating assistant -->
+  <string name="ai_assistant_model_picker_title">Provider and model</string>
+  <string name="ai_assistant_model_summary">%1$s / %2$s</string>
+  <string name="ai_assistant_provider_section">Provider</string>
+  <string name="ai_assistant_model_section">Model</string>
+  <string name="ai_assistant_no_api_key">no API key configured</string>
+  <string name="ai_assistant_provider_switched">Switched to %1$s</string>
+  <string name="ai_assistant_model_switched">Model switched to %1$s</string>
+  <string name="ai_assistant_provider_needs_key">%1$s has no API key yet. Configure it in settings.</string>
+  <string name="ai_assistant_configure_provider">Configure %1$s</string>
+  <string name="ai_assistant_custom_model_hint">Model name served by your gateway</string>
+
   <!-- Main screen: project list, backup and delete dialogs -->
   <string name="import_project">Import project</string>
   <string name="project_options_backup">Backup project</string>

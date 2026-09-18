@@ -104,6 +104,8 @@ private class AgentToolingGroup(
   init {
     addPreference(AgentModeSwitch())
     addPreference(ChatModePreference())
+    addPreference(CodeCompletionSwitch())
+    addPreference(AutoSwitchProviderSwitch())
     addPreference(CustomAgentsPreference())
     addPreference(PermissionModePreference())
     addPreference(AuthorizedToolsPreference())
@@ -886,6 +888,70 @@ private class AuthorizedToolsPreference(
     return com.tom.rv2ide.artificial.agent.AgentToolSettings(context)
         .getDangerousToolRules()
         .sorted()
+  }
+}
+
+/**
+ * 代码补全开关。
+ *
+ * <p>存在独立的 "ai_preferences" 存储里（键 {@code code_completion_enabled}），
+ * 不是主 prefManager——{@code CodeCompletionManager} 与 {@code ChatFragment}
+ * 都从这个存储读，改这里才会被它们看到。
+ *
+ * <p>生效方式是写偏好：`ChatFragment` 注册了该存储的变更监听，会据此挂载/卸载补全。
+ * 本类不直接调用 CodeCompletionManager——那需要 Activity 级的作用域与编辑器引用，
+ * 而设置页两者都没有。
+ */
+@Parcelize
+private class CodeCompletionSwitch(
+    override val key: String = "code_completion_enabled",
+    override val title: Int = R.string.ai_agent_code_completion,
+    override val summary: Int? = R.string.ai_agent_code_completion_summary,
+) : SwitchPreference(
+    setValue = { enabled ->
+      com.tom.rv2ide.app.BaseApplication.getBaseInstance()
+          .getSharedPreferences("ai_preferences", Context.MODE_PRIVATE)
+          .edit()
+          .putBoolean("code_completion_enabled", enabled)
+          .apply()
+    },
+    getValue = {
+      com.tom.rv2ide.app.BaseApplication.getBaseInstance()
+          .getSharedPreferences("ai_preferences", Context.MODE_PRIVATE)
+          .getBoolean("code_completion_enabled", true)
+    },
+) {
+  override fun onCreatePreference(context: Context): Preference {
+    return super.onCreatePreference(context).apply {
+      key = "code_completion_enabled"
+      title = context.getString(R.string.ai_agent_code_completion)
+      summary = context.getString(R.string.ai_agent_code_completion_summary)
+    }
+  }
+}
+
+/**
+ * 出错时自动切换服务商。
+ *
+ * <p>原先只有旧侧栏的设置页能改它（`ProviderSwitchDialog.isAutoSwitchEnabled` /
+ * `setAutoSwitch`，存在主偏好存储的 {@code auto_switch_providers}）。旧页面移除后
+ * 没有入口，这个开关就只能一直保持上一次的值，因此在这里补上。
+ */
+@Parcelize
+private class AutoSwitchProviderSwitch(
+    override val key: String = "auto_switch_providers",
+    override val title: Int = R.string.ai_agent_auto_switch,
+    override val summary: Int? = R.string.ai_agent_auto_switch_summary,
+) : SwitchPreference(
+    setValue = { enabled -> prefManager.putBoolean("auto_switch_providers", enabled) },
+    getValue = { prefManager.getBoolean("auto_switch_providers", false) },
+) {
+  override fun onCreatePreference(context: Context): Preference {
+    return super.onCreatePreference(context).apply {
+      key = "auto_switch_providers"
+      title = context.getString(R.string.ai_agent_auto_switch)
+      summary = context.getString(R.string.ai_agent_auto_switch_summary)
+    }
   }
 }
 

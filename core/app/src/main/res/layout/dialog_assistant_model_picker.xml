@@ -1,0 +1,114 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  悬浮助手的服务商 / 模型选择面板（底部弹出）。
+
+  为什么用底部弹出而不是下拉框：服务商有 14 项、单个服务商的模型最多 13 项，
+  下拉框会撑到屏幕外且没有分组感。底部面板可以带分组标题、滚动，
+  并且在小屏（侧栏模式只有屏幕 88% 宽）上仍然是全宽，不用横向挤。
+
+  两个分组共用一个滚动容器而不是各自滚动：分开滚动时用户想「先看模型再换服务商」
+  要精确对准两个区域滑，共用一个则一路滑到底即可。
+
+  高度交给 BottomSheetDialog 约束（它按屏幕可用高度给 AT_MOST），不写
+  android:maxHeight —— 该属性只对少数容器生效，NestedScrollView 不认，
+  写了等于没写，反而让后来的人以为高度已被限制。
+-->
+<androidx.core.widget.NestedScrollView
+  xmlns:android="http://schemas.android.com/apk/res/android"
+  xmlns:app="http://schemas.android.com/apk/res-auto"
+  xmlns:tools="http://schemas.android.com/tools"
+  android:layout_width="match_parent"
+  android:layout_height="wrap_content"
+  android:background="?attr/colorSurfaceContainerHigh">
+
+  <LinearLayout
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:paddingBottom="8dp">
+
+    <TextView
+      android:id="@+id/pickerTitle"
+      android:layout_width="match_parent"
+      android:layout_height="wrap_content"
+      android:paddingStart="20dp"
+      android:paddingEnd="20dp"
+      android:paddingTop="16dp"
+      android:paddingBottom="12dp"
+      android:text="@string/ai_assistant_model_picker_title"
+      android:textAppearance="@style/TextAppearance.Material3.TitleMedium"
+      android:textStyle="bold" />
+
+    <View
+      android:layout_width="match_parent"
+      android:layout_height="1dp"
+      android:background="?attr/colorOutlineVariant" />
+
+    <!-- 服务商分组 -->
+    <TextView
+      android:layout_width="match_parent"
+      android:layout_height="wrap_content"
+      android:paddingStart="20dp"
+      android:paddingEnd="20dp"
+      android:paddingTop="12dp"
+      android:paddingBottom="4dp"
+      android:text="@string/ai_assistant_provider_section"
+      android:textAppearance="@style/TextAppearance.Material3.LabelMedium"
+      android:textColor="?attr/colorOnSurfaceVariant" />
+
+    <LinearLayout
+      android:id="@+id/pickerProviderList"
+      android:layout_width="match_parent"
+      android:layout_height="wrap_content"
+      android:orientation="vertical" />
+
+    <View
+      android:layout_width="match_parent"
+      android:layout_height="1dp"
+      android:layout_marginTop="8dp"
+      android:background="?attr/colorOutlineVariant" />
+
+    <!-- 模型分组 -->
+    <TextView
+      android:layout_width="match_parent"
+      android:layout_height="wrap_content"
+      android:paddingStart="20dp"
+      android:paddingEnd="20dp"
+      android:paddingTop="12dp"
+      android:paddingBottom="4dp"
+      android:text="@string/ai_assistant_model_section"
+      android:textAppearance="@style/TextAppearance.Material3.LabelMedium"
+      android:textColor="?attr/colorOnSurfaceVariant" />
+
+    <LinearLayout
+      android:id="@+id/pickerModelList"
+      android:layout_width="match_parent"
+      android:layout_height="wrap_content"
+      android:orientation="vertical" />
+
+    <View
+      android:layout_width="match_parent"
+      android:layout_height="1dp"
+      android:layout_marginTop="8dp"
+      android:background="?attr/colorOutlineVariant" />
+
+    <!-- 底部入口：模型清单由预设表提供，用户想加自己的服务商仍要去设置页。 -->
+    <TextView
+      android:id="@+id/pickerSettings"
+      android:layout_width="match_parent"
+      android:layout_height="wrap_content"
+      android:background="?attr/selectableItemBackground"
+      android:clickable="true"
+      android:focusable="true"
+      android:paddingStart="20dp"
+      android:paddingEnd="20dp"
+      android:paddingTop="14dp"
+      android:paddingBottom="14dp"
+      android:text="@string/ai_assistant_settings"
+      android:textAppearance="@style/TextAppearance.Material3.BodyMedium"
+      android:textColor="?attr/colorPrimary"
+      tools:ignore="UnusedAttribute" />
+
+  </LinearLayout>
+
+</androidx.core.widget.NestedScrollView>

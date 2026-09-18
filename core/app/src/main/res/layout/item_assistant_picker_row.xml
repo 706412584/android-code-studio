@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  选择器里的一行：标题 + 可选副标题 + 选中勾。
+
+  副标题用于「未配置密钥」提示——把原因写在同一行而不是靠颜色区分：
+  只变色的话用户得先切过去、发一条消息、失败，才知道问题在哪。
+-->
+<LinearLayout
+  xmlns:android="http://schemas.android.com/apk/res/android"
+  xmlns:app="http://schemas.android.com/apk/res-auto"
+  xmlns:tools="http://schemas.android.com/tools"
+  android:layout_width="match_parent"
+  android:layout_height="wrap_content"
+  android:orientation="horizontal"
+  android:gravity="center_vertical"
+  android:background="?attr/selectableItemBackground"
+  android:clickable="true"
+  android:focusable="true"
+  android:paddingStart="20dp"
+  android:paddingEnd="20dp"
+  android:paddingTop="12dp"
+  android:paddingBottom="12dp">
+
+  <LinearLayout
+    android:layout_width="0dp"
+    android:layout_height="wrap_content"
+    android:layout_weight="1"
+    android:orientation="vertical">
+
+    <TextView
+      android:id="@+id/pickerRowTitle"
+      android:layout_width="match_parent"
+      android:layout_height="wrap_content"
+      android:ellipsize="end"
+      android:singleLine="true"
+      android:textAppearance="@style/TextAppearance.Material3.BodyMedium"
+      tools:text="deepseek-chat" />
+
+    <TextView
+      android:id="@+id/pickerRowSubtitle"
+      android:layout_width="match_parent"
+      android:layout_height="wrap_content"
+      android:layout_marginTop="2dp"
+      android:ellipsize="end"
+      android:singleLine="true"
+      android:textAppearance="@style/TextAppearance.Material3.LabelSmall"
+      android:textColor="?attr/colorError"
+      android:visibility="gone"
+      tools:text="未配置密钥"
+      tools:visibility="visible" />
+
+  </LinearLayout>
+
+  <!--
+    勾用文字而不是矢量图：项目里没有现成的 check 图标，为一个字符新增一份 drawable
+    不划算；「▸/▾」在思维链标题里已经是同样的做法。
+  -->
+  <TextView
+    android:id="@+id/pickerRowCheck"
+    android:layout_width="wrap_content"
+    android:layout_height="wrap_content"
+    android:layout_marginStart="12dp"
+    android:text="✓"
+    android:textColor="?attr/colorPrimary"
+    android:textSize="16sp"
+    android:textStyle="bold"
+    android:visibility="gone"
+    tools:visibility="visible" />
+
+</LinearLayout>

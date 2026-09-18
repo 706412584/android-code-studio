@@ -92,7 +92,59 @@
 
       </LinearLayout>
 
-      <!-- 当前服务商/模型与运行状态 -->
+      <!--
+        服务商 / 模型选择条。
+
+        整行是一个点击目标，而不是两个下拉框：侧栏模式下面板宽度只有屏幕的 88%，
+        再并排放两个控件会把服务商名挤成省略号（「Anthropic Cl…」），
+        用户分不清选的是哪个。整行可点则标签有完整宽度，选择放进面板里做。
+
+        未配置密钥的服务商会带「⚠ …（未配置密钥）」前缀：否则用户切过去、
+        发一条消息、收到「未配置有效的 API 密钥」，要绕一圈才知道问题在哪。
+      -->
+      <LinearLayout
+        android:id="@+id/assistantModelBar"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:background="?attr/selectableItemBackground"
+        android:clickable="true"
+        android:focusable="true"
+        android:paddingStart="16dp"
+        android:paddingEnd="16dp"
+        android:paddingTop="2dp"
+        android:paddingBottom="6dp">
+
+        <ImageView
+          android:layout_width="16dp"
+          android:layout_height="16dp"
+          android:contentDescription="@null"
+          android:src="@drawable/ic_agent_switch"
+          app:tint="?attr/colorOnSurfaceVariant" />
+
+        <TextView
+          android:id="@+id/assistantModelLabel"
+          android:layout_width="0dp"
+          android:layout_height="wrap_content"
+          android:layout_weight="1"
+          android:layout_marginStart="8dp"
+          android:ellipsize="middle"
+          android:singleLine="true"
+          android:textAppearance="@style/TextAppearance.Material3.LabelMedium"
+          android:textColor="?attr/colorOnSurfaceVariant"
+          tools:text="DeepSeek / deepseek-chat" />
+
+        <TextView
+          android:layout_width="wrap_content"
+          android:layout_height="wrap_content"
+          android:text="▾"
+          android:textColor="?attr/colorOnSurfaceVariant"
+          android:textSize="12sp" />
+
+      </LinearLayout>
+
+      <!-- 运行结果摘要。没有内容时不占位（初次打开、每次新建会话后都是这种状态）。 -->
       <TextView
         android:id="@+id/assistantStatus"
         android:layout_width="match_parent"
@@ -102,7 +154,9 @@
         android:paddingBottom="8dp"
         android:textAppearance="@style/TextAppearance.Material3.BodySmall"
         android:textColor="?android:textColorSecondary"
-        tools:text="deepseek / deepseek-chat" />
+        android:visibility="gone"
+        tools:text="已完成 · 3 轮 · 4 次工具调用"
+        tools:visibility="visible" />
 
       <View
         android:layout_width="match_parent"

@@ -204,6 +204,10 @@ class FloatingAssistantView(
     binding.assistantSend.setOnClickListener { sendFromInput() }
     binding.assistantConversationsToggle.setOnClickListener { toggleConversationPanel() }
     binding.assistantOverflow.setOnClickListener { showOverflowMenu() }
+    binding.assistantModelBar.setOnClickListener {
+      AssistantModelPicker.show(context) { refreshModelLabel() }
+    }
+    refreshModelLabel()
 
     // 会话列表
     conversationAdapter =
@@ -357,6 +361,9 @@ class FloatingAssistantView(
   fun open() {
     fabBinding.assistantFab.isVisible = false
     binding.assistantOverlay.isVisible = true
+    // 服务商/模型可能刚在设置页被改过，打开时重读一次。只在 attach 时读会让
+    // 「设置里改了、回到面板显示的还是旧值」。
+    refreshModelLabel()
     updateEmptyState()
   }
 
@@ -508,8 +515,9 @@ class FloatingAssistantView(
           withContext(Dispatchers.Main) {
             binding.assistantSend.isEnabled = false
             binding.assistantProgress.isVisible = true
-            binding.assistantStatus.text =
-                context.getString(string.ai_assistant_status_running, providerId, modelId)
+            // 运行中清空摘要行：上一次的「已完成 · 3 轮」留在那里会与正在进行的运行
+            // 混在一起，看起来像这次已经结束了。运行状态由下方的 WorkingStatusView 承担。
+            setStatus(null)
             // 首字节可能要等好几秒，静态文字无法区分「在工作」和「卡死了」。
             binding.assistantWorking.bind(isThinking = false)
             binding.assistantWorking.startWorking()
@@ -528,13 +536,13 @@ class FloatingAssistantView(
                     result.output.ifBlank { context.getString(string.ai_assistant_no_output) }
                 )
               }
-              binding.assistantStatus.text =
+              setStatus(
                   context.getString(
                       if (result.isFailed) string.ai_assistant_status_failed
                       else string.ai_assistant_status_done,
                       result.turns,
                       result.toolCallCount,
-                  )
+                  ))
             }
           } catch (e: kotlinx.coroutines.CancellationException) {
             // 用户取消不是错误，静默收尾；已流式输出的内容保留在列表里。
@@ -841,25 +849,34 @@ class FloatingAssistantView(
    * 授权规则、提示词模板…），再造一份就是第三份实现。
    */
   private fun openAssistantSettings() {
-    // 传「AI 设置屏的 children」而不是屏幕本身。
-    //
-    // IDEPreferencesFragment 在顶层只接受两种类型：IPreferenceScreen（渲染成可点击入口）
-    // 与 IPreferenceGroup（渲染成 PreferenceCategory）。直接传 AIAgentPreferencesScreen
-    // 会在展开其 children 时抛 ClassCastException——那层 children 是普通 Preference，
-    // 而 addChildren 对非 Screen/Group 的分支仍按 Group 处理。
-    // 把 children 展开到顶层则每一层都符合上述两种类型。
-    val screen = com.tom.rv2ide.preferences.AIAgentPreferencesScreen()
-    val intent =
-        android.content.Intent(context, com.tom.rv2ide.activities.PreferencesActivity::class.java)
-    intent.putParcelableArrayListExtra(
-        com.tom.rv2ide.activities.PreferencesActivity.EXTRA_DIRECT_CHILDREN,
-        ArrayList(screen.children),
-    )
-    intent.putExtra(
-        com.tom.rv2ide.activities.PreferencesActivity.EXTRA_DIRECT_TITLE,
-        context.getString(screen.title),
-    )
-    context.startActivity(intent)
+    AssistantSettings.open(context)
+  }
+
+  /**
+   * 刷新标题栏下方的「服务商 / 模型」文案。
+   *
+   * <p>由选择器在每次选择后回调，以及面板 attach 时调用一次。不订阅偏好变更：
+   * 目前只有本面板会改这两个值，回调已经覆盖；引入全局监听反而要为「谁改的」
+   * 做去重，得不偿失。
+   */
+  private fun refreshModelLabel() {
+    binding.assistantModelLabel.text = AssistantModelPicker.summaryLabel(context)
+  }
+
+  /**
+   * 设置运行摘要行。
+   *
+   * <p>空串等价于隐藏：这个 TextView 没有固定高度，显示空串会留下一段无法解释的
+   * 空白（面板顶部到消息列表之间多出一条缝隙），而用户看不出那里本该有什么。
+   */
+  private fun setStatus(text: CharSequence?) {
+    if (text.isNullOrBlank()) {
+      binding.assistantStatus.text = null
+      binding.assistantStatus.isVisible = false
+    } else {
+      binding.assistantStatus.text = text
+      binding.assistantStatus.isVisible = true
+    }
   }
 
   // ---- 会话列表 ----

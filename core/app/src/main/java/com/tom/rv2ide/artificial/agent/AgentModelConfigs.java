@@ -67,6 +67,17 @@ public final class AgentModelConfigs {
   }
 
   /**
+   * 该服务商当前是否可用（密钥与端点都齐）。
+   *
+   * <p>供选择器判断「能不能切过去」。判据必须与真正发请求时一致，否则界面显示可用、
+   * 一发消息就报「未配置有效的 API 密钥」——把这里做成 {@link #endpointFor} 的薄封装
+   * 就杜绝了这种漂移。
+   */
+  public static boolean isProviderUsable(String providerId, String customBaseUrl) {
+    return endpointFor(providerId, customBaseUrl) != null;
+  }
+
+  /**
    * 把偏好存储里的密钥接到预设表上。
    *
    * <p>包内可见而非 private：{@code AgentOrchestrator.diagnoseEndpointFailure} 需要用它

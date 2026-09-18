@@ -277,6 +277,18 @@
   <string name="ai_assistant_dangerous_allow_always">始终允许</string>
   <string name="ai_assistant_dangerous_deny">拒绝</string>
 
+  <!-- 悬浮助手的服务商 / 模型选择器 -->
+  <string name="ai_assistant_model_picker_title">服务商与模型</string>
+  <string name="ai_assistant_model_summary">%1$s / %2$s</string>
+  <string name="ai_assistant_provider_section">服务商</string>
+  <string name="ai_assistant_model_section">模型</string>
+  <string name="ai_assistant_no_api_key">未配置密钥</string>
+  <string name="ai_assistant_provider_switched">已切换到 %1$s</string>
+  <string name="ai_assistant_model_switched">已切换模型：%1$s</string>
+  <string name="ai_assistant_provider_needs_key">%1$s 还没有配置密钥，请先在设置里填写。</string>
+  <string name="ai_assistant_configure_provider">配置 %1$s</string>
+  <string name="ai_assistant_custom_model_hint">你的网关所提供的模型名</string>
+
   <!-- 主界面：项目列表、备份与删除对话框 -->
   <string name="import_project">导入项目</string>
   <string name="project_options_backup">备份项目</string>

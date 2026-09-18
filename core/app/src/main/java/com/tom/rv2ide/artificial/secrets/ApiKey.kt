@@ -114,6 +114,16 @@ object ApiKey {
         return prefManager.getString("ai_agent_custom_model", "")
     }
 
+    /**
+     * 写入自定义端点的模型名。
+     *
+     * <p>自定义端点的模型名只有用户知道，而「换服务商」是高频操作——
+     * 不能要求他为了改这个值专门进设置页翻三层。设置页仍可编辑同一份存储。
+     */
+    fun setCustomModel(model: String) {
+        prefManager.putString("ai_agent_custom_model", model)
+    }
+
     /** 三项都填了才算配置完成——缺任一项都无法发起请求。 */
     fun hasCustomEndpoint(): Boolean {
         return getCustomBaseUrl().isNotBlank() &&
