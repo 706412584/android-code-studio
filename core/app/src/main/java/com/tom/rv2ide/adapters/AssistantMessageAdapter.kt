@@ -23,6 +23,7 @@ import android.view.View
 import android.view.ViewGroup
 import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.color.MaterialColors
+import com.tom.rv2ide.ai.tool.api.ToolDisplayCategory
 import com.tom.rv2ide.artificial.agent.AssistantMarkdown
 import com.tom.rv2ide.databinding.ItemAssistantMessageBinding
 import com.tom.rv2ide.databinding.ItemAssistantThinkingBinding
@@ -41,6 +42,23 @@ import com.tom.rv2ide.resources.R.string
  * [Item] 做成不可变 data class，使"内容变了"这件事在代码里一眼可见。
  */
 class AssistantMessageAdapter : RecyclerView.Adapter<RecyclerView.ViewHolder>() {
+
+  /**
+   * 按工具名解析展示分类。
+   *
+   * <p>做成注入的窄接口而不是直接持有 `ToolRegistry`：适配器只想知道「这张卡片该用什么
+   * 颜色和图标」，不该因此依赖工具执行层。解析不到时返回 GENERIC，卡片仍能正常显示。
+   */
+  fun interface CategoryResolver {
+    fun categoryOf(toolName: String): ToolDisplayCategory
+  }
+
+  private var categoryResolver: CategoryResolver? = null
+
+  /** 设置分类解析器。未设置时所有卡片按 GENERIC 渲染。 */
+  fun setCategoryResolver(resolver: CategoryResolver?) {
+    this.categoryResolver = resolver
+  }
 
   /** 消息角色。UI 只区分"谁说的"，不关心协议层的具体类型。 */
   enum class Role {
@@ -429,6 +447,20 @@ class AssistantMessageAdapter : RecyclerView.Adapter<RecyclerView.ViewHolder>() 
       binding.toolStatus.setTextColor(
           if (call.status == ToolStatus.FAILED && errorColor != 0) errorColor else normalColor
       )
+
+      // 按工具类型着色。一个长任务会产生几十张卡片，全是同一个灰盒子时用户无法快速
+      // 扫出「哪几步改了文件、哪几步只是读」。分类色提供了一条视觉索引。
+      val category =
+          adapter.categoryResolver?.categoryOf(call.toolName)
+              ?: ToolDisplayCategory.fallbackDisplayCategory(call.toolName)
+      val accent = ToolCategoryStyle.accentColor(category)
+      binding.toolIcon.setImageResource(ToolCategoryStyle.iconRes(category))
+      binding.toolIcon.setColorFilter(accent)
+      // 工具名也用分类色：只染图标的话，图标只有 16dp，在长列表里几乎看不出差别。
+      binding.toolName.setTextColor(accent)
+      // 描边压到半透明：不透明描边在深色主题下过于抢眼，反而盖过正文。
+      binding.toolCard.strokeColor =
+          androidx.core.graphics.ColorUtils.setAlphaComponent(accent, 0x66)
 
       binding.toolDetails.visibility = if (call.expanded) View.VISIBLE else View.GONE
       binding.toolChevron.text =

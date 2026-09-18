@@ -172,6 +172,12 @@ class FloatingAssistantView(
     binding.assistantMessages.adapter = adapter
 
     adapter.setOnRevertClickListener { messageId, diffId -> revertDiff(messageId, diffId) }
+    // 工具卡片的分类色需要按工具名查注册表。注册表在 orchestrator 里，
+    // 但适配器不该依赖工具执行层，因此注入一个只做名字→分类映射的窄接口。
+    val registry = orchestrator.buildRegistry()
+    adapter.setCategoryResolver { toolName ->
+        registry.getCachedDisplayCategory(com.tom.rv2ide.ai.tool.ToolRegistry.canonicalName(toolName))
+    }
 
     // 不设 OnClickListener：拖动用的 OnTouchListener 会消费全部事件，click 永远不会触发。
     // 打开面板的动作用 ACTION_UP 且未进入拖动时手动调用 open()（见 setUpDragging）。

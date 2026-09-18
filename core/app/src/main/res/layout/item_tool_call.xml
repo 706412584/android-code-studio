@@ -33,12 +33,24 @@
     android:paddingTop="8dp"
     android:paddingBottom="8dp">
 
-    <!-- 折叠态可见：工具名 + 状态 -->
+    <!-- 折叠态可见：分类图标 + 工具名 + 状态 -->
     <LinearLayout
       android:layout_width="match_parent"
       android:layout_height="wrap_content"
       android:orientation="horizontal"
       android:gravity="center_vertical">
+
+      <!--
+        分类图标：让用户一眼区分「读文件」「写文件」「跑命令」。
+        颜色由代码按 ToolDisplayCategory 设置，与左侧色条一致。
+      -->
+      <ImageView
+        android:id="@+id/toolIcon"
+        android:layout_width="16dp"
+        android:layout_height="16dp"
+        android:layout_marginEnd="6dp"
+        android:contentDescription="@null"
+        tools:src="@drawable/ic_file" />
 
       <TextView
         android:id="@+id/toolName"
