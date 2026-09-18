@@ -142,6 +142,24 @@
 
       </FrameLayout>
 
+      <!--
+        「思考中…」/「处理中…」状态条。
+
+        放在消息列表与输入框之间：这是用户等待时视线停留的位置（刚按下发送、
+        目光还在输入框附近），比顶部标题栏更容易被注意到。
+        默认 gone，由 startWorking/stopWorking 控制。
+      -->
+      <com.tom.rv2ide.artificial.agent.WorkingStatusView
+        android:id="@+id/assistantWorking"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:paddingStart="16dp"
+        android:paddingEnd="16dp"
+        android:paddingTop="4dp"
+        android:paddingBottom="4dp"
+        android:visibility="gone"
+        tools:visibility="visible" />
+
       <!-- 输入区 -->
       <LinearLayout
         android:layout_width="match_parent"

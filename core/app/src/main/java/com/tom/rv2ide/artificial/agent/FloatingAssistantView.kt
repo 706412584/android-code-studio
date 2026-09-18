@@ -485,6 +485,9 @@ class FloatingAssistantView(
             binding.assistantProgress.isVisible = true
             binding.assistantStatus.text =
                 context.getString(string.ai_assistant_status_running, providerId, modelId)
+            // 首字节可能要等好几秒，静态文字无法区分「在工作」和「卡死了」。
+            binding.assistantWorking.bind(isThinking = false)
+            binding.assistantWorking.startWorking()
           }
 
           try {
@@ -535,6 +538,9 @@ class FloatingAssistantView(
               withContext(Dispatchers.Main) {
                 binding.assistantSend.isEnabled = true
                 binding.assistantProgress.isVisible = false
+                // 状态条同理：不在这里停，取消/异常后动画会一直转，
+                // 看起来像还在跑。
+                binding.assistantWorking.stopWorking()
               }
             }
           }
@@ -549,7 +555,15 @@ class FloatingAssistantView(
           return
         }
         lifecycleScope.launch(Dispatchers.Main) {
-          lastThinkingId = adapter.appendThinking(delta, lastThinkingId)
+          // 返回 -1 表示「纯空白、没建块」——不能把它存进 lastThinkingId，
+          // 否则后续增量会去找一个不存在的 id。
+          val id = adapter.appendThinking(delta, lastThinkingId)
+          if (id >= 0) {
+            lastThinkingId = id
+          }
+          // 收到推理增量 = 模型在思考。这个区分有实际意义：推理模型思考半分钟是正常的，
+          // 显示「思考中」用户不会以为出了问题。
+          binding.assistantWorking.bind(isThinking = true)
           if (throttle.onDelta()) {
             scrollToBottom()
           }
@@ -564,11 +578,19 @@ class FloatingAssistantView(
         lifecycleScope.launch(Dispatchers.Main) {
           val id = streamingMessageId
           if (id == null) {
+            // 还没有气泡时，纯空白增量不建气泡。模型「只调用工具、不写正文」的轮次
+            // 会先吐出 "\n\n"，那时建出的气泡最终没有内容，渲染成一片空白灰块。
+            // 等真正有内容的增量到了再建。
+            if (delta.isBlank()) {
+              return@launch
+            }
             streamingMessageId =
                 adapter.append(AssistantMessageAdapter.Role.ASSISTANT, delta)
           } else {
             adapter.appendTo(id, delta)
           }
+          // 开始输出正文 = 思考结束，进入「处理中」。
+          binding.assistantWorking.bind(isThinking = false)
           if (throttle.onDelta()) {
             scrollToBottom()
           }
@@ -580,22 +602,25 @@ class FloatingAssistantView(
         val text = event.message
         lifecycleScope.launch(Dispatchers.Main) {
           val id = streamingMessageId
-          // streamedThisRun 只在**确实往列表里写过内容**时置位。
-          // 原先无条件置 true 会掩盖一条路径：没有流式增量（非流式响应）时 id 为 null，
-          // 此时若 text 恰好为空，就既没追加本轮输出、又让收尾逻辑以为「已经显示过」，
-          // 于是整轮回答在界面上彻底消失。
-          if (id != null || text.isNotBlank()) {
+          if (text.isNotBlank()) {
+            // streamedThisRun 只在**确实往列表里写过内容**时置位。
+            // 原先无条件置 true 会掩盖一条路径：没有流式增量（非流式响应）时 id 为 null，
+            // 此时若 text 恰好为空，就既没追加本轮输出、又让收尾逻辑以为「已经显示过」，
+            // 于是整轮回答在界面上彻底消失。
             streamedThisRun = true
-          }
-          if (id != null) {
-            // 只有非空才覆盖。该轮的规范输出为空是常见情况——模型这一轮只发起工具调用、
-            // 没写正文（output 已被 ToolCallTextParser 剥掉标记后变成空串）。
-            // 无条件覆盖会把已经流式显示出来的正文抹掉，用户看到气泡突然变空。
-            if (text.isNotBlank()) {
+            if (id != null) {
+              // 只有非空才覆盖。该轮的规范输出为空是常见情况——模型这一轮只发起工具调用、
+              // 没写正文（output 已被 ToolCallTextParser 剥掉标记后变成空串）。
+              // 无条件覆盖会把已经流式显示出来的正文抹掉，用户看到气泡突然变空。
               adapter.update(id, text)
+            } else {
+              appendAssistant(text)
             }
-          } else if (text.isNotBlank()) {
-            appendAssistant(text)
+          } else if (id != null) {
+            // 本轮没有正文，但流式阶段建过气泡（增量全是空白，或后来被覆盖成空）。
+            // 留着就是一个内容为空的灰块——删掉，工具卡片自己已经说明了这一步做了什么。
+            adapter.removeIfBlank(id)
+            streamingMessageId = null
           }
           // 本轮推理到此结束。AgentSession 的事件顺序是 TURN_FINISHED 先于该轮的
           // TOOL_STARTED，所以在这里收尾最准；置空后，工具之后的新推理会另起一块。
@@ -678,7 +703,17 @@ class FloatingAssistantView(
     streamingMessageId = null
   }
 
+  /**
+   * 追加一条助手消息。
+   *
+   * <p>空白内容直接丢弃：模型「只调用工具、不写正文」的轮次会产出 `"\n\n"` 这类内容，
+   * 渲染出来是一个空的灰气泡。放在这里拦截而不是逐个调用点判断，是因为漏一处就会
+   * 在界面上堆一片空白块。
+   */
   private fun appendAssistant(text: String) {
+    if (text.isBlank()) {
+      return
+    }
     adapter.append(AssistantMessageAdapter.Role.ASSISTANT, text)
     scrollToBottom()
   }

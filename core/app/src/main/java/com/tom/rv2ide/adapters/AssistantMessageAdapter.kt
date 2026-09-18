@@ -201,6 +201,27 @@ class AssistantMessageAdapter : RecyclerView.Adapter<RecyclerView.ViewHolder>() 
     notifyItemChanged(index)
   }
 
+  /**
+   * 移除一条**内容为纯空白**的消息，返回是否真的移除了。
+   *
+   * <p><b>为什么需要</b>：模型「只发起工具调用、不写正文」的轮次里，流式阶段仍会吐出
+   * 纯空白增量（`"\n"`）。这些增量建出了助手气泡，但内容只有换行——渲染出来是一个
+   * 空白的灰色气泡，在工具卡片上方堆一大片。用户看到的是「一堆没内容的助手消息」。
+   *
+   * <p>只删纯空白的：有任何实际内容就保留，哪怕只有一个字。判定用 isBlank 而非
+   * isEmpty，因为 `"\n\n"` 正是最常见的形态。
+   */
+  fun removeIfBlank(id: Long): Boolean {
+    val index = indexOf(id)
+    val old = items.getOrNull(index) as? Message ?: return false
+    if (old.role != Role.ASSISTANT || !old.text.isBlank()) {
+      return false
+    }
+    items.removeAt(index)
+    notifyItemRemoved(index)
+    return true
+  }
+
   /** 按 id 取文本消息；不存在或不是消息时返回 null。 */
   fun find(id: Long): Message? = items.firstOrNull { it.id == id } as? Message
 
@@ -250,6 +271,12 @@ class AssistantMessageAdapter : RecyclerView.Adapter<RecyclerView.ViewHolder>() 
    * 因为中间隔着工具调用，合并成一块会让「这段推理属于哪一步」看不出来。
    */
   fun appendThinking(delta: String, lastThinkingId: Long?): Long {
+    // 纯空白增量不建块，也不追加。模型在轮次边界会吐出 "\n" 之类的增量，
+    // 建出来的块标题是「思考过程」但内容是空的——用户看到一排空折叠条，
+    // 以为是渲染坏了。
+    if (delta.isBlank() && lastThinkingId == null) {
+      return -1L
+    }
     if (lastThinkingId != null) {
       val index = indexOf(lastThinkingId)
       val old = items.getOrNull(index) as? Thinking
