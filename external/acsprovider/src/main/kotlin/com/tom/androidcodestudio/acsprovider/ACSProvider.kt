@@ -31,6 +31,7 @@ import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
+import okhttp3.Protocol
 import okhttp3.Request
 import okhttp3.logging.HttpLoggingInterceptor
 import org.slf4j.LoggerFactory
@@ -57,6 +58,18 @@ class ACSProvider(
           .followRedirects(true)
           .followSslRedirects(true)
           .retryOnConnectionFailure(true)
+          // 强制 HTTP/1.1。
+          //
+          // github.com 的 release 资产只能从 github.com 下载（raw.githubusercontent.com
+          // 不提供 release 文件），而实测在国内网络下到 github.com 的 **HTTP/2 握手会被
+          // 中间链路打断**：OkHttp 报
+          // `IOException: Required SETTINGS preface not received`，
+          // 或直接 `SocketTimeoutException: failed to connect ... after 30000ms`。
+          //
+          // 同一台设备、同一个 URL，用 curl 强制 HTTP/1.1 只要 0.8 秒返回 302，
+          // 用默认（协商 HTTP/2）则 25 秒超时。这不是"镜像挂了"，而是 HTTP/2 这条路径
+          // 不可用——禁掉它即可，无需任何代理。
+          .protocols(listOf(Protocol.HTTP_1_1))
           .apply {
             if (enableLogging) {
               val logging =

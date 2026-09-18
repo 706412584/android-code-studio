@@ -41,6 +41,36 @@ import org.json.JSONArray;
 import org.json.JSONObject;
 
 public final class AnthropicMessagesProtocol extends AbstractHttpModelProtocol {
+    /**
+     * Anthropic Messages 端点。
+     *
+     * <p><b>为什么不能直接 {@code endpoint(baseUrl, "/v1/messages")}</b>：第三方兼容服务商
+     * （newapi / one-api 这类网关）给的是 **OpenAI 风格的 baseUrl**，本身就带 {@code /v1}
+     * ——用户配的 {@code https://newapi.example.com/v1} 直接拼会得到
+     * {@code /v1/v1/messages}，服务端返回 404。
+     *
+     * <p>官方地址 {@code https://api.anthropic.com} 不带 {@code /v1}，需要补全。
+     * 两种形态都真实存在，因此按「是否已以 /v1 结尾」判断，而不是猜用户的意图。
+     *
+     * <p>不校验版本号是否为 v1：兼容网关也可能用 {@code /v2} 之类，只要它已经带了
+     * 路径段就不该再补。判据是「有没有版本段」，不是「版本段是不是 v1」。
+     */
+    private String anthropicMessagesEndpoint(String baseUrl) {
+        String base = baseUrl == null ? "" : baseUrl.trim();
+        while (base.endsWith("/")) {
+            base = base.substring(0, base.length() - 1);
+        }
+        // 用户可能已经把完整路径粘进来（含 /messages），此时不再补。
+        if (base.endsWith("/messages")) {
+            return base;
+        }
+        // 已带版本段（/v1、/v2 …）：只补 /messages。
+        if (base.matches(".*/v\\d+$")) {
+            return base + "/messages";
+        }
+        return base + "/v1/messages";
+    }
+
     @Override
     public boolean supportsNativeTools(ModelConfig model) {
         return true;
@@ -63,7 +93,7 @@ public final class AnthropicMessagesProtocol extends AbstractHttpModelProtocol {
             HashMap<String, String> headers = new HashMap<>();
             headers.put("x-api-key", config.getApiKey());
             headers.put("anthropic-version", "2023-06-01");
-            raw = postJson(endpoint(config.getBaseUrl(), "/v1/messages"), body, headers);
+            raw = postJson(anthropicMessagesEndpoint(config.getBaseUrl()), body, headers);
             JSONObject response = new JSONObject(raw);
             return extractResponse(response.optJSONArray("content"));
         } catch (ModelCompletionException e) {
@@ -102,7 +132,7 @@ public final class AnthropicMessagesProtocol extends AbstractHttpModelProtocol {
         com.tom.rv2ide.ai.protocol.AssistantCommitBuffer commitBuffer = new com.tom.rv2ide.ai.protocol.AssistantCommitBuffer();
 
         try {
-        postJsonSse(endpoint(config.getBaseUrl(), "/v1/messages"), body, headers, cancellationToken, (eventType, data) -> {
+        postJsonSse(anthropicMessagesEndpoint(config.getBaseUrl()), body, headers, cancellationToken, (eventType, data) -> {
             handleSseEvent(data, callback, text, reasoning, toolUseBuilders, usageInputTokens, usageOutputTokens, commitBuffer);
         });
 

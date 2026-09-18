@@ -17,6 +17,7 @@
 
 package com.tom.rv2ide.activities.IdeConfigurations
 
+import android.util.Log
 import com.tom.androidcodestudio.acsprovider.ACSProvider as ACSLibProvider
 import com.tom.androidcodestudio.acsprovider.models.ACSConfig
 import com.tom.androidcodestudio.acsprovider.utils.DownloadCallback
@@ -31,6 +32,8 @@ import kotlinx.coroutines.runBlocking
  * library
  */
 object AcsCommandInterface {
+
+  private const val TAG = "AcsCommandInterface"
 
   /** ACS download directory */
   private val ACS_DOWNLOAD_DIR = File("${Environment.HOME}/acs")
@@ -181,7 +184,21 @@ object AcsCommandInterface {
 
           AcsResult(success = true, output = output, errorOutput = "", exitCode = 0)
         } catch (e: Exception) {
-          AcsResult(success = false, output = "", errorOutput = "Error: ${e.message}", exitCode = 1)
+          // 必须留日志：这段错误此前只塞进 errorOutput 显示在 flashbar 上，而 flashbar
+          // 一闪而过、logcat 里什么都没有。用户报「加载不出 NDK 版本」时无从查起——
+          // 是网络不通、manifest 结构变了、还是解析失败，全都看不出来。
+          Log.e(
+              TAG,
+              "listVersions 失败: manifest=$manifestUrl arch=${architecture?.value} " +
+                  "packageId=$packageId",
+              e,
+          )
+          AcsResult(
+              success = false,
+              output = "",
+              errorOutput = "Error: ${e.message}",
+              exitCode = 1,
+          )
         }
       }
     }
