@@ -1,0 +1,26 @@
+# 行尾规则——**只钉住真正必须 LF 的可执行脚本**，不做全仓归一化。
+#
+# 背景：本机 core.autocrlf=true，checkout 会把文本文件转成 CRLF。项目模板里的
+# gradlew（core/app/src/main/assets/*/gradle/gradlew）因此变成 CRLF，导致：
+#
+#   1. shebang 成了 `#!/bin/sh\r`，内核按字面找解释器失败，报
+#      "No such file or directory"——注意不是"权限不足"，所以 chmod +x 永远无效。
+#      实测：模型 12 次 shell_execute 里有 6 次是这条错误。
+#   2. 即使 `sh gradlew` 绕过 shebang，每行末尾的 \r 也会被当成命令的一部分，
+#      报 `gradlew[2]: : inaccessible or not found`。
+#
+# 这里**刻意不写 `*.java` / `*.kt` / `*.xml` 之类的通配规则**：那会让 git 认为
+# 仓库里数百个文件都需要重新归一化，产生一个淹没真实改动的巨型提交，而收益只是
+# 行尾一致性——那些文件是编译输入，CRLF 不影响构建。
+#
+# 真正需要 LF 的只有「被 exec 的脚本」。后续若发现别处也有同类问题，按具体文件名
+# 加进来，不要改用通配。
+
+gradlew         text eol=lf
+*.sh            text eol=lf
+*.bash          text eol=lf
+
+# Windows 批处理反过来必须 CRLF，否则 cmd.exe 解析异常。
+gradlew.bat     text eol=crlf
+*.bat           text eol=crlf
+*.cmd           text eol=crlf

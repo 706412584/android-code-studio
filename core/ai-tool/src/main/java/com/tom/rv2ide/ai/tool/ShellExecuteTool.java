@@ -103,7 +103,11 @@ public final class ShellExecuteTool extends BaseTool {
                     "cwd",
                     new JSONObject()
                         .put("type", "string")
-                        .put("description", "工作目录，省略时使用工作区根目录"))
+                        .put(
+                            "description",
+                            "工作目录。**省略时默认就是当前项目根目录**，"
+                                + "所以执行项目内命令（./gradlew、git 等）不需要传这个参数，"
+                                + "也不需要先在 command 里 cd。仅在要切到项目外的目录时才传。"))
                 .put(
                     "timeoutMs",
                     new JSONObject()
@@ -156,6 +160,15 @@ public final class ShellExecuteTool extends BaseTool {
 
     StringBuilder sb = new StringBuilder();
     sb.append("[后端: ").append(backend.displayName()).append("]\n");
+    // 回显工作目录：让模型**看到**自己站在哪，而不是只能从参数描述里推断。
+    //
+    // 实测问题：模型不知道默认 cwd 就是项目根，于是每次都在命令里写
+    // `cd /data/data/.../ACSProjects/MyGameActivity && ./gradlew ...`——既啰嗦，
+    // 又因为绝对路径写错一次就整条命令失败。回显之后模型能直接确认「已经在项目根」，
+    // 后续调用就会省略 cd。
+    if (!cwd.isEmpty()) {
+      sb.append("[工作目录: ").append(cwd).append("]\n");
+    }
     if (resolution.isFallback()) {
       // 如实报告回退，避免模型以为用的是有特权的后端
       sb.append("[注意: 已回退 — ").append(resolution.getFallbackReason()).append("]\n");
