@@ -125,6 +125,11 @@
   <string name="ai_conversation_rename_hint">Conversation title</string>
   <string name="ai_conversation_empty">No conversations yet</string>
   <string name="ai_conversation_message_count">%1$d messages</string>
+  <string name="ai_conversation_meta">%1$s · %2$d messages</string>
+  <string name="ai_conversation_list_title">Conversations</string>
+  <string name="ai_assistant_more">More</string>
+  <string name="ai_conversation_delete_confirm_title">Delete conversation</string>
+  <string name="ai_conversation_delete_confirm_message">Delete this conversation? This cannot be undone.</string>
   <string name="ai_conversation_deleted">Conversation deleted</string>
   <string name="ai_conversation_renamed">Conversation renamed</string>
 

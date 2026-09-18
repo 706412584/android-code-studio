@@ -1,0 +1,79 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  会话列表的一项：标题 + 时间 + 删除按钮。
+
+  参考 LCP DrawerView 的会话项设计（图标框 + 标题 + 时间 + 常驻垃圾桶），
+  但改用 Material3 attr 而非 LineTheme 静态色——ACS 有多套主题，
+  静态色在主题切换后不会更新。
+
+  删除按钮做成常驻而不是长按/滑动：会话删除是低频但需要明确的操作，
+  藏在手势里会让用户找不到，而常驻一个 24dp 图标代价很小。
+-->
+<com.google.android.material.card.MaterialCardView
+  xmlns:android="http://schemas.android.com/apk/res/android"
+  xmlns:app="http://schemas.android.com/apk/res-auto"
+  xmlns:tools="http://schemas.android.com/tools"
+  android:id="@+id/conversationCard"
+  android:layout_width="match_parent"
+  android:layout_height="wrap_content"
+  android:layout_marginStart="8dp"
+  android:layout_marginEnd="8dp"
+  android:layout_marginTop="2dp"
+  android:layout_marginBottom="2dp"
+  android:clickable="true"
+  android:focusable="true"
+  app:cardCornerRadius="10dp"
+  app:cardElevation="0dp"
+  app:strokeWidth="1dp">
+
+  <LinearLayout
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="horizontal"
+    android:gravity="center_vertical"
+    android:paddingStart="12dp"
+    android:paddingEnd="4dp"
+    android:paddingTop="10dp"
+    android:paddingBottom="10dp">
+
+    <LinearLayout
+      android:layout_width="0dp"
+      android:layout_height="wrap_content"
+      android:layout_weight="1"
+      android:orientation="vertical">
+
+      <TextView
+        android:id="@+id/conversationTitle"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:singleLine="true"
+        android:ellipsize="end"
+        android:textAppearance="@style/TextAppearance.Material3.BodyMedium"
+        tools:text="修复构建失败" />
+
+      <TextView
+        android:id="@+id/conversationMeta"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="2dp"
+        android:singleLine="true"
+        android:ellipsize="end"
+        android:textAppearance="@style/TextAppearance.Material3.LabelSmall"
+        android:textColor="?attr/colorOnSurfaceVariant"
+        tools:text="今天 14:32 · 12 条消息" />
+
+    </LinearLayout>
+
+    <!-- 删除：常驻但低对比，避免抢视觉焦点 -->
+    <com.google.android.material.button.MaterialButton
+      android:id="@+id/conversationDelete"
+      style="@style/Widget.Material3.Button.IconButton"
+      android:layout_width="wrap_content"
+      android:layout_height="wrap_content"
+      android:contentDescription="@string/ai_conversation_delete"
+      app:icon="@drawable/ic_delete"
+      app:iconTint="?attr/colorOnSurfaceVariant" />
+
+  </LinearLayout>
+
+</com.google.android.material.card.MaterialCardView>

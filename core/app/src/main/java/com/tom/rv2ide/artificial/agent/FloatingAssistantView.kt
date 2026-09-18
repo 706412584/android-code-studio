@@ -28,6 +28,7 @@ import androidx.core.view.isVisible
 import androidx.lifecycle.LifecycleCoroutineScope
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.tom.rv2ide.adapters.AssistantMessageAdapter
+import com.tom.rv2ide.adapters.ConversationListAdapter
 import com.tom.rv2ide.artificial.agents.Agents
 import com.tom.rv2ide.databinding.LayoutAiAssistantBinding
 import com.tom.rv2ide.databinding.LayoutAiAssistantFabBinding
@@ -114,6 +115,24 @@ class FloatingAssistantView(
   private var lastThinkingId: Long? = null
 
   /**
+   * 会话列表适配器。
+   *
+   * <p>`lateinit` 而不是构造时创建：它需要 `binding`（在 attach 里才 inflate），
+   * 而构造顺序上 binding 已就绪，但适配器的回调又要引用本类的方法——
+   * 放在 attach 里初始化最清晰。
+   */
+  private lateinit var conversationAdapter: ConversationListAdapter
+
+  /**
+   * 最近一次通过列表打开的会话 id。
+   *
+   * <p>用来判断「被删除的是不是屏幕上正在显示的那个」。不能拿
+   * `orchestrator.activeConversationId` 代替：那个值在删除时会被清空，
+   * 拿它比较时已经晚了。
+   */
+  private var lastOpenedConversationId: String? = null
+
+  /**
    * 本次运行是否已经通过事件流写出过文本。
    *
    * <p>决定收尾时要不要再补一条最终输出：已经流式显示过就不能再追加，否则同一段回答
@@ -181,13 +200,19 @@ class FloatingAssistantView(
 
     // 不设 OnClickListener：拖动用的 OnTouchListener 会消费全部事件，click 永远不会触发。
     // 打开面板的动作用 ACTION_UP 且未进入拖动时手动调用 open()（见 setUpDragging）。
-    binding.assistantClose.setOnClickListener { close() }
-    binding.assistantLayoutToggle.setOnClickListener {
-      applyMode(if (mode == Mode.FULLSCREEN) Mode.SIDEBAR else Mode.FULLSCREEN)
-    }
     binding.assistantNewConversation.setOnClickListener { startNewConversation() }
-    binding.assistantExport.setOnClickListener { copyConversation() }
     binding.assistantSend.setOnClickListener { sendFromInput() }
+    binding.assistantConversationsToggle.setOnClickListener { toggleConversationPanel() }
+    binding.assistantOverflow.setOnClickListener { showOverflowMenu() }
+
+    // 会话列表
+    conversationAdapter =
+        ConversationListAdapter(
+            onOpen = { summary -> openConversation(summary) },
+            onDelete = { summary -> confirmDeleteConversation(summary) },
+        )
+    binding.assistantConversations.layoutManager = LinearLayoutManager(context)
+    binding.assistantConversations.adapter = conversationAdapter
 
     // 回车即发送：面板输入框是多行的，若不拦截回车，用户按回车只会换行。
     binding.assistantInput.setOnEditorActionListener { _, actionId, event ->
@@ -359,13 +384,14 @@ class FloatingAssistantView(
     val card = binding.assistantCard
     val params = card.layoutParams as ViewGroup.MarginLayoutParams
 
+    // 形态切换的文案不再由按钮承载——全屏/侧栏已收进溢出菜单，
+    // 菜单项文案在 showOverflowMenu() 里按当前形态动态生成。
     when (newMode) {
       Mode.FULLSCREEN -> {
         params.width = ViewGroup.LayoutParams.MATCH_PARENT
         params.height = ViewGroup.LayoutParams.MATCH_PARENT
         params.marginStart = dp(8)
         params.marginEnd = dp(8)
-        binding.assistantLayoutToggle.setText(string.ai_assistant_side)
       }
       Mode.SIDEBAR -> {
         // 侧栏宽度取屏幕的 88%，至少 280dp：窄屏上纯比例会挤到不可用，
@@ -376,7 +402,6 @@ class FloatingAssistantView(
         params.height = ViewGroup.LayoutParams.MATCH_PARENT
         params.marginStart = dp(8)
         params.marginEnd = dp(8)
-        binding.assistantLayoutToggle.setText(string.ai_assistant_fullscreen)
       }
     }
     card.layoutParams = params
@@ -762,6 +787,167 @@ class FloatingAssistantView(
     }
   }
 
+  /**
+   * 标题栏溢出菜单。
+   *
+   * <p>全屏/复制/关闭都是低频操作，但侧栏模式下标题栏放不下这么多文字按钮
+   * （会把标题挤到换行甚至截断）。收进菜单后标题有空间，操作仍然可达。
+   */
+  private fun showOverflowMenu() {
+    val popup = androidx.appcompat.widget.PopupMenu(context, binding.assistantOverflow)
+    // 文案写「点击后会变成什么」而不是「当前是什么」：菜单项是动作，不是状态显示。
+    popup.menu.add(
+        0,
+        MENU_LAYOUT,
+        0,
+        if (mode == Mode.FULLSCREEN) string.ai_assistant_side else string.ai_assistant_fullscreen,
+    )
+    popup.menu.add(0, MENU_EXPORT, 1, string.ai_assistant_export)
+    popup.menu.add(0, MENU_CLOSE, 2, string.ai_assistant_close)
+    popup.setOnMenuItemClickListener { item ->
+      when (item.itemId) {
+        MENU_LAYOUT -> {
+          applyMode(if (mode == Mode.FULLSCREEN) Mode.SIDEBAR else Mode.FULLSCREEN)
+          true
+        }
+        MENU_EXPORT -> {
+          copyConversation()
+          true
+        }
+        MENU_CLOSE -> {
+          close()
+          true
+        }
+        else -> false
+      }
+    }
+    popup.show()
+  }
+
+  // ---- 会话列表 ----
+
+  /** 切换会话列表的显示。与消息列表互斥——面板不宽，并排会把两边都挤得不可用。 */
+  private fun toggleConversationPanel() {
+    val showList = binding.assistantConversationPanel.isVisible.not()
+    binding.assistantConversationPanel.isVisible = showList
+    binding.assistantMessages.isVisible = !showList
+    binding.assistantEmpty.isVisible = !showList && adapter.isEmpty()
+    if (showList) {
+      reloadConversations()
+    }
+  }
+
+  /** 重新拉取会话列表。每次展开都重拉：会话可能被另一处（如另一个面板实例）改动过。 */
+  private fun reloadConversations() {
+    lifecycleScope.launch(Dispatchers.IO) {
+      val summaries =
+          try {
+            orchestrator.listConversations()
+          } catch (e: java.io.IOException) {
+            // 列表读不出来不该让界面崩：记日志并显示空态，用户仍可新建会话。
+            com.tom.rv2ide.ai.tool.api.ErrorLog.record("agent", "读取会话列表失败", e, null)
+            emptyList()
+          }
+      withContext(Dispatchers.Main) {
+        conversationAdapter.submitList(summaries)
+        conversationAdapter.setActive(orchestrator.activeConversationId)
+        binding.assistantConversationsEmpty.isVisible = summaries.isEmpty()
+      }
+    }
+  }
+
+  /**
+   * 打开一个历史会话。
+   *
+   * <p>必须同时做两件事：把 orchestrator 的当前会话指过去（后续请求续接它的历史），
+   * 以及把该会话的消息回放到界面上。只做前者会让用户看到旧会话的内容却在新会话里提问。
+   */
+  private fun openConversation(summary: com.tom.rv2ide.ai.agent.conversation.ConversationSummary) {
+    // 切换会话要中断正在进行的运行：它的输出属于旧会话，继续跑会写错地方。
+    cancel()
+    lifecycleScope.launch(Dispatchers.IO) {
+      val messages = orchestrator.loadConversationMessages(summary.getId())
+      withContext(Dispatchers.Main) {
+        orchestrator.openConversation(summary.getId())
+        lastOpenedConversationId = summary.getId()
+        replayMessages(messages)
+        conversationAdapter.setActive(summary.getId())
+        // 打开后自动切回消息视图：用户的意图是「看这个会话」，不是继续浏览列表。
+        binding.assistantConversationPanel.isVisible = false
+        binding.assistantMessages.isVisible = true
+      }
+    }
+  }
+
+  /**
+   * 把历史消息回放到列表。
+   *
+   * <p>只回放用户与助手的文本，工具调用与推理不还原：会话日志里它们是独立条目类型，
+   * 还原需要重建完整的卡片与折叠状态，而历史消息的主要用途是「找回上下文」，
+   * 文本已经够用。宁可少显示，也不显示错的。
+   */
+  private fun replayMessages(messages: List<com.tom.rv2ide.ai.protocol.ModelMessage>) {
+    adapter.clear()
+    streamingMessageId = null
+    streamedThisRun = false
+    lastThinkingId = null
+    lastToolCardId = null
+    for (message in messages) {
+      when (message) {
+        is com.tom.rv2ide.ai.protocol.UserModelMessage ->
+            adapter.append(AssistantMessageAdapter.Role.USER, message.getContent())
+        is com.tom.rv2ide.ai.protocol.AssistantModelMessage -> {
+          val text = message.getContent()
+          if (!text.isNullOrBlank()) {
+            adapter.append(AssistantMessageAdapter.Role.ASSISTANT, text)
+          }
+        }
+        else -> {}
+      }
+    }
+    updateEmptyState()
+    scrollToBottom()
+  }
+
+  /** 删除会话前确认。删除不可撤销，静默删除会让误触的代价过大。 */
+  private fun confirmDeleteConversation(
+      summary: com.tom.rv2ide.ai.agent.conversation.ConversationSummary
+  ) {
+    androidx.appcompat.app.AlertDialog.Builder(context)
+        .setTitle(string.ai_conversation_delete_confirm_title)
+        .setMessage(string.ai_conversation_delete_confirm_message)
+        .setPositiveButton(string.ai_conversation_delete) { _, _ -> deleteConversation(summary) }
+        .setNegativeButton(android.R.string.cancel, null)
+        .show()
+  }
+
+  private fun deleteConversation(
+      summary: com.tom.rv2ide.ai.agent.conversation.ConversationSummary
+  ) {
+    lifecycleScope.launch(Dispatchers.IO) {
+      try {
+        orchestrator.deleteConversation(summary.getId())
+      } catch (e: java.io.IOException) {
+        com.tom.rv2ide.ai.tool.api.ErrorLog.record("agent", "删除会话失败", e, null)
+      }
+      withContext(Dispatchers.Main) {
+        // 删掉的正是当前显示的会话时，必须同时清空消息区——否则会出现
+        // 「列表里已经没有它、但消息还留在屏幕上」的矛盾状态，用户继续提问
+        // 会落进一个已被删除的会话。
+        if (summary.getId() == lastOpenedConversationId) {
+          adapter.clear()
+          streamingMessageId = null
+          streamedThisRun = false
+          lastThinkingId = null
+          lastToolCardId = null
+          lastOpenedConversationId = null
+          updateEmptyState()
+        }
+        reloadConversations()
+      }
+    }
+  }
+
   private fun appendTrace(text: String) {
     adapter.append(AssistantMessageAdapter.Role.TRACE, text)
     scrollToBottom()
@@ -946,6 +1132,11 @@ class FloatingAssistantView(
 
     /** 拖动时四周保留的最小边距（dp）。 */
     private const val EDGE_MARGIN_DP = 8
+
+    /** 溢出菜单项 id。用本地常量而非菜单资源：只有三项，建 XML 反而多一个文件。 */
+    private const val MENU_LAYOUT = 1
+    private const val MENU_EXPORT = 2
+    private const val MENU_CLOSE = 3
 
     private fun summarizeArgs(args: String?): String {
       if (TextUtils.isEmpty(args)) {

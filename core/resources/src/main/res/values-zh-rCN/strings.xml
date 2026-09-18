@@ -125,6 +125,11 @@
   <string name="ai_conversation_rename_hint">会话标题</string>
   <string name="ai_conversation_empty">暂无会话</string>
   <string name="ai_conversation_message_count">%1$d 条消息</string>
+  <string name="ai_conversation_meta">%1$s · %2$d 条消息</string>
+  <string name="ai_conversation_list_title">会话</string>
+  <string name="ai_assistant_more">更多</string>
+  <string name="ai_conversation_delete_confirm_title">删除会话</string>
+  <string name="ai_conversation_delete_confirm_message">确定删除这个会话吗？删除后无法恢复。</string>
   <string name="ai_conversation_deleted">会话已删除</string>
   <string name="ai_conversation_renamed">会话已重命名</string>
 

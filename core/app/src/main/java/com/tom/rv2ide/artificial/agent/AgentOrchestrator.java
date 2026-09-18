@@ -45,6 +45,7 @@ import com.tom.rv2ide.ai.protocol.ModelConfig;
 import com.tom.rv2ide.ai.protocol.ModelMessage;
 import com.tom.rv2ide.ai.protocol.UserModelMessage;
 import com.tom.rv2ide.ai.tool.DiffStore;
+import com.tom.rv2ide.ai.tool.api.ErrorLog;
 import com.tom.rv2ide.ai.tool.FileDeleteTool;
 import com.tom.rv2ide.ai.tool.FileEditTool;
 import com.tom.rv2ide.ai.tool.FileReadTool;
@@ -254,6 +255,28 @@ public final class AgentOrchestrator {
     this.activeConversationId = conversationId;
   }
 
+  /**
+   * 读取某个会话的历史消息，供界面回放。
+   *
+   * <p>走的是与「续接对话」完全相同的那条路径（{@code read → fold}），因此界面上看到的
+   * 历史与模型实际收到的上下文**必然一致**。若另写一套解析，两者迟早会漂移——比如
+   * 界面显示了一条被压缩覆盖掉的消息，而模型那边其实已经看不到它了。
+   *
+   * <p>压缩条目是回溯性标记（出现在被它覆盖的条目**之后**），fold 内部会做两趟处理，
+   * 这里不需要额外关心。
+   *
+   * @return 该会话的消息列表；会话不存在或读取失败时返回空列表（不抛异常——
+   *     回放失败不该让整个界面报错，用户看到空列表比看到崩溃好）
+   */
+  public List<ModelMessage> loadConversationMessages(String conversationId) {
+    // loadEntries 已内部吞掉 IO/运行时异常并返回空列表，这里无需再包一层 try。
+    List<ConversationLog.EntryLocation> entries = loadEntries(conversationId);
+    if (entries.isEmpty()) {
+      return new ArrayList<>();
+    }
+    return ConversationHistory.fold(entries);
+  }
+
   /** @return 当前会话 id，可能为 null（尚未开始任何会话）。 */
   public String getActiveConversationId() {
     return activeConversationId;
@@ -382,8 +405,7 @@ public final class AgentOrchestrator {
           registry.register(adapter);
         }
       } catch (Exception e) {
-        com.tom.rv2ide.ai.tool.api.ErrorLog.record(
-            "mcp", "拉取 MCP 工具列表失败: " + server.url, e, null);
+        ErrorLog.record("mcp", "拉取 MCP 工具列表失败: " + server.url, e, null);
       }
     }
   }
