@@ -167,13 +167,27 @@ public final class AgentModelConfigs {
    * <p>自定义端点的模型名不能从预设表取（那里没有用户自填的值），因此单独提供入口。
    */
   public static String modelIdFor(String providerId, String modelId) {
-    // 用户记录里的槽位模型优先。传进来的 modelId 可能带上下文后缀
-    // （如 glm-5.2[1m]），必须剥离后再发给 API——后缀是本地元数据。
+    return modelIdFor(providerId, modelId, ProviderConfig.SLOT_MAIN);
+  }
+
+  /**
+   * 按指定槽位解析模型名。
+   *
+   * <p><b>为什么必须传槽位</b>：此前本方法无条件返回 {@code SLOT_MAIN} 的模型，
+   * 第二个参数被完全忽略——于是界面上「切到 Opus」改了偏好、提示也显示成功，
+   * 但请求里发的仍是主模型。UI 反馈与实际行为不符，且没有任何报错能让人发现。
+   *
+   * @param slot 槽位（main/haiku/sonnet/opus）；空槽位回退到主模型，
+   *     这是「留空表示与主模型相同」约定的落地处
+   */
+  public static String modelIdFor(String providerId, String modelId, String slot) {
+    // 用户记录里的槽位模型优先。返回值已剥离上下文后缀（如 glm-5.2[1m]）——
+    // 后缀是本地元数据，不能发给 API。
     ProviderConfig record = recordFor(providerId);
     if (record != null) {
-      String fromRecord = record.resolveSlot(ProviderConfig.SLOT_MAIN);
+      String fromRecord = record.apiModelId(slot == null ? ProviderConfig.SLOT_MAIN : slot);
       if (!fromRecord.isEmpty()) {
-        return ContextSizeParser.stripSuffix(fromRecord);
+        return fromRecord;
       }
     }
     if ("custom".equals(providerId)) {

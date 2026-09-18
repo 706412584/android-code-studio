@@ -147,13 +147,44 @@ public final class AgentSession {
       ModelCancellationToken cancellationToken,
       AgentEvent.Listener listener,
       RunContextManager contextManager) {
+    return run(
+        config, systemPrompt, userRequest, history, toolContext, cancellationToken, listener,
+        contextManager, null, null);
+  }
+
+  /**
+   * 带附件与推理强度的运行重载。
+   *
+   * @param rawInputJson 多模态输入（图片等）的原始 JSON；{@code null} 表示纯文本。
+   *     走 {@link UserModelMessage} 的第二个构造参数——两条协议序列化路径都会把它
+   *     转成 image_url / image block，不需要各自特殊处理。
+   * @param reasoningEffort 推理强度（off/low/medium/high 或空表示默认）；空值时由
+   *     {@link ModelRequestOptions} 归一成 medium。
+   */
+  public AgentRunResult run(
+      ModelConfig config,
+      String systemPrompt,
+      String userRequest,
+      List<ModelMessage> history,
+      ToolContext toolContext,
+      ModelCancellationToken cancellationToken,
+      AgentEvent.Listener listener,
+      RunContextManager contextManager,
+      String rawInputJson,
+      String reasoningEffort) {
 
     List<ModelMessage> messages = new ArrayList<>();
     messages.add(new SystemModelMessage(systemPrompt == null ? "" : systemPrompt));
     if (history != null) {
       messages.addAll(history);
     }
-    messages.add(new UserModelMessage(userRequest == null ? "" : userRequest));
+    // 有附件时走带 rawInputJson 的构造：纯文本请求传 null 而不是空串，
+    // 让协议层能明确区分「没有附件」与「附件字段为空」。
+    String prompt = userRequest == null ? "" : userRequest;
+    messages.add(
+        rawInputJson == null || rawInputJson.isEmpty()
+            ? new UserModelMessage(prompt)
+            : new UserModelMessage(prompt, rawInputJson));
     // 本次请求的下标：裁剪必须保住它，否则模型不知道自己在做什么。
     final int historyEnd = messages.size() - 1;
 
@@ -194,7 +225,8 @@ public final class AgentSession {
 
       ModelCompletionResponse response;
       try {
-        response = requestModel(config, messages, tools, cancellationToken, listener);
+        response =
+            requestModel(config, messages, tools, cancellationToken, listener, reasoningEffort);
       } catch (ModelCompletionException e) {
         String reason = "模型请求失败: " + e.getMessage();
         return finish(listener, AgentEvent.failed(reason), lastOutput, toolCallCount, turnIndex);
@@ -259,7 +291,8 @@ public final class AgentSession {
       List<ModelMessage> messages,
       List<ToolInfo> tools,
       ModelCancellationToken cancellationToken,
-      AgentEvent.Listener listener)
+      AgentEvent.Listener listener,
+      String reasoningEffort)
       throws ModelCompletionException {
 
     ModelStreamCallback callback =
@@ -281,7 +314,10 @@ public final class AgentSession {
     // 并用文本形态输出调用（由 ToolCallTextParser 解析）。
     boolean nativeTools = modelClient.supportsNativeTools(config);
     List<ToolInfo> nativeToolList = nativeTools ? tools : new ArrayList<>();
-    ModelRequestOptions options = new ModelRequestOptions("", false, nativeToolList);
+    // 用调用方传入的强度。空串会被 ModelRequestOptions 归一成 medium——
+    // 那是「用户没选」的默认值，与「用户明确选了中」等价，符合预期。
+    ModelRequestOptions options =
+        new ModelRequestOptions(reasoningEffort == null ? "" : reasoningEffort, false, nativeToolList);
 
     return modelClient.stream(config, messages, callback, cancellationToken, options);
   }

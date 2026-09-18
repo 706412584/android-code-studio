@@ -166,6 +166,39 @@ final class FileToolsTest {
   }
 
   @Test
+  void editPreservesMixedLineEndings(@TempDir Path workspace) throws IOException {
+    // 混合行尾：同一文件里既有 LF 又有 CRLF 行。
+    // 这是真实会发生的——模型用 file_write 把 LF 内容写进 CRLF 文件就产生了这种文件。
+    // 修复前用「全文是否含 \r」判定风格，会把原本的 LF 行也改成 CRLF，
+    // git 视角下整个文件都变了（实际只改了一行）。
+    ToolContext ctx = context(workspace);
+    Files.writeString(workspace.resolve("f.txt"), "a\nb\r\nc\n");
+
+    ToolResult result =
+        new FileEditTool()
+            .execute(args("file_path", "f.txt", "old_string", "b\n", "new_string", "B\n"), ctx);
+
+    assertFalse(result.isError(), "混合行尾文件应能编辑: " + result.getContent());
+    // a 与 c 保持 LF，b 保持 CRLF —— 只改内容，不动任何行的行尾。
+    assertEquals("a\nB\r\nc\n", Files.readString(workspace.resolve("f.txt")));
+  }
+
+  @Test
+  void editDoesNotAccumulateCarriageReturns(@TempDir Path workspace) throws IOException {
+    // 含裸 CR 的 LF 文件：修复前 replace("\n","\r\n") 会让 \r 越加越多，
+    // 每次编辑都污染一轮。
+    ToolContext ctx = context(workspace);
+    Files.writeString(workspace.resolve("f.txt"), "a\rb\n");
+
+    ToolResult result =
+        new FileEditTool()
+            .execute(args("file_path", "f.txt", "old_string", "b\n", "new_string", "B\n"), ctx);
+
+    assertFalse(result.isError(), "应能编辑: " + result.getContent());
+    assertEquals("a\rB\n", Files.readString(workspace.resolve("f.txt")));
+  }
+
+  @Test
   void editFailsWhenOldStringAbsentWithoutThrowing(@TempDir Path workspace) throws IOException {
     ToolContext ctx = context(workspace);
     Files.writeString(workspace.resolve("f.txt"), "hello\n");

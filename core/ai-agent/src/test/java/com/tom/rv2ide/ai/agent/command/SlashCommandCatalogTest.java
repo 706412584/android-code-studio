@@ -170,7 +170,12 @@ final class SlashCommandCatalogTest {
 
   @Test
   void matchesCommandsByPrefix() {
-    assertEquals(5, SlashCommandCatalog.matching("/").size());
+    // 6 条：mode / model / new / clear / compact / help
+    assertEquals(6, SlashCommandCatalog.matching("/").size());
+    // "c" 同时匹配 clear 与 compact
+    assertEquals(2, SlashCommandCatalog.matching("/c").size());
+    assertEquals(1, SlashCommandCatalog.matching("/co").size());
+    assertEquals("compact", SlashCommandCatalog.matching("/co").get(0).getName());
     // "m" / "mo" / "mode" 都同时匹配 mode 与 model——"model" 以 "mode" 开头。
     // 这是前缀匹配的正常行为，用户多打一个字符就能区分。
     assertEquals(2, SlashCommandCatalog.matching("/m").size());

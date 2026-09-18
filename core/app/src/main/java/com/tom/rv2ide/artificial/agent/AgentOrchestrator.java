@@ -381,9 +381,16 @@ public final class AgentOrchestrator {
     } catch (IOException | RuntimeException e) {
       return;
     }
+    String want = workspace.getAbsolutePath();
     ConversationSummary best = null;
     for (ConversationSummary summary : all) {
       if (summary.getMessageCount() <= 0) {
+        continue;
+      }
+      // 必须按 cwd 过滤。不过滤的话：项目 A 从未用过 agent 时，打开 A 会恢复到
+      // 项目 B 的会话，紧接着 persistActiveConversation() 把 A 的键指向 B 的 id——
+      // 此后在 A 里的对话会追加进 B 的会话文件，模型拿到的历史属于另一个项目。
+      if (!want.equals(cwdOf(summary.getId()))) {
         continue;
       }
       if (best == null || summary.getModifiedAt() > best.getModifiedAt()) {
@@ -396,6 +403,25 @@ public final class AgentOrchestrator {
     activeConversationId = best.getId();
     // 立刻落盘，之后就走精确路径。
     persistActiveConversation();
+  }
+
+  /**
+   * 读某会话的 cwd（来自它的 session-meta 条目）。
+   *
+   * <p>读取失败或没有 meta 时返回空串——调用方按「不匹配」处理，宁可开新会话，
+   * 也不要把对话追加到别的项目的会话文件里。
+   */
+  private String cwdOf(String conversationId) {
+    try {
+      for (ConversationLog.EntryLocation location : conversationStore.read(conversationId)) {
+        if (location.getEntry() instanceof SessionMetaEntry) {
+          return ((SessionMetaEntry) location.getEntry()).getCwd();
+        }
+      }
+    } catch (IOException | RuntimeException e) {
+      // 落到下面的空串
+    }
+    return "";
   }
 
   /** 记住本工作区当前打开的会话。 */
@@ -620,6 +646,23 @@ public final class AgentOrchestrator {
       String userRequest,
       String customBaseUrl,
       AgentEvent.Listener listener) {
+    return run(providerId, modelId, userRequest, customBaseUrl, listener, null, null);
+  }
+
+  /**
+   * 带附件与推理强度的运行重载。
+   *
+   * @param rawInputJson 多模态输入（图片）的原始 JSON；null 表示纯文本
+   * @param reasoningEffort 推理强度（off/low/medium/high，空表示默认）
+   */
+  public AgentRunResult run(
+      String providerId,
+      String modelId,
+      String userRequest,
+      String customBaseUrl,
+      AgentEvent.Listener listener,
+      String rawInputJson,
+      String reasoningEffort) {
 
     if (workspace == null) {
       return new AgentRunResult("未设置工作区，无法执行。", 0, 0, true);
@@ -758,7 +801,9 @@ public final class AgentOrchestrator {
           toolContext,
           cancellation,
           persistingListener,
-          contextManager);
+          contextManager,
+          rawInputJson,
+          reasoningEffort);
     } finally {
       activeCancellation = null;
     }

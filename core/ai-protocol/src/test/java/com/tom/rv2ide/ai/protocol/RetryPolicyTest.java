@@ -77,9 +77,10 @@ final class RetryPolicyTest {
         assertEquals(ErrorCategory.AUTH, RetryPolicy.classifyStatus(403));
         assertEquals(ErrorCategory.SERVER_ERROR, RetryPolicy.classifyStatus(500));
         assertEquals(ErrorCategory.SERVER_ERROR, RetryPolicy.classifyStatus(529));
+        // 409 是 4xx 里的例外：中转/网关用它表示「上游锁超时」，属可恢复的瞬时冲突
+        assertEquals(ErrorCategory.TIMEOUT, RetryPolicy.classifyStatus(409));
         assertEquals(ErrorCategory.CLIENT_ERROR, RetryPolicy.classifyStatus(400));
         assertEquals(ErrorCategory.CLIENT_ERROR, RetryPolicy.classifyStatus(404));
-        assertEquals(ErrorCategory.CLIENT_ERROR, RetryPolicy.classifyStatus(409));
         assertEquals(ErrorCategory.UNKNOWN, RetryPolicy.classifyStatus(200));
         assertEquals(ErrorCategory.UNKNOWN, RetryPolicy.classifyStatus(-1));
     }
@@ -90,9 +91,13 @@ final class RetryPolicyTest {
     void conflictIsRetryableDespiteBeingFourHundred() {
         // 409 是 4xx 里的例外：中转/网关用它表示「上游锁超时」，是一次性的
         assertTrue(RetryPolicy.isRetryable(409));
-        // 但它仍归类为 CLIENT_ERROR——分类服务于 UI 展示，判定服务于重试节奏，
-        // 两者不必一致，这正是 isRetryable 与 classifyStatus 分开的原因
-        assertEquals(ErrorCategory.CLIENT_ERROR, RetryPolicy.classifyStatus(409));
+        // 分类必须与判定一致。此前 classifyStatus(409) 返回 CLIENT_ERROR（不可重试），
+        // 而 isRetryable(409) 返回 true——同类两个 API 对同一状态码给出相反答案，
+        // 调用方若按 category 决定行为就会得出与按 statusCode 相反的结论。
+        // 分类的职责是「概括这个错误属于哪一类」，可重试性本来就是它的一个属性，
+        // 不该在这里与判定分叉。
+        assertEquals(ErrorCategory.TIMEOUT, RetryPolicy.classifyStatus(409));
+        assertTrue(RetryPolicy.classifyStatus(409).retryable());
     }
 
     // ---------------------------------------------------------- 异常分类

@@ -83,6 +83,7 @@ public final class RetryPolicy {
     private static final String[] RETRYABLE_STREAM_ERROR_TYPES = {
             "api_error",
             "overloaded_error",
+            "rate_limit_error",
             "upstream_error",
             "stream_read_error"
     };
@@ -113,6 +114,13 @@ public final class RetryPolicy {
         }
         if (statusCode == 429) {
             return ErrorCategory.RATE_LIMIT;
+        }
+        if (statusCode == 409) {
+            // 409 是服务端的 lock 超时（「另一个请求正在处理同一资源」），
+            // 属于可恢复的瞬时冲突，不是客户端参数错误。
+            // 必须归到可重试分类里：否则 classifyStatus 说 CLIENT_ERROR（不可重试）、
+            // isRetryable 说 true，同类两个 API 对同一状态码给出相反答案。
+            return ErrorCategory.TIMEOUT;
         }
         if (statusCode == 401 || statusCode == 403) {
             return ErrorCategory.AUTH;
@@ -233,11 +241,8 @@ public final class RetryPolicy {
         }
     }
 
-    /** HTTP 状态码判定（含 409 lock 超时）。 */
+    /** HTTP 状态码判定。409 的可重试性由 {@link #classifyStatus} 统一表达。 */
     public static boolean isRetryable(int statusCode) {
-        if (statusCode == 409) {
-            return true;
-        }
         return retryableStatus(statusCode);
     }
 

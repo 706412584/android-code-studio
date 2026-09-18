@@ -39,6 +39,9 @@ final class StreamIdleWatchdogTest {
     private static final long FIRST_TOKEN_BUDGET = 1_000L;
     private static final long STREAM_IDLE_BUDGET = 200L;
 
+    /** BEFORE_CONTENT 总预算 = 首 token 预算 × 2（与实现一致）。 */
+    private static final long CONTENT_BUDGET = FIRST_TOKEN_BUDGET * 2;
+
     private static StreamIdleWatchdog newWatchdog() {
         return new StreamIdleWatchdog(0L, FIRST_TOKEN_BUDGET, STREAM_IDLE_BUDGET);
     }
@@ -89,16 +92,48 @@ final class StreamIdleWatchdogTest {
 
     @Test
     void heartbeatOnlyStreamEventuallyTripsIdleTimeout() {
-        // 中转稳定吐 thinking 但永不产出正文，是本类要抓的核心场景
+        // 中转稳定吐 thinking 但永不产出正文——本类要抓的核心场景。
+        //
+        // 关键是「稳定吐」：每个 chunk 间隔都小于 idle 预算，因此纯 idle 判定
+        // 永远返回 null。必须有独立于事件间隔的总预算兜底，否则用户面对的
+        // 仍是永久转圈（与 readTimeout 的失效模式完全相同）。
         StreamIdleWatchdog watchdog = newWatchdog();
         long now = 0L;
-        for (int i = 0; i < 50; i++) {
+        TimeoutType tripped = null;
+        for (int i = 0; i < 500; i++) {
             now += STREAM_IDLE_BUDGET - 1;
             watchdog.onEvent(now);
-            assertNull(watchdog.checkTimeout(now), "每个 chunk 都在窗口内，不该判超时");
+            TimeoutType type = watchdog.checkTimeout(now);
+            if (type != null) {
+                tripped = type;
+                break;
+            }
         }
-        // 一旦停止推进，下一个窗口到点就判定卡死
-        assertEquals(TimeoutType.IDLE_TIMEOUT, watchdog.checkTimeout(now + STREAM_IDLE_BUDGET));
+        assertEquals(
+            TimeoutType.FIRST_TOKEN_TIMEOUT,
+            tripped,
+            "持续心跳但始终没有正文时，必须由总预算兜底判定卡死");
+    }
+
+    @Test
+    void contentArrivalClearsTheBeforeContentBudget() {
+        // 一旦真的收到正文，总预算就不再适用——正文可能很长，不能拿它当上限。
+        StreamIdleWatchdog watchdog = newWatchdog();
+        long now = 0L;
+        watchdog.onEvent(now);
+        // 推进到远超 contentBudgetMs，确保「总预算已过期」这个前提成立
+        now += CONTENT_BUDGET + STREAM_IDLE_BUDGET;
+        watchdog.onContent(now);
+        // 进入 MID_STREAM 后只受 idle 约束，总预算不再适用。
+        //
+        // 用 idle 预算内的偏移验证：此刻距离 streamStartMs 已超过 contentBudgetMs
+        // （onEvent 时 now 已经推了很久），若总预算仍在生效就会误报 FIRST_TOKEN_TIMEOUT。
+        assertNull(
+            watchdog.checkTimeout(now + STREAM_IDLE_BUDGET - 1),
+            "收到正文后不该再受 BEFORE_CONTENT 总预算约束");
+        assertEquals(
+            TimeoutType.IDLE_TIMEOUT,
+            watchdog.checkTimeout(now + STREAM_IDLE_BUDGET));
     }
 
     @Test

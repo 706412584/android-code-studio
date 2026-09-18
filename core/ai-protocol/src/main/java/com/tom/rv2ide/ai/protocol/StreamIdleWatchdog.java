@@ -86,6 +86,9 @@ public final class StreamIdleWatchdog {
     private final long firstTokenBudgetMs;
     private final long streamIdleBudgetMs;
 
+    /** BEFORE_CONTENT 阶段的总预算，见构造器里的说明。 */
+    private final long contentBudgetMs;
+
     private Phase phase = Phase.BEFORE_FIRST_EVENT;
     private long lastEventMs;
     private long streamStartMs;
@@ -105,6 +108,10 @@ public final class StreamIdleWatchdog {
         // 把一个配置笔误变成「所有流都秒断」
         this.firstTokenBudgetMs = Math.max(1L, firstTokenBudgetMs);
         this.streamIdleBudgetMs = Math.max(1L, streamIdleBudgetMs);
+        // BEFORE_CONTENT 的总预算。取「首 token 预算 × 2」而不是另设一个魔数：
+        // 两者的语义都是「等到正文为止能容忍多久」，量级应当同阶；
+        // 而 before-content 已经证明连接是通的（收到过事件），可以比首 token 宽一档。
+        this.contentBudgetMs = Math.max(1L, firstTokenBudgetMs * 2);
         this.streamStartMs = nowMs;
         this.lastEventMs = nowMs;
     }
@@ -153,6 +160,18 @@ public final class StreamIdleWatchdog {
                 return TimeoutType.FIRST_TOKEN_TIMEOUT;
             }
             return null;
+        }
+        if (phase == Phase.BEFORE_CONTENT) {
+            // 独立的总预算，**不能只靠 idle 判定**。
+            //
+            // 本类要抓的典型故障是某些中转「稳定吐 thinking delta 却永不产出正文」。
+            // 每个 delta 都调用 onEvent() 从而重置 idle 计时，因此只要间隔小于
+            // streamIdleBudgetMs，纯 idle 判定永远返回 null —— 用户面对的仍是
+            // 永久转圈，与 readTimeout 的失效模式完全相同。
+            // 这里用「从流开始到现在」的总时长兜底，不受单个事件间隔影响。
+            if (nowMs - streamStartMs >= contentBudgetMs) {
+                return TimeoutType.FIRST_TOKEN_TIMEOUT;
+            }
         }
         if (nowMs - lastEventMs >= streamIdleBudgetMs) {
             return TimeoutType.IDLE_TIMEOUT;

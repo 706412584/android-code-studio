@@ -96,6 +96,14 @@ class FloatingAssistantView(
   private val settings = AgentToolSettings(context)
 
   /**
+   * 输入区的附加功能：模型槽位 / 附件 / 推理强度。
+   *
+   * <p>拆成独立对象而不是继续堆在本类里：本类已 1400 余行，主体职责是消息列表与运行循环；
+   * 这三项是纯输入区的局部状态，与消息流无关。它们只在发送时被查询一次。
+   */
+  private val inputFeatures = AssistantInputFeatures(context, binding)
+
+  /**
    * 持久化 diff 存储。
    *
    * <p>用文件实现而非 InMemoryDiffStore：回滚的价值在于「事后反悔」，而事后往往就是
@@ -223,6 +231,10 @@ class FloatingAssistantView(
     binding.assistantModelBar.setOnClickListener {
       AssistantModelPicker.show(context) { refreshModelLabel() }
     }
+    // 槽位标签与模型条都要能点：标签只切槽位，整行开选择器。
+    // 标签自带 padding 与 clickable，点击落点由它自己消费，不会冒泡到整行。
+    binding.assistantSlotLabel.setOnClickListener { inputFeatures.cycleSlot() }
+    inputFeatures.onNotice = { appendTrace(it) }
 
     // 标题栏：左菜单开抽屉，右侧全屏/最小化/关闭。
     binding.assistantMenu.setOnClickListener { toggleConversationPanel() }
@@ -558,20 +570,38 @@ class FloatingAssistantView(
       (value * parent.resources.displayMetrics.density).toInt()
 
   private fun sendFromInput() {
-    val request = binding.assistantInput.text?.toString()?.trim().orEmpty()
-    if (request.isEmpty()) {
+    val typed = binding.assistantInput.text?.toString()?.trim().orEmpty()
+    val attachments = inputFeatures.attachmentContext()
+    // 「只附了文件、没打字」也是有效请求：用户附一张图再点发送是很自然的动作，
+    // 按空文本丢弃会让附件静默消失。此时用附件名当占位文本，至少列表里看得出
+    // 这条消息带了什么。
+    if (typed.isEmpty() && attachments.isEmpty()) {
       return
     }
-    binding.assistantInput.setText("")
 
     // 斜杠命令是纯本地操作：不发给模型、不消耗额度。
     // 只有已知命令名才算命令——「/etc/hosts 是干什么的」是普通消息（见 SlashCommandCatalog）。
-    val parsed = com.tom.rv2ide.ai.agent.command.SlashCommandCatalog.parse(request)
-    if (parsed.isCommand) {
-      handleCommand(parsed)
-      return
+    //
+    // 命令分支**不清空附件**：命令不消费附件，顺手清掉等于把用户刚选的文件弄丢了，
+    // 而他只是先发了一条 /help。
+    if (typed.isNotEmpty()) {
+      val parsed = com.tom.rv2ide.ai.agent.command.SlashCommandCatalog.parse(typed)
+      if (parsed.isCommand) {
+        binding.assistantInput.setText("")
+        handleCommand(parsed)
+        return
+      }
     }
-    execute(request)
+
+    val request = if (typed.isEmpty()) inputFeatures.attachmentNames() else typed
+    binding.assistantInput.setText("")
+    inputFeatures.clearAttachments()
+    // 附件以文本形式追加在用户请求之后。空串时拼接结果与原来完全一致，
+    // 保证无附件路径的行为不变。
+    //
+    // 推理强度随请求走：它在输入区可选，而每轮都可能被改，因此每次发送都重读一次，
+    // 而不是在 attach 时读一次缓存。
+    execute(request + attachments, inputFeatures.reasoningEffort())
   }
 
   /** 执行一条斜杠命令。 */
@@ -664,7 +694,7 @@ class FloatingAssistantView(
     }
   }
 
-  private fun execute(userRequest: String) {
+  private fun execute(userRequest: String, reasoningEffort: String? = null) {
     if (executionJob?.isActive == true) {
       return
     }
@@ -685,7 +715,14 @@ class FloatingAssistantView(
         lifecycleScope.launch(Dispatchers.IO) {
           val agents = Agents(context)
           val providerId = agents.getProvider()
-          val modelId = AgentModelConfigs.modelIdFor(providerId, agents.getAgent())
+          // 传当前槽位：此前不传，modelIdFor 无条件用主模型，
+            // 于是界面「切到 Opus」改了偏好但请求仍发主模型（假反馈）。
+            val modelId =
+                AgentModelConfigs.modelIdFor(
+                    providerId,
+                    agents.getAgent(),
+                    inputFeatures.currentSlot(),
+                )
           val customBaseUrl = AgentOrchestrator.customBaseUrlFor(context, providerId)
 
           withContext(Dispatchers.Main) {
@@ -700,9 +737,15 @@ class FloatingAssistantView(
 
           try {
             val result =
-                orchestrator.run(providerId, modelId, userRequest, customBaseUrl) { event ->
-                  handleEvent(event)
-                }
+                orchestrator.run(
+                    providerId,
+                    modelId,
+                    userRequest,
+                    customBaseUrl,
+                    { event -> handleEvent(event) },
+                    null,
+                    reasoningEffort,
+                )
             withContext(Dispatchers.Main) {
               finishStreaming()
               // 已经流式显示过就不再追加：否则同一段回答会出现两遍。
@@ -1000,6 +1043,9 @@ class FloatingAssistantView(
    */
   private fun refreshModelLabel() {
     binding.assistantModelLabel.text = AssistantModelPicker.summaryLabel(context)
+    // 服务商可能刚被换掉，而槽位是「当前服务商」的属性——必须跟着一起刷新，
+    // 否则标签会停在上一个服务商的槽位名上，点了切到的是另一个模型。
+    inputFeatures.refreshSlotLabel()
   }
 
   /**
