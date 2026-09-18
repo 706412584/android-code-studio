@@ -63,6 +63,38 @@
 
 > `codegraph` 不在 PATH 中，必须用上述完整路径。
 
+## 移植前必做：先查有没有现成实现
+
+**这条是硬性要求，跳过它已经造成过实际损失。**
+
+背景：移植 cc-haha 的重试机制时，我没先检索就派 agent 从头实现了一套
+（`BackoffPolicy` / `RetryPolicy` / `StreamIdleWatchdog`）。做完才发现仓库里
+**早就有一版**（`RetryBackoff` / `ModelRetryDecision` / `StreamWatchdog`）——
+虽然是未完成品（无调用点、无测试），但 `StreamWatchdog` 已经接线在用。
+结果多出一套重复实现，还得回头判断该留哪套。
+
+**动手写（或派 agent 写）任何"新"组件之前，先做这三步检索：**
+
+```bash
+# 1) 按功能关键词搜符号名（不只搜英文，也搜中文注释里的说法）
+/d/npm-global/codegraph.cmd query <Retry|Backoff|Watchdog|Compress|Attachment...>
+
+# 2) 按可能的名字直接列目录，看有没有同族文件
+ls core/<模块>/src/main/java/**/ | grep -i <关键词>
+
+# 3) 找"看起来已实现但没人调用"的半成品
+grep -rn "<候选类名>" --include=*.java core/ | grep -v "\.java:"
+```
+
+第 3 步最容易漏，也最值钱：**移植半途而废的代码往往没有调用点**，
+光看目录名容易以为是完整的。判断标准是「有没有调用点 + 有没有测试」，
+两者皆无就是死代码。
+
+**复用优先于重写**：参考项目（LCP / cc-haha）已有对应实现的，优先照搬其语义，
+只改必要的适配层。自己重写不仅浪费，还容易在细节上踩参考项目已经踩过的坑
+（例如 `RetryBackoff` 把 `Retry-After` 截断到 32s 上限——而 cc-haha 的语义是
+`Retry-After` 优先且**绕过**上限）。
+
 ## 已知陷阱
 
 ### vendored 依赖污染检索结果
