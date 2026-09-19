@@ -96,6 +96,7 @@ constructor(context: Context, attrs: AttributeSet? = null, defStyleAttr: Int = 0
 
   fun bind(isThinking: Boolean) {
     thinking = isThinking
+    publishLabel()
     requestLayout()
     invalidate()
   }
@@ -108,8 +109,25 @@ constructor(context: Context, attrs: AttributeSet? = null, defStyleAttr: Int = 0
    */
   fun setAction(text: CharSequence?) {
     actionText = text?.takeIf { it.isNotBlank() }
+    publishLabel()
     requestLayout()
     invalidate()
+  }
+
+  /**
+   * 把当前文案同步到 contentDescription。
+   *
+   * <p><b>为什么必须做</b>：这段文字是 canvas 直接绘制的，不在视图树里——
+   * 无障碍服务读不到它，`uiautomator dump` 里这个节点也是空的（实测确认）。
+   * 结果是「agent 在做什么」这条信息对视障用户完全不可见，也让自动化测试
+   * 无法断言状态条的内容。
+   *
+   * <p>用 `announceForAccessibility` 会让 TalkBack 在每次工具切换时打断朗读，
+   * 而工具调用可能几秒一次；只设 contentDescription 则等用户主动聚焦时朗读，
+   * 是更合适的粒度。
+   */
+  private fun publishLabel() {
+    contentDescription = label
   }
 
   fun startWorking() {
