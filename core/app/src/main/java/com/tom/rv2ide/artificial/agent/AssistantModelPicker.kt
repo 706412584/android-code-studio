@@ -164,23 +164,49 @@ object AssistantModelPicker {
   /**
    * 已配置的服务商清单（含各自已配置的模型）。
    *
-   * <p><b>「已配置」的判据复用发请求那条路径</b>（[AgentModelConfigs.isProviderUsable]）：
-   * 自己另判一次「密钥非空」会漏掉自定义端点（无密钥、但需要 baseUrl），
-   * 更糟的是会在界面上说「可用」而请求仍然失败。
+   * <p><b>「已配置」的判据必须与发请求那条路径完全一致</b>（[AgentModelConfigs.isProviderUsable]）。
+   * 但**只遍历 [ProviderConfigStore] 的记录是不够的**：判据读的是 `ApiKey` 的偏好槽位，
+   * 与 `providers.json` 无关。两者会分叉的实测情形：
+   *
+   * - `providers.json` 不存在，而 `migrateLegacyKeys` 没产出任何记录——它只迁移
+   *   **有独立密钥**的服务商，且共用密钥槽位只归给「当前选中的、非 custom 的」服务商。
+   *   用户密钥落在共用槽位而当前服务商是 custom 时，记录为空。
+   * - 用户直接改过偏好（不经服务商管理界面）。
+   *
+   * 此时旧逻辑返回空列表 → 选择器显示「还没有配置任何服务商」，而当前服务商其实可用。
+   *
+   * <p>修法：以**记录**为主（它带 label 与各槽位模型），再补上「记录里没有、但当前
+   * 正被使用且可用」的服务商。后者没有记录可查，模型名只能取当前值。
    */
   private fun configuredProviders(context: Context): List<ProviderEntry> {
     val records = ProviderConfigStore(context).load()
     val result = ArrayList<ProviderEntry>()
+    val seen = HashSet<String>()
     for (record in records) {
       val id = record.getId()
       if (!AgentModelConfigs.isProviderUsable(id, AgentOrchestrator.customBaseUrlFor(context, id))) {
         continue
       }
-      val models = configuredModels(record)
       // 模型一个都没配的服务商仍然列出来：用户点它至少能切到该服务商，
       // 再由下面那个「填写模型名」的行引导他去填。整条隐藏会让他以为
       // 「我明明加了服务商，为什么列表里没有」。
-      result.add(ProviderEntry(id, record.getLabel(), models))
+      result.add(ProviderEntry(id, record.getLabel(), configuredModels(record)))
+      seen.add(id)
+    }
+
+    // 兜底：当前服务商可用但没有记录，补一条，否则用户看不到自己正在用的那个。
+    val agents = Agents(context)
+    val currentId = agents.getProvider()
+    if (!seen.contains(currentId) &&
+        AgentModelConfigs.isProviderUsable(
+            currentId, AgentOrchestrator.customBaseUrlFor(context, currentId))) {
+      val currentModel = ContextSizeParser.stripSuffix(agents.getAgent())
+      result.add(
+          ProviderEntry(
+              currentId,
+              ProviderPresets.labelFor(currentId),
+              if (currentModel.isBlank()) emptyList() else listOf(currentModel),
+          ))
     }
     return result
   }

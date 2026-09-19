@@ -103,7 +103,10 @@ public final class AssistantActionTextTest {
 
     assertTrue("应从开头保留: " + target, target.startsWith("./gradlew "));
     assertTrue("应截断: " + target, target.endsWith("…"));
-    assertTrue(target.length() <= AssistantActionText.TARGET_MAX + 1);
+    // 断言**硬编码**的期望长度，而不是拿 TARGET_MAX 去比——用被测常量自身做上界，
+    // 改这个常量时断言会跟着一起变，永远测不出「常量被改小导致命令被截太狠」。
+    // 120 + 省略号 = 121。
+    assertEquals("截断长度应等于 TARGET_MAX+1", 121, target.length());
   }
 
   @Test
@@ -118,9 +121,46 @@ public final class AssistantActionTextTest {
             "file_read", "{\"file_path\":\"a/" + longName + ".cpp\"}");
 
     assertTrue("超长目标应被截断: " + target, target.endsWith("…"));
-    assertTrue(
-        "截断后长度应受控: " + target.length(),
-        target.length() <= AssistantActionText.TARGET_MAX + 1);
+    // 同上：用硬编码值，不引用 TARGET_MAX。
+    assertEquals(121, target.length());
+  }
+
+  @Test
+  public void truncationNeverSplitsASurrogatePair() {
+    // 代理对（emoji、CJK 扩展 B 区汉字）占两个 UTF-16 单元。按单元数截断若正好
+    // 落在代理对中间，结果末尾会是一个孤立的高位代理——它渲染成 `?`，
+    // 并且只在特定长度的名字上偶发，极难定位。中文项目里完全可能出现。
+    //
+    // 构造：让第 TARGET_MAX 个单元落在代理对的高位上。
+    // "𠀋" = U+2000B，UTF-16 是两个单元。前缀填 119 个 ASCII，则
+    // 索引 119 是高位、120 是低位；max=120 时 substring(0,120) 会把高位留下。
+    StringBuilder sb = new StringBuilder();
+    for (int i = 0; i < 119; i++) {
+      sb.append('a');
+    }
+    sb.append('\uD840').append('\uDC0B'); // 𠀋
+    for (int i = 0; i < 50; i++) {
+      sb.append('b');
+    }
+    String target = AssistantActionText.INSTANCE.targetOf("file_read", "{\"file_path\":\"" + sb + "\"}");
+
+    assertTrue("应截断: " + target, target.endsWith("…"));
+    String body = target.substring(0, target.length() - 1);
+    assertFalse(
+        "末尾不应是孤立的高位代理: " + (int) body.charAt(body.length() - 1),
+        Character.isHighSurrogate(body.charAt(body.length() - 1)));
+    // 逐字符校验：整个串必须是合法的 UTF-16（每个高位代理后面都跟低位代理）。
+    for (int i = 0; i < body.length(); i++) {
+      if (Character.isHighSurrogate(body.charAt(i))) {
+        assertTrue(
+            "高位代理后必须跟低位代理 (index " + i + ")",
+            i + 1 < body.length() && Character.isLowSurrogate(body.charAt(i + 1)));
+        i++;
+      } else {
+        assertFalse(
+            "低位代理不应单独出现 (index " + i + ")", Character.isLowSurrogate(body.charAt(i)));
+      }
+    }
   }
 
   @Test

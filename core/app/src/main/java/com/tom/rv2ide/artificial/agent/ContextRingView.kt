@@ -64,7 +64,10 @@ constructor(context: Context, attrs: AttributeSet? = null, defStyleAttr: Int = 0
    * 无障碍服务会逐字读出「上下文占用 %1$s」。实测 UI dump 里就是这个字符串。
    */
   fun bind(ratio: Float, contentDescription: CharSequence? = null) {
-    this.ratio = ratio.coerceIn(0f, 1f)
+    // 负值走「未知」分支，**不能**被 coerceIn 夹成 0——那会把「不知道占用多少」
+    // 显示成「占用 0%」，两者对用户的含义完全相反。0..1 之外的其它值（浮点误差
+    // 导致的 1.0000001）仍夹到边界。
+    this.ratio = if (ratio < 0f) -1f else ratio.coerceAtMost(1f)
     if (contentDescription != null) {
       this.contentDescription = contentDescription
     }

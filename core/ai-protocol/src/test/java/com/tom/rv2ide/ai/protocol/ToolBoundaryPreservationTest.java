@@ -19,6 +19,7 @@ package com.tom.rv2ide.ai.protocol;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.ArrayList;
@@ -134,15 +135,24 @@ final class ToolBoundaryPreservationTest {
     }
   }
 
-  /** 缓冲全空：没有任何可带的信息，异常原样返回。 */
+  /**
+   * 缓冲全空：没有任何可带的信息，异常**原样返回**。
+   *
+   * <p>断言用 `assertSame` 而不是只查两个标志位：只查标志位的话，一个「无条件调用
+   * withPartial("", "", false)」的实现也能通过——那会把一个全新的、字段被清空的
+   * 异常对象替换掉原异常，栈信息与 message 都可能丢。这里钉住的是「什么都没带时
+   * 必须把原对象还回来」。
+   */
   @Test
-  void emptyBufferCarriesNothing() {
+  void emptyBufferCarriesNothingAndReturnsTheSameException() {
     for (int i = 0; i < ATTACHERS.size(); i++) {
       String name = NAMES.get(i);
       AssistantCommitBuffer buffer = new AssistantCommitBuffer();
+      ModelCompletionException original = streamFailure();
 
-      ModelCompletionException exception = ATTACHERS.get(i).attach(streamFailure(), buffer);
+      ModelCompletionException exception = ATTACHERS.get(i).attach(original, buffer);
 
+      assertSame(original, exception, name + ": 无可带信息时必须原样返回同一个异常");
       assertFalse(exception.hasPartial(), name);
       assertFalse(exception.crossedToolBoundary(), name);
     }

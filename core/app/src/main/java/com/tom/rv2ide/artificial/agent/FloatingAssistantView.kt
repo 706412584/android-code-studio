@@ -1243,7 +1243,10 @@ class FloatingAssistantView(
       return
     }
     binding.assistantRetryCard.isVisible = true
-    val seconds = Math.max(0L, delayMs / 1000L)
+    // 向上取整到至少 1 秒，与 AgentEvent.streamRetrying 里 message 的算法保持一致。
+    // 退避首轮是 500ms，若按整数除法会得到「0 秒后重试」——用户看到的是一个
+    // 已经过期的倒计时，而事件 message 里写的是「1s」，两处自相矛盾。
+    val seconds = Math.max(1L, delayMs / 1000L)
     val base =
         if (delayMs > 0) {
           context.getString(string.ai_assistant_retry_retrying, seconds, attempt, maxAttempts)
@@ -1518,12 +1521,13 @@ class FloatingAssistantView(
    * 手机上只有 260dp。参考项目（cc-haha）同样用 ResizeObserver 量实际宽度，
    * 而不是 CSS 媒体查询。
    *
-   * <p><b>逐级让位</b>（阈值由实测控件宽度定，见 [GIT_VISIBLE_MIN_DP] 的注释）：
+   * <p><b>逐级让位</b>（三个阈值均由实测控件宽度推导，各自常量的 KDoc 里有算式）：
    * 模型名永远保留（它是用户最需要看的一格），装不下时先隐服务商、再隐 git：
    * <ul>
-   *   <li>≥320dp：全部显示
-   *   <li>&lt;300dp：隐藏服务商标签（模型名已隐含服务商）
-   *   <li>&lt;240dp：隐藏 git 分支，并把模型名压到 [MODEL_MAX_WIDTH_NARROW_DP]
+   *   <li>≥425dp：全部显示（含服务商标签）
+   *   <li>&lt;425dp：隐藏服务商标签（模型名已隐含服务商）
+   *   <li>&lt;329dp：隐藏 git 分支
+   *   <li>&lt;257dp：把模型名压到 [MODEL_MAX_WIDTH_NARROW_DP]
    * </ul>
    * 用嵌套的 `if` 而不是三个独立判断：三者共享同一个宽度预算，独立判断在中间档
    * 会出现「服务商和 git 都还在、模型被挤没」的组合。
@@ -1584,15 +1588,15 @@ class FloatingAssistantView(
   }
 
   /**
-   * 刷新工具条上的模型标签。
+   * 刷新工具条上的服务商与模型两个标签。
    *
    * <p>由选择器在每次选择后回调，以及面板 attach 时调用一次。不订阅偏好变更：
    * 目前只有本面板会改这两个值，回调已经覆盖；引入全局监听反而要为「谁改的」
    * 做去重，得不偿失。
    *
-   * <p>只显示模型名（服务商名进 contentDescription）：工具条在贴边形态下整行只有
-   * 约 236dp，「DeepSeek / deepseek-chat」这种两段文本会被压成两个省略号，
-   * 而用户切换时记住的是模型名。
+   * <p>两者是**分开的两个控件**而不是合成一段「服务商 / 模型」：合成后两段文字在
+   * 窄面板里会一起被压成省略号，用户既看不出服务商也看不出模型。分开之后各自独立
+   * 省略，且服务商标签可随宽度让位（见 [applyToolbarDensity]）。
    */
   private fun refreshModelLabel() {
     val agents = Agents(context)

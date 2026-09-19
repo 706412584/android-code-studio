@@ -82,10 +82,13 @@ object Check {
       getAllCMakeVersions().firstOrNull { validateCMakeVersion(it) != null }
 
   /**
-   * 设备架构与 CMake 二进制架构不匹配的版本清单（用于给出可操作的错误提示）。
+   * 目录存在、但二进制在本设备上跑不起来的 CMake 版本。
    *
-   * <p>这些版本目录存在、但二进制跑不起来。把它们显式列出来，用户才知道该删哪个、
-   * 或该换装哪个——只报「CMake 不可用」会让人以为一个都没装。
+   * <p>用于给用户一条**可操作**的错误信息：只报「CMake 不可用」会让人以为一个都没装，
+   * 而实际上他装了好几个、只是架构不对（见 [getHighestRunnableCMakeVersion] 的说明）。
+   * 把版本号列出来，用户才知道该删哪个或该换装哪个。
+   *
+   * <p>返回空列表表示「装了但都正常」或「一个都没装」——两者都不需要额外提示。
    */
   fun getBrokenCMakeVersions(): List<String> =
       getAllCMakeVersions().filter { validateCMakeVersion(it) == null }

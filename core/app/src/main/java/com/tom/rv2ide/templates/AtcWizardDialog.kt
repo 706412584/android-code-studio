@@ -182,6 +182,13 @@ class AtcWizardDialog : BottomSheetDialogFragment() {
     binding.createButton.setOnClickListener { createProject(ctx) }
   }
 
+  /**
+   * 校验 CMake 可用性并让用户选版本。
+   *
+   * <p>在后台线程做校验：`validateCMakeVersion` 会**真的执行** `cmake --version`
+   * 并最多等 10 秒，而本方法由 `setOnCheckedChangeListener` 在 UI 线程触发。
+   * 设备上每个版本都要 fork 一次进程，多个版本串行下来主线程会明显卡住。
+   */
   private fun validateAndSelectCMake() {
     val cmakeVersions = Check.getAllCMakeVersions()
     if (cmakeVersions.isEmpty()) {
@@ -192,8 +199,21 @@ class AtcWizardDialog : BottomSheetDialogFragment() {
         startActivity(Intent(requireContext(), IDEConfigurations::class.java))
       }
       binding.useCMakeSwitch.isChecked = false
-    } else {
-      showCMakeVersionPicker(requireContext(), cmakeVersions)
+      return
+    }
+
+    val ctx = requireContext()
+    CoroutineScope(Dispatchers.IO).launch {
+      // 每个版本只校验一次，结果缓存下来。
+      //
+      // 不缓存的话，下面的版本列表（N 次）与 defaultIndex 的 indexOfFirst（再来 N 次）
+      // 会把同一批二进制重复 fork 一遍；用户点某项时还会再校验一次。
+      // 每项 10 秒超时，最坏情况是 UI 冻结几十秒。
+      val runnable =
+          cmakeVersions.associateWith { Check.validateCMakeVersion(it) != null }
+      withContext(Dispatchers.Main) {
+        showCMakeVersionPicker(ctx, cmakeVersions, runnable)
+      }
     }
   }
 
@@ -206,6 +226,22 @@ class AtcWizardDialog : BottomSheetDialogFragment() {
       val highestNdk = if (hasNdk) Check.getHighestNdkVersion() else null
       val isValid = highestNdk?.let { Check.validateNdkVersion(it) } ?: false
 
+      // CMake 也一并校验。
+      //
+      // **必须在这里拦住**：模板生成的 build.gradle 写的是
+      // `version = Options.OPT_CMAKE_VERSION ?: getHighestRunnableCMakeVersion()`，
+      // 两者都为 null 时 writer 干脆不写 `version` 这一行，AGP 于是自动挑
+      // 「已注册的最高版本」——而那个版本很可能是跑不起来的 x86-64（见
+      // NativeChecks.getHighestRunnableCMakeVersion 的说明）。结果是用户拿到一个
+      // 必然构建失败的项目，且错误信息（not executable: 64-bit ELF file）
+      // 看起来像 NDK/SDK 版本冲突，排查方向被完全带偏。
+      //
+      // 只有在确实要用 CMake 时才校验；ndk-build 路径不涉及 CMake。
+      val cmakeOk =
+          !Options.OPT_BUILD_SYSTEM_USE_CMAKE ||
+              Options.OPT_CMAKE_VERSION != null ||
+              Check.getHighestRunnableCMakeVersion() != null
+
       withContext(Dispatchers.Main) {
         progressDialog.dismiss()
 
@@ -216,12 +252,35 @@ class AtcWizardDialog : BottomSheetDialogFragment() {
                   ctx,
                   "The highest NDK version found ($highestNdk) is invalid or corrupted.",
               )
+          !cmakeOk -> showCmakeError(ctx)
           else -> {
             Options.OPT_SELECTED_NDK_VERSION = highestNdk
             proceedToOptionsPage(ctx)
           }
         }
       }
+    }
+  }
+
+  /**
+   * 没有可运行的 CMake 时的提示。
+   *
+   * <p>把「装了但架构不对」的版本号列出来。实测 Android SDK 官方仓库的 CMake
+   * **只有 x86-64**，arm64 设备上装了也跑不了；只说「未找到 CMake」会让用户
+   * 以为自己没装，于是反复重装同一个跑不起来的版本。
+   */
+  private fun showCmakeError(ctx: Context) {
+    val broken = Check.getBrokenCMakeVersions()
+    val detail =
+        if (broken.isEmpty()) {
+          "No CMake installation found."
+        } else {
+          "已安装的 CMake（${broken.joinToString(", ")}）无法在本设备运行——" +
+              "架构不匹配。Android SDK 官方仓库的 CMake 只有 x86-64 构建，" +
+              "arm64 设备需要安装本应用提供的 arm64 版本。"
+        }
+    showAlert(getString(R.string.native_error_title), detail) {
+      startActivity(Intent(ctx, IDEConfigurations::class.java))
     }
   }
 
@@ -429,21 +488,22 @@ class AtcWizardDialog : BottomSheetDialogFragment() {
    * <p>选中的版本写进 [Options.OPT_CMAKE_VERSION]，由模板生成到 build.gradle 的
    * `cmake { version '…' }`。跑不起来的版本直接拒绝，不写进项目。
    */
-  private fun showCMakeVersionPicker(ctx: Context, versions: List<String>) {
+  private fun showCMakeVersionPicker(
+      ctx: Context,
+      versions: List<String>,
+      runnable: Map<String, Boolean>,
+  ) {
     val versionLabels =
-        versions
-            .map { "$it ${if (Check.validateCMakeVersion(it) != null) "✓" else "✗"}" }
-            .toTypedArray()
+        versions.map { "$it ${if (runnable[it] == true) "✓" else "✗"}" }.toTypedArray()
 
     // 默认落在第一个能跑的版本上，而不是永远第一项——第一项可能正是坏的那个。
-    val defaultIndex =
-        versions.indexOfFirst { Check.validateCMakeVersion(it) != null }.coerceAtLeast(0)
+    val defaultIndex = versions.indexOfFirst { runnable[it] == true }.coerceAtLeast(0)
 
     MaterialAlertDialogBuilder(ctx)
         .setTitle("Select CMake Version")
         .setSingleChoiceItems(versionLabels, defaultIndex) { dialog, which ->
           val selectedVersion = versions[which]
-          if (Check.validateCMakeVersion(selectedVersion) != null) {
+          if (runnable[selectedVersion] == true) {
             Options.OPT_CMAKE_VERSION = selectedVersion
             Toast.makeText(ctx, "CMake $selectedVersion selected", Toast.LENGTH_SHORT).show()
             dialog.dismiss()

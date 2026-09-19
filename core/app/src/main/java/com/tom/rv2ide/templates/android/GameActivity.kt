@@ -64,6 +64,8 @@ class GameActivity : Template {
   private val ASSETS_GRADLE_PATH = "$ASSETS_BASE_PATH/gradle"
 
   override fun configureOptions() {
+    // 先清空上一次向导留下的选择，再设本模板需要的位。理由见 NativeCpp 同名方法。
+    Options.resetToDefaults()
     Options.OPT_IS_NATIVE_CPP = true
     Options.OPT_BUILD_SYSTEM_USE_CMAKE = true
     Options.OPT_IS_NATIVE_GAME_ACTIVITY = true

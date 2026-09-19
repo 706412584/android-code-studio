@@ -61,6 +61,12 @@ class NativeCpp : Template {
   private val ASSETS_GRADLE_PATH = "$ASSETS_BASE_PATH/gradle"
 
   override fun configureOptions() {
+    // 先清空上一次向导留下的选择，再设本模板需要的位。
+    //
+    // 必须显式调：本方法覆写了基类的默认实现（基类会 resetToDefaults），不调的话
+    // OPT_CMAKE_VERSION / OPT_SELECTED_NDK_VERSION / OPT_MIN_SDK 会从上一次创建
+    // 静默延续下来——用户这次没碰 CMake 选择器，却继承了上次那个版本。
+    Options.resetToDefaults()
     Options.OPT_IS_NATIVE_CPP = true
     Options.OPT_BUILD_SYSTEM_USE_CMAKE = true
   }

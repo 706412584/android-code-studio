@@ -325,13 +325,6 @@ public final class AgentOrchestrator {
   }
 
   /**
-   * 设置工作区根目录。工具只能在此目录内操作。
-   *
-   * <p><b>切换工作区时恢复该工作区上次打开的会话</b>：用户进入项目后期待接着上次继续，
-   * 而不是每次面对一个空会话、还要去历史列表里翻。持久化的键含工作区绝对路径——
-   * 用全局单一「上次会话」会让两个项目互相覆盖，用户切回 A 项目却看到 B 的对话。
-   */
-  /**
    * 上下文用量回调。
    *
    * <p>由 UI 注入（悬浮助手的上下文圆环）。不放进 `run()` 的参数表：它跨越多次运行
@@ -356,6 +349,13 @@ public final class AgentOrchestrator {
     return config == null ? 0 : ConversationCompaction.contextSizeOf(config);
   }
 
+  /**
+   * 设置工作区根目录。工具只能在此目录内操作。
+   *
+   * <p><b>切换工作区时恢复该工作区上次打开的会话</b>：用户进入项目后期待接着上次继续，
+   * 而不是每次面对一个空会话、还要去历史列表里翻。持久化的键含工作区绝对路径——
+   * 用全局单一「上次会话」会让两个项目互相覆盖，用户切回 A 项目却看到 B 的对话。
+   */
   public void setWorkspace(File workspace) {
     this.workspace = workspace;
     restoreLastConversationForWorkspace();

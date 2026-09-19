@@ -113,8 +113,30 @@ object AssistantActionText {
     if (compact.isEmpty()) {
       return "…"
     }
-    return if (compact.length <= TARGET_MAX) compact
-    else compact.substring(0, TARGET_MAX) + "…"
+    return truncateAtCodePointBoundary(compact, TARGET_MAX)
+  }
+
+  /**
+   * 按**码点**边界截断，绝不切在代理对中间。
+   *
+   * <p>`substring` 按 UTF-16 单元计数，若截断点正好落在代理对中间，结果末尾会是一个
+   * 孤立的高位代理（lone surrogate）。它既渲染成 `?`，也会让 `Canvas.drawText` 抛出
+   * 或画出乱码——而且只在特定长度的中文/emoji 文件名上偶发，极难定位。
+   *
+   * <p>emoji 与 CJK 扩展 B 区汉字（如 𠀋）都是代理对，中文项目里完全可能出现。
+   *
+   * @param max 最大 UTF-16 单元数；实际结果可能少 1 个单元以避开半个代理对
+   */
+  private fun truncateAtCodePointBoundary(text: String, max: Int): String {
+    if (text.length <= max) {
+      return text
+    }
+    var end = max
+    // 截断点落在「低半区」说明前一个单元是高位代理，把它一起退掉。
+    if (Character.isLowSurrogate(text[end])) {
+      end--
+    }
+    return text.substring(0, end) + "…"
   }
 
   /** 安全读一个字符串字段；JSON 非法或字段缺失都返回空串。 */

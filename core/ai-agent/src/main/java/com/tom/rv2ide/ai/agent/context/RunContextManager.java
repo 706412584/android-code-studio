@@ -117,6 +117,10 @@ public final class RunContextManager {
     int budget = historyBudget();
     if (budget == UNLIMITED) {
       // 窗口未配置：无从判断，只记录用量供调用方参考。
+      //
+      // 这里刻意**不**调 notifyUsage()：走到这一支意味着 contextSize <= 0，
+      // 而 notifyUsage() 在 size <= 0 时直接返回，调了也是空转。UI 那边拿不到
+      // 比例会显示「占用未知」，这是正确行为——没有分母就不该编一个比例出来。
       tracker.record(TokenEstimator.estimate(messages), 0);
       return new ArrayList<>(messages);
     }
