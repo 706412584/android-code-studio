@@ -80,8 +80,109 @@ public final class ModelClient {
             ModelCancellationToken cancellationToken,
             ModelRequestOptions options
     ) throws ModelCompletionException {
-        ModelProtocol protocol = protocolFactory.create(config.getProtocolType());
-        ModelRequestOptions compatibleOptions = ReasoningCompatibility.adapt(config, options);
-        return protocol.stream(config, messages, callback, cancellationToken, compatibleOptions);
+        return stream(config, messages, callback, cancellationToken, options, null);
+    }
+
+    /**
+     * 带断流重试的流式请求。
+     *
+     * <p><b>为什么重试放在这一层，而不是 postJsonSse</b>：协议实现里累积的
+     * {@code text}/{@code reasoning}/{@code commitBuffer} 都是在**调用协议方法之前**
+     * 创建的局部状态。在 postJsonSse 内重试只会重发 HTTP，那些 StringBuilder 不会重置，
+     * 两次尝试的内容会**拼接**成一段乱码。放在这里重试，每次都是一次全新的
+     * {@code protocol.stream(...)} 调用，状态自然重建。
+     *
+     * <p><b>只有「未越过副作用边界」才重发</b>：一旦模型已经产出完整工具调用，
+     * 重发会让工具被**重复执行**（重复写文件、重复跑命令）。这个判据来自异常上的
+     * {@link ModelCompletionException#crossedToolBoundary()}，由协议层的
+     * {@code AssistantCommitBuffer} 标记。宁可把失败如实报给用户，也不重复副作用。
+     *
+     * @param retryListener 重试通知回调；可为 null。UI 需要它来丢弃本轮已渲染的部分输出
+     */
+    public ModelCompletionResponse stream(
+            ModelConfig config,
+            List<ModelMessage> messages,
+            ModelStreamCallback callback,
+            ModelCancellationToken cancellationToken,
+            ModelRequestOptions options,
+            RetryListener retryListener
+    ) throws ModelCompletionException {
+        RetryPolicy retryPolicy = new RetryPolicy();
+        BackoffPolicy backoff = new BackoffPolicy();
+        ModelCompletionException last = null;
+
+        for (int attempt = 0; attempt <= retryPolicy.maxRetries(); attempt++) {
+            if (cancellationToken != null && cancellationToken.isCancelled()) {
+                throw new ModelCompletionException("请求已取消");
+            }
+            try {
+                ModelProtocol protocol = protocolFactory.create(config.getProtocolType());
+                ModelRequestOptions compatibleOptions = ReasoningCompatibility.adapt(config, options);
+                return protocol.stream(config, messages, callback, cancellationToken, compatibleOptions);
+            } catch (ModelCompletionException e) {
+                last = e;
+                if (!shouldRetryStream(e, retryPolicy, attempt)) {
+                    throw e;
+                }
+                long delayMs = backoff.delayMs(attempt + 1, e.retryAfterMs());
+                if (retryListener != null) {
+                    retryListener.onRetrying(attempt + 1, retryPolicy.maxRetries(), delayMs, e);
+                }
+                sleepQuietly(delayMs, cancellationToken);
+            }
+        }
+        throw last == null ? new ModelCompletionException("请求失败") : last;
+    }
+
+    /**
+     * 本次流式失败是否该重发。
+     *
+     * <p>三条否决条件，任一成立都不重发：
+     * <ol>
+     *   <li><b>越过工具边界</b>——重发会重复执行工具，这是正确性问题，不是效率问题
+     *   <li>分类不可重试（认证失败、客户端参数错误等）——重发只是把同一个错误再撞一次
+     *   <li>已用完重试次数
+     * </ol>
+     */
+    static boolean shouldRetryStream(
+            ModelCompletionException e, RetryPolicy retryPolicy, int attempt) {
+        if (e.crossedToolBoundary()) {
+            return false;
+        }
+        if (attempt >= retryPolicy.maxRetries()) {
+            return false;
+        }
+        // streamDisconnected=true：走到这里说明流已经开始读了（异常由读循环抛出），
+        // 让分类器给出更精确的 STREAM_DISCONNECT 而不是泛化的 CONNECTION。
+        int status = e.httpStatus();
+        RetryPolicy.ErrorCategory category =
+                status > 0
+                        ? RetryPolicy.classifyStatus(status)
+                        : RetryPolicy.classify(e, true);
+        return retryPolicy.canRetry(category);
+    }
+
+    /** 退避等待。可被取消打断——不把一次取消变成完整睡眠。 */
+    private static void sleepQuietly(long delayMs, ModelCancellationToken cancellationToken) {
+        if (delayMs <= 0) {
+            return;
+        }
+        long deadline = System.currentTimeMillis() + delayMs;
+        while (System.currentTimeMillis() < deadline) {
+            if (cancellationToken != null && cancellationToken.isCancelled()) {
+                return;
+            }
+            try {
+                Thread.sleep(Math.min(200L, Math.max(1L, deadline - System.currentTimeMillis())));
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return;
+            }
+        }
+    }
+
+    /** 重试通知。UI 据此丢弃本轮已渲染的部分输出。 */
+    public interface RetryListener {
+        void onRetrying(int attempt, int maxAttempts, long delayMs, ModelCompletionException cause);
     }
 }

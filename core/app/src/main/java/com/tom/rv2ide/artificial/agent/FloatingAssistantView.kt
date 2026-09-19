@@ -939,6 +939,28 @@ class FloatingAssistantView(
           refreshTodos()
         }
       }
+      com.tom.rv2ide.ai.agent.AgentEvent.Type.STREAM_RETRYING -> {
+        // 丢弃本轮已渲染的部分输出。
+        //
+        // 重发会产生一份**全新的**回答，协议层的累积状态已重建。旧的部分若留在
+        // 列表里，用户会看到两段内容并存（而且第二段从中间开始，读起来像乱码）。
+        //
+        // 必须同时清掉推理块与工具卡片状态：推理块与正文同属本轮输出；
+        // 而 lastToolCardId 指向的卡片若留着，重发后 TOOL_FINISHED 会回填到
+        // 一张属于上一次尝试的卡片上。
+        lifecycleScope.launch(Dispatchers.Main) {
+          streamingMessageId?.let { adapter.remove(it) }
+          streamingMessageId = null
+          lastThinkingId?.let { adapter.remove(it) }
+          lastThinkingId = null
+          lastToolCardId = null
+          streamedThisRun = false
+          // 节流器要重置：它记着「本轮是否已刷过」，不重置会让重发后的首个增量
+          // 被当成「间隔未到」而丢掉，看起来像新回答迟迟不出现。
+          throttle.reset()
+          appendTrace(event.message)
+        }
+      }
       com.tom.rv2ide.ai.agent.AgentEvent.Type.CONTEXT_COMPACTED -> {
         // 压缩是有损的，必须让用户看到——否则会困惑于模型为何遗忘先前的要求。
         lifecycleScope.launch(Dispatchers.Main) { appendTrace(event.message) }

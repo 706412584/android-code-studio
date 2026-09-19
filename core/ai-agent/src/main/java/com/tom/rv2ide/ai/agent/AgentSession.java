@@ -319,7 +319,22 @@ public final class AgentSession {
     ModelRequestOptions options =
         new ModelRequestOptions(reasoningEffort == null ? "" : reasoningEffort, false, nativeToolList);
 
-    return modelClient.stream(config, messages, callback, cancellationToken, options);
+    // 把重试通知转成事件发给 UI：UI 收到后必须丢弃本轮已渲染的部分输出，
+    // 否则重发产生的新回答会与旧的部分内容在列表里并存。
+    com.tom.rv2ide.ai.protocol.ModelClient.RetryListener retryListener =
+        listener == null
+            ? null
+            : (attempt, maxAttempts, delayMs, cause) ->
+                emit(
+                    listener,
+                    AgentEvent.streamRetrying(
+                        attempt,
+                        maxAttempts,
+                        delayMs,
+                        cause == null ? "" : cause.getMessage()));
+
+    return modelClient.stream(
+        config, messages, callback, cancellationToken, options, retryListener);
   }
 
   /**

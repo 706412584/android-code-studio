@@ -144,12 +144,30 @@ public final class RetryPolicy {
      * 只有编排层知道「流是否已经开始读取」，纯异常对象里没有这个信息。
      */
     public static ErrorCategory classify(Throwable t, boolean streamDisconnected) {
-        if (t instanceof SocketTimeoutException) {
+        // 下钻 cause 链。
+        //
+        // 必须这么做：真实调用路径上抛出的总是 ModelCompletionException（它 extends
+        // Exception，不是 IOException），真正的连接异常被包在 cause 里。只看最外层
+        // 会让所有网络故障都落进 UNKNOWN（不可重试）——重试机制等于没接。
+        // 用循环而不是递归，避免异常链成环时栈溢出。
+        Throwable root = t;
+        int guard = 0;
+        while (root != null && !(root instanceof IOException) && guard++ < 16) {
+            Throwable next = root.getCause();
+            if (next == null || next == root) {
+                break;
+            }
+            root = next;
+        }
+        if (root == null) {
+            root = t;
+        }
+        if (root instanceof SocketTimeoutException) {
             return ErrorCategory.TIMEOUT;
         }
-        if (t instanceof IOException) {
+        if (root instanceof IOException) {
             // 「明确不可重试」的 IO 异常优先排除，否则会被下面的默认分支当成瞬时故障重放
-            if (isExplicitlyNonRetryable(t)) {
+            if (isExplicitlyNonRetryable(root)) {
                 return ErrorCategory.CLIENT_ERROR;
             }
             // 注意 InterruptedIOException（SocketTimeoutException 的父类）不走 TIMEOUT：

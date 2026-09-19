@@ -55,6 +55,14 @@ public final class AgentEvent {
      * 静默压缩会让用户困惑于模型为何遗忘先前说过的要求。
      */
     CONTEXT_COMPACTED,
+
+    /**
+     * 流中断后即将重发本次请求。
+     *
+     * <p>UI 收到它必须**丢弃本轮已渲染的部分输出**——重发会产生一份全新的回答，
+     * 旧的部分留在列表里就会出现两段内容并存。
+     */
+    STREAM_RETRYING,
     /** 循环正常结束（模型不再请求工具）。 */
     COMPLETED,
     /** 循环因取消、超预算或错误而终止。 */
@@ -114,6 +122,31 @@ public final class AgentEvent {
     return new AgentEvent(
         Type.CONTEXT_COMPACTED,
         "已压缩 " + replacedMessages + " 条早期消息为摘要（" + summaryTokens + " tokens）",
+        null,
+        null,
+        null);
+  }
+
+  /**
+   * 流中断、即将重发。
+   *
+   * @param attempt 第几次重试（从 1 开始）
+   * @param maxAttempts 重试上限
+   * @param delayMs 本次退避等待时长
+   * @param reason 中断原因（面向用户）
+   */
+  public static AgentEvent streamRetrying(
+      int attempt, int maxAttempts, long delayMs, String reason) {
+    return new AgentEvent(
+        Type.STREAM_RETRYING,
+        "连接中断，正在重试 "
+            + attempt
+            + "/"
+            + maxAttempts
+            + "（等待 "
+            + Math.max(1L, delayMs / 1000L)
+            + "s）："
+            + (reason == null ? "" : reason),
         null,
         null,
         null);

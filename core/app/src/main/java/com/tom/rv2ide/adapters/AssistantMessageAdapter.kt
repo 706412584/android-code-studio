@@ -233,6 +233,25 @@ class AssistantMessageAdapter : RecyclerView.Adapter<RecyclerView.ViewHolder>() 
     return true
   }
 
+  /**
+   * 按 id 移除任意类型的条目（消息 / 工具卡片 / 推理块）。
+   *
+   * <p>供断流重发使用：重发会产生一份全新的回答，上一次尝试的部分输出必须整条丢弃，
+   * 否则两段内容会在列表里并存。与 [removeIfBlank] 的区别是它**无条件移除**——
+   * 重试场景下部分内容可能有几百字，但依然是作废的。
+   *
+   * @return 是否真的移除了
+   */
+  fun remove(id: Long): Boolean {
+    val index = indexOf(id)
+    if (index < 0) {
+      return false
+    }
+    items.removeAt(index)
+    notifyItemRemoved(index)
+    return true
+  }
+
   /** 按 id 取文本消息；不存在或不是消息时返回 null。 */
   fun find(id: Long): Message? = items.firstOrNull { it.id == id } as? Message
 
