@@ -42,6 +42,29 @@ public final class McpServers {
   private static final String FIELD_URL = "url";
   private static final String FIELD_LABEL = "label";
   private static final String FIELD_ENABLED = "enabled";
+  private static final String FIELD_TYPE = "type";
+
+  /** 默认传输类型。已有配置里没有 {@code type} 字段，必须落到它，否则升级即失效。 */
+  public static final String DEFAULT_TYPE = "http";
+
+  /** 支持的传输类型取值。 */
+  public static final String TYPE_HTTP = "http";
+
+  public static final String TYPE_SSE = "sse";
+
+  /**
+   * 归一化传输类型。
+   *
+   * <p>无法识别时回落到 {@link #DEFAULT_TYPE} 而不是报错：配置可能是旧版本写的
+   * （没有该字段），也可能是手改坏的。MCP 是可选扩展，一个字段写错不该让整条配置读不出来。
+   */
+  public static String normalizeType(String raw) {
+    if (raw == null) {
+      return DEFAULT_TYPE;
+    }
+    String value = raw.trim().toLowerCase(java.util.Locale.US);
+    return TYPE_SSE.equals(value) ? TYPE_SSE : DEFAULT_TYPE;
+  }
 
   /** 一个 MCP server 配置。 */
   public static final class Server {
@@ -49,10 +72,24 @@ public final class McpServers {
     public final String label;
     public final boolean enabled;
 
+    /**
+     * 传输类型：{@code http} 或 {@code sse}。
+     *
+     * <p><b>为什么存字符串而不是枚举</b>：取值来自偏好里的 JSON，损坏或来自更高版本的
+     * 未知值时只需回落到默认，不需要在读取处处理 {@code IllegalArgumentException}。
+     * 解析统一由 {@code McpClient.Transport.fromId} 负责。
+     */
+    public final String type;
+
     public Server(String url, String label, boolean enabled) {
+      this(url, label, enabled, DEFAULT_TYPE);
+    }
+
+    public Server(String url, String label, boolean enabled, String type) {
       this.url = url == null ? "" : url.trim();
       this.label = label == null ? "" : label.trim();
       this.enabled = enabled;
+      this.type = normalizeType(type);
     }
 
     /** 展示名：优先用户填的 label，否则用地址。 */
@@ -64,7 +101,8 @@ public final class McpServers {
       return new JSONObject()
           .put(FIELD_URL, url)
           .put(FIELD_LABEL, label)
-          .put(FIELD_ENABLED, enabled);
+          .put(FIELD_ENABLED, enabled)
+          .put(FIELD_TYPE, type);
     }
   }
 
@@ -94,8 +132,14 @@ public final class McpServers {
           // 没有地址的条目无法连接，跳过而不是让整个列表读不出来。
           continue;
         }
+        // optString 在字段缺失时返回 ""，normalizeType 会把它归到 http——
+        // 这正是升级前写入的配置应有的行为。
         servers.add(
-            new Server(url, json.optString(FIELD_LABEL, ""), json.optBoolean(FIELD_ENABLED, true)));
+            new Server(
+                url,
+                json.optString(FIELD_LABEL, ""),
+                json.optBoolean(FIELD_ENABLED, true),
+                json.optString(FIELD_TYPE, DEFAULT_TYPE)));
       }
     } catch (org.json.JSONException e) {
       // 配置损坏 → 当作空列表。不抛异常，否则 AI 功能会因此完全不可用。

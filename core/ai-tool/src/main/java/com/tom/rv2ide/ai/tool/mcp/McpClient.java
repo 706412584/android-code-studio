@@ -24,8 +24,8 @@ package com.tom.rv2ide.ai.tool.mcp;
 import com.tom.rv2ide.ai.tool.HttpPort;
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicLong;
 import org.json.JSONArray;
@@ -44,14 +44,20 @@ import org.json.JSONObject;
  * 三个方法——这是「拉取工具列表并调用」的最小闭环。资源、提示词、采样等 MCP 能力
  * 不在范围内。
  *
+ * <p><b>传输</b>：本类只管 JSON-RPC 语义（报文组装、错误处理、握手顺序），线上差异交给
+ * {@link McpTransport} 的两个实现——{@link StreamableHttpTransport}（单端点 POST）与
+ * {@link HttpStreamTransport}（SSE 长连接）。{@link Transport#HTTP} /
+ * {@link Transport#SSE} 是配置里 {@code type} 字段的取值。
+ *
  * <p><b>协议要点</b>：
  * <ul>
- *   <li>JSON-RPC 2.0 over HTTP POST。
- *   <li>会话 id 由 {@code initialize} 的 {@code Mcp-Session-Id} **响应头**下发，
- *       后续请求必须回传。拿不到它就无法建立会话——这也是 {@link HttpPort#postJson}
- *       必须返回响应头的原因。
+ *   <li>JSON-RPC 2.0。HTTP 传输下结果在 POST 响应体里；SSE 传输下结果从长连接推回来，
+ *       POST 本身可能只回 {@code 202 Accepted}。</li>
+ *   <li>会话 id 由 {@code initialize} 下发（HTTP 走 {@code Mcp-Session-Id} 响应头，
+ *       SSE 通常已含在 endpoint 事件给出的 URL 里）。拿不到它不影响本类工作——
+ *       无状态 server 是合法实现。</li>
  *   <li>{@code initialize} 后按规范应发 {@code notifications/initialized} 通知；
- *       它没有响应体，失败也不阻断后续调用。
+ *       它没有响应体，失败也不阻断后续调用。</li>
  * </ul>
  *
  * <p>本类不引用 Android 类型，可单测（用假的 {@link HttpPort}）。
@@ -61,48 +67,96 @@ public final class McpClient {
   /** 本实现声明的 MCP 协议版本。 */
   public static final String PROTOCOL_VERSION = "2025-03-26";
 
+  /** 会话 id 的响应头名。 */
+  static final String SESSION_HEADER = "Mcp-Session-Id";
+
   /** 客户端名称，会随 initialize 上报给 server。 */
   private static final String CLIENT_NAME = "AndroidCodeStudio";
 
   private static final String CLIENT_VERSION = "1.0.0";
 
-  /** 会话 id 的响应头名。 */
-  private static final String SESSION_HEADER = "Mcp-Session-Id";
+  /**
+   * 传输类型，对应配置里的 {@code type} 字段。
+   *
+   * <p>{@link #HTTP} 是默认值：已有用户的配置里没有这个字段，必须落到「行为不变」的那一支，
+   * 否则升级后所有旧配置会突然改用 SSE 连接而全部失效。
+   */
+  public enum Transport {
+    /** streamable HTTP（现行规范，单端点 POST）。 */
+    HTTP("http"),
+    /** SSE（旧规范，长连接推送）。 */
+    SSE("sse");
 
-  private final HttpPort http;
-  private final String serverUrl;
-  private final Map<String, String> extraHeaders;
+    private final String id;
+
+    Transport(String id) {
+      this.id = id;
+    }
+
+    public String getId() {
+      return id;
+    }
+
+    /** 解析配置值；无法识别时回落到 {@link #HTTP}（兼容缺失字段的旧配置）。 */
+    public static Transport fromId(String raw) {
+      if (raw != null) {
+        String value = raw.trim().toLowerCase(Locale.US);
+        if (SSE.id.equals(value)) {
+          return SSE;
+        }
+      }
+      return HTTP;
+    }
+  }
+
+  private final McpTransport transport;
   private final AtomicLong nextId = new AtomicLong(1);
-
-  /** 会话 id；initialize 成功后才有值。 */
-  private volatile String sessionId = "";
 
   /** server 上报的协议版本，供诊断。 */
   private volatile String serverProtocolVersion = "";
 
   private volatile String serverName = "";
 
+  /**
+   * 握手是否已完成。
+   *
+   * <p><b>为什么不复用 {@link #isInitialized()}</b>：那个对外回答的是「会话 id 拿到了吗」，
+   * 而本字段回答的是「还要不要再握手」。无状态 server 不下发会话 id，若用会话 id 决定
+   * 是否重握手，这类 server 每次调用都会重新 initialize——而 initialize 可能改变
+   * server 侧的会话状态。
+   */
+  private volatile boolean handshakeDone = false;
+
+  /** 并发保护：初始化只做一次，且不让两个线程同时握手。 */
+  private final Object initLock = new Object();
+
   public McpClient(HttpPort http, String serverUrl) {
     this(http, serverUrl, Collections.<String, String>emptyMap());
   }
 
+  public McpClient(HttpPort http, String serverUrl, Map<String, String> extraHeaders) {
+    this(http, serverUrl, extraHeaders, Transport.HTTP);
+  }
+
   /**
    * @param http HTTP 端口；null 视作无网络
-   * @param serverUrl MCP server 的 HTTP 端点
+   * @param serverUrl MCP server 的端点（HTTP 为消息端点，SSE 为事件流端点）
    * @param extraHeaders 附加请求头（例如鉴权）
+   * @param transport 传输类型
    */
-  public McpClient(HttpPort http, String serverUrl, Map<String, String> extraHeaders) {
-    this.http = http == null ? HttpPort.none() : http;
-    this.serverUrl = serverUrl == null ? "" : serverUrl.trim();
-    this.extraHeaders =
-        extraHeaders == null
-            ? Collections.<String, String>emptyMap()
-            : new HashMap<>(extraHeaders);
+  public McpClient(
+      HttpPort http, String serverUrl, Map<String, String> extraHeaders, Transport transport) {
+    HttpPort port = http == null ? HttpPort.none() : http;
+    Transport type = transport == null ? Transport.HTTP : transport;
+    this.transport =
+        type == Transport.SSE
+            ? new HttpStreamTransport(port, serverUrl, extraHeaders)
+            : new StreamableHttpTransport(port, serverUrl, extraHeaders);
   }
 
   /** 当前会话 id；未建立会话时为空串。 */
   public String getSessionId() {
-    return sessionId;
+    return transport.getSessionId();
   }
 
   /** server 上报的名称；未初始化时为空串。 */
@@ -115,9 +169,14 @@ public final class McpClient {
     return serverProtocolVersion;
   }
 
-  /** 是否已建立会话。 */
+  /**
+   * 是否已建立会话（拿到会话 id）。
+   *
+   * <p>无状态 server 不下发会话 id，这里会返回 false，但握手本身是成功的——
+   * 判定「是否还要握手」请看内部的 {@code handshakeDone}。
+   */
   public boolean isInitialized() {
-    return !sessionId.isEmpty();
+    return !getSessionId().isEmpty();
   }
 
   /**
@@ -126,35 +185,43 @@ public final class McpClient {
    * <p>可重复调用：已初始化时直接返回，避免每次拉工具列表都重新握手。
    */
   public void initialize() throws Exception {
-    if (isInitialized()) {
+    if (handshakeDone) {
       return;
     }
-    requireServerUrl();
+    synchronized (initLock) {
+      if (handshakeDone) {
+        return;
+      }
+      transport.open();
 
-    JSONObject params = new JSONObject();
-    params.put("protocolVersion", PROTOCOL_VERSION);
-    params.put(
-        "capabilities",
-        new JSONObject().put("tools", new JSONObject()));
-    params.put(
-        "clientInfo",
-        new JSONObject().put("name", CLIENT_NAME).put("version", CLIENT_VERSION));
+      JSONObject params = new JSONObject();
+      params.put("protocolVersion", PROTOCOL_VERSION);
+      params.put(
+          "capabilities",
+          new JSONObject().put("tools", new JSONObject()));
+      params.put(
+          "clientInfo",
+          new JSONObject().put("name", CLIENT_NAME).put("version", CLIENT_VERSION));
 
-    RpcResult result = call("initialize", params);
+      JSONObject result = call("initialize", params);
 
-    // 会话 id 可能缺失（无状态 server）。此时后续调用不带该头也能工作，
-    // 因此不视为失败——否则一类合法实现会被完全排除。
-    sessionId = result.sessionId;
-    serverProtocolVersion = result.result.optString("protocolVersion", "");
-    JSONObject serverInfo = result.result.optJSONObject("serverInfo");
-    serverName = serverInfo == null ? "" : serverInfo.optString("name", "");
+      serverProtocolVersion = result.optString("protocolVersion", "");
+      JSONObject serverInfo = result.optJSONObject("serverInfo");
+      serverName = serverInfo == null ? "" : serverInfo.optString("name", "");
 
-    // 按规范发送 initialized 通知。它没有响应体，失败不阻断——
-    // 有些 server 不实现它，为此中断整个接入不值得。
-    try {
-      notifyInitialized();
-    } catch (Exception ignored) {
-      // 见上：通知失败不影响后续 tools/list 与 tools/call。
+      // 先置位再发通知：通知失败不该让后续调用重新握手（见下面的 catch）。
+      handshakeDone = true;
+
+      // 按规范发送 initialized 通知。它没有响应体，失败不阻断——
+      // 有些 server 不实现它，为此中断整个接入不值得。
+      try {
+        JSONObject payload = new JSONObject();
+        payload.put("jsonrpc", "2.0");
+        payload.put("method", "notifications/initialized");
+        transport.notify(payload.toString());
+      } catch (Exception ignored) {
+        // 见上：通知失败不影响后续 tools/list 与 tools/call。
+      }
     }
   }
 
@@ -165,10 +232,10 @@ public final class McpClient {
    */
   public List<McpToolInfo> listTools() throws Exception {
     initialize();
-    RpcResult result = call("tools/list", new JSONObject());
+    JSONObject result = call("tools/list", new JSONObject());
 
     List<McpToolInfo> tools = new ArrayList<>();
-    JSONArray array = result.result.optJSONArray("tools");
+    JSONArray array = result.optJSONArray("tools");
     if (array == null) {
       return tools;
     }
@@ -208,8 +275,13 @@ public final class McpClient {
     params.put("name", toolName.trim());
     params.put("arguments", arguments == null ? new JSONObject() : arguments);
 
-    RpcResult result = call("tools/call", params);
-    return extractText(result.result);
+    JSONObject result = call("tools/call", params);
+    return extractText(result);
+  }
+
+  /** 释放传输资源（SSE 的长连接需要显式关闭）。可重复调用。 */
+  public void close() {
+    transport.close();
   }
 
   /**
@@ -249,33 +321,14 @@ public final class McpClient {
     return sb.toString();
   }
 
-  private void requireServerUrl() throws Exception {
-    if (serverUrl.isEmpty()) {
-      throw new Exception("未配置 MCP server 地址。");
-    }
-    if (!serverUrl.startsWith("http://") && !serverUrl.startsWith("https://")) {
-      throw new Exception("MCP server 地址必须是 http(s)：" + serverUrl);
-    }
-  }
-
-  /** 发送 initialized 通知（无 id、无响应）。 */
-  private void notifyInitialized() throws Exception {
-    JSONObject payload = new JSONObject();
-    payload.put("jsonrpc", "2.0");
-    payload.put("method", "notifications/initialized");
-    http.postJson(serverUrl, payload.toString(), buildHeaders());
-  }
-
   /**
    * 发一次 JSON-RPC 调用并解析结果。
    *
-   * <p>解析的是**响应正文**而不是 HTTP 状态码：JSON-RPC 的错误（方法不存在、参数非法）
+   * <p>解析的是**响应报文**而不是 HTTP 状态码：JSON-RPC 的错误（方法不存在、参数非法）
    * 通常仍以 200 返回，错误在 {@code error} 字段里。只看状态码会把这类失败当成成功，
-   * 拿到一个空结果。
+   * 拿到一个空结果。传输层因此返回报文原文，解析只在这一处发生。
    */
-  private RpcResult call(String method, JSONObject params) throws Exception {
-    requireServerUrl();
-
+  private JSONObject call(String method, JSONObject params) throws Exception {
     long id = nextId.getAndIncrement();
     JSONObject payload = new JSONObject();
     payload.put("jsonrpc", "2.0");
@@ -283,16 +336,15 @@ public final class McpClient {
     payload.put("method", method);
     payload.put("params", params == null ? new JSONObject() : params);
 
-    HttpPort.TextResponse response =
-        http.postJson(serverUrl, payload.toString(), buildHeaders());
+    String body = transport.send(payload.toString());
 
     JSONObject json;
     try {
-      json = new JSONObject(response.getBody());
+      json = new JSONObject(body);
     } catch (org.json.JSONException e) {
       // 正文不是 JSON：可能打到了错误的端点（返回了 HTML）。把前若干字符带进错误里，
       // 否则用户只看到「解析失败」而不知道该检查什么。
-      String preview = response.getBody();
+      String preview = body;
       if (preview.length() > 200) {
         preview = preview.substring(0, 200) + "…";
       }
@@ -306,28 +358,6 @@ public final class McpClient {
     }
 
     JSONObject result = json.optJSONObject("result");
-    return new RpcResult(result == null ? new JSONObject() : result, response.header(SESSION_HEADER));
-  }
-
-  /** 组装请求头：JSON 内容类型 + 会话 id + 用户附加头。 */
-  private Map<String, String> buildHeaders() {
-    Map<String, String> headers = new HashMap<>(extraHeaders);
-    headers.put("Content-Type", "application/json");
-    headers.put("Accept", "application/json");
-    if (!sessionId.isEmpty()) {
-      headers.put(SESSION_HEADER, sessionId);
-    }
-    return headers;
-  }
-
-  /** 一次调用的结果。 */
-  private static final class RpcResult {
-    final JSONObject result;
-    final String sessionId;
-
-    RpcResult(JSONObject result, String sessionId) {
-      this.result = result;
-      this.sessionId = sessionId == null ? "" : sessionId;
-    }
+    return result == null ? new JSONObject() : result;
   }
 }

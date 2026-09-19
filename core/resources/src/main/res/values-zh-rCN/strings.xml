@@ -232,8 +232,11 @@
   <string name="ai_agent_mcp_none">尚未配置 MCP 服务端</string>
   <string name="ai_agent_mcp_count">已启用 %1$d / %2$d 个</string>
   <string name="ai_agent_mcp_add">添加服务端…</string>
-  <string name="ai_agent_mcp_add_hint">填写 MCP 服务端的 HTTP 地址。它的工具会以 mcpx_&lt;名字&gt; 的形式出现，且始终需要确认。</string>
+  <string name="ai_agent_mcp_add_hint">填写 MCP 服务端的地址。它的工具会以 mcpx_&lt;名字&gt; 的形式出现，且始终需要确认。</string>
   <string name="ai_agent_mcp_label_hint">备注名（可选）</string>
+  <string name="ai_agent_mcp_type_label">传输方式</string>
+  <string name="ai_agent_mcp_type_http">Streamable HTTP</string>
+  <string name="ai_agent_mcp_type_sse">SSE（旧规范）</string>
   <string name="ai_agent_mcp_enable">启用</string>
   <string name="ai_agent_mcp_disable">停用</string>
   <string name="ai_agent_mcp_remove">删除</string>

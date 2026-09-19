@@ -234,6 +234,12 @@ final class NewBuiltinToolsTest {
     public TextResponse postJson(String url, String jsonBody, Map<String, String> headers) {
       return new TextResponse("", Collections.<String, String>emptyMap());
     }
+
+    @Override
+    public StreamHandle openStream(String url, Map<String, String> headers) throws Exception {
+      // 这些工具只用 GET 取文本，SSE 长连接与它们无关。
+      throw new UnsupportedOperationException("本测试的假实现不支持流式读取");
+    }
   }
 
   @Test

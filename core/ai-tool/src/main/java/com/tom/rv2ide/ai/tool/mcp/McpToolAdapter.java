@@ -157,5 +157,8 @@ public final class McpToolAdapter extends BaseTool {
       ExceptionUtils.restoreInterrupt(e);
       return error("MCP 调用失败：" + ExceptionUtils.describeException(e));
     }
+    // 不在这里 close：一个 client 被同一 server 的**全部** adapter 共享，调用一次就关掉
+    // 会让同一 server 的后续工具调用全部失败。SSE 长连接的释放由创建方负责
+    // （见 AgentOrchestrator.registerMcpTools）。
   }
 }

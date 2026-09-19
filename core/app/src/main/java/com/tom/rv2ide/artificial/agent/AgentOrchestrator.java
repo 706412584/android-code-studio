@@ -155,6 +155,20 @@ public final class AgentOrchestrator {
 
   private volatile ModelCancellationToken activeCancellation;
 
+  /**
+   * 本次运行创建的 MCP 客户端。
+   *
+   * <p><b>为什么要在编排器上持有</b>：SSE 传输握着一条长连接，而注册表与 adapter 都
+   * 没有「运行结束」这个事件可挂。不在这里统一释放，每跑一次对话就泄漏一条连接。
+   * 客户端由同一 server 的多个 adapter 共享，因此也不能由 adapter 自己关。
+   *
+   * <p>用 {@code synchronizedList} 而非并发集合：写入只发生在 {@code buildRegistry}
+   * 的循环里，读取只在 {@code run} 的 finally，规模是个位数。
+   */
+  private final java.util.List<com.tom.rv2ide.ai.tool.mcp.McpClient> activeMcpClients =
+      java.util.Collections.synchronizedList(
+          new java.util.ArrayList<com.tom.rv2ide.ai.tool.mcp.McpClient>());
+
   public AgentOrchestrator(Context context, DiffStore diffStore) {
     this(context, diffStore, new FileConversationStore(defaultConversationDir(context)));
   }
@@ -562,6 +576,10 @@ public final class AgentOrchestrator {
       return;
     }
 
+    // 注意：这里**不能**顺手 closeMcpClients()。buildRegistry 不只被 run() 调用，
+    // 悬浮助手也调它（只为了拿工具分类），而 run() 在会话进行中不会再次调用它——
+    // 因此「走到这里就说明上一轮结束了」这个前提不成立，在此释放会掐断正在使用的连接。
+    // 释放只放在 run() 的 finally 里。
     java.util.Set<String> usedNames = new java.util.HashSet<>();
     for (ToolInfo existing : registry.getAll()) {
       usedNames.add(existing.getName());
@@ -570,8 +588,22 @@ public final class AgentOrchestrator {
     for (McpServers.Server server : servers) {
       try {
         com.tom.rv2ide.ai.tool.mcp.McpClient client =
-            new com.tom.rv2ide.ai.tool.mcp.McpClient(http, server.url);
-        for (com.tom.rv2ide.ai.tool.mcp.McpToolInfo info : client.listTools()) {
+            new com.tom.rv2ide.ai.tool.mcp.McpClient(
+                http,
+                server.url,
+                java.util.Collections.<String, String>emptyMap(),
+                com.tom.rv2ide.ai.tool.mcp.McpClient.Transport.fromId(server.type));
+        java.util.List<com.tom.rv2ide.ai.tool.mcp.McpToolInfo> tools;
+        try {
+          tools = client.listTools();
+        } catch (Exception e) {
+          // 拉列表失败时必须就地释放：SSE 传输此时可能已经建好长连接。
+          client.close();
+          throw e;
+        }
+        // 拉成功后才登记：失败的 client 已在上面关掉，登记它只会在收尾时再关一次。
+        activeMcpClients.add(client);
+        for (com.tom.rv2ide.ai.tool.mcp.McpToolInfo info : tools) {
           com.tom.rv2ide.ai.tool.mcp.McpToolAdapter adapter =
               new com.tom.rv2ide.ai.tool.mcp.McpToolAdapter(client, info, server.displayName());
           // 名字冲突时跳过而不是覆盖：覆盖会让内置工具静默消失，比缺少一个远程工具更糟。
@@ -582,6 +614,29 @@ public final class AgentOrchestrator {
         }
       } catch (Exception e) {
         ErrorLog.record("mcp", "拉取 MCP 工具列表失败: " + server.url, e, null);
+      }
+    }
+  }
+
+  /**
+   * 释放本次运行建立的 MCP 连接。
+   *
+   * <p>幂等：重复调用只是对已关闭的客户端再关一次（{@code close} 本身可重入）。
+   *
+   * <p>只在 {@code run} 的 finally 里调用。见 {@code registerMcpTools} 里的说明：
+   * {@code buildRegistry} 会在会话进行中被再次调用，不能在那里释放。
+   */
+  private void closeMcpClients() {
+    java.util.List<com.tom.rv2ide.ai.tool.mcp.McpClient> clients;
+    synchronized (activeMcpClients) {
+      clients = new java.util.ArrayList<>(activeMcpClients);
+      activeMcpClients.clear();
+    }
+    for (com.tom.rv2ide.ai.tool.mcp.McpClient client : clients) {
+      try {
+        client.close();
+      } catch (RuntimeException ignored) {
+        // 释放失败没有补救手段，且此刻多半正在处理别的失败。
       }
     }
   }
@@ -843,6 +898,9 @@ public final class AgentOrchestrator {
           reasoningEffort);
     } finally {
       activeCancellation = null;
+      // MCP 的 SSE 传输是一条长连接，必须随本次运行结束而释放，
+      // 否则每跑一次对话就多一条悬挂的连接（以及一个守护读线程）。
+      closeMcpClients();
     }
   }
 

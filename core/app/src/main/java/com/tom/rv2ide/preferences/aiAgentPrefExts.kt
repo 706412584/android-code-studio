@@ -690,7 +690,12 @@ private class McpServersPreference(
         servers
             .map { server ->
               val state = if (server.enabled) "✓" else "✗"
-              "$state ${server.displayName()}"
+              // 标出传输类型：同一个 server 用 http 还是 sse 连不通时表现完全不同
+              // （前者打不开长连接，后者 POST 无响应），出问题时需要一眼看到用的是哪个。
+              val type =
+                  if (server.type == com.tom.rv2ide.artificial.agent.McpServers.TYPE_SSE) "SSE"
+                  else "HTTP"
+              "$state [$type] ${server.displayName()}"
             }
             .toMutableList()
     labels.add(context.getString(R.string.ai_agent_mcp_add))
@@ -732,8 +737,10 @@ private class McpServersPreference(
               for (item in updated) {
                 next.add(
                     if (item.url == server.url)
+                        // 必须带上 item.type：四参构造器默认成 http，
+                        // 漏了它会让用户切换启用状态时把 SSE 配置静默改成 HTTP。
                         com.tom.rv2ide.artificial.agent.McpServers.Server(
-                            item.url, item.label, !item.enabled)
+                            item.url, item.label, !item.enabled, item.type)
                     else item)
               }
               store.save(next)
@@ -765,6 +772,26 @@ private class McpServersPreference(
     container.addView(urlField)
     container.addView(labelField)
 
+    // 传输类型选择。默认选中 http：两套传输的地址形态不同（http 是消息端点、
+    // sse 是事件流端点），选错时连接会以很难归因的方式失败，因此必须让用户显式选择
+    // 而不是靠地址猜。
+    val typeLabels =
+        arrayOf(
+            context.getString(R.string.ai_agent_mcp_type_http),
+            context.getString(R.string.ai_agent_mcp_type_sse))
+    container.addView(
+        android.widget.TextView(context).apply {
+          text = context.getString(R.string.ai_agent_mcp_type_label)
+          setPadding(0, 24, 0, 4)
+        })
+    val typePicker =
+        android.widget.Spinner(context).apply {
+          adapter =
+              android.widget.ArrayAdapter(
+                  context, android.R.layout.simple_spinner_dropdown_item, typeLabels)
+        }
+    container.addView(typePicker)
+
     com.google.android.material.dialog.MaterialAlertDialogBuilder(context)
         .setTitle(R.string.ai_agent_mcp_add)
         .setMessage(R.string.ai_agent_mcp_add_hint)
@@ -772,10 +799,14 @@ private class McpServersPreference(
         .setPositiveButton(android.R.string.ok) { _, _ ->
           val url = urlField.text?.toString()?.trim().orEmpty()
           if (url.isNotEmpty()) {
+            val type =
+                if (typePicker.selectedItemPosition == 1)
+                    com.tom.rv2ide.artificial.agent.McpServers.TYPE_SSE
+                else com.tom.rv2ide.artificial.agent.McpServers.TYPE_HTTP
             com.tom.rv2ide.artificial.agent.McpServers(context)
                 .add(
                     com.tom.rv2ide.artificial.agent.McpServers.Server(
-                        url, labelField.text?.toString()?.trim().orEmpty(), true))
+                        url, labelField.text?.toString()?.trim().orEmpty(), true, type))
             preference.summary = refreshSummary(context)
           }
         }

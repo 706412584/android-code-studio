@@ -64,6 +64,12 @@ final class McpClientTest {
     }
 
     @Override
+    public StreamHandle openStream(String url, Map<String, String> headers) throws Exception {
+      // streamable HTTP 传输不建长连接；SSE 传输有独立的测试（McpSseTransportTest）。
+      throw new UnsupportedOperationException("streamable HTTP 不使用长连接");
+    }
+
+    @Override
     public BinaryResponse getBytes(String url, Map<String, String> headers) {
       return new BinaryResponse("application/octet-stream", new byte[0]);
     }
@@ -170,6 +176,66 @@ final class McpClientTest {
 
     assertEquals("", client.getSessionId());
     assertFalse(client.isInitialized());
+  }
+
+  @Test
+  void statelessServerHandshakesOnlyOnce() throws Exception {
+    // 无状态 server 不下发会话 id。若按「会话 id 是否非空」决定要不要重握手，
+    // 这类 server 每次调用都会重新 initialize——而 initialize 可能改变 server 侧状态。
+    ScriptedHttp http =
+        new ScriptedHttp()
+            .enqueue(initResponse(null))
+            .enqueue("{\"jsonrpc\":\"2.0\",\"result\":{}}")
+            .enqueue("{\"jsonrpc\":\"2.0\",\"result\":{\"tools\":[]}}")
+            .enqueue("{\"jsonrpc\":\"2.0\",\"result\":{\"tools\":[]}}");
+
+    McpClient client = new McpClient(http, "https://mcp.example.com/mcp");
+    client.initialize();
+    client.listTools();
+    client.listTools();
+
+    int handshakes = 0;
+    for (String body : http.postedBodies) {
+      if (body.contains("\"initialize\"")) {
+        handshakes++;
+      }
+    }
+    assertEquals(1, handshakes, "无状态 server 也只应握手一次");
+  }
+
+  @Test
+  void defaultConstructorUsesHttpTransport() throws Exception {
+    // 不传传输类型时必须走 streamable HTTP：结果从 POST 响应体里拿，不建长连接。
+    // 若默认跑到 SSE 分支，旧配置（没有 type 字段）会全部失效。
+    ScriptedHttp http =
+        new ScriptedHttp()
+            .enqueue(initResponse("x"), headers("Mcp-Session-Id", "s"))
+            .enqueue("{\"jsonrpc\":\"2.0\",\"result\":{}}");
+
+    McpClient client = new McpClient(http, "https://mcp.example.com/mcp");
+    client.initialize();
+
+    assertEquals("s", client.getSessionId());
+    assertEquals("test-server", client.getServerName());
+    // 长连接一次也没建（ScriptedHttp 的 openStream 会抛异常）
+    assertEquals(2, http.postedBodies.size());
+  }
+
+  @Test
+  void closeIsHarmlessForHttpTransport() throws Exception {
+    // HTTP 传输没有长连接，close() 是空操作。但它不该让后续调用失效——
+    // 调用方（AgentOrchestrator）在运行结束时统一 close，误调不该有副作用。
+    ScriptedHttp http =
+        new ScriptedHttp()
+            .enqueue(initResponse("x"), headers("Mcp-Session-Id", "s"))
+            .enqueue("{\"jsonrpc\":\"2.0\",\"result\":{}}")
+            .enqueue("{\"jsonrpc\":\"2.0\",\"result\":{\"tools\":[]}}");
+
+    McpClient client = new McpClient(http, "https://mcp.example.com/mcp");
+    client.initialize();
+    client.close();
+
+    assertTrue(client.listTools().isEmpty());
   }
 
   @Test
