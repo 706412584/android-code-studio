@@ -1762,8 +1762,6 @@ class FloatingAssistantView(
    * 这个状态**可见**，而不是替他决定。
    */
   private fun openConversation(summary: com.tom.rv2ide.ai.agent.conversation.ConversationSummary) {
-    // 切换会话要中断正在进行的运行：它的输出属于旧会话，继续跑会写错地方。
-    cancel()
     if (isForeignConversation(summary)) {
       confirmOpenForeignConversation(summary) { doOpenConversation(summary) }
       return
@@ -1797,6 +1795,11 @@ class FloatingAssistantView(
   private fun doOpenConversation(
       summary: com.tom.rv2ide.ai.agent.conversation.ConversationSummary
   ) {
+    // 切换会话要中断正在进行的运行：它的输出属于旧会话，继续跑会写错地方。
+    //
+    // 必须放在这里而不是 openConversation 的入口：入口处还要先弹跨项目确认框，
+    // 若那时就 cancel，用户在确认框上点「取消」也会白白杀掉一次正在跑的任务。
+    cancel()
     lifecycleScope.launch(Dispatchers.IO) {
       val messages = orchestrator.loadConversationMessages(summary.getId())
       withContext(Dispatchers.Main) {

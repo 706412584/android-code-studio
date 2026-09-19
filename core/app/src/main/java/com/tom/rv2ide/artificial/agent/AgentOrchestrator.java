@@ -366,49 +366,73 @@ public final class AgentOrchestrator {
    * <p>只存 id 不存内容——会话内容本来就在 {@link ConversationStore} 里，
    * 重复存储会产生两份真相。
    *
-   * <p>取回时校验该会话**仍然存在**：用户可能已在历史列表里删了它，
-   * 此时返回 null 让上层开新会话，而不是指向已删除的 id 导致后续写入失败。
+   * <p><b>两道校验都必须做</b>：
+   *
+   * <ol>
+   *   <li>会话**仍然存在**——用户可能已在历史列表里删了它，指向已删除的 id 会让后续写入失败。
+   *   <li>会话的 cwd **就是本工作区**——不能只信这个键。用户可以从全局会话列表里
+   *       打开别的项目的会话（UI 会先提示，但允许继续），那时 {@link #openConversation}
+   *       会把本工作区的键指向那个会话的 id。此后重开应用，本工作区就会续接另一个
+   *       项目的历史：模型看到的上下文属于别的项目，而工具作用于本项目。
+   * </ol>
+   *
+   * <p>cwd 校验失败时**清掉这个键**再走兜底，而不是留着——留着一个指向别的项目的
+   * 记录，下次启动还要再判一次，且用户永远看不到问题所在。
    */
   private void restoreLastConversationForWorkspace() {
     if (workspace == null) {
       return;
     }
-    String saved =
-        androidx.preference.PreferenceManager.getDefaultSharedPreferences(appContext)
-            .getString(lastConversationKey(workspace), null);
+    // 只列一次：下面两道校验（存在性 + 归属）与兜底挑选都基于同一份快照，
+    // 否则最多要读三遍全部会话文件。
+    List<ConversationSummary> all = listConversationsQuietly();
+    String want = workspace.getAbsolutePath();
+
+    android.content.SharedPreferences prefs =
+        androidx.preference.PreferenceManager.getDefaultSharedPreferences(appContext);
+    String key = lastConversationKey(workspace);
+    String saved = prefs.getString(key, null);
     if (saved != null && !saved.isEmpty()) {
-      try {
-        if (conversationStore.exists(saved)) {
-          activeConversationId = saved;
-          return;
+      for (ConversationSummary summary : all) {
+        if (summary.getId().equals(saved)) {
+          if (want.equals(summary.getCwd())) {
+            activeConversationId = saved;
+            return;
+          }
+          // 存在，但属于别的项目——见上面 KDoc 里的第 2 条。
+          break;
         }
-      } catch (RuntimeException e) {
-        // exists 抛异常时按「不存在」继续走下面的兜底，不影响后续对话。
       }
+      // 走到这里说明记录不可用（会话已删、文件损坏、或指向别的项目）。
+      // 清掉它：留着一个坏记录，下次启动还要再判一次，用户也永远看不到问题所在。
+      prefs.edit().remove(key).apply();
     }
-    // 兜底：没有记录（首次升级到本版本的用户）或记录已失效时，取最近修改的会话。
-    // 否则老用户升级后会看到空会话、还得去历史列表里翻——而会话其实一条都没丢。
-    restoreMostRecentConversation();
+    // 兜底：没有记录（首次升级到本版本的用户）、记录已失效、或记录指向别的项目时，
+    // 取本工作区最近修改的会话。否则老用户升级后会看到空会话、还得去历史列表里翻
+    // ——而会话其实一条都没丢。
+    restoreMostRecentConversation(all);
+  }
+
+  /** {@link #listConversations()} 的不抛异常版本：读不出来时按「没有会话」处理。 */
+  private List<ConversationSummary> listConversationsQuietly() {
+    try {
+      return conversationStore.list();
+    } catch (IOException | RuntimeException e) {
+      return new ArrayList<>();
+    }
   }
 
   /**
-   * 兜底恢复：取本工作区最近修改的、非空的会话。
+   * 兜底恢复：从给定快照里取本工作区最近修改的、非空的会话。
    *
-   * <p>只在本工作区**从未显式记录过**上次会话时走这条路（升级到本版本的老用户）。
-   * 主路径（{@link #restoreLastConversationForWorkspace} 里的显式记录）已保证隔离，
-   * 这条是补救。
+   * <p>只在本工作区**从未显式记录过**可用会话时走这条路（升级到本版本的老用户，
+   * 或记录指向了别的项目）。
    *
    * <p>cwd 直接取自摘要（{@link ConversationSummary#getCwd()}）——早先摘要不含它，
    * 这里得对每个会话调一次 {@code conversationStore.read()} 反查，是 O(n) 次文件读；
    * cwd 本就在 fold 摘要时经手的 meta 条目里，顺手带出来即可。
    */
-  private void restoreMostRecentConversation() {
-    List<ConversationSummary> all;
-    try {
-      all = conversationStore.list();
-    } catch (IOException | RuntimeException e) {
-      return;
-    }
+  private void restoreMostRecentConversation(List<ConversationSummary> all) {
     String want = workspace.getAbsolutePath();
     ConversationSummary best = null;
     for (ConversationSummary summary : all) {
