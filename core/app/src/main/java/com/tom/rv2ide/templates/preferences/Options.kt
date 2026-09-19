@@ -51,8 +51,18 @@ object Options {
   /** Selected NDK version for native projects. Default: null (will auto-select highest) */
   var OPT_SELECTED_NDK_VERSION: String? = null
 
-  /** CMake executable path for native projects. Default: null (will auto-detect) */
-  var OPT_CMAKE_PATH: String? = null
+  /**
+   * 用户在向导里显式选择的 CMake **版本号**（如 "3.31.6"）。
+   *
+   * <p>null 表示「自动挑一个当前设备能跑的」，见
+   * [com.tom.rv2ide.templates.android.etc.NativeCpp.Check.getHighestRunnableCMakeVersion]。
+   *
+   * <p><b>为什么存版本号而不是可执行文件路径</b>：生成的 build.gradle 里
+   * `cmake { version '…' }` 要的是版本号，AGP 自己按版本号去 `$SDK/cmake/<version>/`
+   * 找二进制。存路径既写不进 build.gradle，也跨不过「项目在别处构建」这一步——
+   * 原先那个 `OPT_CMAKE_PATH` 正是因此从未被任何地方读取，用户选完等于没选。
+   */
+  var OPT_CMAKE_VERSION: String? = null
 
   /** Reset all options to their default values. */
   fun resetToDefaults() {
@@ -63,7 +73,7 @@ object Options {
     OPT_BUILD_SYSTEM_USE_CMAKE = false
     OPT_NATIVE_LANGUAGE = "cpp"
     OPT_SELECTED_NDK_VERSION = null
-    OPT_CMAKE_PATH = null
+    OPT_CMAKE_VERSION = null
     OPT_MIN_SDK = 21
   }
 }

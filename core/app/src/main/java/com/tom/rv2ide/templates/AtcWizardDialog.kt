@@ -406,21 +406,44 @@ class AtcWizardDialog : BottomSheetDialogFragment() {
         .show()
   }
 
+  /**
+   * 让用户挑一个 CMake 版本。
+   *
+   * <p>列表里标出每个版本**能否在本设备运行**（✓/✗）。这个标记不是装饰：Android SDK
+   * 仓库里的 CMake 只有 x86-64 构建，设备是 arm64 时它们全都跑不起来——实测
+   * `sdkmanager` 装的 3.22.1 与 3.31.6 都是 x86-64，只有 ACS 自己
+   * `android-cmake` 仓库提供的 arm64 版本可用。不标出来的话，用户会挑一个版本号
+   * 更高、看起来更新的版本，然后在构建时收到 `not executable: 64-bit ELF file`。
+   *
+   * <p>选中的版本写进 [Options.OPT_CMAKE_VERSION]，由模板生成到 build.gradle 的
+   * `cmake { version '…' }`。跑不起来的版本直接拒绝，不写进项目。
+   */
   private fun showCMakeVersionPicker(ctx: Context, versions: List<String>) {
     val versionLabels =
         versions
             .map { "$it ${if (Check.validateCMakeVersion(it) != null) "✓" else "✗"}" }
             .toTypedArray()
 
+    // 默认落在第一个能跑的版本上，而不是永远第一项——第一项可能正是坏的那个。
+    val defaultIndex =
+        versions.indexOfFirst { Check.validateCMakeVersion(it) != null }.coerceAtLeast(0)
+
     MaterialAlertDialogBuilder(ctx)
         .setTitle("Select CMake Version")
-        .setSingleChoiceItems(versionLabels, 0) { dialog, which ->
+        .setSingleChoiceItems(versionLabels, defaultIndex) { dialog, which ->
           val selectedVersion = versions[which]
-          Check.validateCMakeVersion(selectedVersion)?.let { path ->
-            Options.OPT_CMAKE_PATH = path
+          if (Check.validateCMakeVersion(selectedVersion) != null) {
+            Options.OPT_CMAKE_VERSION = selectedVersion
             Toast.makeText(ctx, "CMake $selectedVersion selected", Toast.LENGTH_SHORT).show()
             dialog.dismiss()
-          } ?: Toast.makeText(ctx, "Invalid CMake: $selectedVersion", Toast.LENGTH_SHORT).show()
+          } else {
+            // 不关闭对话框：用户可以就地改选一个能跑的，而不是退出去重来。
+            Toast.makeText(
+                    ctx,
+                    "CMake $selectedVersion 无法在本设备运行（架构不匹配），请选带 ✓ 的版本",
+                    Toast.LENGTH_LONG)
+                .show()
+          }
         }
         .setNegativeButton("Cancel") { _, _ -> binding.useCMakeSwitch.isChecked = false }
         .show()

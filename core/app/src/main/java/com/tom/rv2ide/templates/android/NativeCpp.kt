@@ -338,7 +338,11 @@ class NativeCpp : Template {
                       cmake =
                           CMakeConfig(
                               path = "src/main/cpp/CMakeLists.txt",
-                              version = getHighestRunnableCMakeVersion(),
+                              // 用户在向导里选过就用他选的（他可能知道某个版本更稳），否则自动挑一个
+                              // 本设备真能跑的。注意是「能跑」而不是「版本号最高」——
+                              // SDK 仓库的 CMake 只有 x86-64，arm64 设备上装了也跑不了。
+                              version = Options.OPT_CMAKE_VERSION
+                                  ?: getHighestRunnableCMakeVersion(),
                           )
                   )
               )
