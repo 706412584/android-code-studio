@@ -48,6 +48,15 @@ const val ANDROIDX_NAVIGATION_UI_KTX = ANDROIDX_NAVIGATION_FRAGMENT_KTX
 
 const val ANDROIDX_GAMES_ACTIVITY = "4.0.0"
 
+/**
+ * libGDX。`gdx` 与 `gdx-backend-android` 共用此版本号。
+ *
+ * 对应的原生库 `libgdx.so` 已按 ABI 预置在
+ * `core/app/src/main/assets/LibGdx/native/jniLibs/`；升级此版本号时必须
+ * 同步替换那些 `.so`，否则 Java 侧与原生侧版本不一致会在运行期崩。
+ */
+const val LIBGDX_VERSION = "1.14.2"
+
 const val GOOGLE_MATERIAL_COMPONENTS_VERSION = "1.13.0"
 val PROJECTS_COMPILE_SDK_VERSION = Sdk.BakLava.api
 
