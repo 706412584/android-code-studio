@@ -656,14 +656,17 @@ class AssistantMessageAdapter : RecyclerView.Adapter<RecyclerView.ViewHolder>() 
           }
       )
       // 失败用错误色，其余用次级色：用户需要一眼在长列表里找到出错的那一步。
-      // colorError 是框架 attr（Material 库的 R.attr 里没有），且主题可能未定义它，
-      // 因此取默认值 0 后回退到次级色——否则失败文本会变成透明的，等于没显示。
+      //
+      // 用**应用命名空间**的 R.attr.colorError，不用 android.R.attr.colorError：
+      // 后者解析到框架兜底的 #FF5722，而 ACS 主题定义的是 #ffb3261e——用户换主题时
+      // 失败文本会是唯一不变色的元素。应用侧 attr 存在（R.txt:383），主题也定义了它，
+      // 回退到次级色只是防御主题被改坏。
       val normalColor =
           MaterialColors.getColor(
               binding.root,
               com.google.android.material.R.attr.colorOnSurfaceVariant,
           )
-      val errorColor = MaterialColors.getColor(binding.root, android.R.attr.colorError, 0)
+      val errorColor = MaterialColors.getColor(binding.root, R.attr.colorError, 0)
       binding.toolStatus.setTextColor(
           if (call.status == ToolStatus.FAILED && errorColor != 0) errorColor else normalColor
       )

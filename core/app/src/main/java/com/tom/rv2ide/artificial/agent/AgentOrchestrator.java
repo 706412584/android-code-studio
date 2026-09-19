@@ -1007,7 +1007,15 @@ public final class AgentOrchestrator {
     };
   }
 
-  /** @return 当前会话 id；若尚无会话则新建一个。 */
+  /**
+   * @return 当前会话 id；若尚无会话则新建一个。
+   *
+   * <p>无工作区时 cwd 记为**空串**而不是抛异常或跳过：没有打开项目也能用 AI 助手
+   * （问纯知识问题、看代码片段），此时会话不属于任何项目。空 cwd 的会话不会被
+   * {@code restoreMostRecentConversation} 的 cwd 匹配命中，这是**有意**的——它本就
+   * 不属于任何项目，重开项目时不该被自动续接。原先是直接 {@code workspace.getAbsolutePath()}
+   * 解引用，未打开项目时会抛 NPE（{@code newConversation()} 有守卫，这里漏了）。
+   */
   private String ensureConversation() {
     String existing = activeConversationId;
     if (existing != null && conversationStore.exists(existing)) {
@@ -1017,7 +1025,7 @@ public final class AgentOrchestrator {
       ConversationSummary created =
           conversationStore.create(
               null,
-              workspace.getAbsolutePath(),
+              workspace == null ? "" : workspace.getAbsolutePath(),
               "",
               settings.getPermissionMode());
       activeConversationId = created.getId();

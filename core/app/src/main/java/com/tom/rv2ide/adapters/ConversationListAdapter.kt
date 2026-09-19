@@ -20,7 +20,6 @@ package com.tom.rv2ide.adapters
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
-import androidx.core.content.ContextCompat
 import androidx.core.view.isVisible
 import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.ListAdapter
@@ -163,13 +162,16 @@ class ConversationListAdapter(
      *   提前知道的情况（点开会把历史与当前项目错配）。
      *
      * <p>取色一律走主题 attr，理由同上面的强调色——ACS 有多套主题。
+     *
+     * <p>整个项目行恒显示（含「未知项目」），不做隐藏：这一行的存在本身就是信息，
+     * 藏起来会让「有没有归属」变成又一个要猜的事。因此不需要控制 [conversationProjectRow]
+     * 的可见性。
      */
     private fun bindProjectRow(
         summary: ConversationSummary,
         currentCwd: String?,
         context: android.content.Context,
     ) {
-      val row = binding.conversationProjectRow
       val label = binding.conversationProject
       val cwd = summary.getCwd()
 

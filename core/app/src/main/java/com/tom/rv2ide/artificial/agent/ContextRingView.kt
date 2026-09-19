@@ -127,17 +127,21 @@ constructor(context: Context, attrs: AttributeSet? = null, defStyleAttr: Int = 0
   /**
    * 按占用比例取色。
    *
-   * <p>注意 `colorError` / `colorPrimary` 取的是 **android 命名空间**的 attr：
-   * 它们在框架里定义，Material 库的 R.attr 里没有，写
-   * `com.google.android.material.R.attr.colorError` 编译不过（本仓库
-   * AssistantModelPicker 里有同样的一条注释，是同一个坑）。
+   * <p>三个颜色都取**应用命名空间**的 `R.attr`：`colorError` / `colorPrimary` 是
+   * 框架也有的属性名，但 ACS 主题定义的是应用命名空间那一份。用
+   * `android.R.attr.colorError` 会解析到框架兜底值（实测 `#FF5722`，而 ACS 主题是
+   * `#ffb3261e`），后果是圆环在「危险」档位不跟随用户主题。
+   *
+   * <p>注意不能写 `com.google.android.material.R.attr.colorError` —— Material 库确实
+   * 没有这个 attr，那样写编译不过。应用侧有（`R.txt`），Material 侧用 `colorTertiary`
+   * 这类只在 Material 里定义的名字。
    */
   private fun accentColor(): Int {
     val attr =
         when {
-          ratio >= DANGER_RATIO -> android.R.attr.colorError
+          ratio >= DANGER_RATIO -> com.tom.rv2ide.R.attr.colorError
           ratio >= WARN_RATIO -> com.google.android.material.R.attr.colorTertiary
-          else -> android.R.attr.colorPrimary
+          else -> com.tom.rv2ide.R.attr.colorPrimary
         }
     return MaterialColors.getColor(this, attr)
   }
