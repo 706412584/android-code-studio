@@ -66,6 +66,16 @@ class LibGdx : Template {
   override val displayName = "LibGDX Game"
   override val templateType = Template.TemplateType.ACTIVITY
 
+  companion object {
+    /**
+     * libGDX Android 后端要求的最低 API。
+     *
+     * 来自 `gdx-backend-android` 的 AAR manifest（`<uses-sdk android:minSdkVersion="21"/>`）。
+     * 生成项目时用它给用户选择兜底——见 `create()` 里 `minSdk` 的说明。
+     */
+    private const val LIBGDX_MIN_SDK = 21
+  }
+
   private val projectStructBuilder = ProjectStructBuilder()
   private val activityWriter = ActivityWriter()
   private val topLevelGradleWriter = TopLevelGradleWriter()
@@ -375,7 +385,12 @@ class LibGdx : Template {
             defaultConfig(
                 DefaultConfig(
                     applicationId = packageHelper.getPackageId(),
-                    minSdk = Options.OPT_MIN_SDK,
+                    // 钳到 21：向导的 SDK 列表从 API 16 起（Sdk.kt 的 JellyBean），
+                    // 但 gdx-backend-android 的 AAR 声明 minSdkVersion="21"，
+                    // 用户若选 16–20，manifest merge 会直接失败：
+                    //   minSdkVersion 16 cannot be smaller than version 21 declared in library
+                    // 这里取两者较大值，用户选更低时自动抬到 21 而不是给出一个构建不过的项目。
+                    minSdk = maxOf(Options.OPT_MIN_SDK, LIBGDX_MIN_SDK),
                     targetSdk = 34,
                     versionCode = 1,
                     versionName = "1.0",
@@ -547,8 +562,12 @@ class LibGdx : Template {
       val abis = context.assets.list(ASSETS_JNI_LIBS_PATH) ?: emptyArray()
 
       if (abis.isEmpty()) {
-        Log.e("LibGdx", "No ABI directories found under assets/$ASSETS_JNI_LIBS_PATH")
-        return
+        // 与下面的 catch 同一立场：原生库缺失必须让创建流程失败。
+        // 这里若只记日志就返回，用户会拿到一个「能编译、一启动就 UnsatisfiedLinkError」的项目。
+        throw IllegalStateException(
+            "No ABI directories found under assets/$ASSETS_JNI_LIBS_PATH. " +
+                "The generated project would crash on startup.",
+        )
       }
 
       for (abi in abis) {
@@ -607,7 +626,7 @@ class LibGdx : Template {
 
       // AndroidManifest 引用了 @style/Theme.AppTheme 与 @mipmap/ic_launcher，
       // 二者缺失会让项目在 aapt 阶段直接失败。
-      val required = listOf("values/themes.xml", "mipmap-anydpi/ic_launcher.xml")
+      val required = listOf("values/themes.xml", "mipmap-anydpi-v26/ic_launcher.xml")
       val missing = required.filterNot { File(resDestDir, it).isFile }
       if (missing.isNotEmpty()) {
         throw IllegalStateException(
