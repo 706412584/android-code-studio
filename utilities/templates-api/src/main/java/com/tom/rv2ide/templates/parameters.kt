@@ -388,7 +388,14 @@ inline fun projectLanguageParameter(
 ) =
     enumParameter<Language> {
       name = string.wizard_language
-      default = Java
+      // 默认 Kotlin。
+      //
+      // 新建 Android 项目的事实标准已经是 Kotlin（官方模板、AndroidX 文档、
+      // Compose 全部以 Kotlin 为一等公民），而本仓库的模板两种语言都完整支持
+      // （每个模板都有 mainActivityKotlin 分支，见 templates/android/*.kt）。
+      // 默认 Java 的代价是用户每次建项目都要手动改一次下拉框——忘了改就得到一个
+      // 与所有官方示例都对不上的项目。
+      default = Kotlin
       displayName = Language::lang
       startIcon = {
         if (it.value == Kotlin) R.drawable.ic_language_kotlin else R.drawable.ic_language_java
