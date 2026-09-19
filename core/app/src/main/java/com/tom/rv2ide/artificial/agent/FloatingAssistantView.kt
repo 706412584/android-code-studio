@@ -299,6 +299,10 @@ class FloatingAssistantView(
     binding.assistantConversations.layoutManager = LinearLayoutManager(context)
     binding.assistantConversations.adapter = conversationAdapter
 
+    // 标题栏初始就是当前项目名，而不是等 setWorkspace 才替换——否则面板在
+    // 打开的一瞬间会先闪一下静态的「AI 助手」。
+    refreshWorkspaceLabel()
+
     // 回车即发送：面板输入框是多行的，若不拦截回车，用户按回车只会换行。
     binding.assistantInput.setOnEditorActionListener { _, actionId, event ->
       val isSendAction = actionId == android.view.inputmethod.EditorInfo.IME_ACTION_SEND
@@ -379,6 +383,33 @@ class FloatingAssistantView(
     // 换了项目就换了仓库：分支标签要重新读，且上一个项目的分支不能留着。
     lastGitBranch = null
     refreshGitBranch()
+    // 标题要跟着换项目名，会话列表里各条会话的归属标注也要重算。
+    refreshWorkspaceLabel()
+    conversationAdapter.setCurrentCwd(workspace?.absolutePath)
+  }
+
+  /**
+   * 把面板标题替换为当前项目名。
+   *
+   * <p><b>为什么占标题栏</b>：标题原本只印静态的「AI 助手」，对用户零信息量；而
+   * 「这个对话绑在哪个项目」恰恰是用户从界面上看不出来的关键状态。面板顶部是唯一
+   * 一直可见的位置，把它放这里不需要新增任何控件，也不占用已经拥挤的工具条。
+   *
+   * <p>长按显示完整路径（TooltipCompat）：标题用 middle 省略，而项目名常常尾部才有
+   * 区分度，省略后可能看不出是哪个——完整路径是兜底的确认手段。
+   *
+   * <p>无项目时回退为原来的标题文案，而不是留空：空标题会让面板看起来像出了故障。
+   */
+  private fun refreshWorkspaceLabel() {
+    val ws = workspace
+    val title = binding.assistantTitle
+    if (ws == null) {
+      title.text = context.getString(string.ai_assistant_title)
+      androidx.appcompat.widget.TooltipCompat.setTooltipText(title, null)
+      return
+    }
+    title.text = ws.name
+    androidx.appcompat.widget.TooltipCompat.setTooltipText(title, ws.absolutePath)
   }
 
   /**
@@ -1704,6 +1735,9 @@ class FloatingAssistantView(
             emptyList()
           }
       withContext(Dispatchers.Main) {
+        // 先设当前工作区再提交列表：归属标注要在 bind 时就能拿到正确值，
+        // 否则会先按上一次的项目渲染一遍再纠正，用户能看到一次闪烁。
+        conversationAdapter.setCurrentCwd(workspace?.absolutePath)
         conversationAdapter.submitList(summaries)
         conversationAdapter.setActive(orchestrator.activeConversationId)
         binding.assistantConversationsEmpty.isVisible = summaries.isEmpty()
@@ -1716,10 +1750,53 @@ class FloatingAssistantView(
    *
    * <p>必须同时做两件事：把 orchestrator 的当前会话指过去（后续请求续接它的历史），
    * 以及把该会话的消息回放到界面上。只做前者会让用户看到旧会话的内容却在新会话里提问。
+   *
+   * <p><b>会话属于别的项目时先确认</b>：会话列表是全局的，而工作区按项目隔离。
+   * 点开一条别的项目的会话后，它的历史属于旧项目、工具却作用于当前项目——更糟的是
+   * {@code persistActiveConversation()} 会把当前项目的「上次会话」键指向这条会话，
+   * 此后在当前项目里的对话会**追加进旧项目的会话文件**。这正是
+   * {@code AgentOrchestrator.restoreMostRecentConversation} 注释里警告过的错配，
+   * 只是抽屉这条路绕过了它的防护。
+   *
+   * <p>只提示、不阻止：列表既然全显示，用户就有权打开任意一条；我们要做的是让
+   * 这个状态**可见**，而不是替他决定。
    */
   private fun openConversation(summary: com.tom.rv2ide.ai.agent.conversation.ConversationSummary) {
     // 切换会话要中断正在进行的运行：它的输出属于旧会话，继续跑会写错地方。
     cancel()
+    if (isForeignConversation(summary)) {
+      confirmOpenForeignConversation(summary) { doOpenConversation(summary) }
+      return
+    }
+    doOpenConversation(summary)
+  }
+
+  /** 该会话是否属于**另一个**项目。任一方缺 cwd 时都返回 false（无从判断，不打扰用户）。 */
+  private fun isForeignConversation(
+      summary: com.tom.rv2ide.ai.agent.conversation.ConversationSummary
+  ): Boolean {
+    val ws = workspace?.absolutePath ?: return false
+    val cwd = summary.getCwd()
+    return cwd.isNotBlank() && cwd != ws
+  }
+
+  /** 跨项目打开的确认。确认后才真正切过去。 */
+  private fun confirmOpenForeignConversation(
+      summary: com.tom.rv2ide.ai.agent.conversation.ConversationSummary,
+      onConfirm: () -> Unit,
+  ) {
+    val ws = workspace?.absolutePath.orEmpty()
+    androidx.appcompat.app.AlertDialog.Builder(context)
+        .setTitle(string.ai_conversation_foreign_project_title)
+        .setMessage(context.getString(string.ai_conversation_foreign_project_message, summary.getCwd(), ws))
+        .setPositiveButton(string.ai_conversation_foreign_project_continue) { _, _ -> onConfirm() }
+        .setNegativeButton(android.R.string.cancel, null)
+        .show()
+  }
+
+  private fun doOpenConversation(
+      summary: com.tom.rv2ide.ai.agent.conversation.ConversationSummary
+  ) {
     lifecycleScope.launch(Dispatchers.IO) {
       val messages = orchestrator.loadConversationMessages(summary.getId())
       withContext(Dispatchers.Main) {

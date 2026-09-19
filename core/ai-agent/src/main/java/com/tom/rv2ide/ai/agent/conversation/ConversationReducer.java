@@ -38,12 +38,16 @@ public final class ConversationReducer {
    *
    * <p>标题优先级：用户重命名 > 模型标题 > 首条用户消息 > 占位。
    * 用户显式意图永远压过自动生成的内容。
+   *
+   * <p>同时带出会话绑定的工作区（见 {@link ConversationSummary#getCwd()}）——
+   * 它就在 fold 时经手的 meta 条目里，顺手取比让上层回头再读一遍文件便宜。
    */
   public static ConversationSummary summarize(
       String conversationId, List<ConversationLog.EntryLocation> entries) {
     String customTitle = "";
     String aiTitle = "";
     String firstUserContent = "";
+    String cwd = "";
     long createdAt = 0L;
     long modifiedAt = 0L;
     int messageCount = 0;
@@ -57,7 +61,14 @@ public final class ConversationReducer {
         modifiedAt = entry.getTimestamp();
       }
 
-      if (entry instanceof TitleEntry) {
+      if (entry instanceof SessionMetaEntry) {
+        // 取第一条 meta 的 cwd。会话的工作区在创建时写定，后续条目不会改它；
+        // 若将来真有「会话中途换工作区」，应当追加一条新 meta 而不是就地改，
+        // 那时这里要改成「最后一条 meta 生效」，与标题的语义保持一致。
+        if (cwd.isEmpty()) {
+          cwd = ((SessionMetaEntry) entry).getCwd();
+        }
+      } else if (entry instanceof TitleEntry) {
         TitleEntry title = (TitleEntry) entry;
         if (title.getType() == ConversationEntry.Type.CUSTOM_TITLE) {
           customTitle = title.getTitle();
@@ -78,7 +89,8 @@ public final class ConversationReducer {
     }
 
     String title = firstNonEmpty(customTitle, aiTitle, deriveFromUserMessage(firstUserContent));
-    return new ConversationSummary(conversationId, title, createdAt, modifiedAt, messageCount);
+    return new ConversationSummary(
+        conversationId, title, cwd, createdAt, modifiedAt, messageCount);
   }
 
   private static String firstNonEmpty(String... candidates) {

@@ -34,7 +34,6 @@ import com.tom.rv2ide.ai.agent.conversation.ConversationLog;
 import com.tom.rv2ide.ai.agent.conversation.ConversationStore;
 import com.tom.rv2ide.ai.agent.conversation.ConversationSummary;
 import com.tom.rv2ide.ai.agent.conversation.FileConversationStore;
-import com.tom.rv2ide.ai.agent.conversation.SessionMetaEntry;
 import com.tom.rv2ide.ai.agent.conversation.ToolResultEntry;
 import com.tom.rv2ide.ai.agent.conversation.UserMessageEntry;
 import com.tom.rv2ide.ai.agent.conversation.AssistantMessageEntry;
@@ -393,11 +392,15 @@ public final class AgentOrchestrator {
   }
 
   /**
-   * 兜底恢复：取最近修改的、非空的会话。
+   * 兜底恢复：取本工作区最近修改的、非空的会话。
    *
-   * <p>不按 cwd 过滤是因为 {@link ConversationSummary} 不含 cwd，反查需要逐个读
-   * 会话文件。主路径（显式记录）已保证工作区隔离，这条只在升级后第一次生效，
-   * 宽松一点可接受。
+   * <p>只在本工作区**从未显式记录过**上次会话时走这条路（升级到本版本的老用户）。
+   * 主路径（{@link #restoreLastConversationForWorkspace} 里的显式记录）已保证隔离，
+   * 这条是补救。
+   *
+   * <p>cwd 直接取自摘要（{@link ConversationSummary#getCwd()}）——早先摘要不含它，
+   * 这里得对每个会话调一次 {@code conversationStore.read()} 反查，是 O(n) 次文件读；
+   * cwd 本就在 fold 摘要时经手的 meta 条目里，顺手带出来即可。
    */
   private void restoreMostRecentConversation() {
     List<ConversationSummary> all;
@@ -415,7 +418,7 @@ public final class AgentOrchestrator {
       // 必须按 cwd 过滤。不过滤的话：项目 A 从未用过 agent 时，打开 A 会恢复到
       // 项目 B 的会话，紧接着 persistActiveConversation() 把 A 的键指向 B 的 id——
       // 此后在 A 里的对话会追加进 B 的会话文件，模型拿到的历史属于另一个项目。
-      if (!want.equals(cwdOf(summary.getId()))) {
+      if (!want.equals(summary.getCwd())) {
         continue;
       }
       if (best == null || summary.getModifiedAt() > best.getModifiedAt()) {
@@ -428,25 +431,6 @@ public final class AgentOrchestrator {
     activeConversationId = best.getId();
     // 立刻落盘，之后就走精确路径。
     persistActiveConversation();
-  }
-
-  /**
-   * 读某会话的 cwd（来自它的 session-meta 条目）。
-   *
-   * <p>读取失败或没有 meta 时返回空串——调用方按「不匹配」处理，宁可开新会话，
-   * 也不要把对话追加到别的项目的会话文件里。
-   */
-  private String cwdOf(String conversationId) {
-    try {
-      for (ConversationLog.EntryLocation location : conversationStore.read(conversationId)) {
-        if (location.getEntry() instanceof SessionMetaEntry) {
-          return ((SessionMetaEntry) location.getEntry()).getCwd();
-        }
-      }
-    } catch (IOException | RuntimeException e) {
-      // 落到下面的空串
-    }
-    return "";
   }
 
   /** 记住本工作区当前打开的会话。 */

@@ -164,6 +164,13 @@
   <string name="ai_conversation_delete_confirm_message">确定删除这个会话吗？删除后无法恢复。</string>
   <string name="ai_conversation_deleted">会话已删除</string>
   <string name="ai_conversation_renamed">会话已重命名</string>
+  <!-- 会话列表：标注会话绑定在哪个项目 -->
+  <string name="ai_conversation_project_unknown">未知项目</string>
+  <string name="ai_conversation_project_other">其他项目</string>
+  <!-- 打开属于别的项目的会话时的确认 -->
+  <string name="ai_conversation_foreign_project_title">该会话属于其他项目</string>
+  <string name="ai_conversation_foreign_project_message">这条会话绑定的是：\n%1$s\n\n当前项目是：\n%2$s\n\n继续打开的话，它的历史仍留在旧项目，而工具会作用于当前项目。你之后发送的消息会追加进这条会话。</string>
+  <string name="ai_conversation_foreign_project_continue">仍要打开</string>
 
   <!-- AI Agent Deepseek -->
   <string name="ai_agent_deepseek_api_key">Deepseek API 密钥</string>

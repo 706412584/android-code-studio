@@ -62,6 +62,45 @@
         android:textColor="?attr/colorOnSurfaceVariant"
         tools:text="今天 14:32 · 12 条消息" />
 
+      <!--
+        会话绑定在哪个项目。
+
+        列表是全局的（跨项目全显示），而工作区是按项目隔离的——不标出归属，用户
+        无法判断点开这条会发生什么：它的历史属于另一个项目，工具却作用于当前项目。
+        这是「看不见的状态」，正是最该显式化的那类信息。
+
+        归属当前项目时用弱化色（与 meta 行同色），属于其他项目时用 error 色加「⚠」前缀，
+        让「不是这个项目的」一眼可辨。
+      -->
+      <LinearLayout
+        android:id="@+id/conversationProjectRow"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="3dp"
+        android:gravity="center_vertical"
+        android:orientation="horizontal">
+
+        <ImageView
+          android:layout_width="12dp"
+          android:layout_height="12dp"
+          android:importantForAccessibility="no"
+          android:src="@drawable/ic_folder"
+          app:tint="?attr/colorOnSurfaceVariant" />
+
+        <TextView
+          android:id="@+id/conversationProject"
+          android:layout_width="0dp"
+          android:layout_height="wrap_content"
+          android:layout_marginStart="4dp"
+          android:layout_weight="1"
+          android:ellipsize="middle"
+          android:singleLine="true"
+          android:textAppearance="@style/TextAppearance.Material3.LabelSmall"
+          android:textColor="?attr/colorOnSurfaceVariant"
+          tools:text="MyGameActivity" />
+
+      </LinearLayout>
+
     </LinearLayout>
 
     <!-- 删除：常驻但低对比，避免抢视觉焦点 -->

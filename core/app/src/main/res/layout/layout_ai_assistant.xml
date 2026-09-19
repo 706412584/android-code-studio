@@ -81,12 +81,20 @@
           app:iconTint="?attr/colorOnSurfaceVariant" />
 
         <!-- 标题居中：两侧按钮数量不等（左 1 右 3），靠 weight 均分会偏。
-             用 weight=1 + 居中文字让标题落在剩余空间的中间。 -->
+             用 weight=1 + 居中文字让标题落在剩余空间的中间。
+
+             标题内容运行时替换为**当前项目名**（见 FloatingAssistantView.refreshWorkspaceLabel）：
+             这块空间原本只印静态的「AI 助手」，对用户零信息量，而「这个对话绑在哪个项目」
+             恰恰是用户看不出来的关键信息。无项目时回退为原来的标题文案。
+
+             ellipsize 用 middle 而非 end：项目名常常长而尾部才有区分度（如
+             「.../MyGameActivity」与「.../MyNativeC」），掐尾巴会让两条看起来一样。 -->
         <TextView
+          android:id="@+id/assistantTitle"
           android:layout_width="0dp"
           android:layout_height="wrap_content"
           android:layout_weight="1"
-          android:ellipsize="end"
+          android:ellipsize="middle"
           android:gravity="center"
           android:maxLines="1"
           android:text="@string/ai_assistant_title"

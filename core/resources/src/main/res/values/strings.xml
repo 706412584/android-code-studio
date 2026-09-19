@@ -169,6 +169,13 @@
   <string name="ai_conversation_delete_confirm_message">Delete this conversation? This cannot be undone.</string>
   <string name="ai_conversation_deleted">Conversation deleted</string>
   <string name="ai_conversation_renamed">Conversation renamed</string>
+  <!-- Conversation list: which project a conversation is bound to -->
+  <string name="ai_conversation_project_unknown">Unknown project</string>
+  <string name="ai_conversation_project_other">Another project</string>
+  <!-- Shown when opening a conversation bound to a different project -->
+  <string name="ai_conversation_foreign_project_title">Conversation belongs to another project</string>
+  <string name="ai_conversation_foreign_project_message">This conversation is bound to:\n%1$s\n\nCurrent project:\n%2$s\n\nIf you continue, its history stays with the old project while tools act on the current one. Messages you send will be appended to that conversation.</string>
+  <string name="ai_conversation_foreign_project_continue">Open anyway</string>
 
   <!-- AI Agent Deepseek -->
   <string name="ai_agent_deepseek_api_key">Deepseek API Key</string>

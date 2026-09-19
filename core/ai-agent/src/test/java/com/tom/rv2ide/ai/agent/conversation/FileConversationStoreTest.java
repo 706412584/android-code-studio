@@ -23,6 +23,7 @@ import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.io.File;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -45,11 +46,15 @@ final class FileConversationStoreTest {
 
     assertFalse(created.getId().isEmpty());
     assertEquals("第一个会话", created.getTitle());
+    // 摘要要带出工作区：列表页靠它标注「这条会话属于哪个项目」，
+    // AgentOrchestrator 也靠它判断会话归属，不必再逐个读会话文件。
+    assertEquals("/workspace", created.getCwd());
     assertTrue(store.exists(created.getId()));
 
     List<ConversationSummary> list = store.list();
     assertEquals(1, list.size());
     assertEquals(created.getId(), list.get(0).getId());
+    assertEquals("/workspace", list.get(0).getCwd());
 
     // 首条应为 session-meta
     List<ConversationLog.EntryLocation> entries = store.read(created.getId());
@@ -58,6 +63,42 @@ final class FileConversationStoreTest {
     assertEquals("/workspace", meta.getCwd());
     assertEquals("agnes-2.5-flash", meta.getModel());
     assertEquals("confirm", meta.getPermissionMode());
+  }
+
+  /**
+   * 摘要在整个会话生命周期里都带着创建时的工作区。
+   *
+   * <p>关键点：cwd 来自首条 meta 条目，而后续追加消息、重命名、压缩都不该改变它。
+   * 若实现改成「取最后一条 meta」或「取任意一条」，这条会失败。
+   */
+  @Test
+  void summaryKeepsWorkspaceAcrossLaterAppends(@TempDir Path dir) throws IOException {
+    FileConversationStore store = storeAt(dir);
+    String id = store.create(null, "/project/alpha", "m", "confirm").getId();
+
+    store.append(id, UserMessageEntry.create(null, 1L, "继续"));
+    store.append(id, AssistantMessageEntry.create(null, 2L, "好", "", List.of()));
+    store.rename(id, "换个标题");
+
+    for (ConversationSummary summary : store.list()) {
+      assertEquals("/project/alpha", summary.getCwd());
+    }
+  }
+
+  /** 无 meta 的会话（旧版本或外部生成的日志）cwd 为空串，调用方按「不匹配」处理而不是崩。 */
+  @Test
+  void summaryCwdIsEmptyWhenNoMetaEntry(@TempDir Path dir) throws IOException {
+    FileConversationStore store = storeAt(dir);
+    String id = store.create(null, "/w", "m", "confirm").getId();
+
+    // 覆盖成不含 meta 的日志
+    ConversationLog log = new ConversationLog(new File(dir.toFile(), id + ".jsonl"));
+    assertTrue(log.delete());
+    log.append(UserMessageEntry.create(null, 1L, "没有 meta 的会话"));
+
+    List<ConversationSummary> list = store.list();
+    assertEquals(1, list.size());
+    assertEquals("", list.get(0).getCwd());
   }
 
   @Test

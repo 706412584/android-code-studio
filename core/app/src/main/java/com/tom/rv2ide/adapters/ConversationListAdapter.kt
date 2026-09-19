@@ -21,6 +21,7 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import androidx.core.content.ContextCompat
+import androidx.core.view.isVisible
 import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.ListAdapter
 import androidx.recyclerview.widget.RecyclerView
@@ -51,6 +52,14 @@ class ConversationListAdapter(
   /** 当前打开的会话 id，用于高亮。 */
   private var activeId: String? = null
 
+  /**
+   * 当前工作区绝对路径，用于判断每条会话是否属于当前项目。
+   *
+   * <p>null / 空串表示「不知道当前项目」（如未打开任何项目），此时不做归属判断，
+   * 一律按中性样式显示——不能因为拿不到工作区就把所有会话都标成「其他项目」。
+   */
+  private var currentCwd: String? = null
+
   /** 设置当前会话并刷新高亮。 */
   fun setActive(conversationId: String?) {
     if (activeId == conversationId) {
@@ -66,6 +75,20 @@ class ConversationListAdapter(
     }
   }
 
+  /**
+   * 设置当前工作区并刷新归属标注。
+   *
+   * <p>归属变化会影响**每一条**（当前项目的从「其他」变「本项目」，反之亦然），
+   * 所以这里全量刷新。它只在切换项目时发生，频率远低于滚动，不会打断交互。
+   */
+  fun setCurrentCwd(cwd: String?) {
+    if (currentCwd == cwd) {
+      return
+    }
+    currentCwd = cwd
+    notifyItemRangeChanged(0, itemCount)
+  }
+
   override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): ViewHolder =
       ViewHolder(
           ItemAiConversationBinding.inflate(LayoutInflater.from(parent.context), parent, false)
@@ -73,7 +96,7 @@ class ConversationListAdapter(
 
   override fun onBindViewHolder(holder: ViewHolder, position: Int) {
     val summary = getItem(position)
-    holder.bind(summary, summary.getId() == activeId, onOpen, onDelete)
+    holder.bind(summary, summary.getId() == activeId, currentCwd, onOpen, onDelete)
   }
 
   class ViewHolder(private val binding: ItemAiConversationBinding) :
@@ -82,6 +105,7 @@ class ConversationListAdapter(
     fun bind(
         summary: ConversationSummary,
         isActive: Boolean,
+        currentCwd: String?,
         onOpen: (ConversationSummary) -> Unit,
         onDelete: (ConversationSummary) -> Unit,
     ) {
@@ -122,8 +146,83 @@ class ConversationListAdapter(
           )
       )
 
+      bindProjectRow(summary, currentCwd, context)
+
       binding.conversationCard.setOnClickListener { onOpen(summary) }
       binding.conversationDelete.setOnClickListener { onDelete(summary) }
+    }
+
+    /**
+     * 渲染「这条会话属于哪个项目」。
+     *
+     * <p>三种情况分开处理，不能混为一谈：
+     * - 会话没记 cwd（老会话、或创建时未打开项目）→ 显示「未知项目」，中性色。
+     * - 当前也没有打开项目（[currentCwd] 为空）→ 无从比较，按中性色显示项目名，
+     *   不谎报「其他项目」。
+     * - 会话 cwd 与当前项目不同 → 加「⚠」前缀并用 error 色：这是用户最需要
+     *   提前知道的情况（点开会把历史与当前项目错配）。
+     *
+     * <p>取色一律走主题 attr，理由同上面的强调色——ACS 有多套主题。
+     */
+    private fun bindProjectRow(
+        summary: ConversationSummary,
+        currentCwd: String?,
+        context: android.content.Context,
+    ) {
+      val row = binding.conversationProjectRow
+      val label = binding.conversationProject
+      val cwd = summary.getCwd()
+
+      if (cwd.isBlank()) {
+        row.isVisible = true
+        label.text = context.getString(string.ai_conversation_project_unknown)
+        label.setTextColor(onSurfaceVariant(context))
+        return
+      }
+
+      val name = projectNameOf(cwd)
+      val known = !currentCwd.isNullOrBlank()
+      val foreign = known && currentCwd != cwd
+
+      row.isVisible = true
+      if (foreign) {
+        label.text = "⚠ " + name
+        // colorError 是框架 attr（Material 库的 R.attr 里没有它）。取默认值 0 表示
+        // 主题未定义，此时回退到次级色——绝不能把文字设成透明，那等于信息没显示。
+        val errorColor =
+            com.google.android.material.color.MaterialColors.getColor(
+                binding.root, android.R.attr.colorError, 0)
+        label.setTextColor(if (errorColor != 0) errorColor else onSurfaceVariant(context))
+        // 无障碍：图标被标为 no，颜色又不传达信息给读屏，必须写进 contentDescription。
+        label.contentDescription = context.getString(string.ai_conversation_project_other)
+      } else {
+        label.text = name
+        label.setTextColor(onSurfaceVariant(context))
+        label.contentDescription = null
+      }
+    }
+
+    private fun onSurfaceVariant(context: android.content.Context): Int =
+        com.google.android.material.color.MaterialColors.getColor(
+            binding.root,
+            com.google.android.material.R.attr.colorOnSurfaceVariant,
+            COLOR_FALLBACK,
+        )
+
+    /**
+     * 取路径最后一段作为项目名。
+     *
+     * <p>只显示 basename 而不是完整路径：抽屉只有 240dp 宽，完整路径（
+     * `/data/data/com.tom.rv2ide/files/home/ACSProjects/MyGameActivity`）
+     * 会把这一行撑成一串省略号。完整路径放在标题栏的 tooltip 里。
+     *
+     * <p>末尾有分隔符时先剥掉，否则 `.../MyGameActivity/` 会取到空串。
+     */
+    private fun projectNameOf(cwd: String): String {
+      val trimmed = cwd.trimEnd('/', '\\')
+      val cut = trimmed.lastIndexOfAny(charArrayOf('/', '\\'))
+      val name = if (cut >= 0) trimmed.substring(cut + 1) else trimmed
+      return name.ifBlank { trimmed.ifBlank { cwd } }
     }
 
     /**
