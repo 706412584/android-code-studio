@@ -63,6 +63,9 @@ object AssistantActionText {
       ToolNames.GLOB -> context.getString(string.ai_assistant_work_searching, target)
       ToolNames.SHELL_EXECUTE -> context.getString(string.ai_assistant_work_running, target)
       ToolNames.TODO_UPDATE -> context.getString(string.ai_assistant_work_todo)
+      // 写入 skill 是「AI 记下一条经验」，与读 skill（走兜底显示工具名）不同——
+      // 这是用户会关心的一类动作，值得一个正经文案。
+      ToolNames.SKILL_WRITE -> context.getString(string.ai_assistant_work_skill)
       ToolNames.AGENT -> context.getString(string.ai_assistant_work_agent, target)
       ToolNames.WEB_FETCH, ToolNames.WEB_SEARCH ->
           context.getString(string.ai_assistant_work_web, target)

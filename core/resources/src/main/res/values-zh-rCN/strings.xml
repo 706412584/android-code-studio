@@ -401,6 +401,7 @@
   <string name="ai_assistant_work_launching">正在启动应用</string>
   <string name="ai_assistant_work_agent">子 agent 正在处理 %1$s</string>
   <string name="ai_assistant_work_todo">正在更新任务清单</string>
+  <string name="ai_assistant_work_skill">正在记录 skill</string>
   <string name="ai_assistant_work_web">正在访问网络 %1$s</string>
   <string name="ai_assistant_work_tool">正在执行 %1$s</string>
 

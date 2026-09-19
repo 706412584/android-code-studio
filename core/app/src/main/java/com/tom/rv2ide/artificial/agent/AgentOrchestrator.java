@@ -543,6 +543,9 @@ public final class AgentOrchestrator {
 
     // skill：按需加载的说明文档。提示词里只放名字与一句话说明（渐进披露）。
     registry.register(new com.tom.rv2ide.ai.tool.skill.SkillTool(skillRegistry));
+    // skill 的写入端：让模型能自己沉淀踩过的坑，形成能力自增长。
+    // 与上面那个是一对——只有读没有写，踩过的坑就无处可记，下次重踩。
+    registry.register(new com.tom.rv2ide.ai.tool.skill.SkillWriteTool(skillRegistry));
 
     // 网络：先搜索定位页面，再抓取正文。
     AppHttpPort http = new AppHttpPort();
