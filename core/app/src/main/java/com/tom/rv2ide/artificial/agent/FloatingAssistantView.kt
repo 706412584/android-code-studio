@@ -28,6 +28,7 @@ import androidx.appcompat.app.AlertDialog
 import androidx.constraintlayout.widget.ConstraintLayout
 import androidx.core.view.isVisible
 import com.google.android.material.color.MaterialColors
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import androidx.lifecycle.LifecycleCoroutineScope
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.tom.rv2ide.adapters.AssistantMessageAdapter
@@ -182,8 +183,23 @@ class FloatingAssistantView(
             askDangerousToolOnMain(toolName, args)
           }
       )
+      // 上下文用量回主线程画圆环。回调来自 agent 循环线程，且每轮都会触发，
+      // 因此这里只做一次「写两个字段 + invalidate」。
+      setContextUsageListener { used, total ->
+        lifecycleScope.launch(Dispatchers.Main) {
+          lastContextUsed = used
+          lastContextSize = total
+          binding.assistantContextRing.bind(if (total > 0) used.toFloat() / total else -1f)
+        }
+      }
     }
   }
+
+  /** 最近一次已知的上下文用量；未运行过时为 0。 */
+  private var lastContextUsed = 0
+
+  /** 当前模型的上下文窗口；0 表示未配置。 */
+  private var lastContextSize = 0
 
   /** 是否已展开面板。 */
   val isOpen: Boolean
@@ -227,14 +243,24 @@ class FloatingAssistantView(
 
     // 不设 OnClickListener：拖动用的 OnTouchListener 会消费全部事件，click 永远不会触发。
     // 打开面板的动作用 ACTION_UP 且未进入拖动时手动调用 open()（见 setUpDragging）。
-    binding.assistantSend.setOnClickListener { sendFromInput() }
-    binding.assistantModelBar.setOnClickListener {
+    binding.assistantSend.setOnClickListener { onSendClicked() }
+    // 工具条上的模型标签：点开服务商/模型选择器。
+    binding.assistantToolbarModel.setOnClickListener {
       AssistantModelPicker.show(context) { refreshModelLabel() }
     }
-    // 槽位标签与模型条都要能点：标签只切槽位，整行开选择器。
-    // 标签自带 padding 与 clickable，点击落点由它自己消费，不会冒泡到整行。
-    binding.assistantSlotLabel.setOnClickListener { inputFeatures.cycleSlot() }
+    // 上下文圆环：点开占用详情，并就地提供「压缩上下文」入口。
+    binding.assistantContextRing.setOnClickListener { showContextUsage() }
+    // 权限模式标签：点开三档选择。改完立即生效——权限判定每次工具调用都重读偏好。
+    binding.assistantPermissionChip.setOnClickListener { showPermissionPicker() }
+    // git 分支标签：点它刷新一次（外部可能在终端里切过分支）。
+    binding.assistantGitChip.setOnClickListener { refreshGitBranch() }
     inputFeatures.onNotice = { appendTrace(it) }
+    // 槽位切换发生在 inputFeatures 内部，而模型标签由本类渲染——切完要刷新。
+    inputFeatures.onModelChanged = {
+      refreshModelLabel()
+      // 换模型 = 换窗口，旧用量对新窗口无意义。
+      refreshContextRingFromConfig()
+    }
 
     // 标题栏：左菜单开抽屉，右侧全屏/最小化/关闭。
     binding.assistantMenu.setOnClickListener { toggleConversationPanel() }
@@ -284,12 +310,48 @@ class FloatingAssistantView(
     }
 
     updateEmptyState()
+
+    // 工具条控件的初始状态。
+    setRunningUi(false)
+    applyToolbarDensity()
+    // 上下文窗口在「还没运行过」时也要能判断：模型配了窗口才显示圆环，
+    // 否则圆环是空的、点了只说「未知」，不如直接不显示。
+    refreshContextRingFromConfig()
+  }
+
+  /**
+   * 用当前模型配置初始化圆环。
+   *
+   * <p>只在没有实际用量时用（首次打开、切了模型）：有真实用量时应该显示那个值，
+   * 而不是被重置成 0。切换模型会改变窗口大小，此时旧用量对新窗口无意义，
+   * 因此一并清掉。
+   *
+   * <p>走 IO 线程：`contextSizeForActiveConfig` 会读服务商配置文件
+   * （`ProviderConfigStore.load()` 每次从磁盘解析 JSON），放主线程会在
+   * 打开面板时卡一下。这是「圆环怎么显示」的装饰性判断，晚几十毫秒无妨。
+   */
+  private fun refreshContextRingFromConfig() {
+    lastContextUsed = 0
+    lifecycleScope.launch(Dispatchers.IO) {
+      val size = orchestrator.contextSizeForActiveConfig()
+      withContext(Dispatchers.Main) {
+        lastContextSize = size
+        if (size > 0) {
+          binding.assistantContextRing.bind(0f)
+        } else {
+          binding.assistantContextRing.clear()
+        }
+      }
+    }
   }
 
   /** 设置工作区。主屏上用户可能先选项目，因此每次打开面板前都更新。 */
   fun setWorkspace(workspace: java.io.File?) {
     this.workspace = workspace
     orchestrator.workspace = workspace
+    // 换了项目就换了仓库：分支标签要重新读，且上一个项目的分支不能留着。
+    lastGitBranch = null
+    refreshGitBranch()
   }
 
   /**
@@ -414,6 +476,10 @@ class FloatingAssistantView(
     // 服务商/模型可能刚在设置页被改过，打开时重读一次。只在 attach 时读会让
     // 「设置里改了、回到面板显示的还是旧值」。
     refreshModelLabel()
+    // 权限模式同理：设置页改完回来要看到新值。
+    refreshPermissionChip()
+    // 模型可能被换过，窗口大小随之变化——旧用量对新窗口无意义，重置。
+    refreshContextRingFromConfig()
     // 首次打开时回放已恢复的会话。放在 open() 而不是 attach()：
     // attach 发生在 Activity onCreate 期间，此时读磁盘会拖慢启动；
     // 而用户看到面板时再加载，感知上反而更快。
@@ -727,17 +793,20 @@ class FloatingAssistantView(
           val agents = Agents(context)
           val providerId = agents.getProvider()
           // 传当前槽位：此前不传，modelIdFor 无条件用主模型，
-            // 于是界面「切到 Opus」改了偏好但请求仍发主模型（假反馈）。
-            val modelId =
-                AgentModelConfigs.modelIdFor(
-                    providerId,
-                    agents.getAgent(),
-                    inputFeatures.currentSlot(),
-                )
+          // 于是界面「切到 Opus」改了偏好但请求仍发主模型（假反馈）。
+          val modelId =
+              AgentModelConfigs.modelIdFor(
+                  providerId,
+                  agents.getAgent(),
+                  inputFeatures.currentSlot(),
+              )
           val customBaseUrl = AgentOrchestrator.customBaseUrlFor(context, providerId)
 
           withContext(Dispatchers.Main) {
-            binding.assistantSend.isEnabled = false
+            // 运行中把发送按钮换成「停止」。原先只是置灰：用户看到一个灰掉的按钮，
+            // 既不知道能不能中断，也不知道它什么时候会恢复——而 agent 跑几分钟是常态。
+            // 换成停止按钮之后，同一个位置始终是可点的，且语义随状态翻转。
+            setRunningUi(true)
             // 运行中清空摘要行：上一次的「已完成 · 3 轮」留在那里会与正在进行的运行
             // 混在一起，看起来像这次已经结束了。运行状态由下方的 WorkingStatusView 承担。
             setStatus(null)
@@ -795,13 +864,19 @@ class FloatingAssistantView(
             )
           } finally {
             // 必须放在 finally：run() 抛异常或协程被取消时也要恢复 UI，
-            // 否则发送按钮会永久停留在禁用状态，用户再也发不出请求。
+            // 否则按钮会永久停留在「停止」态，用户再也发不出请求。
             withContext(kotlinx.coroutines.NonCancellable) {
               withContext(Dispatchers.Main) {
-                binding.assistantSend.isEnabled = true
+                setRunningUi(false)
                 // 状态条同理：不在这里停，取消/异常后动画会一直转，
                 // 看起来像还在跑。
                 binding.assistantWorking.stopWorking()
+                // 重试卡片收掉——**除非它正在报告「重试用尽」**。
+                // 那条信息必须留在屏幕上：用户需要知道失败前重试过几次，
+                // 而运行结束后再没有任何地方会显示它。
+                if (!retryCardPinned) {
+                  hideRetryCard()
+                }
               }
             }
           }
@@ -824,6 +899,10 @@ class FloatingAssistantView(
           }
           // 收到推理增量 = 模型在思考。这个区分有实际意义：推理模型思考半分钟是正常的，
           // 显示「思考中」用户不会以为出了问题。
+          //
+          // 清掉工具动作：上一个工具已经结束，此时模型回到推理阶段，状态条继续写着
+          // 「正在读取 xxx」会让人以为文件还没读完。
+          binding.assistantWorking.setAction(null)
           binding.assistantWorking.bind(isThinking = true)
           if (throttle.onDelta()) {
             scrollToBottom()
@@ -850,7 +929,10 @@ class FloatingAssistantView(
           } else {
             adapter.appendTo(id, delta)
           }
-          // 开始输出正文 = 思考结束，进入「处理中」。
+          // 开始输出正文 = 思考结束，进入「生成回复」。
+          // 同样清掉工具动作——正文已经在流出来了，状态条不该还说「正在执行 xxx」。
+          binding.assistantWorking.setAction(
+              context.getString(string.ai_assistant_work_generating))
           binding.assistantWorking.bind(isThinking = false)
           if (throttle.onDelta()) {
             scrollToBottom()
@@ -910,6 +992,9 @@ class FloatingAssistantView(
           // 看不出哪段推理导致了哪次调用。
           lastThinkingId?.let { adapter.finishThinking(it) }
           lastThinkingId = null
+          // 底部状态条播报这一步在做什么。放在这里（而不是 TOOL_FINISHED）：
+          // 用户需要的是「现在在跑什么」，「刚刚跑完了什么」工具卡片已经写了。
+          showAction(actionForTool(call.name, call.arguments))
           scrollToBottom()
         }
       }
@@ -948,6 +1033,10 @@ class FloatingAssistantView(
         // 必须同时清掉推理块与工具卡片状态：推理块与正文同属本轮输出；
         // 而 lastToolCardId 指向的卡片若留着，重发后 TOOL_FINISHED 会回填到
         // 一张属于上一次尝试的卡片上。
+        //
+        // 事件同时携带 attempt / maxAttempts / delayMs，用来渲染底部固定卡片
+        // （见 showRetryCard）。**不再往消息列表追加**：一次运行最多重试 10 次，
+        // 每次插一条会把对话流刷满，而用户只关心「现在第几次、还要等多久」。
         lifecycleScope.launch(Dispatchers.Main) {
           streamingMessageId?.let { adapter.remove(it) }
           streamingMessageId = null
@@ -958,7 +1047,13 @@ class FloatingAssistantView(
           // 节流器要重置：它记着「本轮是否已刷过」，不重置会让重发后的首个增量
           // 被当成「间隔未到」而丢掉，看起来像新回答迟迟不出现。
           throttle.reset()
-          appendTrace(event.message)
+          retryCountThisRun = Math.max(retryCountThisRun, event.retryAttempt)
+          showRetryCard(
+              event.retryAttempt,
+              event.retryMaxAttempts,
+              event.retryDelayMs,
+              event.retryReason,
+          )
         }
       }
       com.tom.rv2ide.ai.agent.AgentEvent.Type.CONTEXT_COMPACTED -> {
@@ -975,12 +1070,172 @@ class FloatingAssistantView(
           // 思维链同理：失败时标题必须从「思考中…」切走，否则看起来像还在等。
           adapter.finishAllThinking()
           lastThinkingId = null
+          // 重试卡片留在原地改成「重试 N 次仍失败」，而不是直接收掉。
+          //
+          // **这条是实测反馈的直接来源**：此前重试卡片还没实现，重试信息走
+          // appendTrace 进消息列表，用户看到的是「正在重试 1/10」紧接着「请求失败」——
+          // 中间九次重试去哪了完全看不出来。留在原地并写明次数，
+          // 「重试到第几次才放弃」才是可读的。
+          if (retryCountThisRun > 0) {
+            binding.assistantRetryCard.isVisible = true
+            binding.assistantRetryText.text =
+                context.getString(string.ai_assistant_retry_exhausted, retryCountThisRun) +
+                    shortErrorCode(event.message).let { if (it.isEmpty()) "" else " · $it" }
+            retryCardPinned = true
+          }
           appendTrace("⚠️ ${event.message}")
         }
       }
       else -> {}
     }
   }
+
+  /**
+   * 发送按钮的点击：运行中 = 停止，空闲 = 发送。
+   *
+   * <p>一个按钮承担两个动作，而不是在运行时禁用发送、另加一个停止按钮：
+   * 工具条在贴边形态下整行只有约 236dp，多一个按钮就要挤掉模型标签或圆环。
+   * 而「发送」与「停止」本来就是同一位置的互斥状态，参考项目（cc-haha）
+   * 也是同一个按钮换图标。
+   */
+  private fun onSendClicked() {
+    if (executionJob?.isActive == true) {
+      cancel()
+      // 取消后立刻切回发送态：用户点这个按钮的意图是「我现在要输入」，
+      // 让他等 finally 里的恢复会有一段「点了没反应」的空窗。
+      setRunningUi(false)
+      return
+    }
+    sendFromInput()
+  }
+
+  /**
+   * 切换发送按钮的运行态外观，并显示/隐藏底部动作条。
+   *
+   * <p>运行态的信号有三处，缺一不可：
+   * <ol>
+   *   <li>发送按钮变成停止（error 配色的方块）——「能中断」这件事必须可见
+   *   <li>底部动作条出现（点阵动画 + 当前动作文案）——「在做什么」必须可见
+   *   <li>按钮本身**不禁用**——禁用会让停止这个动作也无从触发
+   * </ol>
+   * 此前只有「按钮置灰」一条，用户既不知道能不能中断，也看不出 agent 在读文件还是卡住了。
+   */
+  private fun setRunningUi(running: Boolean) {
+    val send = binding.assistantSend
+    send.setIconResource(
+        if (running) com.tom.rv2ide.R.drawable.ic_stop_generation
+        else com.tom.rv2ide.R.drawable.ic_arrow_upward)
+    send.contentDescription =
+        context.getString(
+            if (running) string.ai_assistant_stop else string.ai_assistant_send)
+    // 运行中用 errorContainer 底 + onErrorContainer 图标：与「发送」的实心主色形成
+    // 明确对比，扫一眼就知道现在处于哪个状态。
+    //
+    // attr 的命名空间要逐个确认，写错编译不过：
+    // - colorPrimary 只在框架里（android.R.attr），Material 的 R.attr 里没有
+    // - colorOnPrimary 只在 Material 里（Material 的 R.attr），框架里没有
+    // - colorErrorContainer / colorOnErrorContainer 都是 Material 独有
+    val bgAttr =
+        if (running) com.google.android.material.R.attr.colorErrorContainer
+        else android.R.attr.colorPrimary
+    val fgAttr =
+        if (running) com.google.android.material.R.attr.colorOnErrorContainer
+        else com.google.android.material.R.attr.colorOnPrimary
+    send.setBackgroundTintList(
+        android.content.res.ColorStateList.valueOf(MaterialColors.getColor(send, bgAttr)))
+    send.setIconTint(
+        android.content.res.ColorStateList.valueOf(MaterialColors.getColor(send, fgAttr)))
+
+    // 状态条与分隔线在这里一并显隐。
+    //
+    // **此前它们从未显示过**：XML 里两者都是 visibility="gone"，而代码只调用了
+    // startWorking()/stopWorking()——那两个方法只管动画，不管可见性。结果是
+    // 动画在一个 GONE 的视图上跑，用户什么都看不到，界面上唯一的运行信号就是
+    // 「发送按钮变灰」。这正是「工作状态显示不够明显」的直接原因。
+    binding.assistantWorking.isVisible = running
+    binding.assistantWorkingDivider.isVisible = running
+
+    if (running) {
+      // 新一轮开始：清掉上一轮留下的重试结论与计数。
+      retryCountThisRun = 0
+      retryCardPinned = false
+      hideRetryCard()
+    }
+  }
+
+  /** 隐藏重试卡片。 */
+  private fun hideRetryCard() {
+    binding.assistantRetryCard.isVisible = false
+  }
+
+  /**
+   * 本次运行发生过几次重试。
+   *
+   * <p>用来在最终失败时补一句「重试 N 次仍失败」：否则用户看到重试卡片一闪、
+   * 然后直接是失败提示，无法判断到底是「重试都没成功」还是「重试被拒绝了」。
+   * 这两种情况的可操作性完全不同——前者等网络恢复即可，后者要去看错误码。
+   */
+  private var retryCountThisRun = 0
+
+  /**
+   * 重试卡片是否处于「钉住」状态（正在显示「重试用尽」的结论）。
+   *
+   * <p>钉住时不被运行结束的收尾逻辑清掉。下一次运行开始时由
+   * [setRunningUi] 解开——否则上一轮的结论会一直挂在新一轮的对话上。
+   */
+  private var retryCardPinned = false
+
+  /**
+   * 显示/更新重试卡片。
+   *
+   * <p><b>为什么做成固定卡片而不是往消息列表里追加一行</b>：一次运行最多重试 10 次，
+   * 每次追加一行会把对话流刷满，而用户只关心「现在第几次、还要等多久」。固定卡片
+   * 原地更新，对话流保持干净。这也是参考项目（cc-haha）的做法——它的重试提示
+   * 固定在输入区上方，并且**前 3 次不显示**（`retryAttempt < 4` 时 return null）：
+   * 偶发的一两次重连不值得打扰用户，连续失败才需要让人知道。
+   *
+   * <p>错误码单独拼在尾部：只写「连接中断」用户无法区分「网络抖动」与
+   * 「服务端 503」，而这两者的应对完全不同（前者等，后者可能要去换模型）。
+   */
+  private fun showRetryCard(attempt: Int, maxAttempts: Int, delayMs: Long, reason: String) {
+    if (!AssistantActionText.shouldShowRetry(attempt)) {
+      return
+    }
+    binding.assistantRetryCard.isVisible = true
+    val seconds = Math.max(0L, delayMs / 1000L)
+    val base =
+        if (delayMs > 0) {
+          context.getString(string.ai_assistant_retry_retrying, seconds, attempt, maxAttempts)
+        } else {
+          context.getString(string.ai_assistant_retry_waiting, attempt, maxAttempts)
+        }
+    val code = AssistantActionText.shortErrorCode(reason)
+    binding.assistantRetryText.text = if (code.isEmpty()) base else "$base · $code"
+  }
+
+  /** 见 [AssistantActionText.shortErrorCode]。 */
+  private fun shortErrorCode(reason: String): String = AssistantActionText.shortErrorCode(reason)
+
+  /**
+   * 把当前动作播报到状态条上。
+   *
+   * <p>由 [handleEvent] 在 TOOL_STARTED 时调用，文案按工具名与参数拼。
+   * 拼不出具体对象时退回「正在执行 <工具名>」——显示工具名也比只显示「处理中」有用，
+   * 用户至少知道 agent 卡在哪一类操作上。
+   */
+  private fun showAction(text: CharSequence) {
+    binding.assistantWorking.setAction(text)
+  }
+
+  /**
+   * 工具调用 → 一行动作文案。
+   *
+   * <p>实现抽在 [AssistantActionText]：那段逻辑全是纯函数，留在本类里（需要
+   * Context + ViewBinding 才能构造）就一条测试都写不了，而它恰好是用户每天
+   * 看到最多的一行字。
+   */
+  private fun actionForTool(toolName: String, arguments: String?): CharSequence =
+      AssistantActionText.describe(context, toolName, arguments)
 
   /** 结束流式段：下一次增量会新建一条消息。 */
   private fun finishStreaming() {
@@ -1068,17 +1323,205 @@ class FloatingAssistantView(
   }
 
   /**
-   * 刷新标题栏下方的「服务商 / 模型」文案。
+   * 上下文占用详情 + 压缩入口。
+   *
+   * <p>圆环只给比例，这里给数字。压缩入口放在同一处而不是另做按钮：
+   * 「看占用」与「占用高时压缩」是同一个动作的两半，用户看到 92% 的下一个念头
+   * 就是「怎么腾空间」。
+   */
+  /**
+   * 刷新权限模式标签。
+   *
+   * <p>标签只写**短名**（自动放行 / 需确认 / 只读）：工具条整行在贴边形态下约 236dp，
+   * 「危险工具需确认」七个字会挤掉模型名。完整说明放在弹窗里。
+   */
+  private fun refreshPermissionChip() {
+    val chip = binding.assistantPermissionChip
+    val mode = settings.permissionMode
+    chip.text = context.getString(permissionShortLabelRes(mode))
+    chip.contentDescription = context.getString(permissionLongLabelRes(mode))
+  }
+
+  /**
+   * 弹权限模式选择。
+   *
+   * <p>三档与设置页（{@code PermissionModePreference}）完全一致，文案也共用同一批
+   * 字符串资源——两处对同一个值的叫法不同会让用户以为是两个独立设置。
+   */
+  private fun showPermissionPicker() {
+    val modes =
+        arrayOf(
+            com.tom.rv2ide.ai.tool.ToolSettingsPort.PERMISSION_AUTO,
+            com.tom.rv2ide.ai.tool.ToolSettingsPort.PERMISSION_CONFIRM,
+            com.tom.rv2ide.ai.tool.ToolSettingsPort.PERMISSION_READONLY,
+        )
+    val labels = modes.map { context.getString(permissionLongLabelRes(it)) }.toTypedArray()
+    val checked = modes.indexOf(settings.permissionMode).coerceAtLeast(0)
+    MaterialAlertDialogBuilder(context)
+        .setTitle(string.ai_assistant_permission_title)
+        .setSingleChoiceItems(labels, checked) { dialog, which ->
+          settings.permissionMode = modes[which]
+          refreshPermissionChip()
+          dialog.dismiss()
+        }
+        .show()
+  }
+
+  /** 权限模式 → 工具条上的短标签。 */
+  private fun permissionShortLabelRes(mode: String): Int =
+      when (mode) {
+        com.tom.rv2ide.ai.tool.ToolSettingsPort.PERMISSION_AUTO ->
+            string.ai_assistant_permission_auto
+        com.tom.rv2ide.ai.tool.ToolSettingsPort.PERMISSION_READONLY ->
+            string.ai_assistant_permission_readonly
+        else -> string.ai_assistant_permission_confirm
+      }
+
+  /** 权限模式 → 弹窗里的完整说明。 */
+  private fun permissionLongLabelRes(mode: String): Int =
+      when (mode) {
+        com.tom.rv2ide.ai.tool.ToolSettingsPort.PERMISSION_AUTO ->
+            string.ai_assistant_permission_auto_desc
+        com.tom.rv2ide.ai.tool.ToolSettingsPort.PERMISSION_READONLY ->
+            string.ai_assistant_permission_readonly_desc
+        else -> string.ai_assistant_permission_confirm_desc
+      }
+
+  private fun showContextUsage() {
+    val total = lastContextSize
+    if (total <= 0) {
+      // 未运行过或模型没配上下文窗口。此时圆环是空的，用户点它多半是想知道
+      // 「为什么不显示」——如实说明，而不是弹一个 0/0。
+      appendTrace(context.getString(string.ai_assistant_context_unknown))
+      return
+    }
+    val percent = (lastContextUsed * 100 / total).coerceIn(0, 100)
+    MaterialAlertDialogBuilder(context)
+        .setTitle(string.ai_assistant_context_usage)
+        .setMessage(
+            context.getString(
+                string.ai_assistant_context_usage_detail,
+                formatTokens(lastContextUsed),
+                formatTokens(total),
+                percent,
+            ))
+        .setPositiveButton(string.ai_assistant_compact_now) { _, _ -> compactConversation() }
+        .setNegativeButton(android.R.string.cancel, null)
+        .show()
+  }
+
+  /**
+   * token 数 → 紧凑可读的串（12.3k / 64k）。
+   *
+   * <p>不用 String.format 的 %d 直接显示原值：64000 这种数字要在对话框里数位数，
+   * 而「64k」一眼就懂。低于 1000 时保留原值——「0.5k」比「512」更难读。
+   */
+  private fun formatTokens(value: Int): String =
+      if (value < 1000) value.toString()
+      else String.format(java.util.Locale.US, "%.1fk", value / 1000.0)
+
+  /**
+   * 刷新工具条上的 git 分支。
+   *
+   * <p>在 IO 线程读仓库：JGit 打开仓库要读 `.git` 目录，是文件 I/O，不能放主线程。
+   * 失败（不是 git 仓库、仓库损坏）时整块隐藏——显示一个空的分支标签会让用户
+   * 以为仓库状态读取失败了。
+   */
+  private fun refreshGitBranch() {
+    val ws = workspace
+    if (ws == null || !ws.exists()) {
+      binding.assistantGitChip.isVisible = false
+      return
+    }
+    lifecycleScope.launch(Dispatchers.IO) {
+      val branch =
+          try {
+            val manager = com.tom.rv2ide.git.GitManager(ws.absolutePath)
+            if (!manager.openRepository()) null else manager.getCurrentBranch()
+          } catch (e: Exception) {
+            // 非 git 项目会走到这里（openRepository 返回 false 时上面已返回 null），
+            // 损坏的仓库则抛异常——两者都不该让界面崩。
+            null
+          }
+      withContext(Dispatchers.Main) {
+        // 缓存下来，宽度变化时不必重新读磁盘就能恢复标签。
+        lastGitBranch = branch
+        val chip = binding.assistantGitChip
+        if (branch.isNullOrBlank()) {
+          chip.isVisible = false
+        } else {
+          chip.isVisible = true
+          binding.assistantGitBranch.text = branch
+        }
+        // 分支标签显隐会改变工具条剩余宽度，重新算一次密度。
+        applyToolbarDensity()
+      }
+    }
+  }
+
+  /**
+   * 按工具条实测宽度决定显示哪些控件。
+   *
+   * <p><b>为什么按实测宽度而不是按面板形态</b>：面板宽度由形态（全屏/侧栏/贴边）
+   * 与屏幕宽度共同决定，形态只是间接量——同样是贴边形态，平板上可能是 420dp，
+   * 手机上只有 260dp。参考项目（cc-haha）同样用 ResizeObserver 量实际宽度，
+   * 而不是 CSS 媒体查询。
+   *
+   * <p>三档：
+   * <ul>
+   *   <li>≥340dp：全部显示
+   *   <li>≥290dp：隐藏 git 分支（它是三者里信息密度最低的）
+   *   <li>更窄：连模型名也收成省略（保留图标与圆环）
+   * </ul>
+   */
+  private fun applyToolbarDensity() {
+    val bar = binding.assistantToolbar
+    bar.post {
+      val widthDp = (bar.width / parent.resources.displayMetrics.density).toInt()
+      // git 分支：窄面板下让位。它的显隐同时受「是否 git 仓库」控制，
+      // 因此这里只在够宽时才允许显示，不够宽就强制隐藏（不写回 git 状态本身）。
+      if (widthDp < GIT_VISIBLE_MIN_DP) {
+        binding.assistantGitChip.isVisible = false
+      } else {
+        // 够宽时按仓库状态决定——refreshGitBranch 已经写好了 isVisible，
+        // 这里只在「之前被窄宽度压掉」的情况下重新问一次。
+        refreshGitBranchVisibilityOnly()
+      }
+      // 模型名：极窄时收成 4 个字符宽。maxEms 而不是 maxWidth，
+      // 因为 ems 随字号缩放，换字体或改字号后不用重新调数值。
+      binding.assistantToolbarModel.maxEms = if (widthDp < MODEL_VISIBLE_MIN_DP) 4 else 10
+    }
+  }
+
+  /** 上一次 git 分支查询的结果；避免每次宽度变化都去读一次仓库。 */
+  private var lastGitBranch: String? = null
+
+  /** 仅按已缓存的仓库状态重设 git 标签可见性，不重新读磁盘。 */
+  private fun refreshGitBranchVisibilityOnly() {
+    val branch = lastGitBranch
+    if (branch.isNullOrBlank()) {
+      binding.assistantGitChip.isVisible = false
+      return
+    }
+    binding.assistantGitChip.isVisible = true
+    binding.assistantGitBranch.text = branch
+  }
+
+  /**
+   * 刷新工具条上的模型标签。
    *
    * <p>由选择器在每次选择后回调，以及面板 attach 时调用一次。不订阅偏好变更：
    * 目前只有本面板会改这两个值，回调已经覆盖；引入全局监听反而要为「谁改的」
    * 做去重，得不偿失。
+   *
+   * <p>只显示模型名（服务商名进 contentDescription）：工具条在贴边形态下整行只有
+   * 约 236dp，「DeepSeek / deepseek-chat」这种两段文本会被压成两个省略号，
+   * 而用户切换时记住的是模型名。
    */
   private fun refreshModelLabel() {
-    binding.assistantModelLabel.text = AssistantModelPicker.summaryLabel(context)
-    // 服务商可能刚被换掉，而槽位是「当前服务商」的属性——必须跟着一起刷新，
-    // 否则标签会停在上一个服务商的槽位名上，点了切到的是另一个模型。
-    inputFeatures.refreshSlotLabel()
+    val label = binding.assistantToolbarModel
+    label.text = Agents(context).getAgent()
+    label.contentDescription = AssistantModelPicker.summaryLabel(context)
   }
 
   /**
@@ -1518,6 +1961,12 @@ class FloatingAssistantView(
 
     /** 会话抽屉滑入/滑出的时长。够快不拖沓，又不至于快到看不出方向。 */
     private const val DRAWER_ANIM_MS = 200L
+
+    /** 工具条宽度低于此值（dp）时隐藏 git 分支标签。 */
+    private const val GIT_VISIBLE_MIN_DP = 340
+
+    /** 工具条宽度低于此值（dp）时把模型名收成 4 个字符宽。 */
+    private const val MODEL_VISIBLE_MIN_DP = 290
 
     private fun summarizeArgs(args: String?): String {
       if (TextUtils.isEmpty(args)) {

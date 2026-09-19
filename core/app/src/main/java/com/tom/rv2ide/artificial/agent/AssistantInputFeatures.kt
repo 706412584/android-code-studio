@@ -71,10 +71,10 @@ class AssistantInputFeatures(
 
   init {
     registerPickers()
-    binding.assistantAttach.setOnClickListener { showAttachSheet() }
     // 默认值必须是「自动」：用户没表态时应该由协议层的策略决定，
     // 而不是我们替他固定成某一档。
     applyReasoningEffort(reasoningPrefs().getString(KEY_REASONING, DEFAULT_REASONING))
+    binding.assistantToolbarAdd.setOnClickListener { showAddMenu() }
   }
 
   /**
@@ -124,25 +124,61 @@ class AssistantInputFeatures(
   }
 
   /**
-   * 附件类型选择。
+   * `+` 菜单：附件与推理强度。
    *
-   * <p>用对话框二选一而不是让用户先点 `+` 再猜：Android 没有一个能同时表达
+   * <p><b>为什么附件二选一而不是让用户先点 `+` 再猜</b>：Android 没有一个能同时表达
    * 「项目内文件」与「相册图片」的系统选择器——`ACTION_OPEN_DOCUMENT` 能选到图片文件，
    * 但相册里的图片在多数设备上不在文档树里；`ACTION_GET_CONTENT` 反之。
    * 所以必须由用户先表明意图。
+   *
+   * <p><b>为什么推理强度也收在这里</b>：工具条上放不下它。四个中文标签（自动/低/中/高）
+   * 并排约 200dp，而工具条在贴边形态下整行只有约 236dp 可用——它和模型标签、圆环、
+   * 发送按钮是互斥的。原先它独占输入区上方一整行，也是同样的空间问题：
+   * 一个一周改一次的设置占着每天都要看的输入框上方 32dp。
+   */
+  private fun showAddMenu() {
+    // 槽位切换只在有得切时才列出来。菜单项本身要稳定可预期，但一个点了什么都不做的
+    // 项比少一项更糟——用户会反复点它确认自己没看错。
+    val slotSwitchable = hasSwitchableSlots()
+    val items = mutableListOf<Pair<String, () -> Unit>>()
+    if (filePicker != null) {
+      items.add(context.getString(string.ai_assistant_toolbar_attach) to { showAttachSheet() })
+    }
+    items.add(
+        context.getString(
+            string.ai_assistant_toolbar_reasoning_value,
+            context.getString(
+                reasoningLabelRes(
+                    reasoningPrefs().getString(KEY_REASONING, DEFAULT_REASONING)
+                        ?: DEFAULT_REASONING)),
+        ) to { showReasoningPicker() })
+    if (slotSwitchable) {
+      items.add(
+          context.getString(
+              string.ai_assistant_slot_switched,
+              currentSlotLabel(),
+              Agents(context).getAgent(),
+          ) to { cycleSlot() })
+    }
+
+    MaterialAlertDialogBuilder(context)
+        .setItems(items.map { it.first }.toTypedArray()) { _, which -> items[which].second() }
+        .show()
+  }
+
+  /**
+   * 附件类型选择（文件 / 图片）。
+   *
+   * <p>从 `+` 菜单进来，所以这里不再套一层标题——两层同样标题的对话框会让用户
+   * 以为自己点重复了。
    */
   private fun showAttachSheet() {
-    if (filePicker == null) {
-      toastOrTrace(context.getString(string.ai_assistant_attach_no_picker))
-      return
-    }
     val labels =
         arrayOf(
             context.getString(string.ai_assistant_attach_file),
             context.getString(string.ai_assistant_attach_image),
         )
     MaterialAlertDialogBuilder(context)
-        .setTitle(string.ai_assistant_attach_title)
         .setItems(labels) { _, which ->
           if (which == 0) {
             openFilePicker()
@@ -384,26 +420,6 @@ class AssistantInputFeatures(
   // ---- 模型槽位 ----
 
   /**
-   * 刷新槽位标签。
-   *
-   * <p>只在**非空槽位多于一个**时显示：空槽位的语义是「与主模型相同」，
-   * 列出来等于把同一个模型重复四遍；只有一个非空槽位时切换不会有任何变化，
-   * 显示一个点了没反应的入口比不显示更糟。
-   */
-  fun refreshSlotLabel() {
-    val slots = nonEmptySlots()
-    val label = binding.assistantSlotLabel
-    if (slots.size <= 1) {
-      label.isVisible = false
-      return
-    }
-    label.isVisible = true
-    // 显示**当前**槽位，不是列表里的第一个——否则模型在 opus 时标签仍写「均衡」，
-    // 用户看到的是错误的当前状态。
-    label.text = context.getString(slotLabelRes(currentSlot()))
-  }
-
-  /**
    * 当前选中的槽位。请求路径读它来决定用哪个模型。
    *
    * <p>槽位可能已被清空（用户在设置里删了那个模型），此时回退到主模型——
@@ -426,11 +442,23 @@ class AssistantInputFeatures(
   }
 
   /**
-   * 在非空槽位之间循环切换。
+   * 是否有可切换的槽位（非空槽位多于一个）。
    *
-   * <p>用「循环」而不是弹菜单：非空槽位最多 4 个，弹菜单要多一次点击、多一层遮罩，
-   * 而循环切换的代价上限是 3 次点击且每次都有即时反馈。槽位名会显示在标签上，
-   * 用户始终知道自己在哪一档。
+   * <p>空槽位的语义是「与主模型相同」，列出来等于把同一个模型重复四遍；
+   * 只有一个非空槽位时切换不会有任何变化，显示一个点了没反应的入口比不显示更糟。
+   * 因此 `+` 菜单里那一项只在为 true 时出现。
+   */
+  fun hasSwitchableSlots(): Boolean = nonEmptySlots().size > 1
+
+  /** 当前槽位的显示名（供 `+` 菜单文案）。 */
+  fun currentSlotLabel(): String = context.getString(slotLabelRes(currentSlot()))
+
+  /**
+   * 切到下一个非空槽位。
+   *
+   * <p>由 `+` 菜单里那一项调用（见 [showAddMenu]）。原先它是工具条上一个独立小标签，
+   * 但工具条在贴边形态下整行只有约 236dp，放不下它；而槽位切换是低频操作
+   * （配好四个槽位后偶尔换一档），收进菜单的代价可以接受。
    */
   fun cycleSlot() {
     val slots = nonEmptySlots()
@@ -453,7 +481,8 @@ class AssistantInputFeatures(
     // 记录当前槽位。请求路径读槽位而不是模型名：模型名可能被手改、
     // 也可能两个槽位填了同一个模型，只有槽位能唯一确定用户选的是哪一档。
     setCurrentSlot(next.first)
-    refreshSlotLabel()
+    // 模型名变了，工具条上的标签要跟着走。
+    onModelChanged?.invoke()
     toastOrTrace(
         context.getString(
             string.ai_assistant_slot_switched,
@@ -461,6 +490,14 @@ class AssistantInputFeatures(
             next.second,
         ))
   }
+
+  /**
+   * 模型（或服务商）变化后的回调。
+   *
+   * <p>由宿主注入，用来刷新工具条上的模型标签。槽位切换发生在**本类内部**，
+   * 而标签由宿主渲染——没有这个回调，切完槽位标签会停在上一个模型名上。
+   */
+  var onModelChanged: (() -> Unit)? = null
 
   /**
    * 当前服务商的非空槽位（槽位名 → 模型名，已剥离上下文后缀）。
@@ -542,11 +579,20 @@ class AssistantInputFeatures(
     applyReasoningEffort(effort)
   }
 
-  /** 把偏好值渲染到输入区的推理行上。 */
+  /**
+   * 把偏好值落到 `+` 菜单的文案上。
+   *
+   * <p>当前值不再单独显示——它只出现在菜单里那一行「推理：高」。工具条没有位置放它，
+   * 而推理强度是**低频**设置（一次运行通常不改），把常驻空间让给模型名与上下文圆环
+   * 这两个每轮都要看的信息。
+   */
   private fun applyReasoningEffort(effort: String?) {
     val value = effort ?: DEFAULT_REASONING
-    binding.assistantReasoningValue.text = context.getString(reasoningLabelRes(value))
-    binding.assistantReasoningRow.setOnClickListener { showReasoningPicker() }
+    binding.assistantToolbarAdd.contentDescription =
+        context.getString(
+            string.ai_assistant_toolbar_reasoning_value,
+            context.getString(reasoningLabelRes(value)),
+        )
   }
 
   /** 推理强度值 → 字符串资源。 */

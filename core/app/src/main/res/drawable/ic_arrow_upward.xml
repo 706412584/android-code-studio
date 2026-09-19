@@ -1,0 +1,20 @@
+<!--
+  发送 / 停止。运行时（agent 正在跑）切成停止方块，否则是向上箭头。
+
+  两个图形放同一个 vector 的两个 path，靠代码切换 `android:visibility` 不可行
+  （vector 的 path 没有独立 id），因此做成两个 drawable，代码里换 icon 资源。
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+  android:width="24dp"
+  android:height="24dp"
+  android:viewportWidth="24"
+  android:viewportHeight="24"
+  android:tint="?attr/colorOnPrimary">
+  <path
+    android:fillColor="@android:color/white"
+    android:pathData="M12,4L12,20M12,4L5,11M12,4L19,11"
+    android:strokeColor="@android:color/white"
+    android:strokeWidth="2"
+    android:strokeLineCap="round"
+    android:strokeLineJoin="round" />
+</vector>

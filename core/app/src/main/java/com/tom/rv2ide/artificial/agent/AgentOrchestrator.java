@@ -331,6 +331,31 @@ public final class AgentOrchestrator {
    * 而不是每次面对一个空会话、还要去历史列表里翻。持久化的键含工作区绝对路径——
    * 用全局单一「上次会话」会让两个项目互相覆盖，用户切回 A 项目却看到 B 的对话。
    */
+  /**
+   * 上下文用量回调。
+   *
+   * <p>由 UI 注入（悬浮助手的上下文圆环）。不放进 `run()` 的参数表：它跨越多次运行
+   * 持续存在，属于「这个 orchestrator 的观察者」而不是「这一次运行的输入」——
+   * 放进参数表会让每个调用点都要重复传一遍同一个对象。
+   *
+   * <p>回调在 agent 循环线程上触发，实现方需自行切主线程。
+   */
+  private volatile RunContextManager.UsageListener contextUsageListener;
+
+  public void setContextUsageListener(RunContextManager.UsageListener listener) {
+    this.contextUsageListener = listener;
+  }
+
+  /**
+   * 当前会话的上下文窗口大小；未配置时为 0。
+   *
+   * <p>用于 UI 在没有运行过（因此还没有用量回调）时先判断「圆环该不该显示」。
+   */
+  public int contextSizeForActiveConfig() {
+    ModelConfig config = resolveConfigForCompaction();
+    return config == null ? 0 : ConversationCompaction.contextSizeOf(config);
+  }
+
   public void setWorkspace(File workspace) {
     this.workspace = workspace;
     restoreLastConversationForWorkspace();
@@ -783,9 +808,13 @@ public final class AgentOrchestrator {
     int overhead =
         TokenEstimator.estimate(systemPrompt)
             + (nativeTools ? TokenEstimator.estimateTools(tools) : 0);
+    // 把用量推给 UI（输入区的上下文圆环）。监听器在调用线程上执行，因此实现里
+    // 只做「切主线程 + 更新一个 View」，不做 I/O。
     RunContextManager contextManager =
         new RunContextManager(
-            new TokenUsageTracker(ConversationCompaction.contextSizeOf(config)), overhead);
+            new TokenUsageTracker(ConversationCompaction.contextSizeOf(config)),
+            overhead,
+            contextUsageListener);
 
     // 入口处先做一次压缩：把"每次运行都要丢弃同一段早期历史"变成"只摘要一次并落盘"。
     // 这一步在循环之外，因为压缩结果需要持久化，而循环不接触存储。

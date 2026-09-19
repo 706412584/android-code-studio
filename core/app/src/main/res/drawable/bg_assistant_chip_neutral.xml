@@ -1,0 +1,15 @@
+<!--
+  工具条上的中性小胶囊（git 分支）。
+
+  与 bg_assistant_slot_chip 的区别只在描边色：那个用 colorPrimary，表示「这是当前
+  选中档位，可点切换」；git 分支是一个**只读事实**，用主色描边会让它与旁边的
+  权限标签抢注意力，用户会以为点它能切换分支。改用 colorOutline 后它退成背景信息。
+-->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+  android:shape="rectangle">
+  <corners android:radius="10dp" />
+  <solid android:color="@android:color/transparent" />
+  <stroke
+    android:width="1dp"
+    android:color="?attr/colorOutline" />
+</shape>

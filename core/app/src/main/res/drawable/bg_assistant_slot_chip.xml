@@ -1,0 +1,15 @@
+<!--
+  模型槽位标签的背景：一个描边小胶囊。
+
+  刻意不填充实色：模型条本身已经有「服务商 / 模型」两段文字，再加一块实色底会
+  让这一行出现三个视觉重量相当的元素，用户分不清哪个是「当前值」、哪个是「可点的按钮」。
+  只用描边 + 主色文字，视觉重量低于模型名，但比纯文字更像可点控件。
+-->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+  android:shape="rectangle">
+  <corners android:radius="10dp" />
+  <solid android:color="@android:color/transparent" />
+  <stroke
+    android:width="1dp"
+    android:color="?attr/colorPrimary" />
+</shape>

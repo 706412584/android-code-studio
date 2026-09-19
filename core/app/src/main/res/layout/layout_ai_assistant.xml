@@ -123,56 +123,15 @@
       </LinearLayout>
 
       <!--
-        服务商 / 模型选择条。
+        服务商 / 模型选择条已移除——模型与槽位都移进了输入区工具条。
 
-        整行是一个点击目标，而不是两个下拉框：侧栏模式下面板宽度只有屏幕的 88%，
-        再并排放两个控件会把服务商名挤成省略号（「Anthropic Cl…」），
-        用户分不清选的是哪个。整行可点则标签有完整宽度，选择放进面板里做。
+        原先它单独占一行（图标 + 「DeepSeek / deepseek-chat」+ 槽位标签 + 箭头），
+        在标题栏与消息列表之间多出约 40dp。移进工具条之后，同一份信息只占一行里
+        十几个字符宽，而面板顶部直接就是消息列表。
 
-        未配置密钥的服务商会带「⚠ …（未配置密钥）」前缀：否则用户切过去、
-        发一条消息、收到「未配置有效的 API 密钥」，要绕一圈才知道问题在哪。
+        未配置密钥的服务商在工具条标签上仍会显示「⚠」前缀（见 refreshModelLabel），
+        原先把原因写成整行副标题的做法不再需要——点开选择器里每个服务商都带说明。
       -->
-      <LinearLayout
-        android:id="@+id/assistantModelBar"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:orientation="horizontal"
-        android:gravity="center_vertical"
-        android:background="?attr/selectableItemBackground"
-        android:clickable="true"
-        android:focusable="true"
-        android:paddingStart="16dp"
-        android:paddingEnd="16dp"
-        android:paddingTop="2dp"
-        android:paddingBottom="6dp">
-
-        <ImageView
-          android:layout_width="16dp"
-          android:layout_height="16dp"
-          android:contentDescription="@null"
-          android:src="@drawable/ic_agent_switch"
-          app:tint="?attr/colorOnSurfaceVariant" />
-
-        <TextView
-          android:id="@+id/assistantModelLabel"
-          android:layout_width="0dp"
-          android:layout_height="wrap_content"
-          android:layout_weight="1"
-          android:layout_marginStart="8dp"
-          android:ellipsize="middle"
-          android:singleLine="true"
-          android:textAppearance="@style/TextAppearance.Material3.LabelMedium"
-          android:textColor="?attr/colorOnSurfaceVariant"
-          tools:text="DeepSeek / deepseek-chat" />
-
-        <ImageView
-          android:layout_width="16dp"
-          android:layout_height="16dp"
-          android:contentDescription="@null"
-          android:src="@drawable/ic_chevron_down"
-          app:tint="?attr/colorOnSurfaceVariant" />
-
-      </LinearLayout>
 
       <!-- 运行结果摘要。没有内容时不占位（初次打开、每次新建会话后都是这种状态）。 -->
       <TextView
@@ -221,9 +180,9 @@
       </FrameLayout>
 
       <!--
-        「思考中…」/「处理中…」状态行。
+        底部固定的运行状态条。
 
-        **位置**：消息列表下方、输入框上方——即紧贴「它正在描述的那条输出」，
+        **位置**：消息列表下方、输入区上方——即紧贴「它正在描述的那条输出」，
         这也是参考项目（cc-haha）的位置。参考项目的注释明确否决了把它放进输入框：
         输入框区域只保留「停止」按钮，状态行属于对话流而不属于输入控件。
 
@@ -234,18 +193,75 @@
         另外它在顶部（`layout_gravity="top"`），与用户等待时视线停留的位置
         （输入框附近）相距最远。
 
+        **为什么带背景而不是裸文字**：它是一条「实时播报」，会被正在滚动的消息列表
+        从上方挤过来。裸文字在内容滚动时看起来像消息列表的一部分，加一层
+        colorSurfaceContainerLow 底与上方分隔线之后，它是「面板自己的状态栏」这件事
+        就没有歧义了。
+
         默认 gone，由 startWorking/stopWorking 控制。
       -->
+      <View
+        android:id="@+id/assistantWorkingDivider"
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:background="?attr/colorOutline"
+        android:visibility="gone"
+        tools:visibility="visible" />
+
       <com.tom.rv2ide.artificial.agent.WorkingStatusView
         android:id="@+id/assistantWorking"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
+        android:background="?attr/colorSurfaceContainerLow"
         android:paddingStart="16dp"
         android:paddingEnd="16dp"
-        android:paddingTop="4dp"
-        android:paddingBottom="4dp"
+        android:paddingTop="7dp"
+        android:paddingBottom="7dp"
         android:visibility="gone"
         tools:visibility="visible" />
+
+      <!--
+        重试小卡片。与状态条同一位置、同一种「底部固定」语义——重试本身就是
+        「当前正在做什么」的一种，只是附带错误码与倒计时，因此用 errorContainer
+        底色与状态条区分开，但**不**进消息列表。
+
+        进消息列表的问题：一次运行可能重试 10 次，每次插一条就把对话流刷满，
+        而用户只关心「现在重试到第几次、还要多久」。固定卡片原地更新才是对的呈现。
+      -->
+      <LinearLayout
+        android:id="@+id/assistantRetryCard"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="?attr/colorErrorContainer"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingStart="16dp"
+        android:paddingEnd="16dp"
+        android:paddingTop="7dp"
+        android:paddingBottom="7dp"
+        android:visibility="gone"
+        tools:visibility="visible">
+
+        <ImageView
+          android:layout_width="16dp"
+          android:layout_height="16dp"
+          android:contentDescription="@null"
+          android:src="@drawable/ic_error"
+          app:tint="?attr/colorOnErrorContainer" />
+
+        <TextView
+          android:id="@+id/assistantRetryText"
+          android:layout_width="0dp"
+          android:layout_height="wrap_content"
+          android:layout_marginStart="8dp"
+          android:layout_weight="1"
+          android:ellipsize="end"
+          android:maxLines="2"
+          android:textAppearance="@style/TextAppearance.Material3.LabelMedium"
+          android:textColor="?attr/colorOnErrorContainer"
+          tools:text="连接中断，8 秒后重试（第 2/10 次）· HTTP 503" />
+
+      </LinearLayout>
 
       <!--
         任务卡片。放在状态行与输入区之间——「agent 在做什么」与「还有哪些任务」
@@ -256,12 +272,19 @@
         layout="@layout/layout_assistant_todos" />
 
       <!--
-        输入区。
+        输入区：单行工具条 + 输入框。
 
-        用「输入框在上、发送按钮在下」的两行结构，而不是并排一行：
-        侧栏模式下面板宽度只有屏幕的 88%，并排时输入框会被发送按钮挤掉近三分之一宽，
-        中文长句（「把 build.gradle 里的 compileSdk 改成 34」）一屏看不全。
-        发送按钮独立成行后输入框拿满宽度。
+        布局照搬参考项目（cc-haha 的 ChatInput）：**输入框在上，工具条在下**，
+        工具条里从左到右是 `+`、权限模式、git 分支、弹性留白、上下文圆环、模型、发送。
+        发送是 40dp 的圆形图标按钮，不再是一条占满宽度的文字按钮。
+
+        **为什么改掉原来的「输入框 + 整行文字发送按钮」**：那条按钮在侧栏形态下
+        宽约 300dp、高 44dp，一整条实心色块压在输入框下面，视觉重量盖过了输入框本身，
+        而它传达的信息只有一个动作。图标按钮把这一整行的高度与色彩都还给内容。
+
+        **为什么工具条放在输入框下面而不是上面**：输入框要贴近消息列表（用户视线
+        刚从上面那条回答移下来），而工具条是低频控件，放在更靠下、更靠近键盘的位置。
+        这与参考项目一致。
 
         输入框用 Filled 而不是 Outlined：OutlinedBox 的方角描边在窄容器里显得很"表单"，
         而 Filled 的圆角底与面板整体的圆角语言一致。
@@ -274,6 +297,30 @@
         android:paddingEnd="12dp"
         android:paddingTop="6dp"
         android:paddingBottom="10dp">
+
+        <!--
+          附件标签行。
+
+          横向可滚而不是自动换行：面板贴边时只有 260dp 宽，两三个文件名就能把高度撑到
+          三四行、把输入框顶出可视区；横向滚动把高度固定在一行，长名字靠 chip 自己省略。
+          整行在无附件时隐藏，不留空白。
+        -->
+        <HorizontalScrollView
+          android:id="@+id/assistantAttachScroll"
+          android:layout_width="match_parent"
+          android:layout_height="wrap_content"
+          android:scrollbars="none"
+          android:visibility="gone"
+          tools:visibility="visible">
+
+          <com.google.android.material.chip.ChipGroup
+            android:id="@+id/assistantAttachList"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            app:singleLine="true"
+            app:chipSpacingHorizontal="6dp" />
+
+        </HorizontalScrollView>
 
         <com.google.android.material.textfield.TextInputLayout
           android:layout_width="match_parent"
@@ -291,13 +338,166 @@
 
         </com.google.android.material.textfield.TextInputLayout>
 
-        <com.google.android.material.button.MaterialButton
-          android:id="@+id/assistantSend"
+        <!--
+          单行工具条。
+
+          没有分隔线，只靠间距分组（左组 = 输入相关，右组 = 状态与提交）——
+          分隔线在 300dp 宽的一行里会把它切成三段，看起来像三个独立控件条。
+
+          中间用 Space(weight=1) 撑开：左侧控件数量随面板宽度变化（窄时隐藏 git），
+          靠 weight 让右侧组始终贴右边缘，比给右侧组加 gravity=end 更稳——
+          后者在左组换行或增删时会出现「右侧组被推着走」的抖动。
+        -->
+        <LinearLayout
+          android:id="@+id/assistantToolbar"
           android:layout_width="match_parent"
           android:layout_height="wrap_content"
-          android:layout_marginTop="6dp"
-          android:minHeight="44dp"
-          android:text="@string/ai_assistant_send" />
+          android:orientation="horizontal"
+          android:gravity="center_vertical"
+          android:paddingTop="2dp">
+
+          <!-- `+`：附件与推理强度都收进它的菜单。 -->
+          <com.google.android.material.button.MaterialButton
+            android:id="@+id/assistantToolbarAdd"
+            style="@style/Widget.Material3.Button.IconButton"
+            android:layout_width="36dp"
+            android:layout_height="36dp"
+            android:contentDescription="@string/ai_assistant_toolbar_menu_title"
+            android:insetTop="0dp"
+            android:insetBottom="0dp"
+            app:icon="@drawable/ic_add"
+            app:iconSize="20dp"
+            app:iconTint="?attr/colorOnSurfaceVariant" />
+
+          <!--
+            权限模式。显示当前档位的**短名**（自动放行 / 需确认 / 只读），
+            点开是三档单选。
+
+            放在工具条而不是只在设置页：权限模式是「我这次想让 AI 做到什么程度」，
+            会随任务变化（看一眼代码时用只读，改代码时用需确认），
+            埋在设置里等于每次都要离开对话去改。
+          -->
+          <TextView
+            android:id="@+id/assistantPermissionChip"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="4dp"
+            android:background="@drawable/bg_assistant_slot_chip"
+            android:clickable="true"
+            android:focusable="true"
+            android:maxLines="1"
+            android:paddingStart="8dp"
+            android:paddingEnd="8dp"
+            android:paddingTop="4dp"
+            android:paddingBottom="4dp"
+            android:textAppearance="@style/TextAppearance.Material3.LabelSmall"
+            android:textColor="?attr/colorPrimary"
+            tools:text="需确认" />
+
+          <!--
+            git 分支。仓库根没有 .git 时整块隐藏——在非 git 项目里显示一个空的分支
+            标签会让人以为仓库状态读取失败。
+
+            窄面板下也会隐藏，见 FloatingAssistantView.applyToolbarDensity()：
+            这一行在 260dp 面板里放不下 5 个控件。
+          -->
+          <LinearLayout
+            android:id="@+id/assistantGitChip"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="4dp"
+            android:background="@drawable/bg_assistant_chip_neutral"
+            android:clickable="true"
+            android:focusable="true"
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
+            android:paddingStart="8dp"
+            android:paddingEnd="8dp"
+            android:paddingTop="4dp"
+            android:paddingBottom="4dp"
+            android:visibility="gone"
+            tools:visibility="visible">
+
+            <ImageView
+              android:layout_width="12dp"
+              android:layout_height="12dp"
+              android:contentDescription="@null"
+              android:src="@drawable/ic_branches"
+              app:tint="?attr/colorOnSurfaceVariant" />
+
+            <TextView
+              android:id="@+id/assistantGitBranch"
+              android:layout_width="wrap_content"
+              android:layout_height="wrap_content"
+              android:layout_marginStart="4dp"
+              android:ellipsize="end"
+              android:maxEms="10"
+              android:maxLines="1"
+              android:textAppearance="@style/TextAppearance.Material3.LabelSmall"
+              android:textColor="?attr/colorOnSurfaceVariant"
+              tools:text="main" />
+
+          </LinearLayout>
+
+          <Space
+            android:layout_width="0dp"
+            android:layout_height="1dp"
+            android:layout_weight="1" />
+
+          <!--
+            上下文占用圆环。点它弹详细信息并提供「压缩上下文」入口。
+          -->
+          <com.tom.rv2ide.artificial.agent.ContextRingView
+            android:id="@+id/assistantContextRing"
+            android:layout_width="24dp"
+            android:layout_height="24dp"
+            android:layout_marginEnd="6dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:clickable="true"
+            android:focusable="true"
+            android:contentDescription="@string/ai_assistant_context_usage" />
+
+          <!--
+            模型。只显示模型名，服务商名进 contentDescription——面板窄时两段文字
+            会被压成省略号，而用户切换时记住的是模型名。
+          -->
+          <TextView
+            android:id="@+id/assistantToolbarModel"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:background="?attr/selectableItemBackground"
+            android:clickable="true"
+            android:focusable="true"
+            android:ellipsize="end"
+            android:maxEms="10"
+            android:maxLines="1"
+            android:paddingStart="4dp"
+            android:paddingEnd="4dp"
+            android:paddingTop="6dp"
+            android:paddingBottom="6dp"
+            android:textAppearance="@style/TextAppearance.Material3.LabelMedium"
+            android:textColor="?attr/colorOnSurfaceVariant"
+            tools:text="deepseek-chat" />
+
+          <!--
+            发送 / 停止。运行时换成停止图标与 error 配色——这是「agent 正在跑」
+            最直接的状态信号，与底部的动作条互为补充。
+          -->
+          <com.google.android.material.button.MaterialButton
+            android:id="@+id/assistantSend"
+            style="@style/Widget.Material3.Button.IconButton.Filled"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:layout_marginStart="6dp"
+            android:contentDescription="@string/ai_assistant_send"
+            android:insetTop="0dp"
+            android:insetBottom="0dp"
+            app:icon="@drawable/ic_arrow_upward"
+            app:iconSize="22dp"
+            app:iconGravity="textStart"
+            app:iconPadding="0dp" />
+
+        </LinearLayout>
 
       </LinearLayout>
 

@@ -336,6 +336,73 @@
   <string name="ai_assistant_custom_model_hint">Model name served by your gateway</string>
   <string name="ai_assistant_configure_local">Configure local model</string>
 
+  <!-- Model slot switcher: cycles through the non-empty slots of the current provider -->
+  <string name="ai_assistant_slot_picker_title">Model slot</string>
+  <string name="ai_assistant_slot_switched">Slot %1$s · %2$s</string>
+
+  <!-- Attachments above the input box -->
+  <string name="ai_assistant_attach">Add file or image</string>
+  <string name="ai_assistant_attach_title">Add attachment</string>
+  <string name="ai_assistant_attach_file">File from project</string>
+  <string name="ai_assistant_attach_image">Image from gallery</string>
+  <string name="ai_assistant_attach_remove">Remove attachment</string>
+  <string name="ai_assistant_attach_no_picker">No file manager available on this device.</string>
+  <string name="ai_assistant_attach_failed">Could not read the selected file.</string>
+  <!-- Marker appended to the user message so the agent can open the attachment by path.
+       Kept literal (not translated) because it is machine-readable context, not UI copy. -->
+  <string name="ai_assistant_attachment_marker" translatable="false">[附件: %1$s]</string>
+
+  <!-- Reasoning effort selector -->
+  <string name="ai_assistant_reasoning">Reasoning</string>
+  <string name="ai_assistant_reasoning_title">Reasoning effort</string>
+  <string name="ai_assistant_reasoning_auto">Auto</string>
+  <string name="ai_assistant_reasoning_low">Low</string>
+  <string name="ai_assistant_reasoning_medium">Medium</string>
+  <string name="ai_assistant_reasoning_high">High</string>
+
+  <!-- Composer single-row toolbar -->
+  <string name="ai_assistant_stop">Stop generating</string>
+  <string name="ai_assistant_toolbar_menu_title">Add</string>
+  <string name="ai_assistant_toolbar_attach">Attach a file or image</string>
+  <string name="ai_assistant_toolbar_reasoning">Reasoning effort</string>
+  <string name="ai_assistant_toolbar_reasoning_value">Reasoning: %1$s</string>
+  <string name="ai_assistant_context_usage">Context usage %1$s</string>
+  <string name="ai_assistant_context_usage_detail">Context usage\n%1$s / %2$s (%3$d%%)</string>
+  <string name="ai_assistant_context_unknown">Context usage unknown (no context window configured for this model)</string>
+  <string name="ai_assistant_compact_now">Compact context</string>
+
+  <!-- Tool permission mode (shared by the composer and the settings screen) -->
+  <string name="ai_assistant_permission_auto">Auto approve</string>
+  <string name="ai_assistant_permission_auto_desc">Run everything without asking, including writes and commands</string>
+  <string name="ai_assistant_permission_confirm">Confirm risky tools</string>
+  <string name="ai_assistant_permission_confirm_desc">Writes and commands ask for confirmation first</string>
+  <string name="ai_assistant_permission_readonly">Read only</string>
+  <string name="ai_assistant_permission_readonly_desc">No file writes and no shell commands</string>
+  <string name="ai_assistant_permission_title">Tool permission mode</string>
+
+  <!-- Bottom-fixed activity strip -->
+  <string name="ai_assistant_work_thinking">Thinking…</string>
+  <string name="ai_assistant_work_generating">Writing a reply…</string>
+  <string name="ai_assistant_work_reading">Reading %1$s</string>
+  <string name="ai_assistant_work_editing">Editing %1$s</string>
+  <string name="ai_assistant_work_writing">Writing %1$s</string>
+  <string name="ai_assistant_work_searching">Searching %1$s</string>
+  <string name="ai_assistant_work_listing">Listing %1$s</string>
+  <string name="ai_assistant_work_running">Running %1$s</string>
+  <string name="ai_assistant_work_building">Building</string>
+  <string name="ai_assistant_work_installing">Installing APK</string>
+  <string name="ai_assistant_work_launching">Launching app</string>
+  <string name="ai_assistant_work_agent">Sub-agent working on %1$s</string>
+  <string name="ai_assistant_work_todo">Updating the task list</string>
+  <string name="ai_assistant_work_web">Fetching %1$s</string>
+  <string name="ai_assistant_work_tool">Running %1$s</string>
+  <string name="ai_assistant_work_working">Working…</string>
+
+  <!-- Bottom-fixed retry card -->
+  <string name="ai_assistant_retry_retrying">Connection dropped, retrying in %1$d s (attempt %2$d/%3$d)</string>
+  <string name="ai_assistant_retry_exhausted">Gave up after %1$d retries</string>
+  <string name="ai_assistant_retry_waiting">Connection dropped, retrying (attempt %1$d/%2$d)</string>
+
   <!-- Main screen: project list, backup and delete dialogs -->
   <string name="import_project">Import project</string>
   <string name="project_options_backup">Backup project</string>

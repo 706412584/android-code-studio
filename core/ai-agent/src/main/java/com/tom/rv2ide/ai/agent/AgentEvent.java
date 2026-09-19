@@ -75,13 +75,42 @@ public final class AgentEvent {
   private final ToolResult toolResult;
   private final List<ToolCall> toolCalls;
 
+  /** 仅 {@link Type#STREAM_RETRYING} 有值：第几次重试（从 1 开始）。 */
+  private final int retryAttempt;
+
+  /** 仅 {@link Type#STREAM_RETRYING} 有值：重试上限。 */
+  private final int retryMaxAttempts;
+
+  /** 仅 {@link Type#STREAM_RETRYING} 有值：本次退避等待毫秒数。 */
+  private final long retryDelayMs;
+
+  /** 仅 {@link Type#STREAM_RETRYING} 有值：中断原因（面向用户）。 */
+  private final String retryReason;
+
   private AgentEvent(
       Type type, String message, ToolCall toolCall, ToolResult toolResult, List<ToolCall> toolCalls) {
+    this(type, message, toolCall, toolResult, toolCalls, 0, 0, 0L, "");
+  }
+
+  private AgentEvent(
+      Type type,
+      String message,
+      ToolCall toolCall,
+      ToolResult toolResult,
+      List<ToolCall> toolCalls,
+      int retryAttempt,
+      int retryMaxAttempts,
+      long retryDelayMs,
+      String retryReason) {
     this.type = type;
     this.message = message == null ? "" : message;
     this.toolCall = toolCall;
     this.toolResult = toolResult;
     this.toolCalls = toolCalls == null ? Collections.emptyList() : toolCalls;
+    this.retryAttempt = retryAttempt;
+    this.retryMaxAttempts = retryMaxAttempts;
+    this.retryDelayMs = retryDelayMs;
+    this.retryReason = retryReason == null ? "" : retryReason;
   }
 
   public static AgentEvent turnStarted(int turnIndex) {
@@ -130,6 +159,10 @@ public final class AgentEvent {
   /**
    * 流中断、即将重发。
    *
+   * <p>四个字段**同时**保留在结构化字段与 {@link #getMessage()} 里：UI 需要前者
+   * 才能渲染「第 2/10 次 · 3 秒后」这种分栏文案（自己解析 message 里的数字很脆），
+   * 而 message 仍是一份可读的完整描述，供日志与不关心结构的调用方使用。
+   *
    * @param attempt 第几次重试（从 1 开始）
    * @param maxAttempts 重试上限
    * @param delayMs 本次退避等待时长
@@ -137,6 +170,7 @@ public final class AgentEvent {
    */
   public static AgentEvent streamRetrying(
       int attempt, int maxAttempts, long delayMs, String reason) {
+    String safeReason = reason == null ? "" : reason;
     return new AgentEvent(
         Type.STREAM_RETRYING,
         "连接中断，正在重试 "
@@ -146,10 +180,34 @@ public final class AgentEvent {
             + "（等待 "
             + Math.max(1L, delayMs / 1000L)
             + "s）："
-            + (reason == null ? "" : reason),
+            + safeReason,
         null,
         null,
-        null);
+        null,
+        attempt,
+        maxAttempts,
+        delayMs,
+        safeReason);
+  }
+
+  /** 第几次重试（从 1 开始）；非重试事件为 0。 */
+  public int getRetryAttempt() {
+    return retryAttempt;
+  }
+
+  /** 重试上限；非重试事件为 0。 */
+  public int getRetryMaxAttempts() {
+    return retryMaxAttempts;
+  }
+
+  /** 本次退避等待毫秒数；非重试事件为 0。 */
+  public long getRetryDelayMs() {
+    return retryDelayMs;
+  }
+
+  /** 中断原因；非重试事件为空串。 */
+  public String getRetryReason() {
+    return retryReason;
   }
 
   public static AgentEvent failed(String reason) {

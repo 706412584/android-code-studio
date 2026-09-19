@@ -1,0 +1,17 @@
+<!--
+  停止生成。圆角方块而不是纯方块：与发送箭头的圆头笔画语言一致，
+  在 40dp 的圆形按钮里显得是同一套图标，而不是两个来源的素材。
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+  android:width="24dp"
+  android:height="24dp"
+  android:viewportWidth="24"
+  android:viewportHeight="24"
+  android:tint="?attr/colorOnError">
+  <path
+    android:fillColor="@android:color/white"
+    android:pathData="M8,8h8v8h-8z"
+    android:strokeColor="@android:color/white"
+    android:strokeWidth="2"
+    android:strokeLineJoin="round" />
+</vector>

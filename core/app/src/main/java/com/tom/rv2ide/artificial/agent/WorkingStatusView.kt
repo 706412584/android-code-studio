@@ -28,15 +28,21 @@ import com.google.android.material.color.MaterialColors
 import com.tom.rv2ide.resources.R.string
 
 /**
- * 「思考中…」/「处理中…」状态条：3×3 点阵旋转动画 + 文案。
+ * 底部固定的运行状态条：3×3 点阵旋转动画 + 一行「正在做什么」。
  *
  * <p><b>为什么需要它</b>：模型首字节可能要等好几秒（推理模型更久），而此前的界面在等待
  * 期间只有一个静态的「正在运行 xxx…」文字。静态文字无法区分「在工作」和「卡死了」，
  * 用户只能干等或误以为程序无响应。一个持续运动的指示器是「还活着」最直接的信号。
  *
- * <p><b>两种文案的区分依据</b>：有推理内容且正文还是空 → 模型在思考（[bind] 传
- * `thinking=true`）；否则 → 在输出正文或调用工具。这个区分有实际意义：推理模型
- * 思考半分钟是正常的，用户看到「思考中」不会以为出了问题。
+ * <p><b>为什么文案是外部传入的（{@link #setAction}）而不是只有两种固定文案</b>：
+ * 只区分「思考中 / 处理中」时，一次运行里几十次工具调用在界面上没有任何差别，
+ * 用户看不出 agent 是在读文件、在改代码，还是卡在一条命令上。参考项目（cc-haha）
+ * 的做法是把最新动作当成一行实时播报（"Reading src/a.ts"、"Running npm test"），
+ * 这里照做——宿主在 TOOL_STARTED 时按工具名与参数拼出这条文案。
+ *
+ * <p>没有显式动作时的兜底仍是两种固定文案，区分依据是 [bind] 的 `thinking`：
+ * 有推理内容且正文还是空 → 模型在思考；否则 → 在输出正文。这个区分有实际意义：
+ * 推理模型思考半分钟是正常的，用户看到「思考中」不会以为出了问题。
  *
  * <p><b>动画生命周期</b>：只在被要求且已 attach 时运行。视图从窗口分离时立即停止——
  * 否则动画会持有视图引用，在列表里造成泄漏。同时尊重系统的「动画时长」开发者选项：
@@ -48,11 +54,22 @@ constructor(context: Context, attrs: AttributeSet? = null, defStyleAttr: Int = 0
     View(context, attrs, defStyleAttr) {
 
   private val dotPaint = Paint(Paint.ANTI_ALIAS_FLAG)
+
+  // TextPaint 而不是 Paint：TextUtils.ellipsize 要求 TextPaint（它要读
+  // baselineShift 等文字排版字段）。用 Paint 会在编译期就报类型不匹配。
   private val textPaint =
-      Paint(Paint.ANTI_ALIAS_FLAG).apply {
+      android.text.TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
         textSize = 12f * resources.displayMetrics.scaledDensity
         isSubpixelText = true
       }
+
+  /**
+   * 当前动作文案；null 表示回退到「思考中/处理中」。
+   *
+   * <p>用 CharSequence 而不是 String：宿主传进来的都是 getString 的结果，
+   * 但调用方可能传 Spannable（例如给文件名加等宽字体），不该在这里强制降级。
+   */
+  private var actionText: CharSequence? = null
 
   private val density = resources.displayMetrics.density
   private val dotRadiusPx = 1.6f * density
@@ -70,14 +87,27 @@ constructor(context: Context, attrs: AttributeSet? = null, defStyleAttr: Int = 0
   private var progress = 0f
 
   /** 当前显示文案。 */
-  private val label: String
+  private val label: CharSequence
     get() =
-        context.getString(
-            if (thinking) string.ai_assistant_thinking_running else string.ai_assistant_working
-        )
+        actionText
+            ?: context.getString(
+                if (thinking) string.ai_assistant_thinking_running else string.ai_assistant_working
+            )
 
   fun bind(isThinking: Boolean) {
     thinking = isThinking
+    requestLayout()
+    invalidate()
+  }
+
+  /**
+   * 设置当前动作（例如「正在读取 app/build.gradle」）。
+   *
+   * <p>传 null 回退到「思考中/处理中」。**不在这里做省略**：截断交给绘制时的
+   * [ellipsize]，因为可用宽度只有在 onMeasure 时才知道。
+   */
+  fun setAction(text: CharSequence?) {
+    actionText = text?.takeIf { it.isNotBlank() }
     requestLayout()
     invalidate()
   }
@@ -96,6 +126,9 @@ constructor(context: Context, attrs: AttributeSet? = null, defStyleAttr: Int = 0
     working = false
     stopAnimator()
     progress = 0f
+    // 动作文案随运行结束一起清掉：留着它会让下一条消息的工具文案在还没开始时
+    // 就先显示出来，看起来像「刚点发送就已经在读文件了」。
+    actionText = null
     invalidate()
   }
 
@@ -115,8 +148,12 @@ constructor(context: Context, attrs: AttributeSet? = null, defStyleAttr: Int = 0
   }
 
   override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
+    // 文字按「点阵 + 间距 + 文案」算出的自然宽度参与测量；但父容器给的是 AT_MOST
+    // （工具条在窄面板里只有两百多 dp），所以实际宽度通常小于自然宽度——
+    // 绘制时会按可用宽度省略，见 [drawLabel]。
     val desiredWidth =
-        (paddingPx * 2 + matrixSizePx + gapPx + textPaint.measureText(label)).toInt()
+        (paddingPx * 2 + matrixSizePx + gapPx + textPaint.measureText(label, 0, label.length))
+            .toInt()
     val desiredHeight = maxOf(suggestedMinimumHeight, minHeightPx.toInt())
     setMeasuredDimension(
         resolveSize(desiredWidth, widthMeasureSpec),
@@ -177,7 +214,35 @@ constructor(context: Context, attrs: AttributeSet? = null, defStyleAttr: Int = 0
     // 垂直居中：baseline = 中心 + (ascent 与 descent 的中点偏移)
     val fm = textPaint.fontMetrics
     val baseline = height / 2f - (fm.ascent + fm.descent) / 2f
-    canvas.drawText(label, x, baseline, textPaint)
+
+    val text = label
+    val available = width - paddingPx - x
+    if (available <= 0f) {
+      return
+    }
+    if (textPaint.measureText(text, 0, text.length) <= available) {
+      canvas.drawText(text, 0, text.length, x, baseline, textPaint)
+      return
+    }
+    // 省略。工具名与文件路径可能很长（"正在修改 app/src/main/cpp/Renderer.cpp"），
+    // 超出可用宽度时截断并补省略号——不截会画出控件边界，在贴边形态下直接压到
+    // 旁边的按钮上。
+    //
+    // 用 TextUtils.ellipsize 而不是自己二分：它处理了「省略号本身也要占宽度」
+    // 这个边界，自己写容易在极端宽度下死循环或画出一个只有省略号的结果。
+    val ellipsis = "…"
+    val ellipsized =
+        android.text.TextUtils.ellipsize(
+            text,
+            textPaint,
+            available,
+            android.text.TextUtils.TruncateAt.END,
+            false,
+            null,
+        )
+    if (ellipsized.isNotEmpty() && ellipsized != ellipsis) {
+      canvas.drawText(ellipsized, 0, ellipsized.length, x, baseline, textPaint)
+    }
   }
 
   private fun startAnimator() {

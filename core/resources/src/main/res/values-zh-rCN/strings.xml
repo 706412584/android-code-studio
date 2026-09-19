@@ -331,6 +331,71 @@
   <string name="ai_assistant_custom_model_hint">你的网关所提供的模型名</string>
   <string name="ai_assistant_configure_local">配置本地模型</string>
 
+  <!-- 模型槽位切换：在当前服务商的非空槽位间循环 -->
+  <string name="ai_assistant_slot_picker_title">模型槽位</string>
+  <string name="ai_assistant_slot_switched">槽位 %1$s · %2$s</string>
+
+  <!-- 输入框上方的附件标签 -->
+  <string name="ai_assistant_attach">添加文件或图片</string>
+  <string name="ai_assistant_attach_title">添加附件</string>
+  <string name="ai_assistant_attach_file">从项目选择文件</string>
+  <string name="ai_assistant_attach_image">从相册选择图片</string>
+  <string name="ai_assistant_attach_remove">移除附件</string>
+  <string name="ai_assistant_attach_no_picker">这台设备上没有可用的文件管理器。</string>
+  <string name="ai_assistant_attach_failed">读取所选文件失败。</string>
+  <string name="ai_assistant_attachment_marker" translatable="false">[附件: %1$s]</string>
+
+  <!-- 推理强度选择 -->
+  <string name="ai_assistant_reasoning">推理</string>
+  <string name="ai_assistant_reasoning_title">推理强度</string>
+  <string name="ai_assistant_reasoning_auto">自动</string>
+  <string name="ai_assistant_reasoning_low">低</string>
+  <string name="ai_assistant_reasoning_medium">中</string>
+  <string name="ai_assistant_reasoning_high">高</string>
+
+  <!-- 输入区单行工具条 -->
+  <string name="ai_assistant_stop">停止生成</string>
+  <string name="ai_assistant_toolbar_menu_title">添加</string>
+  <string name="ai_assistant_toolbar_attach">添加文件或图片</string>
+  <string name="ai_assistant_toolbar_reasoning">推理强度</string>
+  <string name="ai_assistant_toolbar_reasoning_value">推理：%1$s</string>
+  <string name="ai_assistant_context_usage">上下文占用 %1$s</string>
+  <string name="ai_assistant_context_usage_detail">上下文占用\n%1$s / %2$s（%3$d%%）</string>
+  <string name="ai_assistant_context_unknown">上下文占用未知（当前模型未配置上下文窗口）</string>
+  <string name="ai_assistant_compact_now">压缩上下文</string>
+
+  <!-- 工具权限模式（输入区与设置页共用同一批标签） -->
+  <string name="ai_assistant_permission_auto">自动放行</string>
+  <string name="ai_assistant_permission_auto_desc">不询问，直接执行（含写入与命令）</string>
+  <string name="ai_assistant_permission_confirm">危险工具需确认</string>
+  <string name="ai_assistant_permission_confirm_desc">写入与命令会先弹出确认</string>
+  <string name="ai_assistant_permission_readonly">只读</string>
+  <string name="ai_assistant_permission_readonly_desc">禁止写入文件与执行命令</string>
+  <string name="ai_assistant_permission_title">工具权限模式</string>
+
+  <!-- 底部固定的运行状态条 -->
+  <string name="ai_assistant_work_thinking">思考中…</string>
+  <string name="ai_assistant_work_generating">正在生成回复…</string>
+  <string name="ai_assistant_work_reading">正在读取 %1$s</string>
+  <string name="ai_assistant_work_editing">正在修改 %1$s</string>
+  <string name="ai_assistant_work_writing">正在写入 %1$s</string>
+  <string name="ai_assistant_work_searching">正在搜索 %1$s</string>
+  <string name="ai_assistant_work_listing">正在浏览 %1$s</string>
+  <string name="ai_assistant_work_running">正在执行 %1$s</string>
+  <string name="ai_assistant_work_building">正在构建</string>
+  <string name="ai_assistant_work_installing">正在安装 APK</string>
+  <string name="ai_assistant_work_launching">正在启动应用</string>
+  <string name="ai_assistant_work_agent">子 agent 正在处理 %1$s</string>
+  <string name="ai_assistant_work_todo">正在更新任务清单</string>
+  <string name="ai_assistant_work_web">正在访问网络 %1$s</string>
+  <string name="ai_assistant_work_tool">正在执行 %1$s</string>
+  <string name="ai_assistant_work_working">处理中…</string>
+
+  <!-- 底部固定的重试小卡片 -->
+  <string name="ai_assistant_retry_retrying">连接中断，%1$d 秒后重试（第 %2$d/%3$d 次）</string>
+  <string name="ai_assistant_retry_exhausted">重试 %1$d 次仍失败，已停止</string>
+  <string name="ai_assistant_retry_waiting">连接中断，准备重试（第 %1$d/%2$d 次）</string>
+
   <!-- 主界面：项目列表、备份与删除对话框 -->
   <string name="import_project">导入项目</string>
   <string name="project_options_backup">备份项目</string>

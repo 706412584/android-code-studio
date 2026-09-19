@@ -48,14 +48,58 @@ public final class RunContextManager {
   /** 上下文窗口未配置时 {@link #historyBudget()} 的取值。 */
   private static final int UNLIMITED = Integer.MAX_VALUE;
 
+  /**
+   * 用量变化通知。
+   *
+   * <p>存在的理由：界面要在输入区显示「当前上下文占用 / 窗口大小」，而用量只在
+   * 循环内部（每次请求前裁剪、每轮记录服务端 usage）才更新。没有这个回调，UI
+   * 只能在一轮运行结束后拿到最终值，中途看不到占用增长。
+   *
+   * <p>实现方需容忍来自循环线程的调用，且**必须快速返回**——它跑在发请求的路径上。
+   */
+  public interface UsageListener {
+    void onUsage(int usedTokens, int contextSize);
+  }
+
   private final TokenUsageTracker tracker;
 
   /** 系统提示词 + 工具定义的估算成本；这些不占历史预算但确实占窗口。 */
   private final int overheadTokens;
 
+  /** 用量回调，可为 null。 */
+  private final UsageListener usageListener;
+
   public RunContextManager(TokenUsageTracker tracker, int overheadTokens) {
+    this(tracker, overheadTokens, null);
+  }
+
+  public RunContextManager(
+      TokenUsageTracker tracker, int overheadTokens, UsageListener usageListener) {
     this.tracker = tracker;
     this.overheadTokens = Math.max(0, overheadTokens);
+    this.usageListener = usageListener;
+  }
+
+  /** 本次运行的系统提示词 + 工具定义估算成本。 */
+  public int overheadTokens() {
+    return overheadTokens;
+  }
+
+  /** 上下文窗口大小；未配置时返回 0。 */
+  public int contextSize() {
+    return tracker.getContextSize();
+  }
+
+  /**
+   * 当前用量。
+   *
+   * <p><b>不要再加 overheadTokens</b>：{@link #fit} 与 {@code maybeCompact} 在
+   * {@code tracker.record(...)} 时**已经把开销算进去了**（那里传的是
+   * {@code estimate(...) + overheadTokens}）。这里再加一次会重复计数，界面上的
+   * 占用比例会比实际偏高一大截。
+   */
+  public int currentTokens() {
+    return tracker.currentTokens();
   }
 
   /**
@@ -84,6 +128,7 @@ public final class RunContextManager {
       // 这类问题编译期与 JVM 单测都发现不了，只在真机上抛 NoSuchMethodError。
       List<ModelMessage> onlySystem = new ArrayList<>(1);
       onlySystem.add(system);
+      notifyUsage();
       return onlySystem;
     }
 
@@ -109,6 +154,7 @@ public final class RunContextManager {
     result.add(request);
     result.addAll(keptTurns);
     tracker.record(TokenEstimator.estimate(result) + overheadTokens, 0);
+    notifyUsage();
     return result;
   }
 
@@ -146,5 +192,18 @@ public final class RunContextManager {
   /** 记录服务端回报的真实用量，用于校准后续估算。 */
   public void recordResponse(int reportedInputTokens) {
     tracker.record(tracker.getLastEstimatedTokens(), reportedInputTokens);
+    notifyUsage();
+  }
+
+  /** 把当前用量推给回调。窗口未配置（为 0）时不推——UI 无从计算比例。 */
+  private void notifyUsage() {
+    if (usageListener == null) {
+      return;
+    }
+    int size = tracker.getContextSize();
+    if (size <= 0) {
+      return;
+    }
+    usageListener.onUsage(currentTokens(), size);
   }
 }
