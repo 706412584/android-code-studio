@@ -48,6 +48,7 @@ public final class ConversationReducer {
     String aiTitle = "";
     String firstUserContent = "";
     String cwd = "";
+    boolean cwdTaken = false;
     long createdAt = 0L;
     long modifiedAt = 0L;
     int messageCount = 0;
@@ -62,11 +63,17 @@ public final class ConversationReducer {
       }
 
       if (entry instanceof SessionMetaEntry) {
-        // 取第一条 meta 的 cwd。会话的工作区在创建时写定，后续条目不会改它；
+        // 取第一条 meta 的 cwd。会话的工作区在创建时写定，后续条目不会改它
+        // （全仓库 SessionMetaEntry.create 只在 FileConversationStore.create 里调用）。
         // 若将来真有「会话中途换工作区」，应当追加一条新 meta 而不是就地改，
         // 那时这里要改成「最后一条 meta 生效」，与标题的语义保持一致。
-        if (cwd.isEmpty()) {
+        //
+        // 用 cwdTaken 标记「是否已经取过」而不是判 cwd.isEmpty()：后者在首条 meta
+        // 的 cwd 恰为空串时会被第二条非空 meta 顶掉，与「第一条生效」的语义不符；
+        // 且那样写与适配器的 isBlank() 判据不对称，空白的 cwd 会在两边得到不同结论。
+        if (!cwdTaken) {
           cwd = ((SessionMetaEntry) entry).getCwd();
+          cwdTaken = true;
         }
       } else if (entry instanceof TitleEntry) {
         TitleEntry title = (TitleEntry) entry;

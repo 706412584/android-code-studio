@@ -174,9 +174,9 @@ class ConversationListAdapter(
       val cwd = summary.getCwd()
 
       if (cwd.isBlank()) {
-        row.isVisible = true
         label.text = context.getString(string.ai_conversation_project_unknown)
         label.setTextColor(onSurfaceVariant(context))
+        label.contentDescription = null
         return
       }
 
@@ -184,23 +184,35 @@ class ConversationListAdapter(
       val known = !currentCwd.isNullOrBlank()
       val foreign = known && currentCwd != cwd
 
-      row.isVisible = true
       if (foreign) {
         label.text = "⚠ " + name
-        // colorError 是框架 attr（Material 库的 R.attr 里没有它）。取默认值 0 表示
-        // 主题未定义，此时回退到次级色——绝不能把文字设成透明，那等于信息没显示。
-        val errorColor =
-            com.google.android.material.color.MaterialColors.getColor(
-                binding.root, android.R.attr.colorError, 0)
-        label.setTextColor(if (errorColor != 0) errorColor else onSurfaceVariant(context))
-        // 无障碍：图标被标为 no，颜色又不传达信息给读屏，必须写进 contentDescription。
-        label.contentDescription = context.getString(string.ai_conversation_project_other)
+        label.setTextColor(errorColor(context))
+        // 无障碍：颜色对读屏不可达，必须把归属写进 contentDescription。
+        // 必须**带上项目名**——只写「其他项目」会把这一行唯一的实质信息（是哪个项目）
+        // 丢掉，读屏用户反而比看得见的人少知道一件事。
+        label.contentDescription =
+            context.getString(string.ai_conversation_project_other) + "：" + name
       } else {
         label.text = name
         label.setTextColor(onSurfaceVariant(context))
         label.contentDescription = null
       }
     }
+
+    /**
+     * 错误色。
+     *
+     * <p><b>必须用应用命名空间的 attr（`R.attr.colorError`），不能用 `android.R.attr.colorError`</b>：
+     * 实测后者在本主题下解析到框架兜底的 `#FF5722`，而 ACS 四套主题定义的 colorError 都是
+     * `#ffb3261e`（vscode 主题为 `#ffd32f2f`）——用框架 attr 意味着这个颜色**不跟随应用主题**，
+     * 用户换主题时 ⚠ 是唯一不变色的元素。`R.txt:383` 确认应用侧 attr 存在。
+     */
+    private fun errorColor(context: android.content.Context): Int =
+        com.google.android.material.color.MaterialColors.getColor(
+            binding.root,
+            com.tom.rv2ide.R.attr.colorError,
+            onSurfaceVariant(context),
+        )
 
     private fun onSurfaceVariant(context: android.content.Context): Int =
         com.google.android.material.color.MaterialColors.getColor(

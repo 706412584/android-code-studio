@@ -65,12 +65,7 @@ final class FileConversationStoreTest {
     assertEquals("confirm", meta.getPermissionMode());
   }
 
-  /**
-   * 摘要在整个会话生命周期里都带着创建时的工作区。
-   *
-   * <p>关键点：cwd 来自首条 meta 条目，而后续追加消息、重命名、压缩都不该改变它。
-   * 若实现改成「取最后一条 meta」或「取任意一条」，这条会失败。
-   */
+  /** 摘要在整个会话生命周期里都带着创建时的工作区。 */
   @Test
   void summaryKeepsWorkspaceAcrossLaterAppends(@TempDir Path dir) throws IOException {
     FileConversationStore store = storeAt(dir);
@@ -80,9 +75,46 @@ final class FileConversationStoreTest {
     store.append(id, AssistantMessageEntry.create(null, 2L, "好", "", List.of()));
     store.rename(id, "换个标题");
 
-    for (ConversationSummary summary : store.list()) {
-      assertEquals("/project/alpha", summary.getCwd());
-    }
+    List<ConversationSummary> list = store.list();
+    assertEquals(1, list.size());
+    assertEquals("/project/alpha", list.get(0).getCwd());
+  }
+
+  /**
+   * 追加第二条 meta 时，仍是**第一条**的 cwd 生效。
+   *
+   * <p>这条才真正钉住「第一条生效」这个不变量。只追加一条 meta 的测试挡不住
+   * 「取最后一条」的实现——那种写法同样会通过。生产代码目前没有追加第二条 meta
+   * 的路径，但语义必须先定死，否则将来加「会话中途换工作区」时无从判断该改哪边。
+   */
+  @Test
+  void summaryKeepsFirstMetaCwdWhenSecondMetaAppended(@TempDir Path dir) throws IOException {
+    FileConversationStore store = storeAt(dir);
+    String id = store.create(null, "/project/first", "m", "confirm").getId();
+
+    store.append(id, SessionMetaEntry.create(2L, "/project/second", "m2", "confirm"));
+
+    List<ConversationSummary> list = store.list();
+    assertEquals(1, list.size());
+    assertEquals("/project/first", list.get(0).getCwd());
+  }
+
+  /**
+   * 首条 meta 的 cwd 为空串时，仍以它为准，不被后面的非空 meta 顶掉。
+   *
+   * <p>这正是「用 isEmpty() 判是否已取过」会写错的地方：那样写会让第二条生效，
+   * 与「第一条生效」矛盾。用 cwdTaken 标记才对。
+   */
+  @Test
+  void summaryKeepsEmptyCwdFromFirstMeta(@TempDir Path dir) throws IOException {
+    FileConversationStore store = storeAt(dir);
+    String id = store.create(null, "", "m", "confirm").getId();
+
+    store.append(id, SessionMetaEntry.create(2L, "/project/second", "m2", "confirm"));
+
+    List<ConversationSummary> list = store.list();
+    assertEquals(1, list.size());
+    assertEquals("", list.get(0).getCwd());
   }
 
   /** 无 meta 的会话（旧版本或外部生成的日志）cwd 为空串，调用方按「不匹配」处理而不是崩。 */

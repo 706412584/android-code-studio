@@ -299,8 +299,9 @@ class FloatingAssistantView(
     binding.assistantConversations.layoutManager = LinearLayoutManager(context)
     binding.assistantConversations.adapter = conversationAdapter
 
-    // 标题栏初始就是当前项目名，而不是等 setWorkspace 才替换——否则面板在
-    // 打开的一瞬间会先闪一下静态的「AI 助手」。
+    // 这里 workspace 还是 null（调用点一律是 attach() 紧接 setWorkspace()），
+    // 所以本次调用只是把标题置成静态文案；真正的项目名由紧随其后的 setWorkspace 设置。
+    // 留着它是为了让「标题永远有内容」这件事不依赖调用顺序。
     refreshWorkspaceLabel()
 
     // 回车即发送：面板输入框是多行的，若不拦截回车，用户按回车只会换行。
