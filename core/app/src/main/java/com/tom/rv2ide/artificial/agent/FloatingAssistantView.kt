@@ -507,6 +507,14 @@ class FloatingAssistantView(
     refreshPermissionChip()
     // 模型可能被换过，窗口大小随之变化——旧用量对新窗口无意义，重置。
     refreshContextRingFromConfig()
+    // **必须在这里重算工具条密度**：本方法之前的每一次 applyToolbarDensity() 调用
+    // （attach、setWorkspace、applyMode）都发生在面板仍为 GONE 时，那时
+    // bar.width == 0，函数会提前返回。面板刚可见的这一刻才是第一次能测到真实宽度。
+    //
+    // 不在这里重算的实测后果：贴边（DOCKED）形态下面板宽 734px，工具条只有 243dp，
+    // 而服务商标签（阈值 300dp 才隐藏）不会隐藏，模型名被挤到不足 20dp——
+    // 只剩一个省略号。这正是阈值逻辑看起来「没生效」的原因。
+    applyToolbarDensity()
     // 首次打开时回放已恢复的会话。放在 open() 而不是 attach()：
     // attach 发生在 Activity onCreate 期间，此时读磁盘会拖慢启动；
     // 而用户看到面板时再加载，感知上反而更快。
@@ -1510,17 +1518,21 @@ class FloatingAssistantView(
    * 手机上只有 260dp。参考项目（cc-haha）同样用 ResizeObserver 量实际宽度，
    * 而不是 CSS 媒体查询。
    *
-   * <p>三档（阈值按实测控件宽度定，见 [GIT_VISIBLE_MIN_DP] 的注释）：
+   * <p><b>逐级让位</b>（阈值由实测控件宽度定，见 [GIT_VISIBLE_MIN_DP] 的注释）：
+   * 模型名永远保留（它是用户最需要看的一格），装不下时先隐服务商、再隐 git：
    * <ul>
-   *   <li>≥320dp：git 分支也显示
-   *   <li>≥300dp：隐藏 git 分支（它是三者里信息密度最低的）
-   *   <li>更窄：连模型名也收成省略（保留图标与圆环）
+   *   <li>≥320dp：全部显示
+   *   <li>&lt;300dp：隐藏服务商标签（模型名已隐含服务商）
+   *   <li>&lt;240dp：隐藏 git 分支，并把模型名压到 [MODEL_MAX_WIDTH_NARROW_DP]
    * </ul>
+   * 用嵌套的 `if` 而不是三个独立判断：三者共享同一个宽度预算，独立判断在中间档
+   * 会出现「服务商和 git 都还在、模型被挤没」的组合。
    *
    * <p><b>宽度为 0 时必须直接返回</b>：面板在 attach 阶段是 `gone`，此时
    * `bar.width` 为 0。把它当成「极窄」会永久隐藏 git 标签——之后宽度正常了
    * 也不会恢复，因为 `lastGitBranch` 已被写成一个看似合法的值。
-   * 0 的含义是「还没布局」，不是「很窄」。
+   * 0 的含义是「还没布局」，不是「很窄」。这也是 [open] 里必须重算一次的原因：
+   * 本方法在此之前的所有调用点都发生在面板不可见时。
    */
   private fun applyToolbarDensity() {
     val bar = binding.assistantToolbar
@@ -1529,25 +1541,29 @@ class FloatingAssistantView(
       if (widthDp <= 0) {
         return@post
       }
-      // git 分支：窄面板下让位。它的显隐同时受「是否 git 仓库」控制，
-      // 因此这里只在够宽时才允许显示，不够宽就强制隐藏（不写回 git 状态本身）。
-      if (widthDp < GIT_VISIBLE_MIN_DP) {
+
+      // 极窄档：连 git 也让位，模型名收窄。
+      val veryNarrow = widthDp < MODEL_VISIBLE_MIN_DP
+      if (veryNarrow) {
         binding.assistantGitChip.isVisible = false
       } else {
         // 够宽时按仓库状态决定——refreshGitBranch 已经写好了 isVisible，
         // 这里只在「之前被窄宽度压掉」的情况下重新问一次。
         refreshGitBranchVisibilityOnly()
       }
+
       // 服务商名：比 git 更早让位。它的信息在模型名旁边（「deepseek-chat」
-      // 已经暗示了服务商），而 git 分支名没有任何替代品。
-      binding.assistantToolbarProvider.isVisible = widthDp >= PROVIDER_VISIBLE_MIN_DP
-      // 模型名：极窄时压到原来的一半宽。
+      // 已经暗示了服务商），而 git 分支名没有替代品。
+      binding.assistantToolbarProvider.isVisible =
+          widthDp >= PROVIDER_VISIBLE_MIN_DP && !veryNarrow
+
+      // 模型名：极窄时压到一半宽。
       //
       // 用 maxWidth(dp) 而不是 maxEms：实测 maxEms 在 `layout_width=wrap_content`
       // 的中文文本上不生效——provider 标签设了 maxEms=7 仍然渲染出全部 12 个字符
       // （UI dump 里 bounds 宽 308px）。dp 是确定的长度，不受字体度量影响。
       binding.assistantToolbarModel.maxWidth =
-          dp(if (widthDp < MODEL_VISIBLE_MIN_DP) MODEL_MAX_WIDTH_NARROW_DP else MODEL_MAX_WIDTH_DP)
+          dp(if (veryNarrow) MODEL_MAX_WIDTH_NARROW_DP else MODEL_MAX_WIDTH_DP)
     }
   }
 
@@ -2036,30 +2052,37 @@ class FloatingAssistantView(
     private const val DRAWER_ANIM_MS = 200L
 
     /**
-     * 工具条宽度低于此值（dp）时隐藏 git 分支标签。
+     * 工具条宽度低于此值（dp）时隐藏服务商标签。
      *
-     * <p>阈值来自实测的控件宽度（1080px @ 440dpi，即 2.4545 px/dp）。
-     * 工具条在发送按钮移入输入行之后，常驻控件为：
-     * `+` 40.3 + 权限胶囊 68.4 + 服务商名(maxEms=7) 约 50 + 圆环 26.9
-     * + 模型名(maxEms=10) 71.7 = 257.3dp，加上固定间距约 20dp 共 277dp；
-     * git 胶囊自身约需 50dp（12dp 图标 + 约 25dp 分支名 + 16dp 内边距 + 4dp 间距）。
-     * 两者相加约 330dp 是「刚好放得下」的下界，取 330。
+     * <p>阈值由实测控件宽度定（设备 1080px @ density 440，即 2.75 px/dp）：
+     * `+` 36 + 权限胶囊 61 + 服务商 92 + 圆环 24 + 模型 124 = 337dp，
+     * 加固定间距约 18dp 共 355dp。服务商 + git（约 50dp）同时在场需要约 320dp，
+     * 故取 320。
      *
-     * <p>侧栏形态实测工具条 360dp（[98,2033]-[982,2149]，即 884px），
-     * 所以手机上 git 标签能正常显示；贴边形态约 260dp 时会隐藏。
+     * <p>实测参照：侧栏形态工具条 360dp（全部显示），贴边形态 243dp（只留模型）。
      */
-    private const val GIT_VISIBLE_MIN_DP = 330
+    private const val GIT_VISIBLE_MIN_DP = 320
 
     /**
      * 工具条宽度低于此值（dp）时隐藏服务商名。
      *
      * <p>比 git 更早让位：模型名已经隐含了服务商（「deepseek-chat」一看就知道是哪家），
      * 而 git 分支名没有替代品。隐藏后模型名顶上，用户仍能看出在用什么模型。
+     *
+     * <p>300dp = 剩余控件（`+` 36 + 权限 61 + 圆环 24 + 模型 124 + 间距 18）的
+     * 约 263dp，加上服务商自身 92dp 的下界。低于它时必须让服务商先走，
+     * 否则模型名会被压到只剩一个省略号——实测贴边形态 243dp 正是如此。
      */
     private const val PROVIDER_VISIBLE_MIN_DP = 300
 
-    /** 工具条宽度低于此值（dp）时把模型名压到 [MODEL_MAX_WIDTH_NARROW_DP]。 */
-    private const val MODEL_VISIBLE_MIN_DP = 270
+    /**
+     * 工具条宽度低于此值（dp）时隐藏 git 并把模型名压到
+     * [MODEL_MAX_WIDTH_NARROW_DP]。
+     *
+     * <p>240dp 是「`+` 36 + 权限 61 + 圆环 24 + 模型 62 + 间距 18 = 201dp」
+     * 这条底线之上的余量；再窄就只剩图标，模型名必须收窄才放得下。
+     */
+    private const val MODEL_VISIBLE_MIN_DP = 240
 
     /** 模型名的常规最大宽度（dp）。约 13 个半角字符，够显示 `deepseek-v4.1-flash`。 */
     private const val MODEL_MAX_WIDTH_DP = 124
