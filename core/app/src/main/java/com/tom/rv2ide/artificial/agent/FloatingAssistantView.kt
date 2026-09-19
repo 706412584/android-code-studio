@@ -189,7 +189,7 @@ class FloatingAssistantView(
         lifecycleScope.launch(Dispatchers.Main) {
           lastContextUsed = used
           lastContextSize = total
-          binding.assistantContextRing.bind(if (total > 0) used.toFloat() / total else -1f)
+          applyContextRing()
         }
       }
     }
@@ -336,13 +336,35 @@ class FloatingAssistantView(
       val size = orchestrator.contextSizeForActiveConfig()
       withContext(Dispatchers.Main) {
         lastContextSize = size
-        if (size > 0) {
-          binding.assistantContextRing.bind(0f)
-        } else {
-          binding.assistantContextRing.clear()
-        }
+        applyContextRing()
       }
     }
+  }
+
+  /**
+   * 按当前已知用量渲染圆环，并写好无障碍描述。
+   *
+   * <p>描述必须**在这里**渲染好再设进去：XML 的 `android:contentDescription="@string/…"`
+   * 不做占位符替换，无障碍服务会逐字读出「上下文占用 %1$s」（实测 UI dump 里
+   * 就是这个字符串）。
+   */
+  private fun applyContextRing() {
+    val ring = binding.assistantContextRing
+    val total = lastContextSize
+    if (total <= 0) {
+      ring.clear()
+      return
+    }
+    val percent = (lastContextUsed * 100 / total).coerceIn(0, 100)
+    ring.show(
+        lastContextUsed.toFloat() / total,
+        context.getString(
+            string.ai_assistant_context_usage_short,
+            percent,
+            formatTokens(lastContextUsed),
+            formatTokens(total),
+        ),
+    )
   }
 
   /** 设置工作区。主屏上用户可能先选项目，因此每次打开面板前都更新。 */

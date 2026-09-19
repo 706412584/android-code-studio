@@ -229,10 +229,32 @@ public final class OpenAiCompatibleProtocol extends AbstractHttpModelProtocol {
         }
     }
 
-    /** 流中断且未越过工具边界时，把已收到内容挂到异常上供编排层提交。 */
-    private static ModelCompletionException attachPartial(ModelCompletionException e,
-                                                          com.tom.rv2ide.ai.protocol.AssistantCommitBuffer buffer) {
-        if (e.hasPartial() || buffer == null || !buffer.hasPartial()) {
+    /**
+     * 把流式缓冲的状态挂到异常上。
+     *
+     * <p><b>工具边界必须无条件带出，不能只在「有部分内容」时带</b>：模型经常先吐一个
+     * 完整的工具调用、再吐一个空行就断流，此时缓冲里 text 与 reasoning 都是空的。
+     * 原先的 `if (e.hasPartial() || buffer == null || !buffer.hasPartial()) return e;`
+     * 在这种情形下直接原样返回异常，{@code crossedToolBoundary} 随之丢失 →
+     * {@code ModelClient.shouldRetryStream} 认为「没越过边界、可以重发」→
+     * 重发后工具被**执行两次**（重复写文件、重复跑命令）。这是正确性问题，不是效率问题。
+     *
+     * <p>实测：一次运行里模型发起 todo_update 后连接被对端关闭，日志里出现连续两次
+     * `ai[sse_io] Connection closed by peer`——同一步被跑了两遍。
+     *
+     * <p>正确做法：只要缓冲里**任一**信息非空（部分内容 或 工具边界）就带上；
+     * 两者都为空时才原样返回（没有任何可带的信息）。
+     *
+     * <p>包级可见（非 private）是为了让 {@code ToolBoundaryPreservationTest} 能直接调用
+     * 真实实现。此前测试只能复刻一份判定逻辑来断言，那等于测试自己——判定被改回去
+     * 测试仍然全绿。
+     */
+    static ModelCompletionException attachPartial(ModelCompletionException e,
+                                                  com.tom.rv2ide.ai.protocol.AssistantCommitBuffer buffer) {
+        if (e.hasPartial() || buffer == null) {
+            return e;
+        }
+        if (!buffer.hasPartial() && !buffer.crossedToolBoundary()) {
             return e;
         }
         return e.withPartial(buffer.text(), buffer.reasoning(), buffer.crossedToolBoundary());

@@ -446,6 +446,11 @@
 
           <!--
             上下文占用圆环。点它弹详细信息并提供「压缩上下文」入口。
+
+            contentDescription **不写在这里**：XML 的 contentDescription 不做占位符
+            替换，写一个带 %1$s 的资源会让无障碍服务逐字读出「上下文占用 %1$s」
+            （实测 UI dump 里就是这个字符串）。描述由 ContextRingView.bind 在
+            拿到真实数字后渲染。未配置上下文窗口时该视图会被设为 gone。
           -->
           <com.tom.rv2ide.artificial.agent.ContextRingView
             android:id="@+id/assistantContextRing"
@@ -454,8 +459,7 @@
             android:layout_marginEnd="6dp"
             android:background="?attr/selectableItemBackgroundBorderless"
             android:clickable="true"
-            android:focusable="true"
-            android:contentDescription="@string/ai_assistant_context_usage" />
+            android:focusable="true" />
 
           <!--
             模型。只显示模型名，服务商名进 contentDescription——面板窄时两段文字

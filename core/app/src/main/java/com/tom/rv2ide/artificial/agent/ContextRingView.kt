@@ -56,15 +56,39 @@ constructor(context: Context, attrs: AttributeSet? = null, defStyleAttr: Int = 0
 
   private val rect = RectF()
 
-  fun bind(ratio: Float) {
+  /**
+   * 绑定占用比例，并更新无障碍描述。
+   *
+   * <p>contentDescription 在**这里**设置而不是在 XML 里：XML 里的
+   * `android:contentDescription="@string/xxx"` 不会做 `%1$s` 替换，
+   * 无障碍服务会逐字读出「上下文占用 %1$s」。实测 UI dump 里就是这个字符串。
+   */
+  fun bind(ratio: Float, contentDescription: CharSequence? = null) {
     this.ratio = ratio.coerceIn(0f, 1f)
+    if (contentDescription != null) {
+      this.contentDescription = contentDescription
+    }
     invalidate()
   }
 
-  /** 置为未知态（未配置上下文窗口）。 */
+  /**
+   * 置为未知态（未配置上下文窗口）。
+   *
+   * <p>同时把自己设为不可见：未知态下 [onDraw] 直接返回，视图会留下一块 24dp 的空白，
+   * 用户看到工具条中间有个无法解释的空档。隐藏后右侧控件自然左移。
+   */
   fun clear() {
     ratio = -1f
+    // 用 View.visibility 而不是 ktx 的 isVisible 扩展：本文件没有引入
+    // androidx.core.view.isVisible，而 android.view.View 自身只有 visibility。
+    visibility = GONE
     invalidate()
+  }
+
+  /** 绑定后必须显式恢复可见——[clear] 会把它设为 gone。 */
+  fun show(ratio: Float, contentDescription: CharSequence?) {
+    visibility = VISIBLE
+    bind(ratio, contentDescription)
   }
 
   override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {

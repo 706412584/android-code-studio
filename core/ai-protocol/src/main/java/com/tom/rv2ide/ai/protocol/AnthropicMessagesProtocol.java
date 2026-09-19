@@ -152,10 +152,22 @@ public final class AnthropicMessagesProtocol extends AbstractHttpModelProtocol {
         }
     }
 
-    /** 流中断且未越过工具边界时，把已收到内容挂到异常上供编排层提交。 */
-    private static ModelCompletionException attachPartial(ModelCompletionException e,
-                                                          com.tom.rv2ide.ai.protocol.AssistantCommitBuffer buffer) {
-        if (e.hasPartial() || buffer == null || !buffer.hasPartial()) {
+    /**
+     * 把流式缓冲的状态挂到异常上。
+     *
+     * <p><b>工具边界必须无条件带出</b>——详见
+     * {@code OpenAiCompatibleProtocol.attachPartial} 的注释：模型先吐完一个工具调用、
+     * 正文为空时断流，此时若因为「没有部分内容」而丢掉 {@code crossedToolBoundary}，
+     * 上层会认为可以安全重发，工具就被执行两次。
+     *
+     * <p>包级可见以便 {@code ToolBoundaryPreservationTest} 直接调用真实实现。
+     */
+    static ModelCompletionException attachPartial(ModelCompletionException e,
+                                                  com.tom.rv2ide.ai.protocol.AssistantCommitBuffer buffer) {
+        if (e.hasPartial() || buffer == null) {
+            return e;
+        }
+        if (!buffer.hasPartial() && !buffer.crossedToolBoundary()) {
             return e;
         }
         return e.withPartial(buffer.text(), buffer.reasoning(), buffer.crossedToolBoundary());
