@@ -66,6 +66,14 @@ public final class TermuxShellBackend implements ShellBackend {
   /** bindService 的等待上限。 */
   private static final long BIND_TIMEOUT_MS = 5_000L;
 
+  /**
+   * 超时到期、但进程已退出时，额外等待结果文件落盘的时间。
+   *
+   * <p>2 秒足够任何一次磁盘 flush；给这个宽限只是为了把「命令跑完了但结果还在写」
+   * 与「命令真的卡住了」区分开——见 {@link #awaitResult}。
+   */
+  private static final long EXIT_GRACE_MS = 2_000L;
+
   /** 单个输出文件的读取上限，防止把巨大文件读进内存。 */
   private static final int MAX_READ_BYTES = 512 * 1024;
 
@@ -174,7 +182,33 @@ public final class TermuxShellBackend implements ShellBackend {
       sleepQuietly(POLL_INTERVAL_MS);
     }
 
-    // 超时：终止进程，避免残留占用后续调用
+    // 到期。**先确认命令是不是真的还在跑**。
+    //
+    // 这一步不能省。Termux 的结果文件是一个个写的，`err` 最后落盘，而 stdout /
+    // exit_code 可能早已写好。极短的 timeoutMs（实测模型填过 10ms、30ms）会让
+    // deadline 在写 `err` 之前就到期，于是命令**明明成功跑完**（exit_code=0、
+    // stdout 完整）却被报成「命令超时被终止」——结果里 exit_code=0 与超时自相矛盾，
+    // 模型无法据此判断发生了什么，只会重试同一条命令。
+    //
+    // 判据用「进程是否还在」而不是「结果文件是否齐全」：进程已退出说明命令确实
+    // 结束了，剩下的只是落盘延迟，多等一小段拿真实结果；进程仍在跑才是真超时。
+    if (!isShellRunning(shell)) {
+      // 进程已退出：等 err 落盘。给足时间（2s）——这只是磁盘 flush，不是命令执行。
+      long graceDeadline = System.currentTimeMillis() + EXIT_GRACE_MS;
+      while (System.currentTimeMillis() < graceDeadline) {
+        if (errFile.exists() && errFile.length() > 0) {
+          return readResult(resultDir, sink);
+        }
+        sleepQuietly(POLL_INTERVAL_MS);
+      }
+      // err 始终没出现，但进程已退出、exit_code 文件可能已写好。用它作为
+      // 「命令确实结束了」的证据，返回真实退出码而不是超时。
+      if (hasExitCode(resultDir)) {
+        return readResult(resultDir, sink);
+      }
+    }
+
+    // 真超时：终止进程，避免残留占用后续调用
     try {
       shell.killIfExecuting(appContext, false);
     } catch (RuntimeException e) {
@@ -183,6 +217,13 @@ public final class TermuxShellBackend implements ShellBackend {
     ShellRequest.ShellResult partial = readResult(resultDir, sink);
     return new ShellRequest.ShellResult(
         partial.getExitCode(), partial.getStdout(), partial.getStderr(), true, false);
+  }
+
+  /** 结果目录里是否已有 exit_code 文件——「命令已结束」的证据之一。 */
+  private static boolean hasExitCode(File dir) {
+    File file =
+        new File(dir, ShellCommandConstants.RESULT_SENDER.RESULT_FILE_EXIT_CODE_PREFIX);
+    return file.exists() && file.length() > 0;
   }
 
   private static boolean isShellRunning(AppShell shell) {

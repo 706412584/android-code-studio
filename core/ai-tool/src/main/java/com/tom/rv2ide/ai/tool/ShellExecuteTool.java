@@ -47,6 +47,20 @@ public final class ShellExecuteTool extends BaseTool {
   /** 单次命令允许的最长超时：10 分钟。 */
   private static final long MAX_TIMEOUT_MS = 10 * 60 * 1000L;
 
+  /**
+   * 单次命令允许的最短超时：1 秒。
+   *
+   * <p><b>为什么需要下限</b>：模型常把 {@code timeoutMs} 当成「秒」来填，于是写出
+   * {@code timeoutMs: 10} 表示「10 秒」。但字段单位是毫秒，10 就成了「10 毫秒」——
+   * 命令连 fork 都来不及，一律被 kill。实测设备会话里 15 次 shell 调用有 5 次
+   * 填了 10/30，全部失败，模型反复重试同一件事。
+   *
+   * <p>夹到 1 秒之后，这类误填会变成「命令正常跑完」而不是「必然超时」，
+   * 模型从结果里看到成功就会继续往下走。真正的短超时（例如轮询某文件出现）
+   * 用 1 秒也够——那类需求本来就该在命令里自己循环。
+   */
+  private static final long MIN_TIMEOUT_MS = 1_000L;
+
   private final ShellBackendRegistry registry;
 
   public ShellExecuteTool(ShellBackendRegistry registry) {
@@ -114,7 +128,13 @@ public final class ShellExecuteTool extends BaseTool {
                         .put("type", "number")
                         .put(
                             "description",
-                            "超时毫秒数，默认 120000，最大 " + MAX_TIMEOUT_MS)))
+                            "超时**毫秒数**（不是秒）。默认 120000（2 分钟），"
+                                + "最小 "
+                                + MIN_TIMEOUT_MS
+                                + "，最大 "
+                                + MAX_TIMEOUT_MS
+                                + "。想给 30 秒就填 30000，填 30 表示 30 毫秒。"
+                                + "构建等耗时命令建议 600000。")))
         .put("required", new org.json.JSONArray().put("command"));
   }
 
@@ -143,7 +163,9 @@ public final class ShellExecuteTool extends BaseTool {
     if (timeout <= 0) {
       timeout = ShellRequest.DEFAULT_TIMEOUT_MS;
     }
-    timeout = Math.min(timeout, MAX_TIMEOUT_MS);
+    // 下限 1 秒，上限 10 分钟。两侧都要夹：低于下限会把「模型把毫秒当秒填」变成
+    // 必然超时，高于上限会让一次调用独占 agent 循环十分钟。
+    timeout = Math.max(MIN_TIMEOUT_MS, Math.min(timeout, MAX_TIMEOUT_MS));
 
     if (context != null) {
       context.reportProgress("执行命令: " + abbreviate(command, 80));
