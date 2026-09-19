@@ -54,9 +54,25 @@ public final class SkillRegistry {
 
   private static final String SKILL_FILE_NAME = "SKILL.md";
 
-  private final Map<String, Skill> skills = new LinkedHashMap<>();
+  /**
+   * 已加载的 skill，按加载顺序。
+   *
+   * <p><b>为什么是 volatile 的不可变快照而不是 final 的 LinkedHashMap</b>：注册表会被
+   * 两个线程同时访问——UI 线程（设置界面列出 skill）与 agent 线程（注入提示词、执行
+   * {@code skill} 工具）。而 {@link #reload()} 会整体替换内容（AI 写完新 skill 后要立刻
+   * 可见）。用可变 Map 就需要在每次读时加锁，且遍历中改会抛
+   * {@code ConcurrentModificationException}；换成「构建新快照 + 原子换引用」后，
+   * 读侧完全无锁，也不会看到半更新的状态。
+   */
+  private volatile Map<String, Skill> skills;
 
-  private SkillRegistry() {}
+  /** 加载来源目录；用于 {@link #reload()}。为 null 表示注册表没有来源（如 {@link #empty()}）。 */
+  private final File root;
+
+  private SkillRegistry(File root, Map<String, Skill> skills) {
+    this.root = root;
+    this.skills = skills;
+  }
 
   /**
    * 从目录加载。
@@ -64,26 +80,55 @@ public final class SkillRegistry {
    * @param root 根目录；不存在或不是目录时返回空注册表
    */
   public static SkillRegistry load(File root) {
-    SkillRegistry registry = new SkillRegistry();
+    return new SkillRegistry(root, scan(root));
+  }
+
+  /** 空注册表。 */
+  public static SkillRegistry empty() {
+    return new SkillRegistry(null, Collections.<String, Skill>emptyMap());
+  }
+
+  /**
+   * 重新扫描来源目录，原子替换全部内容。
+   *
+   * <p><b>为什么需要它</b>：注册表原先只在构造时加载一次。AI 通过 skill 写入工具新增
+   * 或修改 skill 后，本次运行内看不到变化——要等重启应用。重新加载让「AI 记录一条教训」
+   * 能立刻在后续轮次里生效，闭环才成立。
+   *
+   * <p>没有来源目录（{@link #empty()} 造的）时是空操作。
+   *
+   * @return 重新加载后的 skill 数量
+   */
+  public int reload() {
+    if (root == null) {
+      return 0;
+    }
+    skills = scan(root);
+    return skills.size();
+  }
+
+  /** 扫描目录构建快照。纯函数，不触碰实例状态，因此可在替换前先构建完成。 */
+  private static Map<String, Skill> scan(File root) {
+    Map<String, Skill> loaded = new LinkedHashMap<>();
     if (root == null || !root.isDirectory()) {
-      return registry;
+      return Collections.unmodifiableMap(loaded);
     }
     List<File> candidates = collectCandidates(root);
     // 按路径排序：让重名时的胜出者稳定可预期。
     Collections.sort(candidates);
 
     for (File file : candidates) {
-      if (registry.skills.size() >= MAX_SKILLS) {
+      if (loaded.size() >= MAX_SKILLS) {
         break;
       }
-      registry.addFile(file);
+      addFile(loaded, file);
     }
-    return registry;
+    return Collections.unmodifiableMap(loaded);
   }
 
-  /** 空注册表。 */
-  public static SkillRegistry empty() {
-    return new SkillRegistry();
+  /** 加载来源目录；无来源时为 null。 */
+  public File getRoot() {
+    return root;
   }
 
   /** 收集候选文件：直接子文件 {@code *.md} 与子目录里的 {@code SKILL.md}。 */
@@ -106,7 +151,8 @@ public final class SkillRegistry {
     return result;
   }
 
-  private void addFile(File file) {
+  /** 解析一个文件并放进目标 map。静态方法：构建快照时不触碰实例状态。 */
+  private static void addFile(Map<String, Skill> target, File file) {
     String content;
     try {
       content = readAll(file);
@@ -129,8 +175,8 @@ public final class SkillRegistry {
     }
 
     // 重名时先加载的胜出（见类注释）。
-    if (!skills.containsKey(skill.normalizedName())) {
-      skills.put(skill.normalizedName(), skill);
+    if (!target.containsKey(skill.normalizedName())) {
+      target.put(skill.normalizedName(), skill);
     }
   }
 
@@ -164,11 +210,14 @@ public final class SkillRegistry {
    * <p>返回空串表示无 skill，调用方不应把它拼进提示词。
    */
   public String renderForPrompt() {
-    if (skills.isEmpty()) {
+    // 先取本地引用：遍历期间若发生 reload()，用局部变量仍指向同一个快照，
+    // 不会出现「遍历到一半换了 map」的情况。
+    Map<String, Skill> snapshot = skills;
+    if (snapshot.isEmpty()) {
       return "";
     }
     StringBuilder sb = new StringBuilder();
-    for (Skill skill : skills.values()) {
+    for (Skill skill : snapshot.values()) {
       sb.append(skill.toPromptLine()).append('\n');
     }
     return sb.toString().trim();

@@ -40,6 +40,10 @@ public final class ToolNames {
     public static final String AGENT_OUTPUT = "agent_output";
     public static final String TODO_UPDATE = "todo_update";
     public static final String MEMORY_UPDATE = "memory_update";
+    /** 读取 skill 全文（渐进披露的按需加载端）。 */
+    public static final String SKILL = "skill";
+    /** 写入 / 删除 skill，让模型能自己沉淀踩过的坑。 */
+    public static final String SKILL_WRITE = "skill_write";
     public static final String WEB_SEARCH = "web_search";
     public static final String WEB_FETCH = "web_fetch";
     public static final String IMAGE_UNDERSTANDING = "image_understanding";
