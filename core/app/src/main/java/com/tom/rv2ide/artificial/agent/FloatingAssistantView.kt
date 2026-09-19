@@ -594,14 +594,21 @@ class FloatingAssistantView(
     }
 
     val request = if (typed.isEmpty()) inputFeatures.attachmentNames() else typed
+    // 图片走多模态通道：打包成协议层认识的 payload，而不是把路径写进文本。
+    // 必须在 clearAttachments() 之前构建——清空后就读不到附件了。
+    val imagePayload = inputFeatures.imageRawInputJson(request)
+    // 有图片时，附件文本里要剔除那一张（它已由 payload 承载），否则模型会同时
+    // 收到「图片内容」和「图片路径」两份信息，可能重复处理或困惑于该用哪个。
+    val textAttachments = if (imagePayload != null) inputFeatures.attachmentContextExcludingImage() else attachments
+
     binding.assistantInput.setText("")
     inputFeatures.clearAttachments()
-    // 附件以文本形式追加在用户请求之后。空串时拼接结果与原来完全一致，
+    // 非图片附件仍以文本形式追加在用户请求之后。空串时拼接结果与原来完全一致，
     // 保证无附件路径的行为不变。
     //
     // 推理强度随请求走：它在输入区可选，而每轮都可能被改，因此每次发送都重读一次，
     // 而不是在 attach 时读一次缓存。
-    execute(request + attachments, inputFeatures.reasoningEffort())
+    execute(request + textAttachments, inputFeatures.reasoningEffort(), imagePayload)
   }
 
   /** 执行一条斜杠命令。 */
@@ -694,7 +701,11 @@ class FloatingAssistantView(
     }
   }
 
-  private fun execute(userRequest: String, reasoningEffort: String? = null) {
+  private fun execute(
+      userRequest: String,
+      reasoningEffort: String? = null,
+      imagePayload: String? = null,
+  ) {
     if (executionJob?.isActive == true) {
       return
     }
@@ -743,7 +754,7 @@ class FloatingAssistantView(
                     userRequest,
                     customBaseUrl,
                     { event -> handleEvent(event) },
-                    null,
+                    imagePayload,
                     reasoningEffort,
                 )
             withContext(Dispatchers.Main) {

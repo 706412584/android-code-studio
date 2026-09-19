@@ -242,20 +242,84 @@ class AssistantInputFeatures(
   }
 
   /**
+   * 构建多模态输入（图片）。
+   *
+   * <p>协议层已有 {@code ImageInputPayload} 与 {@code ModelMessage.rawInputJson}，
+   * OpenAI 兼容与 Anthropic 两条序列化路径都会把它转成 image_url / image block。
+   * 这里负责把用户选的图片读成 base64 并打包。
+   *
+   * <p><b>只取第一张图</b>：协议层的 payload 是**单个**图片的格式（一个 mime_type +
+   * 一份 base64）。多图需要协议层支持数组，那是独立改动。当前取第一张并如实告知其余
+   * 图片走文本路径，而不是静默丢弃。
+   *
+   * <p><b>读不到内容时返回 null</b>：让调用方退化为文本路径（把路径交给模型），
+   * 而不是发一个空 payload 让服务端报错——后者的错误信息对用户毫无意义。
+   */
+  fun imageRawInputJson(prompt: String): String? {
+    val image = attachments.firstOrNull { it.isImage } ?: return null
+    val bytes =
+        try {
+          context.contentResolver.openInputStream(image.uri)?.use { it.readBytes() }
+        } catch (e: Exception) {
+          null
+        } ?: return null
+    if (bytes.isEmpty()) {
+      return null
+    }
+    // 图片可能有几 MB，超过上限就退化为文本路径——base64 会让体积再涨 1/3，
+    // 而多数服务商对单次请求体有硬限制，超限时报错比降级更难排查。
+    if (bytes.size > MAX_IMAGE_BYTES) {
+      return null
+    }
+    val mime =
+        context.contentResolver.getType(image.uri)
+            ?: if (image.name.endsWith(".png", ignoreCase = true)) "image/png" else "image/jpeg"
+    return try {
+      com.tom.rv2ide.ai.protocol.ImageInputPayload.rawInputJson(
+          prompt,
+          mime,
+          android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP),
+      )
+    } catch (e: Exception) {
+      null
+    }
+  }
+
+  /** 是否有可用的图片附件（决定发送时是否走多模态路径）。 */
+  fun hasImageAttachment(): Boolean = attachments.any { it.isImage }
+
+  /**
    * 本次请求要附带的上下文文本；没有附件时返回空串。
    *
-   * <p><b>为什么是「把路径写进消息」而不是真正的多模态输入</b>：协议层已经有
-   * `ImageInputPayload` 与 `ModelMessage.rawInputJson`，OpenAI 兼容与 Anthropic 两条
-   * 序列化路径都会把它转成 image_url / image block，但**入口是 AgentSession 内部构造的
-   * `new UserModelMessage(userRequest)`**——没有任何参数能让 app 层把 rawInputJson 传进去。
-   * 因此图片通道目前只差这一处接线（需要主 agent 在 `AgentSession` / `AgentOrchestrator.run`
-   * 上开口子），在那之前这里退化为文本：把绝对路径交给模型，让它用 file 工具自己去读。
+   * <p>图片走 {@link #imageRawInputJson} 的多模态通道；这里只处理**非图片**附件，
+   * 以及那些无法作为图片发送的情况（读不到内容、超出体积上限、多图里的第 2 张起）——
+   * 把它们以路径形式交给模型，让它用 file 工具自己读，总好过静默丢弃。
    */
   fun attachmentContext(): String {
     if (attachments.isEmpty()) {
       return ""
     }
     return attachments.joinToString(separator = "\n", prefix = "\n\n") { describe(it) }
+  }
+
+  /**
+   * 同 [attachmentContext]，但排除**第一张图片**——它已由多模态 payload 承载。
+   *
+   * <p>不排除的话模型会同时收到「图片内容」与「图片路径」两份信息：可能重复处理，
+   * 也可能放着图片不用、改去读文件（而相册图片的路径本来就拿不到）。
+   *
+   * <p>只排除第一张：[imageRawInputJson] 也只打包第一张，两者必须一致，
+   * 否则剩下的图片既不在 payload 里也不在文本里，等于静默丢失。
+   */
+  fun attachmentContextExcludingImage(): String {
+    val rest = mutableListOf<Attachment>()
+    rest.addAll(attachments.filter { !it.isImage })
+    // 第 2 张起的图片仍走文本：payload 只装得下一张，丢掉它们不如让模型知道它们存在。
+    rest.addAll(attachments.filter { it.isImage }.drop(1))
+    if (rest.isEmpty()) {
+      return ""
+    }
+    return rest.joinToString(separator = "\n", prefix = "\n\n") { describe(it) }
   }
 
   /**
@@ -524,6 +588,14 @@ class AssistantInputFeatures(
 
     /** 当前选中的模型槽位。与推理强度存在同一份偏好里，都是输入区的会话级偏好。 */
     private const val KEY_SLOT = "ai_assistant_slot"
+
+    /**
+     * 单张图片的体积上限。超过就退化为文本路径。
+     *
+     * <p>取 4MB：base64 后约 5.3MB，多数服务商的单请求上限在 5-10MB 之间，
+     * 留出提示词与历史的余量。
+     */
+    private const val MAX_IMAGE_BYTES = 4 * 1024 * 1024
     private const val DEFAULT_REASONING =
         com.tom.rv2ide.ai.protocol.AiBehaviorSettings.REASONING_AUTO
   }
