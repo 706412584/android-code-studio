@@ -241,6 +241,25 @@
   <string name="ai_agent_mcp_disable">停用</string>
   <string name="ai_agent_mcp_remove">删除</string>
 
+  <!-- CodeGraph 语义索引 -->
+  <string name="ai_agent_codegraph_title">CodeGraph 索引</string>
+  <string name="ai_agent_codegraph_summary">给助手用的语义代码索引（可选）</string>
+  <string name="ai_agent_codegraph_state_installed">已安装 · v%1$s · 占用 %2$s</string>
+  <string name="ai_agent_codegraph_state_partial">安装不完整——缺少 %1$s</string>
+  <string name="ai_agent_codegraph_state_missing">未安装</string>
+  <string name="ai_agent_codegraph_indexed">已索引 %1$d 个项目</string>
+  <string name="ai_agent_codegraph_install">安装</string>
+  <string name="ai_agent_codegraph_reinstall">重新安装</string>
+  <string name="ai_agent_codegraph_uninstall">卸载</string>
+  <string name="ai_agent_codegraph_installing">正在安装…</string>
+  <string name="ai_agent_codegraph_downloading">正在下载… %1$d%%</string>
+  <string name="ai_agent_codegraph_uninstall_confirm">确定卸载 CodeGraph 程序？各项目的索引会保留，可以单独删除。</string>
+  <string name="ai_agent_codegraph_uninstalled">已卸载 CodeGraph</string>
+  <string name="ai_agent_codegraph_install_failed">安装失败：%1$s</string>
+  <string name="ai_agent_codegraph_missing_deps">缺少运行依赖：%1$s。请先在终端里装好（设备可能需要能联网）。</string>
+  <string name="ai_agent_codegraph_install_ok">CodeGraph 安装完成</string>
+  <string name="ai_agent_codegraph_about">CodeGraph 为你的项目建立语义索引，助手可以直接查符号与调用路径，不必逐个文件读。需要终端里的 Node.js 运行时。</string>
+
   <!-- 对话模式与提示词模板 -->
   <string name="ai_agent_chat_mode_title">对话模式</string>
   <string name="ai_agent_chat_mode_summary">助手被允许做到什么程度</string>

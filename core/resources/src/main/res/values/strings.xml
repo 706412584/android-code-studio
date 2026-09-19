@@ -246,6 +246,25 @@
   <string name="ai_agent_mcp_disable">Disable</string>
   <string name="ai_agent_mcp_remove">Remove</string>
 
+  <!-- CodeGraph 语义索引 -->
+  <string name="ai_agent_codegraph_title">CodeGraph index</string>
+  <string name="ai_agent_codegraph_summary">Semantic code index for the assistant (optional)</string>
+  <string name="ai_agent_codegraph_state_installed">Installed · v%1$s · %2$s on disk</string>
+  <string name="ai_agent_codegraph_state_partial">Incomplete install — %1$s missing</string>
+  <string name="ai_agent_codegraph_state_missing">Not installed</string>
+  <string name="ai_agent_codegraph_indexed">%1$d projects indexed</string>
+  <string name="ai_agent_codegraph_install">Install</string>
+  <string name="ai_agent_codegraph_reinstall">Reinstall</string>
+  <string name="ai_agent_codegraph_uninstall">Uninstall</string>
+  <string name="ai_agent_codegraph_installing">Installing…</string>
+  <string name="ai_agent_codegraph_downloading">Downloading… %1$d%%</string>
+  <string name="ai_agent_codegraph_uninstall_confirm">Remove the CodeGraph program? Project indexes stay where they are and can be deleted separately.</string>
+  <string name="ai_agent_codegraph_uninstalled">CodeGraph removed</string>
+  <string name="ai_agent_codegraph_install_failed">Install failed: %1$s</string>
+  <string name="ai_agent_codegraph_missing_deps">Missing runtime packages: %1$s. Install them in the terminal first (the device may need network access).</string>
+  <string name="ai_agent_codegraph_install_ok">CodeGraph installed</string>
+  <string name="ai_agent_codegraph_about">CodeGraph builds a semantic index of your projects so the assistant can look up symbols and call paths instead of reading files one by one. Requires the Node.js runtime from the terminal.</string>
+
   <!-- Chat mode and prompt templates -->
   <string name="ai_agent_chat_mode_title">Chat mode</string>
   <string name="ai_agent_chat_mode_summary">How much the assistant is allowed to do</string>

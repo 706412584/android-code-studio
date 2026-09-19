@@ -18,10 +18,18 @@
 package com.tom.rv2ide.preferences
 
 import android.content.Context
+import android.widget.Toast
 import androidx.preference.Preference
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.tom.rv2ide.R
+import com.tom.rv2ide.artificial.agent.codegraph.CodeGraphInstaller
+import com.tom.rv2ide.artificial.agent.codegraph.CodeGraphManager
 import com.tom.rv2ide.preferences.internal.prefManager
 import com.tom.rv2ide.resources.R.string
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.parcelize.IgnoredOnParcel
 import kotlinx.parcelize.Parcelize
 
@@ -126,6 +134,7 @@ private class CapabilitiesPage(
     addPreference(SkillsPreference())
     addPreference(MemoriesPreference())
     addPreference(McpServersPreference())
+    addPreference(CodeGraphPreference())
   }
 }
 
@@ -1394,5 +1403,203 @@ private class AnthropicApiKey(
   private fun getSummaryText(): String {
     val apiKey = prefManager.getString("ai_agent_anthropic_api_key", "")
     return if (apiKey.isBlank()) "Click to set API key" else "API Key: ${apiKey.take(8)}..."
+  }
+}
+
+/**
+ * CodeGraph 语义索引：安装、状态、卸载。
+ *
+ * <p><b>为什么状态要显示成三态而不是「装了/没装」</b>：CodeGraph 依赖 Termux 里的
+ * Node.js 运行时，而程序本体与运行时的安装是两件独立的事。只判「程序在不在」会把
+ * 「程序解包了但 node 没装」显示成可用，然后 AI 一调用就失败——用户拿不到任何线索。
+ * 因此拆成「已安装 / 安装不完整（缺 X）/ 未安装」，并把缺的东西直接写在界面上。
+ */
+@Parcelize
+private class CodeGraphPreference(
+    override val key: String = "codegraph",
+    override val title: Int = R.string.ai_agent_codegraph_title,
+    override val summary: Int? = R.string.ai_agent_codegraph_summary,
+) : BasePreference() {
+
+  override fun onCreatePreference(context: Context): Preference =
+      androidx.preference.Preference(context).apply {
+        key = "codegraph"
+        title = context.getString(R.string.ai_agent_codegraph_title)
+        // 状态要读磁盘（程序体积、已索引项目数）并起一次进程跑 --version，不能放主线程。
+        // 先给占位文案，异步查完再刷新——本偏好每次进页面都会重建，刷新是安全的。
+        summary = context.getString(R.string.ai_agent_codegraph_state_missing)
+        refreshSummary(this)
+      }
+
+  /** 异步查状态并刷新摘要。 */
+  private fun refreshSummary(preference: Preference) {
+    val context = preference.context
+    val manager = CodeGraphManager(context)
+    CoroutineScope(Dispatchers.IO).launch {
+      val status =
+          try {
+            manager.status()
+          } catch (e: Exception) {
+            null
+          }
+      withContext(Dispatchers.Main) { preference.summary = describe(context, status) }
+    }
+  }
+
+  /** 状态 → 一行摘要。 */
+  private fun describe(context: Context, status: CodeGraphManager.Status?): String {
+    if (status == null) {
+      return context.getString(R.string.ai_agent_codegraph_state_missing)
+    }
+    return when {
+      status.installed -> {
+        val indexed =
+            if (status.indexedProjectCount > 0) {
+              " · " +
+                  context.getString(
+                      R.string.ai_agent_codegraph_indexed, status.indexedProjectCount)
+            } else {
+              ""
+            }
+        context.getString(
+            R.string.ai_agent_codegraph_state_installed,
+            status.version ?: "?",
+            formatSize(status.sizeBytes),
+        ) + indexed
+      }
+      // 只有**真的缺 Termux 包**时才报「不完整」并列出包名。反过来（包都齐了、只是程序
+      // 没装或 wrapper 缺失）应报「未安装」——那时列不出任何包名，报「缺少」却空着
+      // 会让用户完全摸不着头脑。这是真机验证时才暴露的问题。
+      status.missingPackages.isNotEmpty() ->
+          context.getString(
+              R.string.ai_agent_codegraph_state_partial,
+              status.missingPackages.joinToString("、"),
+          )
+      else -> context.getString(R.string.ai_agent_codegraph_state_missing)
+    }
+  }
+
+  private fun formatSize(bytes: Long): String =
+      when {
+        bytes <= 0L -> "0"
+        bytes >= 1024L * 1024 * 1024 ->
+            String.format(java.util.Locale.US, "%.1fG", bytes / 1073741824.0)
+        bytes >= 1024L * 1024 ->
+            String.format(java.util.Locale.US, "%.0fM", bytes / 1048576.0)
+        else -> String.format(java.util.Locale.US, "%.0fK", bytes / 1024.0)
+      }
+
+  override fun onPreferenceClick(preference: Preference): Boolean {
+    val context = preference.context
+    val manager = CodeGraphManager(context)
+    val dialog =
+        MaterialAlertDialogBuilder(context)
+            .setTitle(R.string.ai_agent_codegraph_title)
+            .setMessage(R.string.ai_agent_codegraph_about)
+            .setPositiveButton(R.string.ai_agent_codegraph_install, null)
+            .setNeutralButton(R.string.ai_agent_codegraph_uninstall, null)
+            .setNegativeButton(android.R.string.cancel, null)
+            .create()
+
+    dialog.setOnShowListener {
+      val install = dialog.getButton(android.content.DialogInterface.BUTTON_POSITIVE)
+      val uninstall = dialog.getButton(android.content.DialogInterface.BUTTON_NEUTRAL)
+      install.setOnClickListener { startInstall(context, manager, dialog, install) }
+      uninstall.setOnClickListener {
+        // 卸载会删约 134MB 程序，先确认。索引在各项目里，不在此列。
+        MaterialAlertDialogBuilder(context)
+            .setMessage(R.string.ai_agent_codegraph_uninstall_confirm)
+            .setPositiveButton(R.string.ai_agent_codegraph_uninstall) { _, _ ->
+              CodeGraphInstaller.uninstall()
+              Toast.makeText(context, R.string.ai_agent_codegraph_uninstalled, Toast.LENGTH_SHORT)
+                  .show()
+              dialog.dismiss()
+              refreshSummary(preference)
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+      }
+    }
+    dialog.show()
+    return true
+  }
+
+  /**
+   * 走完整安装流程，把进度写回按钮文字。
+   *
+   * <p>进度直接复用对话框的确定按钮，不额外弹一个进度框：安装是用户刚点的动作，
+   * 就地反馈最不容易让人以为「没反应」。
+   */
+  private fun startInstall(
+      context: Context,
+      manager: CodeGraphManager,
+      dialog: androidx.appcompat.app.AlertDialog,
+      button: android.widget.Button,
+  ) {
+    button.isEnabled = false
+    button.setText(R.string.ai_agent_codegraph_installing)
+    CoroutineScope(Dispatchers.IO).launch {
+      // 先查缺哪些 Termux 包：缺了就直接说清楚，别让用户等完 16MB 下载才发现跑不起来。
+      val missing = CodeGraphInstaller.missingPackages()
+      if (missing.isNotEmpty()) {
+        val result = manager.installTermuxPackages(missing)
+        if (!result.ok) {
+          val output = result.combined()
+          val message =
+              if (output.contains("timed out") || output.contains("Could not connect")) {
+                // 设备出网被拦时 apt 会超时。给出可执行的下一步，而不是笼统的「失败」。
+                context.getString(
+                    R.string.ai_agent_codegraph_missing_deps, missing.joinToString("、"))
+              } else {
+                context.getString(
+                    R.string.ai_agent_codegraph_install_failed, output.take(300))
+              }
+          withContext(Dispatchers.Main) {
+            button.isEnabled = true
+            button.setText(R.string.ai_agent_codegraph_install)
+            Toast.makeText(context, message, Toast.LENGTH_LONG).show()
+          }
+          return@launch
+        }
+      }
+
+      val result =
+          manager.install(
+              object : CodeGraphManager.ProgressListener {
+                override fun onStage(message: String) {}
+
+                override fun onProgress(fraction: Float?) {
+                  if (fraction == null) {
+                    return
+                  }
+                  val percent = (fraction * 100).toInt()
+                  // 回调在 IO 线程，改控件必须切主线程。
+                  CoroutineScope(Dispatchers.Main).launch {
+                    button.text =
+                        context.getString(R.string.ai_agent_codegraph_downloading, percent)
+                  }
+                }
+              })
+
+      withContext(Dispatchers.Main) {
+        button.isEnabled = true
+        button.setText(R.string.ai_agent_codegraph_install)
+        if (result.isSuccess) {
+          Toast.makeText(context, R.string.ai_agent_codegraph_install_ok, Toast.LENGTH_SHORT)
+              .show()
+          dialog.dismiss()
+        } else {
+          Toast.makeText(
+                  context,
+                  context.getString(
+                      R.string.ai_agent_codegraph_install_failed,
+                      result.exceptionOrNull()?.message ?: "?",
+                  ),
+                  Toast.LENGTH_LONG,
+              )
+              .show()
+        }
+      }
+    }
   }
 }
