@@ -233,9 +233,20 @@ class AtcWizardDialog : BottomSheetDialogFragment() {
 
   private fun proceedToOptionsPage(ctx: Context) {
     binding.root.post {
-      val templateName = "My${selectedTemplate?.displayName?.replace(" ", "")}" ?: "MyProject"
-      val packageSuffix =
-          "my${selectedTemplate?.displayName?.replace(" ", ".")?.lowercase()}" ?: "myproject"
+      // 项目名与包名后缀都要**先净化再拼**。
+      //
+      // 模板 displayName 里可能含标识符不允许的字符：「Native C++」直接去掉空格得到
+      // `MyNativeC++`，而 `+` 不在项目名允许的字符集里，于是打开这一页的瞬间
+      // 「Project name must start with a letter and contain only letters…」就报错，
+      // 创建按钮永远点不动——模板等于不可用。
+      //
+      // 净化规则：只保留字母与数字（项目名）／只保留字母、数字与点（包名）。
+      // 不做「把 + 替换成 p」这类映射：那会让包名与模板名看起来毫无关系，
+      // 用户改起来更困惑，不如直接丢掉非法字符。
+      val rawName = selectedTemplate?.displayName ?: ""
+      // 只保留字母数字：空格与 + 一并丢掉（包名各段本来也不能含空格）。
+      val templateName = "My" + rawName.filter { it.isLetterOrDigit() }
+      val packageSuffix = "my" + rawName.lowercase().filter { it.isLetterOrDigit() }
 
       binding.projectNameInput.setText(templateName)
       binding.packageNameInput.setText("com.example.$packageSuffix")
