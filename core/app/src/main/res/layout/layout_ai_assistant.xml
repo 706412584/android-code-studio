@@ -272,19 +272,17 @@
         layout="@layout/layout_assistant_todos" />
 
       <!--
-        输入区：单行工具条 + 输入框。
+        输入区：附件标签行 + 「输入框 + 发送按钮」一行 + 工具条一行。
 
-        布局照搬参考项目（cc-haha 的 ChatInput）：**输入框在上，工具条在下**，
-        工具条里从左到右是 `+`、权限模式、git 分支、弹性留白、上下文圆环、模型、发送。
-        发送是 40dp 的圆形图标按钮，不再是一条占满宽度的文字按钮。
+        工具条从左到右：`+`、权限模式、git 分支、弹性留白、服务商、上下文圆环、模型。
 
-        **为什么改掉原来的「输入框 + 整行文字发送按钮」**：那条按钮在侧栏形态下
-        宽约 300dp、高 44dp，一整条实心色块压在输入框下面，视觉重量盖过了输入框本身，
-        而它传达的信息只有一个动作。图标按钮把这一整行的高度与色彩都还给内容。
+        **发送按钮放在输入框最右侧**（输入行内），不再放在工具条里：
+        发送是这一区域唯一的高频动作，它和输入框是「写什么 / 提交」的一对，
+        贴在一起才符合直觉；放在工具条最右端时，它与输入框之间隔着一整行控件，
+        视线要往下再往右各走一次。参考项目（cc-haha）同样是这个位置。
 
-        **为什么工具条放在输入框下面而不是上面**：输入框要贴近消息列表（用户视线
-        刚从上面那条回答移下来），而工具条是低频控件，放在更靠下、更靠近键盘的位置。
-        这与参考项目一致。
+        工具条里因此剩下「设置类」控件（附件、权限、服务商、上下文、模型），
+        它们都是低频的，与输入框分属两行之后，输入框那一行只剩下「写」与「发」。
 
         输入框用 Filled 而不是 Outlined：OutlinedBox 的方角描边在窄容器里显得很"表单"，
         而 Filled 的圆角底与面板整体的圆角语言一致。
@@ -322,26 +320,63 @@
 
         </HorizontalScrollView>
 
-        <com.google.android.material.textfield.TextInputLayout
+        <!--
+          输入行：输入框 + 发送按钮。
+
+          发送按钮与输入框**同高对齐**（gravity=bottom）：输入框会长高到 5 行，
+          按钮固定 40dp，靠底部对齐时它的位置随输入框增长而自然下移，
+          视线始终落在「刚写完的那一行旁边」。
+        -->
+        <LinearLayout
           android:layout_width="match_parent"
           android:layout_height="wrap_content"
-          style="@style/AppTheme.TextInputLayout.AssistantInput"
-          android:hint="@string/ai_assistant_input_hint">
+          android:orientation="horizontal"
+          android:gravity="bottom">
 
-          <com.google.android.material.textfield.TextInputEditText
-            android:id="@+id/assistantInput"
-            android:layout_width="match_parent"
+          <com.google.android.material.textfield.TextInputLayout
+            android:layout_width="0dp"
             android:layout_height="wrap_content"
-            android:inputType="textMultiLine|textCapSentences"
-            android:maxLines="5"
-            android:imeOptions="actionSend" />
+            android:layout_weight="1"
+            style="@style/AppTheme.TextInputLayout.AssistantInput"
+            android:hint="@string/ai_assistant_input_hint">
 
-        </com.google.android.material.textfield.TextInputLayout>
+            <com.google.android.material.textfield.TextInputEditText
+              android:id="@+id/assistantInput"
+              android:layout_width="match_parent"
+              android:layout_height="wrap_content"
+              android:inputType="textMultiLine|textCapSentences"
+              android:maxLines="5"
+              android:imeOptions="actionSend" />
+
+          </com.google.android.material.textfield.TextInputLayout>
+
+          <!--
+            发送 / 停止。运行时换成停止图标与 error 配色——这是「agent 正在跑」
+            最直接的状态信号，与底部的动作条互为补充。
+          -->
+          <com.google.android.material.button.MaterialButton
+            android:id="@+id/assistantSend"
+            style="@style/Widget.Material3.Button.IconButton.Filled"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:layout_marginStart="6dp"
+            android:layout_marginBottom="4dp"
+            android:contentDescription="@string/ai_assistant_send"
+            android:insetTop="0dp"
+            android:insetBottom="0dp"
+            app:icon="@drawable/ic_arrow_upward"
+            app:iconSize="22dp"
+            app:iconGravity="textStart"
+            app:iconPadding="0dp" />
+
+        </LinearLayout>
 
         <!--
-          单行工具条。
+          单行工具条（设置类控件）。
 
-          没有分隔线，只靠间距分组（左组 = 输入相关，右组 = 状态与提交）——
+          从左到右：`+`、权限模式、git 分支、弹性留白、服务商、上下文圆环、模型。
+
+          没有分隔线，只靠间距分组（左组 = 输入相关，右组 = 模型状态）——
           分隔线在 300dp 宽的一行里会把它切成三段，看起来像三个独立控件条。
 
           中间用 Space(weight=1) 撑开：左侧控件数量随面板宽度变化（窄时隐藏 git），
@@ -445,6 +480,33 @@
             android:layout_weight="1" />
 
           <!--
+            服务商。显示当前服务商名，点开是「服务商 → 其已配置模型」的分组列表。
+
+            与模型名分开显示而不是合成一段「服务商 / 模型」：合成后两段文字在窄面板里
+            都会被压成省略号，用户既看不出服务商也看不出模型。分开之后各自独立省略，
+            至少还能读出「哪个服务商」。
+
+            极窄时整块隐藏（见 applyToolbarDensity），模型名会顶上。
+          -->
+          <TextView
+            android:id="@+id/assistantToolbarProvider"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:background="?attr/selectableItemBackground"
+            android:clickable="true"
+            android:focusable="true"
+            android:ellipsize="end"
+            android:maxLines="1"
+            android:maxWidth="92dp"
+            android:paddingStart="4dp"
+            android:paddingEnd="2dp"
+            android:paddingTop="6dp"
+            android:paddingBottom="6dp"
+            android:textAppearance="@style/TextAppearance.Material3.LabelSmall"
+            android:textColor="?attr/colorOnSurfaceVariant"
+            tools:text="DeepSeek" />
+
+          <!--
             上下文占用圆环。点它弹详细信息并提供「压缩上下文」入口。
 
             contentDescription **不写在这里**：XML 的 contentDescription 不做占位符
@@ -461,10 +523,7 @@
             android:clickable="true"
             android:focusable="true" />
 
-          <!--
-            模型。只显示模型名，服务商名进 contentDescription——面板窄时两段文字
-            会被压成省略号，而用户切换时记住的是模型名。
-          -->
+          <!-- 模型名。点它同样打开选择器（与服务商标签是同一个入口）。 -->
           <TextView
             android:id="@+id/assistantToolbarModel"
             android:layout_width="wrap_content"
@@ -473,8 +532,8 @@
             android:clickable="true"
             android:focusable="true"
             android:ellipsize="end"
-            android:maxEms="10"
             android:maxLines="1"
+            android:maxWidth="124dp"
             android:paddingStart="4dp"
             android:paddingEnd="4dp"
             android:paddingTop="6dp"
@@ -482,24 +541,6 @@
             android:textAppearance="@style/TextAppearance.Material3.LabelMedium"
             android:textColor="?attr/colorOnSurfaceVariant"
             tools:text="deepseek-chat" />
-
-          <!--
-            发送 / 停止。运行时换成停止图标与 error 配色——这是「agent 正在跑」
-            最直接的状态信号，与底部的动作条互为补充。
-          -->
-          <com.google.android.material.button.MaterialButton
-            android:id="@+id/assistantSend"
-            style="@style/Widget.Material3.Button.IconButton.Filled"
-            android:layout_width="40dp"
-            android:layout_height="40dp"
-            android:layout_marginStart="6dp"
-            android:contentDescription="@string/ai_assistant_send"
-            android:insetTop="0dp"
-            android:insetBottom="0dp"
-            app:icon="@drawable/ic_arrow_upward"
-            app:iconSize="22dp"
-            app:iconGravity="textStart"
-            app:iconPadding="0dp" />
 
         </LinearLayout>
 

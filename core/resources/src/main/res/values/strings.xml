@@ -342,7 +342,6 @@
 
   <!-- Attachments above the input box -->
   <string name="ai_assistant_attach">Add file or image</string>
-  <string name="ai_assistant_attach_title">Add attachment</string>
   <string name="ai_assistant_attach_file">File from project</string>
   <string name="ai_assistant_attach_image">Image from gallery</string>
   <string name="ai_assistant_attach_remove">Remove attachment</string>
@@ -366,8 +365,13 @@
   <string name="ai_assistant_toolbar_attach">Attach a file or image</string>
   <string name="ai_assistant_toolbar_reasoning">Reasoning effort</string>
   <string name="ai_assistant_toolbar_reasoning_value">Reasoning: %1$s</string>
-  <string name="ai_assistant_context_usage">Context usage %1$s</string>
+  <string name="ai_assistant_toolbar_slot">Switch to slot %1$s (%2$s)</string>
+  <string name="ai_assistant_model_empty">No provider configured yet. Add one under Settings first.</string>
+  <string name="ai_assistant_model_configured">configured</string>
+  <string name="ai_assistant_model_current">current</string>
+  <string name="ai_assistant_context_usage">Context usage</string>
   <string name="ai_assistant_context_usage_detail">Context usage\n%1$s / %2$s (%3$d%%)</string>
+  <string name="ai_assistant_context_usage_short">Context usage %1$d%% (%2$s / %3$s)</string>
   <string name="ai_assistant_context_unknown">Context usage unknown (no context window configured for this model)</string>
   <string name="ai_assistant_compact_now">Compact context</string>
 
@@ -396,7 +400,6 @@
   <string name="ai_assistant_work_todo">Updating the task list</string>
   <string name="ai_assistant_work_web">Fetching %1$s</string>
   <string name="ai_assistant_work_tool">Running %1$s</string>
-  <string name="ai_assistant_work_working">Working…</string>
 
   <!-- Bottom-fixed retry card -->
   <string name="ai_assistant_retry_retrying">Connection dropped, retrying in %1$d s (attempt %2$d/%3$d)</string>

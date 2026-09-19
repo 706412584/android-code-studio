@@ -337,7 +337,6 @@
 
   <!-- 输入框上方的附件标签 -->
   <string name="ai_assistant_attach">添加文件或图片</string>
-  <string name="ai_assistant_attach_title">添加附件</string>
   <string name="ai_assistant_attach_file">从项目选择文件</string>
   <string name="ai_assistant_attach_image">从相册选择图片</string>
   <string name="ai_assistant_attach_remove">移除附件</string>
@@ -359,8 +358,13 @@
   <string name="ai_assistant_toolbar_attach">添加文件或图片</string>
   <string name="ai_assistant_toolbar_reasoning">推理强度</string>
   <string name="ai_assistant_toolbar_reasoning_value">推理：%1$s</string>
-  <string name="ai_assistant_context_usage">上下文占用 %1$s</string>
+  <string name="ai_assistant_toolbar_slot">切换到槽位 %1$s（%2$s）</string>
+  <string name="ai_assistant_model_empty">还没有配置任何服务商。请先在设置里添加。</string>
+  <string name="ai_assistant_model_configured">已配置</string>
+  <string name="ai_assistant_model_current">当前</string>
+  <string name="ai_assistant_context_usage">上下文占用</string>
   <string name="ai_assistant_context_usage_detail">上下文占用\n%1$s / %2$s（%3$d%%）</string>
+  <string name="ai_assistant_context_usage_short">上下文占用 %1$d%%（%2$s / %3$s）</string>
   <string name="ai_assistant_context_unknown">上下文占用未知（当前模型未配置上下文窗口）</string>
   <string name="ai_assistant_compact_now">压缩上下文</string>
 
@@ -389,7 +393,6 @@
   <string name="ai_assistant_work_todo">正在更新任务清单</string>
   <string name="ai_assistant_work_web">正在访问网络 %1$s</string>
   <string name="ai_assistant_work_tool">正在执行 %1$s</string>
-  <string name="ai_assistant_work_working">处理中…</string>
 
   <!-- 底部固定的重试小卡片 -->
   <string name="ai_assistant_retry_retrying">连接中断，%1$d 秒后重试（第 %2$d/%3$d 次）</string>

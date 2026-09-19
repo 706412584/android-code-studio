@@ -244,8 +244,13 @@ class FloatingAssistantView(
     // 不设 OnClickListener：拖动用的 OnTouchListener 会消费全部事件，click 永远不会触发。
     // 打开面板的动作用 ACTION_UP 且未进入拖动时手动调用 open()（见 setUpDragging）。
     binding.assistantSend.setOnClickListener { onSendClicked() }
-    // 工具条上的模型标签：点开服务商/模型选择器。
+    // 工具条上的服务商与模型标签：两者都点开同一个选择器。
+    // 分成两个可点控件而不是合成一个：服务商名与模型名各自独立省略，
+    // 窄面板下仍能读出「哪个服务商」；合成一段时两段文字会一起被压成省略号。
     binding.assistantToolbarModel.setOnClickListener {
+      AssistantModelPicker.show(context) { refreshModelLabel() }
+    }
+    binding.assistantToolbarProvider.setOnClickListener {
       AssistantModelPicker.show(context) { refreshModelLabel() }
     }
     // 上下文圆环：点开占用详情，并就地提供「压缩上下文」入口。
@@ -652,6 +657,12 @@ class FloatingAssistantView(
     params.horizontalBias = if (newMode == Mode.DOCKED) 1f else 0.5f
 
     card.layoutParams = params
+
+    // 换形态就换了宽度，工具条能放下几个控件随之变化，必须重算。
+    //
+    // 不重算的后果是单向的：窄形态（贴边）下隐藏了 git 分支标签，之后切到全屏
+    // 也不会重新显示——用户会觉得「全屏了还是少个东西」。反方向同理。
+    applyToolbarDensity()
   }
 
   private fun dp(value: Int): Int =
@@ -1367,8 +1378,11 @@ class FloatingAssistantView(
   /**
    * 弹权限模式选择。
    *
-   * <p>三档与设置页（{@code PermissionModePreference}）完全一致，文案也共用同一批
-   * 字符串资源——两处对同一个值的叫法不同会让用户以为是两个独立设置。
+   * <p>三档与设置页（{@code PermissionModePreference}）一致，文案共用同一批字符串资源。
+   *
+   * <p>每项写「短名 — 说明」而不是只写说明：工具条上的标签用的是**短名**
+   * （自动放行 / 需确认 / 只读），弹窗里若只写说明，同一个档位在界面上就有两个
+   * 不同的名字，用户会以为是两个独立设置。短名在前是因为它才是选中后要显示的那个。
    */
   private fun showPermissionPicker() {
     val modes =
@@ -1377,7 +1391,14 @@ class FloatingAssistantView(
             com.tom.rv2ide.ai.tool.ToolSettingsPort.PERMISSION_CONFIRM,
             com.tom.rv2ide.ai.tool.ToolSettingsPort.PERMISSION_READONLY,
         )
-    val labels = modes.map { context.getString(permissionLongLabelRes(it)) }.toTypedArray()
+    val labels =
+        modes
+            .map {
+              context.getString(permissionShortLabelRes(it)) +
+                  " — " +
+                  context.getString(permissionLongLabelRes(it))
+            }
+            .toTypedArray()
     val checked = modes.indexOf(settings.permissionMode).coerceAtLeast(0)
     MaterialAlertDialogBuilder(context)
         .setTitle(string.ai_assistant_permission_title)
@@ -1489,17 +1510,25 @@ class FloatingAssistantView(
    * 手机上只有 260dp。参考项目（cc-haha）同样用 ResizeObserver 量实际宽度，
    * 而不是 CSS 媒体查询。
    *
-   * <p>三档：
+   * <p>三档（阈值按实测控件宽度定，见 [GIT_VISIBLE_MIN_DP] 的注释）：
    * <ul>
-   *   <li>≥340dp：全部显示
-   *   <li>≥290dp：隐藏 git 分支（它是三者里信息密度最低的）
+   *   <li>≥320dp：git 分支也显示
+   *   <li>≥300dp：隐藏 git 分支（它是三者里信息密度最低的）
    *   <li>更窄：连模型名也收成省略（保留图标与圆环）
    * </ul>
+   *
+   * <p><b>宽度为 0 时必须直接返回</b>：面板在 attach 阶段是 `gone`，此时
+   * `bar.width` 为 0。把它当成「极窄」会永久隐藏 git 标签——之后宽度正常了
+   * 也不会恢复，因为 `lastGitBranch` 已被写成一个看似合法的值。
+   * 0 的含义是「还没布局」，不是「很窄」。
    */
   private fun applyToolbarDensity() {
     val bar = binding.assistantToolbar
     bar.post {
       val widthDp = (bar.width / parent.resources.displayMetrics.density).toInt()
+      if (widthDp <= 0) {
+        return@post
+      }
       // git 分支：窄面板下让位。它的显隐同时受「是否 git 仓库」控制，
       // 因此这里只在够宽时才允许显示，不够宽就强制隐藏（不写回 git 状态本身）。
       if (widthDp < GIT_VISIBLE_MIN_DP) {
@@ -1509,9 +1538,16 @@ class FloatingAssistantView(
         // 这里只在「之前被窄宽度压掉」的情况下重新问一次。
         refreshGitBranchVisibilityOnly()
       }
-      // 模型名：极窄时收成 4 个字符宽。maxEms 而不是 maxWidth，
-      // 因为 ems 随字号缩放，换字体或改字号后不用重新调数值。
-      binding.assistantToolbarModel.maxEms = if (widthDp < MODEL_VISIBLE_MIN_DP) 4 else 10
+      // 服务商名：比 git 更早让位。它的信息在模型名旁边（「deepseek-chat」
+      // 已经暗示了服务商），而 git 分支名没有任何替代品。
+      binding.assistantToolbarProvider.isVisible = widthDp >= PROVIDER_VISIBLE_MIN_DP
+      // 模型名：极窄时压到原来的一半宽。
+      //
+      // 用 maxWidth(dp) 而不是 maxEms：实测 maxEms 在 `layout_width=wrap_content`
+      // 的中文文本上不生效——provider 标签设了 maxEms=7 仍然渲染出全部 12 个字符
+      // （UI dump 里 bounds 宽 308px）。dp 是确定的长度，不受字体度量影响。
+      binding.assistantToolbarModel.maxWidth =
+          dp(if (widthDp < MODEL_VISIBLE_MIN_DP) MODEL_MAX_WIDTH_NARROW_DP else MODEL_MAX_WIDTH_DP)
     }
   }
 
@@ -1541,9 +1577,24 @@ class FloatingAssistantView(
    * 而用户切换时记住的是模型名。
    */
   private fun refreshModelLabel() {
-    val label = binding.assistantToolbarModel
-    label.text = Agents(context).getAgent()
-    label.contentDescription = AssistantModelPicker.summaryLabel(context)
+    val agents = Agents(context)
+    val providerId = agents.getProvider()
+    val providerLabel = com.tom.rv2ide.artificial.agent.ProviderPresets.labelFor(providerId)
+    // 未配置密钥的服务商加「⚠」前缀：否则用户切过去、发一条消息、收到
+    // 「未配置有效的 API 密钥」，要绕一圈才知道问题在哪。
+    val usable =
+        AgentModelConfigs.isProviderUsable(
+            providerId,
+            AgentOrchestrator.customBaseUrlFor(context, providerId),
+        )
+    val providerChip = binding.assistantToolbarProvider
+    providerChip.text =
+        if (usable) providerLabel else "⚠ " + providerLabel
+    providerChip.contentDescription = providerLabel
+
+    val modelChip = binding.assistantToolbarModel
+    modelChip.text = agents.getAgent()
+    modelChip.contentDescription = AssistantModelPicker.summaryLabel(context)
   }
 
   /**
@@ -1984,11 +2035,37 @@ class FloatingAssistantView(
     /** 会话抽屉滑入/滑出的时长。够快不拖沓，又不至于快到看不出方向。 */
     private const val DRAWER_ANIM_MS = 200L
 
-    /** 工具条宽度低于此值（dp）时隐藏 git 分支标签。 */
-    private const val GIT_VISIBLE_MIN_DP = 340
+    /**
+     * 工具条宽度低于此值（dp）时隐藏 git 分支标签。
+     *
+     * <p>阈值来自实测的控件宽度（1080px @ 440dpi，即 2.4545 px/dp）。
+     * 工具条在发送按钮移入输入行之后，常驻控件为：
+     * `+` 40.3 + 权限胶囊 68.4 + 服务商名(maxEms=7) 约 50 + 圆环 26.9
+     * + 模型名(maxEms=10) 71.7 = 257.3dp，加上固定间距约 20dp 共 277dp；
+     * git 胶囊自身约需 50dp（12dp 图标 + 约 25dp 分支名 + 16dp 内边距 + 4dp 间距）。
+     * 两者相加约 330dp 是「刚好放得下」的下界，取 330。
+     *
+     * <p>侧栏形态实测工具条 360dp（[98,2033]-[982,2149]，即 884px），
+     * 所以手机上 git 标签能正常显示；贴边形态约 260dp 时会隐藏。
+     */
+    private const val GIT_VISIBLE_MIN_DP = 330
 
-    /** 工具条宽度低于此值（dp）时把模型名收成 4 个字符宽。 */
-    private const val MODEL_VISIBLE_MIN_DP = 290
+    /**
+     * 工具条宽度低于此值（dp）时隐藏服务商名。
+     *
+     * <p>比 git 更早让位：模型名已经隐含了服务商（「deepseek-chat」一看就知道是哪家），
+     * 而 git 分支名没有替代品。隐藏后模型名顶上，用户仍能看出在用什么模型。
+     */
+    private const val PROVIDER_VISIBLE_MIN_DP = 300
+
+    /** 工具条宽度低于此值（dp）时把模型名压到 [MODEL_MAX_WIDTH_NARROW_DP]。 */
+    private const val MODEL_VISIBLE_MIN_DP = 270
+
+    /** 模型名的常规最大宽度（dp）。约 13 个半角字符，够显示 `deepseek-v4.1-flash`。 */
+    private const val MODEL_MAX_WIDTH_DP = 124
+
+    /** 极窄时模型名的最大宽度（dp）。约 6 个字符——够认出是哪家模型即可。 */
+    private const val MODEL_MAX_WIDTH_NARROW_DP = 62
 
     private fun summarizeArgs(args: String?): String {
       if (TextUtils.isEmpty(args)) {

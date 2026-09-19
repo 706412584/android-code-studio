@@ -155,7 +155,7 @@ class AssistantInputFeatures(
     if (slotSwitchable) {
       items.add(
           context.getString(
-              string.ai_assistant_slot_switched,
+              string.ai_assistant_toolbar_slot,
               currentSlotLabel(),
               Agents(context).getAgent(),
           ) to { cycleSlot() })

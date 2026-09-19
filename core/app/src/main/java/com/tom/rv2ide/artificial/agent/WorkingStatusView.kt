@@ -57,9 +57,13 @@ constructor(context: Context, attrs: AttributeSet? = null, defStyleAttr: Int = 0
 
   // TextPaint 而不是 Paint：TextUtils.ellipsize 要求 TextPaint（它要读
   // baselineShift 等文字排版字段）。用 Paint 会在编译期就报类型不匹配。
+  //
+  // 13sp 而不是 12sp：这一行是运行期间唯一的实时信息，包含文件路径与 shell 命令，
+  // 12sp 在 440dpi 的手机上读路径很吃力。命令里的大小写与连字符要能分辨，
+  // 因此不做全大写、也不额外加粗（加粗会让长命令显得拥挤）。
   private val textPaint =
       android.text.TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
-        textSize = 12f * resources.displayMetrics.scaledDensity
+        textSize = 13f * resources.displayMetrics.scaledDensity
         isSubpixelText = true
       }
 
@@ -77,7 +81,7 @@ constructor(context: Context, attrs: AttributeSet? = null, defStyleAttr: Int = 0
   private val matrixSizePx = dotStepPx * 2f + dotRadiusPx * 2f
   private val gapPx = 8f * density
   private val paddingPx = 4f * density
-  private val minHeightPx = 20f * density
+  private val minHeightPx = 22f * density
 
   private var animator: ValueAnimator? = null
   private var working = false

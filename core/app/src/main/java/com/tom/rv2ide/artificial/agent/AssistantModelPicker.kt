@@ -58,99 +58,93 @@ object AssistantModelPicker {
         LayoutInflater.from(context)
             .inflate(R.layout.dialog_assistant_model_picker, null, false)
 
-    val providerList = root.findViewById<ViewGroup>(R.id.pickerProviderList)
-    val modelList = root.findViewById<ViewGroup>(R.id.pickerModelList)
+    val list = root.findViewById<ViewGroup>(R.id.pickerList)
+    val empty = root.findViewById<View>(R.id.pickerEmpty)
 
     /**
-     * 重建两段列表。
+     * 重建整个列表。
      *
-     * <p>每次选择后整体重建而不是局部改勾：服务商切换会连带换掉整个模型列表，
-     * 局部更新的分支比重新渲染更容易写错，而这里的行数最多二十几行，重建的开销可以忽略。
+     * <p>每次选择后整体重建而不是局部改勾：切换服务商或模型会连带改变选中态与
+     * 「当前」标记，局部更新的分支比重新渲染更容易写错，而行数最多几十行。
      */
     fun rebuild() {
       val currentProvider = agents.getProvider()
       val currentModel = agents.getAgent()
 
-      providerList.removeAllViews()
-      // 用户记录优先、预设兜底，且按 id 去重：用户可能给某个预设服务商建了记录
-      // （改了 baseUrl 或密钥），此时只需显示一条，标签用用户自己起的名字。
-      val records = ProviderConfigStore(context).load()
-      val recordIds = records.map { it.getId() }
-      val orderedIds = recordIds + ProviderPresets.allIds().filterNot { recordIds.contains(it) }
-      for (providerId in orderedIds) {
-        val record = records.firstOrNull { it.getId() == providerId }
-        val label = record?.getLabel() ?: ProviderPresets.labelFor(providerId)
-        // 「可用」的判据复用发请求时那条路径（AgentModelConfigs.endpointFor），
-        // 而不是在这里另判一次「密钥非空」：后者会漏掉自定义端点
-        // （无密钥、但需要 baseUrl），更糟的是会在界面说「可用」而请求仍失败。
-        val usable =
-            AgentModelConfigs.isProviderUsable(
-                providerId,
-                AgentOrchestrator.customBaseUrlFor(context, providerId),
-            )
-        providerList.addView(
-            pickerRow(
+      list.removeAllViews()
+      // 只列**已配置**的服务商：没填密钥的切过去必然失败，预设里那十几个
+      // 模型名对用户只是噪音。这与参考项目（cc-haha）一致。
+      val configured = configuredProviders(context)
+
+      empty.visibility = if (configured.isEmpty()) View.VISIBLE else View.GONE
+
+      for (entry in configured) {
+        list.addView(
+            groupHeader(
                 context = context,
-                container = providerList,
-                title = label,
-                // 不可用时把原因写在副标题里。只靠颜色区分的话，用户要先切过去、
-                // 发一条消息、失败，才知道问题在哪。
-                subtitle =
-                    if (usable) null else context.getString(string.ai_assistant_no_api_key),
-                selected = providerId == currentProvider,
+                container = list,
+                entry = entry,
+                selected = entry.id == currentProvider,
                 onClick = {
-                  switchProvider(context, agents, providerId)
+                  switchProvider(context, agents, entry.id)
                   onChanged()
-                  // 不关闭：换完服务商通常还要挑模型。
+                  // 不关闭：换完服务商通常还要在它下面挑模型。
                   rebuild()
                 },
             ))
-      }
 
-      modelList.removeAllViews()
-      for (model in modelsFor(providerId = currentProvider, currentModel = currentModel)) {
-        modelList.addView(
-            pickerRow(
-                context = context,
-                container = modelList,
-                title = model,
-                subtitle = null,
-                selected = model == currentModel,
-                onClick = {
-                  agents.setAgent(model)
-                  onChanged()
-                  sheet.dismiss()
-                },
-            ))
-      }
+        for (model in entry.models) {
+          list.addView(
+              pickerRow(
+                  context = context,
+                  container = list,
+                  title = model,
+                  // 「当前」标记只在**当前服务商**的当前模型上出现：
+                  // 两个服务商可能配了同名模型，都标上会让用户分不清实际在用哪个。
+                  subtitle =
+                      if (model == currentModel && entry.id == currentProvider) {
+                        context.getString(string.ai_assistant_model_current)
+                      } else {
+                        null
+                      },
+                  selected = model == currentModel && entry.id == currentProvider,
+                  indent = true,
+                  onClick = {
+                    // 先写模型再写服务商：setAgent 会按模型名反查服务商并覆写 provider，
+                    // 顺序反了会被这个反查覆盖掉。
+                    agents.setAgent(model)
+                    agents.setProvider(entry.id)
+                    onChanged()
+                    sheet.dismiss()
+                  },
+              ))
+        }
 
-      // 自定义端点没有预设模型列表，得让用户自己填模型名——否则选中它之后
-      // 模型永远是空的，请求必然失败。
-      if (currentProvider == "custom") {
-        modelList.addView(
-            pickerRow(
-                context = context,
-                container = modelList,
-                title = context.getString(string.ai_agent_custom_model),
-                subtitle = context.getString(string.ai_assistant_custom_model_hint),
-                selected = false,
-                onClick = { promptCustomModel(context, agents, onChanged, sheet) },
-            ))
-      }
-
-      // 本地模型需要 baseUrl + 模型名，两个值都只有用户知道。原先这个入口在旧侧栏的
-      // 设置页里（LocalLLMConfigDialog），移除侧栏后没有别处能设——不在这里补上，
-      // 「本地模型」会是一个选中即失败的选项。
-      if (currentProvider == "localllm") {
-        modelList.addView(
-            pickerRow(
-                context = context,
-                container = modelList,
-                title = context.getString(string.ai_assistant_configure_local),
-                subtitle = localModelSummary(context),
-                selected = false,
-                onClick = { promptLocalModel(context, agents, onChanged, sheet) },
-            ))
+        // 自定义端点与本地模型需要用户自己填值，各补一个入口行。
+        if (entry.id == CUSTOM_PROVIDER_ID) {
+          list.addView(
+              pickerRow(
+                  context = context,
+                  container = list,
+                  title = context.getString(string.ai_agent_custom_model),
+                  subtitle = context.getString(string.ai_assistant_custom_model_hint),
+                  selected = false,
+                  indent = true,
+                  onClick = { promptCustomModel(context, agents, onChanged, sheet) },
+              ))
+        }
+        if (entry.id == LOCAL_PROVIDER_ID) {
+          list.addView(
+              pickerRow(
+                  context = context,
+                  container = list,
+                  title = context.getString(string.ai_assistant_configure_local),
+                  subtitle = localModelSummary(context),
+                  selected = false,
+                  indent = true,
+                  onClick = { promptLocalModel(context, agents, onChanged, sheet) },
+              ))
+        }
       }
     }
 
@@ -162,6 +156,50 @@ object AssistantModelPicker {
     sheet.setContentView(root)
     rebuild()
     sheet.show()
+  }
+
+  /** 一个已配置的服务商及其可用模型。 */
+  private class ProviderEntry(val id: String, val label: String, val models: List<String>)
+
+  /**
+   * 已配置的服务商清单（含各自已配置的模型）。
+   *
+   * <p><b>「已配置」的判据复用发请求那条路径</b>（[AgentModelConfigs.isProviderUsable]）：
+   * 自己另判一次「密钥非空」会漏掉自定义端点（无密钥、但需要 baseUrl），
+   * 更糟的是会在界面上说「可用」而请求仍然失败。
+   */
+  private fun configuredProviders(context: Context): List<ProviderEntry> {
+    val records = ProviderConfigStore(context).load()
+    val result = ArrayList<ProviderEntry>()
+    for (record in records) {
+      val id = record.getId()
+      if (!AgentModelConfigs.isProviderUsable(id, AgentOrchestrator.customBaseUrlFor(context, id))) {
+        continue
+      }
+      val models = configuredModels(record)
+      // 模型一个都没配的服务商仍然列出来：用户点它至少能切到该服务商，
+      // 再由下面那个「填写模型名」的行引导他去填。整条隐藏会让他以为
+      // 「我明明加了服务商，为什么列表里没有」。
+      result.add(ProviderEntry(id, record.getLabel(), models))
+    }
+    return result
+  }
+
+  /**
+   * 某服务商**已配置**的模型清单。
+   *
+   * <p>取记录里的非空槽位，按槽位顺序去重。刻意**不回退到预设表**：
+   * 预设那十几个模型名用户大多没配过，列出来点一下就切过去了，然后请求失败——
+   * 用户会以为是自己选错了模型，而不是「这个模型还没配」。
+   *
+   * <p>槽位为空表示「与主模型相同」，因此 `resolveSlot` 会把空槽位折回主模型，
+   * 去重后不会重复出现。
+   */
+  private fun configuredModels(record: ProviderConfig): List<String> {
+    return ProviderConfig.SLOT_ORDER.map { record.resolveSlot(it) }
+        .filter { it.isNotBlank() }
+        .distinct()
+        .map { ContextSizeParser.stripSuffix(it) }
   }
 
   /**
@@ -195,31 +233,6 @@ object AssistantModelPicker {
     if (providerId == "custom" && ApiKey.getCustomModel().isNotBlank()) {
       agents.setAgent(ApiKey.getCustomModel())
     }
-  }
-
-  /** 当前服务商的模型清单；用户记录优先，其次预设，最后回退到当前值。 */
-  private fun modelsFor(providerId: String, currentModel: String): List<String> {
-    // 记录里的非空槽位都列出来，让用户在助手面板里就能在 main/haiku/sonnet/opus
-    // 之间切——否则配了 4 个槽位却只能用到 main，等于白配。
-    val record = AgentModelConfigs.recordFor(providerId)
-    if (record != null) {
-      val fromSlots =
-          ProviderConfig.SLOT_ORDER.map { record.resolveSlot(it) }
-              .filter { it.isNotBlank() }
-              .distinct()
-              .map { ContextSizeParser.stripSuffix(it) }
-      if (fromSlots.isNotEmpty()) {
-        return fromSlots
-      }
-    }
-
-    val preset = ProviderPresets.modelsFor(providerId)
-    if (preset.isNotEmpty()) {
-      return preset
-    }
-    // 自定义端点：预设表里没有模型，把用户已填的那个（如果有）当作唯一选项，
-    // 否则「模型」段会是空的，看起来像界面坏了。
-    return if (currentModel.isNotBlank()) listOf(currentModel) else emptyList()
   }
 
   private fun promptCustomModel(
@@ -337,6 +350,7 @@ object AssistantModelPicker {
       title: String,
       subtitle: String?,
       selected: Boolean,
+      indent: Boolean,
       onClick: () -> Unit,
   ): View {
     val binding =
@@ -354,9 +368,56 @@ object AssistantModelPicker {
     binding.pickerRowSubtitle.text = subtitle
     binding.pickerRowSubtitle.visibility = if (subtitle.isNullOrBlank()) View.GONE else View.VISIBLE
     binding.pickerRowCheck.visibility = if (selected) View.VISIBLE else View.GONE
+    if (indent) {
+      // 在原有内边距之上再缩进一级。加而不是覆盖：模板里的 padding 是给
+      // 组标题用的，模型行需要「组标题的位置 + 一级缩进」。
+      val extra = dp(context, 20)
+      binding.root.setPadding(
+          binding.root.paddingStart + extra,
+          binding.root.paddingTop,
+          binding.root.paddingEnd,
+          binding.root.paddingBottom,
+      )
+    }
     binding.root.setOnClickListener { onClick() }
     return binding.root
   }
+
+  /**
+   * 服务商组标题。
+   *
+   * <p>点它 = 切到该服务商的**主模型**（模型行是切到具体某个模型）。
+   * 这样「换个服务商随便用用」不需要先展开再挑模型，一次点击到位。
+   */
+  private fun groupHeader(
+      context: Context,
+      container: ViewGroup,
+      entry: ProviderEntry,
+      selected: Boolean,
+      onClick: () -> Unit,
+  ): View {
+    val binding =
+        ItemAssistantPickerRowBinding.inflate(LayoutInflater.from(context), container, false)
+    binding.pickerRowTitle.text = entry.label
+    binding.pickerRowTitle.setTextColor(
+        com.google.android.material.color.MaterialColors.getColor(
+            binding.root,
+            if (selected) android.R.attr.colorPrimary
+            else com.google.android.material.R.attr.colorOnSurface,
+        ))
+    binding.pickerRowSubtitle.text =
+        context.getString(string.ai_assistant_model_configured) + " · " + entry.models.size
+    binding.pickerRowSubtitle.visibility = View.VISIBLE
+    binding.pickerRowCheck.visibility = if (selected) View.VISIBLE else View.GONE
+    binding.root.setOnClickListener { onClick() }
+    return binding.root
+  }
+
+  /** 自定义端点的服务商 id。与 ProviderPresets 里的一致。 */
+  private const val CUSTOM_PROVIDER_ID = "custom"
+
+  /** 本地模型的服务商 id。 */
+  private const val LOCAL_PROVIDER_ID = "localllm"
 
   /** 本地模型配置的偏好键。与 `LocalLLM` 读取的键一致。 */
   private const val KEY_LOCAL_BASE_URL = "local_llm_base_url"

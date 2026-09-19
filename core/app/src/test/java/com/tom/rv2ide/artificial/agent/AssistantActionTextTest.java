@@ -70,22 +70,52 @@ public final class AssistantActionTextTest {
   }
 
   @Test
-  public void shellCommandIsReducedToFirstToken() {
-    // `cd foo && ./gradlew build` 里用户关心的是「在跑 gradlew」。
+  public void shellCommandKeepsItsFullText() {
+    // 用户明确要求「显示完整命令动作」：`./gradlew clean` 与 `./gradlew assembleDebug`
+    // 是两件事，只显示首个 token 等于什么都没说。
+    String command = "cd /data/data/com.tom.rv2ide/files/home/ACSProjects/MyGameActivity && ./gradlew clean";
+    String target = AssistantActionText.INSTANCE.targetOf("shell_execute", "{\"command\":\"" + command + "\"}");
+
+    assertEquals(command, target);
+  }
+
+  @Test
+  public void multiLineCommandIsFlattenedToASingleLine() {
+    // 命令常写成多行（`cd x &&\n ./gradlew`）。状态条是固定高度的一行，
+    // 带换行的文案会把整行撑高。
     String target =
         AssistantActionText.INSTANCE.targetOf(
-            "shell_execute",
-            "{\"command\":\"cd /data/data/com.tom.rv2ide/files/home/ACSProjects/MyGameActivity && ./gradlew clean\"}");
+            "shell_execute", "{\"command\":\"cd /tmp &&\\n   ./gradlew   clean\"}");
 
-    assertEquals("cd", target);
+    assertEquals("cd /tmp && ./gradlew clean", target);
+    assertFalse("不应含换行", target.contains("\n"));
+  }
+
+  @Test
+  public void extremelyLongCommandIsTruncatedAtTheEnd() {
+    // 兜底：几 KB 的命令不该整条塞进 TextView。截断保留**开头**——
+    // 命令的可执行文件与子命令是最能区分它的一条信息。
+    StringBuilder sb = new StringBuilder("./gradlew ");
+    for (int i = 0; i < 500; i++) {
+      sb.append("-Pkey").append(i).append(' ');
+    }
+    String target = AssistantActionText.INSTANCE.targetOf("shell_execute", "{\"command\":\"" + sb + "\"}");
+
+    assertTrue("应从开头保留: " + target, target.startsWith("./gradlew "));
+    assertTrue("应截断: " + target, target.endsWith("…"));
+    assertTrue(target.length() <= AssistantActionText.TARGET_MAX + 1);
   }
 
   @Test
   public void longTargetIsTruncatedWithEllipsis() {
+    // 路径压缩到末两段之后仍可能超长（末两段各自很长），此时才走兜底截断。
+    StringBuilder longName = new StringBuilder();
+    for (int i = 0; i < 200; i++) {
+      longName.append('b');
+    }
     String target =
         AssistantActionText.INSTANCE.targetOf(
-            "file_read",
-            "{\"file_path\":\"a/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.cpp\"}");
+            "file_read", "{\"file_path\":\"a/" + longName + ".cpp\"}");
 
     assertTrue("超长目标应被截断: " + target, target.endsWith("…"));
     assertTrue(

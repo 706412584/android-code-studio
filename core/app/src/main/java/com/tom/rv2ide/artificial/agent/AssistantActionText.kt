@@ -36,8 +36,14 @@ import org.json.JSONObject
  */
 object AssistantActionText {
 
-  /** 动作对象名的最大长度；超出截断。 */
-  const val TARGET_MAX = 28
+  /**
+   * 动作对象名的兜底截断长度。
+   *
+   * <p>取得比较宽（120）是因为命令要显示完整内容——用户明确要求看到完整命令。
+   * 真正决定显示多少的是绘制层的可用宽度（WorkingStatusView 在末尾省略），
+   * 这个常量只防「几 KB 的命令塞进 TextView」这种极端情况。
+   */
+  const val TARGET_MAX = 120
 
   /**
    * 工具调用 → 状态条文案。
@@ -74,8 +80,11 @@ object AssistantActionText {
    * <p>路径压到末两段：完整绝对路径在状态条里放不下，而用户靠文件名就能认出是哪个文件
    * （`cpp/Renderer.cpp` 比 `/data/data/com.tom.rv2ide/files/home/.../Renderer.cpp` 有效得多）。
    *
-   * <p>命令只取第一个 token：`cd foo && ./gradlew build` 里用户关心的是「在跑 gradlew」，
-   * 整条命令会占满整行并被省略成看不懂的样子。
+   * <p><b>命令保留完整内容</b>（不取首个 token）：用户明确要求「显示完整命令动作」。
+   * `./gradlew clean --offline` 与 `./gradlew assembleDebug` 对用户是两件事，
+   * 只显示 `./gradlew` 等于什么都没说。超出宽度由绘制层在**末尾**省略——
+   * 命令的开头（可执行文件与子命令）正是最能区分它的一条信息，保留开头比保留中间有用。
+   * 这里只做一层「极长时截断」的兜底，避免把几 KB 的命令塞进 TextView。
    *
    * <p>取不到任何对象时返回 `…` 而不是空串——空串会拼出「正在读取 」这种断句。
    */
@@ -94,7 +103,9 @@ object AssistantActionText {
     }
     val compact =
         if (toolName == ToolNames.SHELL_EXECUTE) {
-          raw.trim().split(Regex("\\s+")).firstOrNull().orEmpty()
+          // 折掉换行与连续空白：命令常写成多行（`cd x &&\n ./gradlew`），
+          // 直接放进单行状态条会把整行撑高。
+          raw.trim().replace(Regex("\\s+"), " ")
         } else {
           raw.trim().replace('\\', '/').split('/').filter { it.isNotEmpty() }.takeLast(2)
               .joinToString("/")
