@@ -1554,8 +1554,10 @@ class FloatingAssistantView(
 
       // 服务商名：比 git 更早让位。它的信息在模型名旁边（「deepseek-chat」
       // 已经暗示了服务商），而 git 分支名没有替代品。
-      binding.assistantToolbarProvider.isVisible =
-          widthDp >= PROVIDER_VISIBLE_MIN_DP && !veryNarrow
+      //
+      // 不必再与 veryNarrow 相与：PROVIDER_VISIBLE_MIN_DP(425) > MODEL_VISIBLE_MIN_DP(257)，
+      // 宽度达到 425 时 veryNarrow 必然为 false，那个条件是恒真的死逻辑。
+      binding.assistantToolbarProvider.isVisible = widthDp >= PROVIDER_VISIBLE_MIN_DP
 
       // 模型名：极窄时压到一半宽。
       //
