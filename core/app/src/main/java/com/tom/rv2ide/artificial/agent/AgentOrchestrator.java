@@ -185,8 +185,11 @@ public final class AgentOrchestrator {
     this.conversationStore = conversationStore;
     this.todoStore = new com.tom.rv2ide.ai.tool.FileTodoStateStore(defaultTodoFile(appContext));
     this.memoryStore = new com.tom.rv2ide.ai.tool.memory.MemoryStore(defaultMemoryFile(appContext));
-    this.skillRegistry =
-        com.tom.rv2ide.ai.tool.skill.SkillRegistry.load(defaultSkillsDir(appContext));
+    // 先把内置 skill 播种到用户目录，再加载——顺序不能反，否则首次启动时
+    // 注册表扫到的是空目录，内置 skill 要等下次构造才出现。
+    File skillsDir = defaultSkillsDir(appContext);
+    seedBuiltinSkills(appContext, skillsDir);
+    this.skillRegistry = com.tom.rv2ide.ai.tool.skill.SkillRegistry.load(skillsDir);
     this.chatModeStore = new PrefsChatModeStore(appContext);
     this.customAgentStore =
         new com.tom.rv2ide.ai.agent.command.CustomAgentStore(defaultCustomAgentsFile(appContext));
@@ -211,6 +214,62 @@ public final class AgentOrchestrator {
   /** skill 目录：{@code filesDir/ai/skills}。 */
   private static File defaultSkillsDir(Context context) {
     return new File(new File(context.getFilesDir(), "ai"), "skills");
+  }
+
+  /**
+   * 把内置 skill 播种到用户 skill 目录。
+   *
+   * <p><b>为什么用「只补缺失的」而不是「每次覆盖」</b>：用户与 AI 都可能改这些文件
+   * （修正一处过时的说明、按自己项目补充细节）。每次覆盖会把他们的改动冲掉。反过来，
+   * 只补缺失的意味着**升级后新增的内置 skill 会装上，但已有同名文件不会被更新**——
+   * 这是刻意的取舍：宁可让用户手工删掉旧文件以获取新版，也不能默默丢弃他的编辑。
+   *
+   * <p>失败一律忽略：播种是锦上添花，不该因为它让 AI 功能起不来。
+   */
+  private static void seedBuiltinSkills(Context context, File skillsDir) {
+    try {
+      String[] entries = context.getAssets().list("skills");
+      if (entries == null || entries.length == 0) {
+        return;
+      }
+      if (!skillsDir.isDirectory() && !skillsDir.mkdirs()) {
+        return;
+      }
+      for (String name : entries) {
+        File targetDir = new File(skillsDir, name);
+        File target = new File(targetDir, "SKILL.md");
+        // 已存在就跳过——见上面的取舍说明。
+        if (target.isFile()) {
+          continue;
+        }
+        String assetPath = "skills/" + name + "/SKILL.md";
+        if (!assetExists(context, assetPath)) {
+          continue;
+        }
+        if (!targetDir.isDirectory() && !targetDir.mkdirs()) {
+          continue;
+        }
+        try (java.io.InputStream in = context.getAssets().open(assetPath);
+            java.io.OutputStream out = new java.io.FileOutputStream(target)) {
+          byte[] buffer = new byte[8192];
+          int read;
+          while ((read = in.read(buffer)) != -1) {
+            out.write(buffer, 0, read);
+          }
+        }
+      }
+    } catch (Exception e) {
+      com.tom.rv2ide.ai.tool.api.ErrorLog.record("agent", "播种内置 skill 失败", e, null);
+    }
+  }
+
+  /** assets 里是否存在该条目（assets 的 open 会抛异常，用它判断）。 */
+  private static boolean assetExists(Context context, String path) {
+    try (java.io.InputStream in = context.getAssets().open(path)) {
+      return in != null;
+    } catch (java.io.IOException e) {
+      return false;
+    }
   }
 
   /** skill 注册表，供设置界面查看。 */
