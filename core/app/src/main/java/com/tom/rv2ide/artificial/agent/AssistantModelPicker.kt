@@ -382,13 +382,14 @@ object AssistantModelPicker {
     val binding =
         ItemAssistantPickerRowBinding.inflate(LayoutInflater.from(context), container, false)
     binding.pickerRowTitle.text = title
-    // 选中态用主题主色。取色走 android.R.attr.colorPrimary 而不是
-    // com.google.android.material.R.attr.colorPrimary —— 后者里根本没有这个 attr
-    // （Material3 的 colorPrimary 落在 android 命名空间），引用它编译不过。
+    // 选中态用主题主色。取**应用**命名空间的 R.attr.colorPrimary：
+    // Material 的 R.attr 里确实没有 colorPrimary（那样写编译不过），但应用侧有，
+    // 且 ACS 主题定义的正是应用那一份。写 android.R.attr.colorPrimary 只是碰巧
+    // 与框架默认值同值才看起来对，主题一旦偏离就会取错。
     binding.pickerRowTitle.setTextColor(
         com.google.android.material.color.MaterialColors.getColor(
             binding.root,
-            if (selected) android.R.attr.colorPrimary
+            if (selected) R.attr.colorPrimary
             else com.google.android.material.R.attr.colorOnSurface,
         ))
     binding.pickerRowSubtitle.text = subtitle
@@ -428,7 +429,7 @@ object AssistantModelPicker {
     binding.pickerRowTitle.setTextColor(
         com.google.android.material.color.MaterialColors.getColor(
             binding.root,
-            if (selected) android.R.attr.colorPrimary
+            if (selected) R.attr.colorPrimary
             else com.google.android.material.R.attr.colorOnSurface,
         ))
     binding.pickerRowSubtitle.text =

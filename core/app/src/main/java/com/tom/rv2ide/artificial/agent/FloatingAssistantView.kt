@@ -1205,12 +1205,20 @@ class FloatingAssistantView(
     // 明确对比，扫一眼就知道现在处于哪个状态。
     //
     // attr 的命名空间要逐个确认，写错编译不过：
-    // - colorPrimary 只在框架里（android.R.attr），Material 的 R.attr 里没有
+    // - colorPrimary 取**应用**命名空间（com.tom.rv2ide.R.attr）。Material 的 R.attr 里
+    //   确实没有它，但应用侧有，且 ACS 主题定义的正是应用那一份。
+    //   早先写 android.R.attr.colorPrimary 能碰巧取对，是因为框架默认浅色主题的
+    //   colorPrimary 与 ACS 的 colorPrimary 恰好同值（#6F5A4A）——一旦用户主题偏离
+    //   这个默认值就会取错，属于靠巧合成立。
     // - colorOnPrimary 只在 Material 里（Material 的 R.attr），框架里没有
     // - colorErrorContainer / colorOnErrorContainer 都是 Material 独有
+    //
+    // 背景与前景必须来自**同一套**主题定义，否则换主题时会出现「主色变了、
+    // 前景没变」的低对比组合。应用命名空间的 colorPrimary 与 Material 命名空间的
+    // colorOnPrimary 是同一次主题定义里的一对，配在一起是对的。
     val bgAttr =
         if (running) com.google.android.material.R.attr.colorErrorContainer
-        else android.R.attr.colorPrimary
+        else com.tom.rv2ide.R.attr.colorPrimary
     val fgAttr =
         if (running) com.google.android.material.R.attr.colorOnErrorContainer
         else com.google.android.material.R.attr.colorOnPrimary
