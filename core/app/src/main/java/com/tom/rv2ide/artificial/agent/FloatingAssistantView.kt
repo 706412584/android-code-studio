@@ -2052,16 +2052,30 @@ class FloatingAssistantView(
     private const val DRAWER_ANIM_MS = 200L
 
     /**
-     * 工具条宽度低于此值（dp）时隐藏服务商标签。
+     * 工具条宽度低于此值（dp）时隐藏 git 分支标签。
      *
-     * <p>阈值由实测控件宽度定（设备 1080px @ density 440，即 2.75 px/dp）：
-     * `+` 36 + 权限胶囊 61 + 服务商 92 + 圆环 24 + 模型 124 = 337dp，
-     * 加固定间距约 18dp 共 355dp。服务商 + git（约 50dp）同时在场需要约 320dp，
-     * 故取 320。
+     * <p><b>三个阈值全部由实测控件宽度推导</b>（设备 1080px @ density 440，
+     * 即 2.75 px/dp；数字取自 uiautomator 的 bounds）：
      *
-     * <p>实测参照：侧栏形态工具条 360dp（全部显示），贴边形态 243dp（只留模型）。
+     * ```
+     *   +            36.0dp
+     *   permission   61.1dp
+     *   git          68.0dp
+     *   provider     92.0dp
+     *   ring         24.0dp
+     *   model       124.0dp（maxWidth 上限）
+     *   间距          4.0dp × 个数
+     * ```
+     *
+     * 累计：
+     * - `+` + 权限 + 圆环 + 模型 = 257dp
+     * - 再加 git = **329dp** ← 本阈值
+     * - 再加服务商 = **425dp** ← [PROVIDER_VISIBLE_MIN_DP]
+     *
+     * <p>实测参照：侧栏形态工具条 336dp（放不下 git + 服务商，故只隐服务商），
+     * 贴边形态 243dp（只留模型）。
      */
-    private const val GIT_VISIBLE_MIN_DP = 320
+    private const val GIT_VISIBLE_MIN_DP = 329
 
     /**
      * 工具条宽度低于此值（dp）时隐藏服务商名。
@@ -2069,20 +2083,20 @@ class FloatingAssistantView(
      * <p>比 git 更早让位：模型名已经隐含了服务商（「deepseek-chat」一看就知道是哪家），
      * 而 git 分支名没有替代品。隐藏后模型名顶上，用户仍能看出在用什么模型。
      *
-     * <p>300dp = 剩余控件（`+` 36 + 权限 61 + 圆环 24 + 模型 124 + 间距 18）的
-     * 约 263dp，加上服务商自身 92dp 的下界。低于它时必须让服务商先走，
-     * 否则模型名会被压到只剩一个省略号——实测贴边形态 243dp 正是如此。
+     * <p>425dp 是「`+` 36 + 权限 61 + git 68 + 服务商 92 + 圆环 24 + 模型 124
+     * + 5×4dp 间距」的实测合计。低于它就必须先让服务商走，否则模型名会被压到
+     * 只剩一个省略号——实测侧栏 336dp 时模型名只剩 26dp 正是如此。
      */
-    private const val PROVIDER_VISIBLE_MIN_DP = 300
+    private const val PROVIDER_VISIBLE_MIN_DP = 425
 
     /**
      * 工具条宽度低于此值（dp）时隐藏 git 并把模型名压到
      * [MODEL_MAX_WIDTH_NARROW_DP]。
      *
-     * <p>240dp 是「`+` 36 + 权限 61 + 圆环 24 + 模型 62 + 间距 18 = 201dp」
-     * 这条底线之上的余量；再窄就只剩图标，模型名必须收窄才放得下。
+     * <p>257dp 是「`+` 36 + 权限 61 + 圆环 24 + 模型 124 + 3×4dp 间距」的实测合计；
+     * 低于它时模型名必须收窄才放得下。实测贴边形态 243dp 落在这一档。
      */
-    private const val MODEL_VISIBLE_MIN_DP = 240
+    private const val MODEL_VISIBLE_MIN_DP = 257
 
     /** 模型名的常规最大宽度（dp）。约 13 个半角字符，够显示 `deepseek-v4.1-flash`。 */
     private const val MODEL_MAX_WIDTH_DP = 124
