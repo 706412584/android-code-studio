@@ -29,7 +29,7 @@ import com.tom.androidcodestudio.project.manager.builder.toplevel.*
 import com.tom.rv2ide.templates.*
 import com.tom.rv2ide.templates.AtcInterface
 import com.tom.rv2ide.templates.android.cpp.CppSources
-import com.tom.rv2ide.templates.android.etc.NativeCpp.Check.getHighestCMakeVersion
+import com.tom.rv2ide.templates.android.etc.NativeCpp.Check.getHighestRunnableCMakeVersion
 import com.tom.rv2ide.templates.android.etc.NativeCpp.Check.getHighestNdkVersion
 import com.tom.rv2ide.templates.preferences.Options
 import java.io.File
@@ -338,7 +338,7 @@ class NativeCpp : Template {
                       cmake =
                           CMakeConfig(
                               path = "src/main/cpp/CMakeLists.txt",
-                              version = getHighestCMakeVersion(),
+                              version = getHighestRunnableCMakeVersion(),
                           )
                   )
               )

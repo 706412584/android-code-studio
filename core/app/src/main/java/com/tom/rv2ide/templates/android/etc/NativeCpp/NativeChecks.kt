@@ -56,6 +56,40 @@ object Check {
    */
   fun getHighestCMakeVersion(): String? = getAllCMakeVersions().firstOrNull()
 
+  /**
+   * 取**当前设备上真正能运行**的最高 CMake 版本。
+   *
+   * <p><b>为什么不能直接用 [getHighestCMakeVersion]</b>：那个只按目录名排序，不校验二进制。
+   * SDK 仓库里的 CMake 包是分架构的，而 `sdkmanager` 在某些设备/旧版 cmdline-tools 上会
+   * 装到与设备不匹配的架构。实测（黑鲨 SKW-A0，aarch64）：
+   *
+   * ```
+   * cmake/3.22.1/bin/cmake: ELF 64-bit LSB x86-64   ← 手机上无法执行
+   * cmake/4.1.2/bin/cmake:  ELF 64-bit LSB arm64    ← 正常
+   * ```
+   *
+   * 而 3.22.1 的版本号更高排序在前，于是模板把 `version '3.22.1'` 写进 build.gradle，
+   * AGP 照此调用 x86-64 的二进制，构建以 `not executable: 64-bit ELF file` 失败。
+   * 这个错误看起来像「NDK/SDK 版本冲突」，实际是架构不匹配。
+   *
+   * <p>判据用「能不能跑起来」而不是「目录是否存在」——[validateCMakeVersion] 真的执行
+   * `cmake --version` 并检查退出码，这是唯一可靠的判据。
+   *
+   * <p>全部版本都不可运行时返回 null，由调用方给出可操作的提示，而不是写一个必然失败的
+   * 版本号进 build.gradle 让用户去猜。
+   */
+  fun getHighestRunnableCMakeVersion(): String? =
+      getAllCMakeVersions().firstOrNull { validateCMakeVersion(it) != null }
+
+  /**
+   * 设备架构与 CMake 二进制架构不匹配的版本清单（用于给出可操作的错误提示）。
+   *
+   * <p>这些版本目录存在、但二进制跑不起来。把它们显式列出来，用户才知道该删哪个、
+   * 或该换装哪个——只报「CMake 不可用」会让人以为一个都没装。
+   */
+  fun getBrokenCMakeVersions(): List<String> =
+      getAllCMakeVersions().filter { validateCMakeVersion(it) == null }
+
   /** Checks if at least one NDK is installed. */
   fun isAtLeastOneInstalled(): Boolean = getAllNdkVersions().isNotEmpty()
 
