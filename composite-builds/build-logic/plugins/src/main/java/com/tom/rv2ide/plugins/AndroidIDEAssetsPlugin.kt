@@ -106,6 +106,47 @@ class AndroidIDEAssetsPlugin : Plugin<Project> {
             copyToolingApiJar,
             AddFileToAssetsTask::outputDirectory,
         )
+
+        // Logger runtime AAR copier
+        //
+        // `external:logwire` 产出 `logger-runtime.aar`，运行期由
+        // `GradleBuildService` 解出后写进 Gradle init script，给**每个用户项目**
+        // 注入 `implementation files(...)`。该 AAR 缺失会让用户项目构建失败，
+        // 而 App 自身仍能正常构建——所以这个缺失长期没有被发现。
+        //
+        // 原先 logwire 用 `gradle.projectsEvaluated { tasks.matching { ... } }`
+        // 自己接线，但那段代码里的 `tasks` 是 **logwire 项目**的任务集合，
+        // 永远匹配不到 `:core:app:preDebugBuild`，属于空操作：
+        // 实测 `:core:app:preDebugBuild --dry-run` 的依赖里没有任何 logwire 任务，
+        // 因此 `assembleRelease` 与 `fixAarName` 从未被调用过。
+        //
+        // 这里按与 tooling-api 完全相同的方式，把它注册为「生成的 assets 目录」，
+        // 由 AGP 负责合并进 APK。依赖用字符串路径声明，避免在配置期过早解析
+        // 由 AGP 变体 API 创建的 `assembleRelease` 任务。
+        val copyLoggerRuntimeAar =
+            tasks.register(
+                "copy${variantNameCapitalized}LoggerRuntimeAar",
+                AddFileToAssetsTask::class.java,
+            ) {
+              dependsOn(":external:logwire:assembleRelease")
+              dependsOn(":external:logwire:fixAarName")
+
+              val logwire = checkNotNull(rootProject.findProject(":external:logwire")) {
+                "Cannot find the LogWire module with project path: ':external:logwire'"
+              }
+
+              // fixAarName 会把 bundleReleaseAar 的产物重命名成这个名字
+              val loggerAar =
+                  logwire.layout.buildDirectory.file("outputs/aar/logger-runtime.aar")
+
+              inputFile.set(loggerAar)
+              baseAssetsPath.set("data/common")
+            }
+
+        variant.sources.assets?.addGeneratedSourceDirectory(
+            copyLoggerRuntimeAar,
+            AddFileToAssetsTask::outputDirectory,
+        )
       }
     }
   }

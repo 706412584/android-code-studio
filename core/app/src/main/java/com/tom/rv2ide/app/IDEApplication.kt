@@ -46,6 +46,7 @@ import com.tom.rv2ide.events.AppEventsIndex
 import com.tom.rv2ide.events.EditorEventsIndex
 import com.tom.rv2ide.events.LspApiEventsIndex
 import com.tom.rv2ide.events.LspJavaEventsIndex
+import com.tom.rv2ide.managers.ToolsManager
 import com.tom.rv2ide.preferences.internal.DevOpsPreferences
 import com.tom.rv2ide.preferences.internal.GeneralPreferences
 import com.tom.rv2ide.preferences.internal.StatPreferences
@@ -272,7 +273,11 @@ class IDEApplication : TermuxApplication() {
 
       val targetFile = File(pluginsDir, "logger-runtime.aar")
 
-      assets.open("logger-runtime.aar").use { input ->
+      // 走 getCommonAsset，与 GradleBuildService.getLoggerRuntimeAar() 保持同一路径。
+      // 这两处原先一个读 `assets/logger-runtime.aar`、一个读
+      // `assets/data/common/logger-runtime.aar`，而资产只被放进其中一个位置，
+      // 导致必有一方取不到文件。现在统一由 AndroidIDEAssetsPlugin 生成到 data/common。
+      assets.open(ToolsManager.getCommonAsset("logger-runtime.aar")).use { input ->
         FileOutputStream(targetFile).use { output -> input.copyTo(output) }
       }
 

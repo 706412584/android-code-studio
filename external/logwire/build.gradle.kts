@@ -1,6 +1,7 @@
 import com.tom.rv2ide.plugins.NoDesugarPlugin
 import com.tom.rv2ide.build.config.BuildConfig
 import java.io.File
+import org.gradle.api.GradleException
 
 apply { plugin(NoDesugarPlugin::class.java) }
 
@@ -40,20 +41,31 @@ dependencies {
     implementation("androidx.annotation:annotation:1.7.0")
 }
 
+/**
+ * Renames the AAR produced by `bundleReleaseAar` to `logger-runtime.aar`.
+ *
+ * 只在 `build/outputs/aar/` 内改名，**不再**往 `core/app/src/main/assets/` 里拷：
+ * 那条路径是源码树，而 `.gitignore` 有全局 `*.aar` 规则——拷进去的文件会被
+ * 静默忽略，既进不了版本控制，也依赖「构建顺序恰好正确」才会被打进 APK。
+ * 现在由 `AndroidIDEAssetsPlugin` 以生成 assets 目录的方式接管（见该插件中
+ * `copy<variant>LoggerRuntimeAar`），AGP 会在合并 assets 时取用此处的产物。
+ */
 tasks.register("fixAarName") {
     doLast {
         val aarDir = layout.buildDirectory.dir("outputs/aar").get().asFile
-        val outDir = File(projectDir, "../../core/app/src/main/assets").canonicalFile
-        outDir.mkdirs()
-        val files = aarDir.listFiles { f -> f.extension == "aar" } ?: return@doLast
         val finalName = "logger-runtime.aar"
-        val aar = files.maxByOrNull { it.lastModified() } ?: return@doLast
+        val files = aarDir.listFiles { f -> f.extension == "aar" } ?: return@doLast
+        // 排除已是目标名的文件，否则重复执行时会选到自己
+        val aar =
+            files
+                .filter { it.name != finalName }
+                .maxByOrNull { it.lastModified() } ?: return@doLast
         val renamed = File(aar.parentFile, finalName)
-        if (aar.name != finalName) {
-            renamed.delete()
-            aar.renameTo(renamed)
+        renamed.delete()
+        if (!aar.renameTo(renamed)) {
+            // 改名失败必须让构建失败：静默失败会让下游的 assets 拷贝拿不到输入
+            throw GradleException("Could not rename ${aar.name} to $finalName")
         }
-        renamed.copyTo(File(outDir, finalName), overwrite = true)
     }
 }
 
@@ -62,12 +74,5 @@ plugins.withId("com.android.library") {
         tasks.named("bundleReleaseAar").configure {
             finalizedBy("fixAarName")
         }
-    }
-}
-
-gradle.projectsEvaluated {
-    tasks.matching { it.path == ":core:app:preDebugBuild" }.configureEach {
-        dependsOn(":external:logwire:assembleRelease")
-        dependsOn(":external:logwire:fixAarName")
     }
 }
