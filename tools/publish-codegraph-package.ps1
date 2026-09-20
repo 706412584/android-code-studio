@@ -41,6 +41,10 @@ param(
 
     [string]$Tag = 'codegraph-v1.6.0',
 
+    # Gitee 建 Release 时必须指定 target_commitish（从哪个分支/commit 打 tag）。
+    # 不传会报 "target_commitish is missing"。
+    [string]$Branch = 'dev',
+
     [switch]$DryRun
 )
 
@@ -91,34 +95,41 @@ $token = Get-GiteeToken
 $api = "https://gitee.com/api/v5/repos/$Repo"
 $headers = @{ Authorization = "token $token" }
 
-# ---------- 确保 Release 存在 ----------
+# ---------- 确保 Release 存在，并拿到 release id ----------
+# 附件端点用的是 release id，不是 tag。实测用 tag 会 404（返回一个 HTML 错误页）。
 Write-Host '检查 Release…'
+$releaseId = $null
 try {
     $existing = Invoke-RestMethod -Uri "$api/releases/tags/$Tag" -Headers $headers -Method Get
-    Write-Host "  已存在（id=$($existing.id)）"
+    $releaseId = $existing.id
+    Write-Host "  已存在（id=$releaseId）"
 }
 catch {
     Write-Host '  不存在，创建…'
     $body = @{
-        tag_name = $Tag
-        name     = $Tag
-        body     = 'CodeGraph 精简包（Android/aarch64，供 AndroidCodeStudio 应用内下载）'
+        tag_name         = $Tag
+        name             = $Tag
+        body             = 'CodeGraph 精简包（Android/aarch64，供 AndroidCodeStudio 应用内下载）'
+        target_commitish = $Branch
     } | ConvertTo-Json
     $created = Invoke-RestMethod -Uri "$api/releases" -Headers $headers -Method Post `
         -ContentType 'application/json' -Body $body
-    Write-Host "  已创建（id=$($created.id)）"
+    $releaseId = $created.id
+    Write-Host "  已创建（id=$releaseId）"
 }
+
+if (-not $releaseId) { throw '未能取得 release id。' }
 
 # ---------- 上传附件 ----------
 # 同名附件先删：Gitee 不会覆盖，会变成两个同名附件，而下载按名字取，
 # 拿到哪个不确定。
 Write-Host '检查同名附件…'
 try {
-    $release = Invoke-RestMethod -Uri "$api/releases/tags/$Tag" -Headers $headers -Method Get
-    foreach ($asset in $release.assets) {
+    $assets = Invoke-RestMethod -Uri "$api/releases/$releaseId/attach_files" -Headers $headers -Method Get
+    foreach ($asset in $assets) {
         if ($asset.name -eq $item.Name) {
             Write-Host "  删除旧的 $($asset.name)（id=$($asset.id)）"
-            Invoke-RestMethod -Uri "$api/releases/$($release.id)/attach_files/$($asset.id)" `
+            Invoke-RestMethod -Uri "$api/releases/$releaseId/attach_files/$($asset.id)" `
                 -Headers $headers -Method Delete | Out-Null
         }
     }
@@ -133,8 +144,10 @@ Write-Host "上传中（$sizeMb MB）…"
 $curl = Get-Command curl.exe -ErrorAction SilentlyContinue
 if (-not $curl) { throw '需要 curl.exe（Windows 10+ 自带）。' }
 
-& curl.exe -sS --http1.1 -X POST "$api/releases/$Tag/attach_files" `
-    -H "Authorization: token $token" `
+# 令牌走表单字段而不是 Authorization 头：Gitee 的附件端点按表单里的
+# access_token 鉴权，用头会 401/404。
+& curl.exe -sS --http1.1 -X POST "$api/releases/$releaseId/attach_files" `
+    -F "access_token=$token" `
     -F "file=@$File" `
     -o "$env:TEMP\gitee-upload.json" -w "HTTP %{http_code}`n"
 

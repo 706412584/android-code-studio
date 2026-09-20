@@ -288,11 +288,20 @@ class CodeGraphManager(private val context: Context) {
     /**
      * 包下载地址。
      *
-     * <p>用**精简包**（去掉自带 node 与 Rust kernel，仅 JS + WASM）：压缩后约 16.8MB、
-     * 解压后约 134MB。官方完整包是 62MB / 284MB，多出的部分在 Android 上加载不了。
+     * <p>用**精简包**（去掉自带 node 与 Rust kernel，仅 JS + WASM）：12.8MB、解压后约 134MB。
+     * 官方完整包是 62MB / 284MB，多出的部分在 Android 上加载不了（两者都是 glibc 链接）。
+     *
+     * <p><b>为什么托管在 Gitee 而不是 GitHub Releases</b>：应用内下载发生在国内设备上，
+     * 而设备常挂着代理（实测 Termux 直连 GitHub 超时）。Gitee 的 Release 附件单文件上限
+     * 100MB，本包 12.8MB，余量充足。
+     *
+     * <p>实测该地址：HTTP 200、12.8MB / 11.8s、sha256
+     * {@code ff458e41d761aee383b40fb954f1388cd515bba17b10a4d19836547852da7bf5}。
+     * 换版本时用 {@code tools/publish-codegraph-package.ps1} 上传，并把这里的 tag 与
+     * 文件名一起改。
      */
     const val DEFAULT_PACKAGE_URL =
-        "https://github.com/706412584/android-code-studio/releases/download/codegraph-v1.6.0/codegraph-android-slim-1.6.0.tgz"
+        "https://gitee.com/wu-yongchengsvip_admin/android-code-studio/releases/download/codegraph-v1.6.0/codegraph-android-slim-1.6.0.tgz"
 
     /** 各操作超时。实测参考：300 文件 init 4s、sync 2s、query 1.3s，余量取 10 倍以上。 */
     private const val VERSION_TIMEOUT_MS = 30_000L
