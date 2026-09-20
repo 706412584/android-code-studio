@@ -191,6 +191,35 @@ Git Bash 下 adb 的远端路径会被 MSYS 改写，涉及 `/sdcard` 等路径�
 
 `minSdk=26`，`targetSdk=28`，`compileSdk=34`。
 
+## 仓库与推送
+
+**GitHub 优先且默认**：
+
+```
+origin  https://github.com/706412584/android-code-studio.git   ← 主仓库，日常推这里
+gitee   https://gitee.com/wu-yongchengsvip_admin/android-code-studio.git   ← 镜像
+```
+
+`dev` 的上游是 `origin/dev`，直接 `git push` 即可。Gitee 只在需要时手动推
+（`git push gitee dev`），**不要配 Gitee 的网页端镜像同步**——那会与本地
+`gitee` remote 的推送互相打架。
+
+推 `dev` 会触发 `asm_build.yml`（构建 APK 并上传 artifact，无发布动作），
+属正常。
+
+### Gitee 的两个用途
+
+1. **代码镜像**（上面那个仓库）
+2. **CodeGraph 组件包托管** —— 应用内下载走 Gitee Release 而非 GitHub：
+   国内设备常挂代理，实测 Termux 直连 GitHub 超时。Gitee Release 附件
+   **单文件上限 100MB**，精简包 12.8MB 余量充足。
+   上传：`tools/publish-codegraph-package.ps1 -Repo wu-yongchengsvip_admin/android-code-studio`
+
+**Gitee 令牌**：`%USERPROFILE%\.gitee_token`。注意 Gitee 的令牌可被**限定到单个
+仓库**，此时访问范围外的仓库 API 会返回 **404**（不是 403），而网页仍是 200 ——
+别被这个误导成「仓库不存在」。诊断方法：同一 URL 带令牌 404、不带令牌 200，
+就是令牌范围问题。
+
 ## AI Agent 模块
 
 **存在两代实现并存，改动前必须先确认你要改的是哪一代。** 计划与进度见
