@@ -1425,11 +1425,25 @@ private class CodeGraphPreference(
       androidx.preference.Preference(context).apply {
         key = "codegraph"
         title = context.getString(R.string.ai_agent_codegraph_title)
-        // 状态要读磁盘（程序体积、已索引项目数）并起一次进程跑 --version，不能放主线程。
-        // 先给占位文案，异步查完再刷新——本偏好每次进页面都会重建，刷新是安全的。
-        summary = context.getString(R.string.ai_agent_codegraph_state_missing)
-        refreshSummary(this)
       }
+
+  /**
+   * 建好视图后再异步查状态。
+   *
+   * <p><b>为什么不能在 [onCreatePreference] 里刷</b>：基类
+   * {@code BasePreference.onCreateView} 拿到本方法的返回值**之后**，才用静态元数据覆盖
+   * summary（`this.summary?.let { pref.summary = context.getString(it) }`）。
+   * 在 onCreatePreference 里写 summary 会被它盖掉——实测表现是状态永远显示占位文案
+   * 「未安装」，即使装好了也一样。
+   *
+   * <p>放在 super 之后就没有这个时序问题：那时静态 summary 已经写完了。
+   */
+  override fun onCreateView(context: Context): Preference {
+    val pref = super.onCreateView(context)
+    // 状态要读磁盘（程序体积、已索引项目数）并起一次进程跑 --version，不能放主线程。
+    refreshSummary(pref)
+    return pref
+  }
 
   /** 异步查状态并刷新摘要。 */
   private fun refreshSummary(preference: Preference) {
