@@ -101,10 +101,11 @@ public class QuickDevelopSourcesTest {
    */
   @Test
   public void writeSourcesForExternalCompilation() throws IOException {
-    File outDir = new File("build/quickdevelop-out/" + PKG.replace('.', '/') + "/ui");
-    if (outDir.exists()) {
-      deleteRecursively(outDir);
+    File base = new File("build/quickdevelop-out/" + PKG.replace('.', '/'));
+    if (base.exists()) {
+      deleteRecursively(base);
     }
+    File outDir = new File(base, "ui");
     assertTrue("无法创建输出目录: " + outDir, outDir.mkdirs());
 
     List<String> names = new ArrayList<>();
@@ -114,6 +115,16 @@ public class QuickDevelopSourcesTest {
       names.add(c.getFirst());
     }
     assertEquals(BASE_COUNT + EXTRA_COUNT * 2, names.size());
+
+    // 工具库同样落盘，好让 javac 一并验证（它们依赖 Android API，比组件更需要编译验证）。
+    File toolDir = new File(base, "tool");
+    assertTrue("无法创建工具库目录: " + toolDir, toolDir.mkdirs());
+    List<Pair<String, String>> toolkits = QuickDevelopToolkits.INSTANCE.all(PKG);
+    for (Pair<String, String> t : toolkits) {
+      File f = new File(toolDir, t.getFirst() + ".java");
+      Files.write(f.toPath(), t.getSecond().getBytes(StandardCharsets.UTF_8));
+    }
+    assertEquals(5, toolkits.size());
   }
 
   private static void deleteRecursively(File file) {

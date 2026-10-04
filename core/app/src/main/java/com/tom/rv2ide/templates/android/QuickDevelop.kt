@@ -29,6 +29,7 @@ import com.tom.androidcodestudio.project.manager.builder.toplevel.*
 import com.tom.rv2ide.templates.*
 import com.tom.rv2ide.templates.AtcInterface
 import com.tom.rv2ide.templates.android.quickdevelop.QuickDevelopSources
+import com.tom.rv2ide.templates.android.quickdevelop.QuickDevelopToolkits
 import com.tom.rv2ide.templates.preferences.Options
 import java.io.File
 import java.io.FileOutputStream
@@ -503,6 +504,26 @@ class QuickDevelop : Template {
       val file = File(destDir, "$className.java")
       file.writeText(content)
       Log.d("QuickDevelop", "Wrote component: ${file.absolutePath}")
+    }
+
+    writeToolkits(projectRoot, packageId)
+  }
+
+  /**
+   * 把工具库写进 `<module>/src/main/java/<包路径>/tool/`。
+   *
+   * 与 `ui/` 的分工：`ui/` 是视图层（45 个控件），`tool/` 是非视图能力
+   * （字符/文件/数据/工具/系统）。对应 Appv5 的 `zf`/`wj`/`sj`/`gj`/`xt` 五个根组件。
+   */
+  private fun writeToolkits(projectRoot: File, packageId: String) {
+    val packagePath = packageId.replace('.', File.separatorChar)
+    val destDir = File(projectRoot, "app/src/main/java/$packagePath/tool")
+    destDir.mkdirs()
+
+    for ((className, content) in QuickDevelopToolkits.all(packageId)) {
+      val file = File(destDir, "$className.java")
+      file.writeText(content)
+      Log.d("QuickDevelop", "Wrote toolkit: ${file.absolutePath}")
     }
   }
 
