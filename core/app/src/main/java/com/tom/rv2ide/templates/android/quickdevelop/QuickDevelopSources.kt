@@ -1397,6 +1397,126 @@ object QuickDevelopSources {
       )
 
   /**
+   * 生成 `ui/README.md`——**从规格表产出**，不是手写。
+   *
+   * <p>为什么必须从表产出：控件清单与样式方法都在 [EXTRA_WIDGETS] / [STYLE_SPECS] 里，
+   * 手写文档会在下一次加控件时立刻过期。这样改表即改文档，不会漂移。
+   *
+   * <p>带目录锚点：45 个控件的表格很长，顶部导航让读者能直接跳到关心的分区。
+   */
+  fun uiReadme(packageId: String): String {
+    val ui = uiPackage(packageId)
+    val builder = StringBuilder()
+
+    builder.append("# UI 组件（").append(ui).append("）\n\n")
+    builder.append("本包由 Quick Develop 模板生成，共 **").append(BASE_CN_NAMES.size + EXTRA_WIDGETS.size)
+        .append(" 个中文组件**（另有等量英文别名）。全部支持链式调用，例如：\n\n")
+    builder.append("```java\n")
+    builder.append("线性布局 根 = new 线性布局(this).方向(线性布局.垂直).内边距(16f);\n")
+    builder.append("根.添加(new 文本(this).文字(\"你好\").字号(20f).粗体(true));\n")
+    builder.append("```\n\n")
+
+    // ---- 导航 ----
+    builder.append("## 目录\n\n")
+    builder.append("- [通用样式方法](#通用样式方法)\n")
+    builder.append("- [容器类](#容器类)\n")
+    builder.append("- [基础控件](#基础控件)\n")
+    builder.append("- [扩展控件](#扩展控件)\n")
+    builder.append("- [命名规则](#命名规则)\n\n")
+
+    // ---- 通用样式 ----
+    builder.append("## 通用样式方法\n\n")
+    builder.append("所有组件都提供下面五个方法，返回自身以便链式继续：\n\n")
+    builder.append("| 方法 | 参数 | 说明 |\n|---|---|---|\n")
+    builder.append("| `背景(int color)` | ARGB 颜色 | 纯色背景 |\n")
+    builder.append("| `圆角(float dp)` | 半径 dp | 圆角（`卡片` 走 CardView 自身的 radius） |\n")
+    builder.append("| `内边距(float dp)` | 四边一致 | 内边距 |\n")
+    builder.append("| `外边距(float dp)` | 四边一致 | 外边距；父容器不支持时静默忽略 |\n")
+    builder.append("| `权重(float w)` | 线性权重 | 仅父容器是 `线性布局` 时生效 |\n\n")
+    builder.append("静态工具：`视图.dp(float)` 把 dp 转成像素。\n\n")
+
+    // ---- 容器 ----
+    builder.append("## 容器类\n\n")
+    builder.append("容器都能装子视图，也都具备上表五个样式方法，且返回类型是本类（链式不会断）。\n\n")
+    builder.append("但**继承关系分两种**：`视图` / `线性布局` / `约束布局` 继承 `视图`；\n")
+    builder.append("其余容器直接继承各自的 Android 类（`RelativeLayout` / `ScrollView` / `CardView` …），\n")
+    builder.append("样式方法是通过 `视图` 的静态辅助实现的，效果相同。\n\n")
+    builder.append("| 中文名 | 英文别名 | 基于 | 特有方法 |\n|---|---|---|---|\n")
+    for (w in containerEntries()) {
+      builder.append("| `").append(w.cn).append("` | `").append(w.en).append("` | ")
+          .append(w.extends.substringAfterLast('.')).append(" | ").append(specialMethods(w)).append(" |\n")
+    }
+    builder.append('\n')
+
+    // ---- 基础控件 ----
+    builder.append("## 基础控件\n\n")
+    builder.append("| 中文名 | 基于 | 特有方法 |\n|---|---|---|\n")
+    for ((cn, base, special) in BASE_CN_SPECS) {
+      builder.append("| `").append(cn).append("` | `").append(base).append("` | ")
+          .append(special).append(" |\n")
+    }
+    builder.append('\n')
+
+    // ---- 扩展控件 ----
+    builder.append("## 扩展控件\n\n")
+    builder.append("| 中文名 | 英文别名 | 基于 | 特有方法 |\n|---|---|---|---|\n")
+    for (w in EXTRA_WIDGETS.filter { it.style == Style.LEAF }) {
+      builder.append("| `").append(w.cn).append("` | `").append(w.en).append("` | ")
+          .append(w.extends.substringAfterLast('.')).append(" | ").append(specialMethods(w)).append(" |\n")
+    }
+    builder.append('\n')
+
+    // ---- 命名规则 ----
+    builder.append("## 命名规则\n\n")
+    builder.append("每个组件都有**中文名**与**英文别名**两个类，行为完全一致")
+        .append("（别名继承中文类，因此不会随时间分叉）。\n\n")
+    builder.append("```java\n")
+    builder.append("文本 t1 = new 文本(this);   // 中文名\n")
+    builder.append("Text t2 = new Text(this);   // 英文别名，同一个类\n")
+    builder.append("```\n\n")
+    builder.append("包名保持 ASCII（`").append(ui).append("`），只有类名与方法是中文。\n\n")
+    builder.append("> 别名以继承方式实现，因此**没有** `ViewBox` 之类的中文基类别名——\n")
+    builder.append("> `ViewBox` 是 `视图` 的别名，而 `线性布局` 的别名 `LinearBox` 继承的是 `线性布局`，\n")
+    builder.append("> 不是 `ViewBox`。两者都能用，只是类型层级不同。\n")
+
+    return builder.toString()
+  }
+
+  /** 容器类清单：基础三件（手写类）+ 扩展里的容器。 */
+  private fun containerEntries(): List<Widget> {
+    val base =
+        listOf(
+            Widget("视图", "ViewBox", "android.widget.FrameLayout", Style.CONTAINER),
+            Widget("线性布局", "LinearBox", "android.widget.LinearLayout", Style.CONTAINER),
+            Widget("约束布局", "ConstraintBox", "androidx.constraintlayout.widget.ConstraintLayout", Style.CONTAINER),
+        )
+    return base + EXTRA_WIDGETS.filter { it.style == Style.CONTAINER }
+  }
+
+  /** 把 [Widget.methods] 渲染成表格里的一格；无特有方法时显示 `—`。 */
+  private fun specialMethods(w: Widget): String {
+    if (w.methods.isEmpty()) {
+      return "—"
+    }
+    return w.methods.joinToString(" / ") { "`${it.name}(${it.params})`" }
+  }
+
+  /** 现有 7 个手写类的「中文名 / 基于 / 特有方法」，供 README 与代码保持同源。 */
+  private val BASE_CN_NAMES =
+      listOf("视图", "线性布局", "约束布局", "文本", "按钮", "输入框", "页面")
+
+  private val BASE_CN_SPECS =
+      listOf(
+          Triple("视图", "FrameLayout", "`dp(float)` 静态"),
+          Triple("线性布局", "视图", "`方向(int)` / `添加(View...)` / `对齐(int)`"),
+          Triple("约束布局", "视图", "`居中(View)` / `铺满(View)`"),
+          Triple("文本", "TextView", "`文字(CharSequence)` / `字号(float)` / `颜色(int)` / `粗体(boolean)`"),
+          Triple("按钮", "MaterialButton", "`文字(CharSequence)` / `点击(Runnable)` / `铺满宽度()`"),
+          Triple("输入框", "TextInputEditText", "`提示(CharSequence)` / `单行(boolean)` / `取值()`"),
+          Triple("页面", "AppCompatActivity", "`protected 视图 搭建()` 抽象"),
+      )
+
+  /**
    * 英文别名：继承中文类即可获得全部链式方法，零重复代码。
    *
    * 为什么用继承而不是再写一遍：别名若各自实现，两边的 setter 会逐渐分叉；

@@ -125,6 +125,50 @@ public class QuickDevelopSourcesTest {
       Files.write(f.toPath(), t.getSecond().getBytes(StandardCharsets.UTF_8));
     }
     assertEquals(5, toolkits.size());
+
+    // README 也落盘：文档是从规格表产出的，得能肉眼核对它没写成空壳。
+    Files.write(
+        new File(base, "ui-README.md").toPath(),
+        QuickDevelopSources.INSTANCE.uiReadme(PKG).getBytes(StandardCharsets.UTF_8));
+    Files.write(
+        new File(base, "tool-README.md").toPath(),
+        QuickDevelopToolkits.INSTANCE.readme(PKG).getBytes(StandardCharsets.UTF_8));
+  }
+
+  /**
+   * README 必须列出全部控件，且带目录锚点。
+   *
+   * <p>钉住「文档从规格表产出」这件事：若有人改成手写清单，加控件时就会漏。
+   */
+  @Test
+  public void uiReadmeCoversEveryWidgetAndHasNav() {
+    String md = QuickDevelopSources.INSTANCE.uiReadme(PKG);
+
+    assertTrue("缺少目录", md.contains("## 目录"));
+    assertTrue("缺少容器分区", md.contains("## 容器类"));
+    assertTrue("缺少扩展控件分区", md.contains("## 扩展控件"));
+    assertTrue("缺少命名规则", md.contains("## 命名规则"));
+
+    // 每个扩展控件的中文名都应出现在文档里
+    for (Pair<String, String> c : components()) {
+      String name = c.getFirst();
+      // 英文别名不必逐一出现（文档按中文名列表 + 说明别名机制），中文名必须出现
+      if (name.chars().anyMatch(cp -> cp > 0x2E80)) {
+        assertTrue("README 未覆盖控件: " + name, md.contains("`" + name + "`"));
+      }
+    }
+  }
+
+  /** 工具库 README 必须覆盖 5 个类与权限表。 */
+  @Test
+  public void toolReadmeCoversAllKitsAndPermissions() {
+    String md = QuickDevelopToolkits.INSTANCE.readme(PKG);
+
+    for (String kit : new String[] {"字符", "文件", "数据", "工具", "系统"}) {
+      assertTrue("README 未覆盖工具类: " + kit, md.contains("## " + kit));
+    }
+    assertTrue("缺少权限一览", md.contains("## 权限一览"));
+    assertTrue("未说明 API 24 限制", md.contains("API 24"));
   }
 
   private static void deleteRecursively(File file) {

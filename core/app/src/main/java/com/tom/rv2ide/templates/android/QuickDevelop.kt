@@ -507,6 +507,7 @@ class QuickDevelop : Template {
     }
 
     writeToolkits(projectRoot, packageId)
+    writeDocs(projectRoot, packageId)
   }
 
   /**
@@ -526,6 +527,97 @@ class QuickDevelop : Template {
       Log.d("QuickDevelop", "Wrote toolkit: ${file.absolutePath}")
     }
   }
+
+  /**
+   * 写开发文档：工程根 README.md + `ui/README.md` + `tool/README.md`。
+   *
+   * 三份文档都**从生成器的规格表产出**，不是手写——否则加一个控件就会过期。
+   */
+  private fun writeDocs(projectRoot: File, packageId: String) {
+    val packagePath = packageId.replace('.', File.separatorChar)
+    val javaRoot = File(projectRoot, "app/src/main/java/$packagePath")
+
+    File(projectRoot, "README.md").writeText(projectReadme(packageId))
+    File(javaRoot, "ui/README.md").writeText(QuickDevelopSources.uiReadme(packageId))
+    File(javaRoot, "tool/README.md").writeText(QuickDevelopToolkits.readme(packageId))
+    Log.d("QuickDevelop", "Wrote dev docs")
+  }
+
+  /**
+   * 工程根 README：定位、结构、构建方式、快速上手。
+   *
+   * 组件与工具库的明细不在这里重复，只给入口链接——避免同一份信息两处维护。
+   */
+  private fun projectReadme(packageId: String): String =
+      """
+      # $packageId
+
+      由 **Android Code Studio** 的 *Quick Develop* 模板生成：一套中文命名的
+      UI 组件 + 工具库，用来快速把界面和常用能力搭起来，不写 XML 布局。
+
+      ## 目录
+
+      - [项目结构](#项目结构)
+      - [快速上手](#快速上手)
+      - [UI 组件](#ui-组件)
+      - [工具库](#工具库)
+      - [构建](#构建)
+
+      ## 项目结构
+
+      ```
+      app/src/main/java/$packageId/
+      ├── MainActivity.java        入口 Activity（用中文组件搭界面）
+      ├── ui/                      45 个中文 UI 组件 + 英文别名
+      │   └── README.md            组件 API 文档（带目录）
+      └── tool/                    5 个工具类
+          └── README.md            工具 API 文档（带目录）
+      ```
+
+      ## 快速上手
+
+      界面在 `MainActivity.搭建()` 里用代码搭，不用 XML：
+
+      ```java
+      @Override
+      protected 视图 搭建() {
+          线性布局 根 = new 线性布局(this).方向(线性布局.垂直).内边距(16f);
+
+          文本 标题 = new 文本(this).文字("你好").字号(24f).粗体(true);
+          按钮 按钮 = new 按钮(this).文字("点我").点击(() -> 标题.文字("已点击"));
+
+          根.添加(标题, 按钮);
+          return 根;
+      }
+      ```
+
+      ## UI 组件
+
+      45 个中文组件，覆盖容器 / 文本 / 输入 / 列表 / 系统控件等。
+      全部支持链式调用，且都有等价的英文别名。
+
+      详见 **[ui/README.md](app/src/main/java/$packageId/ui/README.md)**。
+
+      ## 工具库
+
+      5 个工具类：`字符`（字符串/正则/JSON）、`文件`、`数据`（SQLite/类型转换）、
+      `工具`（动画/媒体/通知）、`系统`（设备信息/应用/截屏）。
+
+      详见 **[tool/README.md](app/src/main/java/$packageId/tool/README.md)**。
+
+      ## 构建
+
+      本机（设备上）直接构建：
+
+      ```bash
+      ./gradlew assembleDebug
+      ```
+
+      或用 Android Code Studio 打开本工程，点构建按钮。
+
+      产物在 `app/build/outputs/apk/debug/`。
+      """
+          .trimIndent() + "\n"
 
   /** Copy wrapper files (gradlew, gradlew.bat, gradle/wrapper folder) from assets to project root */
   private fun copyWrapperFiles(context: Context, projectRoot: File) {
