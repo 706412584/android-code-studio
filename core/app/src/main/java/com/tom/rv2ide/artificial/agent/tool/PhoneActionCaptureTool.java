@@ -21,9 +21,11 @@ import android.content.Context;
 import android.graphics.Bitmap;
 import com.tom.rv2ide.ai.tool.BaseTool;
 import com.tom.rv2ide.ai.tool.ToolContext;
-import com.tom.rv2ide.ai.tool.ToolRegistry;
+import com.tom.rv2ide.ai.tool.ToolInvoker;
+import com.tom.rv2ide.ai.tool.ToolInvokerAware;
 import com.tom.rv2ide.ai.tool.api.ToolCategory;
 import com.tom.rv2ide.ai.tool.api.ToolDisplayCategory;
+import com.tom.rv2ide.ai.tool.api.ToolNames;
 import com.tom.rv2ide.ai.tool.api.ToolResult;
 import java.io.File;
 import java.util.ArrayList;
@@ -53,7 +55,7 @@ import org.slf4j.LoggerFactory;
  * 调用该动作工具（如 phone_click），<b>紧接着</b>连拍——这样 t0 才是真正的「动作后立即」。
  * 不传动作则从调用时刻开始连拍。
  */
-public final class PhoneActionCaptureTool extends BaseTool {
+public final class PhoneActionCaptureTool extends BaseTool implements ToolInvokerAware {
 
   private static final Logger log = LoggerFactory.getLogger(PhoneActionCaptureTool.class);
 
@@ -63,16 +65,25 @@ public final class PhoneActionCaptureTool extends BaseTool {
   private static final int MAX_FRAMES = 6;
 
   private final Context appContext;
-  private final ToolRegistry registry;
 
-  public PhoneActionCaptureTool(Context context, ToolRegistry registry) {
+  /**
+   * 子工具调用入口。装配方在构建执行器后注入（见 {@link ToolInvokerAware}）。
+   * 为 null 时子调用会明确报错，而不是退回直接 {@code execute} 绕过权限。
+   */
+  private volatile ToolInvoker toolInvoker;
+
+  public PhoneActionCaptureTool(Context context) {
     this.appContext = context.getApplicationContext();
-    this.registry = registry;
+  }
+
+  @Override
+  public void setToolInvoker(ToolInvoker invoker) {
+    this.toolInvoker = invoker;
   }
 
   @Override
   public String getName() {
-    return "phone_action_capture";
+    return ToolNames.PHONE_ACTION_CAPTURE;
   }
 
   @Override
@@ -209,7 +220,7 @@ public final class PhoneActionCaptureTool extends BaseTool {
           break;
         }
       }
-      PhoneScreenshotSource.Shot shot = PhoneScreenshotSource.capture(registry, context);
+      PhoneScreenshotSource.Shot shot = PhoneScreenshotSource.capture(toolInvoker, context);
       if (!shot.ok) {
         if (captured.isEmpty()) {
           return error("连拍失败（首帧）: " + shot.error);
@@ -342,15 +353,13 @@ public final class PhoneActionCaptureTool extends BaseTool {
   }
 
   private ToolResult invokeAction(String toolName, JSONObject args, ToolContext context) {
-    if (registry == null) {
-      return null;
-    }
-    BaseTool tool = registry.get(toolName);
-    if (tool == null) {
-      return null;
+    ToolInvoker invoker = toolInvoker;
+    if (invoker == null) {
+      // 不退回直接 execute：那会绕过权限判定，与本次修复的目的相悖。
+      return ToolResult.error("动作工具调用入口不可用（装配方未注入 ToolInvoker）: " + toolName);
     }
     try {
-      return tool.execute(args == null ? new JSONObject() : args, context);
+      return invoker.invoke(toolName, args, context);
     } catch (Exception e) {
       log.warn("动作工具执行异常: {}", toolName, e);
       return ToolResult.error("动作执行异常: " + e.getMessage());

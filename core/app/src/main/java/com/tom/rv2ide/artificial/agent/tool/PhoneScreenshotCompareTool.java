@@ -21,9 +21,11 @@ import android.content.Context;
 import android.graphics.Bitmap;
 import com.tom.rv2ide.ai.tool.BaseTool;
 import com.tom.rv2ide.ai.tool.ToolContext;
-import com.tom.rv2ide.ai.tool.ToolRegistry;
+import com.tom.rv2ide.ai.tool.ToolInvoker;
+import com.tom.rv2ide.ai.tool.ToolInvokerAware;
 import com.tom.rv2ide.ai.tool.api.ToolCategory;
 import com.tom.rv2ide.ai.tool.api.ToolDisplayCategory;
+import com.tom.rv2ide.ai.tool.api.ToolNames;
 import com.tom.rv2ide.ai.tool.api.ToolResult;
 import java.io.File;
 import java.util.List;
@@ -46,7 +48,7 @@ import org.slf4j.LoggerFactory;
  * <p><b>输出约束</b>：无论比对几张，都只返回<b>一张</b>合成对比图（并排 + 差异红框）
  * 加数字指标，绝不把原始截图逐张塞进上下文。
  */
-public final class PhoneScreenshotCompareTool extends BaseTool {
+public final class PhoneScreenshotCompareTool extends BaseTool implements ToolInvokerAware {
 
   private static final Logger log = LoggerFactory.getLogger(PhoneScreenshotCompareTool.class);
 
@@ -57,16 +59,22 @@ public final class PhoneScreenshotCompareTool extends BaseTool {
   static final double DEFAULT_REGRESSION_PERCENT = 1.0;
 
   private final Context appContext;
-  private final ToolRegistry registry;
 
-  public PhoneScreenshotCompareTool(Context context, ToolRegistry registry) {
+  /** 截图子调用入口；装配方在执行器构建后注入。见 {@link ToolInvokerAware}。 */
+  private volatile ToolInvoker toolInvoker;
+
+  public PhoneScreenshotCompareTool(Context context) {
     this.appContext = context.getApplicationContext();
-    this.registry = registry;
+  }
+
+  @Override
+  public void setToolInvoker(ToolInvoker invoker) {
+    this.toolInvoker = invoker;
   }
 
   @Override
   public String getName() {
-    return "phone_screenshot_compare";
+    return ToolNames.PHONE_SCREENSHOT_COMPARE;
   }
 
   @Override
@@ -205,7 +213,7 @@ public final class PhoneScreenshotCompareTool extends BaseTool {
     }
 
     // 2) 截取当前画面
-    PhoneScreenshotSource.Shot shot = PhoneScreenshotSource.capture(registry, context);
+    PhoneScreenshotSource.Shot shot = PhoneScreenshotSource.capture(toolInvoker, context);
     if (!shot.ok) {
       reference.recycle();
       return error(shot.error);

@@ -58,7 +58,11 @@ import com.tom.rv2ide.ai.tool.TodoUpdateTool;
 import com.tom.rv2ide.ai.tool.WebFetchTool;
 import com.tom.rv2ide.ai.tool.WebSearchTool;
 import com.tom.rv2ide.ai.tool.RssSearchProvider;
+import com.tom.rv2ide.ai.tool.BaseTool;
+import com.tom.rv2ide.ai.tool.ExecutorToolInvoker;
 import com.tom.rv2ide.ai.tool.ToolExecutor;
+import com.tom.rv2ide.ai.tool.ToolInvoker;
+import com.tom.rv2ide.ai.tool.ToolInvokerAware;
 import com.tom.rv2ide.ai.tool.ToolPermissionService;
 import com.tom.rv2ide.ai.tool.HttpRequestTool;
 import com.tom.rv2ide.ai.tool.ShellBackendRegistry;
@@ -638,13 +642,17 @@ public final class AgentOrchestrator {
     // 清数据：不可逆，且作用于任意包名，因此额外按包名限定授权粒度（见 ToolPermissionRule）。
     registry.register(new PhoneClearDataTool(shellBackends));
 
-    // 动作级截图回归 / 基线 / 多步场景：需要调用上面已注册的动作工具来驱动界面，因此传入注册表。
-    // 注意：这些工具构造时接收 registry，但只在 execute 时才 registry.get(...)，
-    // 因此这里先注册它们、动作工具已在上面注册完毕即可，不存在“注册到一半被读取”的问题。
-    registry.register(new PhoneBaselineTool(appContext, registry));
-    registry.register(new PhoneActionCaptureTool(appContext, registry));
-    registry.register(new PhoneScreenshotCompareTool(appContext, registry));
-    registry.register(new PhoneTestScenarioTool(appContext, registry));
+    // 动作级截图回归 / 基线 / 多步场景：内部会调用其它工具来驱动界面。
+    //
+    // 它们**不接收注册表**。早先的写法是构造时传入 registry、execute 时直接
+    // registry.get(name).execute(...)，这绕过了 ToolExecutor 的权限判定与确认门：
+    // 一个场景里若嵌了 shell_execute / file_delete / phone_clear_data，
+    // 那些工具自身的 needsConfirmation() 不会被复查，用户只在确认框里看到一大坨 steps JSON。
+    // 现在改为装配方在执行器构建后注入 ToolInvoker（见 wireToolInvokers）。
+    registry.register(new PhoneBaselineTool(appContext));
+    registry.register(new PhoneActionCaptureTool(appContext));
+    registry.register(new PhoneScreenshotCompareTool(appContext));
+    registry.register(new PhoneTestScenarioTool(appContext));
 
     // 任务计划：把模型的计划外化成可见状态，使长任务不丢进度。
     registry.register(new TodoUpdateTool(todoStore));
@@ -670,6 +678,21 @@ public final class AgentOrchestrator {
     registerMcpTools(registry, http);
 
     return registry;
+  }
+
+  /**
+   * 给编排类工具注入子调用入口，使它们的子调用经过 {@link ToolExecutor} 的权限判定。
+   *
+   * <p>只对实现了 {@link ToolInvokerAware} 的工具注入。未注入时工具会明确报错，
+   * 而不是退回直接 {@code BaseTool.execute}——那样会静默绕过权限门。
+   */
+  private static void wireToolInvokers(ToolRegistry registry, ToolExecutor executor) {
+    ToolInvoker invoker = new ExecutorToolInvoker(executor);
+    for (BaseTool tool : registry.getAll()) {
+      if (tool instanceof ToolInvokerAware) {
+        ((ToolInvokerAware) tool).setToolInvoker(invoker);
+      }
+    }
   }
 
   /**
@@ -897,6 +920,11 @@ public final class AgentOrchestrator {
     ToolPermissionService permissions = new ToolPermissionService(settings, registry);
     ToolExecutor executor =
         new ToolExecutor(registry, permissions, diffStore == null ? null : newDiffRecorder());
+
+    // 编排类工具（场景 / 连拍 / 基线 / 截图对比）的子调用必须过权限判定，
+    // 因此在这里——执行器建好之后——把调用入口注入它们。执行器依赖注册表、
+    // 注册表里又有这些工具，构成环，所以只能在环外补这一针。
+    wireToolInvokers(registry, executor);
 
     // 子 agent：把「需要读很多文件」的调查隔离到独立上下文里。
     //

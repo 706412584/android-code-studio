@@ -20,9 +20,11 @@ package com.tom.rv2ide.artificial.agent.tool;
 import android.content.Context;
 import com.tom.rv2ide.ai.tool.BaseTool;
 import com.tom.rv2ide.ai.tool.ToolContext;
-import com.tom.rv2ide.ai.tool.ToolRegistry;
+import com.tom.rv2ide.ai.tool.ToolInvoker;
+import com.tom.rv2ide.ai.tool.ToolInvokerAware;
 import com.tom.rv2ide.ai.tool.api.ToolCategory;
 import com.tom.rv2ide.ai.tool.api.ToolDisplayCategory;
+import com.tom.rv2ide.ai.tool.api.ToolNames;
 import com.tom.rv2ide.ai.tool.api.ToolResult;
 import java.util.ArrayList;
 import java.util.List;
@@ -52,7 +54,7 @@ import org.slf4j.LoggerFactory;
  * </ul>
  * 不写 {@code field} 时，{@code contains} 等直接在整段结果文本上匹配。
  */
-public final class PhoneTestScenarioTool extends BaseTool {
+public final class PhoneTestScenarioTool extends BaseTool implements ToolInvokerAware {
 
   private static final Logger log = LoggerFactory.getLogger(PhoneTestScenarioTool.class);
 
@@ -63,16 +65,25 @@ public final class PhoneTestScenarioTool extends BaseTool {
   private static final int MAX_STEPS = 30;
 
   private final Context appContext;
-  private final ToolRegistry registry;
 
-  public PhoneTestScenarioTool(Context context, ToolRegistry registry) {
+  /**
+   * 子工具调用入口。装配方在构建执行器后注入（见 {@link ToolInvokerAware}）。
+   * 为 null 时步骤会明确失败，而不是退回直接 {@code execute} 绕过权限。
+   */
+  private volatile ToolInvoker toolInvoker;
+
+  public PhoneTestScenarioTool(Context context) {
     this.appContext = context.getApplicationContext();
-    this.registry = registry;
+  }
+
+  @Override
+  public void setToolInvoker(ToolInvoker invoker) {
+    this.toolInvoker = invoker;
   }
 
   @Override
   public String getName() {
-    return "phone_test_scenario";
+    return ToolNames.PHONE_TEST_SCENARIO;
   }
 
   @Override
@@ -260,20 +271,22 @@ public final class PhoneTestScenarioTool extends BaseTool {
     if (toolName.isEmpty()) {
       return new StepOutcome(index, name, toolName, false, "未指定 tool", "");
     }
-    if (registry == null) {
-      return new StepOutcome(index, name, toolName, false, "工具注册表不可用", "");
-    }
-    BaseTool tool = registry.get(toolName);
-    if (tool == null) {
-      return new StepOutcome(index, name, toolName, false, "工具不存在或未注册: " + toolName, "");
+    ToolInvoker invoker = toolInvoker;
+    if (invoker == null) {
+      // 不退回直接 execute：那会绕过权限判定，与本次修复的目的相悖。
+      return new StepOutcome(
+          index, name, toolName, false, "工具调用入口不可用（装配方未注入 ToolInvoker）", "");
     }
 
     ToolResult result;
     try {
-      result = tool.execute(args == null ? new JSONObject() : args, context);
+      result = invoker.invoke(toolName, args, context);
     } catch (Exception e) {
       log.warn("场景步骤执行异常: {}", toolName, e);
       return new StepOutcome(index, name, toolName, false, "执行异常: " + e.getMessage(), "");
+    }
+    if (result == null) {
+      return new StepOutcome(index, name, toolName, false, "工具返回为空: " + toolName, "");
     }
 
     String content = result.getContent();

@@ -20,9 +20,11 @@ package com.tom.rv2ide.artificial.agent.tool;
 import android.content.Context;
 import com.tom.rv2ide.ai.tool.BaseTool;
 import com.tom.rv2ide.ai.tool.ToolContext;
-import com.tom.rv2ide.ai.tool.ToolRegistry;
+import com.tom.rv2ide.ai.tool.ToolInvoker;
+import com.tom.rv2ide.ai.tool.ToolInvokerAware;
 import com.tom.rv2ide.ai.tool.api.ToolCategory;
 import com.tom.rv2ide.ai.tool.api.ToolDisplayCategory;
+import com.tom.rv2ide.ai.tool.api.ToolNames;
 import com.tom.rv2ide.ai.tool.api.ToolResult;
 import java.io.File;
 import java.util.List;
@@ -45,19 +47,25 @@ import org.json.JSONObject;
  *   <li>{@code delete} — 删除指定基线
  * </ul>
  */
-public final class PhoneBaselineTool extends BaseTool {
+public final class PhoneBaselineTool extends BaseTool implements ToolInvokerAware {
 
   private final Context appContext;
-  private final ToolRegistry registry;
 
-  public PhoneBaselineTool(Context context, ToolRegistry registry) {
+  /** 截图子调用入口；装配方在执行器构建后注入。见 {@link ToolInvokerAware}。 */
+  private volatile ToolInvoker toolInvoker;
+
+  public PhoneBaselineTool(Context context) {
     this.appContext = context.getApplicationContext();
-    this.registry = registry;
+  }
+
+  @Override
+  public void setToolInvoker(ToolInvoker invoker) {
+    this.toolInvoker = invoker;
   }
 
   @Override
   public String getName() {
-    return "phone_baseline";
+    return ToolNames.PHONE_BASELINE;
   }
 
   @Override
@@ -126,7 +134,7 @@ public final class PhoneBaselineTool extends BaseTool {
     if (context != null) {
       context.reportProgress("保存基线: " + name);
     }
-    PhoneScreenshotSource.Shot shot = PhoneScreenshotSource.capture(registry, context);
+    PhoneScreenshotSource.Shot shot = PhoneScreenshotSource.capture(toolInvoker, context);
     if (!shot.ok) {
       return error("截图失败，无法保存基线: " + shot.error);
     }
