@@ -93,16 +93,30 @@ public class ToolResultImageSerializationTest {
     assertTrue(toolResult.get("content") instanceof String);
   }
 
+  /**
+   * OpenAI 路径：图片不能留在 role=tool 内，必须搬到紧随其后的 user 消息。
+   *
+   * <p>实测 newapi + DeepSeek 对 {@code {role:"tool", content:[text,image_url]}} 返回
+   * 200 但模型收不到图，因此这里锁定「工具文字仍是字符串 + 额外一条带图 user 消息」
+   * 这一形态；若有人改回数组嵌图，本测试会失败。
+   */
   @Test
-  public void openAiToolResultCarriesImageUrl() throws Exception {
+  public void openAiMovesToolImageToFollowingUserMessage() throws Exception {
     OpenAiMessageSerializer serializer = new OpenAiMessageSerializer();
     JSONArray messages = serializer.messagesJsonForTest(List.of(imageToolMessage()));
 
+    // 1) 工具结果本身：role=tool，正文保持字符串，不再嵌 image_url。
     JSONObject tool = messages.getJSONObject(0);
     assertEquals("tool", tool.getString("role"));
     assertEquals("call-1", tool.getString("tool_call_id"));
+    assertTrue(tool.get("content") instanceof String, "工具正文必须是字符串");
+    assertTrue(tool.getString("content").contains("logo.png"));
 
-    JSONArray content = tool.getJSONArray("content");
+    // 2) 图片由紧随其后的 user 消息承载。
+    assertEquals(2, messages.length());
+    JSONObject carrier = messages.getJSONObject(1);
+    assertEquals("user", carrier.getString("role"));
+    JSONArray content = carrier.getJSONArray("content");
     assertEquals("text", content.getJSONObject(0).getString("type"));
     JSONObject image = content.getJSONObject(1);
     assertEquals("image_url", image.getString("type"));
