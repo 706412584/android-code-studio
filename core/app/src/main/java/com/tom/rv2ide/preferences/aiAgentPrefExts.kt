@@ -22,6 +22,7 @@ import android.widget.Toast
 import androidx.preference.Preference
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.tom.rv2ide.R
+import com.tom.rv2ide.artificial.agent.ShizukuShellBackend
 import com.tom.rv2ide.artificial.agent.codegraph.CodeGraphInstaller
 import com.tom.rv2ide.artificial.agent.codegraph.CodeGraphManager
 import com.tom.rv2ide.preferences.internal.prefManager
@@ -1076,10 +1077,47 @@ private class ShellBackendPreference(
           agentPrefs(context).edit().putString("shell_backend", values[which]).apply()
           preference.summary = shown[which]
           dialog.dismiss()
+          if (values[which] == ShizukuShellBackend.ID) {
+            ensureShizukuAuthorized(context)
+          }
         }
         .setNegativeButton(android.R.string.cancel, null)
         .show()
     return true
+  }
+
+  /**
+   * 切到 shizuku 后端时的授权引导。
+   *
+   * <p>Shizuku 的授权是独立于 Android 运行时权限的一套流程：必须先有 binder
+   * （服务在跑），再由 Shizuku 弹窗让用户勾选本应用。这里在用户选中该后端时就触发，
+   * 而不是等到第一次执行命令才失败——后者会表现为「命令莫名报错」，无从下手。
+   *
+   * <p>三种「不可用」情况都不会弹授权框，直接给出具体原因：
+   * 未安装 / 服务未运行（{@code pingBinder()} 为 false）/ 已授权（无需再请求）。
+   */
+  private fun ensureShizukuAuthorized(context: Context) {
+    val backend = ShizukuShellBackend(context)
+    if (backend.isAvailable()) {
+      Toast.makeText(context, "Shizuku 已就绪，命令将以 adb 权限执行", Toast.LENGTH_SHORT).show()
+      return
+    }
+    // 回调在 Shizuku 的主线程 Handler 上触发，届时设置页可能已关闭，
+    // 因此用 applicationContext 弹 Toast，避免持有已销毁的界面上下文。
+    val appContext = context.applicationContext
+    val requested =
+        backend.requestPermission { granted ->
+          val message =
+              if (granted) "已获得 Shizuku 授权"
+              else "Shizuku 授权被拒绝，可在 Shizuku 应用中重新授予"
+          Toast.makeText(appContext, message, Toast.LENGTH_SHORT).show()
+        }
+    if (requested) {
+      Toast.makeText(context, "请在 Shizuku 弹窗中允许本应用使用 adb 权限", Toast.LENGTH_LONG).show()
+    } else {
+      // 未安装 / 服务未运行：不会弹窗，直接告知原因
+      Toast.makeText(context, backend.unavailableReason(), Toast.LENGTH_LONG).show()
+    }
   }
 }
 

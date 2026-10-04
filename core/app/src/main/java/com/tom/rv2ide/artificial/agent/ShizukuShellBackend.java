@@ -140,20 +140,57 @@ public final class ShizukuShellBackend implements ShellBackend {
     return "";
   }
 
+  /** 授权结果回调，在主线程被调用。 */
+  public interface PermissionResultCallback {
+    void onResult(boolean granted);
+  }
+
   /**
    * 请求 Shizuku 授权。必须在主线程调用，且应用处于前台。
    *
-   * @return true 表示已发起请求，结果通过 Shizuku 的
-   *     {@code OnRequestPermissionResultListener} 异步返回
+   * <p>Shizuku 的授权结果由 {@code Shizuku.requestPermission(int)} 异步返回：本次注册的
+   * 监听器在收到结果后**立即注销**，避免每次请求都在 Shizuku 里堆积一个常驻监听器
+   * （那会导致一次授权触发 N 次回调，且持有 Activity/回调引用造成泄漏）。
+   *
+   * @return true 表示请求已发出；false 表示前置条件不满足（未安装 / 服务未运行），
+   *     此时不会弹出授权框，调用方可直接根据 {@link #unavailableReason()} 提示用户
    */
-  public boolean requestPermission() {
+  public boolean requestPermission(PermissionResultCallback callback) {
+    if (!isShizukuInstalled(appContext)) {
+      log.warn("Shizuku 未安装，无法请求授权");
+      return false;
+    }
     try {
+      if (!Shizuku.pingBinder()) {
+        log.warn("Shizuku 服务未运行，无法请求授权");
+        return false;
+      }
+
+      // 用数组持有监听器引用，才能在回调里注销它自己（lambda 无法在赋值前自引用）。
+      final Shizuku.OnRequestPermissionResultListener[] holder =
+          new Shizuku.OnRequestPermissionResultListener[1];
+      holder[0] =
+          (requestCode, grantResult) -> {
+            Shizuku.removeRequestPermissionResultListener(holder[0]);
+            boolean granted = grantResult == PERMISSION_GRANTED;
+            log.info("Shizuku 授权结果: {}", granted ? "已授权" : "被拒绝");
+            if (callback != null) {
+              callback.onResult(granted);
+            }
+          };
+
+      Shizuku.addRequestPermissionResultListener(holder[0]);
       Shizuku.requestPermission(0);
       return true;
     } catch (Throwable e) {
       log.warn("请求 Shizuku 授权失败", e);
       return false;
     }
+  }
+
+  /** 兼容旧签名：不关心异步结果时使用。 */
+  public boolean requestPermission() {
+    return requestPermission(null);
   }
 
   @Override
