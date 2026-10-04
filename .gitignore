@@ -127,3 +127,6 @@ core/ai-protocol/build/
 
 # CodeGraph 语义索引（本机生成，约 390MB，含绝对路径，不应入库）
 .codegraph/
+
+# Kotlin 构建会话缓存（各模块都会生成，属构建产物）
+.kotlin/

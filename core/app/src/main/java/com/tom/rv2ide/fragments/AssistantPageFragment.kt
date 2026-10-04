@@ -50,11 +50,12 @@ import java.io.File
  * `BaseFragment.viewLifecycleScope`（那是 Dispatchers.Default 的普通作用域，不随视图
  * 销毁取消，会在视图 detach 后继续写控件）。
  *
- * <p><b>orchestrator 归属</b>：内联页与主页悬浮助手若各建一个 orchestrator，会各持一个
- * 活动会话 id，可能同时跑两个 agent 循环、并发写两份会话文件。因此两者共用
- * [MainViewModel.assistantOrchestrator]（Activity 级唯一实例），本页通过
- * [FloatingAssistantView] 的 `sharedOrchestrator` 参数注入。orchestrator 的单例回调槽位
- * （危险工具授权、上下文用量）由当前可见的视图安装，见 `FloatingAssistantView`。
+ * <p><b>orchestrator 归属</b>：内联页与其它宿主（主页悬浮、应用外悬浮、真全屏）若各建一个
+ * orchestrator，会各持一个活动会话 id，可能同时跑两个 agent 循环、并发写两份会话文件。
+ * 因此四者共用 [com.tom.rv2ide.artificial.agent.AssistantOrchestratorProvider] 的进程级单例
+ * （经 [MainViewModel.assistantOrchestrator] 暴露），本页通过 [FloatingAssistantView] 的
+ * `sharedOrchestrator` 参数注入。orchestrator 的单例回调槽位（危险工具授权、上下文用量）
+ * 由当前可见的视图安装，见 `FloatingAssistantView`。
  */
 class AssistantPageFragment : Fragment() {
 

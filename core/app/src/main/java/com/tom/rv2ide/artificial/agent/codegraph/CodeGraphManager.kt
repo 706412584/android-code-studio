@@ -218,11 +218,18 @@ class CodeGraphManager(private val context: Context) {
 
   /** 用 `/system/bin/sh -c` 执行一条命令并同步取回结果。 */
   private fun execRaw(command: String, cwd: File?, timeoutMs: Long): CommandResult {
+    // 只有目录确实存在时才设置工作目录。fresh install 时 `~/codegraph` 尚未创建，
+    // 而 [installTermuxPackages] 会在解包**之前**跑 apt——那时传一个不存在的目录会让
+    // start() 抛 IOException（fork 子进程要 chdir 到该目录），表现为「装依赖」这一步
+    // 永远失败。目录不存在时退回继承 app 的工作目录（`/`），同样能执行 shell。
+    val workDir = cwd?.takeIf { it.isDirectory }
     val process =
         try {
           ProcessBuilder("/system/bin/sh", "-c", command)
               .apply {
-                directory(cwd ?: CodeGraphInstaller.installDir())
+                if (workDir != null) {
+                  directory(workDir)
+                }
                 // 合并 stderr 到 stdout：codegraph 的错误有时只走 stderr，
                 // 分开读会漏掉真正的原因。
                 redirectErrorStream(true)

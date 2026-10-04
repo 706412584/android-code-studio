@@ -19,13 +19,17 @@ package com.tom.rv2ide.preferences
 
 import android.app.AlertDialog
 import android.content.Context
+import android.graphics.Typeface
+import android.util.TypedValue
 import android.view.LayoutInflater
 import android.view.View
 import android.widget.EditText
+import android.widget.TextView
 import android.widget.Toast
 import androidx.preference.Preference
 import com.tom.rv2ide.databinding.DialogProviderFormBinding
 import com.tom.rv2ide.ai.protocol.ModelProtocolType
+import com.tom.rv2ide.artificial.agent.ContextSizeParser
 import com.tom.rv2ide.artificial.agent.ModelCatalogFetcher
 import com.tom.rv2ide.artificial.agent.ProviderConfig
 import com.tom.rv2ide.artificial.agent.ProviderConfigStore
@@ -53,6 +57,20 @@ internal class ProviderManagementPreference(
     override val title: Int = R.string.ai_agent_providers_title,
     override val summary: Int? = R.string.ai_agent_providers_summary,
 ) : BasePreference() {
+
+  private companion object {
+    /** 1M 窗口的 token 数，由解析器算出，避免在 UI 里散落字面量 1000000。 */
+    private val ONE_M_TOKENS: Int = ContextSizeParser.parse("1m")
+  }
+
+  /**
+   * 程序化回填勾选态期间置 true，让 {@code setOnCheckedChangeListener} 跳过 {@link #apply1m}。
+   *
+   * <p>没有这个守卫就会静默丢后缀：从声明 {@code [1m]} 的槽位切到声明 {@code [200k]} 的槽位时，
+   * 回填把勾选框由「勾」改「不勾」会触发监听器，而监听器按「不勾」把模型名改写成无后缀，
+   * 用户的 {@code [200k]} 就没了。勾选框只应响应用户的真实点击。
+   */
+  private var suppress1mListener = false
 
   override fun onCreatePreference(context: Context): Preference {
     return Preference(context).apply {
@@ -161,13 +179,18 @@ internal class ProviderManagementPreference(
 
     val binding = DialogProviderFormBinding.inflate(LayoutInflater.from(context))
     val protocolTypes = ModelProtocolType.entries
-    val slotInputs =
-        listOf(
-            binding.providerSlotMain,
-            binding.providerSlotHaiku,
-            binding.providerSlotSonnet,
-            binding.providerSlotOpus,
-        )
+    val slotInputs = slotInputs(binding)
+    val slotChecks = slotChecks(binding)
+
+    /** 当前获得焦点的槽位，拉取到的模型清单点选时写回它。 */
+    var focusedSlot = 0
+    slotInputs.forEachIndexed { i, input ->
+      input.setOnFocusChangeListener { _, hasFocus -> if (hasFocus) focusedSlot = i }
+    }
+
+    slotChecks.forEachIndexed { i, check ->
+      check.setOnCheckedChangeListener { _, isChecked -> apply1m(binding, i, isChecked) }
+    }
 
     // 预设下拉（仅新建）。预设是「快速填充」而不是唯一来源：选中只覆盖连接信息，
     // 不动密钥——用户可能已经输入了密钥。
@@ -188,6 +211,7 @@ internal class ProviderManagementPreference(
         preset.getSlotModels().forEachIndexed { i, model ->
           slotInputs.getOrNull(i)?.setText(model)
         }
+        slotChecks.indices.forEach { sync1mCheck(binding, it) }
       }
     } else {
       binding.presetLayout.visibility = View.GONE
@@ -203,6 +227,7 @@ internal class ProviderManagementPreference(
     )
     binding.providerProtocol.setText(seed.getProtocolType().getLabel(), false)
     seed.getSlotModels().forEachIndexed { i, model -> slotInputs.getOrNull(i)?.setText(model) }
+    slotChecks.indices.forEach { sync1mCheck(binding, it) }
 
     /** 读表单成草稿。密钥框留空时沿用 seed 的密钥（编辑场景）。 */
     fun readDraft(): ProviderConfig {
@@ -213,6 +238,14 @@ internal class ProviderManagementPreference(
           protocolTypes.getOrElse(protocolTypes.indexOfFirst { it.getLabel() == binding.providerProtocol.text.toString() }) {
             ModelProtocolType.OPENAI_COMPATIBLE
           }
+      // 槽位模型名以勾选框为准再对一次账：用户可能先勾「1M」、后手填模型名，
+      // 此时输入框还没有后缀，只靠 setOnCheckedChangeListener 会漏掉这次勾选。
+      // 只「加」不「减」：未勾选时原样保留，避免抹掉用户手输的 [200k]/[1m]。
+      val models =
+          slotInputs.mapIndexed { i, input ->
+            val raw = input.text?.toString()?.trim().orEmpty()
+            if (slotChecks.getOrNull(i)?.isChecked == true) with1mSuffix(raw, true) else raw
+          }
       // ProviderConfig 是 Java 类，只能按位置传参。
       return ProviderConfig(
           id,
@@ -220,11 +253,11 @@ internal class ProviderManagementPreference(
           selectedProtocol,
           binding.providerBaseUrl.text?.toString()?.trim().orEmpty(),
           key,
-          slotInputs.map { it.text?.toString()?.trim().orEmpty() }.toTypedArray(),
+          models.toTypedArray(),
       )
     }
 
-    wireFetch(context, binding.providerFetchModels, slotInputs) { readDraft() }
+    wireFetch(context, binding, slotInputs, { focusedSlot }, { readDraft() })
 
     AlertDialog.Builder(context)
         .setTitle(if (isNew) R.string.ai_agent_provider_add else R.string.ai_agent_provider_edit)
@@ -246,18 +279,51 @@ internal class ProviderManagementPreference(
   }
 
   /**
-   * 接上「拉取模型列表」按钮。
+   * 接上「获取模型」按钮。
    *
-   * <p>拉取成功后把每个槽位输入框变成可点的选择器——用户从服务端返回的真实列表里挑，
-   * 不必猜模型名。拉取失败只提示，不阻断保存：有些服务商不实现这个端点，
-   * 而用户手填模型名照样能用。
+   * <p>拉取成功后把返回的真实列表渲染成可点清单——点某项即写入当前聚焦的槽位，
+   * 用户不必从弹窗里再挑一次、也不必猜模型名。拉取失败只提示，不阻断保存：
+   * 有些服务商不实现这个端点，而用户手填模型名照样能用。
    */
   private fun wireFetch(
       context: Context,
-      button: com.google.android.material.button.MaterialButton,
+      binding: DialogProviderFormBinding,
       slotInputs: List<EditText>,
+      focusedSlot: () -> Int,
       readDraft: () -> ProviderConfig,
   ) {
+    val button = binding.providerFetchModels
+    val list = binding.providerModelList
+    val listHint = binding.providerModelListHint
+
+    /** 清单项点选后写回聚焦槽位，并同步该槽位的「1M」勾选态。 */
+    fun renderList(models: List<String>) {
+      list.removeAllViews()
+      list.visibility = View.VISIBLE
+      listHint.visibility = View.VISIBLE
+      models.forEach { model ->
+        val row =
+            TextView(context).apply {
+              text = model
+              typeface = Typeface.MONOSPACE
+              setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
+              val v = TypedValue()
+              context.theme.resolveAttribute(android.R.attr.selectableItemBackground, v, true)
+              setBackgroundResource(v.resourceId)
+              setPadding(0, 24, 0, 24)
+              isClickable = true
+            }
+        row.setOnClickListener {
+          val index = focusedSlot()
+          val input = slotInputs.getOrNull(index) ?: return@setOnClickListener
+          // 只换基名，勾选框随后按新模型的后缀重算——拉回的模型名不带 [1m]。
+          input.setText(ContextSizeParser.stripSuffix(model))
+          sync1mCheck(binding, index)
+        }
+        list.addView(row)
+      }
+    }
+
     button.setOnClickListener {
       val draft = readDraft()
       button.isEnabled = false
@@ -269,27 +335,75 @@ internal class ProviderManagementPreference(
           button.isEnabled = true
           button.setText(R.string.ai_agent_provider_fetch_models)
           if (models.isEmpty()) {
+            list.visibility = View.GONE
+            listHint.visibility = View.GONE
             Toast.makeText(context, R.string.ai_agent_provider_fetch_empty, Toast.LENGTH_LONG)
                 .show()
             return@withContext
           }
-          Toast.makeText(
-                  context,
-                  context.getString(R.string.ai_agent_provider_fetch_ok, models.size),
-                  Toast.LENGTH_SHORT,
-              )
-              .show()
-          slotInputs.forEach { input ->
-            input.setOnClickListener {
-              AlertDialog.Builder(context)
-                  .setTitle(R.string.ai_agent_provider_pick_model)
-                  .setItems(models.toTypedArray()) { _, which -> input.setText(models[which]) }
-                  .setNegativeButton(android.R.string.cancel, null)
-                  .show()
-            }
-          }
+          renderList(models)
         }
       }
+    }
+  }
+
+  /** 4 个模型槽位输入框，顺序与 {@link ProviderConfig#SLOT_ORDER} 一致。 */
+  private fun slotInputs(binding: DialogProviderFormBinding): List<EditText> =
+      listOf(
+          binding.providerSlotMain,
+          binding.providerSlotHaiku,
+          binding.providerSlotSonnet,
+          binding.providerSlotOpus,
+      )
+
+  /** 4 个「1M」勾选框，顺序与 {@link #slotInputs} 一一对应。 */
+  private fun slotChecks(binding: DialogProviderFormBinding): List<android.widget.CheckBox> =
+      listOf(
+          binding.providerSlotMain1m,
+          binding.providerSlotHaiku1m,
+          binding.providerSlotSonnet1m,
+          binding.providerSlotOpus1m,
+      )
+
+  /**
+   * 按勾选态给模型名加/去 {@code [1m]} 后缀，返回处理后的模型名。
+   *
+   * <p>不用字符串拼接：模型名可能已带 {@code [200k]}，直接追加会得到
+   * {@code foo[200k][1m]} 这种非法值（解析器只看最后一个后缀，语义被静默改写）。
+   * 正确做法是先 {@link ContextSizeParser#stripSuffix} 剥掉已有后缀，再按需附上新后缀。
+   *
+   * <p>基名为空时原样返回——空槽位无法承载后缀，留到 {@code readDraft} 里对账。
+   */
+  private fun with1mSuffix(model: String, checked: Boolean): String {
+    val base = ContextSizeParser.stripSuffix(model)
+    if (base.isEmpty()) return base
+    return if (checked) "$base[${ContextSizeParser.format(ONE_M_TOKENS)}]" else base
+  }
+
+  /** 勾选框 → 输入框：用户真实点击时立即改写该槽位的模型名。 */
+  private fun apply1m(binding: DialogProviderFormBinding, index: Int, checked: Boolean) {
+    // 程序化回填期间不响应，否则会把已有的 [200k] 等后缀抹掉。
+    if (suppress1mListener) return
+    val input = slotInputs(binding).getOrNull(index) ?: return
+    input.setText(with1mSuffix(input.text?.toString()?.trim().orEmpty(), checked))
+  }
+
+  /**
+   * 模型名 → 勾选框：回填/换模型后重算勾选态。
+   *
+   * <p>只认「窗口恰好是 1M」。{@code [200k]} 或 {@code [2m]} 都不勾，
+   * 避免把用户的声明静默改成 1M。设置 isChecked 会触发监听器，因此用
+   * {@link #suppress1mListener} 把这次程序化改动隔离掉。
+   */
+  private fun sync1mCheck(binding: DialogProviderFormBinding, index: Int) {
+    val input = slotInputs(binding).getOrNull(index) ?: return
+    val check = slotChecks(binding).getOrNull(index) ?: return
+    val size = ContextSizeParser.parseFromModelId(input.text?.toString()?.trim().orEmpty())
+    suppress1mListener = true
+    try {
+      check.isChecked = size == ONE_M_TOKENS
+    } finally {
+      suppress1mListener = false
     }
   }
 }

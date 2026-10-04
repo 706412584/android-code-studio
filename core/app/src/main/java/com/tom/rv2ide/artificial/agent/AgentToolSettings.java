@@ -20,6 +20,7 @@ package com.tom.rv2ide.artificial.agent;
 import android.content.Context;
 import android.content.SharedPreferences;
 import com.tom.rv2ide.ai.tool.DangerousToolDecision;
+import com.tom.rv2ide.ai.tool.RunApprovedRuleStore;
 import com.tom.rv2ide.ai.tool.ToolPermissionRule;
 import com.tom.rv2ide.ai.tool.ToolSettingsPort;
 import java.util.Collections;
@@ -40,7 +41,8 @@ import java.util.Set;
  *   <li>全局放行——{@link #areDangerousToolsConfirmed()}，等价于关掉确认；
  *   <li>规则放行——{@link #hasDangerousToolRule(String)}，按「工具 + 参数粒度」持久化，
  *       例如只放行 {@code git} 开头的 shell 命令；
- *   <li>本次运行放行——{@link #beginRun()} 之后的内存记忆，进程重启即失效。
+ *   <li>本次运行放行——{@link #beginRun(String)} 之后的内存记忆，进程重启即失效。
+ *       该记忆**按会话隔离**（见 {@link RunApprovedRuleStore}），避免并行会话互相放行。
  * </ol>
  */
 public final class AgentToolSettings implements ToolSettingsPort {
@@ -88,14 +90,13 @@ public final class AgentToolSettings implements ToolSettingsPort {
   private volatile DangerousToolConfirmer confirmer;
 
   /**
-   * 本次运行已放行的规则键（含本次运行内确认过的）。
+   * 各会话「本次运行」已放行的规则键（含该会话内确认过的），按会话 id 分桶。
    *
-   * <p>用集合而非单个布尔：布尔无法区分「放行了 git」与「放行了全部」，
-   * 会让一次「仅本次允许」顺带放行同一运行内的其它危险命令。
-   *
-   * <p>读写均在 {@link #confirmationLock} 内。
+   * <p>逻辑抽在纯 Java 的 {@link RunApprovedRuleStore}（见该类 KDoc 说明为何必须按会话
+   * 隔离），本类只负责把它接到 Android 偏好上。读写仍在 {@link #confirmationLock} 内，
+   * 与确认弹窗的串行化共用一把锁。
    */
-  private final Set<String> runApprovedRules = new LinkedHashSet<>();
+  private final RunApprovedRuleStore runApprovedRules = new RunApprovedRuleStore();
 
   /**
    * 确认串行化锁。
@@ -120,8 +121,17 @@ public final class AgentToolSettings implements ToolSettingsPort {
 
   /** 一次新的 agent 运行开始时调用，重置跨会话的确认记忆。 */
   public void beginRun() {
+    beginRun(null);
+  }
+
+  /**
+   * 一次新的 agent 运行开始时调用，只重置**该会话**的确认记忆。
+   *
+   * <p>只清目标会话的桶：并发会话各有各的运行，清掉别的会话已批准的规则会让它重复弹窗。
+   */
+  public void beginRun(String conversationId) {
     synchronized (confirmationLock) {
-      runApprovedRules.clear();
+      runApprovedRules.clear(conversationId);
     }
   }
 
@@ -148,11 +158,7 @@ public final class AgentToolSettings implements ToolSettingsPort {
     if (areDangerousToolsConfirmed()) {
       return true;
     }
-    synchronized (confirmationLock) {
-      if (runApprovedRules.contains(ruleKey)) {
-        return true;
-      }
-    }
+    // 持久化规则（「始终允许」）跨会话有效。
     return prefs.getStringSet(KEY_DANGEROUS_RULES, Collections.emptySet()).contains(ruleKey);
   }
 
@@ -191,27 +197,50 @@ public final class AgentToolSettings implements ToolSettingsPort {
   public void clearDangerousToolRules() {
     prefs.edit().remove(KEY_DANGEROUS_RULES).apply();
     synchronized (confirmationLock) {
-      runApprovedRules.clear();
+      runApprovedRules.clearAll();
+    }
+  }
+
+  /** 丢弃某会话的运行内授权记忆（会话运行结束时调用）。 */
+  @Override
+  public void clearRunApprovedRules(String conversationId) {
+    synchronized (confirmationLock) {
+      runApprovedRules.clear(conversationId);
     }
   }
 
   /**
-   * 带工具名与参数询问用户。
+   * 带工具名与参数询问用户（不区分会话）。
+   *
+   * <p>保留给不传会话的调用方；带会话的路径见
+   * {@link #confirmDangerousTool(String, String, String)}。
+   */
+  @Override
+  public boolean confirmDangerousTool(String toolName, String arguments) {
+    return confirmDangerousTool(null, toolName, arguments);
+  }
+
+  /**
+   * 带工具名与参数询问用户，运行内授权按**会话**隔离。
    *
    * <p>只有这一条路径会弹窗——{@link #areDangerousToolsConfirmed()} 不再主动询问，
    * 否则执行器拿不到工具上下文，只能显示「某个危险工具」，用户无从判断。
    *
-   * <p>整个「查规则 → 询问 → 记结果」过程在同一把锁内，因此并发调用会排队：
+   * <p>整个「查规则 → 询问 → 记结果」过程在同一把锁内，因此同一会话的并发调用会排队：
    * 第二个调用进入时能看到第一个刚写入的运行内规则，不会弹出第二个对话框。
+   * 不同会话各有各的桶，互不影响。
+   *
+   * @param conversationId 产生该调用的会话 id；null/空串归入无会话桶
    */
   @Override
-  public boolean confirmDangerousTool(String toolName, String arguments) {
+  public boolean confirmDangerousTool(
+      String conversationId, String toolName, String arguments) {
     String ruleKey = ToolPermissionRule.keyFor(toolName, arguments);
     synchronized (confirmationLock) {
       if (areDangerousToolsConfirmed()) {
         return true;
       }
-      if (!ruleKey.isEmpty() && runApprovedRules.contains(ruleKey)) {
+      if (runApprovedRules.contains(conversationId, ruleKey)) {
         return true;
       }
       DangerousToolConfirmer c = confirmer;
@@ -222,10 +251,8 @@ public final class AgentToolSettings implements ToolSettingsPort {
       if (!c.confirm(toolName, arguments)) {
         return false;
       }
-      // 本次运行内记住该粒度，避免同一命令在长任务里被反复询问。
-      if (!ruleKey.isEmpty()) {
-        runApprovedRules.add(ruleKey);
-      }
+      // 该会话的运行内记忆：避免同一命令在长任务里被反复询问。
+      runApprovedRules.approve(conversationId, ruleKey);
       return true;
     }
   }

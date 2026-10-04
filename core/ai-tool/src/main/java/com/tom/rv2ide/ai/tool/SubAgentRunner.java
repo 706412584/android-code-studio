@@ -76,10 +76,30 @@ public interface SubAgentRunner {
     /** 当前嵌套深度（调用方所在层）。子 agent 内部再调用时会 +1。 */
     private final int depth;
 
+    /** 角色专用系统提示词；null 表示使用通用的子 agent 提示词。 */
+    private final String systemPrompt;
+
+    /** 工具名白名单；{@link ToolNameFilter#unrestricted()} 表示不限制。 */
+    private final ToolNameFilter toolFilter;
+
     public Request(String task, Mode mode, int depth) {
+      this(task, mode, depth, null, ToolNameFilter.unrestricted());
+    }
+
+    /**
+     * 带角色提示词与工具白名单的请求（内置/自定义角色 agent 使用）。
+     *
+     * @param systemPrompt 角色专用提示词；null 或空则回退到通用子 agent 提示词
+     * @param toolFilter 工具白名单；null 视作不限制。执行方**必须**据此裁剪注册的工具——
+     *     这是能力边界，不是建议
+     */
+    public Request(
+        String task, Mode mode, int depth, String systemPrompt, ToolNameFilter toolFilter) {
       this.task = task == null ? "" : task;
       this.mode = mode == null ? Mode.EXPLORE : mode;
       this.depth = depth;
+      this.systemPrompt = systemPrompt == null ? "" : systemPrompt;
+      this.toolFilter = toolFilter == null ? ToolNameFilter.unrestricted() : toolFilter;
     }
 
     /** 交给子 agent 的任务描述。 */
@@ -93,6 +113,16 @@ public interface SubAgentRunner {
 
     public int getDepth() {
       return depth;
+    }
+
+    /** 角色专用提示词；空串表示使用通用的子 agent 提示词。 */
+    public String getSystemPrompt() {
+      return systemPrompt;
+    }
+
+    /** 工具白名单；永不返回 null。 */
+    public ToolNameFilter getToolFilter() {
+      return toolFilter;
     }
   }
 

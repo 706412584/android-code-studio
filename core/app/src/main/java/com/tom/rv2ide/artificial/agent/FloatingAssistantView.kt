@@ -40,6 +40,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.io.File
+import java.util.concurrent.ConcurrentHashMap
 
 /**
  * 主屏上的悬浮 AI 助手：一个可收起的圆形入口 + 可全屏/侧栏切换的对话面板。
@@ -147,35 +149,59 @@ class FloatingAssistantView(
    */
   private val diffStore = AgentOrchestrator.defaultDiffStore(context)
 
-  private var executionJob: Job? = null
-  private var workspace: java.io.File? = null
+  /**
+   * 正在运行的会话 → 其协程 job。
+   *
+   * <p><b>为什么是 Map 而不是单个 Job</b>：多会话/多项目要能同时跑。单个 job 会迫使
+   * 每次切换都 cancel 掉上一个，用户在 A 项目跑的活会在切到 B 时被无声杀掉。
+   * 按会话 id 隔离后，切走只是换显示，后台会话继续跑。
+   *
+   * <p>用 [ConcurrentHashMap]：写入发生在主线程（execute/cancel），而事件回调来自
+   * agent 循环线程，两侧都会读。
+   */
+  private val executionJobs = ConcurrentHashMap<String, Job>()
 
-  /** 流式输出正在写入的那条助手消息 id；null 表示当前没有进行中的流。 */
-  private var streamingMessageId: Long? = null
+  /**
+   * 每个会话最近一次事件流写到哪张卡片。
+   *
+   * <p>多会话并行时，同一个视图的 [adapter] 只显示一个会话的消息，因此这些「最近卡片」
+   * 指针必须按会话隔离，否则 A 会话的 TOOL_FINISHED 会回填到 B 会话的卡片上。
+   */
+  private class SessionUiState {
+    var streamingMessageId: Long? = null
+    var lastToolCardId: Long? = null
+    var lastThinkingId: Long? = null
+    var streamedThisRun: Boolean = false
+    var retryCountThisRun: Int = 0
+    var retryCardPinned: Boolean = false
+  }
+
+  private val sessionUi = ConcurrentHashMap<String, SessionUiState>()
+
+  private fun uiState(conversationId: String): SessionUiState =
+      sessionUi.getOrPut(conversationId) { SessionUiState() }
+
+  /**
+   * 当前**显示**在消息列表里的会话 id。
+   *
+   * <p>事件入口据此过滤：只有属于当前显示会话的事件才写控件；后台会话的事件仍由
+   * orchestrator 的 PersistingListener 落盘（不丢内容），只是不渲染。用户切回该会话时
+   * 走 [doOpenConversation] 从日志回放。
+   */
+  private var displayedConversationId: String? = null
+
+  private var workspace: java.io.File? = null
 
   /**
    * 流式刷新节流。
    *
    * <p>模型按 token 吐字，一段回答会产生上百个增量。每个都刷一次会让列表重排上百次：
    * 滚动抖动、掉帧，而人眼分辨不出这个粒度。
+   *
+   * <p>只服务**当前显示**的会话（后台会话事件被 [displayedConversationId] 过滤掉），
+   * 因此单个实例足够，不必按会话隔离。
    */
   private val throttle = StreamingThrottle()
-
-  /**
-   * 最近一张「运行中」的工具卡片 id。
-   *
-   * <p>TOOL_STARTED / TOOL_FINISHED 成对出现且顺序执行，因此用「最近一张」即可关联，
-   * 不必让协议层额外传 id。完成后置空，避免迟到的结果回填到错误的卡片。
-   */
-  private var lastToolCardId: Long? = null
-
-  /**
-   * 当前正在累积的思维链块 id。
-   *
-   * <p>同一轮推理的增量要落到同一块里；一旦发生工具调用就置空，让下一段推理另起一块
-   * ——中间隔着工具调用，合并成一块会让「这段推理属于哪一步」看不出来。
-   */
-  private var lastThinkingId: Long? = null
 
   /**
    * 会话列表适配器。
@@ -194,14 +220,6 @@ class FloatingAssistantView(
    * 拿它比较时已经晚了。
    */
   private var lastOpenedConversationId: String? = null
-
-  /**
-   * 本次运行是否已经通过事件流写出过文本。
-   *
-   * <p>决定收尾时要不要再补一条最终输出：已经流式显示过就不能再追加，否则同一段回答
-   * 会在列表里出现两遍。
-   */
-  private var streamedThisRun = false
 
   private var mode = defaultMode
 
@@ -356,7 +374,8 @@ class FloatingAssistantView(
     adapter.setOnRevertClickListener { messageId, diffId -> revertDiff(messageId, diffId) }
     // 工具卡片的分类色需要按工具名查注册表。注册表在 orchestrator 里，
     // 但适配器不该依赖工具执行层，因此注入一个只做名字→分类映射的窄接口。
-    val registry = orchestrator.buildRegistry()
+    // 传 includeMcp=false：分类色查询不该发起 MCP 网络请求，也不该创建无人释放的连接。
+    val registry = orchestrator.buildRegistry(false, null)
     adapter.setCategoryResolver { toolName ->
         registry.getCachedDisplayCategory(com.tom.rv2ide.ai.tool.ToolRegistry.canonicalName(toolName))
     }
@@ -705,6 +724,8 @@ class FloatingAssistantView(
     if (id.isNullOrEmpty() || adapter.itemCount > 0) {
       return
     }
+    // 记录正在显示的会话：后台会话事件据此被过滤掉。
+    displayedConversationId = id
     lifecycleScope.launch(Dispatchers.IO) {
       val messages = orchestrator.loadConversationMessages(id)
       if (messages.isEmpty()) {
@@ -742,7 +763,9 @@ class FloatingAssistantView(
 
   /** 释放资源：取消进行中的运行，避免视图销毁后回调仍写控件。 */
   fun dispose() {
-    cancel()
+    // 视图销毁要停掉**所有**会话的运行：协程挂在 lifecycleScope 上会随之取消，
+    // 但 orchestrator 的取消令牌与 MCP 连接需要显式收尾。
+    cancelAll()
     // 销毁是不可逆的：先从存活集合摘除自己，再让出回调。
     // 顺序很关键——若先 release，可能把回调交接回本视图自己（它仍在集合里），
     // 于是销毁后的视图仍持有回调并往已 detach 的控件里写数据。
@@ -1007,7 +1030,8 @@ class FloatingAssistantView(
           startNewConversation()
 
       com.tom.rv2ide.ai.agent.command.SlashCommandCatalog.Kind.CLEAR -> {
-        cancel()
+        // /clear 清的是当前显示的会话。
+        cancel(displayedConversationId)
         adapter.clear()
         updateEmptyState()
       }
@@ -1030,7 +1054,9 @@ class FloatingAssistantView(
    * 两者并发会写出错乱的记录。
    */
   private fun compactConversation() {
-    if (executionJob?.isActive == true) {
+    // 只检查**当前显示的**会话：压缩作用的对象是它，别的会话在跑不影响。
+    val displayed = displayedConversationId
+    if (displayed != null && executionJobs[displayed]?.isActive == true) {
       appendTrace(context.getString(string.ai_assistant_compact_busy))
       return
     }
@@ -1057,26 +1083,44 @@ class FloatingAssistantView(
       reasoningEffort: String? = null,
       imagePayload: String? = null,
   ) {
-    if (executionJob?.isActive == true) {
-      return
-    }
     val currentWorkspace = workspace
     if (currentWorkspace == null || !currentWorkspace.exists()) {
       appendTrace(context.getString(string.ai_assistant_no_workspace))
       return
     }
 
-    cancel()
-    adapter.append(AssistantMessageAdapter.Role.USER, userRequest)
-    streamingMessageId = null
-    streamedThisRun = false
-    lastToolCardId = null
-    lastThinkingId = null
+    // 先确定本次请求落进哪个会话，再据它做重入判定。多会话/多项目并行时，每条消息
+    // 都属于一个确定的会话；同一会话禁止重入（否则同一段历史会被两轮并发写入），
+    // 不同会话互不阻塞。
+    val conversationId = resolveTargetConversation()
+    if (conversationId == null) {
+      appendTrace(context.getString(string.ai_assistant_error, "IOException", "无法创建会话"))
+      return
+    }
+    if (executionJobs[conversationId]?.isActive == true) {
+      return
+    }
 
-    executionJob =
+    // 用户在当前视图里发消息，就是要看这个会话：切显示过去，并清掉上一会话的渲染指针。
+    displayedConversationId = conversationId
+    lastOpenedConversationId = conversationId
+    adapter.append(AssistantMessageAdapter.Role.USER, userRequest)
+    val ui = uiState(conversationId)
+    ui.streamingMessageId = null
+    ui.streamedThisRun = false
+    ui.lastToolCardId = null
+    ui.lastThinkingId = null
+    // 新一轮开始：清掉该会话上一轮留下的重试结论与计数。
+    ui.retryCountThisRun = 0
+    ui.retryCardPinned = false
+    hideRetryCard()
+
+    val job =
         lifecycleScope.launch(Dispatchers.IO) {
           val agents = Agents(context)
           val providerId = agents.getProvider()
+          // 注意：不要在启动前 cancel 本会话的旧 job。这里已确认本会话没有活跃 job
+          // （上面的重入判定），启动时再 cancel 会取消掉即将执行的自己。
           // 传当前槽位：此前不传，modelIdFor 无条件用主模型，
           // 于是界面「切到 Opus」改了偏好但请求仍发主模型（假反馈）。
           val modelId =
@@ -1103,18 +1147,25 @@ class FloatingAssistantView(
           try {
             val result =
                 orchestrator.run(
+                    // 显式传会话 id：运行期间用户可能切到别的会话，隐式用
+                    // orchestrator.activeConversationId 会把历史写进错误的文件。
+                    conversationId,
                     providerId,
                     modelId,
                     userRequest,
                     customBaseUrl,
-                    { event -> handleEvent(event) },
+                    { event -> handleEvent(conversationId, event) },
                     imagePayload,
                     reasoningEffort,
                 )
             withContext(Dispatchers.Main) {
-              finishStreaming()
+              // 会话可能已被切走：后台会话的结果不写控件（已落盘，切回时回放）。
+              if (displayedConversationId != conversationId) {
+                return@withContext
+              }
+              finishStreaming(ui)
               // 已经流式显示过就不再追加：否则同一段回答会出现两遍。
-              if (!streamedThisRun) {
+              if (!ui.streamedThisRun) {
                 appendAssistant(
                     result.output.ifBlank { context.getString(string.ai_assistant_no_output) }
                 )
@@ -1132,7 +1183,10 @@ class FloatingAssistantView(
             throw e
           } catch (e: Throwable) {
             withContext(Dispatchers.Main) {
-              finishStreaming()
+              if (displayedConversationId != conversationId) {
+                return@withContext
+              }
+              finishStreaming(ui)
               appendTrace(
                   context.getString(
                       string.ai_assistant_error,
@@ -1152,35 +1206,81 @@ class FloatingAssistantView(
             // 否则按钮会永久停留在「停止」态，用户再也发不出请求。
             withContext(kotlinx.coroutines.NonCancellable) {
               withContext(Dispatchers.Main) {
-                setRunningUi(false)
-                // 状态条同理：不在这里停，取消/异常后动画会一直转，
-                // 看起来像还在跑。
-                binding.assistantWorking.stopWorking()
-                // 重试卡片收掉——**除非它正在报告「重试用尽」**。
-                // 那条信息必须留在屏幕上：用户需要知道失败前重试过几次，
-                // 而运行结束后再没有任何地方会显示它。
-                if (!retryCardPinned) {
-                  hideRetryCard()
+                // 只有当前显示的会话才允许改运行态：后台会话结束不该把正在看的
+                // 另一个会话的「停止」按钮切回「发送」。
+                if (displayedConversationId == conversationId) {
+                  setRunningUi(false)
+                  // 状态条同理：不在这里停，取消/异常后动画会一直转，
+                  // 看起来像还在跑。
+                  binding.assistantWorking.stopWorking()
+                  // 重试卡片收掉——**除非它正在报告「重试用尽」**。
+                  // 那条信息必须留在屏幕上：用户需要知道失败前重试过几次，
+                  // 而运行结束后再没有任何地方会显示它。
+                  if (!ui.retryCardPinned) {
+                    hideRetryCard()
+                  }
                 }
               }
             }
           }
         }
+    executionJobs[conversationId] = job
+    // 结束后自摘，避免 Map 随会话数无限增长（job 已完成时 remove 是 no-op 安全的）。
+    job.invokeOnCompletion { executionJobs.remove(conversationId, job) }
   }
 
-  private fun handleEvent(event: com.tom.rv2ide.ai.agent.AgentEvent) {
+  /**
+   * 本次请求应落进的会话 id。
+   *
+   * <p><b>优先「当前显示」的会话</b>：用户点开一条会话后 {@link displayedConversationId}
+   * 立刻更新，而 {@code orchestrator.activeConversationId} 要等回放完成才更新。若只读后者，
+   * 在回放完成前发送会把消息写进**上一个**会话。显示中的会话才是用户此刻在看的那个。
+   *
+   * <p>显示会话不可用时回退到当前活动会话；都不存在（首次、或已被删除）时新建一个。
+   * 新建走同步路径，保证用户消息立即落盘到正确的会话文件。
+   */
+  private fun resolveTargetConversation(): String? {
+    val displayed = displayedConversationId
+    if (!displayed.isNullOrEmpty() && orchestrator.conversationStore.exists(displayed)) {
+      return displayed
+    }
+    val active = orchestrator.activeConversationId
+    if (!active.isNullOrEmpty() && orchestrator.conversationStore.exists(active)) {
+      return active
+    }
+    return try {
+      orchestrator.newConversation().id
+    } catch (e: java.io.IOException) {
+      com.tom.rv2ide.ai.tool.api.ErrorLog.record("agent", "新建会话失败", e, null)
+      null
+    }
+  }
+
+  /**
+   * 渲染一条 agent 事件。
+   *
+   * <p><b>按会话隔离</b>：事件携带产生它的 [conversationId]。多会话并行时，只有
+   * **当前显示**的会话才写控件；后台会话的事件只由 orchestrator 的 PersistingListener
+   * 落盘（内容不丢），用户切回时回放。每个会话的流式/工具卡片指针存在 [uiState] 里，
+   * 避免 A 会话的 TOOL_FINISHED 回填到 B 会话的卡片。
+   */
+  private fun handleEvent(conversationId: String, event: com.tom.rv2ide.ai.agent.AgentEvent) {
+    val ui = uiState(conversationId)
     when (event.type) {
       com.tom.rv2ide.ai.agent.AgentEvent.Type.REASONING_DELTA -> {
         val delta = event.message
         if (delta.isEmpty()) {
           return
         }
+        if (displayedConversationId != conversationId) {
+          return
+        }
         lifecycleScope.launch(Dispatchers.Main) {
           // 返回 -1 表示「纯空白、没建块」——不能把它存进 lastThinkingId，
           // 否则后续增量会去找一个不存在的 id。
-          val id = adapter.appendThinking(delta, lastThinkingId)
+          val id = adapter.appendThinking(delta, ui.lastThinkingId)
           if (id >= 0) {
-            lastThinkingId = id
+            ui.lastThinkingId = id
           }
           // 收到推理增量 = 模型在思考。这个区分有实际意义：推理模型思考半分钟是正常的，
           // 显示「思考中」用户不会以为出了问题。
@@ -1199,9 +1299,12 @@ class FloatingAssistantView(
         if (delta.isEmpty()) {
           return
         }
+        if (displayedConversationId != conversationId) {
+          return
+        }
         // 累积始终发生在数据层（不能丢内容），只有界面刷新被节流。
         lifecycleScope.launch(Dispatchers.Main) {
-          val id = streamingMessageId
+          val id = ui.streamingMessageId
           if (id == null) {
             // 还没有气泡时，纯空白增量不建气泡。模型「只调用工具、不写正文」的轮次
             // 会先吐出 "\n\n"，那时建出的气泡最终没有内容，渲染成一片空白灰块。
@@ -1209,7 +1312,7 @@ class FloatingAssistantView(
             if (delta.isBlank()) {
               return@launch
             }
-            streamingMessageId =
+            ui.streamingMessageId =
                 adapter.append(AssistantMessageAdapter.Role.ASSISTANT, delta)
           } else {
             adapter.appendTo(id, delta)
@@ -1228,14 +1331,17 @@ class FloatingAssistantView(
         // 用轮次的**规范输出**覆盖流式累积：模型可能把工具调用写成正文文本形态，
         // 累积的增量里含标记，而事件里的 message 已经过 ToolCallTextParser 剥离。
         val text = event.message
+        if (displayedConversationId != conversationId) {
+          return
+        }
         lifecycleScope.launch(Dispatchers.Main) {
-          val id = streamingMessageId
+          val id = ui.streamingMessageId
           if (text.isNotBlank()) {
             // streamedThisRun 只在**确实往列表里写过内容**时置位。
             // 原先无条件置 true 会掩盖一条路径：没有流式增量（非流式响应）时 id 为 null，
             // 此时若 text 恰好为空，就既没追加本轮输出、又让收尾逻辑以为「已经显示过」，
             // 于是整轮回答在界面上彻底消失。
-            streamedThisRun = true
+            ui.streamedThisRun = true
             if (id != null) {
               // 只有非空才覆盖。该轮的规范输出为空是常见情况——模型这一轮只发起工具调用、
               // 没写正文（output 已被 ToolCallTextParser 剥掉标记后变成空串）。
@@ -1248,18 +1354,21 @@ class FloatingAssistantView(
             // 本轮没有正文，但流式阶段建过气泡（增量全是空白，或后来被覆盖成空）。
             // 留着就是一个内容为空的灰块——删掉，工具卡片自己已经说明了这一步做了什么。
             adapter.removeIfBlank(id)
-            streamingMessageId = null
+            ui.streamingMessageId = null
           }
           // 本轮推理到此结束。AgentSession 的事件顺序是 TURN_FINISHED 先于该轮的
           // TOOL_STARTED，所以在这里收尾最准；置空后，工具之后的新推理会另起一块。
-          lastThinkingId?.let { adapter.finishThinking(it) }
-          lastThinkingId = null
-          finishStreaming()
+          ui.lastThinkingId?.let { adapter.finishThinking(it) }
+          ui.lastThinkingId = null
+          finishStreaming(ui)
           scrollToBottom()
         }
       }
       com.tom.rv2ide.ai.agent.AgentEvent.Type.TOOL_STARTED -> {
         val call = event.toolCall
+        if (displayedConversationId != conversationId) {
+          return
+        }
         lifecycleScope.launch(Dispatchers.Main) {
           // 卡片替代原来的纯文本过程行：折叠态给摘要，展开看完整输入输出。
           // 展开时展示**原始**参数 JSON 而不做美化：参数里可能有含换行的长内容
@@ -1271,12 +1380,12 @@ class FloatingAssistantView(
                   summary = summarizeArgs(call.arguments),
                   input = call.arguments.orEmpty(),
               )
-          lastToolCardId = id
+          ui.lastToolCardId = id
           // 发生工具调用意味着「这一段推理结束了」：把思维链块收尾并断开，
           // 让工具之后的新推理另起一块。否则整轮的推理会堆在同一块里，
           // 看不出哪段推理导致了哪次调用。
-          lastThinkingId?.let { adapter.finishThinking(it) }
-          lastThinkingId = null
+          ui.lastThinkingId?.let { adapter.finishThinking(it) }
+          ui.lastThinkingId = null
           // 底部状态条播报这一步在做什么。放在这里（而不是 TOOL_FINISHED）：
           // 用户需要的是「现在在跑什么」，「刚刚跑完了什么」工具卡片已经写了。
           showAction(actionForTool(call.name, call.arguments))
@@ -1286,14 +1395,17 @@ class FloatingAssistantView(
       com.tom.rv2ide.ai.agent.AgentEvent.Type.TOOL_FINISHED -> {
         val result = event.toolResult
         val call = event.toolCall
+        if (displayedConversationId != conversationId) {
+          return
+        }
         lifecycleScope.launch(Dispatchers.Main) {
           // 回填到最近的卡片。TOOL_STARTED / TOOL_FINISHED 成对出现，
           // 用「最近一张仍在运行中的卡片」关联即可，无需在协议层传 id。
-          val cardId = lastToolCardId ?: adapter.lastToolCallId()
+          val cardId = ui.lastToolCardId ?: adapter.lastToolCallId()
           if (cardId != null) {
             adapter.completeToolCall(cardId, result.content, result.isError)
           }
-          lastToolCardId = null
+          ui.lastToolCardId = null
 
           // 有 diffId 说明这次调用改了文件。插一条**带撤销按钮**的条目——
           // 这是用户能真正看到「AI 改了什么、怎么改回来」的唯一入口。
@@ -1322,17 +1434,20 @@ class FloatingAssistantView(
         // 事件同时携带 attempt / maxAttempts / delayMs，用来渲染底部固定卡片
         // （见 showRetryCard）。**不再往消息列表追加**：一次运行最多重试 10 次，
         // 每次插一条会把对话流刷满，而用户只关心「现在第几次、还要等多久」。
+        ui.retryCountThisRun = Math.max(ui.retryCountThisRun, event.retryAttempt)
+        if (displayedConversationId != conversationId) {
+          return
+        }
         lifecycleScope.launch(Dispatchers.Main) {
-          streamingMessageId?.let { adapter.remove(it) }
-          streamingMessageId = null
-          lastThinkingId?.let { adapter.remove(it) }
-          lastThinkingId = null
-          lastToolCardId = null
-          streamedThisRun = false
+          ui.streamingMessageId?.let { adapter.remove(it) }
+          ui.streamingMessageId = null
+          ui.lastThinkingId?.let { adapter.remove(it) }
+          ui.lastThinkingId = null
+          ui.lastToolCardId = null
+          ui.streamedThisRun = false
           // 节流器要重置：它记着「本轮是否已刷过」，不重置会让重发后的首个增量
           // 被当成「间隔未到」而丢掉，看起来像新回答迟迟不出现。
           throttle.reset()
-          retryCountThisRun = Math.max(retryCountThisRun, event.retryAttempt)
           showRetryCard(
               event.retryAttempt,
               event.retryMaxAttempts,
@@ -1343,30 +1458,36 @@ class FloatingAssistantView(
       }
       com.tom.rv2ide.ai.agent.AgentEvent.Type.CONTEXT_COMPACTED -> {
         // 压缩是有损的，必须让用户看到——否则会困惑于模型为何遗忘先前的要求。
+        if (displayedConversationId != conversationId) {
+          return
+        }
         lifecycleScope.launch(Dispatchers.Main) { appendTrace(event.message) }
       }
       com.tom.rv2ide.ai.agent.AgentEvent.Type.FAILED -> {
+        ui.streamedThisRun = true
+        ui.retryCardPinned = ui.retryCountThisRun > 0
+        if (displayedConversationId != conversationId) {
+          return
+        }
         lifecycleScope.launch(Dispatchers.Main) {
-          streamedThisRun = true
           // 仍在「运行中」的卡片要收尾，否则会永久停在运行态，用户以为还在跑。
           for (id in adapter.runningToolCallIds()) {
             adapter.failToolCall(id, event.message)
           }
           // 思维链同理：失败时标题必须从「思考中…」切走，否则看起来像还在等。
           adapter.finishAllThinking()
-          lastThinkingId = null
+          ui.lastThinkingId = null
           // 重试卡片留在原地改成「重试 N 次仍失败」，而不是直接收掉。
           //
           // **这条是实测反馈的直接来源**：此前重试卡片还没实现，重试信息走
           // appendTrace 进消息列表，用户看到的是「正在重试 1/10」紧接着「请求失败」——
           // 中间九次重试去哪了完全看不出来。留在原地并写明次数，
           // 「重试到第几次才放弃」才是可读的。
-          if (retryCountThisRun > 0) {
+          if (ui.retryCountThisRun > 0) {
             binding.assistantRetryCard.isVisible = true
             binding.assistantRetryText.text =
-                context.getString(string.ai_assistant_retry_exhausted, retryCountThisRun) +
+                context.getString(string.ai_assistant_retry_exhausted, ui.retryCountThisRun) +
                     shortErrorCode(event.message).let { if (it.isEmpty()) "" else " · $it" }
-            retryCardPinned = true
           }
           appendTrace("⚠️ ${event.message}")
         }
@@ -1384,8 +1505,10 @@ class FloatingAssistantView(
    * 也是同一个按钮换图标。
    */
   private fun onSendClicked() {
-    if (executionJob?.isActive == true) {
-      cancel()
+    val displayed = displayedConversationId
+    if (displayed != null && executionJobs[displayed]?.isActive == true) {
+      // 只取消当前显示的会话：后台会话继续跑（多项目并行）。
+      cancel(displayed)
       // 取消后立刻切回发送态：用户点这个按钮的意图是「我现在要输入」，
       // 让他等 finally 里的恢复会有一段「点了没反应」的空窗。
       setRunningUi(false)
@@ -1448,12 +1571,8 @@ class FloatingAssistantView(
     binding.assistantWorking.isVisible = running
     binding.assistantWorkingDivider.isVisible = running
 
-    if (running) {
-      // 新一轮开始：清掉上一轮留下的重试结论与计数。
-      retryCountThisRun = 0
-      retryCardPinned = false
-      hideRetryCard()
-    }
+    // 重试结论的清理由「新一轮开始」（execute）负责，不放在这里：本方法也会被
+    // 「切到正在跑的会话」调用，若在此清计数会把该会话已累计的重试次数抹掉。
   }
 
   /** 隐藏重试卡片。 */
@@ -1462,21 +1581,20 @@ class FloatingAssistantView(
   }
 
   /**
-   * 本次运行发生过几次重试。
+   * 按**当前显示会话**的运行状态同步按钮与状态条。
    *
-   * <p>用来在最终失败时补一句「重试 N 次仍失败」：否则用户看到重试卡片一闪、
-   * 然后直接是失败提示，无法判断到底是「重试都没成功」还是「重试被拒绝了」。
-   * 这两种情况的可操作性完全不同——前者等网络恢复即可，后者要去看错误码。
+   * <p>多会话并行下，切换会话不能沿用上一个会话的运行态：A 在跑、切到空闲的 B 时
+   * 按钮必须回到「发送」；反之切到正在跑的会话要显示「停止」。
    */
-  private var retryCountThisRun = 0
-
-  /**
-   * 重试卡片是否处于「钉住」状态（正在显示「重试用尽」的结论）。
-   *
-   * <p>钉住时不被运行结束的收尾逻辑清掉。下一次运行开始时由
-   * [setRunningUi] 解开——否则上一轮的结论会一直挂在新一轮的对话上。
-   */
-  private var retryCardPinned = false
+  private fun syncRunningUiForDisplayed() {
+    val running = displayedConversationId?.let { executionJobs[it]?.isActive } == true
+    setRunningUi(running)
+    if (running) {
+      binding.assistantWorking.startWorking()
+    } else {
+      binding.assistantWorking.stopWorking()
+    }
+  }
 
   /**
    * 显示/更新重试卡片。
@@ -1534,13 +1652,13 @@ class FloatingAssistantView(
       AssistantActionText.describe(context, toolName, arguments)
 
   /** 结束流式段：下一次增量会新建一条消息。 */
-  private fun finishStreaming() {
+  private fun finishStreaming(ui: SessionUiState) {
     // 末尾必刷：被节流合并掉的最后一段内容必须补出去，否则看起来像回答被截断了。
     if (throttle.flush()) {
       scrollToBottom()
     }
     throttle.reset()
-    streamingMessageId = null
+    ui.streamingMessageId = null
   }
 
   /**
@@ -1965,65 +2083,53 @@ class FloatingAssistantView(
   /**
    * 打开一个历史会话。
    *
-   * <p>必须同时做两件事：把 orchestrator 的当前会话指过去（后续请求续接它的历史），
-   * 以及把该会话的消息回放到界面上。只做前者会让用户看到旧会话的内容却在新会话里提问。
+   * <p>必须同时做三件事：把 orchestrator 的当前会话指过去（后续请求续接它的历史）、
+   * 把该会话的消息回放到界面上、并让面板跟随该会话所属的项目。
    *
-   * <p><b>会话属于别的项目时先确认</b>：会话列表是全局的，而工作区按项目隔离。
-   * 点开一条别的项目的会话后，它的历史属于旧项目、工具却作用于当前项目——更糟的是
-   * {@code persistActiveConversation()} 会把当前项目的「上次会话」键指向这条会话，
-   * 此后在当前项目里的对话会**追加进旧项目的会话文件**。这正是
-   * {@code AgentOrchestrator.restoreMostRecentConversation} 注释里警告过的错配，
-   * 只是抽屉这条路绕过了它的防护。
-   *
-   * <p>只提示、不阻止：列表既然全显示，用户就有权打开任意一条；我们要做的是让
-   * 这个状态**可见**，而不是替他决定。
+   * <p><b>不再弹跨项目确认框</b>：会话绑定 cwd（存在 {@code SessionMetaEntry}），
+   * {@code AgentOrchestrator.run} 已改为按会话 cwd 解析工具工作区——跨项目会话
+   * 现在会**正确地**作用在它自己的项目上，而不是像以前那样「历史属于 A、工具作用于 B」。
+   * 保护没有消失，只是从「弹框阻止」升级为「按会话正确归属」。点一条 B 项目的会话，
+   * 面板就切到 B 项目（标题、git 分支、会话归属标注一并更新），这正是用户要的快速切换。
    */
   private fun openConversation(summary: com.tom.rv2ide.ai.agent.conversation.ConversationSummary) {
-    if (isForeignConversation(summary)) {
-      confirmOpenForeignConversation(summary) { doOpenConversation(summary) }
-      return
-    }
     doOpenConversation(summary)
-  }
-
-  /** 该会话是否属于**另一个**项目。任一方缺 cwd 时都返回 false（无从判断，不打扰用户）。 */
-  private fun isForeignConversation(
-      summary: com.tom.rv2ide.ai.agent.conversation.ConversationSummary
-  ): Boolean {
-    val ws = workspace?.absolutePath ?: return false
-    val cwd = summary.getCwd()
-    return cwd.isNotBlank() && cwd != ws
-  }
-
-  /** 跨项目打开的确认。确认后才真正切过去。 */
-  private fun confirmOpenForeignConversation(
-      summary: com.tom.rv2ide.ai.agent.conversation.ConversationSummary,
-      onConfirm: () -> Unit,
-  ) {
-    val ws = workspace?.absolutePath.orEmpty()
-    host.dialogs.showConfirm(
-        string.ai_conversation_foreign_project_title,
-        context.getString(string.ai_conversation_foreign_project_message, summary.getCwd(), ws),
-        string.ai_conversation_foreign_project_continue,
-        onConfirm,
-    )
   }
 
   private fun doOpenConversation(
       summary: com.tom.rv2ide.ai.agent.conversation.ConversationSummary
   ) {
-    // 切换会话要中断正在进行的运行：它的输出属于旧会话，继续跑会写错地方。
-    //
-    // 必须放在这里而不是 openConversation 的入口：入口处还要先弹跨项目确认框，
-    // 若那时就 cancel，用户在确认框上点「取消」也会白白杀掉一次正在跑的任务。
-    cancel()
+    val convId = summary.getId()
+    // 切换显示：把该会话标为当前显示，后台会话事件从此不再写控件。
+    displayedConversationId = convId
+    // 只取消**目标会话自身**正在跑的运行（几乎不会发生：正在显示才可能被点）。
+    // 绝不取消其它会话——那会杀掉用户并行跑着的任务。
+    cancel(convId)
     lifecycleScope.launch(Dispatchers.IO) {
-      val messages = orchestrator.loadConversationMessages(summary.getId())
+      val messages = orchestrator.loadConversationMessages(convId)
+      // 会话绑定 cwd 时，面板跟随它切项目。在 IO 线程设置：setWorkspace 会读会话列表。
+      val cwd = summary.getCwd()
+      val projectDir = if (cwd.isNotBlank()) File(cwd) else null
+      val switchProject = projectDir != null && projectDir.isDirectory
+      if (switchProject) {
+        orchestrator.workspace = projectDir
+      }
       withContext(Dispatchers.Main) {
-        orchestrator.openConversation(summary.getId())
-        lastOpenedConversationId = summary.getId()
+        if (switchProject) {
+          workspace = projectDir
+          // 换了项目就换了仓库：分支标签要重读，旧项目的分支不能留着。
+          lastGitBranch = null
+          refreshGitBranch()
+          refreshWorkspaceLabel()
+          conversationAdapter.setCurrentCwd(projectDir.absolutePath)
+        }
+        orchestrator.openConversation(convId)
+        lastOpenedConversationId = convId
         replayMessages(messages)
-        conversationAdapter.setActive(summary.getId())
+        conversationAdapter.setActive(convId)
+        // 发送/停止按钮与状态条要反映**新显示会话**的运行状态：A 会话在跑、切到空闲的
+        // B 会话后，按钮必须回到「发送」，否则用户会以为 B 也在跑。
+        syncRunningUiForDisplayed()
         // 打开后自动收起抽屉：用户的意图是「看这个会话」，不是继续浏览列表。
         if (binding.assistantDrawerOverlay.isVisible) {
           toggleConversationPanel()
@@ -2041,10 +2147,15 @@ class FloatingAssistantView(
    */
   private fun replayMessages(messages: List<com.tom.rv2ide.ai.protocol.ModelMessage>) {
     adapter.clear()
-    streamingMessageId = null
-    streamedThisRun = false
-    lastThinkingId = null
-    lastToolCardId = null
+    // 重置**当前显示会话**的渲染指针（不是全局字段——那些已按会话隔离）。
+    displayedConversationId?.let { id ->
+      val ui = uiState(id)
+      ui.streamingMessageId = null
+      ui.streamedThisRun = false
+      ui.lastThinkingId = null
+      ui.lastToolCardId = null
+    }
+    throttle.reset()
     for (message in messages) {
       when (message) {
         is com.tom.rv2ide.ai.protocol.UserModelMessage ->
@@ -2077,9 +2188,15 @@ class FloatingAssistantView(
   private fun deleteConversation(
       summary: com.tom.rv2ide.ai.agent.conversation.ConversationSummary
   ) {
+    val deletedId = summary.getId()
+    // 删会话前先停掉它自己的运行（若在跑）：继续写一个已被删除的文件没有意义。
+    // 只停这一个，其它并行会话不受影响。
+    cancel(deletedId)
+    executionJobs.remove(deletedId)
+    sessionUi.remove(deletedId)
     lifecycleScope.launch(Dispatchers.IO) {
       try {
-        orchestrator.deleteConversation(summary.getId())
+        orchestrator.deleteConversation(deletedId)
       } catch (e: java.io.IOException) {
         com.tom.rv2ide.ai.tool.api.ErrorLog.record("agent", "删除会话失败", e, null)
       }
@@ -2087,12 +2204,9 @@ class FloatingAssistantView(
         // 删掉的正是当前显示的会话时，必须同时清空消息区——否则会出现
         // 「列表里已经没有它、但消息还留在屏幕上」的矛盾状态，用户继续提问
         // 会落进一个已被删除的会话。
-        if (summary.getId() == lastOpenedConversationId) {
+        if (deletedId == lastOpenedConversationId) {
           adapter.clear()
-          streamingMessageId = null
-          streamedThisRun = false
-          lastThinkingId = null
-          lastToolCardId = null
+          displayedConversationId = null
           lastOpenedConversationId = null
           updateEmptyState()
         }
@@ -2185,16 +2299,64 @@ class FloatingAssistantView(
         else -> "○"
       }
 
+  /**
+   * 新建会话：可选已有项目作为该会话的 cwd。
+   *
+   * <p>「多项目并行」的关键入口——用户开新会话时直接指定目标项目，之后这个会话的工具
+   * 调用固定在那个项目里，与视图当前显示哪个项目无关。只有一个候选项目（或读不到列表）
+   * 时不弹选择框，直接在当前项目里新建，避免多余一步。
+   */
   private fun startNewConversation() {
-    cancel()
+    lifecycleScope.launch(Dispatchers.IO) {
+      val projects =
+          try {
+            orchestrator.listSelectableProjects()
+          } catch (e: Exception) {
+            emptyList()
+          }
+      withContext(Dispatchers.Main) {
+        if (projects.size <= 1) {
+          beginNewConversation(projects.firstOrNull())
+          return@withContext
+        }
+        val labels = projects.map { it.name }.toTypedArray()
+        val currentIdx =
+            projects.indexOfFirst { it.absolutePath == workspace?.absolutePath }.coerceAtLeast(0)
+        host.dialogs.showSingleChoice(
+            string.ai_conversation_new_project_title,
+            labels,
+            currentIdx,
+        ) { which -> beginNewConversation(projects.getOrNull(which)) }
+      }
+    }
+  }
+
+  /** 真正建会话：把项目目录作为 cwd 写进会话元信息。 */
+  private fun beginNewConversation(projectDir: File?) {
     adapter.clear()
-    streamingMessageId = null
-    streamedThisRun = false
-    lastThinkingId = null
+    displayedConversationId = null
+    lastOpenedConversationId = null
     updateEmptyState()
     lifecycleScope.launch(Dispatchers.IO) {
+      // 先把 orchestrator 的当前工作区切到目标项目，再新建：newConversation 会把
+      // 「本工作区上次会话」键指向新会话，键取决于 workspace，顺序不能反。
+      if (projectDir != null && projectDir.isDirectory) {
+        orchestrator.workspace = projectDir
+      }
       try {
-        orchestrator.newConversation()
+        val summary = orchestrator.newConversation(projectDir?.absolutePath)
+        withContext(Dispatchers.Main) {
+          displayedConversationId = summary.id
+          lastOpenedConversationId = summary.id
+          if (projectDir != null && projectDir.isDirectory) {
+            workspace = projectDir
+            lastGitBranch = null
+            refreshGitBranch()
+            refreshWorkspaceLabel()
+            conversationAdapter.setCurrentCwd(projectDir.absolutePath)
+          }
+          conversationAdapter.setActive(summary.id)
+        }
       } catch (e: java.io.IOException) {
         // 开新会话失败不该阻断对话：orchestrator 会在下次 run 时再尝试。
         com.tom.rv2ide.ai.tool.api.ErrorLog.record("agent", "新建会话失败", e, null)
@@ -2202,20 +2364,38 @@ class FloatingAssistantView(
     }
   }
 
-  private fun cancel() {
-    orchestrator.cancel()
-    executionJob?.cancel()
-    executionJob = null
-    finishStreaming()
-    lastToolCardId = null
-    lastThinkingId = null
-    // 取消时仍在运行的卡片要收尾，否则会永久停在运行态。
-    for (id in adapter.runningToolCallIds()) {
-      adapter.failToolCall(id, context.getString(string.ai_assistant_tool_cancelled))
+  /**
+   * 取消**指定会话**的运行。
+   *
+   * <p>按会话隔离：只停这一个，其它并行会话继续跑。只有该会话正在被显示时，才收尾
+   * 屏幕上的工具卡片与思维链——后台会话的卡片本就不在屏幕上。
+   */
+  private fun cancel(conversationId: String?) {
+    if (conversationId == null) {
+      return
     }
-    // 仍在流式的思维链块也要收尾：否则标题会永远停在「思考中…」，
-    // 用户以为模型还在工作。
-    adapter.finishAllThinking()
+    orchestrator.cancel(conversationId)
+    executionJobs.remove(conversationId)?.cancel()
+    val ui = uiState(conversationId)
+    finishStreaming(ui)
+    ui.lastToolCardId = null
+    ui.lastThinkingId = null
+    if (displayedConversationId == conversationId) {
+      // 取消时仍在运行的卡片要收尾，否则会永久停在运行态。
+      for (id in adapter.runningToolCallIds()) {
+        adapter.failToolCall(id, context.getString(string.ai_assistant_tool_cancelled))
+      }
+      // 仍在流式的思维链块也要收尾：否则标题会永远停在「思考中…」，
+      // 用户以为模型还在工作。
+      adapter.finishAllThinking()
+    }
+  }
+
+  /** 取消所有会话的运行（视图销毁时用）。 */
+  private fun cancelAll() {
+    for (id in executionJobs.keys.toList()) {
+      cancel(id)
+    }
   }
 
   /**

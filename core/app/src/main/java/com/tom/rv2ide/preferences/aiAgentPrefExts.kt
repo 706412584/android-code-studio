@@ -50,10 +50,17 @@ class AIAgentPreferencesScreen(
     // 原先只有一个分组（AgentToolingGroup）装了 15 项，加上密钥区的 7 项，
     // 一页要滚动很久才能看完，且「密钥」与「技能」这类毫不相干的配置挨在一起。
     // 拆页粒度参照参考项目：顶层 4 个入口、每页 ≤8 项、每个分组 ≤6 项。
-    addPreference(ProvidersPage())
-    addPreference(ToolsPage())
-    addPreference(CapabilitiesPage())
-    addPreference(AdvancedPage())
+    //
+    // 守卫：`children` 的默认值是 `mutableListOf()`，而 `addPreference` 的实现是
+    // `(children as MutableList).add(...)`——`@Parcelize` 往返时子类会带着**已填充**的
+    // children 重新构造，init 再跑一遍就会把这四项重复追加。只有 children 为空
+    // （真正的新建）时才填充。
+    if (children.isEmpty()) {
+      addPreference(ProvidersPage())
+      addPreference(ToolsPage())
+      addPreference(CapabilitiesPage())
+      addPreference(AdvancedPage())
+    }
   }
 }
 
@@ -133,7 +140,7 @@ private class CapabilitiesPage(
 
   init {
     addPreference(AssistantOverlayPreference())
-    addPreference(CustomAgentsPreference())
+    addPreference(AgentsPreference())
     addPreference(SkillsPreference())
     addPreference(MemoriesPreference())
     addPreference(McpServersPreference())
@@ -343,6 +350,13 @@ private class ChatModePreference(
  *
  * <p>编辑界面同时给出**可用占位符清单**：写错占位符名不会报错，只会静默变成空串，
  * 表现为「模型行为莫名其妙」——这是最难排查的一类问题，因此必须在编辑处就可见。
+ *
+ * <p><b>summary 的时序</b>：必须在 [onCreateView]（`super` 之后）里写，不能在
+ * [onCreatePreference] 里写——基类 {@code BasePreference.onCreateView} 拿到返回值**之后**
+ * 才用静态 {@code summary} 资源覆盖（`this.summary?.let { pref.summary = ... }`）。
+ * 此前在 onCreatePreference 里算好的「已自定义 N 个」会被无条件盖成静态文案，
+ * 于是无论改了多少模板，条目都显示「Using default templates」——看起来就像保存没生效。
+ * 与 [CodeGraphPreference]、[AssistantOverlayPreference] 同一个坑。
  */
 @Parcelize
 private class PromptTemplatePreference(
@@ -351,16 +365,21 @@ private class PromptTemplatePreference(
     override val summary: Int? = R.string.ai_agent_prompt_template_summary,
 ) : BasePreference() {
 
-  override fun onCreatePreference(context: Context): Preference {
-    val store = com.tom.rv2ide.artificial.agent.PrefsPromptTemplateStore(context)
-    val customized = store.readAll().size
-    return androidx.preference.Preference(context).apply {
-      key = "prompt_template"
-      title = context.getString(R.string.ai_agent_prompt_template_title)
-      summary =
-          if (customized == 0) context.getString(R.string.ai_agent_prompt_template_default)
-          else context.getString(R.string.ai_agent_prompt_template_customized, customized)
-    }
+  override fun onCreatePreference(context: Context): Preference =
+      androidx.preference.Preference(context).apply { key = "prompt_template" }
+
+  override fun onCreateView(context: Context): Preference {
+    val pref = super.onCreateView(context)
+    // super 之后：静态 summary 已写完，这里写动态值才不会被盖掉。
+    pref.summary = describe(context)
+    return pref
+  }
+
+  /** 已自定义数量 → 一行摘要。 */
+  private fun describe(context: Context): String {
+    val customized = com.tom.rv2ide.artificial.agent.PrefsPromptTemplateStore(context).readAll().size
+    return if (customized == 0) context.getString(R.string.ai_agent_prompt_template_default)
+    else context.getString(R.string.ai_agent_prompt_template_customized, customized)
   }
 
   override fun onPreferenceClick(preference: Preference): Boolean {
@@ -374,6 +393,9 @@ private class PromptTemplatePreference(
             com.tom.rv2ide.ai.agent.prompt.PromptTemplates.TOOLS_CONTEXT,
             com.tom.rv2ide.ai.agent.prompt.PromptTemplates.TOOL_CALL_FORMAT,
             com.tom.rv2ide.ai.agent.prompt.PromptTemplates.TODO_SECTION,
+            // 与 AgentPromptBuilder 的拼接顺序一致：TODO_SECTION 之后、NOTES 之前。
+            // 此前漏了这一项，guidance 模板在设置里看不到、改不了，但它确实会进提示词。
+            com.tom.rv2ide.ai.agent.prompt.PromptTemplates.GUIDANCE_SECTION,
             com.tom.rv2ide.ai.agent.prompt.PromptTemplates.NOTES,
             com.tom.rv2ide.ai.agent.prompt.PromptTemplates.chatModeTemplateId(
                 com.tom.rv2ide.ai.agent.prompt.ChatMode.CHAT),
@@ -398,7 +420,7 @@ private class PromptTemplatePreference(
         .setItems(labels) { _, which -> editTemplate(context, store, templates[which], preference) }
         .setNeutralButton(R.string.ai_agent_prompt_template_reset_all) { _, _ ->
           templates.forEach { store.reset(it) }
-          preference.summary = context.getString(R.string.ai_agent_prompt_template_default)
+          preference.summary = describe(context)
         }
         .setNegativeButton(android.R.string.cancel, null)
         .show()
@@ -449,15 +471,11 @@ private class PromptTemplatePreference(
         .setView(scroll)
         .setPositiveButton(android.R.string.ok) { _, _ ->
           store.write(templateId, editText.text?.toString().orEmpty())
-          preference.summary =
-              context.getString(
-                  R.string.ai_agent_prompt_template_customized,
-                  store.readAll().size,
-              )
+          preference.summary = describe(context)
         }
         .setNeutralButton(R.string.ai_agent_prompt_template_reset) { _, _ ->
           store.reset(templateId)
-          preference.summary = context.getString(R.string.ai_agent_prompt_template_default)
+          preference.summary = describe(context)
         }
         .setNegativeButton(android.R.string.cancel, null)
         .show()
@@ -465,33 +483,49 @@ private class PromptTemplatePreference(
 }
 
 /**
- * 自定义 agent：新增、编辑、启停、删除。
+ * Agent 管理：**内置 agent（可编辑/启停/恢复默认）** + **自定义 agent（可增删改）**。
  *
- * <p><b>为什么需要它</b>：内置提示词只能覆盖通用场景。用户对自己的项目有特定要求
- * （「审查时必须检查是否遗漏了 i18n 字符串」），把它固化成一个自定义 agent 后，
- * 模型可以通过 {@code agentx_<名字>} 工具调用它，用户不必每次在对话里重复说明。
+ * <p><b>从「自定义 Agent」扩展为「Agent」</b>：此前这里只列自定义 agent，内置预设
+ * （代码审查、探索、缺陷定位、测试编写、文档撰写）只存在于运行时，用户在设置里看不到、
+ * 也改不了。内置预设的职责与提示词是固定的，而不同项目对「审查时该看什么」的要求差别很大，
+ * 因此内置角色也必须可覆盖、可一键恢复默认。
+ *
+ * <p><b>两类 agent 的存储不同</b>：内置 agent 的默认值随应用提供，用户改动只存**与默认不同
+ * 的覆盖项**（{@link com.tom.rv2ide.ai.agent.builtin.BuiltinAgentStore}），
+ * 「恢复默认」= 删掉覆盖项；自定义 agent 由用户从零定义，整份存在
+ * {@link com.tom.rv2ide.ai.agent.command.CustomAgentStore} 里。两类都落在
+ * {@code filesDir/ai/} 下，与运行时（{@code AgentOrchestrator}）读取的是同一份文件——
+ * 否则设置里改了、助手用的还是旧值。
+ *
+ * <p><b>为什么先弹动作菜单再进编辑</b>：Android AlertDialog 只有三个按钮槽位，而一个
+ * agent 需要「编辑 / 启停 / 恢复默认或删除」三类动作。用一层动作菜单（与
+ * {@link McpServersPreference} 同一形态）承载，比把动作硬塞进按钮更清楚。
+ *
+ * <p><b>summary 的时序</b>：同 [PromptTemplatePreference]——动态摘要必须在
+ * [onCreateView]（super 之后）写，否则被基类的静态 summary 覆盖。
  */
 @Parcelize
-private class CustomAgentsPreference(
-    override val key: String = "custom_agents",
-    override val title: Int = R.string.ai_agent_custom_agents_title,
-    override val summary: Int? = R.string.ai_agent_custom_agents_summary,
+private class AgentsPreference(
+    override val key: String = "agents",
+    override val title: Int = R.string.ai_agent_agents_title,
+    override val summary: Int? = R.string.ai_agent_agents_summary,
 ) : BasePreference() {
 
-  override fun onCreatePreference(context: Context): Preference {
-    val agents = customAgentStore(context).all()
-    return androidx.preference.Preference(context).apply {
-      key = "custom_agents"
-      title = context.getString(R.string.ai_agent_custom_agents_title)
-      summary =
-          if (agents.isEmpty()) context.getString(R.string.ai_agent_custom_agents_none)
-          else
-              context.getString(
-                  R.string.ai_agent_custom_agents_count,
-                  agents.count { it.isUsable() },
-                  agents.size,
-              )
-    }
+  override fun onCreatePreference(context: Context): Preference =
+      androidx.preference.Preference(context).apply { key = "agents" }
+
+  override fun onCreateView(context: Context): Preference {
+    val pref = super.onCreateView(context)
+    // super 之后：静态 summary 已写完，动态值才不会被盖掉。
+    pref.summary = describe(context)
+    return pref
+  }
+
+  /** 内置/自定义可用数量 → 一行摘要。 */
+  private fun describe(context: Context): String {
+    val builtin = builtinStore(context).all().count { it.isUsable() }
+    val custom = customStore(context).all().count { it.isUsable() }
+    return context.getString(R.string.ai_agent_agents_count, builtin, custom)
   }
 
   override fun onPreferenceClick(preference: Preference): Boolean {
@@ -499,41 +533,205 @@ private class CustomAgentsPreference(
     return true
   }
 
-  private fun customAgentStore(context: Context) =
+  // ---- stores（路径必须与 AgentOrchestrator 一致） ----
+
+  private fun builtinStore(context: Context) =
+      com.tom.rv2ide.ai.agent.builtin.BuiltinAgentStore(
+          java.io.File(java.io.File(context.filesDir, "ai"), "builtin_agents.json"))
+
+  private fun customStore(context: Context) =
       com.tom.rv2ide.ai.agent.command.CustomAgentStore(
           java.io.File(java.io.File(context.filesDir, "ai"), "custom_agents.json"))
+
+  // ---- 列表 ----
 
   private fun showList(
       context: Context,
       preference: Preference,
   ) {
-    val store = customAgentStore(context)
-    val agents = store.all()
+    val builtin = builtinStore(context)
+    val custom = customStore(context)
+    val builtinAgents = builtin.all()
+    val customAgents = custom.all()
 
-    val labels =
-        agents
-            .map { agent ->
-              val state = if (agent.isUsable()) "✓" else "✗"
-              "$state ${agent.name}"
-            }
-            .toMutableList()
-    labels.add(context.getString(R.string.ai_agent_custom_agents_add))
+    val labels = mutableListOf<String>()
+    for (agent in builtinAgents) {
+      val state = if (agent.isUsable()) "✓" else "✗"
+      val mark =
+          if (builtin.isCustomized(agent.id))
+              " · " + context.getString(R.string.ai_agent_agents_customized)
+          else ""
+      labels.add("[${context.getString(R.string.ai_agent_agents_builtin)}] $state ${agent.name}$mark")
+    }
+    for (agent in customAgents) {
+      val state = if (agent.isUsable()) "✓" else "✗"
+      labels.add("[${context.getString(R.string.ai_agent_agents_custom)}] $state ${agent.name}")
+    }
+    labels.add(context.getString(R.string.ai_agent_agents_add))
 
     com.google.android.material.dialog.MaterialAlertDialogBuilder(context)
-        .setTitle(R.string.ai_agent_custom_agents_title)
+        .setTitle(R.string.ai_agent_agents_title)
         .setItems(labels.toTypedArray()) { _, which ->
-          if (which == agents.size) {
-            edit(context, store, null, preference)
-          } else {
-            edit(context, store, agents[which], preference)
+          when {
+            which < builtinAgents.size ->
+                showBuiltinActions(context, builtin, builtinAgents[which], preference)
+            which < builtinAgents.size + customAgents.size ->
+                showCustomActions(
+                    context, custom, customAgents[which - builtinAgents.size], preference)
+            else -> editCustom(context, custom, null, preference)
+          }
+        }
+        .setNeutralButton(R.string.ai_agent_agents_reset_all) { _, _ ->
+          builtin.clear()
+          preference.summary = describe(context)
+        }
+        .setNegativeButton(android.R.string.cancel, null)
+        .show()
+  }
+
+  // ---- 内置 agent：动作 + 编辑 ----
+
+  private fun showBuiltinActions(
+      context: Context,
+      store: com.tom.rv2ide.ai.agent.builtin.BuiltinAgentStore,
+      agent: com.tom.rv2ide.ai.agent.builtin.BuiltinAgent,
+      preference: Preference,
+  ) {
+    val actions =
+        arrayOf(
+            context.getString(R.string.ai_agent_agents_edit),
+            context.getString(
+                if (agent.isEnabled) R.string.ai_agent_custom_agents_disable
+                else R.string.ai_agent_custom_agents_enable),
+            context.getString(R.string.ai_agent_agents_reset),
+        )
+    com.google.android.material.dialog.MaterialAlertDialogBuilder(context)
+        .setTitle(agent.name)
+        .setItems(actions) { _, which ->
+          when (which) {
+            0 -> editBuiltin(context, store, agent, preference)
+            1 -> {
+              store.save(agent.withEnabled(!agent.isEnabled))
+              preference.summary = describe(context)
+            }
+            else -> {
+              store.reset(agent.id)
+              preference.summary = describe(context)
+            }
           }
         }
         .setNegativeButton(android.R.string.cancel, null)
         .show()
   }
 
-  /** 编辑一个 agent；existing 为 null 表示新建。 */
-  private fun edit(
+  /** 编辑内置 agent：可改说明、提示词与工具白名单；id/名字固定（是工具的稳定标识）。 */
+  private fun editBuiltin(
+      context: Context,
+      store: com.tom.rv2ide.ai.agent.builtin.BuiltinAgentStore,
+      existing: com.tom.rv2ide.ai.agent.builtin.BuiltinAgent,
+      preference: Preference,
+  ) {
+    val container = android.widget.LinearLayout(context).apply {
+      orientation = android.widget.LinearLayout.VERTICAL
+      setPadding(48, 24, 48, 0)
+    }
+    val descriptionField = com.google.android.material.textfield.TextInputEditText(context).apply {
+      hint = context.getString(R.string.ai_agent_custom_agents_description_hint)
+      setText(existing.description)
+    }
+    val promptField = com.google.android.material.textfield.TextInputEditText(context).apply {
+      hint = context.getString(R.string.ai_agent_custom_agents_prompt_hint)
+      setText(existing.prompt)
+      inputType =
+          android.text.InputType.TYPE_CLASS_TEXT or
+              android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE
+      gravity = android.view.Gravity.TOP or android.view.Gravity.START
+      minLines = 8
+    }
+    container.addView(descriptionField)
+    container.addView(promptField)
+
+    // 工具白名单：这是硬边界（不在白名单里的工具根本不会注册给子 agent），不是建议，
+    // 因此必须可编辑——例如把「审查员」从只读改成可写以允许它顺手修一处笔误。
+    val allTools =
+        (com.tom.rv2ide.ai.agent.builtin.BuiltinAgents.readOnlyTools() +
+                com.tom.rv2ide.ai.agent.builtin.BuiltinAgents.writeTools())
+            .distinct()
+    val checks = LinkedHashMap<String, android.widget.CheckBox>()
+    container.addView(
+        android.widget.TextView(context).apply {
+          text = context.getString(R.string.ai_agent_agents_tools_label)
+          setPadding(0, 24, 0, 4)
+        })
+    for (tool in allTools) {
+      val box = android.widget.CheckBox(context).apply {
+        text = tool
+        isChecked = existing.tools.contains(tool)
+      }
+      checks[tool] = box
+      container.addView(box)
+    }
+
+    com.google.android.material.dialog.MaterialAlertDialogBuilder(context)
+        .setTitle(existing.name)
+        .setView(android.widget.ScrollView(context).apply { addView(container) })
+        .setPositiveButton(android.R.string.ok) { _, _ ->
+          val updated =
+              com.tom.rv2ide.ai.agent.builtin.BuiltinAgent(
+                  existing.id,
+                  existing.name,
+                  descriptionField.text?.toString().orEmpty(),
+                  promptField.text?.toString().orEmpty(),
+                  checks.filter { it.value.isChecked }.keys.toList(),
+                  existing.isEnabled,
+              )
+          val error = store.save(updated)
+          if (error.isNotEmpty()) {
+            Toast.makeText(context, error, Toast.LENGTH_LONG).show()
+          }
+          preference.summary = describe(context)
+        }
+        .setNegativeButton(android.R.string.cancel, null)
+        .show()
+  }
+
+  // ---- 自定义 agent：动作 + 编辑 ----
+
+  private fun showCustomActions(
+      context: Context,
+      store: com.tom.rv2ide.ai.agent.command.CustomAgentStore,
+      agent: com.tom.rv2ide.ai.agent.command.CustomAgent,
+      preference: Preference,
+  ) {
+    val actions =
+        arrayOf(
+            context.getString(R.string.ai_agent_agents_edit),
+            context.getString(
+                if (agent.isEnabled) R.string.ai_agent_custom_agents_disable
+                else R.string.ai_agent_custom_agents_enable),
+            context.getString(R.string.ai_agent_agents_remove),
+        )
+    com.google.android.material.dialog.MaterialAlertDialogBuilder(context)
+        .setTitle(agent.name)
+        .setItems(actions) { _, which ->
+          when (which) {
+            0 -> editCustom(context, store, agent, preference)
+            1 -> {
+              store.save(agent.withEnabled(!agent.isEnabled))
+              preference.summary = describe(context)
+            }
+            else -> {
+              store.remove(agent.name)
+              preference.summary = describe(context)
+            }
+          }
+        }
+        .setNegativeButton(android.R.string.cancel, null)
+        .show()
+  }
+
+  /** 编辑一个自定义 agent；existing 为 null 表示新建。 */
+  private fun editCustom(
       context: Context,
       store: com.tom.rv2ide.ai.agent.command.CustomAgentStore,
       existing: com.tom.rv2ide.ai.agent.command.CustomAgent?,
@@ -565,48 +763,28 @@ private class CustomAgentsPreference(
     container.addView(descriptionField)
     container.addView(promptField)
 
-    val builder =
-        com.google.android.material.dialog.MaterialAlertDialogBuilder(context)
-            .setTitle(
-                if (existing == null) R.string.ai_agent_custom_agents_add
-                else R.string.ai_agent_custom_agents_edit)
-            .setMessage(R.string.ai_agent_custom_agents_hint)
-            .setView(android.widget.ScrollView(context).apply { addView(container) })
-            .setPositiveButton(android.R.string.ok) { _, _ ->
-              val agent =
-                  com.tom.rv2ide.ai.agent.command.CustomAgent(
-                      nameField.text?.toString().orEmpty(),
-                      descriptionField.text?.toString().orEmpty(),
-                      promptField.text?.toString().orEmpty(),
-                      existing?.isEnabled ?: true,
-                  )
-              val error = store.save(agent)
-              if (error.isNotEmpty()) {
-                android.widget.Toast.makeText(context, error, android.widget.Toast.LENGTH_LONG)
-                    .show()
-              }
-              preference.summary = refreshSummary(context)
-            }
-            .setNegativeButton(android.R.string.cancel, null)
-
-    if (existing != null) {
-      builder.setNeutralButton(
-          if (existing.isEnabled) R.string.ai_agent_custom_agents_disable
-          else R.string.ai_agent_custom_agents_enable) { _, _ ->
-        store.save(existing.withEnabled(!existing.isEnabled))
-        preference.summary = refreshSummary(context)
-      }
-    }
-
-    builder.show()
-  }
-
-  private fun refreshSummary(context: Context): String {
-    val agents = customAgentStore(context).all()
-    return if (agents.isEmpty()) context.getString(R.string.ai_agent_custom_agents_none)
-    else
-        context.getString(
-            R.string.ai_agent_custom_agents_count, agents.count { it.isUsable() }, agents.size)
+    com.google.android.material.dialog.MaterialAlertDialogBuilder(context)
+        .setTitle(
+            if (existing == null) R.string.ai_agent_agents_add
+            else R.string.ai_agent_agents_edit)
+        .setMessage(R.string.ai_agent_custom_agents_hint)
+        .setView(android.widget.ScrollView(context).apply { addView(container) })
+        .setPositiveButton(android.R.string.ok) { _, _ ->
+          val agent =
+              com.tom.rv2ide.ai.agent.command.CustomAgent(
+                  nameField.text?.toString().orEmpty(),
+                  descriptionField.text?.toString().orEmpty(),
+                  promptField.text?.toString().orEmpty(),
+                  existing?.isEnabled ?: true,
+              )
+          val error = store.save(agent)
+          if (error.isNotEmpty()) {
+            Toast.makeText(context, error, Toast.LENGTH_LONG).show()
+          }
+          preference.summary = describe(context)
+        }
+        .setNegativeButton(android.R.string.cancel, null)
+        .show()
   }
 }
 

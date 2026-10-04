@@ -145,6 +145,14 @@ public final class AgentOrchestrator {
   private final com.tom.rv2ide.ai.agent.command.CustomAgentStore customAgentStore;
 
   /**
+   * 内置子 agent 的用户覆盖存储。
+   *
+   * <p>与 {@link #customAgentStore} 并列：自定义 agent 由用户从零定义；内置 agent 随应用
+   * 提供（审查/探索/定位/写测试/写文档），用户可改提示词与工具集并一键恢复默认。
+   */
+  private final com.tom.rv2ide.ai.agent.builtin.BuiltinAgentStore builtinAgentStore;
+
+  /**
    * 待办列表存储，跨运行保留。
    *
    * <p>必须持久化：待办是模型「记住自己做到哪一步」的依据，只在内存里的话进程被回收后
@@ -174,21 +182,15 @@ public final class AgentOrchestrator {
   /** 当前会话 id；为 null 时 {@link #run} 会新建一个。 */
   private String activeConversationId;
 
-  private volatile ModelCancellationToken activeCancellation;
-
   /**
-   * 本次运行创建的 MCP 客户端。
+   * 正在运行的会话的取消令牌，按会话 id 隔离。
    *
-   * <p><b>为什么要在编排器上持有</b>：SSE 传输握着一条长连接，而注册表与 adapter 都
-   * 没有「运行结束」这个事件可挂。不在这里统一释放，每跑一次对话就泄漏一条连接。
-   * 客户端由同一 server 的多个 adapter 共享，因此也不能由 adapter 自己关。
-   *
-   * <p>用 {@code synchronizedList} 而非并发集合：写入只发生在 {@code buildRegistry}
-   * 的循环里，读取只在 {@code run} 的 finally，规模是个位数。
+   * <p><b>为什么是 Map 而不是单个字段</b>：多会话可以同时跑（每个会话一个 job），
+   * 单个 {@code activeCancellation} 会被后启动的运行覆盖，用户点「停止」时会杀掉
+   * 错误的会话。按会话隔离后，{@link #cancel(String)} 精确命中目标。
    */
-  private final java.util.List<com.tom.rv2ide.ai.tool.mcp.McpClient> activeMcpClients =
-      java.util.Collections.synchronizedList(
-          new java.util.ArrayList<com.tom.rv2ide.ai.tool.mcp.McpClient>());
+  private final java.util.Map<String, ModelCancellationToken> activeCancellations =
+      new java.util.concurrent.ConcurrentHashMap<>();
 
   public AgentOrchestrator(Context context, DiffStore diffStore) {
     this(context, diffStore, new FileConversationStore(defaultConversationDir(context)));
@@ -214,6 +216,8 @@ public final class AgentOrchestrator {
     this.chatModeStore = new PrefsChatModeStore(appContext);
     this.customAgentStore =
         new com.tom.rv2ide.ai.agent.command.CustomAgentStore(defaultCustomAgentsFile(appContext));
+    this.builtinAgentStore =
+        new com.tom.rv2ide.ai.agent.builtin.BuiltinAgentStore(defaultBuiltinAgentsFile(appContext));
     this.promptBuilder = new AgentPromptBuilder("ACS AI Agent", new PrefsPromptTemplateStore(appContext));
   }
 
@@ -222,9 +226,19 @@ public final class AgentOrchestrator {
     return new File(new File(context.getFilesDir(), "ai"), "custom_agents.json");
   }
 
+  /** 内置 agent 覆盖文件：{@code filesDir/ai/builtin_agents.json}（只存与默认不同的覆盖）。 */
+  private static File defaultBuiltinAgentsFile(Context context) {
+    return new File(new File(context.getFilesDir(), "ai"), "builtin_agents.json");
+  }
+
   /** 自定义 agent 存储，供设置界面管理。 */
   public com.tom.rv2ide.ai.agent.command.CustomAgentStore getCustomAgentStore() {
     return customAgentStore;
+  }
+
+  /** 内置 agent 存储（默认值 + 用户覆盖），供设置界面管理。 */
+  public com.tom.rv2ide.ai.agent.builtin.BuiltinAgentStore getBuiltinAgentStore() {
+    return builtinAgentStore;
   }
 
   /** 记忆文件：{@code filesDir/ai/memories.json}。 */
@@ -384,15 +398,61 @@ public final class AgentOrchestrator {
    * @return 新会话摘要
    */
   public ConversationSummary newConversation() throws IOException {
+    return newConversation(null);
+  }
+
+  /**
+   * 在指定项目目录下新建会话并切过去。
+   *
+   * <p>{@code cwd} 决定这个会话属于哪个项目（见 {@link #resolveRunWorkspace}）：传 null
+   * 表示用当前视图工作区。多项目并行时，用户可以在「新建会话」时直接指定目标项目，
+   * 之后这个会话的工具调用就固定在那个项目里，与视图当前显示哪个项目无关。
+   *
+   * @param cwd 会话绑定的项目绝对路径；null 时用当前工作区
+   * @return 新会话摘要
+   */
+  public ConversationSummary newConversation(String cwd) throws IOException {
+    String effectiveCwd = cwd;
+    if (effectiveCwd == null || effectiveCwd.isEmpty()) {
+      effectiveCwd = workspace == null ? "" : workspace.getAbsolutePath();
+    }
     ConversationSummary summary =
         conversationStore.create(
             null,
-            workspace == null ? "" : workspace.getAbsolutePath(),
+            effectiveCwd,
             "",
             settings.getPermissionMode());
     activeConversationId = summary.getId();
     persistActiveConversation();
     return summary;
+  }
+
+  /**
+   * 列出可作为会话 cwd 的候选项目目录。
+   *
+   * <p>来源与主屏「最近项目」一致（{@link com.tom.rv2ide.templates.preferences.WizardPreferences}），
+   * 过滤掉已不存在的目录。用于「新建会话时选择已有项目」。
+   */
+  public List<File> listSelectableProjects() {
+    List<File> result = new ArrayList<>();
+    java.util.Set<String> seen = new java.util.HashSet<>();
+    // 当前工作区排第一：多数情况下用户就是在当前项目里开新会话。
+    if (workspace != null && workspace.isDirectory()) {
+      result.add(workspace);
+      seen.add(workspace.getAbsolutePath());
+    }
+    for (String path :
+        com.tom.rv2ide.templates.preferences.WizardPreferences.INSTANCE.getRecentProjects(
+            appContext)) {
+      if (path == null || path.isEmpty() || !seen.add(path)) {
+        continue;
+      }
+      File dir = new File(path);
+      if (dir.isDirectory()) {
+        result.add(dir);
+      }
+    }
+    return result;
   }
 
   /** 重命名会话。实现为追加标题条目，历史不变。 */
@@ -596,6 +656,24 @@ public final class AgentOrchestrator {
 
   /** 构建工具注册表：文件工具 + shell 执行 + 运行测试闭环四件套。 */
   public ToolRegistry buildRegistry() {
+    return buildRegistry(true, null);
+  }
+
+  /**
+   * 构建工具注册表，可选是否装配外部 MCP 工具。
+   *
+   * <p><b>为什么要有 {@code includeMcp=false} 这条路径</b>：UI 只为「工具卡片的分类色」
+   * 调用本方法（{@code FloatingAssistantView.attach}），而装配 MCP 工具会发起网络请求。
+   * 那条调用发生在主线程，且 MCP 客户端只有 {@code run()} 的 finally 会释放——
+   * UI 调一次就泄漏一条长连接。UI 传 false，只装内置工具即可（MCP 工具的分类退化为默认色，
+   * 无关紧要）。
+   *
+   * @param includeMcp 是否装配 MCP 工具
+   * @param mcpClientsOut 非空时，本次新建的 MCP 客户端登记到这里，由调用方负责释放；
+   *     为 null 时（UI 路径）不装配 MCP
+   */
+  public ToolRegistry buildRegistry(
+      boolean includeMcp, java.util.List<com.tom.rv2ide.ai.tool.mcp.McpClient> mcpClientsOut) {
     ToolRegistry registry = new ToolRegistry();
 
     // 文件操作
@@ -674,8 +752,11 @@ public final class AgentOrchestrator {
     // 非 2xx 当失败）。支持 POST/PUT/DELETE 等可变方法，故为 SYSTEM 且需确认。
     registry.register(new HttpRequestTool(http));
 
-    // 外部 MCP server 提供的工具。
-    registerMcpTools(registry, http);
+    // 外部 MCP server 提供的工具。只有 run() 路径（mcpClientsOut != null）才装配：
+    // UI 的分类色查询不该触发网络请求，也不该创建无人释放的连接。
+    if (includeMcp && mcpClientsOut != null) {
+      registerMcpTools(registry, http, mcpClientsOut);
+    }
 
     return registry;
   }
@@ -705,7 +786,10 @@ public final class AgentOrchestrator {
    * server 后看不到新工具。代价是每次运行多一次网络往返——但只在配置了 server 时才发生，
    * 且 {@link McpToolInfo} 的拉取很轻。
    */
-  private void registerMcpTools(ToolRegistry registry, AppHttpPort http) {
+  private void registerMcpTools(
+      ToolRegistry registry,
+      AppHttpPort http,
+      java.util.List<com.tom.rv2ide.ai.tool.mcp.McpClient> clientsOut) {
     java.util.List<McpServers.Server> servers;
     try {
       servers = new McpServers(appContext).enabled();
@@ -716,10 +800,9 @@ public final class AgentOrchestrator {
       return;
     }
 
-    // 注意：这里**不能**顺手 closeMcpClients()。buildRegistry 不只被 run() 调用，
-    // 悬浮助手也调它（只为了拿工具分类），而 run() 在会话进行中不会再次调用它——
-    // 因此「走到这里就说明上一轮结束了」这个前提不成立，在此释放会掐断正在使用的连接。
-    // 释放只放在 run() 的 finally 里。
+    // 客户端登记到调用方传入的列表（每次运行一份），由 run() 的 finally 释放。
+    // 不能登记到 orchestrator 的共享字段：并发两个会话时，一个运行结束会把另一个
+    // 仍在使用的连接一并关掉。UI 路径（clientsOut 恒为 run 传入的本地列表）不涉及。
     java.util.Set<String> usedNames = new java.util.HashSet<>();
     for (ToolInfo existing : registry.getAll()) {
       usedNames.add(existing.getName());
@@ -742,7 +825,7 @@ public final class AgentOrchestrator {
           throw e;
         }
         // 拉成功后才登记：失败的 client 已在上面关掉，登记它只会在收尾时再关一次。
-        activeMcpClients.add(client);
+        clientsOut.add(client);
         for (com.tom.rv2ide.ai.tool.mcp.McpToolInfo info : tools) {
           com.tom.rv2ide.ai.tool.mcp.McpToolAdapter adapter =
               new com.tom.rv2ide.ai.tool.mcp.McpToolAdapter(client, info, server.displayName());
@@ -763,14 +846,13 @@ public final class AgentOrchestrator {
    *
    * <p>幂等：重复调用只是对已关闭的客户端再关一次（{@code close} 本身可重入）。
    *
-   * <p>只在 {@code run} 的 finally 里调用。见 {@code registerMcpTools} 里的说明：
-   * {@code buildRegistry} 会在会话进行中被再次调用，不能在那里释放。
+   * <p>只释放**本次运行**建立的连接（列表由 run 持有）。不能用 orchestrator 上的共享
+   * 列表：并发两个会话时，一个运行结束会掐断另一个仍在使用的长连接。
    */
-  private void closeMcpClients() {
-    java.util.List<com.tom.rv2ide.ai.tool.mcp.McpClient> clients;
-    synchronized (activeMcpClients) {
-      clients = new java.util.ArrayList<>(activeMcpClients);
-      activeMcpClients.clear();
+  private static void closeMcpClients(
+      java.util.List<com.tom.rv2ide.ai.tool.mcp.McpClient> clients) {
+    if (clients == null) {
+      return;
     }
     for (com.tom.rv2ide.ai.tool.mcp.McpClient client : clients) {
       try {
@@ -779,6 +861,7 @@ public final class AgentOrchestrator {
         // 释放失败没有补救手段，且此刻多半正在处理别的失败。
       }
     }
+    clients.clear();
   }
 
   /**
@@ -891,14 +974,69 @@ public final class AgentOrchestrator {
       AgentEvent.Listener listener,
       String rawInputJson,
       String reasoningEffort) {
+    return runInConversation(
+        null, providerId, modelId, userRequest, customBaseUrl, listener, rawInputJson,
+        reasoningEffort);
+  }
 
-    if (workspace == null) {
+  /**
+   * 在**指定会话**里运行一次请求。
+   *
+   * <p><b>为什么必须显式传会话 id</b>：多会话并行时，视图会在运行期间把
+   * {@link #activeConversationId} 切到用户当前查看的另一个会话。若 run 隐式使用它，
+   * 一个后台运行会在中途「发现」自己换成了别的会话，于是把历史与结果写进错误的文件
+   * ——这正是多会话要防的串扰。显式传入后，整个运行期间会话 id 固定不变。
+   *
+   * @param conversationId 目标会话；null 时用当前活动会话（无则新建）
+   */
+  public AgentRunResult run(
+      String conversationId,
+      String providerId,
+      String modelId,
+      String userRequest,
+      String customBaseUrl,
+      AgentEvent.Listener listener,
+      String rawInputJson,
+      String reasoningEffort) {
+    return runInConversation(
+        conversationId, providerId, modelId, userRequest, customBaseUrl, listener, rawInputJson,
+        reasoningEffort);
+  }
+
+  private AgentRunResult runInConversation(
+      String requestedConversationId,
+      String providerId,
+      String modelId,
+      String userRequest,
+      String customBaseUrl,
+      AgentEvent.Listener listener,
+      String rawInputJson,
+      String reasoningEffort) {
+
+    // 先确定本次运行属于哪个会话，再据其 cwd 解析工作区。顺序不能反：工具作用的工作区
+    // 必须**跟随会话**，而不是跟随「视图当前打开的项目」——后者会让「历史属于 A 项目、
+    // 工具却作用于 B 项目」的错配重新出现（见 restoreMostRecentConversation 的注释）。
+    String conversationId = ensureConversation(requestedConversationId);
+    String sessionCwd = cwdOf(conversationId);
+    File runWorkspace = resolveRunWorkspace(conversationId);
+    if (runWorkspace == null) {
+      // 区分两种 null：会话绑定的项目目录失效（不回退，见 resolveRunWorkspace），
+      // 与压根没设工作区。前者要说清是哪个目录没了，否则用户不知道该恢复什么。
+      if (sessionCwd != null && !sessionCwd.isEmpty()) {
+        return new AgentRunResult(
+            "该会话绑定的项目目录已不存在：" + sessionCwd + "。请重新打开或迁移该项目后再试。",
+            0,
+            0,
+            true);
+      }
       return new AgentRunResult("未设置工作区，无法执行。", 0, 0, true);
     }
-    if (!workspace.exists()) {
-      return new AgentRunResult("工作区不存在: " + workspace, 0, 0, true);
+    if (!runWorkspace.exists()) {
+      return new AgentRunResult("工作区不存在: " + runWorkspace, 0, 0, true);
     }
-    settings.beginRun();
+    // 只重置**本会话**的危险工具运行内授权：并发会话各有各的桶，
+    // 全局清理会让别的会话已批准的规则丢失、重复弹窗。
+    settings.beginRun(conversationId);
 
     AgentModelConfigs.ProviderEndpoint endpoint =
         AgentModelConfigs.endpointFor(providerId, customBaseUrl);
@@ -913,10 +1051,17 @@ public final class AgentOrchestrator {
           true);
     }
 
+    // 主运行用主槽位：请求路径只带模型名、不带槽位，modelId 即当前主模型。
+    // 显式传 SLOT_MAIN 才能把记录里声明的 [1m] 翻译成 contextSize，否则勾选不生效。
     ModelConfig config =
-        AgentModelConfigs.build(endpoint, modelId, DEFAULT_TOOL_CALL_LIMIT);
+        AgentModelConfigs.build(
+            endpoint, modelId, DEFAULT_TOOL_CALL_LIMIT, ProviderConfig.SLOT_MAIN);
 
-    ToolRegistry registry = buildRegistry();
+    // 本次运行的 MCP 客户端列表：随本次运行建立、随本次运行释放。不能放 orchestrator
+    // 共享字段——并发两个会话时，一个运行结束会把另一个仍在使用的长连接关掉。
+    java.util.List<com.tom.rv2ide.ai.tool.mcp.McpClient> mcpClients =
+        new java.util.ArrayList<>();
+    ToolRegistry registry = buildRegistry(true, mcpClients);
     ToolPermissionService permissions = new ToolPermissionService(settings, registry);
     ToolExecutor executor =
         new ToolExecutor(registry, permissions, diffStore == null ? null : newDiffRecorder());
@@ -932,17 +1077,29 @@ public final class AgentOrchestrator {
     // 取消令牌必须在 AgentSession 之前创建：子 agent 要挂在它上面才能随父级一起停——
     // 否则用户点了取消，主循环停了而子 agent 仍在烧额度。
     ModelCancellationToken cancellation = new ModelCancellationToken();
-    activeCancellation = cancellation;
+    // 按会话登记取消令牌：并发两个会话时，各自只停自己的。
+    activeCancellations.put(conversationId, cancellation);
 
     SubAgentRunnerImpl subAgentRunner =
         new SubAgentRunnerImpl(
             endpoint,
             modelId,
-            workspace.getAbsolutePath(),
+            runWorkspace.getAbsolutePath(),
             settings,
             cancellation,
-            diffStore);
+            diffStore,
+            // 子 agent 继承父会话 id：危险工具授权与父会话同桶，避免重复弹窗。
+            conversationId);
     registry.register(new com.tom.rv2ide.ai.tool.AgentTool(subAgentRunner));
+
+    // 内置子 agent：固定的角色提示词 + 受限工具集（审查/探索/定位/写测试/写文档）。
+    // 模型可直接派遣它们，不必每次从零描述角色约束。
+    for (com.tom.rv2ide.ai.agent.builtin.BuiltinAgent builtin : builtinAgentStore.enabled()) {
+      BuiltinAgentTool tool = new BuiltinAgentTool(builtin, subAgentRunner, 0);
+      if (registry.get(tool.getName()) == null) {
+        registry.register(tool);
+      }
+    }
 
     // 用户自定义 agent：固定的角色提示词，模型只需给出要处理什么。
     for (com.tom.rv2ide.ai.agent.command.CustomAgent custom : customAgentStore.usable()) {
@@ -965,7 +1122,7 @@ public final class AgentOrchestrator {
     // 模式与模型信息同样注入，使模板能按模式/模型差异化措辞。
     String systemPrompt =
         promptBuilder.build(
-            workspace.getAbsolutePath(),
+            runWorkspace.getAbsolutePath(),
             tools,
             nativeTools,
             todoStore.renderForPrompt(),
@@ -997,14 +1154,14 @@ public final class AgentOrchestrator {
 
     ToolContext toolContext =
         ToolContext.builder()
-            .homePath(workspace.getAbsolutePath())
+            .homePath(runWorkspace.getAbsolutePath())
             .settings(settings)
+            // 会话 id 随上下文下发：危险工具的运行内授权按会话隔离。
+            .conversationId(conversationId)
             // 读图时的缩放实现。工具模块零 Android 依赖，因此由这里注入。
             .imageDataProvider(AndroidImageDataProvider.INSTANCE)
             .build();
 
-    // 确保有会话：无则新建，使消息有落盘之处。
-    String conversationId = ensureConversation();
     List<ConversationLog.EntryLocation> entries = loadEntries(conversationId);
     List<ModelMessage> history =
         entries.isEmpty() ? new ArrayList<>() : ConversationHistory.fold(entries);
@@ -1044,10 +1201,15 @@ public final class AgentOrchestrator {
           rawInputJson,
           reasoningEffort);
     } finally {
-      activeCancellation = null;
+      // 只移除本次运行登记的那一个令牌：并发会话各有各的，不能整体清空。
+      activeCancellations.remove(conversationId);
+      // 丢弃本会话的运行内危险工具授权记忆（「本次运行内允许」随运行结束失效），
+      // 避免条目随会话数累积。
+      settings.clearRunApprovedRules(conversationId);
       // MCP 的 SSE 传输是一条长连接，必须随本次运行结束而释放，
       // 否则每跑一次对话就多一条悬挂的连接（以及一个守护读线程）。
-      closeMcpClients();
+      // 只释放本次运行建立的连接，不影响并发会话仍在使用的连接。
+      closeMcpClients(mcpClients);
     }
   }
 
@@ -1133,7 +1295,8 @@ public final class AgentOrchestrator {
       if (endpoint == null) {
         return null;
       }
-      return AgentModelConfigs.build(endpoint, modelId, DEFAULT_TOOL_CALL_LIMIT);
+      return AgentModelConfigs.build(
+          endpoint, modelId, DEFAULT_TOOL_CALL_LIMIT, ProviderConfig.SLOT_MAIN);
     } catch (RuntimeException e) {
       return null;
     }
@@ -1222,6 +1385,18 @@ public final class AgentOrchestrator {
    * 解引用，未打开项目时会抛 NPE（{@code newConversation()} 有守卫，这里漏了）。
    */
   private String ensureConversation() {
+    return ensureConversation(null);
+  }
+
+  /**
+   * @param requested 期望的会话 id；非空且存在时直接用它（多会话并行时由视图显式指定）。
+   *     为 null 或已失效时回退到当前活动会话，再没有才新建。
+   * @return 会话 id；新建落盘失败时返回空串（退化为无历史的内存会话）
+   */
+  private String ensureConversation(String requested) {
+    if (requested != null && !requested.isEmpty() && conversationStore.exists(requested)) {
+      return requested;
+    }
     String existing = activeConversationId;
     if (existing != null && conversationStore.exists(existing)) {
       return existing;
@@ -1322,12 +1497,82 @@ public final class AgentOrchestrator {
     }
   }
 
-  /** 请求取消当前正在执行的循环。 */
-  public void cancel() {
-    ModelCancellationToken cancellation = activeCancellation;
+  /**
+   * 请求取消指定会话正在执行的循环。
+   *
+   * <p>按会话 id 精确取消：并发多个会话时，停当前显示的会话不该误杀后台会话。
+   * 会话 id 为空（未开始任何会话）或该会话没在跑时是 no-op。
+   */
+  public void cancel(String conversationId) {
+    if (conversationId == null || conversationId.isEmpty()) {
+      return;
+    }
+    ModelCancellationToken cancellation = activeCancellations.get(conversationId);
     if (cancellation != null) {
       cancellation.cancel();
     }
+  }
+
+  /** 取消当前活动会话的循环。等价于 {@code cancel(activeConversationId)}。 */
+  public void cancel() {
+    cancel(activeConversationId);
+  }
+
+  /**
+   * 解析本次运行实际作用的项目目录。
+   *
+   * <p><b>为什么工具的工作区必须跟随会话、而不是跟随视图的 {@link #workspace}</b>：
+   * 会话列表是全局的，用户可以从当前项目里打开一条属于别的项目的会话。此前 {@code run()}
+   * 无条件用视图的 workspace，于是「历史属于 A 项目、工具却作用于 B 项目」——文件被写到
+   * 错误的项目里。跨项目确认弹框只能提醒，拦不住这条数据损坏路径。
+   *
+   * <p>会话的 cwd 存在 {@link com.tom.rv2ide.ai.agent.conversation.SessionMetaEntry} 里，
+   * 因此这里以它为准：会话属于哪个项目，工具就作用于哪个项目。这同时让「跨项目保护」
+   * 从「弹框阻止」升级为「按会话正确归属」——不再需要拦截用户。
+   *
+   * <p>会话没有 cwd（未打开项目时建的纯问答会话）时回退到视图工作区，保持旧行为。
+   *
+   * <p><b>会话有 cwd、但目录已不存在时返回 null，不回退视图工作区</b>：那正是「历史属于
+   * A、工具却作用于 B」的数据损坏路径。跨项目确认框已被移除（改为「按会话正确归属」），
+   * 因此这里不能再悄悄把工具指向另一个项目——宁可报错让用户显式处理。
+   *
+   * @return 本次运行的工作区；会话绑定的目录失效或两者都不可用时返回 null（调用方报错）
+   */
+  private File resolveRunWorkspace(String conversationId) {
+    String cwd = cwdOf(conversationId);
+    if (cwd != null && !cwd.isEmpty()) {
+      File dir = new File(cwd);
+      if (dir.isDirectory()) {
+        return dir;
+      }
+      // 会话绑定的项目目录已被删除/移动。不能回退到视图工作区（见 KDoc）。
+      return null;
+    }
+    return workspace;
+  }
+
+  /**
+   * 读取会话绑定的 cwd；读不到返回 null。
+   *
+   * <p>只读**这一个**会话文件（首条 {@code SessionMetaEntry} 就带 cwd），而不是遍历
+   * 全部会话做 O(n) 次文件读——本方法在每次 run 前都会调用。
+   */
+  private String cwdOf(String conversationId) {
+    if (conversationId == null || conversationId.isEmpty()
+        || !conversationStore.exists(conversationId)) {
+      return null;
+    }
+    try {
+      for (ConversationLog.EntryLocation location : conversationStore.read(conversationId)) {
+        ConversationEntry entry = location.getEntry();
+        if (entry instanceof com.tom.rv2ide.ai.agent.conversation.SessionMetaEntry) {
+          return ((com.tom.rv2ide.ai.agent.conversation.SessionMetaEntry) entry).getCwd();
+        }
+      }
+    } catch (IOException | RuntimeException e) {
+      // 读不出来按「无 cwd」处理，回退到视图工作区。
+    }
+    return null;
   }
 
   private com.tom.rv2ide.ai.tool.DiffRecorder newDiffRecorder() {

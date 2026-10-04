@@ -31,6 +31,7 @@ import com.tom.rv2ide.ai.tool.ListDirectoryTool;
 import com.tom.rv2ide.ai.tool.SubAgentRunner;
 import com.tom.rv2ide.ai.tool.ToolContext;
 import com.tom.rv2ide.ai.tool.ToolExecutor;
+import com.tom.rv2ide.ai.tool.ToolNameFilter;
 import com.tom.rv2ide.ai.tool.ToolPermissionService;
 import com.tom.rv2ide.ai.tool.ToolRegistry;
 import com.tom.rv2ide.ai.tool.ToolSettingsPort;
@@ -61,10 +62,18 @@ public final class SubAgentRunnerImpl implements SubAgentRunner {
 
   private final AgentModelConfigs.ProviderEndpoint endpoint;
   private final String modelId;
+  /** 子 agent 用的模型槽位；决定从服务商记录里读哪个槽位的上下文声明。 */
+  private final String slot;
   private final String workspacePath;
   private final ToolSettingsPort settings;
   private final ModelCancellationToken parentCancellation;
   private final com.tom.rv2ide.ai.tool.DiffStore diffStore;
+
+  /**
+   * 父会话 id。子 agent 的危险工具授权与父会话归入同一桶，避免子 agent 重复弹窗；
+   * 同时保证授权不会因「新会话」而被错误地重置。
+   */
+  private final String conversationId;
 
   public SubAgentRunnerImpl(
       AgentModelConfigs.ProviderEndpoint endpoint,
@@ -73,12 +82,64 @@ public final class SubAgentRunnerImpl implements SubAgentRunner {
       ToolSettingsPort settings,
       ModelCancellationToken parentCancellation,
       com.tom.rv2ide.ai.tool.DiffStore diffStore) {
+    this(
+        endpoint,
+        modelId,
+        ProviderConfig.SLOT_MAIN,
+        workspacePath,
+        settings,
+        parentCancellation,
+        diffStore,
+        null);
+  }
+
+  public SubAgentRunnerImpl(
+      AgentModelConfigs.ProviderEndpoint endpoint,
+      String modelId,
+      String workspacePath,
+      ToolSettingsPort settings,
+      ModelCancellationToken parentCancellation,
+      com.tom.rv2ide.ai.tool.DiffStore diffStore,
+      String conversationId) {
+    this(
+        endpoint,
+        modelId,
+        ProviderConfig.SLOT_MAIN,
+        workspacePath,
+        settings,
+        parentCancellation,
+        diffStore,
+        conversationId);
+  }
+
+  public SubAgentRunnerImpl(
+      AgentModelConfigs.ProviderEndpoint endpoint,
+      String modelId,
+      String slot,
+      String workspacePath,
+      ToolSettingsPort settings,
+      ModelCancellationToken parentCancellation,
+      com.tom.rv2ide.ai.tool.DiffStore diffStore) {
+    this(endpoint, modelId, slot, workspacePath, settings, parentCancellation, diffStore, null);
+  }
+
+  public SubAgentRunnerImpl(
+      AgentModelConfigs.ProviderEndpoint endpoint,
+      String modelId,
+      String slot,
+      String workspacePath,
+      ToolSettingsPort settings,
+      ModelCancellationToken parentCancellation,
+      com.tom.rv2ide.ai.tool.DiffStore diffStore,
+      String conversationId) {
     this.endpoint = endpoint;
     this.modelId = modelId;
+    this.slot = slot == null ? ProviderConfig.SLOT_MAIN : slot;
     this.workspacePath = workspacePath;
     this.settings = settings;
     this.parentCancellation = parentCancellation;
     this.diffStore = diffStore;
+    this.conversationId = conversationId == null ? "" : conversationId;
   }
 
   @Override
@@ -87,10 +148,11 @@ public final class SubAgentRunnerImpl implements SubAgentRunner {
       return new Result(false, "未配置服务商，无法运行子 agent。", 0, 0);
     }
 
+    // 子 agent 用自己那一档槽位的上下文声明（当前与主 agent 同为 SLOT_MAIN）。
     ModelConfig config =
-        AgentModelConfigs.build(endpoint, modelId, SUB_AGENT_TOOL_CALL_LIMIT);
+        AgentModelConfigs.build(endpoint, modelId, SUB_AGENT_TOOL_CALL_LIMIT, slot);
 
-    ToolRegistry registry = buildSubRegistry(request.getMode());
+    ToolRegistry registry = buildSubRegistry(request.getMode(), request.getToolFilter());
     ToolPermissionService permissions = new ToolPermissionService(settings, registry);
     ToolExecutor executor =
         new ToolExecutor(registry, permissions, diffStore == null ? null : new com.tom.rv2ide.ai.tool.DiffRecorder(diffStore));
@@ -99,13 +161,20 @@ public final class SubAgentRunnerImpl implements SubAgentRunner {
     ModelClient modelClient = new ModelClient();
     boolean nativeTools = modelClient.supportsNativeTools(config);
 
+    // 角色专用提示词优先：内置/自定义角色 agent 带着自己的职责与约束来，
+    // 通用子 agent 提示词（「只专注完成这一个任务」）会稀释角色焦点。
     String systemPrompt =
-        buildSubPrompt(request.getMode(), tools, nativeTools);
+        request.getSystemPrompt().isEmpty()
+            ? buildSubPrompt(request.getMode(), tools, nativeTools)
+            : buildRolePrompt(request.getSystemPrompt(), tools, nativeTools);
 
     ToolContext toolContext =
         ToolContext.builder()
             .homePath(workspacePath)
             .settings(settings)
+            // 继承父会话 id：子 agent 的危险工具授权与父会话归入同一桶，
+            // 既不重复弹窗，也不会跨会话泄漏。
+            .conversationId(conversationId)
             .imageDataProvider(AndroidImageDataProvider.INSTANCE)
             .build();
 
@@ -134,8 +203,12 @@ public final class SubAgentRunnerImpl implements SubAgentRunner {
    * 构造子 agent 的工具集。
    *
    * <p>见类注释：explore 拿不到写工具，是结构上的只读。
+   *
+   * <p>角色白名单（{@code filter}）进一步收窄：未列出的工具根本不注册。白名单是
+   * **能力边界**而非建议——提示词可能被忽略，缺少工具不会。过滤发生在模式裁剪之后，
+   * 因此一个「code 模式 + 只读白名单」的角色，实际也拿不到写工具。
    */
-  private ToolRegistry buildSubRegistry(Mode mode) {
+  private ToolRegistry buildSubRegistry(Mode mode, ToolNameFilter filter) {
     ToolRegistry registry = new ToolRegistry();
     registry.register(new FileReadTool());
     registry.register(new GlobTool());
@@ -146,7 +219,57 @@ public final class SubAgentRunnerImpl implements SubAgentRunner {
       registry.register(new FileEditTool());
       registry.register(new FileDeleteTool());
     }
-    return registry;
+    return registry.filtered(filter);
+  }
+
+  /**
+   * 构造角色 agent 的系统提示词。
+   *
+   * <p>与 {@link #buildSubPrompt} 的区别：角色提示词由预设/用户定义，是本 agent 的
+   * **主要指令**；这里只在它前后补上运行环境（工作区、实际工具清单、文本调用格式），
+   * 而不是用通用措辞替换它。
+   */
+  private String buildRolePrompt(
+      String rolePrompt,
+      List<com.tom.rv2ide.ai.tool.api.ToolInfo> tools,
+      boolean nativeTools) {
+    StringBuilder sb = new StringBuilder();
+    sb.append(rolePrompt.trim()).append("\n\n");
+
+    sb.append("[ 运行环境 ]\n");
+    sb.append("你是一个被委派的子 agent，看不到主对话的历史，也无法与用户对话。\n");
+    if (workspacePath != null && !workspacePath.isEmpty()) {
+      sb.append("工作区根目录: ").append(workspacePath).append('\n');
+      sb.append("工具路径参数请使用相对于根目录的路径。\n");
+    }
+    sb.append('\n');
+
+    sb.append("[ 你可用的工具 ]\n");
+    if (tools == null || tools.isEmpty()) {
+      sb.append("(当前没有可用工具)\n");
+    } else {
+      for (com.tom.rv2ide.ai.tool.api.ToolInfo tool : tools) {
+        sb.append("- ").append(tool.getName()).append(": ").append(tool.getDescription()).append('\n');
+      }
+    }
+    sb.append('\n');
+
+    if (!nativeTools) {
+      sb.append("[ 工具调用格式 ]\n");
+      sb.append("用下面的 XML 形式表达工具调用（可以一次多个）：\n");
+      sb.append("<tool_calls>\n");
+      sb.append("<tool_call name=\"file_read\">\n");
+      sb.append("<argument name=\"file_path\">app/build.gradle.kts</argument>\n");
+      sb.append("</tool_call>\n");
+      sb.append("</tool_calls>\n\n");
+    }
+
+    sb.append("[ 注意 ]\n");
+    sb.append("- 你只有上面列出的工具；不在其中的操作你无法执行，不要尝试或假装执行。\n");
+    sb.append("- 修改文件前先读取其当前内容，不要凭猜测覆盖。\n");
+    sb.append("- 工具返回错误时，阅读错误信息并调整做法。\n");
+    sb.append("- 最后必须给出一段结论：主 agent 只会看到这段文字，看不到你的过程。\n");
+    return sb.toString();
   }
 
   /**

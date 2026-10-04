@@ -22,8 +22,8 @@ import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.Observer
 import androidx.lifecycle.ViewModel
-import com.tom.rv2ide.app.BaseApplication
 import com.tom.rv2ide.artificial.agent.AgentOrchestrator
+import com.tom.rv2ide.artificial.agent.AssistantOrchestratorProvider
 import com.tom.rv2ide.templates.Template
 import java.util.concurrent.atomic.AtomicInteger
 
@@ -122,25 +122,24 @@ class MainViewModel : ViewModel() {
   }
 
   /**
-   * Activity 级共享的 AI 助手 orchestrator。
+   * 共享的 AI 助手 orchestrator。
    *
-   * <p><b>为什么放在这里</b>：主页悬浮助手（SIDEBAR）与 AI 助手页（INLINE）是两个
-   * [com.tom.rv2ide.artificial.agent.FloatingAssistantView] 实例。若各自持有 orchestrator，
-   * 就会各有一个活动会话 id，可能同时跑两个 agent 循环、并发写两份会话文件。让
-   * [MainViewModel]（生命周期与 MainActivity 相同、两个视图都能取到）持有唯一实例，
-   * 两个视图注入同一个引用，会话天然连续、不会并发。
+   * <p><b>为什么共享</b>：助手的多个宿主（主页悬浮 SIDEBAR、AI 助手页 INLINE、应用外系统
+   * 悬浮、真全屏 Activity）都是 [com.tom.rv2ide.artificial.agent.FloatingAssistantView] 实例。
+   * 若各自持有 orchestrator，就会各有一个活动会话 id，可能同时跑两个 agent 循环、并发写两份
+   * 会话文件，用户看到的是「会话列表/上下文用量/工作区对不上」。
+   *
+   * <p><b>为什么委派给进程级 provider 而不是在这里自建</b>：应用外悬浮跑在
+   * `AssistantOverlayService` 里，**没有 Activity**、取不到本 ViewModel。要让它与其余宿主
+   * 共用同一实例，唯一实例就必须是**进程级**的（[AssistantOrchestratorProvider]）。本属性
+   * 只是把 provider 暴露给 Activity 侧的调用点（[com.tom.rv2ide.fragments.MainFragment]、
+   * [com.tom.rv2ide.fragments.AssistantPageFragment]），语义仍是「全进程唯一」。
    *
    * <p><b>回调归属</b>：orchestrator 的「危险工具授权」「上下文用量」是单例槽位，
    * 由可见的那个视图安装（`FloatingAssistantView` 内按「谁可见谁拥有」处理）。
    *
-   * <p>用 application context 构造：orchestrator 被 Activity 级 ViewModel 持有，若绑
-   * Activity context 会在旋转/重建时泄漏；而它需要 Context 只是为了读偏好、写会话目录，
-   * 不需要 Activity 的资源。
+   * <p>provider 内部用 application context 构造：orchestrator 需要 Context 只是为了读偏好、
+   * 写会话目录，不需要 Activity 资源，因此不会随 Activity 重建泄漏。
    */
-  val assistantOrchestrator: AgentOrchestrator by lazy {
-    AgentOrchestrator(
-        BaseApplication.getBaseInstance(),
-        AgentOrchestrator.defaultDiffStore(BaseApplication.getBaseInstance()),
-    )
-  }
+  val assistantOrchestrator: AgentOrchestrator by lazy { AssistantOrchestratorProvider.get() }
 }

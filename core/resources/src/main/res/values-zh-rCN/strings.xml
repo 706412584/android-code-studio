@@ -101,11 +101,14 @@
   <string name="ai_agent_provider_slot_opus">强力</string>
   <string name="ai_agent_provider_slot_hint_same">与主模型相同</string>
   <string name="ai_agent_provider_slot_hint_main">例如 deepseek-chat 或 glm-5.2[1m]</string>
-  <string name="ai_agent_provider_fetch_models">拉取模型列表</string>
+  <string name="ai_agent_provider_fetch_models">获取模型</string>
   <string name="ai_agent_provider_fetching">正在获取…</string>
   <string name="ai_agent_provider_fetch_ok">已获取 %1$d 个模型</string>
   <string name="ai_agent_provider_fetch_empty">未能获取模型列表——请手动填写</string>
+  <string name="ai_agent_provider_fetch_hint">仅当上游服务商提供模型列表接口时才能获取。</string>
   <string name="ai_agent_provider_pick_model">选择模型</string>
+  <string name="ai_agent_provider_1m">1M</string>
+  <string name="ai_agent_provider_model_list_hint">点击模型以填入当前槽位。</string>
   <string name="ai_agent_provider_save">保存</string>
   <string name="ai_agent_provider_required">名称、Base URL 与主模型为必填</string>
   <string name="ai_agent_provider_from_preset">从预设开始</string>
@@ -158,6 +161,7 @@
   <string name="ai_conversation_message_count">%1$d 条消息</string>
   <string name="ai_conversation_meta">%1$s · %2$d 条消息</string>
   <string name="ai_conversation_list_title">会话</string>
+  <string name="ai_conversation_new_project_title">在哪个项目中新建会话</string>
   <string name="ai_assistant_more">更多</string>
   <string name="ai_assistant_settings">设置</string>
   <string name="ai_conversation_delete_confirm_title">删除会话</string>
@@ -210,6 +214,20 @@
   <string name="ai_agent_custom_agents_hint">该 Agent 会变成一个名为 agentx_&lt;名字&gt; 的工具。它的指令是固定的，模型只需说明要处理什么。</string>
   <string name="ai_agent_custom_agents_enable">启用</string>
   <string name="ai_agent_custom_agents_disable">停用</string>
+
+  <!-- Agent（内置 + 自定义入口） -->
+  <string name="ai_agent_agents_title">Agent</string>
+  <string name="ai_agent_agents_summary">模型可派遣的内置角色与自定义角色</string>
+  <string name="ai_agent_agents_count">内置 %1$d · 自定义 %2$d 启用</string>
+  <string name="ai_agent_agents_builtin">内置</string>
+  <string name="ai_agent_agents_custom">自定义</string>
+  <string name="ai_agent_agents_edit">编辑</string>
+  <string name="ai_agent_agents_reset">恢复默认</string>
+  <string name="ai_agent_agents_reset_all">全部内置恢复默认</string>
+  <string name="ai_agent_agents_add">新增自定义 Agent…</string>
+  <string name="ai_agent_agents_remove">删除</string>
+  <string name="ai_agent_agents_tools_label">工具白名单（全不勾选 = 不限制）</string>
+  <string name="ai_agent_agents_customized">已修改</string>
 
   <!-- Skill -->
   <string name="ai_agent_skills_title">Skill</string>

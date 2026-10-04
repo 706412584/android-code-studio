@@ -106,11 +106,14 @@
   <string name="ai_agent_provider_slot_opus">Powerful</string>
   <string name="ai_agent_provider_slot_hint_same">Same as main</string>
   <string name="ai_agent_provider_slot_hint_main">e.g. deepseek-chat or glm-5.2[1m]</string>
-  <string name="ai_agent_provider_fetch_models">Fetch model list</string>
+  <string name="ai_agent_provider_fetch_models">Fetch models</string>
   <string name="ai_agent_provider_fetching">Fetching…</string>
   <string name="ai_agent_provider_fetch_ok">Fetched %1$d models</string>
   <string name="ai_agent_provider_fetch_empty">Could not fetch models — fill in manually</string>
+  <string name="ai_agent_provider_fetch_hint">Only available when the upstream provider exposes a model list endpoint.</string>
   <string name="ai_agent_provider_pick_model">Pick a model</string>
+  <string name="ai_agent_provider_1m">1M</string>
+  <string name="ai_agent_provider_model_list_hint">Tap a model to fill the focused slot.</string>
   <string name="ai_agent_provider_save">Save</string>
   <string name="ai_agent_provider_required">Name, base URL and the main model are required</string>
   <string name="ai_agent_provider_from_preset">Start from a preset</string>
@@ -163,6 +166,7 @@
   <string name="ai_conversation_message_count">%1$d messages</string>
   <string name="ai_conversation_meta">%1$s · %2$d messages</string>
   <string name="ai_conversation_list_title">Conversations</string>
+  <string name="ai_conversation_new_project_title">New conversation in project</string>
   <string name="ai_assistant_more">More</string>
   <string name="ai_assistant_settings">Settings</string>
   <string name="ai_conversation_delete_confirm_title">Delete conversation</string>
@@ -215,6 +219,20 @@
   <string name="ai_agent_custom_agents_hint">The agent becomes a tool named agentx_&lt;name&gt;. Its instructions are fixed, so the model only supplies what to work on.</string>
   <string name="ai_agent_custom_agents_enable">Enable</string>
   <string name="ai_agent_custom_agents_disable">Disable</string>
+
+  <!-- Agents (built-in + custom entry) -->
+  <string name="ai_agent_agents_title">Agents</string>
+  <string name="ai_agent_agents_summary">Built-in and custom roles the model can delegate to</string>
+  <string name="ai_agent_agents_count">%1$d built-in · %2$d custom enabled</string>
+  <string name="ai_agent_agents_builtin">Built-in</string>
+  <string name="ai_agent_agents_custom">Custom</string>
+  <string name="ai_agent_agents_edit">Edit</string>
+  <string name="ai_agent_agents_reset">Reset to default</string>
+  <string name="ai_agent_agents_reset_all">Reset all built-in</string>
+  <string name="ai_agent_agents_add">Add custom agent…</string>
+  <string name="ai_agent_agents_remove">Remove</string>
+  <string name="ai_agent_agents_tools_label">Allowed tools (none checked = unrestricted)</string>
+  <string name="ai_agent_agents_customized">customized</string>
 
   <!-- Skills -->
   <string name="ai_agent_skills_title">Skills</string>

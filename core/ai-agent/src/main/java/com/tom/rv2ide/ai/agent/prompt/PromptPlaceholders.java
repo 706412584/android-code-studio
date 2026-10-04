@@ -61,6 +61,9 @@ public final class PromptPlaceholders {
   /** 收尾注意事项段落。 */
   public static final String NOTES = "NOTES";
 
+  /** 工作准则段落（构建/验证纪律、最小改动、安全边界、何时问用户、失败上报、子代理时机）。 */
+  public static final String GUIDANCE_SECTION = "GUIDANCE_SECTION";
+
   // ---- 任务状态 ----
   /**
    * 待办清单**正文**（每行一项，如 {@code [x] 读取配置}）。
@@ -106,6 +109,7 @@ public final class PromptPlaceholders {
               SUMMARY,
               ROLE_PROMPT,
               TONE_CONTEXT,
+              GUIDANCE_SECTION,
               NOTES));
 
   private PromptPlaceholders() {}
@@ -164,6 +168,8 @@ public final class PromptPlaceholders {
         return "语气要求";
       case NOTES:
         return "收尾注意事项段落";
+      case GUIDANCE_SECTION:
+        return "工作准则段落（构建/验证纪律、安全边界、何时问用户、失败上报、子代理时机）";
       default:
         return "";
     }

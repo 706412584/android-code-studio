@@ -28,6 +28,7 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.lifecycleScope
 import com.tom.rv2ide.app.EdgeToEdgeIDEActivity
+import com.tom.rv2ide.artificial.agent.AssistantOrchestratorProvider
 import com.tom.rv2ide.artificial.agent.FloatingAssistantView
 import com.tom.rv2ide.artificial.agent.host.ActivityHost
 import com.tom.rv2ide.projects.IProjectManager
@@ -112,10 +113,14 @@ class AssistantFullscreenActivity : EdgeToEdgeIDEActivity() {
     container.setBackgroundColor(resolveAttr(com.tom.rv2ide.common.R.attr.colorSurface))
 
     // 用 Activity 的生命周期作用域：助手视图里所有协程都挂在它上面，Activity 销毁即取消。
+    // 注入进程级共享 orchestrator（AssistantOrchestratorProvider）：真全屏与主页悬浮/内联页/
+    // 应用外悬浮共用同一实例，否则这里会另起一段会话——用户从悬浮窗长按进真全屏后，
+    // 看到的是另一条对话、上下文用量也对不上。
     val view =
         FloatingAssistantView(
             ActivityHost(this, lifecycleScope, container),
             FloatingAssistantView.Mode.FULLSCREEN,
+            AssistantOrchestratorProvider.get(),
         )
     view.attach()
     // 绑定当前打开的项目。必须走 getWorkspace()（可空）而不是 projectDir：

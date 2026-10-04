@@ -109,6 +109,27 @@ public interface ToolSettingsPort {
   }
 
   /**
+   * 询问用户是否放行一次危险调用（按会话）。
+   *
+   * <p>默认委托到无会话版本。实现方若维护「本次运行内已批准」的记忆，应按
+   * {@code conversationId} 隔离存储。
+   *
+   * @param conversationId 产生该调用的会话 id；空串表示无会话
+   */
+  default boolean confirmDangerousTool(String conversationId, String toolName, String arguments) {
+    return confirmDangerousTool(toolName, arguments);
+  }
+
+  /**
+   * 丢弃某个会话的运行内授权记忆。会话运行结束时调用，避免条目随会话数累积。
+   *
+   * <p>默认空实现。
+   */
+  default void clearRunApprovedRules(String conversationId) {
+    // 默认无按会话状态，无需清理。
+  }
+
+  /**
    * 默认实现：自动模式、全部工具启用、shell 走 termux。
    *
    * <p>供单元测试与尚未接入配置的调用方使用，避免到处判空。

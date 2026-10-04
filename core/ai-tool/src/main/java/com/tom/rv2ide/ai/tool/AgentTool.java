@@ -52,8 +52,13 @@ public final class AgentTool extends BaseTool {
    */
   public static final int MAX_DEPTH = 2;
 
-  /** 子 agent 任务描述的长度上限。 */
-  static final int MAX_TASK_CHARS = 4000;
+  /**
+   * 子 agent 任务描述的长度上限。
+   *
+   * <p>public 以便 app 层的其它角色工具（{@code BuiltinAgentTool} 等）复用同一上限——
+   * 各写一份会让「任务过长」的判定在同类工具间漂移。
+   */
+  public static final int MAX_TASK_CHARS = 4000;
 
   private final SubAgentRunner runner;
 

@@ -172,6 +172,12 @@ public final class AgentPromptBuilder {
             ? ""
             : PromptRenderer.render(templates.resolve(PromptTemplates.TODO_SECTION), values));
 
+    // 工作准则（构建/验证纪律、最小改动、安全边界、何时问用户、失败上报、子代理时机）。
+    // 与模式无关：这些是普适的行为约束，各模式段落负责的是「授权范围」，不是纪律本身。
+    values.put(
+        "GUIDANCE_SECTION",
+        PromptRenderer.render(templates.resolve(PromptTemplates.GUIDANCE_SECTION), values));
+
     // 收尾注意事项
     values.put(
         "NOTES", PromptRenderer.render(templates.resolve(PromptTemplates.NOTES), values));

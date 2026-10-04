@@ -46,6 +46,9 @@ tasks.register("copyJar") {
       from(libsDir)
       into(libsDir)
       include("*-all.jar")
+      // 排除上一次的产物：它同样以 -all.jar 结尾，会被 include 命中并与重命名后的
+      // 目标同名，导致增量构建报 "Entry tooling-api-all.jar is a duplicate"。
+      exclude("tooling-api-all.jar")
       rename { "tooling-api-all.jar" }
     }
   }

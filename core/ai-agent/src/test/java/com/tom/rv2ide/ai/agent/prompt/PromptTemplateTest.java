@@ -170,6 +170,7 @@ final class PromptTemplateTest {
       PromptTemplates.defaultToolsContext(),
       PromptTemplates.defaultToolCallFormat(),
       PromptTemplates.defaultTodoSection(),
+      PromptTemplates.defaultGuidance(),
       PromptTemplates.defaultNotes(),
       PromptTemplates.defaultChatModeContext(ChatMode.CHAT),
       PromptTemplates.defaultChatModeContext(ChatMode.PLAN),
@@ -474,6 +475,44 @@ final class PromptTemplateTest {
     assertFalse(PromptTemplates.defaultToolsContext().isEmpty());
     assertFalse(PromptTemplates.defaultToolCallFormat().isEmpty());
     assertFalse(PromptTemplates.defaultTodoSection().isEmpty());
+    assertFalse(PromptTemplates.defaultGuidance().isEmpty());
     assertFalse(PromptTemplates.defaultNotes().isEmpty());
+  }
+
+  // ---- 工作准则段落 ----
+
+  @Test
+  void defaultPromptIncludesGuidanceSection() {
+    // 第二轮优化：默认系统提示词必须带上工作准则（验证纪律、安全边界、子代理时机），
+    // 否则模型仍会「改完就算完成」、不问就做破坏性操作、该委派时硬读文件。
+    AgentPromptBuilder builder = new AgentPromptBuilder("A");
+    String prompt = builder.build("/w", tools("file_read"), true);
+
+    assertTrue(prompt.contains("工作准则"), prompt);
+    assertTrue(prompt.contains("验证"), "应包含验证纪律");
+    assertTrue(prompt.contains("子代理"), "应包含子代理使用时机");
+  }
+
+  @Test
+  void guidanceSectionIsIndependentlyCustomizable() {
+    // 准则单独成段的意义：用户可以只替换它，而保留工具清单等其它段落。
+    PromptTemplateStore store = PromptTemplateStore.inMemory();
+    store.write(PromptTemplates.GUIDANCE_SECTION, "CUSTOM-GUIDANCE {{HOME_PATH}}");
+
+    AgentPromptBuilder builder = new AgentPromptBuilder("A", store);
+    String prompt = builder.build("/ws", tools("file_read"), true);
+
+    assertTrue(prompt.contains("CUSTOM-GUIDANCE"));
+    assertFalse(prompt.contains("{{HOME_PATH}}"), "自定义段落里的占位符也要被渲染");
+    // 其它段落仍在，说明只替换了准则这一段。
+    assertTrue(prompt.contains("file_read"));
+  }
+
+  @Test
+  void guidanceSectionResolvesByTemplateId() {
+    // 模板 ID 是稳定契约：guidance 必须能通过 defaultFor 反查，否则设置界面改不了它。
+    assertEquals(
+        PromptTemplates.defaultGuidance(), PromptTemplates.defaultFor(PromptTemplates.GUIDANCE_SECTION));
+    assertEquals(PromptTemplates.GUIDANCE_SECTION, "guidance");
   }
 }

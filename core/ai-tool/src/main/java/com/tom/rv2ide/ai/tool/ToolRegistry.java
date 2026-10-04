@@ -190,6 +190,36 @@ public final class ToolRegistry {
     return selected;
   }
 
+  /**
+   * 按白名单筛选出一个**新注册表**，保持登记顺序。
+   *
+   * <p>用于子 agent 的角色工具集：白名单是能力边界——未列出的工具根本不注册，
+   * 因此子 agent 在结构上就做不到越界操作（提示词可能被忽略，缺少工具不会）。
+   *
+   * <p>不限制（{@code filter} 为 null 或 {@link ToolNameFilter#restricts()} 为 false）时
+   * 返回包含全部工具的新注册表。
+   */
+  public ToolRegistry filtered(ToolNameFilter filter) {
+    ToolRegistry result = new ToolRegistry();
+    if (filter == null || !filter.restricts()) {
+      for (BaseTool tool : getAll()) {
+        result.register(tool);
+      }
+      return result;
+    }
+    lock.readLock().lock();
+    try {
+      for (BaseTool tool : tools.values()) {
+        if (filter.allows(tool.getName())) {
+          result.register(tool);
+        }
+      }
+    } finally {
+      lock.readLock().unlock();
+    }
+    return result;
+  }
+
   /** 返回 {@link ToolInfo} 视图，供 AI 协议层使用而不依赖 BaseTool 具体类型。 */
   public List<ToolInfo> getToolInfoByNameSet(Set<String> names) {
     ArrayList<ToolInfo> selected = new ArrayList<>();

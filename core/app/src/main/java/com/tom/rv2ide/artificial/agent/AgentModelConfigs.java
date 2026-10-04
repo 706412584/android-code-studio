@@ -215,26 +215,59 @@ public final class AgentModelConfigs {
   }
 
   /**
-   * 组装模型配置。
+   * 组装模型配置（默认主模型槽位）。
    *
    * @param endpoint 服务商端点
    * @param modelId 模型名
    * @param toolCallLimit 单轮对话允许的工具调用次数上限；{@code <= 0} 表示不限制
    */
   public static ModelConfig build(ProviderEndpoint endpoint, String modelId, int toolCallLimit) {
+    return build(endpoint, modelId, toolCallLimit, ProviderConfig.SLOT_MAIN);
+  }
+
+  /**
+   * 组装模型配置，并带上该槽位声明的上下文窗口。
+   *
+   * <p><b>为什么必须显式带上 contextSize</b>：用户声明的 {@code [1m]} / {@code [200k]}
+   * 后缀只是本地元数据（{@link ProviderConfig#apiModelId} 会把它剥掉再发给 API），
+   * 若这里不把它翻译成 {@link ModelConfig#getContextSize()}，运行时的压缩窗口仍是默认值——
+   * 用户勾了 1M 却完全不生效，勾选框沦为装饰。
+   *
+   * @param slot 槽位（main/haiku/sonnet/opus）；空槽位回退主模型
+   */
+  public static ModelConfig build(
+      ProviderEndpoint endpoint, String modelId, int toolCallLimit, String slot) {
     if (endpoint == null) {
       throw new IllegalArgumentException("endpoint 不能为空");
     }
-    return ModelConfig.builder(
-            endpoint.id,
-            endpoint.label,
-            endpoint.protocolType,
-            endpoint.label,
-            endpoint.baseUrl,
-            endpoint.apiKey,
-            modelId == null ? "" : modelId)
-        .toolCallLimit(toolCallLimit)
-        .build();
+    ModelConfig.Builder builder =
+        ModelConfig.builder(
+                endpoint.id,
+                endpoint.label,
+                endpoint.protocolType,
+                endpoint.label,
+                endpoint.baseUrl,
+                endpoint.apiKey,
+                modelId == null ? "" : modelId)
+            .toolCallLimit(toolCallLimit);
+    applyContextSize(builder, recordFor(endpoint.id), slot);
+    return builder.build();
+  }
+
+  /**
+   * 把服务商记录里某槽位声明的上下文窗口写进 builder；未声明则保持不设。
+   *
+   * <p>抽成独立的包级方法是为了能纯 JVM 单测：{@link #recordFor} 依赖 Android Context，
+   * 而「声明 {@code [1m]} → contextSize=1000000」这条链路的正确性必须被锁定。
+   */
+  static void applyContextSize(ModelConfig.Builder builder, ProviderConfig record, String slot) {
+    if (builder == null || record == null) {
+      return;
+    }
+    int declared = record.contextSize(slot == null ? ProviderConfig.SLOT_MAIN : slot);
+    if (declared != ContextSizeParser.UNSET) {
+      builder.contextSize(declared);
+    }
   }
 
   /**

@@ -148,6 +148,20 @@
 
     </com.google.android.material.textfield.TextInputLayout>
 
+    <!--
+      1M 上下文勾选框（每个槽位一个）。
+
+      勾选只是给模型名加 [1m] 后缀，不改其它字段——后缀由 ContextSizeParser
+      读写，避免用户手改模型名时把 [200k] 之类叠成非法值。
+    -->
+    <com.google.android.material.checkbox.MaterialCheckBox
+      android:id="@+id/providerSlotMain1m"
+      android:layout_width="wrap_content"
+      android:layout_height="wrap_content"
+      android:layout_marginStart="8dp"
+      android:minHeight="0dp"
+      android:text="@string/ai_agent_provider_1m" />
+
     <com.google.android.material.textfield.TextInputLayout
       android:layout_width="match_parent"
       android:layout_height="wrap_content"
@@ -164,6 +178,14 @@
         android:singleLine="true" />
 
     </com.google.android.material.textfield.TextInputLayout>
+
+    <com.google.android.material.checkbox.MaterialCheckBox
+      android:id="@+id/providerSlotHaiku1m"
+      android:layout_width="wrap_content"
+      android:layout_height="wrap_content"
+      android:layout_marginStart="8dp"
+      android:minHeight="0dp"
+      android:text="@string/ai_agent_provider_1m" />
 
     <com.google.android.material.textfield.TextInputLayout
       android:layout_width="match_parent"
@@ -182,6 +204,14 @@
 
     </com.google.android.material.textfield.TextInputLayout>
 
+    <com.google.android.material.checkbox.MaterialCheckBox
+      android:id="@+id/providerSlotSonnet1m"
+      android:layout_width="wrap_content"
+      android:layout_height="wrap_content"
+      android:layout_marginStart="8dp"
+      android:minHeight="0dp"
+      android:text="@string/ai_agent_provider_1m" />
+
     <com.google.android.material.textfield.TextInputLayout
       android:layout_width="match_parent"
       android:layout_height="wrap_content"
@@ -199,6 +229,14 @@
 
     </com.google.android.material.textfield.TextInputLayout>
 
+    <com.google.android.material.checkbox.MaterialCheckBox
+      android:id="@+id/providerSlotOpus1m"
+      android:layout_width="wrap_content"
+      android:layout_height="wrap_content"
+      android:layout_marginStart="8dp"
+      android:minHeight="0dp"
+      android:text="@string/ai_agent_provider_1m" />
+
     <!--
       拉取目录用 OutlinedButton 而不是实心按钮：它是这个表单里的辅助动作，
       主操作是底部的「保存」。两个实心按钮会互相抢注意力。
@@ -211,8 +249,32 @@
       android:layout_marginTop="16dp"
       android:layout_marginBottom="8dp"
       android:text="@string/ai_agent_provider_fetch_models"
+      app:helperTextEnabled="true"
+      app:helperText="@string/ai_agent_provider_fetch_hint"
       app:icon="@drawable/ic_search"
       app:iconGravity="textStart" />
+
+    <!--
+      拉取到的模型清单（默认隐藏）。
+
+      只 Toast 一个数量不够用：用户仍不知道有哪些模型、也不能从列表里选。
+      这里渲染成可点的列表，点某项即写入当前「焦点槽位」。
+    -->
+    <TextView
+      android:id="@+id/providerModelListHint"
+      android:layout_width="match_parent"
+      android:layout_height="wrap_content"
+      android:visibility="gone"
+      android:text="@string/ai_agent_provider_model_list_hint"
+      android:textAppearance="@style/TextAppearance.Material3.BodySmall"
+      android:textColor="?attr/colorOnSurfaceVariant" />
+
+    <LinearLayout
+      android:id="@+id/providerModelList"
+      android:layout_width="match_parent"
+      android:layout_height="wrap_content"
+      android:orientation="vertical"
+      android:visibility="gone" />
 
   </LinearLayout>
 

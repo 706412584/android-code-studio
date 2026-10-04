@@ -55,6 +55,15 @@ public final class ToolContext {
   /** 当前 tool call 的 id，用于把执行进度与结果关联回对话。 */
   private final String toolCallId;
 
+  /**
+   * 产生本次工具调用的会话 id。
+   *
+   * <p><b>为什么工具上下文需要它</b>：危险工具的一次性授权（「本次运行内允许」）按会话隔离，
+   * 否则并行会话之间会互相放行——在 A 项目批准的危险命令会在 B 项目静默执行。
+   * 空串表示无会话（单测、后台一次性调用），此时退化为不按会话隔离。
+   */
+  private final String conversationId;
+
   /** 执行过程中的进度回调，可为 null。 */
   private final ProgressListener progressListener;
 
@@ -76,6 +85,7 @@ public final class ToolContext {
             : Collections.unmodifiableList(builder.extraWriteRoots);
     this.bypassPathProtection = builder.bypassPathProtection;
     this.toolCallId = builder.toolCallId == null ? "" : builder.toolCallId;
+    this.conversationId = builder.conversationId == null ? "" : builder.conversationId;
     this.progressListener = builder.progressListener;
     this.settings = builder.settings == null ? ToolSettingsPort.defaults() : builder.settings;
     this.imageDataProvider = builder.imageDataProvider;
@@ -95,6 +105,11 @@ public final class ToolContext {
 
   public String getToolCallId() {
     return toolCallId;
+  }
+
+  /** 产生本次工具调用的会话 id；空串表示无会话。 */
+  public String getConversationId() {
+    return conversationId;
   }
 
   public ProgressListener getProgressListener() {
@@ -122,6 +137,7 @@ public final class ToolContext {
         .extraWriteRoots(this.extraWriteRoots)
         .bypassPathProtection(this.bypassPathProtection)
         .toolCallId(newToolCallId)
+        .conversationId(this.conversationId)
         .progressListener(this.progressListener)
         .settings(this.settings)
         .imageDataProvider(this.imageDataProvider)
@@ -150,6 +166,7 @@ public final class ToolContext {
     private List<String> extraWriteRoots;
     private boolean bypassPathProtection;
     private String toolCallId;
+    private String conversationId;
     private ProgressListener progressListener;
     private ToolSettingsPort settings;
     private ImageDataProvider imageDataProvider;
@@ -171,6 +188,12 @@ public final class ToolContext {
 
     public Builder toolCallId(String value) {
       this.toolCallId = value;
+      return this;
+    }
+
+    /** 产生本次调用的会话 id，用于危险工具授权的按会话隔离。 */
+    public Builder conversationId(String value) {
+      this.conversationId = value;
       return this;
     }
 

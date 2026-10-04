@@ -29,6 +29,11 @@ package com.tom.rv2ide.ai.agent.prompt;
  * 行为不变。
  *
  * <p>模板 ID 是稳定契约（偏好里存的就是它），改名会让用户的既有自定义失效。
+ * 新增段落可以，但**已有的 ID 不得改名或删除**。
+ *
+ * <p><b>默认文本的组织方式</b>：按「身份 → 模式 → 环境 → 能力 → 准则 → 注意」分段，
+ * 每段是一个独立模板。用户因此可以只改其中一段（例如只替换「工作准则」而保留工具清单），
+ * 不必整段重写。段落之间保留空行，方便单独编辑。
  */
 public final class PromptTemplates {
 
@@ -46,6 +51,14 @@ public final class PromptTemplates {
 
   /** 待办段落。 */
   public static final String TODO_SECTION = "todoSection";
+
+  /**
+   * 工作准则段落（构建/验证纪律、最小改动、安全边界、何时问用户、失败上报、子代理时机）。
+   *
+   * <p>新增于第二轮优化：此前这些约束要么缺失、要么只散落在 NOTES 的三条里，
+   * 模型因此倾向于「改完就算完成」、不问就做破坏性操作、该派子代理时自己硬读几十个文件。
+   */
+  public static final String GUIDANCE_SECTION = "guidance";
 
   /** 各模式的行为约束段落。ID 形如 {@code chatModeAgent}。 */
   public static final String CHAT_MODE_PREFIX = "chatMode";
@@ -71,6 +84,7 @@ public final class PromptTemplates {
         + "{{TODO_SECTION}}\n"
         + "{{TOOLS_CONTEXT}}\n"
         + "{{TOOL_CALL_FORMAT}}\n"
+        + "{{GUIDANCE_SECTION}}\n"
         + "{{NOTES}}";
   }
 
@@ -79,13 +93,17 @@ public final class PromptTemplates {
     return "[ 工作区 ]\n"
         + "根目录: {{HOME_PATH}}\n"
         + "工具路径参数请使用相对于根目录的路径（如 src/main/App.kt）。\n"
-        + "工具只允许访问根目录内的文件；越界路径会被拒绝。";
+        + "工具只允许访问根目录内的文件；越界路径会被拒绝。\n"
+        + "这是一个 Android 项目：模块划分与包名以实际文件为准，动手前先确认，"
+        + "不要照搬其它项目的结构。";
   }
 
   /** 默认工具清单段落。 */
   public static String defaultToolsContext() {
     return "[ 可用工具 ]\n"
-        + "{{TOOL_LIST}}";
+        + "{{TOOL_LIST}}\n"
+        + "需要多项信息时，尽量在一次回复里发出多个调用，而不是串行地一次问一个——"
+        + "后者会成倍拉长任务。";
   }
 
   /** 默认文本工具调用格式说明。 */
@@ -97,14 +115,58 @@ public final class PromptTemplates {
         + "<argument name=\"file_path\">app/build.gradle.kts</argument>\n"
         + "</tool_call>\n"
         + "</tool_calls>\n"
-        + "工具调用之外可以写文字说明；两者可以同时出现在一次回复里。";
+        + "工具调用之外可以写文字说明；两者可以同时出现在一次回复里。\n"
+        + "只使用上面清单里列出的工具名，不要臆造工具或参数。";
   }
 
   /** 默认待办段落。 */
   public static String defaultTodoSection() {
     return "[ 当前待办 ]\n"
         + "{{TODO_LIST}}\n"
-        + "继续推进未完成的项；每完成一项就用 todo_update 更新状态。";
+        + "继续推进未完成的项；每完成一项就用 todo_update 更新状态。\n"
+        + "长任务里待办是你「不丢进度」的依据，请保持它与实际进度一致。";
+  }
+
+  /**
+   * 默认工作准则。
+   *
+   * <p><b>为什么值得单独成段</b>：模型的能力不是问题，「纪律」才是。缺了这段，实测常见
+   * 的失败是：改完不验证就说完成、不问就执行不可逆操作、该委派时自己硬读几十个文件把
+   * 上下文占满、失败后粉饰结论。这些都靠明确的行为约束来收敛。
+   */
+  public static String defaultGuidance() {
+    return "[ 工作准则 ]\n"
+        + "先理解再动手：\n"
+        + "- 动手前先读相关代码，理解既有模式与约定，不要凭猜测写代码或覆盖文件。\n"
+        + "- 优先复用项目里已有的实现，避免重复造轮子。\n"
+        + "\n"
+        + "最小改动：\n"
+        + "- 只改完成当前任务所必需的部分，不做无关的重构、风格统一或顺带清理。\n"
+        + "- 改动共享代码前，先确认它被谁依赖，评估影响面再动手。\n"
+        + "\n"
+        + "验证闭环：\n"
+        + "- 改完代码要验证，不要假设「应该没问题」。能编译就编译，能跑相关测试就跑。\n"
+        + "- 验证失败时如实报告失败输出与原因，不要粉饰、跳过或假装成功。\n"
+        + "\n"
+        + "安全边界：\n"
+        + "- 删除、覆盖、安装、启动、清数据等不可逆或影响范围大的操作，先说明你要做什么、"
+        + "为什么，等用户确认后再执行（除非用户已明确授权本次操作）。\n"
+        + "- 不要把密钥、令牌等敏感信息写进代码、日志或回复。\n"
+        + "- 不确定的 API、字段或行为，宁可说不确定并给出验证方式，也不要编造。\n"
+        + "\n"
+        + "何时直接做 / 何时先问：\n"
+        + "- 需求清晰、改动局部、可逆：直接做，做完说明。\n"
+        + "- 需求含糊、有多种合理做法、影响面大或不可逆：先问清楚，或先给出方案再动手。\n"
+        + "\n"
+        + "失败上报：\n"
+        + "- 如实说明做了什么、结果如何、哪一步没成，并给出下一步建议；不要掩盖或美化。\n"
+        + "\n"
+        + "子代理使用时机：\n"
+        + "- 当调查需要读大量文件、或需要独立视角时，用 agent 工具把任务派给子代理："
+        + "它的过程不占用你的上下文，只把结论带回来。\n"
+        + "- 子代理看不到本对话，任务描述必须自包含（文件路径、目标、约束都要写清）。\n"
+        + "- 需要固定职责的角色（代码审查、测试编写、文档撰写）时，优先派遣对应的内置子代理。\n"
+        + "- 一两步就能做完的简单事不要委派——委派本身也有开销。";
   }
 
   /** 默认收尾注意事项。 */
@@ -112,7 +174,7 @@ public final class PromptTemplates {
     return "[ 注意 ]\n"
         + "- 修改文件前先读取其当前内容，不要凭猜测覆盖。\n"
         + "- 工具返回错误时，阅读错误信息并调整做法，不要重复同样的调用。\n"
-        + "- 任务完成后用简洁的文字说明你做了什么。";
+        + "- 任务完成后用简洁的文字说明你做了什么、结果如何；没有完成的部分要明说。";
   }
 
   /**
@@ -137,7 +199,8 @@ public final class PromptTemplates {
         return "[ 模式：执行 ]\n"
             + "请通过调用工具完成任务，不要只在回复里描述你打算怎么做。\n"
             + "一次可以请求多个工具调用；系统会执行它们并把结果回传给你，"
-            + "然后你可以继续下一步，直到任务完成。";
+            + "然后你可以继续下一步，直到任务完成。\n"
+            + "完成后按「工作准则」做必要的验证，再报告结果。";
       case CONTROL:
       default:
         return "[ 模式：受控执行 ]\n"
@@ -163,6 +226,8 @@ public final class PromptTemplates {
         return defaultToolCallFormat();
       case TODO_SECTION:
         return defaultTodoSection();
+      case GUIDANCE_SECTION:
+        return defaultGuidance();
       case NOTES:
         return defaultNotes();
       default:

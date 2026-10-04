@@ -92,12 +92,15 @@ public final class ToolExecutor {
    * <p>「本次运行内已确认」的记忆交由实现方的 {@code confirmDangerousTool} 维护——
    * 那里能同时记录工具名与参数粒度，比在这里再放一个粗粒度布尔更精确。
    */
-  private boolean confirmViaRules(ToolSettingsPort settings, String toolName, String arguments) {
+  private boolean confirmViaRules(
+      ToolSettingsPort settings, String conversationId, String toolName, String arguments) {
     String ruleKey = ToolPermissionRule.keyFor(toolName, arguments);
+    // 持久化规则（「始终允许」）跨会话有效，直接放行。
     if (!ruleKey.isEmpty() && settings.hasDangerousToolRule(ruleKey)) {
       return true;
     }
-    return settings.confirmDangerousTool(toolName, arguments);
+    // 否则按**会话**询问：运行内的一次性授权只在产生它的会话里有效，不会泄漏到并行会话。
+    return settings.confirmDangerousTool(conversationId, toolName, arguments);
   }
 
   private ToolResult executeTool(ToolCall toolCall, ToolContext context, boolean confirmed) {
@@ -127,7 +130,9 @@ public final class ToolExecutor {
       // 带上工具名与参数询问，用户才能判断要放行的是什么。
       ToolSettingsPort callSettings =
           context == null ? ToolSettingsPort.defaults() : context.getSettings();
-      if (!confirmViaRules(callSettings, toolName, toolCall.getArguments())) {
+      // 会话 id 从上下文取：危险工具的运行内授权按会话隔离，避免并行会话互相放行。
+      String conversationId = context == null ? "" : context.getConversationId();
+      if (!confirmViaRules(callSettings, conversationId, toolName, toolCall.getArguments())) {
         return ToolResult.of(
             callId, toolName, "用户拒绝执行工具 " + toolName + "（或未确认）。", true);
       }
