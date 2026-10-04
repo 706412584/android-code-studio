@@ -71,6 +71,7 @@ object QuickDevelopSources {
       import android.graphics.Color;
       import android.graphics.drawable.GradientDrawable;
       import android.util.TypedValue;
+      import android.view.View;
       import android.view.ViewGroup;
       import android.widget.FrameLayout;
 
@@ -160,6 +161,65 @@ object QuickDevelopSources {
               drawable.setColor(背景色);
               drawable.setCornerRadius(圆角值);
               setBackground(drawable);
+          }
+
+          // ==================================================================
+          // 静态辅助：供「不继承 视图 的控件」复用同一套样式能力。
+          //
+          // 表格布局 / 滚动 / 卡片 这类控件的父类已经定死（TableLayout、
+          // ScrollView…），无法再继承 视图，但它们同样需要背景/圆角/边距。
+          // 与其在几十个类里各抄一份 GradientDrawable 逻辑，不如放这里共用。
+          //
+          // 读写都走 View 自己的 background：先设背景再设圆角（或反过来）
+          // 都不会互相覆盖——取或建() 会复用已有的 GradientDrawable。
+          // ==================================================================
+
+          /** 给任意 View 设置纯色背景，保留已设的圆角。 */
+          public static void 设背景(View view, int color) {
+              GradientDrawable drawable = 取或建(view);
+              drawable.setColor(color);
+              view.setBackground(drawable);
+          }
+
+          /** 给任意 View 设置圆角（dp），保留已设的背景色。 */
+          public static void 设圆角(View view, float radiusDp) {
+              GradientDrawable drawable = 取或建(view);
+              drawable.setCornerRadius(dp(radiusDp));
+              view.setBackground(drawable);
+          }
+
+          /** 给任意 View 设置四边一致的内边距（dp）。 */
+          public static void 设内边距(View view, float paddingDp) {
+              int p = dp(paddingDp);
+              view.setPadding(p, p, p, p);
+          }
+
+          /** 给任意 View 设置四边一致的外边距（dp）；父容器不支持时静默忽略。 */
+          public static void 设外边距(View view, float marginDp) {
+              int m = dp(marginDp);
+              ViewGroup.LayoutParams params = view.getLayoutParams();
+              if (params instanceof ViewGroup.MarginLayoutParams) {
+                  ((ViewGroup.MarginLayoutParams) params).setMargins(m, m, m, m);
+                  view.requestLayout();
+              }
+          }
+
+          /** 设置线性布局权重；父容器不是 LinearLayout 时静默忽略。 */
+          public static void 设权重(View view, float weight) {
+              ViewGroup.LayoutParams params = view.getLayoutParams();
+              if (params instanceof android.widget.LinearLayout.LayoutParams) {
+                  ((android.widget.LinearLayout.LayoutParams) params).weight = weight;
+                  view.requestLayout();
+              }
+          }
+
+          /** 取 View 已有的 GradientDrawable 背景；没有就新建一个。 */
+          private static GradientDrawable 取或建(View view) {
+              android.graphics.drawable.Drawable background = view.getBackground();
+              if (background instanceof GradientDrawable) {
+                  return (GradientDrawable) background;
+              }
+              return new GradientDrawable();
           }
       }
   """
@@ -626,14 +686,735 @@ object QuickDevelopSources {
    * 模板按顺序写文件；MainActivity 由 `ActivityWriter` 单独写（它需要
    * 目录推导逻辑）。
    */
-  fun components(packageId: String): List<Pair<String, String>> =
+  fun components(packageId: String): List<Pair<String, String>> {
+    val base =
+        listOf(
+            "视图" to viewJava(packageId),
+            "线性布局" to linearLayoutJava(packageId),
+            "约束布局" to constraintLayoutJava(packageId),
+            "文本" to textJava(packageId),
+            "按钮" to buttonJava(packageId),
+            "输入框" to inputJava(packageId),
+            "页面" to pageJava(packageId),
+        )
+    val extra = EXTRA_WIDGETS.flatMap { w ->
+      listOf(w.cn to widgetJava(packageId, w), w.en to aliasJava(packageId, w))
+    }
+    return base + extra
+  }
+
+  // =====================================================================================
+  // 规格表驱动的控件生成
+  //
+  // 为什么用规格表而不是 38 段手写字符串：每个控件的 Java 骨架（构造器、样式方法、
+  // 英文别名）高度同构，只有「继承谁 / 有哪些特有方法」不同。一张表 + 一个引擎，
+  // 改一处约定就全局生效；手写 38 段则要改 38 处。
+  //
+  // 规格来源：Appv5 的控件清单（`runlibrary/app/v/`，109 文件）。Appv5 的代码本身
+  // 不可搬运——基类 `VC` 依赖已从仓库丢失的 `ClientsUDP.a`、反编译有重复声明
+  // （`an.java` 里 `st` 与 `f94` 同指一个 Button），整包无法编译。但「哪些控件
+  // 值得封装」这份清单与骨架设计是可复用的，本表即为它的落地。
+  // =====================================================================================
+
+  /** 控件能力来源：容器继承 [视图]（可添加子视图），叶子控件走 [视图] 的静态辅助。 */
+  private enum class Style { CONTAINER, LEAF }
+
+  /**
+   * 一个控件特有方法的签名与实现体。
+   *
+   * [body] 为空表示生成 `abstract` 空壳，交给子类实现（如 `页面.搭建()`）。
+   */
+  private data class Method(
+      val ret: String,
+      val name: String,
+      val params: String = "",
+      val body: List<String> = emptyList(),
+  )
+
+  private data class Widget(
+      val cn: String,
+      val en: String,
+      /** Java 继承的类（全限定名）。 */
+      val extends: String,
+      val style: Style,
+      /** 构造器体（`super(context)` 之后执行）。 */
+      val ctor: List<String> = emptyList(),
+      val methods: List<Method> = emptyList(),
+      val isAbstract: Boolean = false,
+      /**
+       * 不生成自动样式方法的名字。
+       *
+       * 仅 [CardView] 需要：它自带 `setRadius`，背景式圆角对它无效，
+       * 因此跳过后由规格表提供一个走 `setRadius` 的 `圆角`。
+       */
+      val skipStyles: Set<String> = emptySet(),
+      /**
+       * 方法体里用到的**简单名**类型所需的 import。
+       *
+       * 必须显式声明：`extends` 用的是全限定名，不会把父类的简单名带进作用域，
+       * 因此方法体里写 `LinearLayoutManager` 必须自己 import。
+       */
+      val extraImports: Set<String> = emptySet(),
+      /**
+       * 非空时改为「包装」形态：类继承 `视图`，内部持有一个该类型的实例。
+       *
+       * 用于 **final 类**——`ViewPager2` 是 final，无法被继承，只能包装。
+       * 包装后方法体里通过 `内部` 调用目标对象。
+       */
+      val wraps: String? = null,
+  )
+
+  /** 五个样式方法：名称 → 参数声明 → 转发用的实参名。 */
+  private val STYLE_SPECS =
       listOf(
-          "视图" to viewJava(packageId),
-          "线性布局" to linearLayoutJava(packageId),
-          "约束布局" to constraintLayoutJava(packageId),
-          "文本" to textJava(packageId),
-          "按钮" to buttonJava(packageId),
-          "输入框" to inputJava(packageId),
-          "页面" to pageJava(packageId),
+          Triple("背景", "int color", "color"),
+          Triple("圆角", "float radiusDp", "radiusDp"),
+          Triple("内边距", "float paddingDp", "paddingDp"),
+          Triple("外边距", "float marginDp", "marginDp"),
+          Triple("权重", "float weight", "weight"),
       )
+
+  private fun widgetJava(packageId: String, w: Widget): String {
+    val imports =
+        buildSet {
+              add("android.content.Context")
+              add("android.view.View")
+              if (w.style == Style.CONTAINER) add("android.view.ViewGroup")
+              // 包装形态的字段类型与 new 表达式都用简单名，必须 import 目标类。
+              if (w.wraps != null) add(w.wraps)
+              addAll(w.extraImports)
+            }
+            .sorted()
+
+    return buildString {
+      append("package ").append(uiPackage(packageId)).append(";\n\n")
+      for (i in imports) append("import ").append(i).append(";\n")
+      append('\n')
+      append("/** ").append(w.cn).append("：")
+      append(w.wraps?.substringAfterLast('.') ?: w.extends.substringAfterLast('.'))
+      append(" 的中文封装。 */\n")
+
+      if (w.wraps != null) {
+        // ---- 包装形态：目标类是 final（无法继承），改为继承 视图 + 内部持有 ----
+        append(if (w.isAbstract) "public abstract class " else "public class ")
+        append(w.cn).append(" extends 视图 {\n\n")
+        append("    private final ").append(w.wraps.substringAfterLast('.')).append(" 内部;\n\n")
+      } else {
+        append(if (w.isAbstract) "public abstract class " else "public class ")
+        append(w.cn).append(" extends ").append(w.extends).append(" {\n\n")
+      }
+
+      // 构造器
+      append("    public ").append(w.cn).append("(Context context) {\n        super(context);\n")
+      if (w.wraps != null) {
+        append("        内部 = new ").append(w.wraps.substringAfterLast('.')).append("(context);\n")
+        append("        addView(内部, new LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT));\n")
+      }
+      for (line in w.ctor) append("        ").append(line).append('\n')
+      append("    }\n\n")
+
+      // 包装形态：暴露内部实例，方便调用方做未封装的操作。
+      if (w.wraps != null) {
+        append("    /** 内部持有的 ").append(w.wraps.substringAfterLast('.')).append(" 实例。 */\n")
+        append("    public ").append(w.wraps.substringAfterLast('.')).append(" 控件() {\n")
+        append("        return 内部;\n    }\n\n")
+      }
+
+      // 样式方法。
+      //
+      // 一律走 视图 的静态辅助，不写 super.背景(...)：表格里的容器虽然能加子视图
+      // （RelativeLayout / ScrollView / CardView…），但它们**并不继承 视图**，
+      // 调 super 会编译失败。静态辅助对所有 View 都成立。
+      for ((name, params, arg) in STYLE_SPECS) {
+        if (name in w.skipStyles) continue
+        append("    public ").append(w.cn).append(' ').append(name).append('(').append(params).append(") {\n")
+        append("        视图.设").append(name).append("(this, ").append(arg).append(");\n")
+        append("        return this;\n    }\n\n")
+      }
+
+      // 特有方法
+      for (m in w.methods) {
+        if (m.body.isEmpty()) {
+          append("    public abstract ").append(m.ret).append(' ').append(m.name)
+              .append('(').append(m.params).append(");\n\n")
+        } else {
+          append("    public ").append(m.ret).append(' ').append(m.name)
+              .append('(').append(m.params).append(") {\n")
+          for (line in m.body) append("        ").append(line).append('\n')
+          append("    }\n\n")
+        }
+      }
+
+      append("}\n")
+    }
+  }
+
+  /**
+   * 38 个新增控件。列名对应 Appv5 `runlibrary/app/v/` 的控件清单。
+   *
+   * 容器类（style=CONTAINER）继承 `视图`，因此自带 背景/圆角/内边距/外边距/权重
+   * 且返回本类类型，链式调用不会断。
+   */
+  private val EXTRA_WIDGETS: List<Widget> =
+      listOf(
+          // ---------- 批 1：布局 / 容器（17） ----------
+          Widget(
+              cn = "相对布局",
+              en = "RelativeLayoutBox",
+              extends = "android.widget.RelativeLayout",
+              style = Style.CONTAINER,
+          ),
+          Widget(
+              cn = "帧布局",
+              en = "FrameLayoutBox",
+              extends = "android.widget.FrameLayout",
+              style = Style.CONTAINER,
+          ),
+          Widget(
+              cn = "表格布局",
+              en = "TableLayoutBox",
+              extends = "android.widget.TableLayout",
+              style = Style.CONTAINER,
+          ),
+          Widget(
+              cn = "表格项",
+              en = "TableRowBox",
+              extends = "android.widget.TableRow",
+              style = Style.CONTAINER,
+          ),
+          Widget(
+              cn = "滚动",
+              en = "ScrollBox",
+              extends = "android.widget.ScrollView",
+              style = Style.CONTAINER,
+              methods =
+                  listOf(
+                      Method(
+                          ret = "滚动",
+                          name = "内容",
+                          params = "View child",
+                          body =
+                              listOf(
+                                  "removeAllViews();",
+                                  "if (child != null) addView(child);",
+                                  "return this;",
+                              ),
+                      ),
+                  ),
+          ),
+          Widget(
+              cn = "水平滚动",
+              en = "HorizontalScrollBox",
+              extends = "android.widget.HorizontalScrollView",
+              style = Style.CONTAINER,
+              methods =
+                  listOf(
+                      Method(
+                          ret = "水平滚动",
+                          name = "内容",
+                          params = "View child",
+                          body =
+                              listOf(
+                                  "removeAllViews();",
+                                  "if (child != null) addView(child);",
+                                  "return this;",
+                              ),
+                      ),
+                  ),
+          ),
+          Widget(
+              cn = "嵌套滚动",
+              en = "NestedScrollBox",
+              extends = "androidx.core.widget.NestedScrollView",
+              style = Style.CONTAINER,
+              methods =
+                  listOf(
+                      Method(
+                          ret = "嵌套滚动",
+                          name = "内容",
+                          params = "View child",
+                          body =
+                              listOf(
+                                  "removeAllViews();",
+                                  "if (child != null) addView(child);",
+                                  "return this;",
+                              ),
+                      ),
+                  ),
+          ),
+          Widget(
+              cn = "卡片",
+              en = "CardBox",
+              extends = "androidx.cardview.widget.CardView",
+              style = Style.CONTAINER,
+              ctor =
+                  listOf(
+                      "setCardElevation(视图.dp(2));",
+                      "setUseCompatPadding(true);",
+                  ),
+              // CardView 自带 setRadius，背景式圆角对它无效：跳过后用 setRadius 实现。
+              skipStyles = setOf("圆角"),
+              methods =
+                  listOf(
+                      Method(
+                          ret = "卡片",
+                          name = "圆角",
+                          params = "float radiusDp",
+                          body =
+                              listOf(
+                                  "setRadius(视图.dp(radiusDp));",
+                                  "return this;",
+                              ),
+                      ),
+                      Method(
+                          ret = "卡片",
+                          name = "内容",
+                          params = "View child",
+                          body =
+                              listOf(
+                                  "removeAllViews();",
+                                  "if (child != null) addView(child);",
+                                  "return this;",
+                              ),
+                      ),
+                  ),
+          ),
+          Widget(
+              cn = "协调布局",
+              en = "CoordinatorBox",
+              extends = "androidx.coordinatorlayout.widget.CoordinatorLayout",
+              style = Style.CONTAINER,
+          ),
+          Widget(
+              cn = "应用栏布局",
+              en = "AppBarBox",
+              extends = "com.google.android.material.appbar.AppBarLayout",
+              style = Style.CONTAINER,
+          ),
+          Widget(
+              cn = "工具栏布局",
+              en = "ToolbarBox",
+              extends = "com.google.android.material.appbar.MaterialToolbar",
+              style = Style.LEAF,
+              methods =
+                  listOf(
+                      Method(
+                          ret = "工具栏布局",
+                          name = "标题",
+                          params = "CharSequence title",
+                          body = listOf("setTitle(title);", "return this;"),
+                      ),
+                  ),
+          ),
+          Widget(
+              cn = "折叠工具栏布局",
+              en = "CollapsingToolbarBox",
+              extends = "com.google.android.material.appbar.CollapsingToolbarLayout",
+              style = Style.LEAF,
+              methods =
+                  listOf(
+                      Method(
+                          ret = "折叠工具栏布局",
+                          name = "标题",
+                          params = "CharSequence title",
+                          body = listOf("setTitle(title);", "return this;"),
+                      ),
+                  ),
+          ),
+          Widget(
+              cn = "侧滑窗体",
+              en = "DrawerBox",
+              extends = "androidx.drawerlayout.widget.DrawerLayout",
+              style = Style.LEAF,
+              methods =
+                  listOf(
+                      Method(
+                          ret = "侧滑窗体",
+                          name = "侧栏",
+                          params = "View drawer",
+                          body =
+                              listOf(
+                                  "if (drawer != null) {",
+                                  "    addView(drawer, new LayoutParams(视图.dp(280), LayoutParams.MATCH_PARENT));",
+                                  "}",
+                                  "return this;",
+                              ),
+                      ),
+                  ),
+          ),
+          // ViewPager2 是 final 类，无法继承，只能包装。
+          Widget(
+              cn = "滑动窗体",
+              en = "PagerBox",
+              extends = "androidx.viewpager2.widget.ViewPager2",
+              style = Style.CONTAINER,
+              wraps = "androidx.viewpager2.widget.ViewPager2",
+          ),
+          Widget(
+              cn = "垂直滑动窗体",
+              en = "VerticalPagerBox",
+              extends = "androidx.viewpager2.widget.ViewPager2",
+              style = Style.CONTAINER,
+              wraps = "androidx.viewpager2.widget.ViewPager2",
+              ctor = listOf("内部.setOrientation(ViewPager2.ORIENTATION_VERTICAL);"),
+          ),
+          Widget(
+              cn = "标签布局",
+              en = "TabBox",
+              extends = "com.google.android.material.tabs.TabLayout",
+              style = Style.LEAF,
+              methods =
+                  listOf(
+                      Method(
+                          ret = "标签布局",
+                          name = "标签",
+                          params = "CharSequence... titles",
+                          body =
+                              listOf(
+                                  "for (CharSequence t : titles) {",
+                                  "    addTab(newTab().setText(t));",
+                                  "}",
+                                  "return this;",
+                              ),
+                      ),
+                  ),
+          ),
+          Widget(
+              cn = "下拉刷新控件",
+              en = "SwipeRefreshBox",
+              extends = "androidx.swiperefreshlayout.widget.SwipeRefreshLayout",
+              style = Style.LEAF,
+              methods =
+                  listOf(
+                      Method(
+                          ret = "下拉刷新控件",
+                          name = "刷新回调",
+                          params = "final Runnable action",
+                          body =
+                              listOf(
+                                  "setOnRefreshListener(new OnRefreshListener() {",
+                                  "    @Override",
+                                  "    public void onRefresh() {",
+                                  "        action.run();",
+                                  "    }",
+                                  "});",
+                                  "return this;",
+                              ),
+                      ),
+                  ),
+          ),
+          // ---------- 批 2：数据展示（10） ----------
+          Widget(
+              cn = "列表",
+              en = "ListBox",
+              extends = "android.widget.ListView",
+              style = Style.LEAF,
+          ),
+          Widget(
+              cn = "v7列表",
+              en = "RecyclerBox",
+              extends = "androidx.recyclerview.widget.RecyclerView",
+              style = Style.LEAF,
+              extraImports = setOf("androidx.recyclerview.widget.LinearLayoutManager"),
+              methods =
+                  listOf(
+                      Method(
+                          ret = "v7列表",
+                          name = "纵向",
+                          body =
+                              listOf(
+                                  "setLayoutManager(new LinearLayoutManager(getContext()));",
+                                  "return this;",
+                              ),
+                      ),
+                      Method(
+                          ret = "v7列表",
+                          name = "适配器",
+                          params = "androidx.recyclerview.widget.RecyclerView.Adapter<?> adapter",
+                          body = listOf("setAdapter(adapter);", "return this;"),
+                      ),
+                  ),
+          ),
+          Widget(
+              cn = "网格视图",
+              en = "GridBox",
+              extends = "android.widget.GridView",
+              style = Style.LEAF,
+          ),
+          Widget(
+              cn = "下拉菜单",
+              en = "SpinnerBox",
+              extends = "android.widget.Spinner",
+              style = Style.LEAF,
+          ),
+          Widget(
+              cn = "浏览器",
+              en = "WebBox",
+              extends = "android.webkit.WebView",
+              style = Style.LEAF,
+              methods =
+                  listOf(
+                      Method(
+                          ret = "浏览器",
+                          name = "加载",
+                          params = "String url",
+                          body = listOf("loadUrl(url);", "return this;"),
+                      ),
+                  ),
+          ),
+          Widget(
+              cn = "图像",
+              en = "ImageBox",
+              extends = "android.widget.ImageView",
+              style = Style.LEAF,
+              methods =
+                  listOf(
+                      Method(
+                          ret = "图像",
+                          name = "图片",
+                          params = "int resId",
+                          body = listOf("setImageResource(resId);", "return this;"),
+                      ),
+                      Method(
+                          ret = "图像",
+                          name = "适应",
+                          params = "android.widget.ImageView.ScaleType type",
+                          body = listOf("setScaleType(type);", "return this;"),
+                      ),
+                  ),
+          ),
+          Widget(
+              cn = "图像按钮",
+              en = "ImageButtonBox",
+              extends = "android.widget.ImageButton",
+              style = Style.LEAF,
+              methods =
+                  listOf(
+                      Method(
+                          ret = "图像按钮",
+                          name = "图片",
+                          params = "int resId",
+                          body = listOf("setImageResource(resId);", "return this;"),
+                      ),
+                  ),
+          ),
+          Widget(
+              cn = "视频",
+              en = "VideoBox",
+              extends = "android.widget.VideoView",
+              style = Style.LEAF,
+          ),
+          Widget(
+              cn = "面控件",
+              en = "SurfaceBox",
+              extends = "android.view.SurfaceView",
+              style = Style.LEAF,
+          ),
+          Widget(
+              cn = "动态图",
+              en = "GifBox",
+              extends = "android.widget.ImageView",
+              style = Style.LEAF,
+              methods =
+                  listOf(
+                      Method(
+                          ret = "动态图",
+                          name = "图片",
+                          params = "int resId",
+                          body = listOf("setImageResource(resId);", "return this;"),
+                      ),
+                  ),
+          ),
+          // ---------- 批 3：输入与选择（11） ----------
+          Widget(
+              cn = "开关",
+              en = "SwitchBox",
+              extends = "androidx.appcompat.widget.SwitchCompat",
+              style = Style.LEAF,
+              methods =
+                  listOf(
+                      Method(
+                          ret = "开关",
+                          name = "文字",
+                          params = "CharSequence text",
+                          body = listOf("setText(text);", "return this;"),
+                      ),
+                      Method(
+                          ret = "开关",
+                          name = "选中",
+                          params = "boolean checked",
+                          body = listOf("setChecked(checked);", "return this;"),
+                      ),
+                  ),
+          ),
+          Widget(
+              cn = "单选项",
+              en = "RadioBox",
+              extends = "android.widget.RadioButton",
+              style = Style.LEAF,
+              methods =
+                  listOf(
+                      Method(
+                          ret = "单选项",
+                          name = "文字",
+                          params = "CharSequence text",
+                          body = listOf("setText(text);", "return this;"),
+                      ),
+                  ),
+          ),
+          Widget(
+              cn = "多选",
+              en = "CheckBox",
+              extends = "android.widget.CheckBox",
+              style = Style.LEAF,
+              methods =
+                  listOf(
+                      Method(
+                          ret = "多选",
+                          name = "文字",
+                          params = "CharSequence text",
+                          body = listOf("setText(text);", "return this;"),
+                      ),
+                  ),
+          ),
+          Widget(
+              cn = "单选布局",
+              en = "RadioGroupBox",
+              extends = "android.widget.RadioGroup",
+              style = Style.CONTAINER,
+              methods =
+                  listOf(
+                      Method(
+                          ret = "单选布局",
+                          name = "选项",
+                          params = "View... children",
+                          body =
+                              listOf(
+                                  "for (View child : children) {",
+                                  "    if (child != null) addView(child);",
+                                  "}",
+                                  "return this;",
+                              ),
+                      ),
+                  ),
+          ),
+          Widget(
+              cn = "拖动条",
+              en = "SeekBox",
+              extends = "android.widget.SeekBar",
+              style = Style.LEAF,
+              methods =
+                  listOf(
+                      Method(
+                          ret = "拖动条",
+                          name = "上限",
+                          params = "int max",
+                          body = listOf("setMax(max);", "return this;"),
+                      ),
+                  ),
+          ),
+          Widget(
+              cn = "评分",
+              en = "RatingBox",
+              extends = "android.widget.RatingBar",
+              style = Style.LEAF,
+              methods =
+                  listOf(
+                      Method(
+                          ret = "评分",
+                          name = "星级",
+                          params = "float stars",
+                          body = listOf("setRating(stars);", "return this;"),
+                      ),
+                  ),
+          ),
+          Widget(
+              cn = "进度条",
+              en = "ProgressBox",
+              extends = "android.widget.ProgressBar",
+              style = Style.LEAF,
+              methods =
+                  listOf(
+                      Method(
+                          ret = "进度条",
+                          name = "进度",
+                          params = "int progress",
+                          body = listOf("setProgress(progress);", "return this;"),
+                      ),
+                  ),
+          ),
+          Widget(
+              cn = "日期选择器",
+              en = "DatePickerBox",
+              extends = "android.widget.DatePicker",
+              style = Style.LEAF,
+          ),
+          Widget(
+              cn = "时间选择器",
+              en = "TimePickerBox",
+              extends = "android.widget.TimePicker",
+              style = Style.LEAF,
+          ),
+          Widget(
+              cn = "文本输入布局",
+              en = "TextInputLayoutBox",
+              extends = "com.google.android.material.textfield.TextInputLayout",
+              style = Style.LEAF,
+              methods =
+                  listOf(
+                      Method(
+                          ret = "文本输入布局",
+                          name = "提示",
+                          params = "CharSequence hint",
+                          body = listOf("setHint(hint);", "return this;"),
+                      ),
+                  ),
+          ),
+          Widget(
+              cn = "浮动动作按钮",
+              en = "FabBox",
+              extends = "com.google.android.material.floatingactionbutton.FloatingActionButton",
+              style = Style.LEAF,
+              methods =
+                  listOf(
+                      Method(
+                          ret = "浮动动作按钮",
+                          name = "点击",
+                          params = "final Runnable action",
+                          body =
+                              listOf(
+                                  "setOnClickListener(new OnClickListener() {",
+                                  "    @Override",
+                                  "    public void onClick(View v) {",
+                                  "        action.run();",
+                                  "    }",
+                                  "});",
+                                  "return this;",
+                              ),
+                      ),
+                  ),
+          ),
+      )
+
+  /**
+   * 英文别名：继承中文类即可获得全部链式方法，零重复代码。
+   *
+   * 为什么用继承而不是再写一遍：别名若各自实现，两边的 setter 会逐渐分叉；
+   * 继承保证 `Text` 与 `文本` 永远是同一个东西。
+   */
+  private fun aliasJava(packageId: String, w: Widget): String =
+      """
+      package ${uiPackage(packageId)};
+
+      import android.content.Context;
+
+      /** ${w.en}：{@link ${w.cn}} 的英文别名，行为完全一致。 */
+      public class ${w.en} extends ${w.cn} {
+
+          public ${w.en}(Context context) {
+              super(context);
+          }
+      }
+      """
+          .trimIndent() + "\n"
 }

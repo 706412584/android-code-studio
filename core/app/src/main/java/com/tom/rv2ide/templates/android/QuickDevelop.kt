@@ -187,6 +187,25 @@ class QuickDevelop : Template {
                   version(ANDROIDX_CONSTRAINTLAYOUT_VERSION)
                 }
             )
+            // 中文控件封装覆盖到 45 个后，下面这几个库不再只是「传递依赖」：
+            // 生成的源码会直接 import RecyclerView / ViewPager2 / SwipeRefreshLayout /
+            // CardView / DrawerLayout / CoordinatorLayout，编译期必须显式声明。
+            add(catalogVersion { name("recyclerview"); version(ANDROIDX_RECYCLERVIEW_VERSION) })
+            add(catalogVersion { name("viewpager2"); version(ANDROIDX_VIEWPAGER2_VERSION) })
+            add(
+                catalogVersion {
+                  name("swiperefreshlayout")
+                  version(ANDROIDX_SWIPEREFRESHLAYOUT_VERSION)
+                }
+            )
+            add(catalogVersion { name("cardview"); version(ANDROIDX_CARDVIEW_VERSION) })
+            add(catalogVersion { name("drawerlayout"); version(ANDROIDX_DRAWERLAYOUT_VERSION) })
+            add(
+                catalogVersion {
+                  name("coordinatorlayout")
+                  version(ANDROIDX_COORDINATORLAYOUT_VERSION)
+                }
+            )
           }
 
           val plugins = buildList {
@@ -230,6 +249,54 @@ class QuickDevelop : Template {
                   group("androidx.constraintlayout")
                   name("constraintlayout")
                   versionRef("constraintlayout")
+                }
+            )
+            add(
+                catalogLibrary {
+                  alias("androidx-recyclerview")
+                  group("androidx.recyclerview")
+                  name("recyclerview")
+                  versionRef("recyclerview")
+                }
+            )
+            add(
+                catalogLibrary {
+                  alias("androidx-viewpager2")
+                  group("androidx.viewpager2")
+                  name("viewpager2")
+                  versionRef("viewpager2")
+                }
+            )
+            add(
+                catalogLibrary {
+                  alias("androidx-swiperefreshlayout")
+                  group("androidx.swiperefreshlayout")
+                  name("swiperefreshlayout")
+                  versionRef("swiperefreshlayout")
+                }
+            )
+            add(
+                catalogLibrary {
+                  alias("androidx-cardview")
+                  group("androidx.cardview")
+                  name("cardview")
+                  versionRef("cardview")
+                }
+            )
+            add(
+                catalogLibrary {
+                  alias("androidx-drawerlayout")
+                  group("androidx.drawerlayout")
+                  name("drawerlayout")
+                  versionRef("drawerlayout")
+                }
+            )
+            add(
+                catalogLibrary {
+                  alias("androidx-coordinatorlayout")
+                  group("androidx.coordinatorlayout")
+                  name("coordinatorlayout")
+                  versionRef("coordinatorlayout")
                 }
             )
           }
@@ -314,6 +381,12 @@ class QuickDevelop : Template {
             addDependency(GradleDependency("implementation(libs.androidx.appcompat)"))
             addDependency(GradleDependency("implementation(libs.material)"))
             addDependency(GradleDependency("implementation(libs.androidx.constraintlayout)"))
+            addDependency(GradleDependency("implementation(libs.androidx.recyclerview)"))
+            addDependency(GradleDependency("implementation(libs.androidx.viewpager2)"))
+            addDependency(GradleDependency("implementation(libs.androidx.swiperefreshlayout)"))
+            addDependency(GradleDependency("implementation(libs.androidx.cardview)"))
+            addDependency(GradleDependency("implementation(libs.androidx.drawerlayout)"))
+            addDependency(GradleDependency("implementation(libs.androidx.coordinatorlayout)"))
           }
 
           val appDir = File(projectRoot, "app")
