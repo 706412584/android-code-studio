@@ -169,6 +169,90 @@ public class QuickDevelopSourcesTest {
     }
     assertTrue("缺少权限一览", md.contains("## 权限一览"));
     assertTrue("未说明 API 24 限制", md.contains("API 24"));
+    // 权限表必须列出通知权限：模板 manifest 里已声明它，文档若漏写会让人以为不需要。
+    assertTrue("权限表未列出 POST_NOTIFICATIONS", md.contains("POST_NOTIFICATIONS"));
+  }
+
+  /**
+   * `卡片` 的背景与圆角必须走 CardView 自己的 API。
+   *
+   * <p>回归用例：`视图.设背景` 会 {@code View.setBackground} 掉 CardView 内部的
+   * RoundRectDrawable，导致 `圆角` 静默失效（卡片变直角）。这条断言锁住「不许回退到
+   * 背景式实现」。
+   */
+  @Test
+  public void cardViewUsesOwnBackgroundAndRadiusApi() {
+    String src = sourceOf("卡片");
+
+    assertTrue("卡片.背景 未走 setCardBackgroundColor", src.contains("setCardBackgroundColor(color);"));
+    assertTrue("卡片.圆角 未走 setRadius", src.contains("setRadius(视图.dp(radiusDp));"));
+    assertFalse(
+        "卡片 不应再走背景式 设背景（会顶掉 CardView 自身 drawable）",
+        src.contains("视图.设背景(this"));
+    assertFalse(
+        "卡片 不应再走背景式 设圆角", src.contains("视图.设圆角(this"));
+  }
+
+  /** `侧滑窗体.侧栏` 必须显式给 LayoutParams 设 gravity，否则抽屉永远打不开。 */
+  @Test
+  public void drawerSetsGravityOnLayoutParams() {
+    String src = sourceOf("侧滑窗体");
+
+    assertTrue("侧栏 未设置 params.gravity", src.contains("params.gravity = Gravity.START;"));
+    assertTrue("侧栏 未 import Gravity", src.contains("import android.view.Gravity;"));
+  }
+
+  /**
+   * 生成的 manifest 必须声明工具类用到的权限。
+   *
+   * <p>这两条权限缺失时行为是**静默失效**（震动没反应、通知不显示，都不崩溃），
+   * 所以最容易被忽略——必须由测试钉住。
+   */
+  @Test
+  public void manifestDeclaresToolkitPermissions() {
+    String xml = QuickDevelopSources.INSTANCE.manifestXml();
+
+    assertTrue("缺 VIBRATE", xml.contains("android.permission.VIBRATE"));
+    assertTrue("缺 POST_NOTIFICATIONS", xml.contains("android.permission.POST_NOTIFICATIONS"));
+    assertTrue("缺 launcher activity", xml.contains("android.intent.action.MAIN"));
+    assertTrue("theme 应为 AppTheme", xml.contains("@style/AppTheme"));
+  }
+
+  /**
+   * README 的别名说明必须与实际生成的类一致。
+   *
+   * <p>回归用例：别名只对规格表里的 38 个扩展控件生成，7 个基础控件（视图/线性布局/
+   * 约束布局/文本/按钮/输入框/页面）**没有**别名。文档曾把 `ViewBox` / `LinearBox` /
+   * `ConstraintBox` 当作可用别名列进容器表，照抄会编译失败。
+   */
+  @Test
+  public void uiReadmeAliasClaimsMatchGeneratedClasses() {
+    String md = QuickDevelopSources.INSTANCE.uiReadme(PKG);
+
+    Set<String> names = new HashSet<>();
+    for (Pair<String, String> c : components()) {
+      names.add(c.getFirst());
+    }
+    // 前提：基础控件确实没有别名文件（否则下面的文档断言就无意义了）
+    for (String base : new String[] {"视图", "线性布局", "约束布局", "文本", "按钮", "输入框", "页面"}) {
+      assertFalse("基础控件不应有别名文件: " + base + "Box", names.contains(base + "Box"));
+    }
+    // 文档不得把不存在的别名当成可用项
+    assertFalse("README 不应宣称 ViewBox 可用", md.contains("`ViewBox`"));
+    assertFalse("README 不应宣称 LinearBox 可用", md.contains("`LinearBox`"));
+    assertFalse("README 不应宣称 ConstraintBox 可用", md.contains("`ConstraintBox`"));
+    // 扩展控件的别名必须仍然列出
+    assertTrue("README 应列出扩展控件别名 CardBox", md.contains("`CardBox`"));
+  }
+
+  /** 按中文类名取生成源码。 */
+  private static String sourceOf(String className) {
+    for (Pair<String, String> c : components()) {
+      if (c.getFirst().equals(className)) {
+        return c.getSecond();
+      }
+    }
+    throw new AssertionError("未找到控件: " + className);
   }
 
   private static void deleteRecursively(File file) {

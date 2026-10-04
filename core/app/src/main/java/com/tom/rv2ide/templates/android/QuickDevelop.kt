@@ -422,33 +422,14 @@ class QuickDevelop : Template {
           //
           // theme 用 @style/AppTheme：本模板从 assets 拷的 themes.xml 定义的正是
           // AppTheme（与 EmptyActivity 同源），不是 LibGdx 的 Theme.AppTheme。
-          val manifestContent =
-              """
-                  <?xml version="1.0" encoding="utf-8"?>
-                  <manifest xmlns:android="http://schemas.android.com/apk/res/android">
-                      <application
-                          android:allowBackup="true"
-                          android:icon="@mipmap/ic_launcher"
-                          android:label="@string/app_name"
-                          android:roundIcon="@mipmap/ic_launcher_round"
-                          android:supportsRtl="true"
-                          android:theme="@style/AppTheme">
-                          <activity
-                              android:name=".MainActivity"
-                              android:exported="true">
-                              <intent-filter>
-                                  <action android:name="android.intent.action.MAIN" />
-                                  <category android:name="android.intent.category.LAUNCHER" />
-                              </intent-filter>
-                          </activity>
-                      </application>
-
-                  </manifest>
-              """
-                  .trimIndent()
-
+          // 内容由 QuickDevelopSources.manifestXml() 生成，便于 JVM 单测断言权限声明。
           val manifestDir = File(projectRoot, "app/src/main")
-          activityWriter.createFile(manifestDir, "AndroidManifest", "xml", manifestContent)
+          activityWriter.createFile(
+              manifestDir,
+              "AndroidManifest",
+              "xml",
+              QuickDevelopSources.manifestXml(),
+          )
 
           // Create strings.xml
           val stringsContent =

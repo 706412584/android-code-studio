@@ -1546,9 +1546,14 @@ object QuickDevelopToolkits {
       | 方法 | 需要的权限 | 缺权限时的行为 |
       |---|---|---|
       | `震动` | `android.permission.VIBRATE` | 静默返回，不崩溃 |
+      | `发通知` | `android.permission.POST_NOTIFICATIONS`（Android 13+ 需运行时授权） | 通知不显示 |
       | `截屏` / `截屏保存` | 无 | — |
       | `剪切板写入` | 无（Android 10+ 后台受限） | 可能失败，无异常 |
       | `打开应用` / `卸载应用` | 无 | 目标不存在时静默返回 |
+
+      > 前两项已在模板生成的 `AndroidManifest.xml` 里声明，无需再手动添加。
+      > `POST_NOTIFICATIONS` 在 Android 13+ 还需在运行时调用
+      > `requestPermissions` 申请，仅声明不够。
       """
         .trimIndent() + "\n"
   }

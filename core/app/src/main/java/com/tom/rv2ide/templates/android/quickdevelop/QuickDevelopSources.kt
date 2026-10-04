@@ -225,6 +225,46 @@ object QuickDevelopSources {
   """
           .trimIndent()
 
+  /**
+   * 生成 `AndroidManifest.xml` 的内容。
+   *
+   * <p>放在生成器里而不是 {@code QuickDevelop.kt} 里，是为了能在 JVM 上断言——
+   * 工具类（{@code 震动}/{@code 发通知}）需要 manifest 权限，漏声明时行为是
+   * **静默失效**（不崩溃），最容易一直没人发现。落在这里就能被单测钉住。
+   */
+  fun manifestXml(): String =
+      """
+      <?xml version="1.0" encoding="utf-8"?>
+      <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+          <!-- 工具类里会用到、且必须在 manifest 声明的权限。
+               VIBRATE：系统.震动 需要，否则静默返回（不崩溃但没效果）。
+               POST_NOTIFICATIONS：工具.发通知 在 Android 13+ 需要运行时授权，
+               不声明的话 notify() 直接无效，且连申请入口都没有。 -->
+          <uses-permission android:name="android.permission.VIBRATE" />
+          <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+          <application
+              android:allowBackup="true"
+              android:icon="@mipmap/ic_launcher"
+              android:label="@string/app_name"
+              android:roundIcon="@mipmap/ic_launcher_round"
+              android:supportsRtl="true"
+              android:theme="@style/AppTheme">
+              <activity
+                  android:name=".MainActivity"
+                  android:exported="true">
+                  <intent-filter>
+                      <action android:name="android.intent.action.MAIN" />
+                      <category android:name="android.intent.category.LAUNCHER" />
+                  </intent-filter>
+              </activity>
+          </application>
+
+      </manifest>
+      """
+          .trimIndent()
+
   /** 生成 `线性布局`。 */
   fun linearLayoutJava(packageId: String): String =
       """
@@ -952,10 +992,27 @@ object QuickDevelopSources {
                       "setCardElevation(视图.dp(2));",
                       "setUseCompatPadding(true);",
                   ),
-              // CardView 自带 setRadius，背景式圆角对它无效：跳过后用 setRadius 实现。
-              skipStyles = setOf("圆角"),
+              // 背景与圆角都必须走 CardView 自己的 API。
+              //
+              // CardView 的圆角是由它内部那个 RoundRectDrawable 画的。`视图.设背景`
+              // 走的是 `View.setBackground`，会把那个 drawable **整个换掉**成普通
+              // GradientDrawable——于是卡片变直角，且随后 `setRadius` 改的是已经被
+              // 换掉的那个 drawable，肉眼毫无变化（顺序反过来同样无效）。
+              // 因此两者都跳过自动生成，改用 setCardBackgroundColor / setRadius，
+              // 它们改的是同一个内部 drawable，与调用顺序无关。
+              skipStyles = setOf("背景", "圆角"),
               methods =
                   listOf(
+                      Method(
+                          ret = "卡片",
+                          name = "背景",
+                          params = "int color",
+                          body =
+                              listOf(
+                                  "setCardBackgroundColor(color);",
+                                  "return this;",
+                              ),
+                      ),
                       Method(
                           ret = "卡片",
                           name = "圆角",
@@ -1026,6 +1083,7 @@ object QuickDevelopSources {
               en = "DrawerBox",
               extends = "androidx.drawerlayout.widget.DrawerLayout",
               style = Style.LEAF,
+              extraImports = setOf("android.view.Gravity"),
               methods =
                   listOf(
                       Method(
@@ -1035,7 +1093,12 @@ object QuickDevelopSources {
                           body =
                               listOf(
                                   "if (drawer != null) {",
-                                  "    addView(drawer, new LayoutParams(视图.dp(280), LayoutParams.MATCH_PARENT));",
+                                  "    // gravity 必须显式设为 START：DrawerLayout 只把带 gravity 的子视图",
+                                  "    // 当作抽屉，而 LayoutParams 的**双参构造器会把 gravity 置 0**",
+                                  "    // （源码里就是 `this(0)`），于是抽屉永远打不开。",
+                                  "    LayoutParams params = new LayoutParams(视图.dp(280), LayoutParams.MATCH_PARENT);",
+                                  "    params.gravity = Gravity.START;",
+                                  "    addView(drawer, params);",
                                   "}",
                                   "return this;",
                               ),
@@ -1410,7 +1473,8 @@ object QuickDevelopSources {
 
     builder.append("# UI 组件（").append(ui).append("）\n\n")
     builder.append("本包由 Quick Develop 模板生成，共 **").append(BASE_CN_NAMES.size + EXTRA_WIDGETS.size)
-        .append(" 个中文组件**（另有等量英文别名）。全部支持链式调用，例如：\n\n")
+        .append(" 个中文组件**，其中 ").append(EXTRA_WIDGETS.size)
+        .append(" 个扩展控件另有等量英文别名。全部支持链式调用，例如：\n\n")
     builder.append("```java\n")
     builder.append("线性布局 根 = new 线性布局(this).方向(线性布局.垂直).内边距(16f);\n")
     builder.append("根.添加(new 文本(this).文字(\"你好\").字号(20f).粗体(true));\n")
@@ -1438,12 +1502,12 @@ object QuickDevelopSources {
     // ---- 容器 ----
     builder.append("## 容器类\n\n")
     builder.append("容器都能装子视图，也都具备上表五个样式方法，且返回类型是本类（链式不会断）。\n\n")
-    builder.append("但**继承关系分两种**：`视图` / `线性布局` / `约束布局` 继承 `视图`；\n")
-    builder.append("其余容器直接继承各自的 Android 类（`RelativeLayout` / `ScrollView` / `CardView` …），\n")
-    builder.append("样式方法是通过 `视图` 的静态辅助实现的，效果相同。\n\n")
+    builder.append("除 `视图` 本身外，**所有容器都直接继承各自的 Android 类**")
+        .append("（`LinearLayout` / `ConstraintLayout` / `RelativeLayout` / `ScrollView` / `CardView` …）。\n")
+    builder.append("样式方法一律通过 `视图` 的静态辅助实现，因此对任意 `View` 都成立，效果相同。\n\n")
     builder.append("| 中文名 | 英文别名 | 基于 | 特有方法 |\n|---|---|---|---|\n")
     for (w in containerEntries()) {
-      builder.append("| `").append(w.cn).append("` | `").append(w.en).append("` | ")
+      builder.append("| `").append(w.cn).append("` | ").append(aliasCell(w)).append(" | ")
           .append(w.extends.substringAfterLast('.')).append(" | ").append(specialMethods(w)).append(" |\n")
     }
     builder.append('\n')
@@ -1468,16 +1532,17 @@ object QuickDevelopSources {
 
     // ---- 命名规则 ----
     builder.append("## 命名规则\n\n")
-    builder.append("每个组件都有**中文名**与**英文别名**两个类，行为完全一致")
-        .append("（别名继承中文类，因此不会随时间分叉）。\n\n")
+    builder.append("扩展控件都有**中文名**与**英文别名**两个类，行为完全一致")
+        .append("（别名继承中文类，因此不会随时间分叉）。\n")
+    builder.append("基础控件（`视图` / `线性布局` / `约束布局` / `文本` / `按钮` / `输入框` / `页面`）")
+        .append("**只有中文名**，没有英文别名。\n\n")
     builder.append("```java\n")
-    builder.append("文本 t1 = new 文本(this);   // 中文名\n")
-    builder.append("Text t2 = new Text(this);   // 英文别名，同一个类\n")
+    builder.append("文本 t1 = new 文本(this);      // 基础控件：只有中文名\n")
+    builder.append("文本 t2 = new Text(this);      // ❌ 编译失败：基础控件没有别名\n")
+    builder.append("卡片 c1 = new 卡片(this);      // 扩展控件：中文名\n")
+    builder.append("CardBox c2 = new CardBox(this); // ✅ 扩展控件的英文别名\n")
     builder.append("```\n\n")
-    builder.append("包名保持 ASCII（`").append(ui).append("`），只有类名与方法是中文。\n\n")
-    builder.append("> 别名以继承方式实现，因此**没有** `ViewBox` 之类的中文基类别名——\n")
-    builder.append("> `ViewBox` 是 `视图` 的别名，而 `线性布局` 的别名 `LinearBox` 继承的是 `线性布局`，\n")
-    builder.append("> 不是 `ViewBox`。两者都能用，只是类型层级不同。\n")
+    builder.append("包名保持 ASCII（`").append(ui).append("`），只有类名与方法是中文。\n")
 
     return builder.toString()
   }
@@ -1492,6 +1557,16 @@ object QuickDevelopSources {
         )
     return base + EXTRA_WIDGETS.filter { it.style == Style.CONTAINER }
   }
+
+  /**
+   * 英文别名单元格。
+   *
+   * <p>基础三件（`视图` / `线性布局` / `约束布局`）是**手写类，没有英文别名**——
+   * 别名只对规格表里的扩展控件生成（见 [aliasJava]）。表格若不区分，会让人照抄
+   * `new ViewBox(this)` 然后编译失败。
+   */
+  private fun aliasCell(w: Widget): String =
+      if (BASE_CN_NAMES.contains(w.cn)) "—（无别名）" else "`" + w.en + "`"
 
   /** 把 [Widget.methods] 渲染成表格里的一格；无特有方法时显示 `—`。 */
   private fun specialMethods(w: Widget): String {
@@ -1508,8 +1583,10 @@ object QuickDevelopSources {
   private val BASE_CN_SPECS =
       listOf(
           Triple("视图", "FrameLayout", "`dp(float)` 静态"),
-          Triple("线性布局", "视图", "`方向(int)` / `添加(View...)` / `对齐(int)`"),
-          Triple("约束布局", "视图", "`居中(View)` / `铺满(View)`"),
+          // 线性布局 / 约束布局 直接继承各自的 Android 类，**不是**继承 视图——
+          // 它们只是复用了 视图 的静态样式辅助。写「基于 视图」会让人以为能当 视图 用。
+          Triple("线性布局", "LinearLayout", "`方向(int)` / `添加(View...)` / `对齐(int)`"),
+          Triple("约束布局", "ConstraintLayout", "`居中(View)` / `铺满(View)`"),
           Triple("文本", "TextView", "`文字(CharSequence)` / `字号(float)` / `颜色(int)` / `粗体(boolean)`"),
           Triple("按钮", "MaterialButton", "`文字(CharSequence)` / `点击(Runnable)` / `铺满宽度()`"),
           Triple("输入框", "TextInputEditText", "`提示(CharSequence)` / `单行(boolean)` / `取值()`"),
