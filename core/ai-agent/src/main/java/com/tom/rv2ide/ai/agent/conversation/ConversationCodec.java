@@ -108,7 +108,9 @@ public final class ConversationCodec {
             json.optBoolean(ToolResultEntry.FIELD_IS_ERROR, false),
             json.optString(ToolResultEntry.FIELD_DIFF_ID, ""),
             json.optString(ToolResultEntry.FIELD_REVIEW_STATE, ""),
-            json.optString(ToolResultEntry.FIELD_REVIEW_MESSAGE, ""));
+            json.optString(ToolResultEntry.FIELD_REVIEW_MESSAGE, ""),
+            json.optString(ToolResultEntry.FIELD_IMAGE_MIME_TYPE, ""),
+            json.optString(ToolResultEntry.FIELD_IMAGE_BASE64, ""));
       case CUSTOM_TITLE:
       case AI_TITLE:
         return new TitleEntry(

@@ -281,7 +281,11 @@ public final class AgentSession {
         // 结果回灌：四元组齐全，isError 单独传递（部分协议需要它来区分成败）
         messages.add(
             new ToolModelMessage(
-                result.getContent(), call.getId(), call.getName(), result.isError()));
+                result.getContent(),
+                call.getId(),
+                call.getName(),
+                result.isError(),
+                toolResultImageJson(result)));
       }
     }
   }
@@ -396,6 +400,23 @@ public final class AgentSession {
       return sorted.toString();
     } catch (org.json.JSONException e) {
       return raw;
+    }
+  }
+
+  /**
+   * 把工具结果里的图片编码成 {@link ToolModelMessage} 的 rawInputJson。
+   *
+   * <p>无图片（绝大多数工具）或编码失败时返回 {@code null}，使消息退回纯文本形态。
+   */
+  private static String toolResultImageJson(ToolResult result) {
+    if (result == null || !result.hasImage()) {
+      return null;
+    }
+    try {
+      return com.tom.rv2ide.ai.protocol.ImageInputPayload.imageResultJson(
+          result.getImageMimeType(), result.getImageBase64());
+    } catch (org.json.JSONException e) {
+      return null;
     }
   }
 

@@ -37,6 +37,8 @@ public final class ToolResultEntry extends ConversationEntry {
   static final String FIELD_DIFF_ID = "diffId";
   static final String FIELD_REVIEW_STATE = "reviewState";
   static final String FIELD_REVIEW_MESSAGE = "reviewMessage";
+  static final String FIELD_IMAGE_MIME_TYPE = "imageMimeType";
+  static final String FIELD_IMAGE_BASE64 = "imageBase64";
 
   private final String toolCallId;
   private final String toolName;
@@ -45,6 +47,10 @@ public final class ToolResultEntry extends ConversationEntry {
   private final String diffId;
   private final String reviewState;
   private final String reviewMessage;
+  /** 工具结果图片的 MIME 类型；无图片时为空串。 */
+  private final String imageMimeType;
+  /** 工具结果图片的 base64 数据；无图片时为空串。 */
+  private final String imageBase64;
 
   public ToolResultEntry(String uuid, String parentUuid, long timestamp, ToolResult result) {
     super(uuid, parentUuid, timestamp);
@@ -55,6 +61,8 @@ public final class ToolResultEntry extends ConversationEntry {
     this.diffId = result == null ? "" : result.getDiffId();
     this.reviewState = result == null ? "" : result.getReviewState();
     this.reviewMessage = result == null ? "" : result.getReviewMessage();
+    this.imageMimeType = result == null ? "" : result.getImageMimeType();
+    this.imageBase64 = result == null ? "" : result.getImageBase64();
   }
 
   private ToolResultEntry(
@@ -67,7 +75,9 @@ public final class ToolResultEntry extends ConversationEntry {
       boolean error,
       String diffId,
       String reviewState,
-      String reviewMessage) {
+      String reviewMessage,
+      String imageMimeType,
+      String imageBase64) {
     super(uuid, parentUuid, timestamp);
     this.toolCallId = toolCallId;
     this.toolName = toolName;
@@ -76,6 +86,8 @@ public final class ToolResultEntry extends ConversationEntry {
     this.diffId = diffId;
     this.reviewState = reviewState;
     this.reviewMessage = reviewMessage;
+    this.imageMimeType = imageMimeType == null ? "" : imageMimeType;
+    this.imageBase64 = imageBase64 == null ? "" : imageBase64;
   }
 
   static ToolResultEntry fromFields(
@@ -88,9 +100,12 @@ public final class ToolResultEntry extends ConversationEntry {
       boolean error,
       String diffId,
       String reviewState,
-      String reviewMessage) {
+      String reviewMessage,
+      String imageMimeType,
+      String imageBase64) {
     return new ToolResultEntry(
-        uuid, parentUuid, timestamp, toolCallId, toolName, content, error, diffId, reviewState, reviewMessage);
+        uuid, parentUuid, timestamp, toolCallId, toolName, content, error, diffId, reviewState,
+        reviewMessage, imageMimeType, imageBase64);
   }
 
   public static ToolResultEntry create(String parentUuid, long timestamp, ToolResult result) {
@@ -130,6 +145,16 @@ public final class ToolResultEntry extends ConversationEntry {
     return reviewMessage;
   }
 
+  /** 工具结果图片的 MIME 类型；无图片时为空串。 */
+  public String getImageMimeType() {
+    return imageMimeType;
+  }
+
+  /** 工具结果图片的 base64 数据；无图片时为空串。 */
+  public String getImageBase64() {
+    return imageBase64;
+  }
+
   @Override
   protected void writeFields(JSONObject json) throws JSONException {
     json.put(FIELD_TOOL_CALL_ID, toolCallId);
@@ -144,6 +169,11 @@ public final class ToolResultEntry extends ConversationEntry {
     }
     if (!reviewMessage.isEmpty()) {
       json.put(FIELD_REVIEW_MESSAGE, reviewMessage);
+    }
+    // 图片负载只在存在时写入，避免给纯文本结果塞两个空字段（JSONL 里每行都有）。
+    if (!imageBase64.isEmpty()) {
+      json.put(FIELD_IMAGE_MIME_TYPE, imageMimeType);
+      json.put(FIELD_IMAGE_BASE64, imageBase64);
     }
   }
 }

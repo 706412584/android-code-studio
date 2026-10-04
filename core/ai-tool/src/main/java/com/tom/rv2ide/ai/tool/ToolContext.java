@@ -21,6 +21,7 @@
 
 package com.tom.rv2ide.ai.tool;
 
+import com.tom.rv2ide.ai.tool.api.ImageDataProvider;
 import java.util.Collections;
 import java.util.List;
 
@@ -59,6 +60,14 @@ public final class ToolContext {
 
   private final ToolSettingsPort settings;
 
+  /**
+   * 图片解码/缩放实现；由 app 层注入，未注入时为 null。
+   *
+   * <p>工具模块是纯 Java、零 Android 依赖的 java-library，不能直接引用
+   * {@code android.graphics}。读取图片时把缩放这一步委托给该端口。
+   */
+  private final ImageDataProvider imageDataProvider;
+
   private ToolContext(Builder builder) {
     this.homePath = builder.homePath == null ? "" : builder.homePath;
     this.extraWriteRoots =
@@ -69,6 +78,7 @@ public final class ToolContext {
     this.toolCallId = builder.toolCallId == null ? "" : builder.toolCallId;
     this.progressListener = builder.progressListener;
     this.settings = builder.settings == null ? ToolSettingsPort.defaults() : builder.settings;
+    this.imageDataProvider = builder.imageDataProvider;
   }
 
   public String getHomePath() {
@@ -95,6 +105,11 @@ public final class ToolContext {
     return settings;
   }
 
+  /** 图片解码/缩放实现；可能为 null（未注入时读图退化为不缩放）。 */
+  public ImageDataProvider getImageDataProvider() {
+    return imageDataProvider;
+  }
+
   /**
    * 返回一个仅替换 {@code toolCallId} 的副本。
    *
@@ -109,6 +124,7 @@ public final class ToolContext {
         .toolCallId(newToolCallId)
         .progressListener(this.progressListener)
         .settings(this.settings)
+        .imageDataProvider(this.imageDataProvider)
         .build();
   }
 
@@ -136,6 +152,7 @@ public final class ToolContext {
     private String toolCallId;
     private ProgressListener progressListener;
     private ToolSettingsPort settings;
+    private ImageDataProvider imageDataProvider;
 
     public Builder homePath(String value) {
       this.homePath = value;
@@ -164,6 +181,11 @@ public final class ToolContext {
 
     public Builder settings(ToolSettingsPort value) {
       this.settings = value;
+      return this;
+    }
+
+    public Builder imageDataProvider(ImageDataProvider value) {
+      this.imageDataProvider = value;
       return this;
     }
 

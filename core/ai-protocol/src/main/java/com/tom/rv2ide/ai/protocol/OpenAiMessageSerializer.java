@@ -41,7 +41,24 @@ final class OpenAiMessageSerializer {
             object.put("role", message.getRole());
             if ("tool".equals(message.getRole())) {
                 object.put("tool_call_id", message.getToolCallId());
-                object.put("content", toolContentForModel(message));
+                // 工具结果带图片时（file_read 读图），content 用内容块数组；
+                // 纯文本结果保持字符串形态，兼容只认字符串的 OpenAI 兼容端。
+                ImageInputPayload.Payload image =
+                        ImageInputPayload.fromImageResult(message.getRawInputJson());
+                if (image != null) {
+                    JSONArray content = new JSONArray();
+                    String text = toolContentForModel(message);
+                    if (text != null && text.length() > 0) {
+                        content.put(new JSONObject().put("type", "text").put("text", text));
+                    }
+                    content.put(
+                            new JSONObject()
+                                    .put("type", "image_url")
+                                    .put("image_url", new JSONObject().put("url", image.dataUrl())));
+                    object.put("content", content);
+                } else {
+                    object.put("content", toolContentForModel(message));
+                }
                 array.put(object);
                 continue;
             }

@@ -80,6 +80,26 @@ public final class ToolMessages {
   public static final String FILE_READ_DIR_TRUNCATED =
       "… (too many directory items, truncated)\\n";
 
+  /**
+   * 图片文件读取成功时给模型的文字说明。
+   *
+   * <p>图片本身作为独立负载附加（见 {@code ToolResult.withImage}），此处只说明来源与规格，
+   * 使模型知道「附件对应的是哪个文件」。
+   */
+  public static final String FILE_READ_IMAGE_ATTACHED =
+      "Image %1$s (%2$s, %3$dKB%4$s) is attached below.";
+
+  /** 图片已被缩放时追加到说明里的后缀。 */
+  public static final String FILE_READ_IMAGE_DOWNSCALED_SUFFIX = ", downscaled";
+
+  /** 图片读取失败。 */
+  public static final String FILE_READ_IMAGE_FAILED =
+      "Failed to read image %1$s: %2$s";
+
+  /** 图片格式不受支持。 */
+  public static final String FILE_READ_IMAGE_UNSUPPORTED =
+      "Image %1$s is in an unsupported format. Only PNG and JPEG can be read as images; convert it first or use another tool.";
+
   /** 对应上游 strings.xml 的 tool_file_edit_old_string_empty。 */
   public static final String FILE_EDIT_OLD_STRING_EMPTY =
       "old_string cannot be empty";

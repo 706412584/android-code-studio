@@ -19,6 +19,7 @@ package com.tom.rv2ide.ai.agent.conversation;
 
 import com.tom.rv2ide.ai.protocol.AssistantModelMessage;
 import com.tom.rv2ide.ai.protocol.ModelMessage;
+import com.tom.rv2ide.ai.protocol.ImageInputPayload;
 import com.tom.rv2ide.ai.protocol.ToolModelMessage;
 import com.tom.rv2ide.ai.protocol.UserModelMessage;
 import java.util.ArrayList;
@@ -117,11 +118,24 @@ public final class ConversationHistory {
     }
     if (entry instanceof ToolResultEntry) {
       ToolResultEntry result = (ToolResultEntry) entry;
+      // 带图工具结果：把图片重新编码成 rawInputJson，协议层据此还原 image block。
+      // 不这么做的话，历史里的图片在续接会话时会退化成一句文字说明，模型看不到图。
+      String imageJson = null;
+      if (result.getImageBase64().length() > 0) {
+        try {
+          imageJson =
+              ImageInputPayload.imageResultJson(
+                  result.getImageMimeType(), result.getImageBase64());
+        } catch (org.json.JSONException ignored) {
+          // 编码失败就退回纯文本，不影响对话继续。
+        }
+      }
       return new ToolModelMessage(
           result.getContent(),
           result.getToolCallId(),
           result.getToolName(),
-          result.isError());
+          result.isError(),
+          imageJson);
     }
     // SessionMetaEntry / TitleEntry / CompactionEntry 不参与模型对话
     return null;

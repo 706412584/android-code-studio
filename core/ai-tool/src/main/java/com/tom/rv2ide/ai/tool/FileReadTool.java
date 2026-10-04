@@ -44,7 +44,7 @@ public final class FileReadTool extends BaseTool {
 
     @Override
     public String getDescription() {
-        return "Read file contents. Returns line-numbered content; for large files, read in segments via start_kb/end_kb (end_kb may exceed 50, up to the file size). Returns a directory tree when reading a directory.";
+        return "Read file contents. Returns line-numbered content; for large files, read in segments via start_kb/end_kb (end_kb may exceed 50, up to the file size). Returns a directory tree when reading a directory. For image files (PNG/JPEG) the image itself is returned for visual inspection.";
     }
 
     @Override
@@ -87,6 +87,19 @@ public final class FileReadTool extends BaseTool {
                 String list = builder.length() == 0 ? ToolMessages.FILE_READ_EMPTY_DIR : builder.toString().trim();
                 return ok(ToolMessages.format(ToolMessages.FILE_READ_DIR_CONTENT, FileToolPathPolicy.displayPath(context.getHomePath(), file), list)
                         + ToolMessages.FILE_READ_DIR_SPECIFY_FILE);
+            }
+
+            // 图片走独立分支：不按文本读取（二进制会被当作乱码），而是解码后作为图片负载
+            // 附在结果上，由协议层编码成各家的 image block。缩放委托给 context 注入的
+            // ImageDataProvider（工具模块零 Android 依赖，见该类注释）。
+            if (ImageFileSupport.hasImageExtension(file)) {
+                return readImage(file, context);
+            }
+            // 其它图片格式（gif/webp/heic…）当文本读会得到乱码。明确报错，
+            // 让模型知道该转换格式而不是拿到一堆无意义的字节。
+            if (ImageFileSupport.hasUnsupportedImageExtension(file)) {
+                return error(ToolMessages.format(ToolMessages.FILE_READ_IMAGE_UNSUPPORTED,
+                        FileToolPathPolicy.displayPath(context.getHomePath(), file)));
             }
 
             int startKb = Math.max(0, input.optInt("start_kb", 0));
@@ -165,6 +178,29 @@ public final class FileReadTool extends BaseTool {
         } catch (Exception e) {
             return error(ToolMessages.format(ToolMessages.FILE_READ_FAILED, e.getMessage()));
         }
+    }
+
+    /**
+     * 把图片文件读成携带图片负载的结果。
+     *
+     * <p>失败时返回普通错误结果（agent 循环约定：不抛异常，错误要能回灌给模型）。
+     * 与 cc-haha 的差异见 {@link ImageFileSupport}：只支持 PNG/JPEG，且以 magic bytes
+     * 而非扩展名校验内容。
+     */
+    private ToolResult readImage(File file, ToolContext context) throws Exception {
+        String display = FileToolPathPolicy.displayPath(context.getHomePath(), file);
+        ImageFileSupport.Result image = ImageFileSupport.read(file, context.getImageDataProvider());
+        if (image.isError()) {
+            return error(ToolMessages.format(ToolMessages.FILE_READ_IMAGE_FAILED, display, image.error));
+        }
+        String note =
+                ToolMessages.format(
+                        ToolMessages.FILE_READ_IMAGE_ATTACHED,
+                        display,
+                        image.mimeType,
+                        image.originalSize / 1024,
+                        image.downscaled ? ToolMessages.FILE_READ_IMAGE_DOWNSCALED_SUFFIX : "");
+        return ToolResult.withImage(getName(), note, image.mimeType, image.base64);
     }
 
     /** 分块读取文件，统计字节位置 < upToByte 的 '\n' 个数，避免逐字节 seek/read 的 O(n) 系统调用。 */

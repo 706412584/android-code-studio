@@ -35,7 +35,19 @@ public final class ToolModelMessage extends ModelMessage {
     }
 
     public ToolModelMessage(String content, String toolCallId, String toolName, boolean toolError) {
-        super(content);
+        this(content, toolCallId, toolName, toolError, null);
+    }
+
+    /**
+     * 带图片负载的构造。
+     *
+     * @param rawInputJson 工具结果图片的原始 JSON（见
+     *     {@link ImageInputPayload#imageResultJson}）；{@code null} 表示纯文本结果。
+     *     两条协议序列化路径据此把结果编码成 image block。
+     */
+    public ToolModelMessage(
+            String content, String toolCallId, String toolName, boolean toolError, String rawInputJson) {
+        super(content, "", rawInputJson);
         this.toolCallId = toolCallId == null ? "" : toolCallId;
         this.toolName = toolName == null ? "" : toolName;
         this.toolError = toolError;

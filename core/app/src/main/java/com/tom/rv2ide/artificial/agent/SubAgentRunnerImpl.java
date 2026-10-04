@@ -103,7 +103,11 @@ public final class SubAgentRunnerImpl implements SubAgentRunner {
         buildSubPrompt(request.getMode(), tools, nativeTools);
 
     ToolContext toolContext =
-        ToolContext.builder().homePath(workspacePath).settings(settings).build();
+        ToolContext.builder()
+            .homePath(workspacePath)
+            .settings(settings)
+            .imageDataProvider(AndroidImageDataProvider.INSTANCE)
+            .build();
 
     // 取消要向下传播：父级被取消时子 agent 必须一起停，否则用户点了取消却仍在烧额度。
     // 用一个受父级影响的独立令牌：子级取消不影响父级，父级取消连带子级。

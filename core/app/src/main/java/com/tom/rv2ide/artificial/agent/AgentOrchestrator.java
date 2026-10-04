@@ -916,6 +916,8 @@ public final class AgentOrchestrator {
         ToolContext.builder()
             .homePath(workspace.getAbsolutePath())
             .settings(settings)
+            // 读图时的缩放实现。工具模块零 Android 依赖，因此由这里注入。
+            .imageDataProvider(AndroidImageDataProvider.INSTANCE)
             .build();
 
     // 确保有会话：无则新建，使消息有落盘之处。

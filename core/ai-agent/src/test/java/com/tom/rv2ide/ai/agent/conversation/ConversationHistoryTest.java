@@ -105,6 +105,31 @@ final class ConversationHistoryTest {
   }
 
   @Test
+  void preservesToolResultImageAcrossPersistence(@TempDir Path dir) throws IOException {
+    ConversationLog log = logAt(dir);
+    log.append(
+        ToolResultEntry.create(
+            null, T0, ToolResult.withImage("file_read", "图片已附加", "image/png", "QUJD")));
+
+    // 先验证 JSONL 往返（写盘再读回）——图片负载是 base64，容易被截断或转义出错。
+    ConversationEntry reloaded =
+        ConversationCodec.parse(ConversationCodec.toLine(log.readAll().get(0).getEntry()));
+    ToolResultEntry entry = assertInstanceOf(ToolResultEntry.class, reloaded);
+    assertEquals("QUJD", entry.getImageBase64());
+    assertEquals("image/png", entry.getImageMimeType());
+
+    // 再验证折叠成模型消息时图片被重新编码成工具结果图片 payload，
+    // 否则续接会话时历史里的图会退化成纯文字，模型看不到像素。
+    ToolModelMessage tool =
+        assertInstanceOf(ToolModelMessage.class, ConversationHistory.fold(log.readAll()).get(0));
+    assertEquals("图片已附加", tool.getContent());
+    assertEquals(
+        "QUJD",
+        com.tom.rv2ide.ai.protocol.ImageInputPayload.fromImageResult(tool.getRawInputJson())
+            .getDataBase64());
+  }
+
+  @Test
   void marksToolErrorOnFoldedMessage(@TempDir Path dir) throws IOException {
     ConversationLog log = logAt(dir);
     log.append(

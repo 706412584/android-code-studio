@@ -354,8 +354,27 @@ public final class AnthropicMessagesProtocol extends AbstractHttpModelProtocol {
     private JSONObject toolResultBlock(ModelMessage message) throws Exception {
         JSONObject block = new JSONObject()
                 .put("type", "tool_result")
-                .put("tool_use_id", message.getToolCallId())
-                .put("content", message.getContent());
+                .put("tool_use_id", message.getToolCallId());
+        // 工具结果可以带图片（file_read 读图）。Anthropic 的 tool_result.content 允许
+        // 是块数组，因此把文字说明与 image 块一起放进去；无图片时保持原来的字符串形态。
+        ImageInputPayload.Payload image = ImageInputPayload.fromImageResult(message.getRawInputJson());
+        if (image != null) {
+            JSONArray content = new JSONArray();
+            if (message.getContent().trim().length() > 0) {
+                content.put(new JSONObject()
+                        .put("type", "text")
+                        .put("text", message.getContent()));
+            }
+            content.put(new JSONObject()
+                    .put("type", "image")
+                    .put("source", new JSONObject()
+                            .put("type", "base64")
+                            .put("media_type", image.getMimeType())
+                            .put("data", image.getDataBase64())));
+            block.put("content", content);
+        } else {
+            block.put("content", message.getContent());
+        }
         if (message.isToolError()) {
             block.put("is_error", true);
         }
