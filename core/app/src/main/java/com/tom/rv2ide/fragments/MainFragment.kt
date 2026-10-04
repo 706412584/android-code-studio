@@ -45,6 +45,7 @@ import com.tom.rv2ide.adapters.MainActionsListAdapter
 import com.tom.rv2ide.app.BaseApplication
 import com.tom.rv2ide.app.BaseIDEActivity
 import com.tom.rv2ide.artificial.agent.FloatingAssistantView
+import com.tom.rv2ide.artificial.agent.host.ActivityHost
 import com.tom.rv2ide.common.databinding.LayoutDialogProgressBinding
 import com.tom.rv2ide.databinding.BottomsheetGitCloneBinding
 import com.tom.rv2ide.databinding.FragmentMainBinding
@@ -87,16 +88,32 @@ class MainFragment : BaseFragment() {
   private var assistant: FloatingAssistantView? = null
 
   /**
-   * 返回键先收面板。
+   * 返回键先收面板；**收不动时必须透传**。
    *
    * <p>用 dispatcher 而不是覆写 `onBackPressed`：Activity 自己注册了一个 callback
-   * （切屏幕用），dispatcher 按后进先出分发，后注册的这个先拿到事件，面板收起后
-   * 返回 false 让它继续落到 Activity 的 callback。
+   * （切屏幕用），dispatcher 按后进先出分发，后注册的这个先拿到事件。
+   *
+   * <p><b>为什么必须显式透传</b>：本 callback 在 [setUpAssistant] 里无条件启用，且
+   * 只要 fragment 仍 RESUMED 就一直启用——主页视图被 `isVisible=false` 隐藏到
+   * SCREEN_AI / 模板屏时，本 callback 依旧先于 Activity 拿到返回键。此前它只是调用
+   * `collapseIfOpen()` 而**不看返回值**：面板没开时事件被静默吞掉，Activity 的
+   * `SCREEN_AI -> SCREEN_MAIN` 永不触发，返回键整体失效。
+   *
+   * <p>透传做法：先把自己禁用再重新分发，避免 dispatcher 立即回调本 callback 造成
+   * 死循环；分发返回后恢复启用，供下一次返回键继续优先收面板。
+   *
+   * <p><b>行为变化</b>：主页上面板已收起时按返回，现在会透传到 Activity——主页屏
+   * Activity 的 callback 是禁用的（`screen != SCREEN_MAIN` 才启用），因此落到系统默认，
+   * 即退出应用。这符合 Android 惯例，此前是「按了没反应」。
    */
   private val backCallback =
       object : OnBackPressedCallback(false) {
         override fun handleOnBackPressed() {
-          assistant?.collapseIfOpen()
+          if (assistant?.collapseIfOpen() != true) {
+            isEnabled = false
+            requireActivity().onBackPressedDispatcher.onBackPressed()
+            isEnabled = true
+          }
         }
       }
 
@@ -149,6 +166,11 @@ class MainFragment : BaseFragment() {
                 startActivity(Intent(requireActivity(), IDEConfigurations::class.java))
               }
               MainScreenAction.ACTION_DOCS -> BaseApplication.getBaseInstance().openDocs()
+              // 进入应用内 AI 助手页。走 viewModel.setScreen 而不是 startActivity：
+              // 助手页是 MainActivity 内部的一个屏幕（第 4 个 FragmentContainerView），
+              // 与模板列表/详情同级，返回键由 MainActivity 的 callback 统一处理。
+              MainScreenAction.ACTION_AI_ASSISTANT ->
+                  viewModel.setScreen(MainViewModel.SCREEN_AI)
             }
           }
 
@@ -187,7 +209,14 @@ class MainFragment : BaseFragment() {
     // 必须用 viewLifecycleOwner.lifecycleScope：BaseFragment.viewLifecycleScope 只是
     // 一个普通 CoroutineScope（Dispatchers.Default），不会随视图销毁自动取消，用它会在
     // 视图销毁后继续往已 detach 的控件里写数据。
-    val view = FloatingAssistantView(requireContext(), viewLifecycleOwner.lifecycleScope, container)
+    val view =
+        FloatingAssistantView(
+            ActivityHost(requireContext(), viewLifecycleOwner.lifecycleScope, container),
+            FloatingAssistantView.Mode.SIDEBAR,
+            // 与内联页（AssistantPageFragment）共享同一个 orchestrator，保证只有一个
+            // activeConversationId、不会并发两个会话。实例由 MainViewModel 持有。
+            viewModel.assistantOrchestrator,
+        )
     view.attach()
     view.setWorkspace(currentWorkspace())
     assistant = view

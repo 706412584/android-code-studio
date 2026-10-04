@@ -24,15 +24,14 @@ import android.view.LayoutInflater
 import android.view.ViewGroup
 import android.widget.FrameLayout
 import android.widget.TextView
-import androidx.appcompat.app.AlertDialog
 import androidx.constraintlayout.widget.ConstraintLayout
 import androidx.core.view.isVisible
 import com.google.android.material.color.MaterialColors
-import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import androidx.lifecycle.LifecycleCoroutineScope
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.tom.rv2ide.adapters.AssistantMessageAdapter
 import com.tom.rv2ide.adapters.ConversationListAdapter
+import com.tom.rv2ide.artificial.agent.host.AssistantHost
 import com.tom.rv2ide.artificial.agents.Agents
 import com.tom.rv2ide.databinding.LayoutAiAssistantBinding
 import com.tom.rv2ide.databinding.LayoutAiAssistantFabBinding
@@ -61,15 +60,38 @@ import kotlinx.coroutines.withContext
  * 来自循环线程，因此 [handleEvent] 内部不做直接控件操作，只投递到主线程。
  */
 class FloatingAssistantView(
-    private val context: Context,
-    private val lifecycleScope: LifecycleCoroutineScope,
-    private val parent: ViewGroup,
+    private val host: AssistantHost,
     /**
      * 初始形态。主页传 [Mode.SIDEBAR]（浮层，露出项目列表），
      * 编辑器传 [Mode.DOCKED]（贴右侧满高，与文件树抽屉左右对称）。
      */
     private val defaultMode: Mode = Mode.SIDEBAR,
+    /**
+     * 可选的共享 orchestrator。
+     *
+     * <p>当同一宿主下有多个视图（例如主页 SIDEBAR 与内联页 INLINE）需要共用同一段对话时，
+     * 由宿主（如 MainViewModel）持有唯一实例并注入给每个视图。orchestrator 持有
+     * `activeConversationId`，两个实例会各自维护一份会话，导致「同一时刻两个会话」的错配，
+     * 因此共享是保证单会话的正确做法。
+     *
+     * <p>为 null 时（现有所有调用点）每个视图自建实例，行为与抽象前完全一致。
+     */
+    private val sharedOrchestrator: AgentOrchestrator? = null,
 ) {
+
+  private val context: Context = host.context
+  private val lifecycleScope: LifecycleCoroutineScope = host.lifecycleScope
+
+  /**
+   * 挂载面板的真实父容器。
+   *
+   * <p>刻意保留真实 `ViewGroup` 类型而不抽进接口：面板的定位与拖拽依赖它的具体类型
+   * （ConstraintLayout 约束、FrameLayout.LayoutParams、WindowInsets）。见 [AssistantHost.container]。
+   */
+  private val parent: ViewGroup = host.container
+
+  /** 面板宽度预算。原先取 `parent.resources.displayMetrics.widthPixels`，现由宿主提供。 */
+  private fun screenWidthPx(): Int = host.widthPx()
 
   /** 面板形态。 */
   enum class Mode {
@@ -85,7 +107,16 @@ class FloatingAssistantView(
      * 编辑器已经有自己的侧栏抽屉（文件树）与底部构建面板，再叠一张居中的浮层卡片
      * 会与它们争夺空间，观感上也不像编辑器的一部分。贴边后它与文件树抽屉左右对称。
      */
-    DOCKED
+    DOCKED,
+
+    /**
+     * 内联页形态：占满宿主给定的容器，无边距、无圆角。
+     *
+     * 与 [FULLSCREEN] 的区别：全屏是「浮层铺开」，四周仍留 8/12dp 边距与圆角，
+     * 传达的是「一张盖在内容上的卡片」；内联页要的是「它就是页面本身」，因此
+     * 完全不留边距、不做圆角，与容器严丝合缝。宽度由容器决定，不按屏幕比例算。
+     */
+    INLINE
   }
 
   private val fabBinding =
@@ -101,8 +132,12 @@ class FloatingAssistantView(
    *
    * <p>拆成独立对象而不是继续堆在本类里：本类已 1400 余行，主体职责是消息列表与运行循环；
    * 这三项是纯输入区的局部状态，与消息流无关。它们只在发送时被查询一次。
+   *
+   * <p>传入 `host` 而不是 `context`：附件选择需要宿主能力（Activity 走
+   * `registerForActivityResult`，应用外悬浮的 Service 宿主走蹦床 Activity），
+   * 由 `host.attachments` 提供，视图本身不必知道当前宿主是哪种形态。
    */
-  private val inputFeatures = AssistantInputFeatures(context, binding)
+  private val inputFeatures = AssistantInputFeatures(host, binding)
 
   /**
    * 持久化 diff 存储。
@@ -177,22 +212,97 @@ class FloatingAssistantView(
    * 于是每条消息都开一个新会话，历史永远无法续接。
    */
   private val orchestrator: AgentOrchestrator by lazy {
-    AgentOrchestrator(context, diffStore).apply {
-      settings.setDangerousToolConfirmer(
-          AgentToolSettings.DangerousToolConfirmer { toolName, args ->
-            askDangerousToolOnMain(toolName, args)
-          }
-      )
-      // 上下文用量回主线程画圆环。回调来自 agent 循环线程，且每轮都会触发，
-      // 因此这里只做一次「写两个字段 + invalidate」。
-      setContextUsageListener { used, total ->
-        lifecycleScope.launch(Dispatchers.Main) {
-          lastContextUsed = used
-          lastContextSize = total
-          applyContextRing()
+    sharedOrchestrator ?: AgentOrchestrator(context, diffStore)
+  }
+
+  /**
+   * 本视图是否是当前**安装者**（最后把回调装到 orchestrator 上的视图）。
+   *
+   * <p>两个回调（危险工具授权、上下文用量）是 orchestrator 的**单例槽位**，多个视图共享
+   * 同一个 orchestrator 时会互相覆盖。约定：谁可见谁拥有；可见的视图在 [attach]/[open]
+   * 抢过回调。让出时见 [releaseOrchestratorCallbacks]——它会把回调**交接**给另一个存活视图，
+   * 而不是直接清空。
+   *
+   * <p>默认 `false`：视图只有在 [installOrchestratorCallbacks] 之后才算安装者。未 attach
+   * 就被销毁的视图不会去动共享 orchestrator 上的回调。
+   */
+  private var ownsOrchestratorCallbacks = false
+
+  /**
+   * 与当前视图共享同一 orchestrator 的存活视图集合。
+   *
+   * <p>用于让出时挑选交接对象。集合对视图用弱引用（GC 后自动移除），对 orchestrator 也弱引用。
+   * 只有 [dispose] 会把视图从集合中摘除；[close] 只是不再当安装者，视图仍是**合法的交接对象**
+   * ——它只是被隐藏，[androidx.lifecycle.LifecycleCoroutineScope] 仍然可用，接住回调不会出错。
+   */
+  private fun liveViewSet(): MutableSet<FloatingAssistantView> =
+      liveViews.getOrPut(orchestrator) {
+        java.util.Collections.newSetFromMap(
+            java.util.WeakHashMap<FloatingAssistantView, Boolean>())
+      }
+
+  /**
+   * 安装两个回调并把自己登记为当前安装者 / 存活视图。
+   *
+   * <p>**只应在主线程调用**（[attach]/[open]/[close]/[dispose] 均在主线程）：与
+   * [ownsOrchestratorCallbacks] 的读写同线程，避免共享 orchestrator 下两个视图并发抢装
+   * 造成回调归属错乱。
+   */
+  private fun installOrchestratorCallbacks() {
+    ownsOrchestratorCallbacks = true
+    liveViewSet().add(this)
+    // 注意接收者：授权确认器必须装在 **orchestrator 的** AgentToolSettings 上。
+    // 原代码在 `orchestrator.apply { settings.setDangerousToolConfirmer(...) }` 里，
+    // 那个 `settings` 经隐式接收者解析到 orchestrator.getSettings()——执行器走的是
+    // 这条（ToolContext.settings = orchestrator.settings）。若误装到本视图自己的
+    // `settings` 字段上，执行器读到的 confirmer 仍为 null，危险工具会被静默拒绝。
+    orchestrator.settings.setDangerousToolConfirmer(
+        AgentToolSettings.DangerousToolConfirmer { toolName, args ->
+          askDangerousToolOnMain(toolName, args)
         }
+    )
+    // 上下文用量回主线程画圆环。回调来自 agent 循环线程，且每轮都会触发，
+    // 因此这里只做一次「写两个字段 + invalidate」。
+    orchestrator.setContextUsageListener { used, total ->
+      lifecycleScope.launch(Dispatchers.Main) {
+        lastContextUsed = used
+        lastContextSize = total
+        applyContextRing()
       }
     }
+  }
+
+  /**
+   * 让出回调：**交接给另一个存活视图，而不是清空**。
+   *
+   * <p>只有确实没有任何其它存活视图共享该 orchestrator 时，才把回调置空。
+   *
+   * <p>否则会出现评审指出的场景：内联页视图 A 是安装者，A 销毁后回调被清空，而主页
+   * SIDEBAR 视图 B 仍活着却没有任何机制重装——B 的上下文圆环停更、危险工具确认被静默
+   * 拒绝（[com.tom.rv2ide.artificial.agent.AgentToolSettings.confirmDangerousTool] 在
+   * confirmer 为 null 时直接拒绝）。交接后 B 重新安装，两个回调始终有效。
+   *
+   * <p>非安装者调用本方法（`ownsOrchestratorCallbacks == false`）时不动 orchestrator，
+   * 避免把当前安装者刚装上的回调清掉。
+   */
+  private fun releaseOrchestratorCallbacks() {
+    if (!ownsOrchestratorCallbacks) {
+      return
+    }
+    ownsOrchestratorCallbacks = false
+    val next = liveViews[orchestrator]?.firstOrNull { it !== this }
+    if (next != null) {
+      next.installOrchestratorCallbacks()
+      return
+    }
+    // 没有任何其它存活视图：确实无人使用，才清空并移除登记。
+    liveViews.remove(orchestrator)
+    orchestrator.setContextUsageListener(null)
+  }
+
+  /** 从存活视图集合中摘除自己（仅 [dispose] 调用，见 [liveViewSet]）。 */
+  private fun detachFromLiveSet() {
+    liveViews[orchestrator]?.remove(this)
   }
 
   /** 最近一次已知的上下文用量；未运行过时为 0。 */
@@ -215,20 +325,30 @@ class FloatingAssistantView(
 
   /** 把两个视图挂到父容器上。父容器应是 `FrameLayout`（FAB 靠 gravity 定位）。 */
   fun attach() {
-    // FAB 在 XML 里只有固定尺寸、没有 gravity；放进 FrameLayout 时必须显式给右下角，
-    // 否则会落在左上角盖住标题。
-    fabBinding.root.layoutParams =
-        FrameLayout.LayoutParams(dp(56), dp(56)).apply {
-          gravity = Gravity.END or Gravity.BOTTOM
-          marginEnd = dp(16)
-          bottomMargin = dp(16) + defaultBottomOffsetPx
-        }
-    parent.addView(fabBinding.root)
+    // INLINE 是「页面本身」，没有可收起的宿主：不挂 FAB，也不装拖拽。
+    // 其余形态照旧挂 FAB 并装拖拽，行为不变。
+    if (defaultMode != Mode.INLINE) {
+      // FAB 在 XML 里只有固定尺寸、没有 gravity；放进 FrameLayout 时必须显式给右下角，
+      // 否则会落在左上角盖住标题。
+      fabBinding.root.layoutParams =
+          FrameLayout.LayoutParams(dp(56), dp(56)).apply {
+            gravity = Gravity.END or Gravity.BOTTOM
+            marginEnd = dp(16)
+            bottomMargin = dp(16) + defaultBottomOffsetPx
+          }
+      parent.addView(fabBinding.root)
+    }
     parent.addView(binding.assistantOverlay)
 
-    setUpDragging()
+    if (defaultMode != Mode.INLINE) {
+      setUpDragging()
+    }
 
     applyMode(defaultMode)
+
+    // 装回调。共享 orchestrator 时这是「当前可见者拥有」的初始声明；不共享时与
+    // 抽象前「构造期装一次」等价（attach 在本视图生命周期内只调一次，且在主线程）。
+    installOrchestratorCallbacks()
 
     binding.assistantMessages.layoutManager = LinearLayoutManager(context)
     binding.assistantMessages.adapter = adapter
@@ -248,10 +368,10 @@ class FloatingAssistantView(
     // 分成两个可点控件而不是合成一个：服务商名与模型名各自独立省略，
     // 窄面板下仍能读出「哪个服务商」；合成一段时两段文字会一起被压成省略号。
     binding.assistantToolbarModel.setOnClickListener {
-      AssistantModelPicker.show(context) { refreshModelLabel() }
+      host.dialogs.showModelPicker { refreshModelLabel() }
     }
     binding.assistantToolbarProvider.setOnClickListener {
-      AssistantModelPicker.show(context) { refreshModelLabel() }
+      host.dialogs.showModelPicker { refreshModelLabel() }
     }
     // 上下文圆环：点开占用详情，并就地提供「压缩上下文」入口。
     binding.assistantContextRing.setOnClickListener { showContextUsage() }
@@ -530,8 +650,14 @@ class FloatingAssistantView(
   }
 
   fun open() {
-    fabBinding.assistantFab.isVisible = false
+    // INLINE 没有 FAB 可藏（见 attach）。
+    if (defaultMode != Mode.INLINE) {
+      fabBinding.assistantFab.isVisible = false
+    }
     binding.assistantOverlay.isVisible = true
+    // 可见即接管 orchestrator 回调。共享 orchestrator 时，后打开的视图抢过圆环/授权回调；
+    // 不共享时重装一次等价（同样的闭包、同样的对象）。
+    installOrchestratorCallbacks()
     // 服务商/模型可能刚在设置页被改过，打开时重读一次。只在 attach 时读会让
     // 「设置里改了、回到面板显示的还是旧值」。
     refreshModelLabel()
@@ -588,7 +714,12 @@ class FloatingAssistantView(
 
   fun close() {
     binding.assistantOverlay.isVisible = false
-    fabBinding.assistantFab.isVisible = true
+    // INLINE 没有 FAB 可恢复（见 attach）。
+    if (defaultMode != Mode.INLINE) {
+      fabBinding.assistantFab.isVisible = true
+    }
+    // 隐藏即让出回调，见 [ownsOrchestratorCallbacks]。
+    releaseOrchestratorCallbacks()
   }
 
   /** 折叠面板（返回键用）。@return 是否消费了这次返回 */
@@ -603,6 +734,11 @@ class FloatingAssistantView(
   /** 释放资源：取消进行中的运行，避免视图销毁后回调仍写控件。 */
   fun dispose() {
     cancel()
+    // 销毁是不可逆的：先从存活集合摘除自己，再让出回调。
+    // 顺序很关键——若先 release，可能把回调交接回本视图自己（它仍在集合里），
+    // 于是销毁后的视图仍持有回调并往已 detach 的控件里写数据。
+    detachFromLiveSet()
+    releaseOrchestratorCallbacks()
   }
 
   /**
@@ -642,7 +778,7 @@ class FloatingAssistantView(
       Mode.SIDEBAR -> {
         // 侧栏宽度取屏幕的 88%，至少 280dp：窄屏上纯比例会挤到不可用，
         // 宽屏上固定宽度又会留下大片空白。
-        val screenWidth = parent.resources.displayMetrics.widthPixels
+        val screenWidth = screenWidthPx()
         val width = maxOf(dp(280), (screenWidth * 0.88f).toInt())
         params.width = minOf(width, screenWidth - dp(16))
         params.height = ViewGroup.LayoutParams.MATCH_PARENT
@@ -672,7 +808,7 @@ class FloatingAssistantView(
         // 下限必须再对上限取一次 min：窄屏上「屏宽-100dp」可能小于 260dp，
         // 直接 coerceIn(260dp, 那个值) 会抛
         // IllegalArgumentException: Cannot coerce value to an empty range。
-        val screenWidth = parent.resources.displayMetrics.widthPixels
+        val screenWidth = screenWidthPx()
         val upper = minOf(dp(420), screenWidth - dp(100))
         val lower = minOf(dp(260), upper)
         params.width = (screenWidth * 0.68f).toInt().coerceIn(lower, upper)
@@ -687,6 +823,21 @@ class FloatingAssistantView(
         // 描边在上下右三边正好压在屏幕边缘（不可见），实际只起左分界线的作用。
         card.strokeWidth = dp(1)
       }
+      Mode.INLINE -> {
+        // 内联页：占满宿主容器，无边距、无圆角、无描边。
+        //
+        // 与 FULLSCREEN 的「浮层铺开」相反，这里要的是「它就是页面本身」——
+        // 任何留白或圆角都会立刻把它变回盖在内容上的卡片。宽度不按屏幕比例算，
+        // 由容器的 MATCH_PARENT 决定（宿主给的容器就是页面的可用区域）。
+        params.width = ViewGroup.LayoutParams.MATCH_PARENT
+        params.height = ViewGroup.LayoutParams.MATCH_PARENT
+        params.marginStart = 0
+        params.marginEnd = 0
+        params.topMargin = 0
+        params.bottomMargin = 0
+        card.radius = 0f
+        card.strokeWidth = 0
+      }
     }
 
     // 水平对齐方向。
@@ -698,6 +849,18 @@ class FloatingAssistantView(
 
     card.layoutParams = params
 
+    // 标题栏右侧三键在 INLINE 下无意义：
+    // - 全屏：页面本身已经占满容器，再切全屏没有目标形态；
+    // - 最小化 / 关闭：内联页没有可收起的宿主，收起后无处可去。
+    // 保留「菜单（会话抽屉）」与「设置」（在抽屉底部），页面导航由宿主的返回键负责。
+    //
+    // 只在 INLINE 下改可见性，且每次 applyMode 都显式重设：从 INLINE 切回其他形态
+    // （理论上宿主允许时）不会把按钮永久藏掉。
+    val chromeVisible = newMode != Mode.INLINE
+    binding.assistantFullscreen.isVisible = chromeVisible
+    binding.assistantMinimize.isVisible = chromeVisible
+    binding.assistantClose.isVisible = chromeVisible
+
     // 换形态就换了宽度，工具条能放下几个控件随之变化，必须重算。
     //
     // 不重算的后果是单向的：窄形态（贴边）下隐藏了 git 分支标签，之后切到全屏
@@ -705,8 +868,17 @@ class FloatingAssistantView(
     applyToolbarDensity()
   }
 
-  private fun dp(value: Int): Int =
-      (value * parent.resources.displayMetrics.density).toInt()
+  private fun dp(value: Int): Int = (value * density()).toInt()
+
+  /**
+   * 显示密度。
+   *
+   * <p>原实现取 `parent.resources.displayMetrics.density`。Activity 宿主下 `parent` 与
+   * `context` 同源（都来自同一个 Activity），两者取到的 Resources 是同一个对象，
+   * 因此换成 `context.resources` 对现有调用点零影响；换用宿主 Context 也让非 Activity
+   * 宿主能给出自己窗口的密度。
+   */
+  private fun density(): Float = context.resources.displayMetrics.density
 
   private fun sendFromInput() {
     val typed = binding.assistantInput.text?.toString()?.trim().orEmpty()
@@ -1403,7 +1575,7 @@ class FloatingAssistantView(
    * 授权规则、提示词模板…），再造一份就是第三份实现。
    */
   private fun openAssistantSettings() {
-    AssistantSettings.open(context)
+    host.dialogs.openSettings()
   }
 
   /**
@@ -1451,14 +1623,10 @@ class FloatingAssistantView(
             }
             .toTypedArray()
     val checked = modes.indexOf(settings.permissionMode).coerceAtLeast(0)
-    MaterialAlertDialogBuilder(context)
-        .setTitle(string.ai_assistant_permission_title)
-        .setSingleChoiceItems(labels, checked) { dialog, which ->
-          settings.permissionMode = modes[which]
-          refreshPermissionChip()
-          dialog.dismiss()
-        }
-        .show()
+    host.dialogs.showSingleChoice(string.ai_assistant_permission_title, labels, checked) { which ->
+      settings.permissionMode = modes[which]
+      refreshPermissionChip()
+    }
   }
 
   /** 权限模式 → 工具条上的短标签。 */
@@ -1490,18 +1658,18 @@ class FloatingAssistantView(
       return
     }
     val percent = (lastContextUsed * 100 / total).coerceIn(0, 100)
-    MaterialAlertDialogBuilder(context)
-        .setTitle(string.ai_assistant_context_usage)
-        .setMessage(
-            context.getString(
-                string.ai_assistant_context_usage_detail,
-                formatTokens(lastContextUsed),
-                formatTokens(total),
-                percent,
-            ))
-        .setPositiveButton(string.ai_assistant_compact_now) { _, _ -> compactConversation() }
-        .setNegativeButton(android.R.string.cancel, null)
-        .show()
+    host.dialogs.showMessage(
+        string.ai_assistant_context_usage,
+        context.getString(
+            string.ai_assistant_context_usage_detail,
+            formatTokens(lastContextUsed),
+            formatTokens(total),
+            percent,
+        ),
+        string.ai_assistant_compact_now,
+        { compactConversation() },
+        android.R.string.cancel,
+    )
   }
 
   /**
@@ -1581,7 +1749,7 @@ class FloatingAssistantView(
   private fun applyToolbarDensity() {
     val bar = binding.assistantToolbar
     bar.post {
-      val widthDp = (bar.width / parent.resources.displayMetrics.density).toInt()
+      val widthDp = (bar.width / density()).toInt()
       if (widthDp <= 0) {
         return@post
       }
@@ -1793,12 +1961,12 @@ class FloatingAssistantView(
       onConfirm: () -> Unit,
   ) {
     val ws = workspace?.absolutePath.orEmpty()
-    androidx.appcompat.app.AlertDialog.Builder(context)
-        .setTitle(string.ai_conversation_foreign_project_title)
-        .setMessage(context.getString(string.ai_conversation_foreign_project_message, summary.getCwd(), ws))
-        .setPositiveButton(string.ai_conversation_foreign_project_continue) { _, _ -> onConfirm() }
-        .setNegativeButton(android.R.string.cancel, null)
-        .show()
+    host.dialogs.showConfirm(
+        string.ai_conversation_foreign_project_title,
+        context.getString(string.ai_conversation_foreign_project_message, summary.getCwd(), ws),
+        string.ai_conversation_foreign_project_continue,
+        onConfirm,
+    )
   }
 
   private fun doOpenConversation(
@@ -1858,12 +2026,12 @@ class FloatingAssistantView(
   private fun confirmDeleteConversation(
       summary: com.tom.rv2ide.ai.agent.conversation.ConversationSummary
   ) {
-    androidx.appcompat.app.AlertDialog.Builder(context)
-        .setTitle(string.ai_conversation_delete_confirm_title)
-        .setMessage(string.ai_conversation_delete_confirm_message)
-        .setPositiveButton(string.ai_conversation_delete) { _, _ -> deleteConversation(summary) }
-        .setNegativeButton(android.R.string.cancel, null)
-        .show()
+    host.dialogs.showConfirm(
+        string.ai_conversation_delete_confirm_title,
+        context.getString(string.ai_conversation_delete_confirm_message),
+        string.ai_conversation_delete,
+        { deleteConversation(summary) },
+    )
   }
 
   private fun deleteConversation(
@@ -2018,26 +2186,21 @@ class FloatingAssistantView(
     if (android.os.Looper.myLooper() == android.os.Looper.getMainLooper()) {
       return false
     }
+    // 阻塞语义保留在调用方：agent 循环线程建 latch、post 到主线程摆弹窗、再 await。
+    // dialogs 只负责把弹窗摆出来并把三个选择回调回来，不感知线程。
     val latch = java.util.concurrent.CountDownLatch(1)
     var accepted = false
     android.os.Handler(android.os.Looper.getMainLooper())
         .post {
           try {
-            AlertDialog.Builder(context)
-                .setTitle(string.ai_assistant_dangerous_title)
-                .setMessage(
-                    context.getString(
-                        string.ai_assistant_dangerous_message,
-                        toolName,
-                        args?.take(500) ?: "",
-                    )
-                )
-                .setCancelable(false)
-                .setPositiveButton(string.ai_assistant_dangerous_allow_once) { _, _ ->
+            host.dialogs.showDangerousToolConfirm(
+                toolName,
+                args,
+                { // 允许一次
                   accepted = true
                   latch.countDown()
-                }
-                .setNeutralButton(string.ai_assistant_dangerous_allow_always) { _, _ ->
+                },
+                { // 始终允许
                   // 写的是「工具 + 参数粒度」规则，不是全局放行——
                   // 对 git status 点「始终允许」不应顺带放行 git push --force。
                   settings.applyDecision(
@@ -2047,9 +2210,11 @@ class FloatingAssistantView(
                   )
                   accepted = true
                   latch.countDown()
-                }
-                .setNegativeButton(string.ai_assistant_dangerous_deny) { _, _ -> latch.countDown() }
-                .show()
+                },
+                { // 拒绝
+                  latch.countDown()
+                },
+            )
           } catch (e: Exception) {
             latch.countDown()
           }
@@ -2135,6 +2300,20 @@ class FloatingAssistantView(
   }
 
   companion object {
+
+    /**
+     * 每个 orchestrator 上「存活的视图」集合，键弱引用 orchestrator。
+     *
+     * <p>集合内的视图也弱引用（[java.util.WeakHashMap] 的 key 集合）：视图销毁后自动移除，
+     * 登记表不成为泄漏点。让出回调时从集合里挑一个其它视图做**交接**（见
+     * [releaseOrchestratorCallbacks]），避免一个视图销毁把共享 orchestrator 的回调清空。
+     *
+     * <p>不共享 orchestrator（现有调用点）时每个视图用自己的实例作键、集合里只有自己，
+     * 让出即清空，行为不变。
+     */
+    private val liveViews =
+        java.util.WeakHashMap<
+            AgentOrchestrator, MutableSet<FloatingAssistantView>>()
 
     /** 悬浮按钮落点（相对父容器左上角的像素）。 */
     private const val PREF_FAB_X = "ai_assistant_fab_x"

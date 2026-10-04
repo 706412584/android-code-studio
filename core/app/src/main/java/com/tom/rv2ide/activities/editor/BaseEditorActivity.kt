@@ -76,6 +76,7 @@ import com.tom.rv2ide.adapters.DiagnosticsAdapter
 import com.tom.rv2ide.adapters.SearchListAdapter
 import com.tom.rv2ide.app.EdgeToEdgeIDEActivity
 import com.tom.rv2ide.artificial.agent.FloatingAssistantView
+import com.tom.rv2ide.artificial.agent.host.ActivityHost
 import com.tom.rv2ide.databinding.ActivityEditorBinding
 import com.tom.rv2ide.databinding.ContentEditorBinding
 import com.tom.rv2ide.databinding.LayoutDiagnosticInfoBinding
@@ -1513,9 +1514,7 @@ override fun onApplySystemBarInsets(insets: Insets) {
     // 会与它们争夺空间，观感上也不像编辑器的一部分——这正是之前"割裂感"的来源。
     val assistant =
         FloatingAssistantView(
-            this,
-            lifecycleScope,
-            container,
+            ActivityHost(this, lifecycleScope, container),
             FloatingAssistantView.Mode.DOCKED,
         )
     // 折叠态的 bottom sheet 常驻屏幕底部，默认落点要避开它，否则一进来就被压住。

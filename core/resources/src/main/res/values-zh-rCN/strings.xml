@@ -244,6 +244,14 @@
   <!-- CodeGraph 语义索引 -->
   <string name="ai_agent_codegraph_title">CodeGraph 索引</string>
   <string name="ai_agent_codegraph_summary">给助手用的语义代码索引（可选）</string>
+
+  <!-- 应用外系统悬浮入口（设置 → AI 助手 → 能力） -->
+  <string name="ai_agent_overlay_title">悬浮到其它应用之上</string>
+  <string name="ai_agent_overlay_summary">把助手作为系统悬浮窗显示在其它应用之上</string>
+  <string name="ai_agent_overlay_need_permission">需要「显示在其他应用上层」权限——点击去授予</string>
+  <string name="ai_agent_overlay_off">已获授权——点击开启悬浮</string>
+  <string name="ai_agent_overlay_on">悬浮中——点击关闭</string>
+  <string name="ai_agent_overlay_no_settings">本设备没有「显示在其他应用上层」设置页</string>
   <string name="ai_agent_codegraph_state_installed">已安装 · v%1$s · 占用 %2$s</string>
   <string name="ai_agent_codegraph_state_partial">安装不完整——缺少 %1$s</string>
   <string name="ai_agent_codegraph_state_missing">未安装</string>

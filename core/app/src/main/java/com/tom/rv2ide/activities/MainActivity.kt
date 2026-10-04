@@ -40,6 +40,7 @@ import com.tom.rv2ide.utils.DialogUtils
 import com.tom.rv2ide.utils.flashInfo
 import com.tom.rv2ide.R
 import com.tom.rv2ide.viewmodel.MainViewModel
+import com.tom.rv2ide.viewmodel.MainViewModel.Companion.SCREEN_AI
 import com.tom.rv2ide.viewmodel.MainViewModel.Companion.SCREEN_MAIN
 import com.tom.rv2ide.viewmodel.MainViewModel.Companion.SCREEN_TEMPLATE_DETAILS
 import com.tom.rv2ide.viewmodel.MainViewModel.Companion.SCREEN_TEMPLATE_LIST
@@ -66,11 +67,14 @@ class MainActivity : EdgeToEdgeIDEActivity() {
                 when (currentScreen.value) {
                   SCREEN_TEMPLATE_DETAILS -> SCREEN_TEMPLATE_LIST
                   SCREEN_TEMPLATE_LIST -> SCREEN_MAIN
+                  // AI 助手页与模板向导是并列分支：返回键直接回主页，不回模板列表。
+                  SCREEN_AI -> SCREEN_MAIN
                   else -> SCREEN_MAIN
                 }
 
             if (currentScreen.value != newScreen) {
-              setScreen(newScreen)
+              // back = true：只有返回键能确定这是后退，转场方向据此判定。
+              setScreen(newScreen, back = true)
             }
           }
         }
@@ -126,7 +130,12 @@ class MainActivity : EdgeToEdgeIDEActivity() {
             MaterialSharedAxis.Y
           }
 
-      val isForward = (screen ?: 0) - previous == 1
+      // 方向判定：返回键触发的切换一律是后退；否则看编号是否增大。
+      //
+      // 旧判据 `(screen - previous) == 1` 在 AI 页（SCREEN_AI=3）上会失效：
+      // 主页(0) → AI(3) 差 3，会被误判成后退而播反向动画。编号是否增大对
+      // 「主页→模板列表→详情」仍成立，对「主页↔AI」也成立，且不依赖编号连续。
+      val isForward = if (viewModel.navigatingBack) false else (screen ?: 0) > previous
 
       val transition = MaterialSharedAxis(axis, isForward)
       transition.doOnEnd {
@@ -144,10 +153,17 @@ class MainActivity : EdgeToEdgeIDEActivity() {
           SCREEN_TEMPLATE_LIST ->
               com.tom.rv2ide.templates.AtcInterface().create(this)
           SCREEN_TEMPLATE_DETAILS -> binding.templateDetails
+          SCREEN_AI -> binding.assistantPage
           else -> throw IllegalArgumentException("Invalid screen id: '$screen'")
         }
 
-    for (fragment in arrayOf(binding.main, binding.templateList, binding.templateDetails)) {
+    for (fragment in
+        arrayOf(
+            binding.main,
+            binding.templateList,
+            binding.templateDetails,
+            binding.assistantPage,
+        )) {
       fragment.isVisible = fragment == currentFragment
     }
   }

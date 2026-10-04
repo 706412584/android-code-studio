@@ -18,16 +18,12 @@
 package com.tom.rv2ide.artificial.agent
 
 import android.content.Context
-import android.content.Intent
 import android.net.Uri
 import android.provider.OpenableColumns
-import androidx.activity.result.ActivityResultLauncher
-import androidx.activity.result.contract.ActivityResultContracts
-import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.isVisible
-import androidx.fragment.app.FragmentActivity
 import com.google.android.material.chip.Chip
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
+import com.tom.rv2ide.artificial.agent.host.AssistantHost
 import com.tom.rv2ide.artificial.agents.Agents
 import com.tom.rv2ide.databinding.LayoutAiAssistantBinding
 import com.tom.rv2ide.resources.R.string
@@ -44,14 +40,19 @@ import java.io.File
  * <p><b>与宿主的关系</b>：本类不持有 orchestrator，也不发请求。它在发送时被
  * [FloatingAssistantView.sendFromInput] 查询一次，把附件以文本形式拼进用户消息。
  *
- * <p><b>宿主必须是 [FragmentActivity]</b>：文件/图片选择走 `ActivityResultLauncher`，
- * 而它只在 ComponentActivity 及其子类上可用。两个宿主（MainFragment 与 BaseEditorActivity）
- * 都满足；取不到时附件按钮会给出提示而不是崩溃。
+ * <p><b>宿主能力由 [AssistantHost.attachments] 提供</b>：附件选择需要「发起一个系统
+ * 选择器并异步拿回结果」，这在 Activity 与 Service（应用外悬浮）两种宿主下机制不同
+ * ——Activity 走 `registerForActivityResult`，Service 走蹦床 Activity。此前本类直接
+ * `context as? FragmentActivity`，在 Service 下取不到便**静默失效**（按钮点了没反应、
+ * 还不报错）；改为从 host 取后，两种宿主都能工作，失败也有明确的 `null` 回调。
  */
 class AssistantInputFeatures(
-    private val context: Context,
+    private val host: AssistantHost,
     private val binding: LayoutAiAssistantBinding,
 ) {
+
+  /** 视图与选择器共用的 Context。从 host 取，保证与宿主一致。 */
+  private val context: Context = host.context
 
   // ---- 附件 ----
 
@@ -66,61 +67,21 @@ class AssistantInputFeatures(
 
   private data class Attachment(val uri: Uri, val name: String, val isImage: Boolean)
 
-  private var filePicker: ActivityResultLauncher<Intent>? = null
-  private var imagePicker: ActivityResultLauncher<Intent>? = null
+  /**
+   * 附件按钮是否可用。
+   *
+   * <p>取 `+` 菜单里那一项是否出现。任何宿主都能提供 [AssistantHost.attachments]
+   * （Activity 与 Service 各有实现），因此这里恒为 true；保留这个判断是为了让
+   * 「菜单项存在」与「能发起选择」两件事在语义上仍然分离——将来若有宿主明确不支持
+   * 附件，改这里即可，不必动菜单装配代码。
+   */
+  private val attachmentsAvailable: Boolean = true
 
   init {
-    registerPickers()
     // 默认值必须是「自动」：用户没表态时应该由协议层的策略决定，
     // 而不是我们替他固定成某一档。
     applyReasoningEffort(reasoningPrefs().getString(KEY_REASONING, DEFAULT_REASONING))
     binding.assistantToolbarAdd.setOnClickListener { showAddMenu() }
-  }
-
-  /**
-   * 注册两个选择器。
-   *
-   * <p>必须用 `registerForActivityResult` 而不是直接 `startActivityForResult`：
-   * 后者在 Android 10+ 上拿到的是被系统过滤过的结果，且 Fragment 宿主下
-   * `onActivityResult` 的回调路径依赖已废弃的 API。
-   */
-  private fun registerPickers() {
-    val activity = context as? FragmentActivity ?: return
-    filePicker =
-        activity.registerForActivityResult(
-            ActivityResultContracts.StartActivityForResult()) { result ->
-          collectResult(result, isImage = false)
-        }
-    imagePicker =
-        activity.registerForActivityResult(
-            ActivityResultContracts.StartActivityForResult()) { result ->
-          collectResult(result, isImage = true)
-        }
-  }
-
-  /**
-   * 收集选择结果。
-   *
-   * <p>必须同时看 `clipData` 与 `data`：多选时系统只把结果放进 `clipData`，
-   * `data` 为 null——只读 `data` 会让「选了两个文件」变成「什么都没选」，
-   * 而且不报错，用户只会觉得按钮坏了。
-   */
-  private fun collectResult(
-      result: androidx.activity.result.ActivityResult,
-      isImage: Boolean,
-  ) {
-    if (result.resultCode != AppCompatActivity.RESULT_OK) {
-      return
-    }
-    val data = result.data
-    val clip = data?.clipData
-    if (clip != null) {
-      for (i in 0 until clip.itemCount) {
-        clip.getItemAt(i).uri?.let { addAttachment(it, isImage) }
-      }
-      return
-    }
-    data?.data?.let { addAttachment(it, isImage) }
   }
 
   /**
@@ -141,7 +102,7 @@ class AssistantInputFeatures(
     // 项比少一项更糟——用户会反复点它确认自己没看错。
     val slotSwitchable = hasSwitchableSlots()
     val items = mutableListOf<Pair<String, () -> Unit>>()
-    if (filePicker != null) {
+    if (attachmentsAvailable) {
       items.add(context.getString(string.ai_assistant_toolbar_attach) to { showAttachSheet() })
     }
     items.add(
@@ -190,43 +151,26 @@ class AssistantInputFeatures(
   }
 
   private fun openFilePicker() {
-    // ACTION_OPEN_DOCUMENT 而不是 ACTION_GET_CONTENT：前者给出的 URI 带持久读权限，
-    // 且不会因为「选完即失效」导致发送时读不到文件。
-    val intent =
-        Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
-          addCategory(Intent.CATEGORY_OPENABLE)
-          type = "*/*"
-          // 多选：一次挑几个相关文件是常见需求（对比两个实现文件）。
-          putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
-        }
-    launchSafely(filePicker, intent, string.ai_assistant_attach_no_picker)
+    // 真正的 Intent 构造交给宿主（Activity 与 Service 走不同机制）。这里只负责
+    // 「选完之后把结果并入附件」——契约是每个 URI 回调一次、取消/失败回调一次 null。
+    host.attachments.pickFile { uri -> addAttachment(uri, isImage = false) }
   }
 
   private fun openImagePicker() {
-    val intent =
-        Intent(Intent.ACTION_GET_CONTENT).apply {
-          addCategory(Intent.CATEGORY_OPENABLE)
-          type = "image/*"
-          putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
-        }
-    launchSafely(imagePicker, intent, string.ai_assistant_attach_no_picker)
+    host.attachments.pickImage { uri -> addAttachment(uri, isImage = true) }
   }
 
-  /** 启动选择器；设备上没有对应 Activity 时给出提示而不是抛 ActivityNotFoundException。 */
-  private fun launchSafely(
-      launcher: ActivityResultLauncher<Intent>?,
-      intent: Intent,
-      errorStringRes: Int,
-  ) {
-    try {
-      launcher?.launch(intent)
-    } catch (e: android.content.ActivityNotFoundException) {
-      toastOrTrace(context.getString(errorStringRes))
+  /**
+   * 记录选中的 URI 并刷新标签行。名称解析失败不阻断——退化成 URI 尾段即可。
+   *
+   * <p>[uri] 为 null 表示用户取消、没选任何项、设备上没有可处理该 Intent 的 Activity，
+   * 或宿主无法解析结果（见 `AssistantAttachments` 契约）。此时**什么都不做**：
+   * 静默忽略是「取消」的正确表现，弹提示反而像出错了。
+   */
+  private fun addAttachment(uri: Uri?, isImage: Boolean) {
+    if (uri == null) {
+      return
     }
-  }
-
-  /** 记录选中的 URI 并刷新标签行。名称解析失败不阻断——退化成 URI 尾段即可。 */
-  private fun addAttachment(uri: Uri, isImage: Boolean) {
     val name = displayName(uri)
     if (attachments.any { it.uri == uri }) {
       return

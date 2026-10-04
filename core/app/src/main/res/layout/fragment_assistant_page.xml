@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  应用内 AI 助手页的根布局。
+
+  本布局只提供一个「真实 ViewGroup」挂载点：助手面板（FloatingAssistantView）以
+  INLINE 形态占满它。容器刻意不做任何内边距/圆角/背景——INLINE 的语义就是
+  「页面本身」，任何装饰都会把它变回盖在内容上的卡片。
+
+  用 FrameLayout 而非 ConstraintLayout：INLINE 形态下卡片是 MATCH_PARENT 直接铺满，
+  不需要约束；而 FAB 的定位（若形态未来复用）依赖 FrameLayout.LayoutParams。
+-->
+<FrameLayout
+  xmlns:android="http://schemas.android.com/apk/res/android"
+  android:id="@+id/assistantPageContainer"
+  android:layout_width="match_parent"
+  android:layout_height="match_parent" />

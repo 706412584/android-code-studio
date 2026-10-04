@@ -57,6 +57,19 @@
         android:layout_width="match_parent"
         android:layout_height="match_parent" />
 
+      <!--
+        应用内 AI 助手页（内联形态）。
+
+        与其余三个容器同级、互相显隐，由 MainActivity 的 SCREEN_AI 切换。
+        放在最后：FragmentContainerView 在 FrameLayout 里按添加顺序叠放，最后添加的
+        在最上层，保证从主页动作列表进入时助手页完整盖住主页内容。
+      -->
+      <androidx.fragment.app.FragmentContainerView
+        android:id="@+id/assistant_page"
+        android:name="com.tom.rv2ide.fragments.AssistantPageFragment"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent" />
+
     </FrameLayout>
 
   </androidx.constraintlayout.widget.ConstraintLayout>

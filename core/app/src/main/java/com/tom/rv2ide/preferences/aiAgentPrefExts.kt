@@ -25,6 +25,7 @@ import com.tom.rv2ide.R
 import com.tom.rv2ide.artificial.agent.codegraph.CodeGraphInstaller
 import com.tom.rv2ide.artificial.agent.codegraph.CodeGraphManager
 import com.tom.rv2ide.preferences.internal.prefManager
+import com.tom.rv2ide.services.AssistantOverlayService
 import com.tom.rv2ide.resources.R.string
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -130,12 +131,99 @@ private class CapabilitiesPage(
 ) : IPreferenceScreen() {
 
   init {
+    addPreference(AssistantOverlayPreference())
     addPreference(CustomAgentsPreference())
     addPreference(SkillsPreference())
     addPreference(MemoriesPreference())
     addPreference(McpServersPreference())
     addPreference(CodeGraphPreference())
   }
+}
+
+/**
+ * 应用外系统悬浮入口。
+ *
+ * <p><b>为什么需要它</b>：`AssistantOverlayService` 能挂出系统级悬浮窗，但没有入口就
+ * 等于不存在。本项负责「申请悬浮权限 + 拉起/关闭服务」这条闭环。
+ *
+ * <p><b>为什么不是 [SwitchPreference]</b>：Switch 的语义是一份**持久布尔**，而「悬浮窗
+ * 是否显示」是**运行时状态**（服务在不在跑），由系统、用户、进程死亡共同决定，无法用
+ * 一个存进 SharedPreferences 的开关表达。用普通条目 + 动态 summary 反映真实状态。
+ *
+ * <p><b>权限闭环（选「再点一次」）</b>：Android 的 `SYSTEM_ALERT_WINDOW` 是特殊权限，
+ * 只能跳系统页让用户手动开启，没有「授权回调」。因此：点击时若 `canDrawOverlays` 为
+ * false，则跳 `ACTION_MANAGE_OVERLAY_PERMISSION`；用户回来后**再点一次**即生效。
+ * 为让用户知道「该再点一次」，summary 每次渲染都重读权限与服务状态——回来后能看到
+ * 「已授予权限，点击开启」而不是停在旧文案。刻意不挂 `onResume`：那要改偏好框架，
+ * 侵入大于收益。
+ *
+ * <p><b>summary 的时序</b>：必须在 [onCreateView]（`super` 之后）里写，不能在
+ * [onCreatePreference] 里写——基类会用静态 `summary` 资源覆盖前者（与
+ * [CodeGraphPreference] 同一个坑）。
+ */
+@Parcelize
+private class AssistantOverlayPreference(
+    override val key: String = "assistant_overlay",
+    override val title: Int = R.string.ai_agent_overlay_title,
+    override val summary: Int? = R.string.ai_agent_overlay_summary,
+) : BasePreference() {
+
+  override fun onCreatePreference(context: Context): Preference =
+      androidx.preference.Preference(context).apply { key = "assistant_overlay" }
+
+  override fun onCreateView(context: Context): Preference {
+    val pref = super.onCreateView(context)
+    // super 之后：此时静态 summary 已写完，动态状态才不会被盖掉。
+    pref.summary = describe(context)
+    return pref
+  }
+
+  /** 状态 → 一行摘要（区分「无权限 / 有权限未开 / 已开」三种情况）。 */
+  private fun describe(context: Context): String =
+      when {
+        !canDrawOverlays(context) -> context.getString(R.string.ai_agent_overlay_need_permission)
+        AssistantOverlayService.isShowing -> context.getString(R.string.ai_agent_overlay_on)
+        else -> context.getString(R.string.ai_agent_overlay_off)
+      }
+
+  override fun onPreferenceClick(preference: Preference): Boolean {
+    val context = preference.context
+
+    // 无权限：跳系统授权页。requestDisplayOverOtherAppsPermission 内部会按上下文
+    // 决定是否加 FLAG_ACTIVITY_NEW_TASK（Activity 上下文不加，Service 上下文加），
+    // 这里传 Activity 或 Activity 派生的 Context 都安全。
+    if (!canDrawOverlays(context)) {
+      val activity = context as? android.app.Activity
+      val error =
+          if (activity != null) {
+            com.termux.shared.android.PermissionUtils.requestDisplayOverOtherAppsPermission(activity)
+          } else {
+            com.termux.shared.android.PermissionUtils.requestDisplayOverOtherAppsPermission(context)
+          }
+      if (error != null) {
+        // 拉不起系统页（极少数 ROM 没有该 Activity）：给出可操作的提示而不是静默。
+        Toast.makeText(context, R.string.ai_agent_overlay_no_settings, Toast.LENGTH_LONG).show()
+      }
+      return true
+    }
+
+    // 有权限：按当前状态开关。
+    if (AssistantOverlayService.isShowing) {
+      AssistantOverlayService.hide(context)
+    } else {
+      AssistantOverlayService.show(context)
+    }
+    // 立即按「点击后的预期状态」刷新一次；真正的状态以后再次打开设置时重读。
+    // 不写死为 isShowing 的即时值——服务启停是异步的，写死会读到旧值。
+    preference.summary =
+        context.getString(
+            if (AssistantOverlayService.isShowing) R.string.ai_agent_overlay_off
+            else R.string.ai_agent_overlay_on)
+    return true
+  }
+
+  private fun canDrawOverlays(context: Context): Boolean =
+      com.termux.shared.android.PermissionUtils.checkDisplayOverOtherAppsPermission(context)
 }
 
 /** 高级：提示词模板与自动切换服务商。改动频率低，但出问题时要能找到。 */

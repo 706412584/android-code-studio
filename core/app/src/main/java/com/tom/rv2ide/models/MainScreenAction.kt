@@ -47,6 +47,7 @@ constructor(
     const val ACTION_PREFERENCES = 4
     const val ACTION_DONATE = 5
     const val ACTION_DOCS = 6
+    const val ACTION_AI_ASSISTANT = 7
 
     /** Get all main screen actions. */
     @JvmStatic
@@ -75,8 +76,26 @@ constructor(
 
         val docs = MainScreenAction(ACTION_DOCS, R.string.btn_docs, R.drawable.ic_docs)
 
+        // AI 助手页入口。放在动作列表最前：它是「新建 / 打开项目」之外的第三种
+        // 进入工作流的方式（先问再建），且是主页上唯一进入应用内页面的动作。
+        //
+        // 复用主页动作列表而不是往工具栏加图标：主页动作列表本就是「主页能做的事」
+        // 的清单，页面导航在仓库里也只有 `viewModel.setScreen` 一条路。工具栏图标需要
+        // 先给 MainActivity 引入 options menu（它当前没有 setSupportActionBar），
+        // 那会改动全局工具栏外观，收益只是语义更好，风险不划算。
+        val aiAssistant =
+            MainScreenAction(
+                ACTION_AI_ASSISTANT,
+                R.string.ai_assistant_title,
+                // 图标在 app 模块（core/app/src/main/res/drawable/ic_ai_agent.xml），
+                // 而本文件用的是 resources 模块的 R（见文件头的 import）。两个 R 的简单名
+                // 相同，无法同时 import，因此这里全限定到 app 的 R。
+                com.tom.rv2ide.R.drawable.ic_ai_agent,
+            )
+
         Collections.addAll(
             this,
+            aiAssistant,
             createProject,
             openProject,
             cloneGitRepository,

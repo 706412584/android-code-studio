@@ -26,6 +26,15 @@
 
   <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
+  <!--
+    应用外系统悬浮（AI 助手悬浮窗）。targetSdk=28 在 Android 10 (SDK29) 上
+    仍属「特殊权限」：只声明 Manifest 不够，运行时须由设置入口
+    （CapabilitiesPage 的 AssistantOverlayPreference）用 Settings.canDrawOverlays()
+    检查、经 ACTION_MANAGE_OVERLAY_PERMISSION 引导用户授权后才拉起
+    AssistantOverlayService。
+  -->
+  <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+
   <application
     android:allowBackup="false"
     android:allowNativeHeapPointerTagging="false"
@@ -74,6 +83,16 @@
       android:configChanges="orientation|screenSize"
       android:launchMode="singleTop"
       android:name=".activities.editor.EditorActivityKt" />
+
+    <!--
+      AI 助手真全屏宿主：独立窗口 + 隐藏系统栏（沉浸式）。
+      与 FloatingAssistantView.Mode.FULLSCREEN（窗口内最大化）不同，这里是真正的全屏。
+    -->
+    <activity
+      android:exported="false"
+      android:name=".activities.editor.AssistantFullscreenActivity"
+      android:theme="@style/Theme.AndroidIDE" />
+
     <activity android:name=".activities.PreferencesActivity" />
     <activity android:name=".activities.AboutActivity" />
     <activity android:name=".activities.ContributorsActivity" />
@@ -108,6 +127,18 @@
       android:name=".activities.NCrashHandlerActivity"
       android:exported="false"
       android:theme="@style/Theme.AndroidIDE" />
+
+    <!--
+      附件选择蹦床：透明、无标题、不出现在最近任务里。
+      exported=false 是硬性安全要求——被导出则任意应用可借本应用的
+      SYSTEM_ALERT_WINDOW 豁免拉起系统选择器（见 AttachmentPickerActivity 类注释）。
+      刻意不设 noHistory=true：选择器在前台时蹦床须留在栈里才能收到结果。
+    -->
+    <activity
+      android:name=".activities.AttachmentPickerActivity"
+      android:exported="false"
+      android:excludeFromRecents="true"
+      android:theme="@android:style/Theme.Translucent.NoTitleBar" />
 
     <provider
       android:authorities="com.tom.rv2ide.documents"
@@ -153,6 +184,14 @@
     <service
       android:exported="false"
       android:name=".services.builder.GradleBuildService" />
+
+    <!--
+      应用外系统悬浮助手：前台服务 + TYPE_APPLICATION_OVERLAY 窗口。
+      exported=false：只允许本应用启动，避免第三方应用拉起常驻悬浮窗。
+    -->
+    <service
+      android:exported="false"
+      android:name=".services.AssistantOverlayService" />
 
     <service
       android:name="com.termux.app.TermuxService"

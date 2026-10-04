@@ -17,6 +17,7 @@
 
 package com.tom.rv2ide.artificial.agent
 
+import android.app.Activity
 import android.content.Context
 import android.content.Intent
 import com.tom.rv2ide.activities.PreferencesActivity
@@ -48,6 +49,12 @@ object AssistantSettings {
         ArrayList(screen.children),
     )
     intent.putExtra(PreferencesActivity.EXTRA_DIRECT_TITLE, context.getString(screen.title))
+    // 非 Activity 上下文（应用外悬浮的 Service 宿主）启动 Activity 必须带 NEW_TASK，
+    // 否则抛 "Calling startActivity() from outside of an Activity context requires
+    // FLAG_ACTIVITY_NEW_TASK"。Activity 上下文不能带该 flag（会另起任务栈），故按类型分支。
+    if (context !is Activity) {
+      intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+    }
     context.startActivity(intent)
   }
 }

@@ -249,6 +249,14 @@
   <!-- CodeGraph 语义索引 -->
   <string name="ai_agent_codegraph_title">CodeGraph index</string>
   <string name="ai_agent_codegraph_summary">Semantic code index for the assistant (optional)</string>
+
+  <!-- 应用外系统悬浮入口（设置 → AI 助手 → 能力） -->
+  <string name="ai_agent_overlay_title">Float over other apps</string>
+  <string name="ai_agent_overlay_summary">Show the assistant as a system overlay above other apps</string>
+  <string name="ai_agent_overlay_need_permission">Permission required — tap to grant "Display over other apps"</string>
+  <string name="ai_agent_overlay_off">Permission granted — tap to start floating</string>
+  <string name="ai_agent_overlay_on">Floating — tap to stop</string>
+  <string name="ai_agent_overlay_no_settings">This device has no "Display over other apps" settings page</string>
   <string name="ai_agent_codegraph_state_installed">Installed · v%1$s · %2$s on disk</string>
   <string name="ai_agent_codegraph_state_partial">Incomplete install — %1$s missing</string>
   <string name="ai_agent_codegraph_state_missing">Not installed</string>
@@ -961,6 +969,10 @@
   <string name="lsp_server_success_title">Download Complete</string>
 
   <string name="title_gradle_service_notification_channel">Android Code Studio Gradle build service</string>
+
+  <!-- 应用外系统悬浮助手（AssistantOverlayService）的常驻通知 -->
+  <string name="title_assistant_overlay_notification">AI assistant is floating over other apps</string>
+  <string name="title_assistant_overlay_notification_channel">Android Code Studio floating assistant</string>
   <string name="msg_hex_color_code">Hex color code</string>
   <string name="msg_color_picker_pick">Pick</string>
   <string name="msg_chmod_exec">Setting executable permissions…</string>

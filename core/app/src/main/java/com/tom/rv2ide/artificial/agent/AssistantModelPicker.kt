@@ -17,6 +17,7 @@
 
 package com.tom.rv2ide.artificial.agent
 
+import android.app.Dialog
 import android.content.Context
 import android.view.LayoutInflater
 import android.view.View
@@ -50,10 +51,28 @@ object AssistantModelPicker {
    * 显示选择面板。
    *
    * @param onChanged 选择生效后的回调，用于刷新面板标题上的「服务商 / 模型」文案
+   * @param onOpenSettings 点面板里的「设置」时的跳转动作。由宿主注入——非 Activity 宿主
+   *   的跳转方式与 Activity 不同（例如应用外悬浮要走自己的入口）。默认回退到
+   *   [AssistantSettings.open]，保持既有调用点的行为不变。
+   * @param asDialog 是否用普通 [Dialog] 而非 [BottomSheetDialog]。应用外悬浮（Service 宿主）
+   *   **必须**为 true：`BottomSheetDialog` 依赖 Activity 的 window token 与 `window` 属性，
+   *   在 `TYPE_APPLICATION_OVERLAY` 的 Service 窗口下无法正常显示。默认 false，保持既有
+   *   调用点（Activity 宿主）行为不变。
+   * @param configureWindow 可选：在 `show()` 之前配置弹窗的 window（例如给 Service 宿主
+   *   的弹窗设置 `TYPE_APPLICATION_OVERLAY`）。Activity 宿主传 null 即可。
    */
-  fun show(context: Context, onChanged: () -> Unit) {
+  fun show(
+      context: Context,
+      onChanged: () -> Unit,
+      onOpenSettings: (() -> Unit)? = null,
+      asDialog: Boolean = false,
+      configureWindow: ((Dialog) -> Unit)? = null,
+  ) {
     val agents = Agents(context)
-    val sheet = BottomSheetDialog(context)
+    // BottomSheetDialog 与 Dialog 都继承 android.app.Dialog；show()/dismiss()/setContentView()
+    // 三者都在基类上，故后续代码无需按类型分叉，只在构造处二选一。
+    val dialog: Dialog =
+        if (asDialog) Dialog(context) else BottomSheetDialog(context)
     val root =
         LayoutInflater.from(context)
             .inflate(R.layout.dialog_assistant_model_picker, null, false)
@@ -115,7 +134,7 @@ object AssistantModelPicker {
                     agents.setAgent(model)
                     agents.setProvider(entry.id)
                     onChanged()
-                    sheet.dismiss()
+                    dialog.dismiss()
                   },
               ))
         }
@@ -130,7 +149,7 @@ object AssistantModelPicker {
                   subtitle = context.getString(string.ai_assistant_custom_model_hint),
                   selected = false,
                   indent = true,
-                  onClick = { promptCustomModel(context, agents, onChanged, sheet) },
+                  onClick = { promptCustomModel(context, agents, onChanged, dialog) },
               ))
         }
         if (entry.id == LOCAL_PROVIDER_ID) {
@@ -142,20 +161,22 @@ object AssistantModelPicker {
                   subtitle = localModelSummary(context),
                   selected = false,
                   indent = true,
-                  onClick = { promptLocalModel(context, agents, onChanged, sheet) },
+                  onClick = { promptLocalModel(context, agents, onChanged, dialog) },
               ))
         }
       }
     }
 
     root.findViewById<View>(R.id.pickerSettings).setOnClickListener {
-      sheet.dismiss()
-      AssistantSettings.open(context)
+      dialog.dismiss()
+      (onOpenSettings ?: { AssistantSettings.open(context) }).invoke()
     }
 
-    sheet.setContentView(root)
+    dialog.setContentView(root)
+    // 允许宿主在 show() 前配置 window（如给 Service 窗口的弹窗设 TYPE_APPLICATION_OVERLAY）。
+    configureWindow?.invoke(dialog)
     rebuild()
-    sheet.show()
+    dialog.show()
   }
 
   /** 一个已配置的服务商及其可用模型。 */
@@ -265,7 +286,7 @@ object AssistantModelPicker {
       context: Context,
       agents: Agents,
       onChanged: () -> Unit,
-      sheet: BottomSheetDialog,
+      picker: Dialog,
   ) {
     val input =
         android.widget.EditText(context).apply {
@@ -283,7 +304,7 @@ object AssistantModelPicker {
             agents.setAgent(model)
             onChanged()
           }
-          sheet.dismiss()
+          picker.dismiss()
         }
         .setNegativeButton(android.R.string.cancel, null)
         .show()
@@ -311,7 +332,7 @@ object AssistantModelPicker {
       context: Context,
       agents: Agents,
       onChanged: () -> Unit,
-      sheet: BottomSheetDialog,
+      picker: Dialog,
   ) {
     val prefs = localPrefs(context)
     val baseUrlInput =
@@ -350,7 +371,7 @@ object AssistantModelPicker {
             agents.setAgent(model)
           }
           onChanged()
-          sheet.dismiss()
+          picker.dismiss()
         }
         .setNegativeButton(android.R.string.cancel, null)
         .show()
