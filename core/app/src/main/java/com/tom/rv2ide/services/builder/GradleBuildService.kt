@@ -44,6 +44,7 @@ import com.tom.rv2ide.services.ToolingServerNotStartedException
 import com.tom.rv2ide.services.builder.ToolingServerRunner.OnServerStartListener
 import com.tom.rv2ide.tasks.ifCancelledOrInterrupted
 import com.tom.rv2ide.tasks.runOnUiThread
+import com.tom.rv2ide.tooling.api.Aapt2Config
 import com.tom.rv2ide.tooling.api.ForwardingToolingApiClient
 import com.tom.rv2ide.tooling.api.IProject
 import com.tom.rv2ide.tooling.api.IToolingApiClient
@@ -582,6 +583,26 @@ class GradleBuildService :
   internal fun startToolingServer(listener: OnServerStartListener?) {
     if (toolingServerRunner?.isStarted != true) {
       val envs = TermuxShellEnvironment().getEnvironment(this, false)
+
+      // 把 AAPT2 路径随环境变量交给 tooling server，作为 RPC 之外的独立通道。
+      // 原因见 Aapt2Config.ENV_AAPT2_OVERRIDE 的文档。
+      //
+      // 必须确认文件已存在再传：`Environment.AAPT2` 只是路径声明
+      // （`Environment.init` 里的 `new File(ANDROIDIDE_HOME, "aapt2")`），
+      // 而真正的拷贝发生在 `ToolsManager.init` 的异步任务里。若此时尚未落地，
+      // 传下去会得到一个**指向不存在文件**的 override——那比不传更糟，
+      // AGP 会直接以「指定的 aapt2 不存在」失败。
+      val aapt2 = Environment.AAPT2
+      if (aapt2.isFile) {
+        envs[Aapt2Config.ENV_AAPT2_OVERRIDE] = aapt2.absolutePath
+      } else {
+        log.warn(
+            "AAPT2 not yet extracted at {}; skipping the override fallback. " +
+                "The RPC path still supplies it when it succeeds.",
+            aapt2,
+        )
+      }
+
       toolingServerRunner = ToolingServerRunner(listener, this).also { it.startAsync(envs) }
       return
     }

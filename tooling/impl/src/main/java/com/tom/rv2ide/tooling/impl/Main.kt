@@ -23,6 +23,7 @@ package com.tom.rv2ide.tooling.impl
  */
 
 import com.tom.rv2ide.logging.JvmStdErrAppender
+import com.tom.rv2ide.tooling.api.Aapt2Config
 import com.tom.rv2ide.tooling.api.IToolingApiClient
 import com.tom.rv2ide.tooling.api.util.ToolingApiLauncher
 import com.tom.rv2ide.tooling.impl.internal.ProjectImpl
@@ -195,7 +196,29 @@ object Main {
         val filteredArgs = args.filter { it != null && it.isNotBlank() }
         launcher.addArguments(filteredArgs)
       } catch (e: Throwable) {
+        // 这里丢弃的是**全部**构建参数，不只是日志相关的那几个。其中
+        // `android.aapt2FromMavenOverride` 一旦缺失，AGP 会回退去 Maven 取
+        // `aapt2:<version>:linux`——那是 x86-64 二进制，在 arm64 设备上执行会报
+        // `syntax error: unexpected '('`，导致整个构建失败。
+        //
+        // 因此失败时用环境变量里的路径兜底（由 GradleBuildService 启动本进程时注入）。
+        // 其余参数（--stacktrace / --info 等）丢失只影响日志详细程度，不兜底。
         LOG.error("Unable to get build arguments from tooling client", e)
+        val aapt2Path = System.getenv(Aapt2Config.ENV_AAPT2_OVERRIDE)
+        if (!aapt2Path.isNullOrBlank()) {
+          LOG.warn(
+              "Falling back to aapt2 override from {}: {}",
+              Aapt2Config.ENV_AAPT2_OVERRIDE,
+              aapt2Path,
+          )
+          launcher.addArguments("-P${Aapt2Config.PROPERTY_AAPT2_FROM_MAVEN_OVERRIDE}=$aapt2Path")
+        } else {
+          LOG.error(
+              "{} is not set either; AAPT2 will be resolved from Maven and is likely to fail " +
+                  "on this device",
+              Aapt2Config.ENV_AAPT2_OVERRIDE,
+          )
+        }
       }
     }
   }
