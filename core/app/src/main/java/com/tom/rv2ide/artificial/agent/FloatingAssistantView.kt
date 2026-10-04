@@ -390,7 +390,16 @@ class FloatingAssistantView(
     // 标题栏：左菜单开抽屉，右侧全屏/最小化/关闭。
     binding.assistantMenu.setOnClickListener { toggleConversationPanel() }
     binding.assistantTodos.todoHeader.setOnClickListener { toggleTodos() }
+    // 全屏键两档语义：
+    // - 单击 = 窗口内最大化（现状，行为零变化）；
+    // - 长按 = 拉起沉浸式全屏 Activity（真全屏，横屏/沉浸式，是独立的屏幕）。
+    //   长按而不是单击：单击已是评审通过的窗口内最大化，改成跳 Activity 会破坏现有习惯；
+    //   长按是「同一个按钮上的进阶动作」，与仓库里其它长按用法一致。
     binding.assistantFullscreen.setOnClickListener { toggleFullscreen() }
+    binding.assistantFullscreen.setOnLongClickListener {
+      launchTrueFullscreen()
+      true
+    }
     // 最小化与关闭都是收起面板（再点 FAB 可打开），行为一致，语义不同：
     // 关闭是「我不需要它了」，最小化是「先收起来，等下还要用」。
     // 两者都保留面板状态，不做额外区分——差别只在用户的预期，不在实现。
@@ -751,6 +760,33 @@ class FloatingAssistantView(
     applyMode(if (mode == Mode.FULLSCREEN) defaultMode else Mode.FULLSCREEN)
   }
 
+  /**
+   * 拉起沉浸式全屏 Activity（真全屏）。
+   *
+   * <p>与 [toggleFullscreen] 的区别：那个只把面板撑满**当前窗口**；本方法开一个独立屏幕
+   * （横屏/沉浸式），是用户能真正进入的第三种宿主形态。
+   *
+   * <p>会话连续性不靠传 id：`AssistantFullscreenActivity` 会
+   * `setWorkspace(IProjectManager.getInstance().projectDir)`，而
+   * `AgentOrchestrator.setWorkspace` 会恢复该工作区上次的会话。
+   *
+   * <p>`FLAG_ACTIVITY_NEW_TASK` 对应用外悬浮（Service context）是必需的——从非 Activity
+   * context 启动 Activity 必须带它；对 Activity 宿主无害。Android 10 起后台启动 Activity
+   * 受限，可能被系统拦截，因此**失败一律吞掉**：这只是多一个入口，拉不起也不该让面板崩。
+   */
+  private fun launchTrueFullscreen() {
+    val intent =
+        android.content.Intent(
+                context,
+                com.tom.rv2ide.activities.editor.AssistantFullscreenActivity::class.java)
+            .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+    try {
+      context.startActivity(intent)
+    } catch (e: Exception) {
+      // 后台启动被拦 / 没有可用的 Activity：静默忽略，不打断当前会话。
+    }
+  }
+
   private fun applyMode(newMode: Mode) {
     mode = newMode
     val card = binding.assistantCard
@@ -758,11 +794,15 @@ class FloatingAssistantView(
 
     // 全屏按钮的语义随当前形态翻转：全屏时说「退出全屏」，否则说「全屏」。
     // 写进 contentDescription 而不是按钮文字（按钮是图标），无障碍服务读它。
-    binding.assistantFullscreen.contentDescription =
+    // 末尾补上长按提示：长按是进入沉浸式全屏的入口，纯图标按钮无法自述，
+    // 不写进无障碍描述的话读屏用户完全发现不了这个动作。
+    val fullscreenLabel =
         context.getString(
             if (newMode == Mode.FULLSCREEN) string.ai_assistant_side
             else string.ai_assistant_fullscreen
         )
+    binding.assistantFullscreen.contentDescription =
+        "$fullscreenLabel · ${context.getString(string.ai_assistant_fullscreen_hint)}"
 
     when (newMode) {
       Mode.FULLSCREEN -> {

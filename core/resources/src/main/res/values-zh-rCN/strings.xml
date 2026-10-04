@@ -332,6 +332,7 @@
   <string name="ai_assistant_title">AI 助手</string>
   <string name="ai_assistant_side">侧栏</string>
   <string name="ai_assistant_fullscreen">全屏</string>
+  <string name="ai_assistant_fullscreen_hint">长按进入沉浸式全屏</string>
   <string name="ai_assistant_new_conversation">新会话</string>
   <string name="ai_assistant_minimize">最小化</string>
   <string name="ai_assistant_close">关闭</string>

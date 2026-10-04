@@ -118,8 +118,12 @@ class AssistantFullscreenActivity : EdgeToEdgeIDEActivity() {
             FloatingAssistantView.Mode.FULLSCREEN,
         )
     view.attach()
-    // 绑定当前打开的项目。没有打开项目时返回的目录不存在，助手会自行提示「请先打开项目」。
-    view.setWorkspace(IProjectManager.getInstance().projectDir)
+    // 绑定当前打开的项目。必须走 getWorkspace()（可空）而不是 projectDir：
+    // ProjectManagerImpl.projectDir 的 getter 是 checkNotNull(_projectDir){...}，
+    // **未打开项目时直接抛 IllegalStateException**（真机 am start 拉本 Activity 时实测崩溃），
+    // 它不返回 null 也不返回不存在的目录。getWorkspace() 可空、getProjectDir() 不抛；
+    // 无项目时传 null，助手会自行提示「请先打开项目」。
+    view.setWorkspace(IProjectManager.getInstance().getWorkspace()?.getProjectDir())
     assistant = view
 
     return container
