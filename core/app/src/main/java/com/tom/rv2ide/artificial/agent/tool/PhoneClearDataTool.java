@@ -24,6 +24,7 @@ import com.tom.rv2ide.ai.tool.api.ToolCategory;
 import com.tom.rv2ide.ai.tool.api.ToolDisplayCategory;
 import com.tom.rv2ide.ai.tool.api.ToolNames;
 import com.tom.rv2ide.ai.tool.api.ToolResult;
+import com.tom.rv2ide.BuildConfig;
 import java.util.regex.Pattern;
 import org.json.JSONObject;
 
@@ -138,6 +139,12 @@ public final class PhoneClearDataTool extends BaseTool {
 
   /**
    * 校验包名。通过返回 null，否则返回面向模型的错误说明。
+   *
+   * <p>拒绝名单里必须包含本应用自己：{@code pm clear} 对应用数据的破坏力等同卸载，
+   * 而 ACS 的私有目录 {@code /data/data/<pkg>/files} 下装着 Android SDK、Termux rootfs
+   * 与 JDK（数 GB，无法从网络重建）。一旦 agent 清掉自己，用户丢的不只是配置，
+   * 而是整套工具链。用 {@link BuildConfig#APPLICATION_ID} 而非硬编码，
+   * 这样改包名（含 debug 后缀）后仍然生效。
    */
   static String validatePackage(String packageName) {
     if (!PACKAGE_PATTERN.matcher(packageName).matches()) {
@@ -150,6 +157,11 @@ public final class PhoneClearDataTool extends BaseTool {
         || packageName.startsWith("android.")
         || packageName.startsWith("com.google.android.")) {
       return "拒绝清除系统包: " + packageName + "。pm clear 系统应用可能破坏设备。";
+    }
+    if (com.tom.rv2ide.BuildConfig.APPLICATION_ID.equals(packageName)) {
+      return "拒绝清除本应用自身的数据: "
+          + packageName
+          + "。其私有目录含 Android SDK / Termux rootfs / JDK，清除后无法恢复。";
     }
     return null;
   }
