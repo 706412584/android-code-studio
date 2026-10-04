@@ -22,6 +22,7 @@ import com.tom.rv2ide.ai.tool.ShellBackendRegistry;
 import com.tom.rv2ide.ai.tool.ToolContext;
 import com.tom.rv2ide.ai.tool.api.ToolCategory;
 import com.tom.rv2ide.ai.tool.api.ToolDisplayCategory;
+import com.tom.rv2ide.ai.tool.api.ToolNames;
 import com.tom.rv2ide.ai.tool.api.ToolResult;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -69,7 +70,7 @@ public final class PhoneViewHierarchyTool extends BaseTool {
 
   @Override
   public String getName() {
-    return "phone_view_hierarchy";
+    return ToolNames.PHONE_VIEW_HIERARCHY;
   }
 
   @Override

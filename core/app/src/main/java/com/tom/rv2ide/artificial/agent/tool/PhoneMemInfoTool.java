@@ -23,6 +23,7 @@ import com.tom.rv2ide.ai.tool.ShellBackendRegistry;
 import com.tom.rv2ide.ai.tool.ToolContext;
 import com.tom.rv2ide.ai.tool.api.ToolCategory;
 import com.tom.rv2ide.ai.tool.api.ToolDisplayCategory;
+import com.tom.rv2ide.ai.tool.api.ToolNames;
 import com.tom.rv2ide.ai.tool.api.ToolResult;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -102,7 +103,7 @@ public final class PhoneMemInfoTool extends BaseTool {
 
   @Override
   public String getName() {
-    return "phone_meminfo";
+    return ToolNames.PHONE_MEM_INFO;
   }
 
   @Override

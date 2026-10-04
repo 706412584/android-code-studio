@@ -73,6 +73,16 @@ public final class ToolNames {
     public static final String PHONE_WAIT_FOR = "phone_wait_for";
     /** 清除应用数据（`pm clear`）。 */
     public static final String PHONE_CLEAR_DATA = "phone_clear_data";
+    /** 读取设备内存与帧统计（`meminfo` / `gfxinfo`）。 */
+    public static final String PHONE_MEM_INFO = "phone_meminfo";
+    /** 执行多步测试场景（步骤数组 + 期望断言）。 */
+    public static final String PHONE_TEST_SCENARIO = "phone_test_scenario";
+    /** 保存/比对截图基线。 */
+    public static final String PHONE_BASELINE = "phone_baseline";
+    /** 执行一个动作并连拍多帧（动作级截图回归）。 */
+    public static final String PHONE_ACTION_CAPTURE = "phone_action_capture";
+    /** 两张截图逐像素对比并生成差异图。 */
+    public static final String PHONE_SCREENSHOT_COMPARE = "phone_screenshot_compare";
 
     private static final String CUSTOM_AGENT_PREFIX = "agentx_";
     private static final String CUSTOM_MCP_PREFIX = "mcpx_";

@@ -22,6 +22,7 @@ import com.tom.rv2ide.ai.tool.ShellBackendRegistry;
 import com.tom.rv2ide.ai.tool.ToolContext;
 import com.tom.rv2ide.ai.tool.api.ToolCategory;
 import com.tom.rv2ide.ai.tool.api.ToolDisplayCategory;
+import com.tom.rv2ide.ai.tool.api.ToolNames;
 import com.tom.rv2ide.ai.tool.api.ToolResult;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -41,16 +42,10 @@ import org.slf4j.LoggerFactory;
  * {@code dumpsys window} 的 {@code mCurrentFocus / mFocusedApp}。
  *
  * <p><b>权限</b>：需要 adb 级权限（Shizuku）；无权限时明确报错。
- *
- * <p><b>命名</b>：工具名 {@code phone_current_activity}。此名尚未登记到
- * {@code ToolNames}（该文件不在本任务边界内），集成时由集成方补一个常量。
  */
 public final class PhoneCurrentActivityTool extends BaseTool {
 
   private static final Logger log = LoggerFactory.getLogger(PhoneCurrentActivityTool.class);
-
-  /** 工具名。集成时应在 ToolNames 中新增同名常量。 */
-  public static final String NAME = "phone_current_activity";
 
   private static final long ACTIVITY_TIMEOUT_MS = 15_000L;
   private static final long WINDOW_TIMEOUT_MS = 15_000L;
@@ -76,7 +71,7 @@ public final class PhoneCurrentActivityTool extends BaseTool {
 
   @Override
   public String getName() {
-    return NAME;
+    return ToolNames.PHONE_CURRENT_ACTIVITY;
   }
 
   @Override

@@ -25,6 +25,7 @@ import com.tom.rv2ide.ai.tool.ShellBackendRegistry;
 import com.tom.rv2ide.ai.tool.ToolContext;
 import com.tom.rv2ide.ai.tool.api.ToolCategory;
 import com.tom.rv2ide.ai.tool.api.ToolDisplayCategory;
+import com.tom.rv2ide.ai.tool.api.ToolNames;
 import com.tom.rv2ide.ai.tool.api.ToolResult;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
@@ -89,7 +90,7 @@ public final class PhoneScreenshotTool extends BaseTool {
 
   @Override
   public String getName() {
-    return "phone_screenshot";
+    return ToolNames.PHONE_SCREENSHOT;
   }
 
   @Override
