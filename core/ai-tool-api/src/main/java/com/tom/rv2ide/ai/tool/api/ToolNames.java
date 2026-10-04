@@ -46,15 +46,33 @@ public final class ToolNames {
     public static final String SKILL_WRITE = "skill_write";
     public static final String WEB_SEARCH = "web_search";
     public static final String WEB_FETCH = "web_fetch";
+    /** 通用 HTTP 请求（任意方法/头/体），供调试接口、上传、带鉴权的调用使用。 */
+    public static final String HTTP_REQUEST = "http_request";
     public static final String IMAGE_UNDERSTANDING = "image_understanding";
     public static final String IMAGE_GENERATION = "image_generation";
+    // ---- 手机控制（真机测试闭环，经 Shizuku 走 adb 级权限，不依赖无障碍服务） ----
+    /** 截取设备屏幕。 */
     public static final String PHONE_SCREENSHOT = "phone_screenshot";
+    /** 按坐标点击。 */
     public static final String PHONE_CLICK = "phone_click";
+    /** 按视图选择器点击（基于节点树定位）。 */
     public static final String PHONE_CLICK_VIEW = "phone_click_view";
+    /** 滑动/拖拽。 */
     public static final String PHONE_SWIPE = "phone_swipe";
+    /** 长按。 */
     public static final String PHONE_LONG_PRESS = "phone_long_press";
+    /** dump 视图节点树。 */
     public static final String PHONE_VIEW_HIERARCHY = "phone_view_hierarchy";
+    /** 全局动作（返回/主页/最近任务等）。 */
     public static final String PHONE_GLOBAL_ACTION = "phone_global_action";
+    /** 向当前聚焦输入框输入文本。 */
+    public static final String PHONE_INPUT_TEXT = "phone_input_text";
+    /** 查询当前前台 Activity。 */
+    public static final String PHONE_CURRENT_ACTIVITY = "phone_current_activity";
+    /** 等待某个界面条件成立（如某 Activity/视图出现）。 */
+    public static final String PHONE_WAIT_FOR = "phone_wait_for";
+    /** 清除应用数据（`pm clear`）。 */
+    public static final String PHONE_CLEAR_DATA = "phone_clear_data";
 
     private static final String CUSTOM_AGENT_PREFIX = "agentx_";
     private static final String CUSTOM_MCP_PREFIX = "mcpx_";

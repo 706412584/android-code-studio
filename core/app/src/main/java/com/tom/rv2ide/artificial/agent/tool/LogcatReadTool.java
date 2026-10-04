@@ -19,23 +19,19 @@ package com.tom.rv2ide.artificial.agent.tool;
 
 import android.content.Context;
 import com.tom.rv2ide.ai.tool.BaseTool;
+import com.tom.rv2ide.ai.tool.ShellBackendRegistry;
 import com.tom.rv2ide.ai.tool.ToolContext;
 import com.tom.rv2ide.ai.tool.api.ToolCategory;
 import com.tom.rv2ide.ai.tool.api.ToolDisplayCategory;
 import com.tom.rv2ide.ai.tool.api.ToolResult;
-import java.io.BufferedReader;
-import java.io.InputStream;
-import java.io.InputStreamReader;
-import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.TimeUnit;
 import org.json.JSONObject;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * 读取应用日志。
+ * 读取应用日志，并可做结构化崩溃判定。
  *
  * <p>「运行 app 测试」闭环的第四步：改代码 → 构建 → 安装 → 启动 → <b>读日志</b> → 修。
  *
@@ -47,6 +43,15 @@ import org.slf4j.LoggerFactory;
  * </ul>
  * 因此这里直接调用系统 {@code logcat -d}：dump 后即退出，天然是「取一段」语义，
  * 且不侵入用户项目、不与任何 UI 竞争。
+ *
+ * <p><b>两种模式</b>：
+ * <ul>
+ *   <li>{@code raw}（默认）— 返回过滤后的日志文本，保持原有行为
+ *   <li>{@code crash} — <b>结构化崩溃判定</b>：读 crash buffer 并按 PID 过滤
+ *       {@code FATAL EXCEPTION}，返回「崩没崩 + 崩溃堆栈」；顺带识别 ANR。
+ *       这一步把「崩溃了没有」从「模型自己正则翻日志」变成一个明确结论，
+ *       是自动化验证的关键信号。
+ * </ul>
  *
  * <p><b>权限说明</b>：Android 4.1+ 起普通应用只能读取自身进程的日志。
  * 要读取其它应用的日志需要 adb 级权限（uid 2000 或 root），因此本工具需要
@@ -66,10 +71,28 @@ public final class LogcatReadTool extends BaseTool {
   /** 命令执行超时。 */
   private static final long TIMEOUT_MS = 15_000L;
 
+  /** 崩溃模式下扫描 main buffer 的行数（crash buffer 之外再兜底查一遍 FATAL）。 */
+  private static final int CRASH_SCAN_LINES = 1000;
+
+  /** 崩溃堆栈最多返回的行数，避免一次异常刷屏。 */
+  private static final int MAX_STACK_LINES = 60;
+
+  /** 模式：原始日志。 */
+  private static final String MODE_RAW = "raw";
+
+  /** 模式：结构化崩溃判定。 */
+  private static final String MODE_CRASH = "crash";
+
   private final Context appContext;
+  private final ShellBackendRegistry shellBackends;
 
   public LogcatReadTool(Context context) {
+    this(context, PhoneShellRunner.defaultRegistry(context));
+  }
+
+  public LogcatReadTool(Context context, ShellBackendRegistry shellBackends) {
     this.appContext = context.getApplicationContext();
+    this.shellBackends = shellBackends;
   }
 
   @Override
@@ -79,8 +102,9 @@ public final class LogcatReadTool extends BaseTool {
 
   @Override
   public String getDescription() {
-    return "读取本机日志（logcat），可按包名与级别过滤。"
-        + "用于查看刚启动的应用输出、排查崩溃。"
+    return "读取本机日志（logcat）。默认模式按包名与级别过滤返回原始日志。"
+        + "设置 mode=crash 可做结构化崩溃判定：按 PID 读 crash buffer 的 FATAL EXCEPTION，"
+        + "返回「是否崩溃 + 崩溃堆栈」（并识别 ANR）。"
         + "注意：读取其它应用的日志需要 adb 级权限（Shizuku 后端）；"
         + "权限不足时会返回空结果并说明原因。";
   }
@@ -113,6 +137,14 @@ public final class LogcatReadTool extends BaseTool {
                         .put("type", "string")
                         .put("description", "按应用包名过滤；省略则读取全部日志"))
                 .put(
+                    "mode",
+                    new JSONObject()
+                        .put("type", "string")
+                        .put("description", "raw（默认，返回原始日志）或 crash（结构化崩溃判定）")
+                        .put(
+                            "enum",
+                            new org.json.JSONArray().put(MODE_RAW).put(MODE_CRASH)))
+                .put(
                     "lines",
                     new JSONObject()
                         .put("type", "number")
@@ -140,6 +172,20 @@ public final class LogcatReadTool extends BaseTool {
 
   @Override
   public ToolResult execute(JSONObject input, ToolContext context) {
+    String mode = input.optString("mode", MODE_RAW).trim().toLowerCase();
+    String packageName = input.optString("packageName", "").trim();
+
+    if (MODE_CRASH.equals(mode)) {
+      return crashCheck(packageName, context);
+    }
+    return readRaw(input, context, packageName);
+  }
+
+  // ---------------------------------------------------------------------------
+  // 原始日志模式
+  // ---------------------------------------------------------------------------
+
+  private ToolResult readRaw(JSONObject input, ToolContext context, String packageName) {
     int lines = (int) input.optDouble("lines", DEFAULT_LINES);
     if (lines <= 0) {
       lines = DEFAULT_LINES;
@@ -151,7 +197,6 @@ public final class LogcatReadTool extends BaseTool {
       level = "V";
     }
     String filter = input.optString("filter", "").trim();
-    String packageName = input.optString("packageName", "").trim();
 
     if (context != null) {
       context.reportProgress("读取日志" + (packageName.isEmpty() ? "" : ": " + packageName));
@@ -170,91 +215,373 @@ public final class LogcatReadTool extends BaseTool {
     }
 
     String pid = packageName.isEmpty() ? null : findPid(packageName);
-    if (packageName != null && !packageName.isEmpty()) {
+    if (!packageName.isEmpty()) {
       if (pid == null) {
         return error("应用 " + packageName + " 没有正在运行的进程，无法按 PID 过滤日志。请先启动它。");
       }
       command.add("--pid=" + pid);
     }
 
-    Process process = null;
-    try {
-      process = new ProcessBuilder(command).redirectErrorStream(true).start();
-      StringBuilder output = new StringBuilder();
-      try (InputStream in = process.getInputStream();
-          BufferedReader reader =
-              new BufferedReader(new InputStreamReader(in, StandardCharsets.UTF_8))) {
-        String line;
-        while ((line = reader.readLine()) != null) {
-          if (filter.isEmpty() || line.toLowerCase().contains(filter.toLowerCase())) {
-            output.append(line).append('\n');
-          }
-        }
-      }
+    List<String> output = runLogcat(command);
+    if (output == null) {
+      return error(
+          "读取日志失败：没有可用输出。"
+              + "读取其它应用的日志需要 adb 级权限（Shizuku 后端），"
+              + "请确认 Shizuku 已安装并授权后重试。");
+    }
 
-      if (!process.waitFor(TIMEOUT_MS, TimeUnit.MILLISECONDS)) {
-        process.destroyForcibly();
-        return error("读取日志超时");
+    StringBuilder text = new StringBuilder();
+    for (String line : output) {
+      if (filter.isEmpty() || line.toLowerCase().contains(filter.toLowerCase())) {
+        text.append(line).append('\n');
       }
+    }
 
-      String text = output.toString();
-      if (text.trim().isEmpty()) {
-        StringBuilder sb = new StringBuilder();
-        sb.append("(没有匹配的日志)\n");
-        if (!packageName.isEmpty()) {
-          sb.append("提示：读取其它应用的日志需要 adb 级权限（Shizuku）。");
-          sb.append("若当前 shell 后端是 Termux，普通应用只能读取自身进程的日志。\n");
-        }
-        return ok(sb.toString());
-      }
-
+    if (text.toString().trim().isEmpty()) {
       StringBuilder sb = new StringBuilder();
+      sb.append("(没有匹配的日志)\n");
       if (!packageName.isEmpty()) {
-        sb.append("[应用: ").append(packageName).append(" (pid ").append(pid).append(")]\n");
+        sb.append("提示：读取其它应用的日志需要 adb 级权限（Shizuku）。");
+        sb.append("若当前 shell 后端是 Termux，普通应用只能读取自身进程的日志。\n");
       }
-      sb.append(text);
       return ok(sb.toString());
-    } catch (InterruptedException e) {
-      Thread.currentThread().interrupt();
-      return error("读取日志被中断");
-    } catch (Exception e) {
-      log.warn("读取 logcat 失败", e);
-      return error("读取日志失败: " + e.getMessage());
-    } finally {
-      if (process != null) {
-        process.destroy();
+    }
+
+    StringBuilder sb = new StringBuilder();
+    if (!packageName.isEmpty()) {
+      sb.append("[应用: ").append(packageName).append(" (pid ").append(pid).append(")]\n");
+    }
+    sb.append(text);
+    return ok(sb.toString());
+  }
+
+  // ---------------------------------------------------------------------------
+  // 结构化崩溃判定
+  // ---------------------------------------------------------------------------
+
+  /**
+   * 结构化崩溃判定。
+   *
+   * <p>步骤：
+   * <ol>
+   *   <li>{@code pidof <pkg>} 拿 PID；拿不到说明进程未运行
+   *   <li>读 {@code logcat -b crash}（按 PID 过滤）中的 {@code FATAL EXCEPTION}
+   *   <li>crash buffer 为空时，兜底扫 main buffer 最近若干行（部分 ROM 只写 main）
+   *   <li>识别 {@code ANR in <pkg>}
+   *   <li>返回「是否崩溃 + 崩溃堆栈」，而不是原始大段日志
+   * </ol>
+   *
+   * <p><b>为什么按 PID 过滤</b>：crash buffer 是全设备共享的，其它应用崩溃会污染结果。
+   * 用 {@code pidof} 得到的 PID 过滤后，命中就是我们这个进程的崩溃。
+   */
+  private ToolResult crashCheck(String packageName, ToolContext context) {
+    if (packageName.isEmpty()) {
+      return error("mode=crash 需要提供 packageName");
+    }
+    if (context != null) {
+      context.reportProgress("崩溃判定: " + packageName);
+    }
+
+    String pid = findPid(packageName);
+
+    // 1) crash buffer（按 PID 过滤，若拿到 PID）
+    List<String> crashLines =
+        runLogcat(buildCrashCommand(pid, packageName));
+
+    // 2) 兜底：main buffer 最近 N 行里找 FATAL / ANR
+    List<String> mainLines = runLogcat(buildMainFatalCommand(pid, packageName));
+
+    List<String> all = new ArrayList<>();
+    if (crashLines != null) {
+      all.addAll(crashLines);
+    }
+    if (mainLines != null) {
+      all.addAll(mainLines);
+    }
+
+    if (all.isEmpty() && pid == null) {
+      // 没有进程、也没有任何相关日志
+      return ok(
+          "崩溃判定: 未运行\n"
+              + "Package: "
+              + packageName
+              + "\n说明: 未找到正在运行的进程（pidof 为空），也没有崩溃日志。\n"
+              + "提示: 若期望它在运行，请先用 launch_app 启动；若刚启动就查不到进程，"
+              + "可能是启动即崩溃——请检查启动结果与 main buffer 日志。");
+    }
+
+    FatalReport fatal = extractFatal(all, packageName, pid);
+    String anr = findAnr(all, packageName);
+
+    StringBuilder sb = new StringBuilder();
+    boolean crashed = fatal != null || anr != null;
+
+    if (!crashed) {
+      sb.append("崩溃判定: 未崩溃\n");
+      sb.append("Package: ").append(packageName).append('\n');
+      sb.append("PID: ").append(pid == null ? "(未运行)" : pid).append('\n');
+      sb.append("扫描: crash buffer")
+          .append(pid == null ? "" : " (--pid=" + pid + ")")
+          .append(" + main buffer 最近 ")
+          .append(CRASH_SCAN_LINES)
+          .append(" 行，未发现 FATAL EXCEPTION / ANR。");
+      return ok(sb.toString());
+    }
+
+    sb.append("崩溃判定: 已崩溃\n");
+    sb.append("Package: ").append(packageName).append('\n');
+    sb.append("PID: ").append(pid == null ? "(进程已退出)" : pid).append('\n');
+
+    if (fatal != null) {
+      sb.append("类型: FATAL EXCEPTION\n");
+      if (!fatal.exception.isEmpty()) {
+        sb.append("异常: ").append(fatal.exception).append('\n');
       }
+      if (!fatal.thread.isEmpty()) {
+        sb.append("线程: ").append(fatal.thread).append('\n');
+      }
+      if (!fatal.process.isEmpty()) {
+        sb.append("进程: ").append(fatal.process).append('\n');
+      }
+      if (!fatal.stack.isEmpty()) {
+        sb.append("堆栈:\n").append(fatal.stack);
+        if (!fatal.stack.endsWith("\n")) {
+          sb.append('\n');
+        }
+      }
+    }
+    if (anr != null) {
+      sb.append("类型: ANR\n");
+      sb.append("详情: ").append(anr).append('\n');
+    }
+    sb.append("提示: 依据堆栈里的第一条应用帧定位代码；修改后重新构建安装再验证。");
+    return ok(sb.toString());
+  }
+
+  /** 一条 FATAL EXCEPTION 的解析结果。 */
+  private static final class FatalReport {
+    final String thread;
+    final String process;
+    final String exception;
+    final String stack;
+
+    FatalReport(String thread, String process, String exception, String stack) {
+      this.thread = thread == null ? "" : thread;
+      this.process = process == null ? "" : process;
+      this.exception = exception == null ? "" : exception;
+      this.stack = stack == null ? "" : stack;
     }
   }
 
   /**
-   * 按包名查找进程 PID。
+   * 从日志行中抽取第一条 {@code FATAL EXCEPTION} 及其堆栈。
    *
-   * <p>Android 没有公开 API 做这个映射，因此调用 {@code pidof}。
-   * 找不到时返回 null——调用方据此给出明确提示，而不是返回一个空日志列表。
+   * <p>crash buffer 的典型形态（每行都带 {@code E AndroidRuntime: } 前缀）：
+   * <pre>
+   * 10-04 12:34:56.789  1234  1234 E AndroidRuntime: FATAL EXCEPTION: main
+   * 10-04 12:34:56.789  1234  1234 E AndroidRuntime: Process: com.example, PID: 1234
+   * 10-04 12:34:56.789  1234  1234 E AndroidRuntime: java.lang.NullPointerException: ...
+   * 10-04 12:34:56.789  1234  1234 E AndroidRuntime: 	at com.example.MainActivity.onCreate(MainActivity.java:42)
+   * </pre>
+   * 抽取时会剥掉 logcat 的前缀，只留下异常本体。
    */
-  private String findPid(String packageName) {
-    Process process = null;
-    try {
-      process = new ProcessBuilder("pidof", packageName).redirectErrorStream(true).start();
-      try (BufferedReader reader =
-          new BufferedReader(new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
-        String line = reader.readLine();
-        if (line != null && !line.trim().isEmpty()) {
-          // pidof 可能返回多个 pid（多进程应用），取第一个
-          return line.trim().split("\\s+")[0];
+  static FatalReport extractFatal(List<String> lines, String packageName, String pid) {
+    int start = -1;
+    for (int i = 0; i < lines.size(); i++) {
+      if (lines.get(i).contains("FATAL EXCEPTION")) {
+        // 若给了包名，优先选属于该包的那条
+        if (packageName == null || packageName.isEmpty() || lineBelongsTo(lines, i, packageName, pid)) {
+          start = i;
+          break;
+        }
+        if (start < 0) {
+          start = i;
         }
       }
-      process.waitFor(TIMEOUT_MS, TimeUnit.MILLISECONDS);
-    } catch (InterruptedException e) {
-      Thread.currentThread().interrupt();
-    } catch (Exception e) {
-      log.debug("查找 pid 失败: {}", packageName, e);
-    } finally {
-      if (process != null) {
-        process.destroy();
+    }
+    if (start < 0) {
+      return null;
+    }
+
+    String header = stripPrefix(lines.get(start));
+    String thread = "";
+    int colon = header.indexOf("FATAL EXCEPTION:");
+    if (colon >= 0) {
+      thread = header.substring(colon + "FATAL EXCEPTION:".length()).trim();
+    }
+
+    String process = "";
+    String exception = "";
+    StringBuilder stack = new StringBuilder();
+    int emitted = 0;
+    for (int i = start + 1; i < lines.size() && emitted < MAX_STACK_LINES; i++) {
+      String body = stripPrefix(lines.get(i));
+      if (body.isEmpty()) {
+        continue;
+      }
+      if (body.startsWith("Process:")) {
+        process = body.substring("Process:".length()).trim();
+        continue;
+      }
+      if (body.startsWith("Caused by:") || body.startsWith("at ") || body.startsWith("\tat ")) {
+        stack.append(body).append('\n');
+        emitted++;
+        continue;
+      }
+      if (exception.isEmpty() && looksLikeException(body)) {
+        exception = body;
+        stack.append(body).append('\n');
+        emitted++;
+        continue;
+      }
+      // 遇到下一条 FATAL 或明显无关的行就停止
+      if (body.contains("FATAL EXCEPTION")) {
+        break;
+      }
+      if (stack.length() == 0) {
+        // 异常头之前的信息（如 "Process:" 已处理）
+        continue;
+      }
+      break;
+    }
+
+    return new FatalReport(thread, process, exception, stack.toString());
+  }
+
+  /** 判断某行附近（同 PID 或同包名）是否属于目标应用。 */
+  private static boolean lineBelongsTo(List<String> lines, int index, String packageName, String pid) {
+    int from = Math.max(0, index - 3);
+    int to = Math.min(lines.size() - 1, index + 4);
+    for (int i = from; i <= to; i++) {
+      String line = lines.get(i);
+      if (line.contains(packageName)) {
+        return true;
+      }
+      if (pid != null && !pid.isEmpty() && containsPid(line, pid)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  private static boolean containsPid(String line, String pid) {
+    // threadtime 格式：时间 PID TID 级别 标签: 内容 —— PID 是第二个数值列
+    String[] parts = line.trim().split("\\s+");
+    return parts.length >= 3 && parts[2].equals(pid);
+  }
+
+  private static boolean looksLikeException(String body) {
+    // 形如 java.lang.XxxException: msg / android.os.Xxx / kotlin.Xxx
+    return body.matches("[a-zA-Z_$][\\w$]*(\\.[\\w$]+)*Exception.*")
+        || body.matches("[a-zA-Z_$][\\w$]*(\\.[\\w$]+)*Error.*")
+        || body.contains("Exception:")
+        || body.contains("Error:");
+  }
+
+  /** 抽取 ANR 行（{@code ANR in <pkg>}）。 */
+  static String findAnr(List<String> lines, String packageName) {
+    for (String line : lines) {
+      if (line.contains("ANR in " + packageName)) {
+        return stripPrefix(line);
       }
     }
     return null;
+  }
+
+  /** 剥掉 logcat threadtime 前缀，留下 tag 之后的正文。 */
+  private static String stripPrefix(String line) {
+    if (line == null) {
+      return "";
+    }
+    // 形式: "10-04 12:34:56.789  1234  1234 E AndroidRuntime: 正文"
+    int marker = line.indexOf(": ");
+    int threadtime = line.indexOf(" E ") >= 0 ? line.indexOf(" E ") : line.indexOf(" W ");
+    if (marker > 0 && threadtime > 0 && marker > threadtime) {
+      return line.substring(marker + 2).trim();
+    }
+    return line.trim();
+  }
+
+  // ---------------------------------------------------------------------------
+  // 命令构造与执行
+  // ---------------------------------------------------------------------------
+
+  /** 构造读 crash buffer 的命令。 */
+  static List<String> buildCrashCommand(String pid, String packageName) {
+    List<String> command = new ArrayList<>();
+    command.add("logcat");
+    command.add("-d");
+    command.add("-b");
+    command.add("crash");
+    command.add("-v");
+    command.add("threadtime");
+    if (pid != null && !pid.isEmpty()) {
+      command.add("--pid=" + pid);
+    }
+    return command;
+  }
+
+  /** 构造读 main buffer 中 FATAL/ANR 的命令（兜底，按级别 E）。 */
+  static List<String> buildMainFatalCommand(String pid, String packageName) {
+    List<String> command = new ArrayList<>();
+    command.add("logcat");
+    command.add("-d");
+    command.add("-v");
+    command.add("threadtime");
+    command.add("-t");
+    command.add(String.valueOf(CRASH_SCAN_LINES));
+    command.add("*:E");
+    if (pid != null && !pid.isEmpty()) {
+      command.add("--pid=" + pid);
+    }
+    return command;
+  }
+
+  /**
+   * 执行 logcat 命令并收集输出行。
+   *
+   * @return 输出行；执行失败或超时返回 null
+   */
+  private List<String> runLogcat(List<String> command) {
+    // 经统一执行器（严格要求 Shizuku）：logcat 读取其它应用需要 adb 级权限，
+    // 本地 app uid 只能读到本应用自己的日志（Android 4.1+）。
+    String cmd = joinCommand(command);
+    PhoneShellRunner.Output output = PhoneShellRunner.exec(shellBackends, cmd, TIMEOUT_MS);
+    if ("none".equals(output.channel) || output.timedOut) {
+      return null;
+    }
+    List<String> lines = new ArrayList<>();
+    String text = output.combined();
+    if (text.isEmpty()) {
+      return lines;
+    }
+    for (String line : text.split("\\r?\\n")) {
+      lines.add(line);
+    }
+    return lines;
+  }
+
+  /** 把命令列表拼成一条 shell 命令（各元素已由构造方保证无空格）。 */
+  private static String joinCommand(List<String> parts) {
+    StringBuilder sb = new StringBuilder();
+    for (String part : parts) {
+      if (sb.length() > 0) {
+        sb.append(' ');
+      }
+      sb.append(part);
+    }
+    return sb.toString();
+  }
+
+  /**
+   * 按包名查找进程 PID（经统一执行器，严格要求 Shizuku）。
+   *
+   * <p>找不到时返回 null——调用方据此给出明确提示，而不是返回一个空日志列表。
+   */
+  private String findPid(String packageName) {
+    if (!PhoneShellRunner.isValidPackage(packageName)) {
+      return null;
+    }
+    return PhoneShellRunner.findPid(shellBackends, packageName);
   }
 }

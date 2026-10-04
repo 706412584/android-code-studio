@@ -60,6 +60,7 @@ import com.tom.rv2ide.ai.tool.WebSearchTool;
 import com.tom.rv2ide.ai.tool.RssSearchProvider;
 import com.tom.rv2ide.ai.tool.ToolExecutor;
 import com.tom.rv2ide.ai.tool.ToolPermissionService;
+import com.tom.rv2ide.ai.tool.HttpRequestTool;
 import com.tom.rv2ide.ai.tool.ShellBackendRegistry;
 import com.tom.rv2ide.ai.tool.ShellExecuteTool;
 import com.tom.rv2ide.ai.tool.ToolRegistry;
@@ -68,6 +69,22 @@ import com.tom.rv2ide.artificial.secrets.ApiKey;
 import com.tom.rv2ide.artificial.agent.tool.InstallApkTool;
 import com.tom.rv2ide.artificial.agent.tool.LaunchAppTool;
 import com.tom.rv2ide.artificial.agent.tool.LogcatReadTool;
+import com.tom.rv2ide.artificial.agent.tool.PhoneActionCaptureTool;
+import com.tom.rv2ide.artificial.agent.tool.PhoneBaselineTool;
+import com.tom.rv2ide.artificial.agent.tool.PhoneClearDataTool;
+import com.tom.rv2ide.artificial.agent.tool.PhoneClickTool;
+import com.tom.rv2ide.artificial.agent.tool.PhoneClickViewTool;
+import com.tom.rv2ide.artificial.agent.tool.PhoneCurrentActivityTool;
+import com.tom.rv2ide.artificial.agent.tool.PhoneGlobalActionTool;
+import com.tom.rv2ide.artificial.agent.tool.PhoneInputTextTool;
+import com.tom.rv2ide.artificial.agent.tool.PhoneLongPressTool;
+import com.tom.rv2ide.artificial.agent.tool.PhoneMemInfoTool;
+import com.tom.rv2ide.artificial.agent.tool.PhoneScreenshotCompareTool;
+import com.tom.rv2ide.artificial.agent.tool.PhoneScreenshotTool;
+import com.tom.rv2ide.artificial.agent.tool.PhoneSwipeTool;
+import com.tom.rv2ide.artificial.agent.tool.PhoneTestScenarioTool;
+import com.tom.rv2ide.artificial.agent.tool.PhoneViewHierarchyTool;
+import com.tom.rv2ide.artificial.agent.tool.PhoneWaitForTool;
 import com.tom.rv2ide.ai.tool.api.ToolInfo;
 import java.io.File;
 import java.io.IOException;
@@ -585,14 +602,49 @@ public final class AgentOrchestrator {
     registry.register(new GlobTool());
     registry.register(new ListDirectoryTool());
 
-    // shell 执行（后端由配置决定：Termux 或 Shizuku）
-    registry.register(new ShellExecuteTool(buildShellBackends()));
+    // shell 执行（后端由配置决定：Termux 或 Shizuku）。
+    //
+    // 后端注册表**只建一次并共享**给所有需要执行命令的工具（shell_execute 与 phone_*）。
+    // 每次 new 一个的话，各工具会各自解析出可能不同的 active 后端，且 setActiveId 的
+    // 效果只落在自己那份上——用户切后端后，一部分工具还走旧后端，行为不一致且难排查。
+    ShellBackendRegistry shellBackends = buildShellBackends();
+    registry.register(new ShellExecuteTool(shellBackends));
 
     // 运行测试闭环：构建 → 安装 → 启动 → 读日志
     registry.register(new GradleBuildTool(this::lookupBuildService));
     registry.register(new InstallApkTool(appContext));
     registry.register(new LaunchAppTool(appContext));
     registry.register(new LogcatReadTool(appContext));
+
+    // ---- 真机测试工具集（经 Shizuku 走 adb 级权限，不需要无障碍服务）----
+    // 全部复用上面那一份 shell 后端注册表，与 shell_execute 看到同一个 active 后端。
+
+    // 观察类（只读，不改变设备）：截屏 / 节点树 / 前台 Activity / 内存与渲染
+    registry.register(new PhoneScreenshotTool(appContext, shellBackends));
+    registry.register(new PhoneViewHierarchyTool(shellBackends));
+    registry.register(new PhoneCurrentActivityTool(shellBackends));
+    registry.register(new PhoneMemInfoTool(appContext, shellBackends));
+
+    // 交互类（SYSTEM；needsConfirmation=true，与 shell_execute 同级）。
+    // 这些工具能驱动任意应用（点开终端、输入命令、回车执行），若免确认就是绕过
+    // shell_execute 确认门的一条通道，因此必须逐次确认；需要无打扰跑闭环请切 AUTO 模式。
+    registry.register(new PhoneClickTool(shellBackends));
+    registry.register(new PhoneClickViewTool(shellBackends));
+    registry.register(new PhoneSwipeTool(shellBackends));
+    registry.register(new PhoneLongPressTool(shellBackends));
+    registry.register(new PhoneInputTextTool(shellBackends));
+    registry.register(new PhoneGlobalActionTool(shellBackends));
+    registry.register(new PhoneWaitForTool(shellBackends));
+    // 清数据：不可逆，且作用于任意包名，因此额外按包名限定授权粒度（见 ToolPermissionRule）。
+    registry.register(new PhoneClearDataTool(shellBackends));
+
+    // 动作级截图回归 / 基线 / 多步场景：需要调用上面已注册的动作工具来驱动界面，因此传入注册表。
+    // 注意：这些工具构造时接收 registry，但只在 execute 时才 registry.get(...)，
+    // 因此这里先注册它们、动作工具已在上面注册完毕即可，不存在“注册到一半被读取”的问题。
+    registry.register(new PhoneBaselineTool(appContext, registry));
+    registry.register(new PhoneActionCaptureTool(appContext, registry));
+    registry.register(new PhoneScreenshotCompareTool(appContext, registry));
+    registry.register(new PhoneTestScenarioTool(appContext, registry));
 
     // 任务计划：把模型的计划外化成可见状态，使长任务不丢进度。
     registry.register(new TodoUpdateTool(todoStore));
@@ -610,6 +662,9 @@ public final class AgentOrchestrator {
     AppHttpPort http = new AppHttpPort();
     registry.register(new WebFetchTool(http));
     registry.register(new WebSearchTool(new RssSearchProvider(http)));
+    // 通用 HTTP：带自定义方法/头/体，并返回状态码与非 2xx 的错误体（web_fetch 只做 GET 且
+    // 非 2xx 当失败）。支持 POST/PUT/DELETE 等可变方法，故为 SYSTEM 且需确认。
+    registry.register(new HttpRequestTool(http));
 
     // 外部 MCP server 提供的工具。
     registerMcpTools(registry, http);

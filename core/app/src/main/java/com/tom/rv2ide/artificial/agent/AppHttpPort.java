@@ -21,6 +21,7 @@ import com.tom.rv2ide.ai.protocol.AppProxy;
 import com.tom.rv2ide.ai.protocol.SimpleHttpClient;
 import com.tom.rv2ide.ai.protocol.UrlPolicy;
 import com.tom.rv2ide.ai.tool.HttpPort;
+import com.tom.rv2ide.ai.tool.HttpRequestPort;
 import java.io.InputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
@@ -35,7 +36,7 @@ import java.util.Map;
  * 使安全边界仍只有一处——URL 策略、代理与超时都由 {@code SimpleHttpClient} 内部处理，
  * 不会因为新增一个工具就绕过 {@code UrlPolicy}。
  */
-public final class AppHttpPort implements HttpPort {
+public final class AppHttpPort implements HttpPort, HttpRequestPort {
 
   /** 网页抓取的超时。比模型调用的超时短：用户在看结果，等太久不如早点失败。 */
   private static final int CONNECT_TIMEOUT_MS = 15_000;
@@ -81,6 +82,43 @@ public final class AppHttpPort implements HttpPort {
       throw new Exception("HTTP " + response.code + ": " + response.body);
     }
     return new TextResponse(response.body, response.headers);
+  }
+
+  /**
+   * 通用请求：任意方法/头/体/超时，**非 2xx 也返回**（不抛），供 {@code http_request} 工具使用。
+   *
+   * <p><b>为什么走 {@code SimpleHttpClient.execute} 而不是自己建连</b>：那里面已经内建了
+   * 逐跳的 {@link UrlPolicy#requireHttpOrLocalCleartextUrl} 校验与逐跳代理
+   * （见 {@code SimpleHttpClient.openFollowingRedirects}）。自己再建一条连接就等于复制出
+   * 第二处安全边界，而复制的那份迟早会与这份漂移——SSRF 防护只有一处才靠得住。
+   *
+   * <p><b>为什么这里能拿到非 2xx 的响应体</b>：{@code execute} 对 {@code code >= 400}
+   * 会读 {@code getErrorStream()}，且**不**像 {@code get}/{@code postJson} 那样把非 2xx
+   * 当成异常抛出。这正是接口调试工具需要的行为。
+   *
+   * <p><b>已知平台限制</b>：Android 的 {@code HttpURLConnection} 只接受
+   * GET/POST/HEAD/OPTIONS/PUT/DELETE/TRACE，{@code setRequestMethod("PATCH")} 会抛
+   * {@code ProtocolException}。即 PUT/DELETE 可用，PATCH 在真机上可能失败——失败会以
+   * 异常上抛，由工具层转成可读错误。若日后需要可靠的 PATCH，应在
+   * {@code SimpleHttpClient} 内解决（那里是唯一的建连点），而不是在此另开一条路径。
+   */
+  @Override
+  public Response request(
+      String method, String url, Map<String, String> headers, String body, int timeoutMs)
+      throws Exception {
+    SimpleHttpClient.Request request = new SimpleHttpClient.Request(url, method, body);
+    request.connectTimeoutMs = timeoutMs;
+    request.readTimeoutMs = timeoutMs;
+    if (headers != null) {
+      request.headers.putAll(headers);
+    }
+    SimpleHttpClient.Response response = SimpleHttpClient.execute(request);
+    return new Response(
+        response.code,
+        response.message,
+        response.contentType,
+        response.headers,
+        response.body);
   }
 
   /**

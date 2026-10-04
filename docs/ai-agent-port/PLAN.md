@@ -85,11 +85,19 @@ app 层（`core/app/.../artificial/agent/`、`handlers/AgentRequestHandler.kt`�
 
 | 功能 | 理由 |
 |---|---|
-| 手机控制（7 个 `phone_*` 工具 + 无障碍服务） | ACS 是代码编辑器，不操控其他 App |
 | IM 机器人（`feature-im/`，Telegram 远程驱动） | 与 IDE 场景无关 |
 | SSH 远程执行（`feature-ssh/`） | ACS 已有 Termux / Shizuku 后端 |
 | 终端 Provider 生态（`ipc/` 23 文件） | ACS 有内置终端 |
 | Workspace SAF 抽象 | ACS 有自身文件模型 |
+
+> **手机控制（`phone_*`）不在排除之列——已改为用 Shizuku 实现。**
+> 早先的排除理由是「ACS 是代码编辑器，不操控其他 App」，但真机测试闭环
+> （构建 → 安装 → 启动 → 操作 → 观察 → 验证）需要能模拟用户操作并读取界面状态，
+> 否则 agent 只能「装上去、拉日志」，无法验证交互路径。
+> LCP 用**无障碍服务**（AccessibilityService）实现这些工具，而 ACS 改用
+> **Shizuku**（adb 级权限）执行 `input` / `uiautomator` / `am` / `pm` 等命令：
+> 不需要用户额外开启无障碍，也不依赖被测应用做任何集成。
+> 已注册的工具见 `AgentOrchestrator.buildRegistry()`；权限分级见该文件内注释。
 
 ---
 

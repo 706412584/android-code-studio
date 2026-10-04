@@ -40,6 +40,11 @@ import org.json.JSONObject;
  *       {@code bash build.sh} 与 {@code bash -c '任意命令'} 会同键，
  *       等于一次放行就把整个解释器交出去。</li>
  *   <li>文件类——危险在**路径**。粒度取绝对路径，放行一次写入不等于放行任意路径。</li>
+ *   <li>手机交互类（{@code phone_click}/{@code phone_swipe}/...）——危险在**工具本身**，
+ *       与参数无关：每次调用的爆炸半径都是「在屏幕上做一次交互」，因此粒度取工具名，
+ *       不含参数。详见 {@link #PHONE_TOOL_SCOPED}。</li>
+ *   <li>{@code phone_clear_data}——危险在**目标包名**：粒度取包名，
+ *       放行一次清数据不等于放行任意应用的清数据。</li>
  *   <li>其余——没有可提取的判别字段时退化为**参数摘要**，
  *       即「只有参数完全相同的那一次调用」才复用规则。</li>
  * </ul>
@@ -66,6 +71,9 @@ public final class ToolPermissionRule {
   /** 删除类工具的参数键：路径数组。 */
   public static final String ARG_PATHS = "paths";
 
+  /** 清数据类工具的参数键：目标包名。 */
+  public static final String ARG_PACKAGE_NAME = "packageName";
+
   /** 键与值之间的分隔符。见类注释说明为何选 NUL。 */
   private static final char SEPARATOR = '\u0000';
 
@@ -74,6 +82,40 @@ public final class ToolPermissionRule {
 
   /** 参数摘要的前缀，用于把它与路径/命令区分开，也便于在设置页辨认。 */
   private static final String DIGEST_PREFIX = "args:";
+
+  /**
+   * 按「工具名」授权的 phone_* 交互工具的 scope 值。
+   *
+   * <p>这些工具的爆炸半径与参数无关（都是「在屏幕上做一次交互」），因此 scope 取固定值，
+   * 使用户点一次「始终允许」能对**该工具的任何参数**生效。见 {@link #PHONE_TOOL_SCOPED}。
+   */
+  private static final String TOOL_SCOPE = "tool";
+
+  /**
+   * scope 不含参数的 phone_* 交互工具：其规则键退化为「工具名」。
+   *
+   * <p><b>为什么必须按工具名而非参数摘要</b>：这些工具的参数是坐标/文本/手势距离，
+   * 每次调用几乎都不同（{@code {"x":540,"y":1200}} vs {@code {"x":540,"y":1201}}）。
+   * 若按参数摘要建键，用户点「始终允许」后**下一次点击照旧弹窗**，「始终允许」形同虚设
+   * ——这正是本类要解决的原始问题。
+   *
+   * <p><b>为什么不担心被放大</b>：与 shell 不同（同一工具、命令全文不同则破坏力天差地别），
+   * 这些工具的每一次调用在权限语义上等价——「允许 phone_click」就是「允许在屏幕上点一下」，
+   * 不存在「允许 ls 却顺带放行 rm -rf /」那种提权路径。
+   *
+   * <p><b>{@code phone_clear_data} 刻意不在其中</b>：它带包名参数且破坏不可逆，
+   * 按工具名授权会连别的应用的清数据一并放行，因此它的 scope 取包名。
+   */
+  private static final java.util.Set<String> PHONE_TOOL_SCOPED =
+      java.util.Collections.unmodifiableSet(
+          new java.util.LinkedHashSet<>(
+              java.util.Arrays.asList(
+                  ToolNames.PHONE_CLICK,
+                  ToolNames.PHONE_CLICK_VIEW,
+                  ToolNames.PHONE_SWIPE,
+                  ToolNames.PHONE_LONG_PRESS,
+                  ToolNames.PHONE_GLOBAL_ACTION,
+                  ToolNames.PHONE_INPUT_TEXT)));
 
   private ToolPermissionRule() {}
 
@@ -104,6 +146,20 @@ public final class ToolPermissionRule {
    * @param toolName 工具**规范名**
    */
   public static String scopeOf(String toolName, String arguments) {
+    // phone_* 交互工具在 parse 之前分流：它们的键要么与参数无关、要么只取单个字段，
+    // 因此即便参数缺失/非法，也不该退化成参数摘要（那会让「始终允许」反复失效）。
+    if (PHONE_TOOL_SCOPED.contains(toolName)) {
+      return TOOL_SCOPE;
+    }
+    if (ToolNames.PHONE_CLEAR_DATA.equals(toolName)) {
+      JSONObject clearJson = parse(arguments);
+      String packageName =
+          clearJson == null ? "" : clearJson.optString(ARG_PACKAGE_NAME, "").trim();
+      // 包名缺失/非法时回落到参数摘要：空白 scope 会把「始终允许」放大成
+      // 「允许清除任意应用的数据」，与 file_delete 空 scope 同类风险。见类注释。
+      return fallbackIfEmpty(packageName, arguments);
+    }
+
     JSONObject json = parse(arguments);
     if (json == null) {
       // 参数不是合法 JSON（模型偶尔给出截断片段）→ 没有可靠的判别字段，
