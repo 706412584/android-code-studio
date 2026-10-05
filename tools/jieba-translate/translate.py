@@ -366,6 +366,13 @@ class Translator:
             self.emit(s)
 
     def handle_annotation(self, s):
+        # @导入Java 也可能写在**类体里**（源里大量如此），不能只认文件顶层。
+        # 原先类体的 `@` 分支走这里，而这里不处理 @导入Java → 该类所有 import 丢失，
+        # `Intent`/`Uri`/`Settings`/`StrictMode` 全变「找不到符号」。
+        m_imp = re.match(r'^@导入Java\("([^"]+)"\)', s)
+        if m_imp:
+            self.imports.append(m_imp.group(1))
+            return
         if s.startswith('@嵌入式代码'):
             # 必须写 pending_embedded：parse_method 开头用
             # `self.embedded = self.pending_embedded` 覆盖 self.embedded，

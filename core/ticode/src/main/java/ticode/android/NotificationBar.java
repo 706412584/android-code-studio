@@ -14,6 +14,9 @@ import android.view.*;
 import android.app.*;
 import android.content.Intent;
 import android.os.Build;
+import android.content.pm.*;
+import android.provider.Settings;
+import android.os.StrictMode;
 import android.os.*;
 import android.content.*;
 import android.view.KeyEvent;
@@ -21,7 +24,6 @@ import android.content.res.Configuration;
 import android.os.IBinder;
 import android.content.ComponentName;
 import android.content.ServiceConnection;
-import android.content.pm.*;
 import android.graphics.drawable.*;
 
 import ticode.jvm.JFile;

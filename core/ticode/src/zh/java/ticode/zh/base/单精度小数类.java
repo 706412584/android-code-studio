@@ -1,5 +1,7 @@
 package ticode.zh.base;
 
+import java.io.PrintWriter;
+import java.io.StringWriter;
 import android.os.*;
 import java.util.List;
 import java.util.concurrent.*;

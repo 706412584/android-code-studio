@@ -1,5 +1,10 @@
 package ticode.android;
 
+import android.os.StrictMode;
+import android.content.Intent;
+import android.net.Uri;
+import java.io.File;
+import android.provider.Settings;
 
 public class SignatureData extends android.content.pm.Signature {
 

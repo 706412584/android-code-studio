@@ -1,6 +1,7 @@
 package ticode.android;
 
 import android.os.Environment;
+import android.content.pm.*;
 
 import ticode.jvm.JFile;
 import ticode.jvm.JavaClass;

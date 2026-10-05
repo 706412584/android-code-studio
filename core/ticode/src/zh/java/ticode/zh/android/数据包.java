@@ -1,6 +1,7 @@
 package ticode.zh.android;
 
 import android.os.Environment;
+import android.content.pm.*;
 
 import ticode.zh.jvm.Java类;
 import ticode.zh.jvm.文件;

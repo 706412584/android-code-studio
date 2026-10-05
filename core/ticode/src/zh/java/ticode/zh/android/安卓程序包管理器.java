@@ -1,5 +1,10 @@
 package ticode.zh.android;
 
+import android.os.StrictMode;
+import android.content.Intent;
+import android.net.Uri;
+import java.io.File;
+import android.provider.Settings;
 
 public class 安卓程序包管理器 extends android.content.pm.PackageManager {
 
