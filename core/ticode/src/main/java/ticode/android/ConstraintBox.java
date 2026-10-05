@@ -1,7 +1,6 @@
 package ticode.android;
 
 import androidx.constraintlayout.widget.ConstraintLayout;
-import androidx.constraintlayout.widget.ConstraintLayout;
 
 public class ConstraintBox extends LayoutComponent {
 private final static String PARENT = "父布局";

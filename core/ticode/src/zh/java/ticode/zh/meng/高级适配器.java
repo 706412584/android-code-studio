@@ -5,8 +5,6 @@ import androidx.recyclerview.widget.RecyclerView.*;
 import android.view.*;
 import android.widget.*;
 import androidx.recyclerview.widget.RecyclerView;
-import androidx.recyclerview.widget.RecyclerView;
-import androidx.recyclerview.widget.RecyclerView.*;
 import androidx.recyclerview.widget.ItemTouchHelper;
 
 import ticode.zh.android.可视化组件;

@@ -1,7 +1,6 @@
 package ticode.zh.android;
 
 import androidx.constraintlayout.widget.ConstraintLayout;
-import androidx.constraintlayout.widget.ConstraintLayout;
 
 public class 约束布局 extends 布局组件 {
 private final static String PARENT = "父布局";

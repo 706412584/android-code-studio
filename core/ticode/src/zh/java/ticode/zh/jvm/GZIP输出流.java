@@ -2,17 +2,6 @@ package ticode.zh.jvm;
 
 import java.util.zip.*;
 import java.io.File;
-import java.util.zip.*;
-import java.util.zip.*;
-import java.util.zip.*;
-import java.util.zip.*;
-import java.util.zip.*;
-import java.util.zip.*;
-import java.util.zip.*;
-import java.util.zip.*;
-import java.util.zip.*;
-import java.util.zip.*;
-import java.util.zip.*;
 import java.io.*;
 
 public class GZIP输出流 extends java.util.zip.GZIPOutputStream {

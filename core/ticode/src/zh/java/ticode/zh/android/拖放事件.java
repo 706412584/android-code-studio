@@ -4,7 +4,7 @@ import android.content.Context;
 import android.view.ScaleGestureDetector;
 import android.view.ScaleGestureDetector.OnScaleGestureListener;
 
-public class 拖放事件 extends android.view.DragEvent {
+public class 拖放事件 {
 
 
 

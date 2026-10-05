@@ -10,7 +10,6 @@ import android.graphics.*;
 import android.graphics.drawable.*;
 import android.graphics.drawable.shapes.*;
 import android.content.res.*;
-import android.graphics.drawable.GradientDrawable;
 import android.os.Build;
 
 import ticode.base.LongBox;
@@ -19,25 +18,25 @@ import ticode.jvm.FileOutputStream2;
 import ticode.jvm.JInputStream;
 import ticode.jvm.JOutputStream;
 
-public class BitmapConfig2 extends android.graphics.Bitmap.Config {
+public class BitmapConfig2 {
 
-public static final BitmapConfig2 ALPHA_8;
+public static final android.graphics.Bitmap.Config ALPHA_8;
 
-public static final BitmapConfig2 RGB_565;
+public static final android.graphics.Bitmap.Config RGB_565;
 
-public static final BitmapConfig2 ARGB_4444;
+public static final android.graphics.Bitmap.Config ARGB_4444;
 
-public static final BitmapConfig2 ARGB_8888;
+public static final android.graphics.Bitmap.Config ARGB_8888;
 
-public static final BitmapConfig2 RGBA_F16;
+public static final android.graphics.Bitmap.Config RGBA_F16;
 
-public static final BitmapConfig2 HARDWARE;
+public static final android.graphics.Bitmap.Config HARDWARE;
 
-public static BitmapConfig2 到配置(String 配置名) {
+public static android.graphics.Bitmap.Config 到配置(String 配置名) {
 return Config.valueOf(配置名);
 }
 
-public static BitmapConfig2[] 配置列表() {
+public static android.graphics.Bitmap.Config[] 配置列表() {
 return Config.values();
 }
 

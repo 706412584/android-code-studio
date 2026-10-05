@@ -11,9 +11,9 @@ import ticode.zh.android.对齐方式;
 
 public class 弹性布局_分割线模式 {
 
-public static final 弹性布局_分割线模式 无 = 0;
-public static final 弹性布局_分割线模式 起始位 = 1;
-public static final 弹性布局_分割线模式 中间 = 1 << 1;
-public static final 弹性布局_分割线模式 结束位 = 1 << 2;
+public static final int 无 = 0;
+public static final int 起始位 = 1;
+public static final Object 中间 = 1 << 1;
+public static final Object 结束位 = 1 << 2;
 
 }

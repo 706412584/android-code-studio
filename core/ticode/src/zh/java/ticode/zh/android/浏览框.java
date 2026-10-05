@@ -10,25 +10,16 @@ import android.text.Html;
 import android.text.TextUtils;
 import android.widget.CompoundButton;
 import android.widget.RadioButton;
-import android.widget.CompoundButton;
 import android.widget.CheckBox;
-import android.widget.CompoundButton;
 import android.widget.Switch;
-import android.widget.CompoundButton;
 import android.widget.ImageView.ScaleType;
 import android.graphics.*;
 import android.widget.ProgressBar;
 import android.graphics.drawable.*;
-import android.graphics.*;
-import android.widget.ProgressBar;
-import android.graphics.drawable.*;
-import android.graphics.*;
 import android.widget.SeekBar;
-import android.graphics.drawable.*;
 import android.widget.RatingBar;
 import android.widget.VideoView;
 import android.media.MediaPlayer;
-import android.content.Context;
 import android.content.pm.ActivityInfo;
 import android.content.Intent;
 import android.content.ActivityNotFoundException;
@@ -43,7 +34,6 @@ import android.widget.FrameLayout;
 import java.io.File;
 import android.graphics.Bitmap;
 import android.annotation.TargetApi;
-import android.widget.ProgressBar;
 import android.webkit.*;
 
 import ticode.zh.base.异常;
@@ -130,7 +120,7 @@ return getView().getContentHeight();
 }
 
 //获取当前页面的 favicon
-public 位图对象 网页图标() {
+public android.graphics.Bitmap 网页图标() {
 return getView().getFavicon();
 }
 
@@ -357,7 +347,7 @@ public void 进度值改变(int 进度) { } // 事件
 public void 接收到标题(String 网址) { } // 事件
 
 //接收到网页图标触发该事件，返回可绘制对象
-public void 接收到图标(位图对象 图标) { } // 事件
+public void 接收到图标(android.graphics.Bitmap 图标) { } // 事件
 
 //网页拦截到网页请求时触发该事件，返回请求的网址
 public void 拦截到请求(String 网址) { } // 事件

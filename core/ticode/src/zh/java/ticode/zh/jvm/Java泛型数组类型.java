@@ -1,9 +1,6 @@
 package ticode.zh.jvm;
 
 import java.lang.reflect.Modifier;
-import java.lang.reflect.Modifier;
-import java.lang.reflect.Modifier;
-import java.lang.reflect.Modifier;
 import dalvik.system.DexFile;
 import java.util.Enumeration;
 

@@ -1,7 +1,7 @@
 package ticode.android;
 
 
-public class PropertyAnimator extends android.view.ViewPropertyAnimator {
+public class PropertyAnimator {
 //获取动画的播放时长
 public long 播放时间() {
 return this.getDuration();

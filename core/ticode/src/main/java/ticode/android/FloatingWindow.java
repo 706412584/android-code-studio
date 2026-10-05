@@ -232,13 +232,13 @@ public void 悬浮窗显示() { } // 事件
 public void 悬浮窗隐藏() { } // 事件
 public void 悬浮窗关闭() { } // 事件
 
-public void 悬浮窗被单击(TouchEvent2 来源事件, int X, int Y) { } // 事件
-public void 悬浮窗被长按(TouchEvent2 来源事件, int X, int Y) { } // 事件
-public void 悬浮窗被触摸(TouchEvent2 来源事件, int X, int Y) { } // 事件
-public void 悬浮窗被拖动(TouchEvent2 来源事件, int X, int Y) { } // 事件
-public void 悬浮窗被放开(TouchEvent2 来源事件, int X, int Y) { } // 事件
+public void 悬浮窗被单击(android.view.MotionEvent 来源事件, int X, int Y) { } // 事件
+public void 悬浮窗被长按(android.view.MotionEvent 来源事件, int X, int Y) { } // 事件
+public void 悬浮窗被触摸(android.view.MotionEvent 来源事件, int X, int Y) { } // 事件
+public void 悬浮窗被拖动(android.view.MotionEvent 来源事件, int X, int Y) { } // 事件
+public void 悬浮窗被放开(android.view.MotionEvent 来源事件, int X, int Y) { } // 事件
 public void 悬浮窗位置变化(int X, int Y) { } // 事件
-public void 悬浮窗外侧操作(TouchEvent2 来源事件) { } // 事件
+public void 悬浮窗外侧操作(android.view.MotionEvent 来源事件) { } // 事件
 
 public void 悬浮窗获取权限() { } // 事件
 public void 悬浮窗获取权限成功() { } // 事件

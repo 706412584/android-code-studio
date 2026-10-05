@@ -10,25 +10,16 @@ import android.text.Html;
 import android.text.TextUtils;
 import android.widget.CompoundButton;
 import android.widget.RadioButton;
-import android.widget.CompoundButton;
 import android.widget.CheckBox;
-import android.widget.CompoundButton;
 import android.widget.Switch;
-import android.widget.CompoundButton;
 import android.widget.ImageView.ScaleType;
 import android.graphics.*;
 import android.widget.ProgressBar;
 import android.graphics.drawable.*;
-import android.graphics.*;
-import android.widget.ProgressBar;
-import android.graphics.drawable.*;
-import android.graphics.*;
 import android.widget.SeekBar;
-import android.graphics.drawable.*;
 import android.widget.RatingBar;
 import android.widget.VideoView;
 import android.media.MediaPlayer;
-import android.content.Context;
 import android.content.pm.ActivityInfo;
 import android.content.Intent;
 import android.content.ActivityNotFoundException;
@@ -43,7 +34,6 @@ import android.widget.FrameLayout;
 import java.io.File;
 import android.graphics.Bitmap;
 import android.annotation.TargetApi;
-import android.widget.ProgressBar;
 import android.webkit.*;
 
 import ticode.jvm.JMatcher;
@@ -482,7 +472,7 @@ if (父组件 != null) {
 
 
 
-public PropertyAnimator 取动画播放器() {
+public android.view.ViewPropertyAnimator 取动画播放器() {
 ViewPropertyAnimator animator = view.animate();
 animator.setListener(new android.animation.Animator.AnimatorListener() {
 @Override
@@ -712,7 +702,7 @@ public void 被长按() { } // 事件
 
 
 
-public boolean 被触摸(TouchEvent2 来源事件) { return false; } // 事件
+public boolean 被触摸(android.view.MotionEvent 来源事件) { return false; } // 事件
 
 
 
@@ -726,7 +716,7 @@ public void 触摸手势(TouchGesture 手势) { } // 事件
 
 
 
-public boolean 被拖放(DragEvent2 来源事件) { return false; } // 事件
+public boolean 被拖放(android.view.DragEvent 来源事件) { return false; } // 事件
 
 //组件焦点改变时事件
 public void 焦点被改变(boolean 是否获得焦点) { } // 事件

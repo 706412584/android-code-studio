@@ -5,8 +5,6 @@ import androidx.recyclerview.widget.RecyclerView.*;
 import android.view.*;
 import android.widget.*;
 import androidx.recyclerview.widget.RecyclerView;
-import androidx.recyclerview.widget.RecyclerView;
-import androidx.recyclerview.widget.RecyclerView.*;
 import androidx.recyclerview.widget.ItemTouchHelper;
 
 import ticode.zh.android.可视化组件;
@@ -18,8 +16,8 @@ import ticode.zh.jvm.集合;
 
 public class 高级列表项目触摸状态 {
 
-public static final 高级列表项目触摸状态 无 = 0;
-public static final 高级列表项目触摸状态 滑动 = 1;
-public static final 高级列表项目触摸状态 拖拽 = 2;
+public static final int 无 = 0;
+public static final int 滑动 = 1;
+public static final int 拖拽 = 2;
 
 }

@@ -2,21 +2,10 @@ package ticode.android;
 
 import android.hardware.*;
 import android.view.WindowManager;
-import android.hardware.*;
-import android.view.WindowManager;
 import java.util.*;
-import android.hardware.*;
-import android.view.WindowManager;
-import java.util.*;
-import android.hardware.*;
-import android.view.WindowManager;
-import java.util.*;
-import android.hardware.*;
 import android.location.*;
 import android.os.*;
 import android.content.*;
-import android.view.WindowManager;
-import java.util.*;
 
 public class LocationSensor extends WindowComponent {
 

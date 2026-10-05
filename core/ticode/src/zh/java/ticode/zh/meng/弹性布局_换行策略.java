@@ -11,8 +11,8 @@ import ticode.zh.android.对齐方式;
 
 public class 弹性布局_换行策略 {
 
-public static final 弹性布局_换行策略 单行 = 0;
-public static final 弹性布局_换行策略 多行 = 1;
-public static final 弹性布局_换行策略 多行_反向 = 2;
+public static final int 单行 = 0;
+public static final int 多行 = 1;
+public static final int 多行_反向 = 2;
 
 }

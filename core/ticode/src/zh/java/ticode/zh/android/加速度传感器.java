@@ -2,21 +2,10 @@ package ticode.zh.android;
 
 import android.hardware.*;
 import android.view.WindowManager;
-import android.hardware.*;
-import android.view.WindowManager;
 import java.util.*;
-import android.hardware.*;
-import android.view.WindowManager;
-import java.util.*;
-import android.hardware.*;
-import android.view.WindowManager;
-import java.util.*;
-import android.hardware.*;
 import android.location.*;
 import android.os.*;
 import android.content.*;
-import android.view.WindowManager;
-import java.util.*;
 
 public class 加速度传感器 extends 窗口组件 {
 private static final int SENSOR_CACHE_SIZE = 10;

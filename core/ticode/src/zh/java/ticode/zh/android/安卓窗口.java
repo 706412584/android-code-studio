@@ -18,13 +18,9 @@ import android.os.*;
 import android.content.*;
 import android.view.KeyEvent;
 import android.content.res.Configuration;
-import android.content.Intent;
 import android.os.IBinder;
 import android.content.ComponentName;
 import android.content.ServiceConnection;
-import android.content.*;
-import android.app.*;
-import android.content.*;
 import android.content.pm.*;
 import android.graphics.drawable.*;
 

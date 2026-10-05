@@ -10,25 +10,16 @@ import android.text.Html;
 import android.text.TextUtils;
 import android.widget.CompoundButton;
 import android.widget.RadioButton;
-import android.widget.CompoundButton;
 import android.widget.CheckBox;
-import android.widget.CompoundButton;
 import android.widget.Switch;
-import android.widget.CompoundButton;
 import android.widget.ImageView.ScaleType;
 import android.graphics.*;
 import android.widget.ProgressBar;
 import android.graphics.drawable.*;
-import android.graphics.*;
-import android.widget.ProgressBar;
-import android.graphics.drawable.*;
-import android.graphics.*;
 import android.widget.SeekBar;
-import android.graphics.drawable.*;
 import android.widget.RatingBar;
 import android.widget.VideoView;
 import android.media.MediaPlayer;
-import android.content.Context;
 import android.content.pm.ActivityInfo;
 import android.content.Intent;
 import android.content.ActivityNotFoundException;
@@ -43,21 +34,20 @@ import android.widget.FrameLayout;
 import java.io.File;
 import android.graphics.Bitmap;
 import android.annotation.TargetApi;
-import android.widget.ProgressBar;
 import android.webkit.*;
 
 import ticode.jvm.JMatcher;
 import ticode.jvm.JRegex;
 
-public class ImageScaleType extends android.widget.ImageView.ScaleType {
-public static final ImageScaleType 矩阵;
-public static final ImageScaleType 完全拉伸;
-public static final ImageScaleType 左上;
-public static final ImageScaleType 自适应居中;
-public static final ImageScaleType 右下;
-public static final ImageScaleType 居中;
-public static final ImageScaleType 裁切居中;
-public static final ImageScaleType 内置居中;
+public class ImageScaleType {
+public static final android.widget.ImageView.ScaleType 矩阵;
+public static final android.widget.ImageView.ScaleType 完全拉伸;
+public static final android.widget.ImageView.ScaleType 左上;
+public static final android.widget.ImageView.ScaleType 自适应居中;
+public static final android.widget.ImageView.ScaleType 右下;
+public static final android.widget.ImageView.ScaleType 居中;
+public static final android.widget.ImageView.ScaleType 裁切居中;
+public static final android.widget.ImageView.ScaleType 内置居中;
 
 static {
 矩阵=ScaleType.MATRIX;

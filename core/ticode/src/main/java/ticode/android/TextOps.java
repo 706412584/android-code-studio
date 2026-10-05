@@ -13,16 +13,10 @@ import android.content.res.*;
 import android.os.*;
 import android.system.*;
 import android.graphics.*;
-import android.os.*;
 import android.app.*;
-import java.io.*;
-import java.util.*;
 import java.util.regex.*;
-import java.io.*;
-import java.io.*;
 import java.net.*;
 import java.math.*;
-import java.io.*;
 
 import ticode.base.JException;
 import ticode.base.TextBox;

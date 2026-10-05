@@ -13,16 +13,10 @@ import android.content.res.*;
 import android.os.*;
 import android.system.*;
 import android.graphics.*;
-import android.os.*;
 import android.app.*;
-import java.io.*;
-import java.util.*;
 import java.util.regex.*;
-import java.io.*;
-import java.io.*;
 import java.net.*;
 import java.math.*;
-import java.io.*;
 
 import ticode.base.JException;
 import ticode.base.TextBox;
@@ -206,7 +200,7 @@ bitmap.recycle();
 });
 }
 
-public static BitmapObject 截屏_位图(AndroidActivity 窗口环境) {
+public static android.graphics.Bitmap 截屏_位图(AndroidActivity 窗口环境) {
 try {
 View decorView = 窗口环境.getWindow().getDecorView();
 Bitmap bitmap = Bitmap.createBitmap(decorView.getWidth(), decorView.getHeight(), Bitmap.Config.ARGB_8888);

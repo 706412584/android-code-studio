@@ -7,38 +7,38 @@ import android.os.Message;
 import android.os.Looper;
 import java.util.UUID;
 
-public class JLocale extends java.util.Locale {
-public static final JLocale 中文;
+public class JLocale {
+public static final java.util.Locale 中文;
 
-public static final JLocale 简体中文;
+public static final java.util.Locale 简体中文;
 
-public static final JLocale 繁体中文;
+public static final java.util.Locale 繁体中文;
 
-public static final JLocale 英语;
+public static final java.util.Locale 英语;
 
-public static final JLocale 法语;
+public static final java.util.Locale 法语;
 
-public static final JLocale 日语;
+public static final java.util.Locale 日语;
 
-public static final JLocale 意大利语;
+public static final java.util.Locale 意大利语;
 
-public static final JLocale 朝鲜语;
+public static final java.util.Locale 朝鲜语;
 
-public static final JLocale 德语;
+public static final java.util.Locale 德语;
 
-public static final JLocale 英语_英国;
+public static final java.util.Locale 英语_英国;
 
-public static final JLocale 英语_美国;
+public static final java.util.Locale 英语_美国;
 
-public static final JLocale 英语_加拿大;
+public static final java.util.Locale 英语_加拿大;
 
-public static final JLocale 法语_加拿大;
+public static final java.util.Locale 法语_加拿大;
 
 public void 赋值_op(String 语言代码, String 国家或地区代码) {
 return new java.util.Locale(语言代码, 国家或地区代码);
 }
 
-public static JLocale 新建语言环境(String 语言代码, String 国家或地区代码) {
+public static java.util.Locale 新建语言环境(String 语言代码, String 国家或地区代码) {
 return new java.util.Locale(语言代码, 国家或地区代码);
 }
 

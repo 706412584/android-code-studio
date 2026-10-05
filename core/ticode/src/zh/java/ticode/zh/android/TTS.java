@@ -4,8 +4,6 @@ import android.speech.tts.TextToSpeech;
 import java.util.*;
 import android.content.*;
 
-import ticode.zh.jvm.语言环境;
-
 public class TTS extends 窗口组件 {
 
 private Context context;
@@ -40,7 +38,7 @@ mSpeech.setPitch((float) 音调);
 }
 
 //设置语言环境
-public void 语言(语言环境 语言) {
+public void 语言(java.util.Locale 语言) {
 mSpeech.setLanguage(语言);
 }
 

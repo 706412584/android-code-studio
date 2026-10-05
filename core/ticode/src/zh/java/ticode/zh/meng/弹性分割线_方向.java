@@ -11,7 +11,7 @@ import ticode.zh.android.图片资源;
 import ticode.zh.android.安卓应用;
 
 public class 弹性分割线_方向 {
-public static final 弹性分割线_方向 横向 = 1;
-public static final 弹性分割线_方向 纵向 = 2;
-public static final 弹性分割线_方向 全部 = 3;
+public static final int 横向 = 1;
+public static final int 纵向 = 2;
+public static final int 全部 = 3;
 }

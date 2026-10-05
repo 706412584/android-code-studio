@@ -10,7 +10,6 @@ import android.graphics.*;
 import android.graphics.drawable.*;
 import android.graphics.drawable.shapes.*;
 import android.content.res.*;
-import android.graphics.drawable.GradientDrawable;
 import android.os.Build;
 
 import ticode.zh.base.长整数类;
@@ -19,15 +18,15 @@ import ticode.zh.jvm.文件输出流;
 import ticode.zh.jvm.输入流;
 import ticode.zh.jvm.输出流;
 
-public class 绘制和形状 extends android.graphics.drawable.GradientDrawable.Orientation {
-public static final 绘制和形状 绘制_从上往下;
-public static final 绘制和形状 绘制_从右上角到左下角;
-public static final 绘制和形状 绘制_从右往左;
-public static final 绘制和形状 绘制_从右下角到左上角;
-public static final 绘制和形状 绘制_从下往上;
-public static final 绘制和形状 绘制_从左下角到右上角;
-public static final 绘制和形状 绘制_从左往右;
-public static final 绘制和形状 绘制_从左上角到右下角;
+public class 绘制和形状 {
+public static final android.graphics.drawable.GradientDrawable.Orientation 绘制_从上往下;
+public static final android.graphics.drawable.GradientDrawable.Orientation 绘制_从右上角到左下角;
+public static final android.graphics.drawable.GradientDrawable.Orientation 绘制_从右往左;
+public static final android.graphics.drawable.GradientDrawable.Orientation 绘制_从右下角到左上角;
+public static final android.graphics.drawable.GradientDrawable.Orientation 绘制_从下往上;
+public static final android.graphics.drawable.GradientDrawable.Orientation 绘制_从左下角到右上角;
+public static final android.graphics.drawable.GradientDrawable.Orientation 绘制_从左往右;
+public static final android.graphics.drawable.GradientDrawable.Orientation 绘制_从左上角到右下角;
 public static final Integer 形状_矩形;
 public static final Integer 形状_圆形;
 public static final Integer 形状_线;

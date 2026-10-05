@@ -560,7 +560,14 @@ class Translator:
         name, typ, val = m.group(1), (m.group(2) or '').strip(), (m.group(3) or '').strip()
         if val.startswith('code '):
             val = val[5:].strip()
-        jt = map_type(typ, self.tparams) if typ else self.infer_type(val)
+        # 结绳的枚举惯用法：类里只有 `@静态 常量 X : 自身类名 = <整数>`。
+        # 若按声明类型生成 `public static final 弹性布局_主轴对齐方式 左或上 = 0;`
+        # 会报「int 无法转换为 弹性布局_主轴对齐方式」（该模式约 70 处）。
+        # 这类常量值就是字面量，取**值的类型**（int 等）。
+        if typ and typ.strip() == self.cur_class_zh and val:
+            jt = self.infer_type(val)
+        else:
+            jt = map_type(typ, self.tparams) if typ else self.infer_type(val)
         mod = 'public static final'
         self.emit('%s %s %s%s;' % (mod, jt, name, (' = ' + subst(val, [], self.tparams)) if val else ''))
 
@@ -930,10 +937,22 @@ def translate(path, outdir):
     if t.pkg:
         head.append('package %s;' % t.pkg)
     head.append('')
+    # 去重：Java 禁止两个 simple name 相同的 single-type-import
+    # （实测 `android.widget.LinearLayout.LayoutParams` 与
+    #   `android.widget.RelativeLayout.LayoutParams` 并存 → 「已定义具有相同简名的类型」）。
+    # 星号导入与单类型导入分开去重；保留首次出现者。
+    _seen_simple, _seen_star = set(), set()
     for imp in t.imports:
         if imp.endswith('.*'):
+            if imp in _seen_star:
+                continue
+            _seen_star.add(imp)
             head.append('import %s;' % imp)
         else:
+            simple = imp.rsplit('.', 1)[-1]
+            if simple in _seen_simple:
+                continue
+            _seen_simple.add(simple)
             head.append('import %s;' % imp)
     head.append('')
     # 跨包引用必须显式 import：本库 40 个文件引用了其它包的类，而原 .t 靠

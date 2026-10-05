@@ -1,7 +1,6 @@
 package ticode.zh.android;
 
 import androidx.constraintlayout.widget.ConstraintLayout;
-import androidx.constraintlayout.widget.ConstraintLayout;
 
 public class 链式排列规则 {
 public static final int 均匀排列 = ConstraintLayout.LayoutParams.CHAIN_SPREAD;

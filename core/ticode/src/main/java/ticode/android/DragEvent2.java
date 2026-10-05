@@ -4,7 +4,7 @@ import android.content.Context;
 import android.view.ScaleGestureDetector;
 import android.view.ScaleGestureDetector.OnScaleGestureListener;
 
-public class DragEvent2 extends android.view.DragEvent {
+public class DragEvent2 {
 
 
 

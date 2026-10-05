@@ -10,7 +10,6 @@ import android.graphics.*;
 import android.graphics.drawable.*;
 import android.graphics.drawable.shapes.*;
 import android.content.res.*;
-import android.graphics.drawable.GradientDrawable;
 import android.os.Build;
 
 import ticode.base.LongBox;

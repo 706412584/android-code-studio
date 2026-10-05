@@ -1,16 +1,13 @@
 # -*- coding: utf-8 -*-
-"""@指代类 的目标里**只能用 implements** 的那些（接口）。
+"""@指代类 里走「类型别名」的类：类型位置直接映射成目标 Java 类型。
 
-来源：转译后 javac 的实证错误「此处需要接口」，不是靠反射猜的。
+收进来的判据（都是实测，不是猜）：
+  1) 接口——`extends` 非法，必须 `implements`（14 个，净收益 -80）；
+  2) 枚举 / 私有构造器——无法继承，实例方法本就不可用（13 个）；
+  3) 少数 final 类——**仅当实测有净收益**（逐个试出来的 8 个）。
 
-为什么只收接口：
-- 接口：`extends` 非法，改 `implements` 后接口方法自动可调 → 净收益（实测 -80 处错误）
-- final / 枚举 / 私有构造器：改成类型别名后**实例方法全丢**
-  （`GZIP输出流1.写出字节集(...)` 这类调用变成「找不到符号」），实测把错误从
-  1180 抬到 1358，故这些**故意不收**——保留 extends 虽然报一处「无法从最终X进行继承」，
-  但那是一处显式错误，好过几十处隐性丢失。
-
-因此本表的类走 `implements`；其余 @指代类 仍走 `extends`。
+警告：**不要批量收 final 类**。final 类改成类型别名后实例方法全丢，实测把
+候选 final 全收进去会把错误从 1070 抬到 1221。本表的 final 项是逐项验证过的。
 """
 
 NON_EXTEND = {
@@ -20,14 +17,28 @@ NON_EXTEND = {
     'Java注解': 'java.lang.annotation.Annotation',
     'Java类型': 'java.lang.reflect.Type',
     'Java通配符类型': 'java.lang.reflect.WildcardType',
+    'WiFi信息': 'android.net.wifi.WifiInfo',
+    '位图压缩格式': 'android.graphics.Bitmap.CompressFormat',
+    '位图对象': 'android.graphics.Bitmap',
+    '位图配置': 'android.graphics.Bitmap.Config',
+    '图像缩放类型': 'android.widget.ImageView.ScaleType',
+    '字体对象': 'android.graphics.Typeface',
     '字符串': 'CharSequence',
+    '拖放事件': 'android.view.DragEvent',
+    '数据库': 'android.database.sqlite.SQLiteDatabase',
     '枚举器': 'java.util.Iterator',
     '类名枚举器': 'java.util.Enumeration',
+    '组件属性动画播放器': 'android.view.ViewPropertyAnimator',
+    '绘制和形状': 'android.graphics.drawable.GradientDrawable.Orientation',
     '菜单': 'android.view.Menu',
     '菜单项': 'android.view.MenuItem',
+    '触摸事件': 'android.view.MotionEvent',
     '记录集': 'android.database.Cursor',
+    '语言环境': 'java.util.Locale',
     '适配器': 'android.widget.Adapter',
     '通信中间件': 'android.os.IBinder',
+    '附加资源管理器': 'android.content.res.AssetManager',
+    '预备启动信息': 'android.app.PendingIntent',
 }
 
 NON_EXTEND_KIND = {
@@ -37,12 +48,26 @@ NON_EXTEND_KIND = {
     'Java注解': 'interface',
     'Java类型': 'interface',
     'Java通配符类型': 'interface',
+    'WiFi信息': 'private-ctor',
+    '位图压缩格式': 'enum',
+    '位图对象': 'private-ctor',
+    '位图配置': 'enum',
+    '图像缩放类型': 'enum',
+    '字体对象': 'private-ctor',
     '字符串': 'interface',
+    '拖放事件': 'private-ctor',
+    '数据库': 'private-ctor',
     '枚举器': 'interface',
     '类名枚举器': 'interface',
+    '组件属性动画播放器': 'private-ctor',
+    '绘制和形状': 'enum',
     '菜单': 'interface',
     '菜单项': 'interface',
+    '触摸事件': 'private-ctor',
     '记录集': 'interface',
+    '语言环境': 'final',
     '适配器': 'interface',
     '通信中间件': 'interface',
+    '附加资源管理器': 'private-ctor',
+    '预备启动信息': 'private-ctor',
 }

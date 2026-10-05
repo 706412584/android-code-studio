@@ -3,7 +3,7 @@ package ticode.android;
 
 import ticode.jvm.JInputStream;
 
-public class ExtraResourceManager extends android.content.res.AssetManager {
+public class ExtraResourceManager {
 //打开指定文件输入流
 public JInputStream 打开文件(String 文件名) {
 try {

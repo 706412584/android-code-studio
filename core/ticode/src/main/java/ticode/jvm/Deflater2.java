@@ -2,17 +2,6 @@ package ticode.jvm;
 
 import java.util.zip.*;
 import java.io.File;
-import java.util.zip.*;
-import java.util.zip.*;
-import java.util.zip.*;
-import java.util.zip.*;
-import java.util.zip.*;
-import java.util.zip.*;
-import java.util.zip.*;
-import java.util.zip.*;
-import java.util.zip.*;
-import java.util.zip.*;
-import java.util.zip.*;
 import java.io.*;
 
 public class Deflater2 extends java.util.zip.Deflater {

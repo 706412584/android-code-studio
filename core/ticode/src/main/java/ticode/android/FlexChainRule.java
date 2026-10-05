@@ -1,7 +1,6 @@
 package ticode.android;
 
 import androidx.constraintlayout.widget.ConstraintLayout;
-import androidx.constraintlayout.widget.ConstraintLayout;
 
 public class FlexChainRule {
 public static final int 均匀排列 = ConstraintLayout.LayoutParams.CHAIN_SPREAD;

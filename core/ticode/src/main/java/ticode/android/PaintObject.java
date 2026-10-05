@@ -7,24 +7,18 @@ import java.lang.reflect.Field;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.ReentrantLock;
 import android.os.SystemClock;
-import android.view.View;
 import android.view.Surface;
 import android.view.SurfaceView;
 import android.view.SurfaceHolder;
-import android.content.Context;
 import android.graphics.Color;
-import android.graphics.Canvas;
 import android.graphics.PixelFormat;
 import java.util.Map;
 import java.util.HashMap;
 import android.graphics.Path;
 import android.graphics.RectF;
 import android.graphics.Bitmap;
-import android.graphics.Canvas;
 import android.graphics.Paint;
 import android.graphics.Rect;
-import android.graphics.Path;
-import android.graphics.RectF;
 
 public class PaintObject extends android.graphics.Paint {
 public static final int 画笔类型_填充 = 1;
@@ -92,7 +86,7 @@ public void 透明度(int 透明度) {
 this.setAlpha(透明度);
 }
 
-public void 字体(TypefaceObject 字体) {
+public void 字体(android.graphics.Typeface 字体) {
 this.setTypeface(字体);
 }
 

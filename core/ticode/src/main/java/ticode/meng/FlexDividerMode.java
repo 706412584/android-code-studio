@@ -10,9 +10,9 @@ import ticode.android.VisualComponent;
 
 public class FlexDividerMode {
 
-public static final FlexDividerMode 无 = 0;
-public static final FlexDividerMode 起始位 = 1;
-public static final FlexDividerMode 中间 = 1 << 1;
-public static final FlexDividerMode 结束位 = 1 << 2;
+public static final int 无 = 0;
+public static final int 起始位 = 1;
+public static final Object 中间 = 1 << 1;
+public static final Object 结束位 = 1 << 2;
 
 }

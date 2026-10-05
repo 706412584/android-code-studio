@@ -4,7 +4,7 @@ import android.content.Context;
 import android.view.ScaleGestureDetector;
 import android.view.ScaleGestureDetector.OnScaleGestureListener;
 
-public class TouchEvent2 extends android.view.MotionEvent {
+public class TouchEvent2 extends InputEvent2 {
 
 
 

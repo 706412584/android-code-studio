@@ -11,7 +11,7 @@ import ticode.android.DrawableObject;
 import ticode.android.ImageResource;
 
 public class FlexDividerOrientation {
-public static final FlexDividerOrientation 横向 = 1;
-public static final FlexDividerOrientation 纵向 = 2;
-public static final FlexDividerOrientation 全部 = 3;
+public static final int 横向 = 1;
+public static final int 纵向 = 2;
+public static final int 全部 = 3;
 }

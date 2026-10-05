@@ -4,30 +4,9 @@ import android.content.*;
 import android.app.*;
 import android.view.*;
 import android.graphics.drawable.*;
-import android.content.*;
-import android.app.*;
-import android.view.*;
-import android.graphics.drawable.*;
-import android.app.*;
 import android.widget.*;
-import android.graphics.drawable.*;
-import android.content.*;
 import java.util.*;
-import android.app.*;
-import android.widget.*;
-import android.graphics.drawable.*;
-import android.content.*;
-import java.util.*;
-import android.app.*;
-import android.widget.*;
-import android.graphics.drawable.*;
-import android.content.*;
-import java.util.*;
-import android.widget.*;
 import android.graphics.*;
-import android.graphics.drawable.*;
-import android.view.*;
-import android.widget.*;
 
 public class PopupMenu2 extends WindowComponent {
 
