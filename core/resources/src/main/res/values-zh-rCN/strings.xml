@@ -276,6 +276,7 @@
   <string name="ai_agent_codegraph_indexed">已索引 %1$d 个项目</string>
   <string name="ai_agent_codegraph_install">安装</string>
   <string name="ai_agent_codegraph_reinstall">重新安装</string>
+  <string name="ai_agent_codegraph_reinstall_confirm">CodeGraph 已安装。重新安装会重新下载并覆盖当前程序，确定继续？</string>
   <string name="ai_agent_codegraph_uninstall">卸载</string>
   <string name="ai_agent_codegraph_installing">正在安装…</string>
   <string name="ai_agent_codegraph_downloading">正在下载… %1$d%%</string>

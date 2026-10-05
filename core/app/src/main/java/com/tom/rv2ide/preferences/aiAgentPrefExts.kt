@@ -1836,19 +1836,46 @@ private class CodeGraphPreference(
   override fun onPreferenceClick(preference: Preference): Boolean {
     val context = preference.context
     val manager = CodeGraphManager(context)
+    // 按当前安装态决定对话框的措辞与按钮。
+    //
+    // 此前无论装没装，正按钮永远是「安装」——用户装完再点，看到的还是「安装」，
+    // 会以为刚才那次没成功。已安装时正按钮改为「重新安装」，并先弹一次确认。
+    // isInstalled() 只读三个文件是否存在，同步调用，可直接在主线程判。
+    val installed = CodeGraphInstaller.isInstalled()
     val dialog =
         MaterialAlertDialogBuilder(context)
             .setTitle(R.string.ai_agent_codegraph_title)
             .setMessage(R.string.ai_agent_codegraph_about)
-            .setPositiveButton(R.string.ai_agent_codegraph_install, null)
+            .setPositiveButton(
+                if (installed) R.string.ai_agent_codegraph_reinstall
+                else R.string.ai_agent_codegraph_install,
+                null,
+            )
             .setNeutralButton(R.string.ai_agent_codegraph_uninstall, null)
             .setNegativeButton(android.R.string.cancel, null)
             .create()
 
     dialog.setOnShowListener {
-      val install = dialog.getButton(android.content.DialogInterface.BUTTON_POSITIVE)
+      val primary = dialog.getButton(android.content.DialogInterface.BUTTON_POSITIVE)
       val uninstall = dialog.getButton(android.content.DialogInterface.BUTTON_NEUTRAL)
-      install.setOnClickListener { startInstall(context, manager, dialog, install) }
+      primary.setOnClickListener {
+        if (installed) {
+          // 重装会重新下载 12.8MB 并覆盖当前程序，先确认。确认后关掉本对话框，
+          // 免得两个对话框叠在一起、用户不知道哪个在跑进度。
+          MaterialAlertDialogBuilder(context)
+              .setMessage(R.string.ai_agent_codegraph_reinstall_confirm)
+              .setPositiveButton(R.string.ai_agent_codegraph_reinstall) { _, _ ->
+                dialog.dismiss()
+                // 对话框已关，按钮没了：进度改由条目摘要承担（startInstall 里的
+                // refreshSummary 会在结束时把摘要改成真实安装态）。
+                startInstall(context, manager, preference, dialog, primary)
+              }
+              .setNegativeButton(android.R.string.cancel, null)
+              .show()
+        } else {
+          startInstall(context, manager, preference, dialog, primary)
+        }
+      }
       uninstall.setOnClickListener {
         // 卸载会删约 134MB 程序，先确认。索引在各项目里，不在此列。
         MaterialAlertDialogBuilder(context)
@@ -1877,6 +1904,7 @@ private class CodeGraphPreference(
   private fun startInstall(
       context: Context,
       manager: CodeGraphManager,
+      preference: Preference,
       dialog: androidx.appcompat.app.AlertDialog,
       button: android.widget.Button,
   ) {
@@ -1899,8 +1927,8 @@ private class CodeGraphPreference(
                     R.string.ai_agent_codegraph_install_failed, output.take(300))
               }
           withContext(Dispatchers.Main) {
-            button.isEnabled = true
-            button.setText(R.string.ai_agent_codegraph_install)
+            resetInstallButton(button)
+            refreshSummary(preference)
             Toast.makeText(context, message, Toast.LENGTH_LONG).show()
           }
           return@launch
@@ -1917,7 +1945,7 @@ private class CodeGraphPreference(
                     return
                   }
                   val percent = (fraction * 100).toInt()
-                  // 回调在 IO 线程，改控件必须切主线程。
+                  // 回调是普通函数（非 suspend），不能直接 withContext；用 launch 切主线程。
                   CoroutineScope(Dispatchers.Main).launch {
                     button.text =
                         context.getString(R.string.ai_agent_codegraph_downloading, percent)
@@ -1926,13 +1954,15 @@ private class CodeGraphPreference(
               })
 
       withContext(Dispatchers.Main) {
-        button.isEnabled = true
-        button.setText(R.string.ai_agent_codegraph_install)
+        // 安装结束后**必须刷新摘要**：此前只弹 Toast 就 dismiss，停在设置页时摘要仍是
+        // 「未安装」，用户以为没装上、又去点一次。这是「UI 没马上更新」的直接原因。
+        refreshSummary(preference)
         if (result.isSuccess) {
           Toast.makeText(context, R.string.ai_agent_codegraph_install_ok, Toast.LENGTH_SHORT)
               .show()
           dialog.dismiss()
         } else {
+          resetInstallButton(button)
           Toast.makeText(
                   context,
                   context.getString(
@@ -1945,5 +1975,17 @@ private class CodeGraphPreference(
         }
       }
     }
+  }
+
+  /**
+   * 安装失败后把按钮恢复成可点，并按**当前真实安装态**决定文案。
+   *
+   * <p>不能写死回「安装」：重装失败时程序其实还在，写死成「安装」会让人以为程序没了。
+   */
+  private fun resetInstallButton(button: android.widget.Button) {
+    button.isEnabled = true
+    button.setText(
+        if (CodeGraphInstaller.isInstalled()) R.string.ai_agent_codegraph_reinstall
+        else R.string.ai_agent_codegraph_install)
   }
 }

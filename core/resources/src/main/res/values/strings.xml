@@ -281,6 +281,7 @@
   <string name="ai_agent_codegraph_indexed">%1$d projects indexed</string>
   <string name="ai_agent_codegraph_install">Install</string>
   <string name="ai_agent_codegraph_reinstall">Reinstall</string>
+  <string name="ai_agent_codegraph_reinstall_confirm">CodeGraph is already installed. Reinstalling downloads the package again and overwrites the current program. Continue?</string>
   <string name="ai_agent_codegraph_uninstall">Uninstall</string>
   <string name="ai_agent_codegraph_installing">Installing…</string>
   <string name="ai_agent_codegraph_downloading">Downloading… %1$d%%</string>
