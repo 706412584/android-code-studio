@@ -1,0 +1,64 @@
+package 结绳.安卓;
+
+import android.widget.AdapterView;
+import android.widget.AdapterView.*;
+import android.content.Context;
+import android.view.View;
+import android.view.View;
+import android.widget.AdapterView.*;
+import android.widget.AdapterView;
+import android.widget.ListView;
+import android.content.Context;
+import android.graphics.*;
+import android.graphics.drawable.*;
+import android.widget.ArrayAdapter;
+import java.lang.reflect.Field;
+import android.view.View;
+import android.widget.AdapterView.*;
+import android.widget.AdapterView;
+import android.widget.Spinner;
+import android.widget.ListPopupWindow;
+import android.content.Context;
+import android.graphics.*;
+import android.graphics.drawable.*;
+import android.view.View;
+import android.widget.AdapterView;
+import android.widget.AdapterView.*;
+import android.widget.GridView;
+import android.content.Context;
+import android.graphics.*;
+import android.graphics.drawable.*;
+import android.view.*;
+import android.view.*;
+
+public class 自定义下拉列表框 extends 下拉列表框 {
+public 自定义下拉列表框(安卓环境 context) {
+super(context);
+初始化_内部();
+}
+
+简单适配器 适配器对象;
+
+public 组件容器 加载布局(int 索引, 组件容器 项目布局) {
+return 加载布局(索引, 项目布局);
+}
+
+public void 初始化_内部() {
+this.适配器 = 适配器对象;
+订阅事件 适配器对象;
+}
+
+
+
+
+public void 更新项目(int 项目总数) {
+适配器对象.更新项目(项目总数);
+}
+
+public 组件容器 加载布局(int 索引, 组件容器 项目布局) { return null; } // 事件
+}
+
+
+
+
+

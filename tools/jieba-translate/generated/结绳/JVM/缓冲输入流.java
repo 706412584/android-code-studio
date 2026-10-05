@@ -1,0 +1,20 @@
+package 结绳.JVM;
+
+import java.io.Serializable;
+
+public class 缓冲输入流 extends 输入流 {
+public void 赋值_op(输入流 目标输入流) {
+return new java.io.BufferedInputStream(目标输入流);
+}
+
+public 缓冲输入流 从路径创建(String 文件路径) {
+try {
+return new java.io.BufferedInputStream(new java.io.FileInputStream(文件路径));
+} catch (Exception e) {
+e.printStackTrace();
+}
+return null;
+}
+}
+
+
