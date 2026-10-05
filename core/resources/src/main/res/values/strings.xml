@@ -301,6 +301,8 @@
   <string name="ai_agent_prompt_template_reset">Reset this template</string>
   <string name="ai_agent_prompt_template_reset_all">Reset all</string>
   <string name="ai_agent_prompt_template_placeholders">Available placeholders:</string>
+  <string name="ai_agent_prompt_template_placeholders_hint">Placeholders (long-press the box to see all):</string>
+  <string name="ai_agent_prompt_template_save">Save</string>
   <string name="ai_agent_prompt_template_unknown">Not recognized (will render as empty):</string>
 
   <!-- Persistent authorization rules for dangerous agent tools -->

@@ -436,6 +436,7 @@ private class PromptTemplatePreference(
   ) {
     val current = store.resolve(templateId)
     val unknown = com.tom.rv2ide.ai.agent.prompt.PromptRenderer.unknownPlaceholders(current)
+    val dp = { value: Int -> (value * context.resources.displayMetrics.density).toInt() }
 
     val editText =
         android.widget.EditText(context).apply {
@@ -449,14 +450,38 @@ private class PromptTemplatePreference(
           typeface = android.graphics.Typeface.MONOSPACE
           setHorizontallyScrolling(false)
         }
-    val scroll = android.widget.ScrollView(context).apply { addView(editText) }
 
-    // 校验提示：拼错的占位符会静默变空串，必须在保存前让用户看到。
+    // 完整占位符清单（19 个）挂到输入框的长按上，**不能放进对话框正文**：
+    // 正文里那十几行会把 AlertDialog 顶到满屏，底部按钮栏被挤出窗口——
+    // 用户看到的就是「能编辑，但找不到保存按钮」。
+    val placeholders = com.tom.rv2ide.ai.agent.prompt.PromptPlaceholders.all()
+    editText.setOnLongClickListener {
+      com.google.android.material.dialog.MaterialAlertDialogBuilder(context)
+          .setTitle(R.string.ai_agent_prompt_template_placeholders)
+          .setMessage(placeholders.joinToString("\n") { "{{$it}}" })
+          .setPositiveButton(android.R.string.ok, null)
+          .show()
+      true
+    }
+
+    val scroll =
+        android.widget.ScrollView(context).apply {
+          addView(editText)
+          // 固定高度而非 WRAP_CONTENT：提示词动辄几十行，WRAP_CONTENT 会把对话框
+          // 撑到满屏、按钮被挤出窗口。取屏幕高度的 45%，标题 + 提示 + 按钮都留在
+          // 可见区，正文超出部分在框内滚动。这是「保存按钮看得见」的根本保证。
+          layoutParams =
+              android.widget.LinearLayout.LayoutParams(
+                  android.widget.LinearLayout.LayoutParams.MATCH_PARENT,
+                  (context.resources.displayMetrics.heightPixels * 0.45f).toInt(),
+              )
+          setPadding(dp(4), dp(4), dp(4), dp(4))
+        }
+
+    // 正文只留短提示与**校验警告**：拼错的占位符会静默变空串，必须在保存前可见。
     val hint =
         buildString {
-          append(context.getString(R.string.ai_agent_prompt_template_placeholders))
-          append('\n')
-          append(com.tom.rv2ide.ai.agent.prompt.PromptPlaceholders.all().joinToString("  ") { "{{$it}}" })
+          append(context.getString(R.string.ai_agent_prompt_template_placeholders_hint))
           if (unknown.isNotEmpty()) {
             append("\n\n")
             append(context.getString(R.string.ai_agent_prompt_template_unknown))
@@ -469,7 +494,8 @@ private class PromptTemplatePreference(
         .setTitle(templateId)
         .setMessage(hint)
         .setView(scroll)
-        .setPositiveButton(android.R.string.ok) { _, _ ->
+        // 显式写「保存」而不是「确定」：用户要的就是一个明确的保存入口。
+        .setPositiveButton(R.string.ai_agent_prompt_template_save) { _, _ ->
           store.write(templateId, editText.text?.toString().orEmpty())
           preference.summary = describe(context)
         }
