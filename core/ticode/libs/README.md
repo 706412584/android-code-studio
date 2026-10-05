@@ -12,10 +12,11 @@
 cp utilities/framework-stubs/libs/android.jar core/ticode/libs/android.jar
 ```
 
-## recyclerview / constraintlayout / flexbox
+## recyclerview / constraintlayout / flexbox / appcompat
 
 从本机 Gradle 缓存的 AAR 里取 `classes.jar`。版本与 `gradle/libs.versions.toml`
-中声明的一致（recyclerview 1.3.2 / constraintlayout 2.1.4 / flexbox 3.0.0）：
+中声明的一致（recyclerview 1.3.2 / constraintlayout 2.1.4 / flexbox 3.0.0 /
+appcompat 1.3.1）：
 
 ```bash
 CACHE=~/.gradle/caches/modules-2/files-2.1
@@ -25,10 +26,16 @@ unzip -p "$CACHE/androidx.constraintlayout/constraintlayout/2.1.4/"*/constraintl
   classes.jar > core/ticode/libs/constraintlayout.jar
 unzip -p "$CACHE/com.google.android.flexbox/flexbox/3.0.0/"*/flexbox-3.0.0.aar \
   classes.jar > core/ticode/libs/flexbox.jar
+unzip -p "$CACHE/androidx.appcompat/appcompat/1.3.1/"*/appcompat-1.3.1.aar \
+  classes.jar > core/ticode/libs/appcompat.jar
 ```
 
-## 为什么需要这三个
+## 为什么需要这些
 
 生成的代码只引用三类东西：`android.*`（含 `android.R` 常量）、
-`androidx.recyclerview` / `androidx.constraintlayout`、`com.google.android.flexbox`。
-全部只出现在 `ticode.meng`（分割线/布局管理器家族）与个别 `ticode.android` 控件里。
+`androidx.recyclerview` / `androidx.constraintlayout`、`com.google.android.flexbox`、
+`androidx.appcompat`。分布：
+- `ticode.meng`（分割线/布局管理器家族）与个别 `ticode.android` 控件 → recyclerview/flexbox/constraintlayout
+- `ticode.android.工具栏`（`androidx.appcompat.widget.Toolbar`）、
+  `安卓X窗口`（`androidx.appcompat.app.AppCompatActivity`）→ appcompat
+

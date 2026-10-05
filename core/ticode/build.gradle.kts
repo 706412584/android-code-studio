@@ -66,12 +66,13 @@ sourceSets {
 }
 
 dependencies {
-    // 只做编译期依赖：真正运行时的 android.jar / recyclerview / flexbox 由
-    // 宿主（模板生成的工程）提供，这里不能打进产物，否则重复类。
+    // 只做编译期依赖：真正运行时的这些库由宿主（模板生成的工程）提供，
+    // 这里不能打进产物，否则重复类。jar 来源见 libs/README.md。
     compileOnly(files("libs/android.jar"))
     compileOnly(files("libs/recyclerview.jar"))
     compileOnly(files("libs/constraintlayout.jar"))
     compileOnly(files("libs/flexbox.jar"))
+    compileOnly(files("libs/appcompat.jar"))
 }
 
 // 源码含中文标识符与中文字符串字面量，必须显式钉 UTF-8：
