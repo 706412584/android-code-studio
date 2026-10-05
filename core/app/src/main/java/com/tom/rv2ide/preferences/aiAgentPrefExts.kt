@@ -149,7 +149,6 @@ private class CapabilitiesPage(
     addPreference(MemoriesPreference())
     addPreference(McpServersPreference())
     addPreference(CodeGraphPreference())
-    addPreference(IndexProjectsPreference())
   }
 }
 
@@ -164,29 +163,20 @@ private class CapabilitiesPage(
  * <p><b>为什么用「已记录项目列表」而不是扫描磁盘</b>：项目可能在任意路径（外部项目、
  * 用户自选目录），扫盘既慢又不全。ACS 自己维护的项目清单才是「用户关心哪些项目」的
  * 权威来源；清单之外的情况用「选择文件夹…」兜底。
+ *
+ * <p><b>为什么不是设置条目</b>：它和安装是同一件事的上下游（先有程序才能建索引），
+ * 因此作为安装弹窗里的一个按钮出现（见 [CodeGraphPreference]），不单列条目——
+ * 用户不必在设置里找两个地方。
  */
-@Parcelize
-private class IndexProjectsPreference(
-    override val key: String = "codegraph_index_projects",
-    override val title: Int = R.string.ai_agent_codegraph_index_title,
-    override val summary: Int? = R.string.ai_agent_codegraph_index_summary,
-) : BasePreference() {
+private object CodeGraphIndexActions {
 
-  override fun onCreatePreference(context: Context): Preference =
-      androidx.preference.Preference(context).apply {
-        key = "codegraph_index_projects"
-        title = context.getString(R.string.ai_agent_codegraph_index_title)
-        summary = context.getString(R.string.ai_agent_codegraph_index_summary)
-      }
-
-  override fun onPreferenceClick(preference: Preference): Boolean {
-    val context = preference.context
+  /** 读项目清单（走 DataStore，须在 IO 线程），再回主线程弹选择框。 */
+  fun start(context: Context, preference: Preference) {
     if (!CodeGraphInstaller.isInstalled()) {
       Toast.makeText(context, R.string.ai_agent_codegraph_index_needs_install, Toast.LENGTH_SHORT)
           .show()
-      return true
+      return
     }
-    // 读项目清单要走 DataStore，不能在主线程阻塞；读完再回主线程弹选择框。
     CoroutineScope(Dispatchers.IO).launch {
       val projects =
           try {
@@ -196,7 +186,6 @@ private class IndexProjectsPreference(
           }
       withContext(Dispatchers.Main) { showPicker(context, preference, projects) }
     }
-    return true
   }
 
   /** 勾选式项目选择框；无已记录项目时只提供「选择文件夹…」。 */
@@ -331,14 +320,10 @@ private class IndexProjectsPreference(
         }
       }
       withContext(Dispatchers.Main) {
-        // 完成后恢复成默认摘要，并弹一条总结。逐个项目的结果已由失败 Toast 覆盖，
-        // 这里只说总数，避免成功时也刷屏。
-        preference.summary = context.getString(R.string.ai_agent_codegraph_index_summary)
-        // 顺带刷新「CodeGraph 索引」条目的「已索引 N 个项目」——建索引改的是那边的数字，
-        // 不刷新的话用户回去看到的还是旧值。兄弟条目从当前条目的 parent 里按 key 找。
-        preference.parent?.findPreference<Preference>(CodeGraphPreference.KEY)?.let {
-          CodeGraphPreference().refreshSummary(it)
-        }
+        // 完成后刷新 CodeGraph 条目的摘要（「已索引 N 个项目」就在这上面）。
+        // 本入口从该条目的对话框触发，preference 就是它——直接刷新即可，
+        // 不刷新的话用户看到的还是建索引前的旧数字。
+        CodeGraphPreference().refreshSummary(preference)
         Toast.makeText(
                 context,
                 if (ok == dirs.size) context.getString(R.string.ai_agent_codegraph_index_done_all)
@@ -350,6 +335,7 @@ private class IndexProjectsPreference(
     }
   }
 }
+
 
 /**
  * 应用外系统悬浮入口。
@@ -2050,10 +2036,32 @@ private class CodeGraphPreference(
     // 会以为刚才那次没成功。已安装时正按钮改为「重新安装」，并先弹一次确认。
     // isInstalled() 只读三个文件是否存在，同步调用，可直接在主线程判。
     val installed = CodeGraphInstaller.isInstalled()
+    // 「初始化项目索引」放在**内容区**而不是按钮栏：按钮栏只有 positive/negative/neutral
+    // 三个位置（卸载已占 neutral），硬塞第 4 个会被 Material 的 ButtonBarLayout 判定放不下
+    // 而**整体竖排**——4 个按钮各占一行，对话框又高又难看。放进内容区既是弹窗里的按钮，
+    // 又不动按钮栏的布局。未安装时不显示（没有程序时建索引必然失败）。
+    val content =
+        android.widget.LinearLayout(context).apply {
+          orientation = android.widget.LinearLayout.VERTICAL
+          val pad = (context.resources.displayMetrics.density * 24).toInt()
+          setPadding(pad, pad / 2, pad, 0)
+          addView(
+              android.widget.TextView(context).apply {
+                setText(R.string.ai_agent_codegraph_about)
+                setTextAppearance(com.google.android.material.R.style.TextAppearance_Material3_BodyMedium)
+              })
+          if (installed) {
+            addView(
+                android.widget.Button(context, null, android.R.attr.borderlessButtonStyle).apply {
+                  setText(R.string.ai_agent_codegraph_index_title)
+                  setOnClickListener { CodeGraphIndexActions.start(context, preference) }
+                })
+          }
+        }
     val dialog =
         MaterialAlertDialogBuilder(context)
             .setTitle(R.string.ai_agent_codegraph_title)
-            .setMessage(R.string.ai_agent_codegraph_about)
+            .setView(content)
             .setPositiveButton(
                 if (installed) R.string.ai_agent_codegraph_reinstall
                 else R.string.ai_agent_codegraph_install,
