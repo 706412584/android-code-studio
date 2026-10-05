@@ -703,7 +703,7 @@ public final class AgentOrchestrator {
 
     // 观察类（只读，不改变设备）：截屏 / 节点树 / 前台 Activity / 内存与渲染
     registry.register(new PhoneScreenshotTool(appContext, shellBackends));
-    registry.register(new PhoneViewHierarchyTool(shellBackends));
+    registry.register(new PhoneViewHierarchyTool(appContext, shellBackends));
     registry.register(new PhoneCurrentActivityTool(shellBackends));
     registry.register(new PhoneMemInfoTool(appContext, shellBackends));
 
@@ -711,12 +711,12 @@ public final class AgentOrchestrator {
     // 这些工具能驱动任意应用（点开终端、输入命令、回车执行），若免确认就是绕过
     // shell_execute 确认门的一条通道，因此必须逐次确认；需要无打扰跑闭环请切 AUTO 模式。
     registry.register(new PhoneClickTool(shellBackends));
-    registry.register(new PhoneClickViewTool(shellBackends));
+    registry.register(new PhoneClickViewTool(appContext, shellBackends));
     registry.register(new PhoneSwipeTool(shellBackends));
     registry.register(new PhoneLongPressTool(shellBackends));
     registry.register(new PhoneInputTextTool(shellBackends));
     registry.register(new PhoneGlobalActionTool(shellBackends));
-    registry.register(new PhoneWaitForTool(shellBackends));
+    registry.register(new PhoneWaitForTool(appContext, shellBackends));
     // 清数据：不可逆，且作用于任意包名，因此额外按包名限定授权粒度（见 ToolPermissionRule）。
     registry.register(new PhoneClearDataTool(shellBackends));
 

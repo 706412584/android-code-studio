@@ -51,7 +51,11 @@ public final class PhoneClickViewTool extends BaseTool {
 
   private final ShellBackendRegistry registry;
 
-  public PhoneClickViewTool(ShellBackendRegistry registry) {
+  /** 仅用于定位 dump 临时文件目录（app 外部私有目录），避免写公共存储根。 */
+  private final android.content.Context appContext;
+
+  public PhoneClickViewTool(android.content.Context appContext, ShellBackendRegistry registry) {
+    this.appContext = appContext;
     this.registry = registry;
   }
 
@@ -155,7 +159,7 @@ public final class PhoneClickViewTool extends BaseTool {
       context.reportProgress("定位节点: " + selector.describe());
     }
 
-    PhoneUiSelector.Locate locate = PhoneUiSelector.locate(registry, selector, compressed, DUMP_TIMEOUT_MS);
+    PhoneUiSelector.Locate locate = PhoneUiSelector.locate(appContext, registry, selector, compressed, DUMP_TIMEOUT_MS);
     if (!locate.isOk()) {
       // 定位失败必须如实报错，绝不回退到点击 (0,0)。
       return error(locate.error);

@@ -64,8 +64,34 @@ public final class PhoneUiSelector {
   /** uiautomator dump 的默认超时。dump 需要等待窗口 idle，比普通命令慢。 */
   public static final long DEFAULT_DUMP_TIMEOUT_MS = 20_000L;
 
-  /** dump 临时文件的路径前缀。uiautomator 以 shell 身份运行，可写 /sdcard。 */
-  private static final String DUMP_PATH_PREFIX = "/sdcard/acs_ui_dump_";
+  /**
+   * dump 临时文件目录的兜底前缀。
+   *
+   * <p><b>为什么不再直接用 `/sdcard/` 根</b>：那是公共存储根目录，往那儿扔文件既违反存储
+   * 规范，`rm` 失败时又会永久残留（实测设备根目录已堆积 291 个调试 PNG）。改用 app 的
+   * 外部私有目录（见 {@link #dumpDirPrefix}）——shell 同样可写，且被媒体扫描天然忽略。
+   */
+  private static final String DUMP_PATH_PREFIX_FALLBACK = "/sdcard/acs_ui_dump_";
+
+  /**
+   * dump 临时文件目录前缀。
+   *
+   * <p>优先 app 外部私有目录 `/sdcard/Android/data/<pkg>/files/phone/`：uiautomator 以
+   * shell(uid 2000) 运行，对 `Android/data` 有写权限，而该目录不在媒体扫描范围内，
+   * 不会污染相册。拿不到 Context 或目录创建失败时退回
+   * {@link #DUMP_PATH_PREFIX_FALLBACK}。
+   */
+  private static String dumpDirPrefix(android.content.Context context) {
+    java.io.File base = context == null ? null : context.getExternalFilesDir(null);
+    if (base == null) {
+      return DUMP_PATH_PREFIX_FALLBACK;
+    }
+    java.io.File dir = new java.io.File(base, "phone");
+    if (!dir.exists() && !dir.mkdirs() && !dir.isDirectory()) {
+      return DUMP_PATH_PREFIX_FALLBACK;
+    }
+    return dir.getAbsolutePath() + "/acs_ui_dump_";
+  }
 
   /** 临时文件名去重序号（同一毫秒内多次调用时避免互相覆盖）。 */
   private static final AtomicInteger SEQ = new AtomicInteger();
@@ -411,23 +437,34 @@ public final class PhoneUiSelector {
   }
 
   /** 用默认超时 dump 当前界面。 */
-  public static Dump dump(ShellBackendRegistry registry, boolean compressed) {
-    return dump(registry, compressed, DEFAULT_DUMP_TIMEOUT_MS);
+  public static Dump dump(
+      android.content.Context context, ShellBackendRegistry registry, boolean compressed) {
+    return dump(context, registry, compressed, DEFAULT_DUMP_TIMEOUT_MS);
   }
 
   /**
    * dump 当前界面并解析成节点树。
    *
    * <p>实现：{@code uiautomator dump <file> && cat <file>; rm -f <file>}。dump 把 XML 写到
-   * /sdcard 下的临时文件，再 cat 回 stdout（纯文本，可安全经过 shell 后端的 UTF-8 通道），
-   * 最后清理临时文件。
+   * 临时文件，再 cat 回 stdout（纯文本，可安全经过 shell 后端的 UTF-8 通道），最后清理。
+   *
+   * <p>临时文件落在 app 外部私有目录（见 {@link #dumpDirPrefix}），不再用 `/sdcard` 根，
+   * 以免污染公共存储。
    *
    * @param compressed 传给 uiautomator 的 {@code --compressed}，会省略无文本/无 id 的节点，
    *     输出更小但可能丢失结构性节点
    */
-  public static Dump dump(ShellBackendRegistry registry, boolean compressed, long timeoutMs) {
+  public static Dump dump(
+      android.content.Context context,
+      ShellBackendRegistry registry,
+      boolean compressed,
+      long timeoutMs) {
     String path =
-        DUMP_PATH_PREFIX + System.currentTimeMillis() + "_" + SEQ.incrementAndGet() + ".xml";
+        dumpDirPrefix(context)
+            + System.currentTimeMillis()
+            + "_"
+            + SEQ.incrementAndGet()
+            + ".xml";
     // 保留 dump/cat 的退出码：若 dump 失败，&& 短路，rc 即 dump 的失败码；
     // 最后的 rm 只负责清理，不得覆盖这个码（否则失败会被当成成功，模型误判）。
     String command =
@@ -632,11 +669,15 @@ public final class PhoneUiSelector {
    * 让模型能据此改条件重试，而不是盲目重试同一条。
    */
   public static Locate locate(
-      ShellBackendRegistry registry, Selector selector, boolean compressed, long timeoutMs) {
+      android.content.Context context,
+      ShellBackendRegistry registry,
+      Selector selector,
+      boolean compressed,
+      long timeoutMs) {
     if (selector == null || selector.isEmpty()) {
       return new Locate(null, null, "未提供定位条件（resourceId / text / contentDesc 至少给一个）。");
     }
-    Dump dump = dump(registry, compressed, timeoutMs);
+    Dump dump = dump(context, registry, compressed, timeoutMs);
     if (!dump.isOk()) {
       return new Locate(null, null, dump.error);
     }

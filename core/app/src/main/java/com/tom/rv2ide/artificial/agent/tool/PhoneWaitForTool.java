@@ -90,7 +90,11 @@ public final class PhoneWaitForTool extends BaseTool {
 
   private final ShellBackendRegistry registry;
 
-  public PhoneWaitForTool(ShellBackendRegistry registry) {
+  /** 仅用于定位 dump 临时文件目录（app 外部私有目录），避免写公共存储根。 */
+  private final android.content.Context appContext;
+
+  public PhoneWaitForTool(android.content.Context appContext, ShellBackendRegistry registry) {
+    this.appContext = appContext;
     this.registry = registry;
   }
 
@@ -213,7 +217,8 @@ public final class PhoneWaitForTool extends BaseTool {
       if (wantNode) {
         // 用完整树（compressed=false）：压缩会省略既无 text 又无 id 的节点，
         // 可能把「节点其实在」误判成「未出现」，导致等待空转到超时。
-        PhoneUiSelector.Dump dump = PhoneUiSelector.dump(registry, false, DUMP_TIMEOUT_MS);
+        PhoneUiSelector.Dump dump =
+            PhoneUiSelector.dump(appContext, registry, false, DUMP_TIMEOUT_MS);
         if (dump.isOk()) {
           lastNodeFound = PhoneUiSelector.find(dump.root, selector) != null;
           nodeOk = lastNodeFound;

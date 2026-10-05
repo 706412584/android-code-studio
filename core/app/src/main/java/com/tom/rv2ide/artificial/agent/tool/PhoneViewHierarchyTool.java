@@ -64,7 +64,12 @@ public final class PhoneViewHierarchyTool extends BaseTool {
 
   private final ShellBackendRegistry shellBackends;
 
-  public PhoneViewHierarchyTool(ShellBackendRegistry shellBackends) {
+  /** 仅用于定位 dump 临时文件目录（app 外部私有目录），避免写公共存储根。 */
+  private final android.content.Context appContext;
+
+  public PhoneViewHierarchyTool(
+      android.content.Context appContext, ShellBackendRegistry shellBackends) {
+    this.appContext = appContext;
     this.shellBackends = shellBackends;
   }
 
@@ -147,7 +152,7 @@ public final class PhoneViewHierarchyTool extends BaseTool {
     }
 
     // 2) dump + 解析 + 渲染。
-    PhoneUiSelector.Dump dump = PhoneUiSelector.dump(shellBackends, compressed);
+    PhoneUiSelector.Dump dump = PhoneUiSelector.dump(appContext, shellBackends, compressed);
     if (!dump.isOk()) {
       return error("读取界面节点树失败。\n" + dump.error);
     }

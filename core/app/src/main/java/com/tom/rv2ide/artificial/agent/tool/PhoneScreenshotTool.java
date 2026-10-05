@@ -540,7 +540,29 @@ public final class PhoneScreenshotTool extends BaseTool {
     if (!dir.exists() && !dir.mkdirs() && !dir.isDirectory()) {
       throw new IOException("无法创建目录: " + dir.getAbsolutePath());
     }
+    ensureNoMedia(dir);
     return dir;
+  }
+
+  /**
+   * 在目录里放一个 `.nomedia`，让媒体扫描器跳过它。
+   *
+   * <p>`getExternalFilesDir` 位于 `Android/data/` 下，按规范本就不该被扫描（实测该目录
+   * 在 MediaStore 里 0 条记录）。但个别 ROM（MIUI/部分定制）会越界扫描 `Android/data`，
+   * 把 agent 的调试截图收进相册——用户看到相册里冒出一堆截图。`.nomedia` 是零成本的
+   * 保险，只写一次。
+   */
+  private static void ensureNoMedia(File dir) {
+    File marker = new File(dir, ".nomedia");
+    if (marker.exists()) {
+      return;
+    }
+    try {
+      //noinspection ResultOfMethodCallIgnored
+      marker.createNewFile();
+    } catch (IOException e) {
+      // 写不了就算了：这只是保险，不该让截图本身失败。
+    }
   }
 
   private File newScreenFile(String suffix) throws IOException {
