@@ -138,9 +138,58 @@ class CodeGraphManager(private val context: Context) {
           listener?.onProgress(1f)
           Result.success(Unit)
         } catch (e: Exception) {
-          Result.failure(e)
+          Result.failure(enhanceDownloadError(e, packageUrl))
         }
       }
+
+  /**
+   * 给下载失败补上「是不是被系统代理挡了」这条线索。
+   *
+   * <p><b>为什么必须补</b>：OkHttp 默认走系统代理。设备上「代理挂着但没开」很常见
+   * （实测某设备配了 `192.168.1.8:8080`，该代理已不可达），此时下载必然失败，而原始
+   * 异常只有一句 `Failed to connect to /192.168.1.8:8080`——用户看到「安装失败」，
+   * 完全不知道要去关代理。把代理地址直接写进错误里，排查方向才明确。
+   *
+   * <p>只对网络类异常加这句；其它异常（磁盘满、权限）原样返回，避免误导。
+   */
+  private fun enhanceDownloadError(e: Exception, url: String): Exception {
+    val isNetwork =
+        e is java.io.IOException ||
+            e.cause is java.io.IOException ||
+            e.message?.contains("connect", ignoreCase = true) == true
+    if (!isNetwork) {
+      return e
+    }
+    val proxy = systemProxyDescription(url)
+    if (proxy == null) {
+      return e
+    }
+    return java.io.IOException("${e.message ?: "下载失败"}（检测到系统代理 $proxy，连接失败时请检查该代理是否可用或先关闭）", e)
+  }
+
+  /**
+   * 当前系统代理的「host:port」描述；没有代理或取不到时返回 null。
+   *
+   * <p>优先问 [java.net.ProxySelector]（OkHttp 实际用的就是它），拿不到再退回读
+   * `http.proxyHost` / `http.proxyPort` 系统属性。
+   */
+  private fun systemProxyDescription(url: String): String? {
+    try {
+      val uri = java.net.URI(url)
+      val proxy = java.net.ProxySelector.getDefault()?.select(uri)?.firstOrNull()
+      if (proxy != null && proxy.type() != java.net.Proxy.Type.DIRECT) {
+        val addr = proxy.address()
+        if (addr is java.net.InetSocketAddress) {
+          return "${addr.hostString}:${addr.port}"
+        }
+      }
+    } catch (ignored: Exception) {
+      // 解析失败就走下面的系统属性兜底。
+    }
+    val host = System.getProperty("http.proxyHost")
+    val port = System.getProperty("http.proxyPort")
+    return if (!host.isNullOrBlank()) "$host:${port ?: "?"}" else null
+  }
 
   /**
    * 安装缺失的 Termux 包。

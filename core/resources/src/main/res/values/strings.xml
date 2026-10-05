@@ -291,6 +291,18 @@
   <string name="ai_agent_codegraph_missing_deps">Missing runtime packages: %1$s. Install them in the terminal first (the device may need network access).</string>
   <string name="ai_agent_codegraph_install_ok">CodeGraph installed</string>
   <string name="ai_agent_codegraph_about">CodeGraph builds a semantic index of your projects so the assistant can look up symbols and call paths instead of reading files one by one. Requires the Node.js runtime from the terminal.</string>
+  <string name="ai_agent_codegraph_index_title">Index projects</string>
+  <string name="ai_agent_codegraph_index_summary">Build the index for existing projects or a chosen folder</string>
+  <string name="ai_agent_codegraph_index_needs_install">Install CodeGraph first.</string>
+  <string name="ai_agent_codegraph_index_pick_folder">Choose a folder…</string>
+  <string name="ai_agent_codegraph_index_choose_project">Choose a project to index</string>
+  <string name="ai_agent_codegraph_index_start">Start indexing</string>
+  <string name="ai_agent_codegraph_index_no_projects">No tracked projects yet. Use “Choose a folder…” instead.</string>
+  <string name="ai_agent_codegraph_index_already">already indexed</string>
+  <string name="ai_agent_codegraph_indexing">Indexing %1$s…</string>
+  <string name="ai_agent_codegraph_index_ok">Indexed %1$s</string>
+  <string name="ai_agent_codegraph_index_failed">Indexing %1$s failed: %2$s</string>
+  <string name="ai_agent_codegraph_index_done_all">All selected projects indexed</string>
 
   <!-- Chat mode and prompt templates -->
   <string name="ai_agent_chat_mode_title">Chat mode</string>

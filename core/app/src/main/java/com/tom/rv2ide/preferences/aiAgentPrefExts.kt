@@ -18,16 +18,20 @@
 package com.tom.rv2ide.preferences
 
 import android.content.Context
+import android.content.Intent
 import android.widget.Toast
 import androidx.preference.Preference
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.tom.rv2ide.R
+import com.tom.rv2ide.activities.FolderPickerActivity
 import com.tom.rv2ide.artificial.agent.ShizukuShellBackend
 import com.tom.rv2ide.artificial.agent.codegraph.CodeGraphInstaller
 import com.tom.rv2ide.artificial.agent.codegraph.CodeGraphManager
 import com.tom.rv2ide.preferences.internal.prefManager
 import com.tom.rv2ide.services.AssistantOverlayService
 import com.tom.rv2ide.resources.R.string
+import com.tom.androidcodestudio.project.manager.ProjectManager
+import java.io.File
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -145,6 +149,205 @@ private class CapabilitiesPage(
     addPreference(MemoriesPreference())
     addPreference(McpServersPreference())
     addPreference(CodeGraphPreference())
+    addPreference(IndexProjectsPreference())
+  }
+}
+
+/**
+ * 手动为**已有项目**建立 CodeGraph 索引。
+ *
+ * <p><b>为什么需要这个入口</b>：索引原先只在「项目第一次被助手操作」时惰性建立
+ * （[CodeGraphManager.ensureIndex]），用户装完 CodeGraph 后没有任何办法把已有项目一次
+ * 建好——只能逐个打开项目、问助手一句话，把副作用当入口用。这里给出显式入口：
+ * 勾选若干已记录的项目，或直接指定一个文件夹。
+ *
+ * <p><b>为什么用「已记录项目列表」而不是扫描磁盘</b>：项目可能在任意路径（外部项目、
+ * 用户自选目录），扫盘既慢又不全。ACS 自己维护的项目清单才是「用户关心哪些项目」的
+ * 权威来源；清单之外的情况用「选择文件夹…」兜底。
+ */
+@Parcelize
+private class IndexProjectsPreference(
+    override val key: String = "codegraph_index_projects",
+    override val title: Int = R.string.ai_agent_codegraph_index_title,
+    override val summary: Int? = R.string.ai_agent_codegraph_index_summary,
+) : BasePreference() {
+
+  override fun onCreatePreference(context: Context): Preference =
+      androidx.preference.Preference(context).apply {
+        key = "codegraph_index_projects"
+        title = context.getString(R.string.ai_agent_codegraph_index_title)
+        summary = context.getString(R.string.ai_agent_codegraph_index_summary)
+      }
+
+  override fun onPreferenceClick(preference: Preference): Boolean {
+    val context = preference.context
+    if (!CodeGraphInstaller.isInstalled()) {
+      Toast.makeText(context, R.string.ai_agent_codegraph_index_needs_install, Toast.LENGTH_SHORT)
+          .show()
+      return true
+    }
+    // 读项目清单要走 DataStore，不能在主线程阻塞；读完再回主线程弹选择框。
+    CoroutineScope(Dispatchers.IO).launch {
+      val projects =
+          try {
+            ProjectManager.getInstance(context).getTrackedProjects()
+          } catch (e: Exception) {
+            emptyList()
+          }
+      withContext(Dispatchers.Main) { showPicker(context, preference, projects) }
+    }
+    return true
+  }
+
+  /** 勾选式项目选择框；无已记录项目时只提供「选择文件夹…」。 */
+  private fun showPicker(
+      context: Context,
+      preference: Preference,
+      projects: List<com.tom.androidcodestudio.project.manager.ProjectInfo>,
+  ) {
+    val manager = CodeGraphManager(context)
+
+    if (projects.isEmpty()) {
+      MaterialAlertDialogBuilder(context)
+          .setTitle(R.string.ai_agent_codegraph_index_title)
+          .setMessage(R.string.ai_agent_codegraph_index_no_projects)
+          .setPositiveButton(R.string.ai_agent_codegraph_index_pick_folder) { _, _ ->
+            pickFolder(context, preference)
+          }
+          .setNegativeButton(android.R.string.cancel, null)
+          .show()
+      return
+    }
+
+    // 已建索引的项目在标签里标出来，用户一眼知道哪些还需要建。
+    val labels =
+        projects
+            .map { info ->
+              val indexed = File(info.projectDir, CodeGraphInstaller.INDEX_DIR_NAME).isDirectory
+              if (indexed) "${info.projectName}（${context.getString(R.string.ai_agent_codegraph_index_already)}）"
+              else info.projectName
+            }
+            .toTypedArray()
+    val checked = BooleanArray(projects.size)
+
+    MaterialAlertDialogBuilder(context)
+        .setTitle(R.string.ai_agent_codegraph_index_choose_project)
+        .setMultiChoiceItems(labels, checked) { _, which, isChecked -> checked[which] = isChecked }
+        .setPositiveButton(R.string.ai_agent_codegraph_index_start) { _, _ ->
+          val selected = projects.filterIndexed { i, _ -> checked[i] }
+          if (selected.isNotEmpty()) {
+            indexAll(context, preference, manager, selected.map { File(it.projectDir) })
+          }
+        }
+        .setNeutralButton(R.string.ai_agent_codegraph_index_pick_folder) { _, _ ->
+          pickFolder(context, preference)
+        }
+        .setNegativeButton(android.R.string.cancel, null)
+        .show()
+  }
+
+  /**
+   * 拉起文件夹选择器。
+   *
+   * <p>结果经 [FolderPickerActivity.onFolderPicked] 的静态回调返回——[Preference] 拿不到
+   * Activity 的 result API，这是仓库里既有的做法。回调拿到的 `content://` tree URI 需要
+   * 转成真实路径（CodeGraph 以 `File` 作 cwd 调 `init`）。
+   */
+  private fun pickFolder(context: Context, preference: Preference) {
+    FolderPickerActivity.onFolderPicked = { uriString ->
+      val dir = treeUriToFile(context, uriString)
+      if (dir == null || !dir.isDirectory) {
+        Toast.makeText(
+                context, R.string.ai_agent_codegraph_index_pick_folder, Toast.LENGTH_SHORT)
+            .show()
+      } else {
+        indexAll(context, preference, CodeGraphManager(context), listOf(dir))
+      }
+      FolderPickerActivity.onFolderPicked = null
+    }
+    context.startActivity(Intent(context, FolderPickerActivity::class.java))
+  }
+
+  /**
+   * `content://` tree URI → 真实目录。
+   *
+   * <p>外部存储的文档 id 形如 `primary:MyFolder`，冒号后才是相对路径（与
+   * `AssistantInputFeatures.localPathOf` 同一约定）。非主存储卷（SD 卡等）拿不到路径，
+   * 返回 null——这类卷 CodeGraph 本来也难以作为 cwd 使用。
+   */
+  private fun treeUriToFile(context: Context, uriString: String): File? {
+    return try {
+      val uri = android.net.Uri.parse(uriString)
+      val id = android.provider.DocumentsContract.getTreeDocumentId(uri)
+      val relative = id.substringAfter(':', missingDelimiterValue = "")
+      if (relative.isEmpty()) {
+        null
+      } else {
+        File(android.os.Environment.getExternalStorageDirectory(), relative)
+      }
+    } catch (e: Exception) {
+      null
+    }
+  }
+
+  /**
+   * 逐个建索引（没有的 init、有的 sync）。
+   *
+   * <p>串行而不是并发：`init` 会跑 Node 进程并写磁盘，并发多个进程既抢 IO 又让进度
+   * 无法读。串行下每完成一个就更新一次摘要，用户能看到推进。
+   */
+  private fun indexAll(
+      context: Context,
+      preference: Preference,
+      manager: CodeGraphManager,
+      dirs: List<File>,
+  ) {
+    CoroutineScope(Dispatchers.IO).launch {
+      var ok = 0
+      dirs.forEach { dir ->
+        withContext(Dispatchers.Main) {
+          preference.summary = context.getString(R.string.ai_agent_codegraph_indexing, dir.name)
+        }
+        val result =
+            try {
+              manager.syncIndex(dir)
+            } catch (e: Exception) {
+              null
+            }
+        val succeeded = result?.ok == true
+        if (succeeded) {
+          ok++
+        } else {
+          val reason = result?.combined()?.take(200) ?: "?"
+          withContext(Dispatchers.Main) {
+            Toast.makeText(
+                    context,
+                    context.getString(
+                        R.string.ai_agent_codegraph_index_failed, dir.name, reason),
+                    Toast.LENGTH_LONG,
+                )
+                .show()
+          }
+        }
+      }
+      withContext(Dispatchers.Main) {
+        // 完成后恢复成默认摘要，并弹一条总结。逐个项目的结果已由失败 Toast 覆盖，
+        // 这里只说总数，避免成功时也刷屏。
+        preference.summary = context.getString(R.string.ai_agent_codegraph_index_summary)
+        // 顺带刷新「CodeGraph 索引」条目的「已索引 N 个项目」——建索引改的是那边的数字，
+        // 不刷新的话用户回去看到的还是旧值。兄弟条目从当前条目的 parent 里按 key 找。
+        preference.parent?.findPreference<Preference>(CodeGraphPreference.KEY)?.let {
+          CodeGraphPreference().refreshSummary(it)
+        }
+        Toast.makeText(
+                context,
+                if (ok == dirs.size) context.getString(R.string.ai_agent_codegraph_index_done_all)
+                else context.getString(R.string.ai_agent_codegraph_index_ok, "$ok/${dirs.size}"),
+                Toast.LENGTH_SHORT,
+            )
+            .show()
+      }
+    }
   }
 }
 
@@ -1775,8 +1978,13 @@ private class CodeGraphPreference(
     return pref
   }
 
+  companion object {
+    /** 本条目在偏好树里的 key，供其它入口定位并刷新它。 */
+    const val KEY = "codegraph"
+  }
+
   /** 异步查状态并刷新摘要。 */
-  private fun refreshSummary(preference: Preference) {
+  internal fun refreshSummary(preference: Preference) {
     val context = preference.context
     val manager = CodeGraphManager(context)
     CoroutineScope(Dispatchers.IO).launch {
