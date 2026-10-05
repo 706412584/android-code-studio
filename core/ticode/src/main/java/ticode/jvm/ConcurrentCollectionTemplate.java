@@ -2,6 +2,8 @@ package ticode.jvm;
 
 import java.util.concurrent.*;
 
+import ticode.base.IntegerBox;
+
 public class ConcurrentCollectionTemplate<T1> extends java.util.Vector {
 
 public void 赋值_op(T1[] 成员) {
@@ -91,7 +93,7 @@ return this.size();
 
 
 
-public JEnumerator 枚举器() {
+public java.util.Iterator 枚举器() {
 return this.iterator();
 }
 }

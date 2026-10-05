@@ -7,7 +7,7 @@ import java.util.concurrent.*;
 import ticode.jvm.JRegex;
 import ticode.jvm.JavaClass;
 
-public class PrimitiveTemplate<T1> extends String {
+public class PrimitiveTemplate<T1> {
 
 
 

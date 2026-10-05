@@ -7,7 +7,7 @@ import java.util.concurrent.*;
 import ticode.jvm.JRegex;
 import ticode.jvm.JavaClass;
 
-public class AsyncDispatcher extends java.lang.StringBuilder {
+public class AsyncDispatcher {
 private static final ExecutorService service = Executors.newCachedThreadPool();
 private static final Handler handler = new Handler(Looper.getMainLooper());
 

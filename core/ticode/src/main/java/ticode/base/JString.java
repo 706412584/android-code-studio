@@ -7,7 +7,7 @@ import java.util.concurrent.*;
 import ticode.jvm.JRegex;
 import ticode.jvm.JavaClass;
 
-public class JString extends CharSequence {
+public class JString implements CharSequence {
 public int 长度() {
 return this.length();
 }

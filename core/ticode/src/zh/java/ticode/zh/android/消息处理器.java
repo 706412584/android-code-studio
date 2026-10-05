@@ -2,7 +2,7 @@ package ticode.zh.android;
 
 import android.os.Message;
 
-public class 消息处理器 extends android.os.Message {
+public class 消息处理器 {
 
 public void handleMessage(Message msg)
 {

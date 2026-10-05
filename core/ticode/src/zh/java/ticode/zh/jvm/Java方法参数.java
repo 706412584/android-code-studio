@@ -61,7 +61,7 @@ return this.getType();
 }
 
 // 返回泛型类型
-public Java类型 带泛型类型() {
+public java.lang.reflect.Type 带泛型类型() {
 return this.getParameterizedType();
 }
 
@@ -71,17 +71,17 @@ return this.isAnnotationPresent(注解类);
 }
 
 // 从注解类获取标注在本参数上的注解
-public Java注解 取注解(Java类 注解类) {
+public java.lang.annotation.Annotation 取注解(Java类 注解类) {
 return this.getAnnotation(注解类);
 }
 
 // 从注解类获取标注在本参数上的注解
-public Java注解[] 取注解数组(Java类 注解类) {
+public java.lang.annotation.Annotation[] 取注解数组(Java类 注解类) {
 return this.getAnnotationsByType(注解类);
 }
 
 // 取标注在本参数上的所有注解
-public Java注解[] 取所有注解() {
+public java.lang.annotation.Annotation[] 取所有注解() {
 return this.getAnnotations();
 }
 

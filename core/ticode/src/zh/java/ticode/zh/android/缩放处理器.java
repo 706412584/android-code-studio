@@ -4,7 +4,7 @@ import android.content.Context;
 import android.view.ScaleGestureDetector;
 import android.view.ScaleGestureDetector.OnScaleGestureListener;
 
-public class 缩放处理器 extends android.view.KeyEvent {
+public class 缩放处理器 extends 窗口组件 {
 
 private ScaleGestureDetector scaleGestureDetector;
 public 缩放处理器(Context context){

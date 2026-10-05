@@ -10,10 +10,11 @@
 本库内或 Object），其余类需人工处理基类垫片。
 """
 import io, os, re, sys, glob, collections
-# 与本脚本同目录的 class_map.py / dedup_set.py（原为个人工作目录的绝对路径）。
+# 与本脚本同目录的 class_map.py / dedup_set.py / alias_nonextend.py。
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from class_map import CLASS_MAP, PACKAGE_MAP   # 结绳类名/包名 → 英文
 from dedup_set import CONFIRMED as DROP_CLASSES   # 与模板重叠、需剔除的类
+from alias_nonextend import NON_EXTEND, NON_EXTEND_KIND   # @指代类 里不可继承的目标
 
 # 语言模式：en=英文类名+ticode.* 包；zh=中文类名+ticode.zh.* 包
 LANG = os.environ.get('TICODE_LANG', 'en')
@@ -26,6 +27,17 @@ def map_pkg(p):
 
 def map_cls(n):
     return n if LANG == 'zh' else CLASS_MAP.get(n, n)
+
+
+def map_type_cls(n):
+    """类型位置上的类名。
+
+    不可继承的 @指代类（`位图对象` == `Bitmap`）直接映射成 Java 原生类型：
+    这些类在结绳里**就是**那个类型，只是额外挂了静态工厂方法；因为目标是
+    final / 接口 / 枚举 / 私有构造器，生成 `extends` 必然编译不过。
+    静态壳另生成（见 parse_class），故 `位图对象.从文件路径创建位图(...)` 仍可解析。
+    """
+    return NON_EXTEND.get(n) or map_cls(n)
 
 # 结绳类型 → Java 类型
 TYPE_MAP = {
@@ -64,7 +76,7 @@ def map_type(t, tparams):
         return 'java.util.Map<String,String>'
     # 先查基础类型表（int/String/Object…），再映射本库类名（安卓窗口→AndroidActivity）。
     # map_cls 在中文版是恒等函数，英文版才改名，故两版共用这一条路径。
-    return map_cls(TYPE_MAP.get(t, t))
+    return map_type_cls(TYPE_MAP.get(t, t))
 
 def _brace_balance(text):
     """剥离字符串/字符字面量与行注释后的 { } 净余额。0 表示配平。"""
@@ -85,7 +97,7 @@ _CLASSNAME_RE = re.compile(
     # 把中文标识符切碎（`开始TextBox` → `开始TextBox`）。
     r'(?<![A-Za-z0-9_一-鿿])(' +
     '|'.join(re.escape(k) for k in sorted(CLASS_MAP, key=len, reverse=True)) +
-    r')(?![A-Za-z0-9_一-鿿])')
+    r')(?![A-Za-z0-9_一-鿿])(?!\s*\.)')
 
 
 # 结绳表达式里的类引用（非 @code 上下文也出现）：
@@ -163,13 +175,14 @@ def subst(body, params, tparams, in_code=False):
     body = re.sub(r'@([一-鿿A-Za-z_][一-鿿A-Za-z0-9_.]*)',
                   _at_map if in_code else _at_map_decl, body)
     if in_code:
-        # @code 里的裸中文类名（`private 可视化组件 root;`、`new 高级适配器(...)`）。
-        # 按长度倒序，避免短名先匹配吃掉长名的前缀。
-        body = _CLASSNAME_RE.sub(lambda m: map_cls(m.group(1)), body)
+        # 先处理 `X.成员`：X 是静态调用的限定符，保留壳名（`位图对象.静态工厂(...)`）。
+        body = _CLASSNAME_DOT_RE.sub(lambda m: map_cls(m.group(1)), body)
+        # 再处理裸类名（排除后跟 `.` 的，上面已处理）：多为类型位置 → 映射成目标类型。
+        body = _CLASSNAME_RE.sub(lambda m: map_type_cls(m.group(1)), body)
     else:
         # 结绳表达式里的类引用（`设备信息.安卓版本号`、`new 高级适配器(...)`）。
         body = _CLASSNAME_DOT_RE.sub(lambda m: map_cls(m.group(1)), body)
-        body = _CLASSNAME_NEW_RE.sub(lambda m: m.group(1) + map_cls(m.group(2)), body)
+        body = _CLASSNAME_NEW_RE.sub(lambda m: m.group(1) + map_type_cls(m.group(2)), body)
     for k, v in (('本对象', 'this'), ('且', '&&'), ('或', '||'), ('非', '!'), ('空', 'null'),
                  ('真', 'true'), ('假', 'false')):
         body = re.sub(B % k, v, body)
@@ -408,11 +421,24 @@ class Translator:
         # Application、Context…），提供 getWindow()/overridePendingTransition() 等
         # 平台 API；显式基类（如 安卓环境 : Context）只是同一平台类的薄抽象。
         # 若两者都写，取别名——否则平台方法全部「找不到符号」（实测 25 处 getWindow）。
-        if self.alias:
+        if self.alias and NON_EXTEND_KIND.get(name) == 'interface':
+            # 目标是接口：Java 里只能 implements，`extends` 会报「此处需要接口」。
+            # 实现接口后接口方法自动可调（结绳里这些类就是该接口）。
+            al = self.alias.strip()
+            extends = (extends.replace(' extends ', ' implements ') + ', ' + al) if extends else (' implements ' + al)
+        elif self.alias and name not in NON_EXTEND:
+            # 可继承：让包装类 extends 目标 Java 类，从而拿到其全部实例方法。
             al = self.alias.strip()
             if al not in ('int', 'long', 'short', 'byte', 'char', 'float',
                           'double', 'boolean', 'void'):
                 extends = ' extends ' + al
+        # name in NON_EXTEND：目标是 final/接口/枚举/私有构造器，不能 extends。
+        # 不生成 extends —— 本类退化成「同名静态壳」（只承载静态工厂方法）；
+        # 类型位置由 map_type_cls 映射成目标原生类型。
+        # @指代类 是**逐类**的，用完必须清空：否则同一文件里后续所有类都会
+        # 继承上一个类的 @指代类 目标（实测 进度条/拖动条/视频播放器/浏览框
+        # 全被误挂上 图像缩放类型 的 ScaleType）。
+        self.alias = None
         tdecl = ('<' + ', '.join(self.tparams) + '>') if self.tparams else ''
         JAVA_SIMPLE = {'UUID','Date','Timer','File','Thread','String','Integer','Long',
                        'Boolean','Double','Float','Object','Math','System','Runtime'}

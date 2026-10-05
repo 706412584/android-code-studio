@@ -9,7 +9,7 @@ import java.util.Enumeration;
 
 import ticode.android.AndroidEnv;
 
-public class ClassNameEnumerator extends java.util.Enumeration {
+public class ClassNameEnumerator implements java.util.Enumeration {
 public boolean 还有下一个() {
 return this.hasMoreElements();
 }

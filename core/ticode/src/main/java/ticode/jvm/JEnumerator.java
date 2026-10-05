@@ -1,7 +1,9 @@
 package ticode.jvm;
 
 
-public class JEnumerator extends java.util.Iterator {
+import ticode.base.IntegerBox;
+
+public class JEnumerator implements java.util.Iterator {
 
 
 

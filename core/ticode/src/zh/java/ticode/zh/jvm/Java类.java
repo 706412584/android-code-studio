@@ -130,7 +130,7 @@ return this.getModifiers();
 }
 
 // 取本类声明的泛型参数
-public Java泛型变量[] 泛型参数() {
+public java.lang.reflect.TypeVariable[] 泛型参数() {
 return this.getTypeParameters();
 }
 
@@ -140,7 +140,7 @@ return this.getSuperclass();
 }
 
 // 获取带有泛型的父类
-public Java类型 带泛型父类() {
+public java.lang.reflect.Type 带泛型父类() {
 return this.getGenericSuperclass();
 }
 
@@ -150,7 +150,7 @@ return this.getInterfaces();
 }
 
 // 获取带有泛型的接口
-public Java类型[] 带泛型实现接口() {
+public java.lang.reflect.Type[] 带泛型实现接口() {
 return this.getGenericInterfaces();
 }
 
@@ -296,17 +296,17 @@ return this.isAnnotationPresent(注解类);
 }
 
 // 从注解类获取标注在本类上的注解
-public Java注解 取注解(Java类 注解类) {
+public java.lang.annotation.Annotation 取注解(Java类 注解类) {
 return this.getAnnotation(注解类);
 }
 
 // 从注解类获取标注在本类上的注解
-public Java注解[] 取注解数组(Java类 注解类) {
+public java.lang.annotation.Annotation[] 取注解数组(Java类 注解类) {
 return this.getAnnotationsByType(注解类);
 }
 
 // 取标注在本类上的所有注解
-public Java注解[] 取所有注解() {
+public java.lang.annotation.Annotation[] 取所有注解() {
 return this.getAnnotations();
 }
 

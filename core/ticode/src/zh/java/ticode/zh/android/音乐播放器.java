@@ -6,7 +6,7 @@ import java.util.*;
 import android.os.Vibrator;
 import android.content.Context;
 
-public class 音乐播放器 extends android.widget.Toast {
+public class 音乐播放器 {
 
 private MediaPlayer player;
 private Timer mTimer;

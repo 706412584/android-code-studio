@@ -24,7 +24,7 @@ return new DexFile(文件路径);
 return null;
 }
 
-public 类名枚举器 取本文件所有类名() {
+public java.util.Enumeration 取本文件所有类名() {
 return this.entries();
 }
 

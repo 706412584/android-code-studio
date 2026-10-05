@@ -5,12 +5,12 @@ import android.os.Environment;
 import ticode.jvm.JFile;
 import ticode.jvm.JavaClass;
 
-public class Menu2 extends android.view.Menu {
+public class Menu2 implements android.view.Menu {
 
 
 
 
-public MenuItem2 添加菜单项(String 标题) {
+public android.view.MenuItem 添加菜单项(String 标题) {
 return this.add(标题);
 }
 
@@ -21,7 +21,7 @@ return this.add(标题);
 
 
 
-public MenuItem2 添加菜单项2(int 组ID, int ID, int 序号, String 标题) {
+public android.view.MenuItem 添加菜单项2(int 组ID, int ID, int 序号, String 标题) {
 return this.add(组ID, ID, 序号, 标题);
 }
 

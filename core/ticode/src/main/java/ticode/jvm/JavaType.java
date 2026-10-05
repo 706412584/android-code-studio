@@ -9,7 +9,7 @@ import java.util.Enumeration;
 
 import ticode.android.AndroidEnv;
 
-public class JavaType extends java.lang.reflect.Type {
+public class JavaType implements java.lang.reflect.Type {
 
 // 获取本类型的名称 需要安卓api28，安卓9可使用
 public String 类型名称() {

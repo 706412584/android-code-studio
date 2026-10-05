@@ -31,7 +31,7 @@ import android.graphics.drawable.*;
 import ticode.jvm.JFile;
 import ticode.jvm.JavaClass;
 
-public class Window2 extends android.app.Activity {
+public class Window2 extends AndroidActivity {
 private VisualComponent root;
 
 @Override
@@ -176,10 +176,10 @@ public void 被恢复() {
 public void 被销毁() {
 }
 
-public void 菜单被创建(Menu2 菜单) {
+public void 菜单被创建(android.view.Menu 菜单) {
 }
 
-public void 菜单项被选中(MenuItem2 菜单项) {
+public void 菜单项被选中(android.view.MenuItem 菜单项) {
 }
 
 public void 标题栏返回键被单击() {

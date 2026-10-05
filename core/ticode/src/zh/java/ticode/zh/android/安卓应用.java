@@ -31,7 +31,7 @@ import android.graphics.drawable.*;
 import ticode.zh.jvm.Java类;
 import ticode.zh.jvm.文件;
 
-public class 安卓应用 extends android.app.Application {
+public class 安卓应用 extends 应用 {
 private static Application application;
 
 @Override protected void attachBaseContext(android.content.Context base) {

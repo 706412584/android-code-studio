@@ -1,5 +1,7 @@
 package ticode.jvm;
 
 
-public class IntSet extends java.util.ArrayList {
+import ticode.base.IntegerBox;
+
+public class IntSet extends CollectionTemplate<IntegerBox> {
 }

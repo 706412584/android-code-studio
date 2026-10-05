@@ -1,7 +1,9 @@
 package ticode.zh.jvm;
 
 
-public class 键值对 extends java.util.HashMap {
+import ticode.zh.base.整数类;
+
+public class 键值对 {
 Object 键;
 Object 值;
 

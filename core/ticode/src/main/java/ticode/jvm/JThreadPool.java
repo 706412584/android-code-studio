@@ -2,6 +2,8 @@ package ticode.jvm;
 
 import java.util.concurrent.*;
 
+import ticode.base.IntegerBox;
+
 public class JThreadPool {
 public static ExecutorService cachedThreadPool;
 public static ExecutorService fixedThreadPool;

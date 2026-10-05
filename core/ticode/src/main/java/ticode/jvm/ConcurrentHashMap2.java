@@ -2,5 +2,7 @@ package ticode.jvm;
 
 import java.util.concurrent.*;
 
-public class ConcurrentHashMap2 extends java.util.concurrent.ConcurrentHashMap {
+import ticode.base.IntegerBox;
+
+public class ConcurrentHashMap2 extends ConcurrentHashMapTemplate<Object, Object> {
 }

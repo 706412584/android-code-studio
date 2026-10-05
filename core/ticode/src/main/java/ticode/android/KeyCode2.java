@@ -4,7 +4,7 @@ import android.content.Context;
 import android.view.ScaleGestureDetector;
 import android.view.ScaleGestureDetector.OnScaleGestureListener;
 
-public class KeyCode2 extends android.view.DragEvent {
+public class KeyCode2 {
 public static final Integer A;
 
 public static final Integer B;

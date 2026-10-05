@@ -2,7 +2,7 @@ package ticode.zh.android;
 
 import android.os.Message;
 
-public class 时钟 extends Thread {
+public class 时钟 {
 private boolean enabled;
 private int period;
 private android.os.Handler handler = new android.os.Handler(android.os.Looper.getMainLooper());

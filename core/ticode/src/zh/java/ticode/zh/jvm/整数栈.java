@@ -1,5 +1,7 @@
 package ticode.zh.jvm;
 
 
-public class 整数栈 extends java.util.Stack {
+import ticode.zh.base.整数类;
+
+public class 整数栈 extends 栈模板类<整数类> {
 }

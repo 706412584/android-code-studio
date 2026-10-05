@@ -49,7 +49,7 @@ import android.webkit.*;
 import ticode.jvm.JMatcher;
 import ticode.jvm.JRegex;
 
-public class SeekBarBox extends android.widget.ImageView.ScaleType {
+public class SeekBarBox extends ProgressBox {
 public SeekBarBox(android.content.Context context) {
 super(context);
 getView().setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener(){

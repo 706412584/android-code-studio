@@ -2,6 +2,8 @@ package ticode.zh.jvm;
 
 import java.util.concurrent.*;
 
+import ticode.zh.base.整数类;
+
 public class 线程池 {
 public static ExecutorService cachedThreadPool;
 public static ExecutorService fixedThreadPool;

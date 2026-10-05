@@ -9,7 +9,7 @@ import java.util.Enumeration;
 
 import ticode.zh.android.安卓环境;
 
-public class 反射操作 extends dalvik.system.DexClassLoader {
+public class 反射操作 {
 
 // 设置某个字段的值，如果是静态字段，可省略类实例
 public static boolean 设置字段值(String 字段所在类类名, Object 类实例, String 字段名, Object 值) {

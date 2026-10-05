@@ -45,14 +45,14 @@ public abstract AdapterView getView();
 
 
 
-public 适配器 适配器() {
+public android.widget.Adapter 适配器() {
 return getView().getAdapter();
 }
 
 
 
 
-public void 适配器(适配器 适配器对象) {
+public void 适配器(android.widget.Adapter 适配器对象) {
 getView().setAdapter(适配器对象);
 }
 

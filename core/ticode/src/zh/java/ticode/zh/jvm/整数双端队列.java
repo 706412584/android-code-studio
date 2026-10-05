@@ -1,5 +1,7 @@
 package ticode.zh.jvm;
 
 
-public class 整数双端队列 extends java.util.ArrayDeque {
+import ticode.zh.base.整数类;
+
+public class 整数双端队列 extends 双端队列模板类<整数类> {
 }

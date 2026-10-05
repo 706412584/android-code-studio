@@ -15,7 +15,7 @@ import java.util.zip.*;
 import java.util.zip.*;
 import java.io.*;
 
-public class GZIP操作 extends java.util.zip.GZIPOutputStream {
+public class GZIP操作 {
 
 public static byte[] 压缩字节集(byte[] 欲压缩数据) {
 字节集输出流 字节集输出流1;

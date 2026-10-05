@@ -2,6 +2,8 @@ package ticode.zh.jvm;
 
 import java.util.concurrent.*;
 
+import ticode.zh.base.整数类;
+
 public class 读写锁 extends java.util.concurrent.locks.ReentrantReadWriteLock {
 public void 获取读锁() {
 this.readLock().lock();

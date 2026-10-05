@@ -42,7 +42,7 @@ this.execSQL(SQL语句);
 
 
 
-public RecordSet 执行SQL查询语句(String SQL查询语句) {
+public android.database.Cursor 执行SQL查询语句(String SQL查询语句) {
 return this.rawQuery(SQL查询语句, null);
 }
 
@@ -91,7 +91,7 @@ if (条件 == null || 条件.为空()) {
 
 
 
-public RecordSet 查询记录(String 表名, String 条件) {
+public android.database.Cursor 查询记录(String 表名, String 条件) {
 if (条件 == null || 条件.为空()) {
 return 执行SQL查询语句("SELECT * FROM " + 表名);
 } else {

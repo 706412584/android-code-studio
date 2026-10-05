@@ -8,7 +8,7 @@ public static 信使 新建对象(消息处理器 处理器) {
 return new android.os.Messenger(处理器);
 }
 
-public static 信使 新建对象2(通信中间件 中间件) {
+public static 信使 新建对象2(android.os.IBinder 中间件) {
 return new android.os.Messenger(中间件);
 }
 
@@ -20,7 +20,7 @@ e.printStackTrace();
 }
 }
 
-public 通信中间件 取通信中间件() {
+public android.os.IBinder 取通信中间件() {
 return this.getBinder();
 }
 

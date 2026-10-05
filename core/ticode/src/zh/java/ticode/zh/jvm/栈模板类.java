@@ -1,13 +1,15 @@
 package ticode.zh.jvm;
 
 
+import ticode.zh.base.整数类;
+
 public class 栈模板类<T1> extends java.util.Stack {
 
 public int 长度() {
 return this.size();
 }
 
-public 枚举器 枚举器() {
+public java.util.Iterator 枚举器() {
 return this.iterator();
 }
 

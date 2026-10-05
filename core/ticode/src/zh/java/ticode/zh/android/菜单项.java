@@ -5,7 +5,7 @@ import android.os.Environment;
 import ticode.zh.jvm.Java类;
 import ticode.zh.jvm.文件;
 
-public class 菜单项 extends android.view.MenuItem {
+public class 菜单项 implements android.view.MenuItem {
 public static final int 总是显示 = 2;
 public static final int 尽量显示 = 1;
 public static final int 从不显示 = 0;

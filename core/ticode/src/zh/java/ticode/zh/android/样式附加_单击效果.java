@@ -6,7 +6,7 @@ import android.text.SpannableString;
 import ticode.zh.base.字符串;
 import ticode.zh.base.文本;
 
-public class 样式附加_单击效果 extends android.text.style.AbsoluteSizeSpan {
+public class 样式附加_单击效果 {
 
 private boolean underline;
 @Override

@@ -1,5 +1,7 @@
 package ticode.jvm;
 
 
-public class JCollection extends java.util.ArrayList {
+import ticode.base.IntegerBox;
+
+public class JCollection extends CollectionTemplate<Object> {
 }

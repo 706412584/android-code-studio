@@ -9,7 +9,7 @@ import ticode.zh.jvm.正则表达式;
 
 public class 文本构建器 extends java.lang.StringBuilder {
 
-public void 赋值_op(字符串 初始字符串) {
+public void 赋值_op(CharSequence 初始字符串) {
 return new StringBuilder(初始字符串);
 }
 
@@ -36,7 +36,7 @@ public void 设索引_op(int 索引, char 设置字符) {
 设置字符(索引,设置字符);
 }
 
-public 文本构建器 追加字符串(字符串 追加内容) {
+public 文本构建器 追加字符串(CharSequence 追加内容) {
 return this.append(追加内容);
 }
 
@@ -91,7 +91,7 @@ public 文本构建器 替换(int 被替换起始位置, int 被替换结束位�
 return this.replace(被替换起始位置,被替换结束位置,替换内容);
 }
 
-public 文本构建器 插入字符串(int 插入索引位置, 字符串 插入内容) {
+public 文本构建器 插入字符串(int 插入索引位置, CharSequence 插入内容) {
 return this.insert(插入索引位置,插入内容);
 }
 

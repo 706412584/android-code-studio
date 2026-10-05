@@ -31,7 +31,7 @@ import android.graphics.drawable.*;
 import android.view.*;
 import android.view.*;
 
-public class Adapter2 extends android.widget.Adapter {
+public class Adapter2 implements android.widget.Adapter {
 
 
 

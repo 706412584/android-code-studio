@@ -31,7 +31,7 @@ import android.graphics.drawable.*;
 import android.view.*;
 import android.view.*;
 
-public class SimpleAdapter2 extends android.widget.BaseAdapter {
+public class SimpleAdapter2 extends UniversalAdapter {
 Integer 项目数;
 
 public void 更新项目(int 项目总数) {

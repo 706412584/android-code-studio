@@ -2,7 +2,7 @@ package ticode.android;
 
 import android.os.Message;
 
-public class Clock2 extends Thread {
+public class Clock2 {
 private boolean enabled;
 private int period;
 private android.os.Handler handler = new android.os.Handler(android.os.Looper.getMainLooper());

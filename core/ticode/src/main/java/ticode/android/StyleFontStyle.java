@@ -3,8 +3,6 @@ package ticode.android;
 import android.text.SpannableStringBuilder;
 import android.text.SpannableString;
 
-import ticode.base.JString;
-
 public class StyleFontStyle extends android.text.style.StyleSpan {
 
 public static final int 样式类型_默认 = 0;

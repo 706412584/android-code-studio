@@ -1,6 +1,8 @@
 package ticode.jvm;
 
 
+import ticode.base.IntegerBox;
+
 public class HashMapTemplate<T1, T2> extends java.util.HashMap {
 public T2 取索引_op(T1 键) {
 return 取项目(键);

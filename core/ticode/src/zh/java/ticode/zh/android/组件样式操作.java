@@ -19,7 +19,7 @@ import ticode.zh.jvm.文件输出流;
 import ticode.zh.jvm.输入流;
 import ticode.zh.jvm.输出流;
 
-public class 组件样式操作 extends android.graphics.drawable.GradientDrawable.Orientation {
+public class 组件样式操作 {
 public static void 渐变(可视化组件 组件, int[] 颜色值, 绘制和形状 绘制, int 形状, int 宽度, int 高度, int 圆角) {
 GradientDrawable drawable = new GradientDrawable();
 if(宽度 != -1 && 高度 != -1)

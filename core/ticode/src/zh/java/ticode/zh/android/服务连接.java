@@ -31,7 +31,7 @@ import android.graphics.drawable.*;
 import ticode.zh.jvm.Java类;
 import ticode.zh.jvm.文件;
 
-public class 服务连接 extends android.app.Service {
+public class 服务连接 {
 @Override
 public void onServiceConnected(ComponentName name, IBinder service) {
 服务已连接(name,service);
@@ -42,7 +42,7 @@ public void onServiceDisconnected(ComponentName name) {
 服务已断开连接(name);
 }
 
-public void 服务已连接(组件名称 名称, 通信中间件 中间件) {
+public void 服务已连接(组件名称 名称, android.os.IBinder 中间件) {
 }
 
 public void 服务已断开连接(组件名称 名称) {

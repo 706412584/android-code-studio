@@ -150,7 +150,7 @@ getView().getMenu().add(标题);
 
 
 
-public MenuItem2 添加菜单项2(int 组ID, int ID, int 序号, String 标题) {
+public android.view.MenuItem 添加菜单项2(int 组ID, int ID, int 序号, String 标题) {
 return getView().getMenu().add(组ID, ID, 序号, 标题);
 }
 

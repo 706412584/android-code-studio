@@ -31,7 +31,7 @@ import android.graphics.drawable.*;
 import ticode.jvm.JFile;
 import ticode.jvm.JavaClass;
 
-public class NotificationBar extends android.content.BroadcastReceiver {
+public class NotificationBar {
 int 通知栏_重要程度_最低 = 1;
 int 通知栏_重要程度_低 = 2;
 int 通知栏_重要程度_默认 = 3;

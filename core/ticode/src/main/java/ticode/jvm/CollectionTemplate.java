@@ -1,6 +1,8 @@
 package ticode.jvm;
 
 
+import ticode.base.IntegerBox;
+
 public class CollectionTemplate<T1> extends java.util.ArrayList {
 
 public void 赋值_op(T1[] 成员) {
@@ -91,7 +93,7 @@ return this.size();
 
 
 
-public JEnumerator 枚举器() {
+public java.util.Iterator 枚举器() {
 return this.iterator();
 }
 }

@@ -31,7 +31,7 @@ import android.graphics.drawable.*;
 import ticode.zh.jvm.Java类;
 import ticode.zh.jvm.文件;
 
-public class 广播接收器 extends android.content.BroadcastReceiver {
+public class 广播接收器 extends 安卓广播接收器 {
 @Override
 public void onReceive(Context context, Intent intent) {
 接收到广播(context, intent);

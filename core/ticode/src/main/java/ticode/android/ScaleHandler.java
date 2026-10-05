@@ -4,7 +4,7 @@ import android.content.Context;
 import android.view.ScaleGestureDetector;
 import android.view.ScaleGestureDetector.OnScaleGestureListener;
 
-public class ScaleHandler extends android.view.KeyEvent {
+public class ScaleHandler extends WindowComponent {
 
 private ScaleGestureDetector scaleGestureDetector;
 public ScaleHandler(Context context){

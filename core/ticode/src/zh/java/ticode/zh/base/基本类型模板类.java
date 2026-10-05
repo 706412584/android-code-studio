@@ -7,7 +7,7 @@ import java.util.concurrent.*;
 import ticode.zh.jvm.Java类;
 import ticode.zh.jvm.正则表达式;
 
-public class 基本类型模板类<T1> extends String {
+public class 基本类型模板类<T1> {
 
 
 

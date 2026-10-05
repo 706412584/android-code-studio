@@ -1,5 +1,7 @@
 package ticode.jvm;
 
 
-public class StringObjectHashMap extends java.util.HashMap {
+import ticode.base.IntegerBox;
+
+public class StringObjectHashMap extends HashMapTemplate<String, Object> {
 }

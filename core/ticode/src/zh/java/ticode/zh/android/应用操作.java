@@ -1,7 +1,7 @@
 package ticode.zh.android;
 
 
-public class 应用操作 extends android.content.pm.SigningInfo {
+public class 应用操作 {
 
 public static boolean 应用是否已安装(安卓环境 环境, String 应用包名) {
 try {

@@ -51,7 +51,7 @@ import ticode.zh.base.文本;
 import ticode.zh.jvm.正则匹配器;
 import ticode.zh.jvm.正则表达式;
 
-public class 浏览框 extends android.widget.ImageView.ScaleType {
+public class 浏览框 extends 可视化组件 {
 
 private ProgressBar mProgressBar;
 private boolean Prv = true;

@@ -31,7 +31,7 @@ import android.graphics.drawable.*;
 import android.view.*;
 import android.view.*;
 
-public class UniversalAdapter extends android.widget.BaseAdapter {
+public class UniversalAdapter extends BaseAdapter2 {
 @Override
 public int getCount() {
 return 取项目数量();

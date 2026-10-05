@@ -3,9 +3,7 @@ package ticode.android;
 import android.text.SpannableStringBuilder;
 import android.text.SpannableString;
 
-import ticode.base.JString;
-
-public class StyleClickEffect extends android.text.style.AbsoluteSizeSpan {
+public class StyleClickEffect {
 
 private boolean underline;
 @Override

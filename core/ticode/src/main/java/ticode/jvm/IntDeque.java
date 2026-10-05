@@ -1,5 +1,7 @@
 package ticode.jvm;
 
 
-public class IntDeque extends java.util.ArrayDeque {
+import ticode.base.IntegerBox;
+
+public class IntDeque extends DequeTemplate<IntegerBox> {
 }

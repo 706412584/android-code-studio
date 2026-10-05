@@ -2,7 +2,7 @@ package ticode.zh.android;
 
 import android.os.Message;
 
-public class 可执行任务 extends Thread {
+public class 可执行任务 {
 public void run(){
 被执行();
 }

@@ -9,7 +9,7 @@ import java.util.Enumeration;
 
 import ticode.android.AndroidEnv;
 
-public class JavaModifierUtils extends dalvik.system.DexClassLoader {
+public class JavaModifierUtils {
 
 public static final int ABSTRACT = 1024;
 

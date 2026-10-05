@@ -3,8 +3,6 @@ package ticode.android;
 import android.text.SpannableStringBuilder;
 import android.text.SpannableString;
 
-import ticode.base.JString;
-
 public class StyleBackgroundColor extends android.text.style.BackgroundColorSpan {
 
 public void 赋值_op(int 颜色值) {

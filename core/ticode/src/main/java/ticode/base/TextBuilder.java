@@ -9,7 +9,7 @@ import ticode.jvm.JavaClass;
 
 public class TextBuilder extends java.lang.StringBuilder {
 
-public void 赋值_op(JString 初始字符串) {
+public void 赋值_op(CharSequence 初始字符串) {
 return new StringBuilder(初始字符串);
 }
 
@@ -36,7 +36,7 @@ public void 设索引_op(int 索引, char 设置字符) {
 设置字符(索引,设置字符);
 }
 
-public TextBuilder 追加字符串(JString 追加内容) {
+public TextBuilder 追加字符串(CharSequence 追加内容) {
 return this.append(追加内容);
 }
 
@@ -91,7 +91,7 @@ public TextBuilder 替换(int 被替换起始位置, int 被替换结束位置, 
 return this.replace(被替换起始位置,被替换结束位置,替换内容);
 }
 
-public TextBuilder 插入字符串(int 插入索引位置, JString 插入内容) {
+public TextBuilder 插入字符串(int 插入索引位置, CharSequence 插入内容) {
 return this.insert(插入索引位置,插入内容);
 }
 

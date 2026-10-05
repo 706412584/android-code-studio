@@ -66,7 +66,7 @@ this.setAccessible(可访问);
 }
 
 // 取本方法声明的泛型参数
-public JavaTypeVariable[] 泛型参数() {
+public java.lang.reflect.TypeVariable[] 泛型参数() {
 return this.getTypeParameters();
 }
 
@@ -81,7 +81,7 @@ return this.getParameterCount();
 }
 
 // 返回带有泛型的参数类型
-public JavaType[] 带泛型参数类型() {
+public java.lang.reflect.Type[] 带泛型参数类型() {
 return this.getGenericParameterTypes();
 }
 
@@ -96,12 +96,12 @@ return this.getExceptionTypes();
 }
 
 // 返回本方法声明可能抛出的异常
-public JavaType[] 带泛型异常类型() {
+public java.lang.reflect.Type[] 带泛型异常类型() {
 return this.getGenericExceptionTypes();
 }
 
 // 返回本方法的所有参数的注解
-public JavaAnnotation[][] 参数注解() {
+public java.lang.annotation.Annotation[][] 参数注解() {
 return this.getParameterAnnotations();
 }
 
@@ -111,17 +111,17 @@ return this.isAnnotationPresent(注解类);
 }
 
 // 从注解类获取标注在本方法上的注解
-public JavaAnnotation 取注解(JavaClass 注解类) {
+public java.lang.annotation.Annotation 取注解(JavaClass 注解类) {
 return this.getAnnotation(注解类);
 }
 
 // 从注解类获取标注在本方法上的注解
-public JavaAnnotation[] 取注解数组(JavaClass 注解类) {
+public java.lang.annotation.Annotation[] 取注解数组(JavaClass 注解类) {
 return this.getAnnotationsByType(注解类);
 }
 
 // 取标注在本方法上的所有注解
-public JavaAnnotation[] 取所有注解() {
+public java.lang.annotation.Annotation[] 取所有注解() {
 return this.getAnnotations();
 }
 
@@ -146,7 +146,7 @@ return this.getReturnType();
 }
 
 // 返回本方法的返回类型
-public JavaType 带泛型返回类型() {
+public java.lang.reflect.Type 带泛型返回类型() {
 return this.getGenericReturnType();
 }
 

@@ -49,7 +49,7 @@ import android.webkit.*;
 import ticode.jvm.JMatcher;
 import ticode.jvm.JRegex;
 
-public class ProgressBox extends android.widget.ImageView.ScaleType {
+public class ProgressBox extends VisualComponent {
 public ProgressBox(android.content.Context context) {
 super(context);
 }

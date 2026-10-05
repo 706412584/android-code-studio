@@ -31,9 +31,9 @@ import android.graphics.drawable.*;
 import ticode.zh.jvm.Java类;
 import ticode.zh.jvm.文件;
 
-public class 服务 extends android.app.Service {
+public class 服务 extends 安卓服务 {
 
-通信中间件 中间件;
+android.os.IBinder 中间件;
 
 @Override
 public void onCreate() {
@@ -66,7 +66,7 @@ public void 置通信中间件(消息处理器 处理器) {
 }
 
 
-public 通信中间件 取通信中间件() {
+public android.os.IBinder 取通信中间件() {
 return 中间件;
 }
 

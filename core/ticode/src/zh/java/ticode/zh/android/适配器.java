@@ -31,7 +31,7 @@ import android.graphics.drawable.*;
 import android.view.*;
 import android.view.*;
 
-public class 适配器 extends android.widget.Adapter {
+public class 适配器 implements android.widget.Adapter {
 
 
 

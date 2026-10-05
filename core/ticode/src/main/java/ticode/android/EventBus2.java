@@ -2,5 +2,5 @@ package ticode.android;
 
 import android.os.Message;
 
-public class EventBus2 extends android.os.IBinder {
+public class EventBus2 implements android.os.IBinder {
 }

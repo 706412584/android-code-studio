@@ -1,7 +1,9 @@
 package ticode.zh.jvm;
 
 
-public class 坐标 extends java.util.HashMap {
+import ticode.zh.base.整数类;
+
+public class 坐标 {
 Integer 横坐标;
 Integer 纵坐标;
 

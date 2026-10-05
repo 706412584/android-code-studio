@@ -9,7 +9,7 @@ import java.util.Enumeration;
 
 import ticode.android.AndroidEnv;
 
-public class ReflectOps extends dalvik.system.DexClassLoader {
+public class ReflectOps {
 
 // 设置某个字段的值，如果是静态字段，可省略类实例
 public static boolean 设置字段值(String 字段所在类类名, Object 类实例, String 字段名, Object 值) {

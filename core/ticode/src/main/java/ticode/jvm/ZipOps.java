@@ -15,7 +15,7 @@ import java.util.zip.*;
 import java.util.zip.*;
 import java.io.*;
 
-public class ZipOps extends java.util.zip.GZIPOutputStream {
+public class ZipOps {
 
 public static void 压缩文件(String 欲压缩路径, String 输出文件路径) {
 JFile 压缩文件 = 欲压缩路径;

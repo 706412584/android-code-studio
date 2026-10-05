@@ -1,7 +1,9 @@
 package ticode.jvm;
 
 
-public class JCoordinate extends java.util.HashMap {
+import ticode.base.IntegerBox;
+
+public class JCoordinate {
 Integer 横坐标;
 Integer 纵坐标;
 

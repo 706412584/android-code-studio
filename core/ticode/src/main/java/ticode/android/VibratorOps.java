@@ -6,7 +6,7 @@ import java.util.*;
 import android.os.Vibrator;
 import android.content.Context;
 
-public class VibratorOps extends android.widget.Toast {
+public class VibratorOps extends WindowComponent {
 Vibrator vibrator;
 public VibratorOps(Context context) {
 super(context);

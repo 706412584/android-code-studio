@@ -49,7 +49,7 @@ import android.webkit.*;
 import ticode.jvm.JMatcher;
 import ticode.jvm.JRegex;
 
-public class BrowserBox extends android.widget.ImageView.ScaleType {
+public class BrowserBox extends VisualComponent {
 
 private ProgressBar mProgressBar;
 private boolean Prv = true;

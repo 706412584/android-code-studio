@@ -1,7 +1,9 @@
 package ticode.jvm;
 
 
-public class KeyValuePair extends java.util.HashMap {
+import ticode.base.IntegerBox;
+
+public class KeyValuePair {
 Object 键;
 Object 值;
 

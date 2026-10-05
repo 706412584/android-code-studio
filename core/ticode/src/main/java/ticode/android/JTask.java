@@ -2,7 +2,7 @@ package ticode.android;
 
 import android.os.Message;
 
-public class JTask extends Thread {
+public class JTask {
 public void run(){
 被执行();
 }

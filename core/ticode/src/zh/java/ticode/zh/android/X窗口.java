@@ -3,7 +3,7 @@ package ticode.zh.android;
 import android.content.Intent;
 import android.os.Bundle;
 
-public class X窗口 extends androidx.appcompat.app.AppCompatActivity {
+public class X窗口 extends 安卓X窗口 {
 private 可视化组件 root;
 
 @Override
@@ -127,10 +127,10 @@ public void 被恢复() {
 public void 被销毁() {
 }
 
-public void 菜单被创建(菜单 菜单) {
+public void 菜单被创建(android.view.Menu 菜单) {
 }
 
-public void 菜单项被选中(菜单项 菜单项) {
+public void 菜单项被选中(android.view.MenuItem 菜单项) {
 }
 
 public void 标题栏返回键被单击() {

@@ -4,7 +4,7 @@ import java.io.File;
 import java.util.ArrayList;
 import android.database.sqlite.SQLiteDatabase;
 
-public class RecordSet extends android.database.Cursor {
+public class RecordSet implements android.database.Cursor {
 public int 总数() {
 return this.getCount();
 }

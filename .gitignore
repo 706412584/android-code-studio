@@ -130,3 +130,6 @@ core/ai-protocol/build/
 
 # Kotlin 构建会话缓存（各模块都会生成，属构建产物）
 .kotlin/
+
+# Python 字节码缓存
+tools/jieba-translate/__pycache__/

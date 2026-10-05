@@ -2,7 +2,7 @@ package ticode.android;
 
 import android.os.Message;
 
-public class Handler2 extends android.os.Message {
+public class Handler2 {
 
 public void handleMessage(Message msg)
 {

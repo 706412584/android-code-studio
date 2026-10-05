@@ -4,7 +4,7 @@ import android.content.Context;
 import android.view.ScaleGestureDetector;
 import android.view.ScaleGestureDetector.OnScaleGestureListener;
 
-public class TouchAction extends android.view.InputEvent {
+public class TouchAction {
 public static final TouchAction 按下;
 
 public static final TouchAction 移动;

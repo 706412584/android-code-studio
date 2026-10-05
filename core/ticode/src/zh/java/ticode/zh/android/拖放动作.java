@@ -4,7 +4,7 @@ import android.content.Context;
 import android.view.ScaleGestureDetector;
 import android.view.ScaleGestureDetector.OnScaleGestureListener;
 
-public class 拖放动作 extends android.view.MotionEvent {
+public class 拖放动作 {
 public static final 拖放动作 开始拖放;
 
 public static final 拖放动作 结束拖放;

@@ -3,7 +3,7 @@ package ticode.android;
 import android.content.Intent;
 import android.os.Bundle;
 
-public class XWindow extends androidx.appcompat.app.AppCompatActivity {
+public class XWindow extends AndroidXWindow {
 private VisualComponent root;
 
 @Override
@@ -127,10 +127,10 @@ public void 被恢复() {
 public void 被销毁() {
 }
 
-public void 菜单被创建(Menu2 菜单) {
+public void 菜单被创建(android.view.Menu 菜单) {
 }
 
-public void 菜单项被选中(MenuItem2 菜单项) {
+public void 菜单项被选中(android.view.MenuItem 菜单项) {
 }
 
 public void 标题栏返回键被单击() {

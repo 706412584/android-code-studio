@@ -1,7 +1,7 @@
 package ticode.android;
 
 
-public class AppOps extends android.content.pm.SigningInfo {
+public class AppOps {
 
 public static boolean 应用是否已安装(AndroidEnv 环境, String 应用包名) {
 try {

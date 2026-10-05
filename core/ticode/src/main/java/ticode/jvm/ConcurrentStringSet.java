@@ -2,5 +2,7 @@ package ticode.jvm;
 
 import java.util.concurrent.*;
 
-public class ConcurrentStringSet extends java.util.Vector {
+import ticode.base.IntegerBox;
+
+public class ConcurrentStringSet extends ConcurrentCollectionTemplate<String> {
 }

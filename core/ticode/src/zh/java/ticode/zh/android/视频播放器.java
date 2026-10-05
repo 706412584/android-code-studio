@@ -51,7 +51,7 @@ import ticode.zh.base.文本;
 import ticode.zh.jvm.正则匹配器;
 import ticode.zh.jvm.正则表达式;
 
-public class 视频播放器 extends android.widget.ImageView.ScaleType {
+public class 视频播放器 extends 可视化组件 {
 private boolean autoPlay;
 
 public 视频播放器(安卓环境 context) {

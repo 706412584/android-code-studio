@@ -2,7 +2,7 @@ package ticode.android;
 
 import android.os.Message;
 
-public class JThread extends Thread {
+public class JThread extends AndroidThread {
 private android.os.Handler handler = new android.os.Handler(android.os.Looper.getMainLooper()){
 @Override
 public void handleMessage(Message2 msg) {

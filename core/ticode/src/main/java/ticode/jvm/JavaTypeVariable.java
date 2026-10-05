@@ -9,16 +9,16 @@ import java.util.Enumeration;
 
 import ticode.android.AndroidEnv;
 
-public class JavaTypeVariable extends java.lang.reflect.TypeVariable {
+public class JavaTypeVariable implements JavaType, java.lang.reflect.TypeVariable {
 
-public boolean 等于_op(JavaTypeVariable 另一个) {
+public boolean 等于_op(java.lang.reflect.TypeVariable 另一个) {
 if (this == null) {
 return 另一个 == null;
 }
 return this.equals(另一个);
 }
 
-public boolean 不等于_op(JavaTypeVariable 另一个) {
+public boolean 不等于_op(java.lang.reflect.TypeVariable 另一个) {
 if (this == null) {
 return 另一个 != null;
 }
@@ -33,7 +33,7 @@ return this.getName();
 
 
 
-public JavaType[] 限制类型() {
+public java.lang.reflect.Type[] 限制类型() {
 return this.getBounds();
 }
 

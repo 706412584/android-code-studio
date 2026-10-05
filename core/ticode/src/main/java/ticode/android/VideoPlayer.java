@@ -49,7 +49,7 @@ import android.webkit.*;
 import ticode.jvm.JMatcher;
 import ticode.jvm.JRegex;
 
-public class VideoPlayer extends android.widget.ImageView.ScaleType {
+public class VideoPlayer extends VisualComponent {
 private boolean autoPlay;
 
 public VideoPlayer(AndroidEnv context) {

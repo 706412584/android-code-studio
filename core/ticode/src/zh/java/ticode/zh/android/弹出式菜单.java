@@ -53,7 +53,7 @@ return true;
 
 
 
-public 菜单 菜单() {
+public android.view.Menu 菜单() {
 return mPopupMenu.getMenu();
 }
 
@@ -72,6 +72,6 @@ public void 关闭() {
 mPopupMenu.dismiss();
 }
 
-public void 菜单项被单击(菜单项 项目) { } // 事件
+public void 菜单项被单击(android.view.MenuItem 项目) { } // 事件
 
 }

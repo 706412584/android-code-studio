@@ -51,7 +51,7 @@ import ticode.zh.base.文本;
 import ticode.zh.jvm.正则匹配器;
 import ticode.zh.jvm.正则表达式;
 
-public class 进度条 extends android.widget.ImageView.ScaleType {
+public class 进度条 extends 可视化组件 {
 public 进度条(android.content.Context context) {
 super(context);
 }

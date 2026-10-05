@@ -6,7 +6,7 @@ import java.util.*;
 import android.os.Vibrator;
 import android.content.Context;
 
-public class 提示框 extends android.widget.Toast {
+public class 提示框 extends 窗口组件 {
 public static final int 长时 = 1;
 public static final int 短时 = 0;
 

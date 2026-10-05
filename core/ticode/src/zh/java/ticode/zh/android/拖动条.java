@@ -51,7 +51,7 @@ import ticode.zh.base.文本;
 import ticode.zh.jvm.正则匹配器;
 import ticode.zh.jvm.正则表达式;
 
-public class 拖动条 extends android.widget.ImageView.ScaleType {
+public class 拖动条 extends 进度条 {
 public 拖动条(android.content.Context context) {
 super(context);
 getView().setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener(){

@@ -2,6 +2,8 @@ package ticode.jvm;
 
 import java.util.concurrent.*;
 
+import ticode.base.IntegerBox;
+
 public class ConcurrentHashMapTemplate<T1, T2> extends java.util.concurrent.ConcurrentHashMap {
 public T2 取索引_op(T1 键) {
 return 取项目(键);

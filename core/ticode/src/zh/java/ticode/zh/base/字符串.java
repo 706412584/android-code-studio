@@ -7,7 +7,7 @@ import java.util.concurrent.*;
 import ticode.zh.jvm.Java类;
 import ticode.zh.jvm.正则表达式;
 
-public class 字符串 extends CharSequence {
+public class 字符串 implements CharSequence {
 public int 长度() {
 return this.length();
 }

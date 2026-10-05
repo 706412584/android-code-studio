@@ -31,9 +31,9 @@ import android.graphics.drawable.*;
 import ticode.jvm.JFile;
 import ticode.jvm.JavaClass;
 
-public class Service2 extends android.app.Service {
+public class Service2 extends AndroidService {
 
-EventBus2 中间件;
+android.os.IBinder 中间件;
 
 @Override
 public void onCreate() {
@@ -66,7 +66,7 @@ public void 置通信中间件(Handler2 处理器) {
 }
 
 
-public EventBus2 取通信中间件() {
+public android.os.IBinder 取通信中间件() {
 return 中间件;
 }
 

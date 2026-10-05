@@ -19,7 +19,7 @@ import ticode.jvm.FileOutputStream2;
 import ticode.jvm.JInputStream;
 import ticode.jvm.JOutputStream;
 
-public class ComponentStyleOps extends android.graphics.drawable.GradientDrawable.Orientation {
+public class ComponentStyleOps {
 public static void 渐变(VisualComponent 组件, int[] 颜色值, Drawable2 绘制, int 形状, int 宽度, int 高度, int 圆角) {
 GradientDrawable drawable = new GradientDrawable();
 if(宽度 != -1 && 高度 != -1)

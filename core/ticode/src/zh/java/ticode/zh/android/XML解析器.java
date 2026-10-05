@@ -9,7 +9,7 @@ import org.xmlpull.v1.*;
 
 import ticode.zh.base.异常;
 
-public class XML解析器 extends org.json.JSONArray {
+public class XML解析器 {
 public static final Object 异常 = -1;
 public static final int 文档开始 = 0;
 public static final int 文档结束 = 1;

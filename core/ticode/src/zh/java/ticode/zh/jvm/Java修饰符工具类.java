@@ -9,7 +9,7 @@ import java.util.Enumeration;
 
 import ticode.zh.android.安卓环境;
 
-public class Java修饰符工具类 extends dalvik.system.DexClassLoader {
+public class Java修饰符工具类 {
 
 public static final int ABSTRACT = 1024;
 

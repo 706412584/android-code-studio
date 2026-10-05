@@ -9,7 +9,7 @@ import ticode.zh.base.文本;
 public class 可扩展文本构建器 extends android.text.SpannableStringBuilder {
 
 //字符串 包括 文本(String)
-public void 赋值_op(字符串 初始字符串) {
+public void 赋值_op(CharSequence 初始字符串) {
 return new SpannableStringBuilder(初始字符串);
 }
 
@@ -28,7 +28,7 @@ public char 取索引_op(int 索引) {
 return 取字符(索引);
 }
 
-public 可扩展文本构建器 追加字符串(字符串 追加内容) {
+public 可扩展文本构建器 追加字符串(CharSequence 追加内容) {
 return this.append(追加内容);
 }
 
@@ -71,7 +71,7 @@ public 可扩展文本构建器 替换(int 被替换起始位置, int 被替换�
 return this.replace(被替换起始位置,被替换结束位置,替换内容);
 }
 
-public 可扩展文本构建器 插入字符串(int 插入索引位置, 字符串 插入内容) {
+public 可扩展文本构建器 插入字符串(int 插入索引位置, CharSequence 插入内容) {
 return this.insert(插入索引位置,插入内容);
 }
 

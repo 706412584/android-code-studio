@@ -6,7 +6,7 @@ import java.util.*;
 import android.os.Vibrator;
 import android.content.Context;
 
-public class Toast2 extends android.widget.Toast {
+public class Toast2 extends WindowComponent {
 public static final int 长时 = 1;
 public static final int 短时 = 0;
 

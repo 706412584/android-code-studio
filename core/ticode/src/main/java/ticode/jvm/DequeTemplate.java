@@ -1,13 +1,15 @@
 package ticode.jvm;
 
 
+import ticode.base.IntegerBox;
+
 public class DequeTemplate<T1> extends java.util.ArrayDeque {
 
 public int 长度() {
 return this.size();
 }
 
-public JEnumerator 枚举器() {
+public java.util.Iterator 枚举器() {
 return this.iterator();
 }
 

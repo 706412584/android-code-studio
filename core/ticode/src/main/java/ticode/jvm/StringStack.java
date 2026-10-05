@@ -1,5 +1,7 @@
 package ticode.jvm;
 
 
-public class StringStack extends java.util.Stack {
+import ticode.base.IntegerBox;
+
+public class StringStack extends StackTemplate<String> {
 }

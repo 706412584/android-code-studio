@@ -1,5 +1,7 @@
 package ticode.jvm;
 
 
-public class IntIntHashMap extends java.util.HashMap {
+import ticode.base.IntegerBox;
+
+public class IntIntHashMap extends HashMapTemplate<IntegerBox, IntegerBox> {
 }

@@ -2,7 +2,7 @@ package ticode.zh.android;
 
 import android.os.Message;
 
-public class 线程 extends Thread {
+public class 线程 extends 安卓线程 {
 private android.os.Handler handler = new android.os.Handler(android.os.Looper.getMainLooper()){
 @Override
 public void handleMessage(消息 msg) {

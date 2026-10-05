@@ -20,7 +20,7 @@ public void 设置扩展(Object 样式, int 开始位置, int 结束位置, int 
 this.setSpan(样式, 开始位置, 结束位置, 扩展类型);
 }
 
-public void 赋值_op(字符串 内容) {
+public void 赋值_op(CharSequence 内容) {
 return new android.text.SpannableString(内容);
 }
 

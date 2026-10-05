@@ -6,7 +6,7 @@ import java.util.*;
 import android.os.Vibrator;
 import android.content.Context;
 
-public class 震动操作 extends android.widget.Toast {
+public class 震动操作 extends 窗口组件 {
 Vibrator vibrator;
 public 震动操作(Context context) {
 super(context);

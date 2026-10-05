@@ -31,7 +31,7 @@ import android.graphics.drawable.*;
 import ticode.zh.jvm.Java类;
 import ticode.zh.jvm.文件;
 
-public class 通知栏 extends android.content.BroadcastReceiver {
+public class 通知栏 {
 int 通知栏_重要程度_最低 = 1;
 int 通知栏_重要程度_低 = 2;
 int 通知栏_重要程度_默认 = 3;

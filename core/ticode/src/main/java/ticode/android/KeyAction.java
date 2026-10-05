@@ -4,7 +4,7 @@ import android.content.Context;
 import android.view.ScaleGestureDetector;
 import android.view.ScaleGestureDetector.OnScaleGestureListener;
 
-public class KeyAction extends android.view.DragEvent {
+public class KeyAction {
 public static final KeyAction 按下;
 
 public static final KeyAction 放开;
