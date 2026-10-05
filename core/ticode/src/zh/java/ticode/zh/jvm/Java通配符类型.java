@@ -1,11 +1,7 @@
 package ticode.zh.jvm;
 
-import java.lang.reflect.Modifier;
-import dalvik.system.DexFile;
 
-import ticode.zh.android.安卓环境;
-
-public class Java通配符类型 implements Java类型, java.lang.reflect.WildcardType {
+public abstract class Java通配符类型 extends Java类型 {
 
 public boolean 等于_op(java.lang.reflect.WildcardType 另一个) {
 if (this == null) {

@@ -1,11 +1,10 @@
 package ticode.zh.meng;
 
+import androidx.recyclerview.widget.RecyclerView;
 import androidx.recyclerview.widget.*;
 import androidx.recyclerview.widget.RecyclerView.*;
 import android.view.*;
 import android.widget.*;
-import androidx.recyclerview.widget.RecyclerView;
-import androidx.recyclerview.widget.ItemTouchHelper;
 
 import ticode.zh.android.可视化组件;
 import ticode.zh.android.安卓环境;
@@ -14,7 +13,7 @@ import ticode.zh.android.组件容器;
 import ticode.zh.android.适配器;
 import ticode.zh.jvm.集合;
 
-public class 高级适配器 {
+public class 高级适配器 extends androidx.recyclerview.widget.RecyclerView.Adapter {
 
 高级列表框 列表;
 
@@ -37,6 +36,7 @@ return new 高级适配器((java.util.ArrayList)集合);
 
 public Object 赋值_op(集合 集合) {
 new 高级适配器(集合);
+return this;
 }
 
 //更新数量
@@ -116,7 +116,7 @@ public 布局管理器 取布局管理器() {
 return 取列表().取布局管理器();
 }
 
-public 安卓环境 取安卓环境() {
+public android.content.Context 取安卓环境() {
 return 列表.取安卓环境();
 }
 

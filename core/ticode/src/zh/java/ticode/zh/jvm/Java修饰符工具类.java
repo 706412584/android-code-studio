@@ -1,9 +1,6 @@
 package ticode.zh.jvm;
 
 import java.lang.reflect.Modifier;
-import dalvik.system.DexFile;
-
-import ticode.zh.android.安卓环境;
 
 public class Java修饰符工具类 {
 

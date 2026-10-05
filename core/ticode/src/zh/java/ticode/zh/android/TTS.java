@@ -40,7 +40,7 @@ mSpeech.setPitch((float) 音调);
 }
 
 //设置语言环境
-public void 语言(语言环境 语言) {
+public void 语言(java.util.Locale 语言) {
 mSpeech.setLanguage(语言);
 }
 

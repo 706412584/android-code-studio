@@ -1,10 +1,9 @@
 package ticode.zh.android;
 
-import android.os.Message;
 
-public class 安卓线程 extends Thread {
+public abstract class 安卓线程 extends Thread {
 public static 安卓线程 取当前线程() {
-return Thread.currentThread();
+return (安卓线程)Thread.currentThread();
 }
 
 public static long 取当前线程ID() {

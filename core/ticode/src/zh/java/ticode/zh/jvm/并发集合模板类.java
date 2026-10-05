@@ -2,11 +2,9 @@ package ticode.zh.jvm;
 
 import java.util.concurrent.*;
 
-import ticode.zh.base.整数类;
+public abstract class 并发集合模板类<T1> extends java.util.Vector {
 
-public class 并发集合模板类<T1> extends java.util.Vector {
-
-public void 赋值_op(T1[] 成员) {
+public 并发集合模板类 赋值_op(T1[] 成员) {
 java.util.Vector<T1> list = new java.util.Vector<>(成员.length);
 for(T1 el : 成员) {
 list.add(el);

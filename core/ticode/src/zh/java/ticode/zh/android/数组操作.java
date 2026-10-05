@@ -1,5 +1,6 @@
 package ticode.zh.android;
 
+import java.lang.System;
 import java.io.*;
 import java.util.*;
 import java.lang.reflect.*;
@@ -13,20 +14,14 @@ import android.content.res.*;
 import android.os.*;
 import android.system.*;
 import android.graphics.*;
-import java.lang.System;
-import java.util.Stack;
 import android.app.*;
 import java.util.regex.*;
 import java.net.*;
 import java.math.*;
 
-import ticode.zh.base.异常;
-import ticode.zh.base.数字;
-import ticode.zh.base.文本;
-import ticode.zh.jvm.UUID;
-import ticode.zh.jvm.哈希表;
-import ticode.zh.jvm.键值对;
 import ticode.zh.jvm.集合;
+
+import static ticode.zh.android.常用操作.运行报错;
 
 public class 数组操作 {
 public static int 取数组长度(Object[] 数组) {

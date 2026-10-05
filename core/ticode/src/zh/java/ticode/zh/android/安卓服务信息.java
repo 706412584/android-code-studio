@@ -1,12 +1,7 @@
 package ticode.zh.android;
 
-import android.os.StrictMode;
-import android.content.Intent;
-import android.net.Uri;
-import java.io.File;
-import android.provider.Settings;
 
-public class 安卓服务信息 extends android.content.pm.ServiceInfo {
+public abstract class 安卓服务信息 extends android.content.pm.ServiceInfo {
 
 public static final int 标志_外部服务 = 4;;
 

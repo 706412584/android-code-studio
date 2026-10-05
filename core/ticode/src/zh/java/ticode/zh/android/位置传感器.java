@@ -1,7 +1,6 @@
 package ticode.zh.android;
 
 import android.hardware.*;
-import android.view.WindowManager;
 import java.util.*;
 import android.location.*;
 import android.os.*;
@@ -48,7 +47,7 @@ break;
 }
 };
 
-public 位置传感器(安卓环境 context) {
+public 位置传感器(android.content.Context context) {
 super(context);
 this.mContext = context;
 locationManager = ((LocationManager) mContext.getSystemService("location"));

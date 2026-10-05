@@ -1,7 +1,7 @@
 package ticode.zh.jvm;
 
 
-public class 输入流 extends java.io.InputStream {
+public abstract class 输入流 extends java.io.InputStream {
 public int 读取() {
 try {
 return this.read();

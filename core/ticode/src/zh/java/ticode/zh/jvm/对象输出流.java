@@ -1,10 +1,10 @@
 package ticode.zh.jvm;
 
 
-public class 对象输出流 extends java.io.ObjectOutputStream {
-public void 赋值_op(输出流 目标输出流) {
+public abstract class 对象输出流 extends java.io.ObjectOutputStream {
+public 对象输出流 赋值_op(输出流 目标输出流) {
 try {
-return new java.io.ObjectOutputStream(目标输出流);
+return (对象输出流)new java.io.ObjectOutputStream(目标输出流);
 } catch (java.io.IOException e) {
 e.printStackTrace();
 return null;
@@ -13,7 +13,7 @@ return null;
 
 public static 对象输出流 从路径创建(String 文件路径) {
 try {
-return new java.io.ObjectOutputStream(new java.io.FileOutputStream(文件路径));
+return (对象输出流)new java.io.ObjectOutputStream(new java.io.FileOutputStream(文件路径));
 } catch (java.io.IOException e) {
 e.printStackTrace();
 return null;

@@ -1,32 +1,14 @@
 package ticode.zh.android;
 
-import android.app.Application;
-import java.lang.reflect.Method;
-import android.content.Context;
-import android.net.Uri;
-import android.widget.Toast;
-import android.provider.MediaStore;
-import android.database.Cursor;
-import android.provider.DocumentsContract;
-import android.os.Environment;
-import android.content.ContentUris;
-import android.view.*;
-import android.app.*;
 import android.content.Intent;
-import android.os.Build;
-import android.content.pm.*;
-import android.provider.Settings;
-import android.os.StrictMode;
-import android.os.*;
-import android.content.*;
 import android.view.KeyEvent;
 import android.content.res.Configuration;
-import android.os.IBinder;
-import android.content.ComponentName;
+import android.view.*;
+import android.app.*;
+import android.content.pm.*;
+import android.os.*;
+import android.content.*;
 import android.graphics.drawable.*;
-
-import ticode.zh.jvm.Java类;
-import ticode.zh.jvm.文件;
 
 public class 窗口 extends 安卓窗口 {
 private 可视化组件 root;
@@ -185,7 +167,7 @@ public void 标题栏返回键被单击() {
 
 
 
-public void 获得返回数据(int 请求码, int 结果码, 启动信息 数据) {
+public void 获得返回数据(int 请求码, int 结果码, android.content.Intent 数据) {
 }
 
 public void 申请权限完毕(int 请求码, String[] 权限集, int[] 允许结果) {

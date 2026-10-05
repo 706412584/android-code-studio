@@ -1,9 +1,7 @@
 package ticode.zh.jvm;
 
 
-import ticode.zh.base.整数类;
-
-public class 栈模板类<T1> extends java.util.Stack {
+public abstract class 栈模板类<T1> extends java.util.Stack {
 
 public int 长度() {
 return this.size();

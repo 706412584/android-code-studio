@@ -1,12 +1,7 @@
 package ticode.zh.android;
 
-import android.os.StrictMode;
-import android.content.Intent;
-import android.net.Uri;
-import java.io.File;
-import android.provider.Settings;
 
-public class 安卓程序包项目信息基础类 extends android.content.pm.PackageItemInfo {
+public abstract class 安卓程序包项目信息基础类 extends android.content.pm.PackageItemInfo {
 
 public boolean 等于_op(安卓程序包项目信息基础类 另一个) {
 if (this == null) {
@@ -54,11 +49,11 @@ public void 徽标资源id(int 徽标资源id) {
 this.logo = 徽标资源id;
 }
 
-public 数据包 元数据() {
-return this.metaData;
+public android.os.Bundle 元数据() {
+return (android.os.Bundle)this.metaData;
 }
 
-public void 元数据(数据包 元数据) {
+public void 元数据(android.os.Bundle 元数据) {
 this.metaData = 元数据;
 }
 
@@ -83,15 +78,15 @@ return this.loadLabel(管理器).toString();
 }
 
 public 可绘制对象 获取图标(安卓程序包管理器 管理器) {
-return this.loadIcon(管理器);
+return (可绘制对象)this.loadIcon(管理器);
 }
 
 public 可绘制对象 获取横幅(安卓程序包管理器 管理器) {
-return this.loadBanner(管理器);
+return (可绘制对象)this.loadBanner(管理器);
 }
 
 public 可绘制对象 获取徽标(安卓程序包管理器 管理器) {
-return this.loadLogo(管理器);
+return (可绘制对象)this.loadLogo(管理器);
 }
 
 }

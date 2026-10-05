@@ -1,12 +1,7 @@
 package ticode.zh.android;
 
-import android.os.StrictMode;
-import android.content.Intent;
-import android.net.Uri;
-import java.io.File;
-import android.provider.Settings;
 
-public class 安卓窗口信息 extends android.content.pm.ActivityInfo {
+public abstract class 安卓窗口信息 extends android.content.pm.ActivityInfo {
 
 public static final int 颜色模式_默认 = 0;
 
@@ -252,11 +247,11 @@ public void 主题资源id(int 主题资源id) {
 this.theme = 主题资源id;
 }
 
-public 安卓窗口布局信息 布局信息() {
-return this.windowLayout;
+public android.content.pm.ActivityInfo.WindowLayout 布局信息() {
+return (android.content.pm.ActivityInfo.WindowLayout)this.windowLayout;
 }
 
-public void 布局信息(安卓窗口布局信息 布局信息) {
+public void 布局信息(android.content.pm.ActivityInfo.WindowLayout 布局信息) {
 this.windowLayout = 布局信息;
 }
 

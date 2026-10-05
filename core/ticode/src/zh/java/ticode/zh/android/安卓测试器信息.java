@@ -1,12 +1,7 @@
 package ticode.zh.android;
 
-import android.os.StrictMode;
-import android.content.Intent;
-import android.net.Uri;
-import java.io.File;
-import android.provider.Settings;
 
-public class 安卓测试器信息 extends android.content.pm.InstrumentationInfo {
+public abstract class 安卓测试器信息 extends android.content.pm.InstrumentationInfo {
 
 public boolean 等于_op(安卓测试器信息 另一个) {
 if (this == null) {

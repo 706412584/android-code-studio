@@ -1,11 +1,7 @@
 package ticode.zh.android;
 
-import android.text.SpannableStringBuilder;
 
-import ticode.zh.base.字符串;
-import ticode.zh.base.文本;
-
-public class 可扩展文本 extends android.text.SpannableString {
+public abstract class 可扩展文本 extends android.text.SpannableString {
 
 public static final int 包括开始和结束 = 1;
 //表示标记的范围从start到end-1，包括start，但不包括end.
@@ -19,8 +15,8 @@ public void 设置扩展(Object 样式, int 开始位置, int 结束位置, int 
 this.setSpan(样式, 开始位置, 结束位置, 扩展类型);
 }
 
-public void 赋值_op(CharSequence 内容) {
-return new android.text.SpannableString(内容);
+public 可扩展文本 赋值_op(CharSequence 内容) {
+return (可扩展文本)new android.text.SpannableString(内容);
 }
 
 public void 设置到文本框(文本框 文本框组件) {

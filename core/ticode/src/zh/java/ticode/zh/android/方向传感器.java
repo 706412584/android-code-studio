@@ -1,13 +1,13 @@
 package ticode.zh.android;
 
-import android.hardware.*;
 import android.view.WindowManager;
+import android.hardware.*;
 import java.util.*;
 import android.location.*;
 import android.os.*;
 import android.content.*;
 
-public class 方向传感器 extends 窗口组件 {
+public class 方向传感器 extends 窗口组件 implements SensorEventListener {
 @Override
 public void onSensorChanged(SensorEvent event) {
 if (event.sensor.getType() == 3 && this.enabled) {

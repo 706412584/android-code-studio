@@ -1,15 +1,16 @@
 package ticode.zh.jvm;
 
 
-import ticode.zh.base.整数类;
+import static ticode.zh.android.文本操作.格式化文本;
 
 public class 键值对 {
 Object 键;
 Object 值;
 
-public void 赋值_op(Object 键, Object 值) {
+public 键值对 赋值_op(Object 键, Object 值) {
 this.键 = 键;
 this.值 = 值;
+return this;
 }
 
 //格式: 键=值

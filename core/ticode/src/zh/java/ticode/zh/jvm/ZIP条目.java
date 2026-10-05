@@ -1,17 +1,16 @@
 package ticode.zh.jvm;
 
 import java.util.zip.*;
-import java.io.File;
 import java.io.*;
 
-public class ZIP条目 extends java.util.zip.ZipEntry {
+public abstract class ZIP条目 extends java.util.zip.ZipEntry {
 
 public static final int 压缩方法_存储 = 0;
 public static final int 压缩方法_压缩 = 8;
 
 public static ZIP条目 创建新条目(String 条目路径) {
 try {
-return new ZipEntry(条目路径);
+return (ZIP条目)new ZipEntry(条目路径);
 } catch(NullPointerException e) {
 throw new RuntimeException("路径不能为空");
 } catch(IllegalArgumentException e) {

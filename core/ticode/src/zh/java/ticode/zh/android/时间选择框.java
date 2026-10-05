@@ -12,7 +12,7 @@ public class 时间选择框 extends 窗口组件 {
 
 private TimePickerDialog dialog;
 
-public 时间选择框(安卓环境 context) {
+public 时间选择框(android.content.Context context) {
 super(context);
 Calendar calendar = Calendar.getInstance();
 dialog = new TimePickerDialog(context, new TimePickerDialog.OnTimeSetListener(){
@@ -48,7 +48,7 @@ e.printStackTrace();
 }
 
 //设置对话框图标, 参数为图片资源
-public void 图标(图片资源 图片) {
+public void 图标(int 图片) {
 dialog.setIcon(图片);
 }
 

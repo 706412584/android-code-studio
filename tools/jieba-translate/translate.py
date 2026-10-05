@@ -59,11 +59,23 @@ def out_package(jb_pkg):
 BOX = {'int': 'Integer', 'long': 'Long', 'short': 'Short', 'byte': 'Byte',
        'float': 'Float', 'double': 'Double', 'boolean': 'Boolean', 'char': 'Character'}
 
+# 结绳的「资源引用」类：`@值输出规则("@drawable")` / `@值输入规则(...)` 声明
+# 它们在结绳编译期被替换成 Android 的 `R.xxx` 整型资源 ID。转译器不生成 R 类，
+# 若留成空壳类，`builder.setIcon(图标)` / `getDrawable(图片)` 会报「找不到合适的
+# 方法」/「图片资源无法转换为int」（实测约 15 处）。类型位置直接映射成 int。
+VALUE_RESOURCE = {
+    '图片资源': 'int', '高清图片资源': 'int', '动画资源': 'int', 'XML资源': 'int',
+    '文本资源': 'int', '主题资源': 'int', '组件样式': 'int',
+}
+
+
 def map_type(t, tparams):
     """把结绳类型表达式映射成 Java 类型。"""
     t = t.strip()
     if not t:
         return 'Object'
+    if t in VALUE_RESOURCE:               # 资源引用 → Android 整型资源 ID
+        return VALUE_RESOURCE[t]
     if t.endswith('?'):                      # 可空 → 装箱类型
         return BOX.get(map_type(t[:-1], tparams), map_type(t[:-1], tparams))
     # 模板类型
@@ -196,6 +208,19 @@ def subst(body, params, tparams, in_code=False):
         # 结绳表达式里的类引用（`设备信息.安卓版本号`、`new 高级适配器(...)`）。
         body = _CLASSNAME_DOT_RE.sub(lambda m: map_cls(m.group(1)), body)
         body = _CLASSNAME_NEW_RE.sub(lambda m: m.group(1) + map_type_cls(m.group(2)), body)
+    # 基础类型的「扩展方法」：结绳在 整数/小数/字节 上挂了 `到十六进制()` /
+    # `到字节()` / `到整数()` 等。Java 无扩展方法，`值.到字节()` 会报
+    # 「无法取消引用int」。这里直接内联成等价的 Java 表达式（实测约 10 处）。
+    body = re.sub(r'(?<![\w一-鿿.])([A-Za-z_一-鿿][\w一-鿿]*)\.到十六进制\(\)',
+                  r'Integer.toHexString(\1)', body)
+    body = re.sub(r'(?<![\w一-鿿.])([A-Za-z_一-鿿][\w一-鿿]*)\.到八进制\(\)',
+                  r'Integer.toOctalString(\1)', body)
+    body = re.sub(r'(?<![\w一-鿿.])([A-Za-z_一-鿿][\w一-鿿]*)\.到二进制\(\)',
+                  r'Integer.toBinaryString(\1)', body)
+    body = re.sub(r'(?<![\w一-鿿.])([A-Za-z_一-鿿][\w一-鿿]*)\.到字节\(\)',
+                  r'(byte)(\1)', body)
+    body = re.sub(r'(?<![\w一-鿿.])([A-Za-z_一-鿿][\w一-鿿]*)\(([^()]*)\)\.到整数\(\)',
+                  r'(int)(\1(\2))', body)
     for k, v in (('本对象', 'this'), ('且', '&&'), ('或', '||'), ('非', '!'), ('空', 'null'),
                  ('真', 'true'), ('假', 'false')):
         body = re.sub(B % k, v, body)
@@ -241,23 +266,21 @@ def split_top(s, sep=','):
     return [x.strip() for x in out if x.strip()]
 
 
-def _cross_refs(t):
-    """返回本文件引用的 (其它包, 类名) 集合。
+def _cross_refs_text(text, own_pkg):
+    """返回文本引用的 (其它包, 类名) 集合。
 
     判据：文本里出现某个**已知类名**（中文版是中文名，英文版是映射后的英文名），
-    且它属于**本文件之外的包**。用于生成 import。
+    且它属于**本文件之外的包**。用于生成 import。入参是**单个类**的正文，
+    因此同一个 .t 里不同类各算各的 import（否则相对布局会继承线性布局的
+    `LinearLayout.LayoutParams` 导入，`params.addRule` 在错类型上找不到）。
     """
-    text = '\n'.join(t.out)
-    own = t.pkg
     out = set()
     for jb_pkg, cls_set in _LIB_CLASSES.items():
         mapped_pkg = map_pkg(jb_pkg)
-        if mapped_pkg == own:
+        if mapped_pkg == own_pkg:
             continue
         for cls in cls_set:
             j = map_cls(cls)
-            if j == cls and LANG == 'zh':
-                pass
             # 词边界匹配类名（避免子串误判）
             if re.search(r'(?<![\w\u4e00-\u9fff])' + re.escape(j) + r'(?![\w\u4e00-\u9fff])', text):
                 out.add((mapped_pkg, j))
@@ -279,7 +302,317 @@ def _load_lib_classes(src):
                 _LIB_CLASSES.setdefault(pkg, set()).add(m.group(1))
 
 
+
+def _prescan_wrappers(src):
+    """预扫描源：收集全部 @指代类 目标类名与被 `new W(...)` 的类。
+
+    `new` 的写法有两种：`new 启动信息(...)` 与 `new #<@启动信息>(...)`，
+    后者在转译后才显出类名，必须在**源文本**上识别。
+    """
+    global _WRAPPER_TARGETS, _NEEDED_NEW
+    aliases = {}
+    texts = []
+    for p in glob.glob(os.path.join(src, '**', '*.t'), recursive=True):
+        txt = io.open(p, encoding='utf-8', errors='replace').read()
+        texts.append(txt)
+        for m in re.finditer(r'((?:^[ \t]*@[^\n]*\n)+)[ \t]*(?:类|公开类|抽象类)\s+([^\s:<]+)', txt, re.M):
+            am = re.search(r'@指代类\("([^"]+)"\)', m.group(1))
+            if am:
+                aliases[m.group(2)] = am.group(1)
+    _WRAPPER_TARGETS.update(aliases)
+    for txt in texts:
+        for m in re.finditer(r'\bnew\s+(?:#<@)?([\u4e00-\u9fff][\u4e00-\u9fffA-Za-z0-9_]*)', txt):
+            if m.group(1) in aliases:
+                _NEEDED_NEW.add(m.group(1))
+
+
 _LIB_CLASSES = {}
+
+# 全局已知的 @指代类 目标（预扫描收集，供 postprocess_all 判定）。
+_WRAPPER_TARGETS = set()
+# 被 `new W(...)` 的包装类：不能加 abstract（否则「无法实例化」）。
+_NEEDED_NEW = set()
+# 目标为 final 且「无法实例化」不适用时仍不加 abstract 的类（保守名单）。
+_NO_ABSTRACT = set()
+
+# ============================================================================
+# @指代类 包装类的统一策略（实测：中文版 992 → 590，语法错误保持 0）
+#
+# 矛盾：包装类 W 既要能当目标 Java 类 X 用（赋值/传参），又要能转发 X 的实例方法；
+# 而大量 X 是 final（Bitmap/File/Class/StringBuilder/Locale…），extends 非法。
+#
+# 三档策略（按「目标类能否被继承」与「类是否需要构造」划分）：
+#   A) 别名壳（_ALIAS_TARGETS）：X final / 值语义类。
+#      去 extends、实例方法体 stub（保留签名）、所有方法返回类型 W→X；
+#      类型位置 W→X、`new W(`→`new X(`、`(W)`→`(X)`。
+#      → 类退化为纯静态工厂壳，W 不再是「类型」。
+#   B) 桥接（_BRIDGE）：X 可继承、但类被 `new`（启动信息/文件/动画类）或构造器不匹配。
+#      保留 extends 与方法体；只做类型位置 W→X、`new W(`→`new X(`、方法返回类型 W→X。
+#      → 调用点用原生 X，定义内转发方法照常工作。
+#   C) 抽象（其余非 final 目标）：保留 extends 加 abstract。
+#      缺抽象方法实现无法补齐（结绳靠 code 块自由转译，无法机械生成 override），
+#      加 abstract 只是让错误从「N 个具体报错」收敛为「1 个」，并让子类继续编译。
+#
+# 已排除的无效做法（实测）：
+#   - final 类批量加 abstract  → 992 不变（final+abstract 非法，且多了构造器错误）
+#   - 仅去 extends 不 stub     → 实例方法全丢，找不到符号暴涨（1029）
+#   - 类型位置替换过宽         → 误伤同名变量/方法名（文本框 → String框）
+# ============================================================================
+_ALIAS_TARGETS = {
+    # --- JDK final / 值语义 ---
+    '文本': 'String', '长整数类': 'Long', '逻辑型类': 'Boolean', '单精度小数类': 'Float',
+    '字符类': 'Character', '字节类': 'Byte', '小数类': 'Double', '整数类': 'Integer',
+    '文本构建器': 'java.lang.StringBuilder', '语言环境': 'java.util.Locale',
+    '正则表达式': 'java.util.regex.Pattern', '正则匹配器': 'java.util.regex.Matcher',
+    'UUID': 'java.util.UUID',
+    'Java类': 'java.lang.Class', 'Java字段': 'java.lang.reflect.Field',
+    'Java方法': 'java.lang.reflect.Method', 'Java构造方法': 'java.lang.reflect.Constructor',
+    'Java方法参数': 'java.lang.reflect.Parameter',
+    '资源标识符': 'java.net.URI',
+    # --- Android final / 值语义 ---
+    '位图对象': 'android.graphics.Bitmap', '矩形': 'android.graphics.Rect',
+    '组件名称': 'android.content.ComponentName', '数据包': 'android.os.Bundle',
+    '内容数据包': 'android.content.ContentValues', '消息': 'android.os.Message',
+    '信使': 'android.os.Messenger', '触摸事件': 'android.view.MotionEvent',
+    '预备启动信息': 'android.app.PendingIntent', '数据库': 'android.database.sqlite.SQLiteDatabase',
+    '安卓程序签名信息': 'android.content.pm.SigningInfo',
+    '安卓程序功能组信息': 'android.content.pm.FeatureGroupInfo',
+    '安卓窗口布局信息': 'android.content.pm.ActivityInfo.WindowLayout',
+    'WiFi扫描结果': 'android.net.wifi.ScanResult', 'RSA密钥对': 'java.security.KeyPair',
+    '附加资源管理器': 'android.content.res.AssetManager', 'dex文件': 'dalvik.system.DexFile',
+    '字体对象': 'android.graphics.Typeface',
+}
+_BRIDGE = {
+    '启动信息': 'android.content.Intent', '文件': 'java.io.File',
+    '安卓环境': 'android.content.Context',
+    '偏移动画': 'android.view.animation.TranslateAnimation',
+    '旋转动画': 'android.view.animation.RotateAnimation',
+    '缩放动画': 'android.view.animation.ScaleAnimation',
+    '透明动画': 'android.view.animation.AlphaAnimation',
+    '组件动画集合': 'android.view.animation.AnimationSet',
+}
+_METH_RE = re.compile(r'^[ \t]*public\s+(static\s+)?([^\s(]+)\s+([^\s(]+)\s*\(([^)]*)\)\s*\{', re.M)
+_DEFAULT_RET = {'void': '', 'boolean': 'return false; ', 'int': 'return 0; ', 'long': 'return 0L; ',
+                'double': 'return 0; ', 'float': 'return 0; ', 'char': 'return 0; ',
+                'byte': 'return 0; ', 'short': 'return 0; '}
+_STR_LIT = re.compile(r'"(?:\\.|[^"\\])*"|\'(?:\\.|[^\'\\])*\'')
+
+
+def _body_span(txt, start):
+    depth = 1; i = start
+    while i < len(txt) and depth:
+        if txt[i] == '{': depth += 1
+        elif txt[i] == '}': depth -= 1
+        i += 1
+    return start, i - 1
+
+
+def _stub_instance(txt, clsname):
+    out = []; pos = 0
+    for m in _METH_RE.finditer(txt):
+        if m.group(1):
+            continue
+        ret, mname = m.group(2), m.group(3)
+        b0, b1 = _body_span(txt, m.end())
+        rep = '' if mname == clsname else _DEFAULT_RET.get(ret, 'return null; ')
+        out.append(txt[pos:b0]); out.append(rep); pos = b1
+    out.append(txt[pos:])
+    return ''.join(out)
+
+
+def _ret_type_all(txt, clsname, target):
+    return re.sub(r'(public\s+(?:static\s+)?)(?<![\w.])' + re.escape(clsname) + r'(\s+[\w\u4e00-\u9fff]+\s*\()',
+                  r'\1' + target + r'\2', txt)
+
+
+def _fix_assign_op(txt, clsname):
+    """`方法 =(...)`（无返回类型）→ 应返回本类实例（`=` 运算符重载）。"""
+    return re.sub(r'public\s+void\s+(赋值_op\s*\()', 'public ' + clsname + r' \1', txt)
+
+
+def _cast_returns(txt, clsname):
+    """单行 `return <expr>;` 的 expr 加 (R) 强转（downcast），R 为方法声明的返回类型。
+
+    只要 R 是中文类名（结绳类）就强转：R 为 Java 原生类型时无需（本来就能赋值）；
+    R 为中文类时，体内返回的往往是其「原生目标」（如 `安卓程序包信息` 方法返回
+    `PackageInfo`），需要显式 downcast 才能编译。正确类型的 cast 是无害空操作。
+    """
+    lines = txt.split('\n')
+    cur_ret = None
+    for i, ln in enumerate(lines):
+        m = re.match(r'^[ \t]*public\s+(static\s+)?([^\s(]+)\s+([^\s(]+)\s*\(', ln)
+        if m:
+            cur_ret = m.group(2); continue
+        if cur_ret and re.search(r'[\u4e00-\u9fff]', cur_ret):
+            mm = re.match(r'^([ \t]*)return\s+([^;]+);\s*$', ln)
+            if mm:
+                expr = mm.group(2).strip()
+                if (expr not in ('null', 'true', 'false') and not re.match(r'^\d', expr)
+                        and not expr.startswith('(')
+                        and not expr.startswith('new ' + cur_ret + '(')
+                        and 'new ' + cur_ret + '(' not in expr):
+                    lines[i] = '%sreturn (%s)%s;' % (mm.group(1), cur_ret, expr)
+        if ln.strip() == '}':
+            cur_ret = None
+    return '\n'.join(lines)
+
+
+def replace_type_positions(txt, clsname, target):
+    """只替换**类型位置**的 W→X（保守，避免误伤同名变量/方法名）。
+
+    类型位置判据：后面跟空白+标识符 / `[` / `>` / `...`；`new W(`；`(W)` 强转。
+    不换 `W.xxx`（静态限定符）、`f(W)`（可能是变量）。保护字符串与 `class W`。
+    """
+    lits = []
+    def stash(m):
+        lits.append(m.group(0)); return '\x00%d\x00' % (len(lits) - 1)
+    txt = _STR_LIT.sub(stash, txt)
+    txt = txt.replace('class ' + clsname, 'class \x01')
+    W = re.escape(clsname)
+    txt = re.sub(r'(?<![A-Za-z0-9_\u4e00-\u9fff.])' + W
+                 + r'(?=[ \t]+(?:[A-Za-z_\u4e00-\u9fff]|\[|>|\.\.\.)|(?=\[))', target, txt)
+    txt = re.sub(r'(?<![\w.])new\s+' + W + r'(?=\s*[\(\[])', 'new ' + target, txt)
+    txt = re.sub(r'(?<=[=(,\[+\-*/?:&|])\s*\(' + W + r'\)', '(' + target + ')', txt)
+    txt = re.sub(r'\breturn\s+\(' + W + r'\)', 'return (' + target + ')', txt)   # `return (W)x`
+    txt = txt.replace('class \x01', 'class ' + clsname)
+    txt = re.sub(r'\x00(\d+)\x00', lambda m: lits[int(m.group(1))], txt)
+    return txt
+
+
+def apply_wrapper_policy(parts):
+    """对切分好的类源码逐条应用三档策略。返回新 parts 列表。"""
+    out = []
+    for p in parts:
+        nm = re.search(r'public (?:abstract )?class ([^\s<{]+)', p)
+        if not nm:
+            out.append(p); continue
+        name = nm.group(1)
+        if name not in _WRAPPER_TARGETS:
+            out.append(p); continue          # 非 @指代类：不动
+        if name in _ALIAS_TARGETS:
+            tgt = _ALIAS_TARGETS[name]
+            # 0) 类名与目标简单名相同（UUID→java.util.UUID）：self-import 已被写出点
+            #    过滤掉，正文里的裸 `UUID.xxx` 会解析到本类自身 → 改全限定名。
+            if name == tgt.rsplit('.', 1)[-1]:
+                p = re.sub(r'(?<![\w.])' + re.escape(name) + r'(?=\s*\.)', tgt, p)
+            # 1) 去 extends
+            p = re.sub(r'^(public\s+(?:abstract\s+)?class\s+' + re.escape(name) + r'[^{]*?)\s+extends\s+[\w\u4e00-\u9fff\.\$]+',
+                       r'\1', p, count=1, flags=re.M)
+            # 2) 实例方法体 stub
+            p = _stub_instance(p, name)
+            # 3) 全方法返回类型 W→X
+            p = _ret_type_all(p, name, tgt)
+            # 4) 类型位置 / new / 强转
+            p = replace_type_positions(p, name, tgt)
+        elif name in _BRIDGE:
+            tgt = _BRIDGE[name]
+            p = _fix_assign_op(p, name)
+            p = _cast_returns(p, name)
+            p = replace_type_positions(p, name, tgt)
+            p = re.sub(r'(?<![\w.])new\s+' + re.escape(name) + r'(?=\s*\()', 'new ' + tgt, p)
+            p = _ret_type_all(p, name, tgt)
+        else:
+            # C) 其余包装类：`方法 =(...)` 返回本类；本类内 `return 原生值` 加 (W) 强转；
+            #    目标非 final 但缺抽象方法实现 → 加 abstract（收敛为 1 条报错）。
+            p = _fix_assign_op(p, name)
+            p = _cast_returns(p, name)
+            if name not in _NEEDED_NEW and name not in _NO_ABSTRACT:
+                p = re.sub(r'^(public\s+)class\s+' + re.escape(name) + r'\b',
+                           lambda m: m.group(1) + 'abstract class ' + name, p, count=1, flags=re.M)
+        out.append(p)
+    return out
+
+
+def _drop_self_import(head, clsname):
+    """过滤 import 简单名与本类名相同者（UUID）→ Java 禁止 self-import。"""
+    return [h for h in head if not (h.startswith('import ') and not h.startswith('import static ')
+                                    and h.endswith(';') and h[7:-1].rsplit('.', 1)[-1] == clsname)]
+
+
+def postprocess_all(text, all_wrappers):
+    """对**其它文件**做类型位置/构造替换（别名壳与桥接的目标都是原生类型）。"""
+    for w, tgt in sorted(_ALIAS_TARGETS.items(), key=lambda kv: -len(kv[0])):
+        if w in all_wrappers:
+            text = replace_type_positions(text, w, tgt)
+    for w, tgt in _BRIDGE.items():
+        if w in all_wrappers:
+            text = replace_type_positions(text, w, tgt)
+            text = re.sub(r'(?<![\w.])new\s+' + re.escape(w) + r'(?=\s*\()', 'new ' + tgt, text)
+    return text
+
+# @全局类：其**静态方法**在结绳里可直接按名调用（等价 Java 静态导入）。
+# 记录 类名 -> (结绳包名, {方法名})，供生成 `import static`。
+_GLOBAL_CLASSES = {}
+
+def _load_global_classes(src):
+    global _GLOBAL_CLASSES
+    _GLOBAL_CLASSES = {}
+    for p in glob.glob(os.path.join(src, '**', '*.t'), recursive=True):
+        pkg = ''; pending = False; cur = None; is_static = False
+        for ln in io.open(p, encoding='utf-8', errors='replace'):
+            t = ln.strip()
+            if t.startswith('包名'):
+                pkg = t[2:].strip()
+                continue
+            if t.startswith('@全局类'):
+                pending = True
+                continue
+            if t.startswith('@静态'):
+                is_static = True
+                continue
+            if t in ('结束 类', '结束类'):
+                cur = None; pending = False; is_static = False
+                continue
+            m = re.match(r'^(?:类|公开类|抽象类)\s+([^\s:<]+)', t)
+            if m:
+                cur = m.group(1)
+                if pending:
+                    _GLOBAL_CLASSES[cur] = (pkg, set())
+                    pending = False
+                continue
+            if cur and cur in _GLOBAL_CLASSES:
+                # 只收合法 Java 标识符名：`方法 =(...)`（运算符重载）会产出 `=`，
+                # 生成 `import static X.=` 是语法错误。
+                mm = re.match(r'^(?:方法|属性读|属性写)\s+([A-Za-z_\u4e00-\u9fff][\w\u4e00-\u9fff]*)', t)
+                if mm:
+                    # 只有**静态**成员能静态导入：实例方法（如 安卓线程.ID 属性读）
+                    # 会产出 `import static ...ID;` → 「找不到符号」。
+                    if is_static:
+                        _GLOBAL_CLASSES[cur][1].add(mm.group(1))
+                    is_static = False
+                elif t and not t.startswith('@') and not t.startswith('//'):
+                    # `@静态` 与 `方法` 之间常夹 `@嵌入式代码`，注解不能清标志；
+                    # 只有非注解的实义行（变量/常量/其它）才清。
+                    is_static = False
+
+
+def _global_static_imports(body_all):
+    """为 @全局类 的静态方法生成 `import static`。
+
+    结绳里 `取数组长度(x)`/`延时(100)` 直接按名调用全局类的静态方法；
+    Java 必须显式静态导入，否则「找不到符号」。只对**非限定调用**
+    （名字前不是 `.`）生成，避免把 `流.关闭()` 这类实例调用误当全局方法。
+    本文件自身定义的同名方法优先（跳过），防止静态导入与本地方法冲突。
+    """
+    # 本类已声明的方法优先，不生成静态导入（否则 `线程池` 会给自身
+    # `结束提交到缓存线程池` 生成自导入，而该定义实际嵌在匿名 Runnable 里
+    # → 「找不到符号 静态 X」）。入参是**单个类**的方法体，故不会误判兄弟类。
+    own = set(re.findall(
+        r'(?m)^\s*(?:(?:public|private|protected|static|final|abstract|'
+        r'synchronized|native|default|strictfp)\s+)+[\w<>\[\],.]+\s+'
+        r'([\w\u4e00-\u9fff]+)\s*\(', body_all))
+    res, seen = [], set()
+    for gcls, (gpkg, methods) in _GLOBAL_CLASSES.items():
+        jgcls = map_cls(gcls)
+        for m in sorted(methods):
+            # 同名方法只导入一次：两个全局类都提供 `取安卓环境` 时，
+            # 重复静态导入会报「对 X 的引用不明确」。
+            if m in own or m in seen:
+                continue
+            if re.search(r'(?<![\w.\u4e00-\u9fff])' + re.escape(m) + r'\s*\(', body_all):
+                res.append('import static %s.%s.%s;' % (map_pkg(gpkg), jgcls, m))
+                seen.add(m)
+    return res
 
 class Translator:
     def __init__(self, path):
@@ -295,12 +628,18 @@ class Translator:
         self.cur_ret = 'void'   # 当前方法返回类型（决定 `code expr` 是否补 return）
         self.try_open = False   # 容错处理() 开了 try，等 结束容错() 收
         self.alias = None
+        self.pending_suffix = ''    # @后缀代码("implements X") 暂存，供类声明拼接
         self.used_names = set()
         self.used_class_names = set()
         self.cur_class_zh = ''
         self.cur_class_out = ''
         self.imports = []
         self.tparams = []
+        # 全库方法返回类型索引：`方法名 → {返回类型 Java 串}`。供变量类型推断用
+        # （如 `变量 结果 = 取网页源码_同步_内部(...)` 需要知道它是 `Object[]`，
+        # 否则推断成 Object，`结果[0]` 报「需要数组, 但找到Object」）。
+        self.method_rets = {}
+        self._index_method_rets()
         # 块注释扫描。块起始用 `'*/' not in t`，同行闭合的 `/* x */ code` 保持原样。
         self.comment_lines = set()
         in_c = False
@@ -324,6 +663,38 @@ class Translator:
                     in_c = True
                     self.comment_lines.add(idx)
                     self.lines[idx] = ''
+
+    def _index_method_rets(self):
+        """扫描全库 `.t`，记录每个方法名对应的返回类型（可能多个）。
+
+        结绳的方法签名常跨多行（参数表换行），返回类型写在最后一行末尾；
+        这里按「括号配平」把签名拼成一行再解析。
+        """
+        for p in glob.glob(os.path.join(os.path.dirname(self.path), '**', '*.t'), recursive=True):
+            lines = io.open(p, encoding='utf-8', errors='replace').read().split('\n')
+            for j, ln in enumerate(lines):
+                t = ln.strip()
+                if not re.match(r'^方法\s+[^\s(]+\s*\(', t):
+                    continue
+                sig = t
+                k = j
+                while _paren_open(sig) > 0 and k + 1 < len(lines):
+                    k += 1
+                    sig = sig.rstrip() + ' ' + lines[k].strip()
+                m = re.match(r'^方法\s+([^\s(]+)\s*\(.*\)\s*(?::|为)\s*(\S+)', sig)
+                if m and m.group(2) != '无返回值':
+                    self.method_rets.setdefault(m.group(1), set()).add(m.group(2))
+
+    def _call_ret(self, val):
+        """若 val 是「方法调用」，返回该方法的 Java 返回类型；否则 ''。"""
+        v = re.sub(r'^等待\s+', '', (val or '').strip())
+        m = re.match(r'^([一-鿿A-Za-z_][\w一-鿿]*)\s*\(', v)
+        if not m:
+            return ''
+        rets = self.method_rets.get(m.group(1))
+        if not rets or len(rets) > 1:
+            return ''       # 未知或重载返回不一致 → 不猜
+        return map_type(next(iter(rets)), self.tparams)
 
     def peek(self, k=0):
         j = self.i + k
@@ -372,6 +743,12 @@ class Translator:
             m = re.match(r'^@导入Java\("([^"]+)"\)', s)
             if m:
                 self.imports.append(m.group(1)); continue
+            m = re.match(r'^@后缀代码\("([^"]+)"\)', s)
+            if m:
+                # 结绳的「附加 implements/extends」注解。原样输出，否则
+                # `implements SensorEventListener` / `extends Handler` 全丢，
+                # 导致「方法不会覆盖」+「找不到符号」两类错误（实测约 40 处）。
+                self.pending_suffix = m.group(1).strip(); continue
             if s.startswith('@'):
                 self.handle_annotation(s); continue
             if s.startswith('类 ') or s.startswith('公开类 ') or s.startswith('抽象类 '):
@@ -455,10 +832,15 @@ class Translator:
         # 平台 API；显式基类（如 安卓环境 : Context）只是同一平台类的薄抽象。
         # 若两者都写，取别名——否则平台方法全部「找不到符号」（实测 25 处 getWindow）。
         if self.alias and NON_EXTEND_KIND.get(name) == 'interface':
-            # 目标是接口：Java 里只能 implements，`extends` 会报「此处需要接口」。
-            # 实现接口后接口方法自动可调（结绳里这些类就是该接口）。
+            # 结绳里这些类**就是**该接口：类型位置映射成接口（map_type_cls），
+            # 本类只留静态工厂壳。绝不 `extends 接口`（Java 语法错「此处需要接口」）；
+            # 把显式 `extends 基类` 强改成 implements 又会要求类体补全接口的全部
+            # 抽象方法（实测 ParameterizedType.getOwnerType →「不是抽象的」）。
+            # 有显式基类时基类已 implements 该接口，别名冗余；无基类时用
+            # `implements 接口` 让结绳里转发接口方法的方法体仍可解析。
             al = self.alias.strip()
-            extends = (extends.replace(' extends ', ' implements ') + ', ' + al) if extends else (' implements ' + al)
+            if not extends:
+                extends = ' implements ' + al
         elif self.alias and name not in NON_EXTEND:
             # 可继承：让包装类 extends 目标 Java 类，从而拿到其全部实例方法。
             al = self.alias.strip()
@@ -472,6 +854,13 @@ class Translator:
         # 继承上一个类的 @指代类 目标（实测 进度条/拖动条/视频播放器/浏览框
         # 全被误挂上 图像缩放类型 的 ScaleType）。
         self.alias = None
+        # @后缀代码("implements X")：结绳用它声明「本类还实现/继承 X」。
+        # 拼在 extends 之后（`class A extends B implements X` 合法）。
+        if self.pending_suffix:
+            suf = self.pending_suffix.strip()
+            if suf and suf not in extends:
+                extends = (extends + ' ' + suf) if extends else (' ' + suf)
+            self.pending_suffix = ''
         tdecl = ('<' + ', '.join(self.tparams) + '>') if self.tparams else ''
         JAVA_SIMPLE = {'UUID','Date','Timer','File','Thread','String','Integer','Long',
                        'Boolean','Double','Float','Object','Math','System','Runtime'}
@@ -619,20 +1008,22 @@ class Translator:
     BARE_ARRAY = re.compile(r'^([一-鿿A-Za-z_][一-鿿A-Za-z0-9_.]*)\[([^\]]+)\]\s+([一-鿿A-Za-z_][一-鿿A-Za-z0-9_]*)\s*(?:=\s*(.+?))?;?$')
 
     def parse_var(self, s):
+        st = self.pending_static          # @静态 变量 → 静态字段，否则静态方法引用不到
         self.pending_static = False
+        pre = 'static ' if st else ''
         s = self._join(s)   # 结绳允许 `变量 x : 类型 = 表达式` 跨行续写
         m = re.match(r'^变量\s+([^\s:]+)\s*(?:(?::|为)\s*([^=]+))?\s*(?:=\s*(.+))?$', s)
         name, typ, val = m.group(1), (m.group(2) or '').strip(), (m.group(3) or '').strip()
         am = re.match(r'^(.+?)\[(.+)\]$', typ)   # 字节[1024] / 整数[宽度*高度]
         if am:
             jt = map_type(am.group(1).strip(), self.tparams)
-            self.emit('%s[] %s = new %s[%s];' % (
-                jt, name, jt, subst(am.group(2), [], self.tparams))); return
-        jt = map_type(typ, self.tparams) if typ else self.infer_type(val)
+            self.emit('%s%s[] %s = new %s[%s];' % (
+                pre, jt, name, jt, subst(am.group(2), [], self.tparams))); return
+        jt = map_type(typ, self.tparams) if typ else (self._call_ret(val) or self.infer_type(val))
         if val and re.match(r'^\(.*\)$', val) and jt not in ('int','long','short','byte','float','double','boolean','char','String','Object'):
             # 结绳构造语法：变量 x : 类型 = (a,b)  →  类型 x = new 类型(a,b)
-            self.emit('%s %s = new %s%s;' % (jt, name, jt, val)); return
-        self.emit('%s %s%s;' % (jt, name, (' = ' + subst(val, [], self.tparams)) if val else ''))
+            self.emit('%s%s %s = new %s%s;' % (pre, jt, name, jt, val)); return
+        self.emit('%s%s %s%s;' % (pre, jt, name, (' = ' + subst(val, [], self.tparams)) if val else ''))
 
     def parse_params(self, ps):
         """结绳参数表 → (java参数列表, 参数名列表)"""
@@ -689,6 +1080,7 @@ class Translator:
         # 运算符重载 → 具名方法
         self.embedded = self.pending_embedded; self.pending_embedded = False
         is_op = name in self.OPMAP
+        value_sem = (name == '=')   # 结绳 `方法 =(...)` 是「本类型值构造」，语义上返回值
         name = self.op_name(name)
         if is_op:
             name = name + '_op'   # Java 无运算符重载；与具名方法并存会重名，统一加后缀
@@ -696,13 +1088,26 @@ class Translator:
         # 方法体只有一条 `code expr`，若按 void 生成会得到 `return expr;` → 类型错误。
         if self.embedded and jret == 'void':
             jret = 'Object'
+        # 结绳 `方法 =(…)` 无返回类型时仍代表「构造一个本类实例」（如 `文件 =("路径")`
+        # 体内是 `new java.io.File(...)`）。按 void 生成会把 `code expr` 变成
+        # 丢弃值的语句（javac「意外的返回值」）。返回类型取本类名。
+        if value_sem and jret == 'void':
+            jret = self.cur_class_out or 'Object'
         is_static = self.pending_static
         self.pending_static = False
         self.used_names.add(name)
         self.embedded = False
         self.cur_ret = jret
         self.emit('public %s%s %s(%s) {' % ('static ' if is_static else '', jret, name, params))
+        mark = len(self.out)
         self.parse_body()
+        # 值语义 `=` 的体内可能只是字段赋值（`this.x = x;`），没有 return。
+        # 那样 Java 会报「缺少返回语句」；补 `return this;`。
+        if value_sem and not any(l.strip().startswith('return') for l in self.out[mark:]):
+            for k in range(len(self.out) - 1, mark - 1, -1):
+                if self.out[k].strip() == '}':
+                    self.out.insert(k, 'return this;')
+                    break
         self.cur_ret = 'void'
 
     def parse_prop_read(self, s):
@@ -935,6 +1340,12 @@ class Translator:
             v, a, b = args
             self.emit('for (int %s = %s; %s < %s; %s++) {' % (
                 v, subst(a, [], self.tparams), v, subst(b, [], self.tparams), v))
+        elif len(args) == 1 and '->' in args[0]:
+            # 结绳的 `循环(集合 -> 元素)`：Java 里是 for-each。用 `var` 让
+            # javac 推断元素类型（否则元素是 Object，`v.键` 之类会「找不到符号」）。
+            coll, var = args[0].split('->', 1)
+            self.emit('for (var %s : %s) {' % (
+                subst(var.strip(), [], self.tparams), subst(coll.strip(), [], self.tparams)))
         else:
             cond = args[0] if args else ''
             self.emit('while (%s) {' % subst(cond, [], self.tparams))
@@ -1003,49 +1414,74 @@ def _first_class_name(t):
             return m.group(1)
     return ''
 
-def translate(path, outdir):
-    t = Translator(path)
-    t.parse()
-    # 组装
-    body_all = chr(10).join(t.out)   # 先算出来，供 import 过滤判定
+def _class_head(pkg, imports, body):
+    """按**单个类**的正文组装 import 头。
+
+    导入必须逐类计算：一个 .t 里多个类共用一份 imports 列表，若按整文件过滤，
+    （a）同简名冲突（`LinearLayout.LayoutParams` vs `RelativeLayout.LayoutParams`）
+        会按首次出现保留错误的那个，另一个类的方法就在错类型上找不到；
+    （b）未使用的导入（`android.widget.GridLayout` 落在 相对布局 头上）干扰解析。
+    """
     head = []
-    if t.pkg:
-        head.append('package %s;' % t.pkg)
+    if pkg:
+        head.append('package %s;' % pkg)
     head.append('')
-    # 去重：Java 禁止两个 simple name 相同的 single-type-import
-    # （实测 `android.widget.LinearLayout.LayoutParams` 与
+    # Java 禁止两个 simple name 相同的 single-type-import
+    # （`android.widget.LinearLayout.LayoutParams` 与
     #   `android.widget.RelativeLayout.LayoutParams` 并存 → 「已定义具有相同简名的类型」）。
-    # 星号导入与单类型导入分开去重；保留首次出现者。
-    _seen_simple, _seen_star = set(), set()
-    for imp in t.imports:
-        # 只保留 body 里**真正用到**的导入（星号导入无法廉价判定，一律保留）。
-        # 类体里的 @导入Java 会进文件级 imports，使同文件其它类也带上它；
-        # 若该包在库外不存在（如 tdr.util），未使用也会报「程序包不存在」。
+    # 同简名冲突时不能简单「保留首次」：文件级顺序会把 线性布局 的
+    # `LinearLayout.LayoutParams` 留给 相对布局，`params.addRule` 就在错类型上
+    # 找不到符号。改为按**外部类名是否出现在本类正文里**打分选优。
+    by_simple, star = {}, []
+    for imp in imports:
         if any(imp == p or imp.startswith(p + '.') for p in MISSING_PACKAGES):
             continue
-        if not imp.endswith('.*'):
-            simple = imp.rsplit('.', 1)[-1]
-            if not re.search(r'(?<![\w.])' + re.escape(simple) + r'(?![\w])', body_all):
-                continue
         if imp.endswith('.*'):
-            if imp in _seen_star:
-                continue
-            _seen_star.add(imp)
-            head.append('import %s;' % imp)
-        else:
-            simple = imp.rsplit('.', 1)[-1]
-            if simple in _seen_simple:
-                continue
-            _seen_simple.add(simple)
-            head.append('import %s;' % imp)
+            if imp not in star:
+                star.append(imp)
+            continue
+        simple = imp.rsplit('.', 1)[-1]
+        # 只保留 body 里**真正用到**的导入。
+        if not re.search(r'(?<![\w.])' + re.escape(simple) + r'(?![\w])', body):
+            continue
+        by_simple.setdefault(simple, []).append(imp)
+
+    def _score(imp):
+        # 外部类简名（`android.widget.RelativeLayout.LayoutParams` → `RelativeLayout`）
+        # 出现在正文 → 该导入才是本类真正要用的那个。
+        parts = imp.split('.')
+        outer = parts[-2] if len(parts) >= 2 else ''
+        return 1 if outer and re.search(
+            r'(?<![\w\u4e00-\u9fff])' + re.escape(outer) + r'(?![\w\u4e00-\u9fff])', body) else 0
+
+    for simple in by_simple:
+        cands = by_simple[simple]
+        if len(cands) > 1:
+            cands = sorted(cands, key=_score, reverse=True)
+        head.append('import %s;' % cands[0])
+    for imp in star:
+        head.append('import %s;' % imp)
     head.append('')
     # 跨包引用必须显式 import：本库 40 个文件引用了其它包的类，而原 .t 靠
     # 「同包解析」并不写 import。全量编译时 javac 会从 sourcepath 隐式加载，
     # 掩盖这个问题；两套映射下包名不同，必须补上。
-    for other_pkg, other_cls in sorted(_cross_refs(t)):
+    xrefs = sorted(_cross_refs_text(body, pkg))
+    for other_pkg, other_cls in xrefs:
         head.append('import %s.%s;' % (other_pkg, other_cls))
-    if any(_cross_refs(t)):
+    if xrefs:
         head.append('')
+    # @全局类 的静态方法 → 静态导入（结绳里可直接按名调用）。
+    st = _global_static_imports(body)
+    if st:
+        head.extend(st)
+        head.append('')
+    return head
+
+
+def translate(path, outdir):
+    t = Translator(path)
+    t.parse()
+    # 组装
     # 一个 .t 文件含多个顶层类，而 Java 每个 public 类必须独占同名文件——
     # 按顶层 `public (abstract )?class ` 切分，各自成文件。
     NL = chr(10)
@@ -1096,6 +1532,8 @@ def translate(path, outdir):
         return res
 
     parts = _split(body.split(NL))
+    # @指代类 包装类三档策略（别名壳 / 桥接 / 抽象）。仅当类确实是 @指代类 目标时生效。
+    parts = apply_wrapper_policy(parts)
     rel = t.pkg.replace('.', '/') if t.pkg else ''
     d = os.path.join(outdir, rel)
     os.makedirs(d, exist_ok=True)
@@ -1108,6 +1546,9 @@ def translate(path, outdir):
             sys.stderr.write('WARN 跳过不配平的类 %s（源文件花括号失衡）\n' % nm.group(1))
             continue
         fn = nm.group(1) + '.java'
+        head = _class_head(t.pkg, t.imports, p)
+        head = _drop_self_import(head, nm.group(1))
+        p = postprocess_all(p, _WRAPPER_TARGETS)
         io.open(os.path.join(d, fn), 'w', encoding='utf-8').write('\n'.join(head) + '\n' + p)
         n += 1
     return map_cls(_first_class_name(t) or ''), n
@@ -1116,6 +1557,8 @@ if __name__ == '__main__':
     src = sys.argv[1]
     outdir = sys.argv[2]
     _load_lib_classes(src)
+    _load_global_classes(src)
+    _prescan_wrappers(src)
     files = glob.glob(os.path.join(src, '**', '*.t'), recursive=True)
     for f in sorted(files):
         try:

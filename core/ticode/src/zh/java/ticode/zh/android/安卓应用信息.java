@@ -1,12 +1,7 @@
 package ticode.zh.android;
 
-import android.os.StrictMode;
-import android.content.Intent;
-import android.net.Uri;
-import java.io.File;
-import android.provider.Settings;
 
-public class 安卓应用信息 extends android.content.pm.ApplicationInfo {
+public abstract class 安卓应用信息 extends android.content.pm.ApplicationInfo {
 
 public static final int 类别_未定义 = -1;
 
@@ -248,7 +243,7 @@ public void 主题资源id(int 主题资源id) {
 this.theme = 主题资源id;
 }
 
-public String 取类别标题(安卓环境 环境, int 类别) {
+public String 取类别标题(android.content.Context 环境, int 类别) {
 return this.getCategoryTitle(环境,类别).toString();
 }
 

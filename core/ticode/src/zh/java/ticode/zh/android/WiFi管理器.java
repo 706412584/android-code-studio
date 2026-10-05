@@ -12,8 +12,8 @@ this.glq = (WifiManager)context.getSystemService(android.content.Context.WIFI_SE
 this.context=context;
 }
 
-public WiFi扫描结果[] 取WiFi扫描结果() {
-return glq.getScanResults().toArray(new WiFi扫描结果[0]);
+public android.net.wifi.ScanResult[] 取WiFi扫描结果() {
+return glq.getScanResults().toArray(new android.net.wifi.ScanResult[0]);
 }
 
 public WiFi信息 取当前连接信息() {

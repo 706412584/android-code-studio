@@ -1,5 +1,9 @@
 package ticode.zh.android;
 
+import java.util.concurrent.ExecutorService;
+import java.net.InetSocketAddress;
+import android.os.Looper;
+import android.os.Handler;
 import java.io.*;
 import java.net.*;
 import java.util.*;
@@ -7,42 +11,18 @@ import java.math.*;
 import java.security.*;
 import java.security.cert.*;
 import javax.net.ssl.*;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.OutputStream;
-import java.io.ByteArrayOutputStream;
-import java.net.URL;
-import java.net.HttpURLConnection;
-import java.util.Map;
-import java.util.zip.GZIPInputStream;
-import java.util.concurrent.ExecutorService;
-import java.security.SecureRandom;
-import java.security.cert.X509Certificate;
-import java.security.cert.CertificateException;
-import javax.net.ssl.SSLSession;
-import javax.net.ssl.SSLContext;
-import javax.net.ssl.X509TrustManager;
-import javax.net.ssl.HostnameVerifier;
-import javax.net.ssl.HttpsURLConnection;
 import java.util.concurrent.*;
 import android.os.*;
-import java.net.InetSocketAddress;
-import java.nio.ByteBuffer;
-import java.nio.channels.DatagramChannel;
-import android.os.Looper;
-import android.os.Handler;
 import java.nio.*;
 import java.nio.channels.*;
 
-import ticode.zh.base.异常;
-import ticode.zh.base.文本;
-import ticode.zh.base.逻辑型类;
-import ticode.zh.jvm.UUID;
-import ticode.zh.jvm.文件;
+import static ticode.zh.android.流程处理.提交到新线程运行;
+import static ticode.zh.android.流程处理.等待新线程执行完毕;
+import static ticode.zh.android.流程处理.结束提交到新线程;
 
 public class 局域网工具 {
-boolean 是否连通;
-boolean 是否开放;
+static boolean 是否连通;
+static boolean 是否开放;
 
 public static boolean 是否开启网络代理() {
 String proxyHost = System.getProperty("http.proxyHost");

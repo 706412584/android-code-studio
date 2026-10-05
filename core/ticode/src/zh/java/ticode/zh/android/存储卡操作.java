@@ -13,20 +13,10 @@ import android.content.res.*;
 import android.os.*;
 import android.system.*;
 import android.graphics.*;
-import java.lang.System;
-import java.util.Stack;
 import android.app.*;
 import java.util.regex.*;
 import java.net.*;
 import java.math.*;
-
-import ticode.zh.base.异常;
-import ticode.zh.base.数字;
-import ticode.zh.base.文本;
-import ticode.zh.jvm.UUID;
-import ticode.zh.jvm.哈希表;
-import ticode.zh.jvm.键值对;
-import ticode.zh.jvm.集合;
 
 public class 存储卡操作 {
 
@@ -99,7 +89,7 @@ return (initial_memory > 0) ? (initial_memory / 1024L) : 0L;
 }
 
 //获取手机剩余内存，单位为MB
-public static long 取手机剩余内存(安卓环境 环境) {
+public static long 取手机剩余内存(android.content.Context 环境) {
 ActivityManager am = (ActivityManager) 环境.getSystemService("activity");
 ActivityManager.MemoryInfo mi = new ActivityManager.MemoryInfo();
 am.getMemoryInfo(mi);

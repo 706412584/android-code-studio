@@ -3,8 +3,6 @@ package ticode.zh.android;
 import android.media.*;
 import android.os.*;
 import java.util.*;
-import android.os.Vibrator;
-import android.content.Context;
 
 public class 音乐播放器 {
 

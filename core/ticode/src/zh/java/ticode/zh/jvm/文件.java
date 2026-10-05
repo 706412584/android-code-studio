@@ -6,16 +6,16 @@ public Object 赋值_op(String 文件路径) {
 return new java.io.File(文件路径);
 }
 
-public static 文件 从路径创建(String 路径) {
-return new java.io.File(路径);
+public static java.io.File 从路径创建(String 路径) {
+return (java.io.File)new java.io.File(路径);
 }
 
-public static 文件 新建对象(String 路径, String 子文件名) {
-return new java.io.File(路径, 子文件名);
+public static java.io.File 新建对象(String 路径, String 子文件名) {
+return (java.io.File)new java.io.File(路径, 子文件名);
 }
 
-public static 文件 新建对象2(文件 目录, String 子文件名) {
-return new java.io.File(目录, 子文件名);
+public static java.io.File 新建对象2(java.io.File 目录, String 子文件名) {
+return (java.io.File)new java.io.File(目录, 子文件名);
 }
 
 public String 取文件名() {
@@ -26,8 +26,8 @@ public String 取父目录路径() {
 return this.getParent();
 }
 
-public 文件 取父目录() {
-return this.getParentFile();
+public java.io.File 取父目录() {
+return (java.io.File)this.getParentFile();
 }
 
 public String 取路径() {
@@ -70,7 +70,7 @@ return this.mkdirs();
 }
 
 //将当前文件重命名到另一个文件
-public boolean 重命名(文件 新文件) {
+public boolean 重命名(java.io.File 新文件) {
 return this.renameTo(新文件);
 }
 
@@ -85,13 +85,13 @@ return this.delete();
 
 
 
-public 文件[] 取子文件数组() {
-return this.listFiles();
+public java.io.File[] 取子文件数组() {
+return (java.io.File[])this.listFiles();
 }
 
 //将当前文件转换为资源标识符(URI)
-public 资源标识符 到资源标识符() {
-return this.toURI();
+public java.net.URI 到资源标识符() {
+return (java.net.URI)this.toURI();
 }
 
 public long 最后修改时间() {

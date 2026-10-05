@@ -7,9 +7,7 @@ import java.security.spec.*;
 import java.math.*;
 import javax.crypto.*;
 import javax.crypto.spec.*;
-import java.security.KeyPairGenerator;
 
-import ticode.zh.base.数字;
 import ticode.zh.base.文本;
 
 public class 加解密操作 {
@@ -76,7 +74,7 @@ return Base64编码_字节集(字节集, 编码集);
 
 
 public static String Base64解码(String 欲解码内容, String 编码, String 编码集) {
-Object 字节集 = Base64解码_字节集(欲解码内容, 编码集);
+byte[] 字节集 = Base64解码_字节集(欲解码内容, 编码集);
 return 文本.从字节集创建(字节集, 编码);
 }
 

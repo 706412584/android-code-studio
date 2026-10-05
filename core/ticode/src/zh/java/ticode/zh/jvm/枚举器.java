@@ -1,9 +1,7 @@
 package ticode.zh.jvm;
 
 
-import ticode.zh.base.整数类;
-
-public class 枚举器 implements java.util.Iterator {
+public abstract class 枚举器 implements java.util.Iterator {
 
 
 

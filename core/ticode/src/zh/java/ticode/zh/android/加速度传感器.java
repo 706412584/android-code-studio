@@ -1,13 +1,12 @@
 package ticode.zh.android;
 
 import android.hardware.*;
-import android.view.WindowManager;
 import java.util.*;
 import android.location.*;
 import android.os.*;
 import android.content.*;
 
-public class 加速度传感器 extends 窗口组件 {
+public class 加速度传感器 extends 窗口组件 implements SensorEventListener {
 private static final int SENSOR_CACHE_SIZE = 10;
 private static final double SHAKE_THRESHOLD = 8.0d;
 private final Queue<Float> X_CACHE = new LinkedList<>();

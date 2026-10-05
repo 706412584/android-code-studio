@@ -7,10 +7,6 @@ import java.security.spec.*;
 import java.math.*;
 import javax.crypto.*;
 import javax.crypto.spec.*;
-import java.security.KeyPairGenerator;
-
-import ticode.zh.base.数字;
-import ticode.zh.base.文本;
 
 public class Java代码扩展 {
 //等价于 条件 ? 为真输出 : 为假输出

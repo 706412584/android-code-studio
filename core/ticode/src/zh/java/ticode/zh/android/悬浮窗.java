@@ -1,7 +1,7 @@
 package ticode.zh.android;
 
-import android.content.*;
 import android.app.Activity;
+import android.content.*;
 import android.view.*;
 import android.widget.*;
 import java.util.*;
@@ -220,7 +220,7 @@ public 组件容器 取布局() {
 return ViewContainer;
 }
 
-public 安卓环境 取安卓环境() {
+public android.content.Context 取安卓环境() {
 return context;
 }
 
@@ -233,13 +233,13 @@ public void 悬浮窗显示() { } // 事件
 public void 悬浮窗隐藏() { } // 事件
 public void 悬浮窗关闭() { } // 事件
 
-public void 悬浮窗被单击(触摸事件 来源事件, int X, int Y) { } // 事件
-public void 悬浮窗被长按(触摸事件 来源事件, int X, int Y) { } // 事件
-public void 悬浮窗被触摸(触摸事件 来源事件, int X, int Y) { } // 事件
-public void 悬浮窗被拖动(触摸事件 来源事件, int X, int Y) { } // 事件
-public void 悬浮窗被放开(触摸事件 来源事件, int X, int Y) { } // 事件
+public void 悬浮窗被单击(android.view.MotionEvent 来源事件, int X, int Y) { } // 事件
+public void 悬浮窗被长按(android.view.MotionEvent 来源事件, int X, int Y) { } // 事件
+public void 悬浮窗被触摸(android.view.MotionEvent 来源事件, int X, int Y) { } // 事件
+public void 悬浮窗被拖动(android.view.MotionEvent 来源事件, int X, int Y) { } // 事件
+public void 悬浮窗被放开(android.view.MotionEvent 来源事件, int X, int Y) { } // 事件
 public void 悬浮窗位置变化(int X, int Y) { } // 事件
-public void 悬浮窗外侧操作(触摸事件 来源事件) { } // 事件
+public void 悬浮窗外侧操作(android.view.MotionEvent 来源事件) { } // 事件
 
 public void 悬浮窗获取权限() { } // 事件
 public void 悬浮窗获取权限成功() { } // 事件
@@ -276,7 +276,7 @@ public static void 关闭指定悬浮窗(String 标记) {
 
 public static void 关闭所有悬浮窗() {
 集合 集合 = 取所有悬浮窗();
-while (集合 -> 值) {
+for (var 值 : 集合) {
 ((悬浮窗)值).关闭();
 }
 }

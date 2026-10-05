@@ -1,28 +1,14 @@
 package ticode.zh.android;
 
-import android.view.View;
-import android.content.Context;
 import android.graphics.Canvas;
-import java.lang.reflect.Field;
-import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.locks.ReentrantLock;
-import android.os.SystemClock;
-import android.view.Surface;
-import android.view.SurfaceView;
-import android.view.SurfaceHolder;
-import android.graphics.PixelFormat;
 import java.util.Map;
 import java.util.HashMap;
 import android.graphics.Path;
 import android.graphics.RectF;
 import android.graphics.Bitmap;
-import android.graphics.Paint;
-import android.graphics.Rect;
 
-import ticode.zh.base.对象;
-
-public class 画布对象 extends android.graphics.Canvas {
-画笔对象 默认画笔 = 画笔对象.创建画笔();
+public abstract class 画布对象 extends android.graphics.Canvas {
+static 画笔对象 默认画笔 = 画笔对象.创建画笔();
 
 private static Path path;
 private static RectF rectF;
@@ -88,8 +74,8 @@ bitmapCacheHandler = new BitmapCacheHandler();
 return bitmapCacheHandler;
 }
 
-public static 画布对象 创建画布(位图对象 位图) {
-return new Canvas(位图);
+public static 画布对象 创建画布(android.graphics.Bitmap 位图) {
+return (画布对象)new Canvas(位图);
 }
 
 public int 保存() {
@@ -169,7 +155,7 @@ public void 矩形裁剪(float 左, float 上, float 右, float 下) {
 this.clipRect(左,上,右,下);
 }
 
-public void 矩形裁剪2(矩形 参数) {
+public void 矩形裁剪2(android.graphics.Rect 参数) {
 this.clipRect(参数);
 }
 
@@ -190,12 +176,12 @@ path.quadTo(辅助X坐标, 辅助Y坐标, 结束X坐标, 结束Y坐标);
 this.drawPath(path, 画笔);
 }
 
-public void 画位图(float X坐标, float Y坐标, 位图对象 位图, 画笔对象 画笔) {
+public void 画位图(float X坐标, float Y坐标, android.graphics.Bitmap 位图, 画笔对象 画笔) {
 if (位图 == null || 位图.isRecycled()) return;
 this.drawBitmap(位图, X坐标, Y坐标, 画笔);
 }
 
-public void 画缩放位图(float X坐标, float Y坐标, float 宽度, float 高度, 位图对象 位图, 画笔对象 画笔) {
+public void 画缩放位图(float X坐标, float Y坐标, float 宽度, float 高度, android.graphics.Bitmap 位图, 画笔对象 画笔) {
 if (位图 == null || 位图.isRecycled()) return;
 if (rectF == null) {
 rectF = new RectF();

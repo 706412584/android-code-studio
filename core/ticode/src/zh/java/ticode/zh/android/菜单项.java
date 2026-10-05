@@ -1,12 +1,8 @@
 package ticode.zh.android;
 
-import android.os.Environment;
 import android.content.pm.*;
 
-import ticode.zh.jvm.Java类;
-import ticode.zh.jvm.文件;
-
-public class 菜单项 implements android.view.MenuItem {
+public abstract class 菜单项 implements android.view.MenuItem {
 public static final int 总是显示 = 2;
 public static final int 尽量显示 = 1;
 public static final int 从不显示 = 0;
@@ -50,7 +46,7 @@ this.setTitle(标题);
 
 
 
-public void 图标资源(图片资源 图标) {
+public void 图标资源(int 图标) {
 this.setIcon(图标);
 }
 

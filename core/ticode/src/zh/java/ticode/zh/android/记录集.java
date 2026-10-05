@@ -1,9 +1,7 @@
 package ticode.zh.android;
 
-import java.io.File;
-import android.database.sqlite.SQLiteDatabase;
 
-public class 记录集 implements android.database.Cursor {
+public abstract class 记录集 implements android.database.Cursor {
 public int 总数() {
 return this.getCount();
 }

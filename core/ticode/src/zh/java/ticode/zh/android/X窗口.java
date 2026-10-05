@@ -139,7 +139,7 @@ public void 标题栏返回键被单击() {
 
 
 
-public void 获得返回数据(int 请求码, int 结果码, 启动信息 数据) {
+public void 获得返回数据(int 请求码, int 结果码, android.content.Intent 数据) {
 }
 
 public void 申请权限完毕(int 请求码, String[] 权限集, int[] 允许结果) {

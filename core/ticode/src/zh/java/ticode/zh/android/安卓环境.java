@@ -3,8 +3,11 @@ package ticode.zh.android;
 import android.os.Environment;
 import android.content.pm.*;
 
-import ticode.zh.jvm.Java类;
 import ticode.zh.jvm.文件;
+
+import static ticode.zh.android.流程处理.提交到主线程运行2;
+import static ticode.zh.android.流程处理.是否处于主线程;
+import static ticode.zh.android.流程处理.结束提交到主线程;
 
 public class 安卓环境 extends android.content.Context {
 
@@ -37,25 +40,25 @@ delayed = delayed + 50;
 }
 
 //静态变量推荐使用全局环境，尽量避免使用窗口环境
-public 安卓环境 取全局环境() {
-return this.getApplicationContext();
+public android.content.Context 取全局环境() {
+return (android.content.Context)this.getApplicationContext();
 }
 
 //获取安卓资源管理器
 public 安卓资源管理器 取安卓资源管理器() {
-return this.getResources();
+return (安卓资源管理器)this.getResources();
 }
 
 //获取安卓附加资源管理器
-public 附加资源管理器 取附加资源管理器() {
-return this.getAssets();
+public android.content.res.AssetManager 取附加资源管理器() {
+return (android.content.res.AssetManager)this.getAssets();
 }
 
 
 
 
 
-public void 发送广播(启动信息 数据) {
+public void 发送广播(android.content.Intent 数据) {
 this.sendBroadcast(数据);
 }
 
@@ -83,7 +86,7 @@ return 0;
 }
 
 public 安卓程序包管理器 取程序包管理器() {
-return this.getPackageManager();
+return (安卓程序包管理器)this.getPackageManager();
 }
 
 public String 取自身版本名称() {
@@ -96,8 +99,8 @@ return "";
 
 
 
-public 文件 取私有目录() {
-return this.getFilesDir();
+public java.io.File 取私有目录() {
+return (java.io.File)this.getFilesDir();
 }
 
 
@@ -110,8 +113,8 @@ return 取私有目录().取绝对路径();
 
 
 
-public 文件 取内部私有缓存目录() {
-return this.getCacheDir();
+public java.io.File 取内部私有缓存目录() {
+return (java.io.File)this.getCacheDir();
 }
 
 
@@ -121,16 +124,16 @@ public String 取内部私有缓存目录路径() {
 return 取内部私有缓存目录().取绝对路径();
 }
 
-public 文件 取私有缓存目录() {
-return this.getExternalCacheDir();
+public java.io.File 取私有缓存目录() {
+return (java.io.File)this.getExternalCacheDir();
 }
 
 public String 取私有缓存目录路径() {
 return this.getExternalCacheDir().getAbsolutePath();
 }
 
-public 文件 取私有数据目录(String 目标) {
-return this.getExternalFilesDir(目标);
+public java.io.File 取私有数据目录(String 目标) {
+return (java.io.File)this.getExternalFilesDir(目标);
 }
 
 public String 取私有数据目录路径(String 目标) {
@@ -140,8 +143,8 @@ return this.getExternalFilesDir(目标).getAbsolutePath();
 
 
 
-public 文件 取数据目录() {
-return this.getDataDir();
+public java.io.File 取数据目录() {
+return (java.io.File)this.getDataDir();
 }
 
 
@@ -154,8 +157,8 @@ return 取数据目录().取绝对路径();
 
 
 
-public 文件 取公用下载目录() {
-return Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS);
+public java.io.File 取公用下载目录() {
+return (java.io.File)Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS);
 }
 
 
@@ -168,8 +171,8 @@ return 取公用下载目录().取绝对路径();
 
 
 
-public 文件 取公用图片目录() {
-return Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES);
+public java.io.File 取公用图片目录() {
+return (java.io.File)Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES);
 }
 
 
@@ -182,8 +185,8 @@ return 取公用图片目录().取绝对路径();
 
 
 
-public 文件 取公用文档目录() {
-return Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS);
+public java.io.File 取公用文档目录() {
+return (java.io.File)Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS);
 }
 
 

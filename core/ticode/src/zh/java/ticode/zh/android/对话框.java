@@ -30,7 +30,7 @@ builder.setMessage(信息);
 }
 
 //设置对话框图标, 参数为图片资源
-public void 图标(图片资源 图标) {
+public void 图标(int 图标) {
 builder.setIcon(图标);
 }
 
@@ -88,7 +88,7 @@ window.setAttributes(p);
 }
 
 //设置对话框动画主题
-public void 动画主题(动画资源 主题) {
+public void 动画主题(int 主题) {
 if(dialog == null) {
 dialog = builder.create();
 }
@@ -167,7 +167,7 @@ window.setBackgroundDrawable(new ColorDrawable(颜色));
 }
 
 //设置对话框背景图片
-public void 背景图片(图片资源 图片) {
+public void 背景图片(int 图片) {
 if(dialog == null) {
 dialog = builder.create();
 }

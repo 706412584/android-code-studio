@@ -1,8 +1,7 @@
 package ticode.zh.android;
 
-import android.os.Message;
 
-public class 可执行任务 {
+public class 可执行任务 implements Runnable {
 public void run(){
 被执行();
 }

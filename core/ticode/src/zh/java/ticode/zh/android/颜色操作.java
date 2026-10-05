@@ -13,20 +13,10 @@ import android.content.res.*;
 import android.os.*;
 import android.system.*;
 import android.graphics.*;
-import java.lang.System;
-import java.util.Stack;
 import android.app.*;
 import java.util.regex.*;
 import java.net.*;
 import java.math.*;
-
-import ticode.zh.base.异常;
-import ticode.zh.base.数字;
-import ticode.zh.base.文本;
-import ticode.zh.jvm.UUID;
-import ticode.zh.jvm.哈希表;
-import ticode.zh.jvm.键值对;
-import ticode.zh.jvm.集合;
 
 public class 颜色操作 {
 
@@ -328,24 +318,24 @@ String G;
 String B;
 String returnColor;
 if (A值 < 0x10) {
-A = "0" + A值.到十六进制();
+A = "0" + Integer.toHexString(A值);
 } else {
-A = A值.到十六进制();
+A = Integer.toHexString(A值);
 }
 if (R值 < 0x10) {
-R = "0" + R值.到十六进制();
+R = "0" + Integer.toHexString(R值);
 } else {
-R = R值.到十六进制();
+R = Integer.toHexString(R值);
 }
 if (G值 < 0x10) {
-G = "0" + G值.到十六进制();
+G = "0" + Integer.toHexString(G值);
 } else {
-G = G值.到十六进制();
+G = Integer.toHexString(G值);
 }
 if (B值 < 0x10) {
-B = "0" + B值.到十六进制();
+B = "0" + Integer.toHexString(B值);
 } else {
-B = B值.到十六进制();
+B = Integer.toHexString(B值);
 }
 switch (内置格式) {
 case ARGB:

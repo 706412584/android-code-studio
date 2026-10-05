@@ -1,12 +1,7 @@
 package ticode.zh.android;
 
-import android.os.StrictMode;
-import android.content.Intent;
-import android.net.Uri;
-import java.io.File;
-import android.provider.Settings;
 
-public class 安卓程序包信息 extends android.content.pm.PackageInfo {
+public abstract class 安卓程序包信息 extends android.content.pm.PackageInfo {
 
 public static final int 安装位置_自动 = 0;
 
@@ -31,7 +26,7 @@ return !this.equals(另一个);
 }
 
 public 安卓窗口信息[] 窗口信息集() {
-return this.activities;
+return (安卓窗口信息[])this.activities;
 }
 
 public void 窗口信息集(安卓窗口信息[] 窗口信息集) {
@@ -39,7 +34,7 @@ this.activities = 窗口信息集;
 }
 
 public 安卓窗口信息[] 广播接收器信息集() {
-return this.receivers;
+return (安卓窗口信息[])this.receivers;
 }
 
 public void 广播接收器信息集(安卓窗口信息[] 广播接收器信息集) {
@@ -47,7 +42,7 @@ this.receivers = 广播接收器信息集;
 }
 
 public 安卓应用信息 应用信息() {
-return this.applicationInfo;
+return (安卓应用信息)this.applicationInfo;
 }
 
 public void 应用信息(安卓应用信息 应用信息) {
@@ -55,23 +50,23 @@ this.applicationInfo = 应用信息;
 }
 
 public 安卓程序配置信息[] 配置信息集() {
-return this.configPreferences;
+return (安卓程序配置信息[])this.configPreferences;
 }
 
 public void 配置信息集(安卓程序配置信息[] 配置信息集) {
 this.configPreferences = 配置信息集;
 }
 
-public 安卓程序功能组信息[] 功能组信息集() {
-return this.featureGroups;
+public android.content.pm.FeatureGroupInfo[] 功能组信息集() {
+return (android.content.pm.FeatureGroupInfo[])this.featureGroups;
 }
 
-public void 功能组信息集(安卓程序功能组信息[] 功能组信息集) {
+public void 功能组信息集(android.content.pm.FeatureGroupInfo[] 功能组信息集) {
 this.featureGroups = 功能组信息集;
 }
 
 public 安卓测试器信息[] 测试器信息集() {
-return this.instrumentation;
+return (安卓测试器信息[])this.instrumentation;
 }
 
 public void 测试器信息集(安卓测试器信息[] 测试器信息集) {
@@ -79,7 +74,7 @@ this.instrumentation = 测试器信息集;
 }
 
 public 安卓程序权限信息[] 权限信息集() {
-return this.permissions;
+return (安卓程序权限信息[])this.permissions;
 }
 
 public void 权限信息集(安卓程序权限信息[] 权限信息集) {
@@ -87,7 +82,7 @@ this.permissions = 权限信息集;
 }
 
 public 安卓程序功能信息[] 功能信息集() {
-return this.reqFeatures;
+return (安卓程序功能信息[])this.reqFeatures;
 }
 
 public void 功能信息集(安卓程序功能信息[] 功能信息集) {
@@ -95,7 +90,7 @@ this.reqFeatures = 功能信息集;
 }
 
 public 安卓服务信息[] 服务信息集() {
-return this.services;
+return (安卓服务信息[])this.services;
 }
 
 public void 服务信息集(安卓服务信息[] 服务信息集) {
@@ -103,18 +98,18 @@ this.services = 服务信息集;
 }
 
 public 安卓程序签名数据[] 签名数据集() {
-return this.signatures;
+return (安卓程序签名数据[])this.signatures;
 }
 
 public void 签名数据集(安卓程序签名数据[] 签名数据集) {
 this.signatures = 签名数据集;
 }
 
-public 安卓程序签名信息 签名信息() {
-return this.signingInfo;
+public android.content.pm.SigningInfo 签名信息() {
+return (android.content.pm.SigningInfo)this.signingInfo;
 }
 
-public void 签名信息(安卓程序签名信息 签名信息) {
+public void 签名信息(android.content.pm.SigningInfo 签名信息) {
 this.signingInfo = 签名信息;
 }
 

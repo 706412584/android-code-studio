@@ -1,20 +1,18 @@
 package ticode.zh.android;
 
+import android.content.Intent;
+import android.net.Uri;
 import java.io.*;
 import java.util.*;
 import java.util.zip.*;
 import java.util.regex.*;
 import java.text.*;
 import java.nio.channels.*;
-import java.util.zip.CRC32;
 import java.security.*;
-import android.content.Intent;
-import android.net.Uri;
 import android.content.*;
 import android.provider.*;
 import android.graphics.*;
 
-import ticode.zh.jvm.文件;
 import ticode.zh.jvm.集合;
 
 public class 图片操作 {
@@ -32,7 +30,7 @@ return BitmapFactory.decodeByteArray(buffer, 0, buffer.length);
 
 
 
-public static byte[] 取图片字节数组(String 图片路径, 安卓环境 窗口) {
+public static byte[] 取图片字节数组(String 图片路径, android.content.Context 窗口) {
 if (图片路径.startsWith("/")) {
 File f = new File(图片路径);
 if (f.exists()) {
@@ -177,7 +175,7 @@ return Bitmap2Bytes(roundCornerBitmap);
 }
 
 //取图片宽度，图片文件名可以是资源文件，也可以是SD卡文件
-public static int 取图片宽度(安卓环境 窗口, String 图片路径) {
+public static int 取图片宽度(android.content.Context 窗口, String 图片路径) {
 int width = 0;
 if (图片路径.length() > 0)
 if (图片路径.startsWith("/")) {
@@ -198,7 +196,7 @@ return width;
 }
 
 //取图片高度，图片文件名可以是资源文件，也可以是SD卡文件
-public static int 取图片高度(安卓环境 窗口, String 图片路径) {
+public static int 取图片高度(android.content.Context 窗口, String 图片路径) {
 int height = 0;
 if (图片路径.length() > 0)
 if (图片路径.startsWith("/")) {
@@ -240,7 +238,7 @@ return Bitmap2Bytes(bitmap);
 }
 
 //发送系统通知，更新系统相册，让SD卡上的指定图片显示在系统相册中
-public static void 更新系统相册(安卓环境 窗口, String 图片路径) {
+public static void 更新系统相册(android.content.Context 窗口, String 图片路径) {
 try {
 //TODO 未测试
 File file = new File(图片路径);

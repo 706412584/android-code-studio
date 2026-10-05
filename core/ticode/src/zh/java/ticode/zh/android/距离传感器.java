@@ -1,7 +1,6 @@
 package ticode.zh.android;
 
 import android.hardware.*;
-import android.view.WindowManager;
 import java.util.*;
 import android.location.*;
 import android.os.*;
@@ -9,7 +8,7 @@ import android.content.*;
 
 public class 距离传感器 extends 窗口组件 {
 
-private 安卓环境 mContext;
+private android.content.Context mContext;
 private float lastValue;
 private int mRate = 3;
 private Sensor mSensor;
@@ -19,7 +18,7 @@ private int min = 1;
 private float value = -999.0f;
 private boolean enable;
 
-public 距离传感器(安卓环境 context) {
+public 距离传感器(android.content.Context context) {
 super(context);
 this.mContext = context;
 mSensorManager = ((SensorManager) mContext.getSystemService("sensor"));

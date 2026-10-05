@@ -1,10 +1,11 @@
 package ticode.zh.jvm;
 
 import java.util.zip.*;
-import java.io.File;
 import java.io.*;
 
-public class 压缩器 extends java.util.zip.Deflater {
+import static ticode.zh.android.数组操作.取数组长度;
+
+public abstract class 压缩器 extends java.util.zip.Deflater {
 
 public static final int 压缩等级_默认 = -1;
 public static final int 压缩等级_无压缩 = 0;
@@ -16,13 +17,13 @@ public static final int 压缩策略_小值数据 = 1;
 public static final int 压缩策略_霍夫曼编码 = 2;
 
 // 创建压缩器对象并指定压缩等级(0-9)
-public void 赋值_op(int 压缩等级) {
-return new Deflater(压缩等级);
+public 压缩器 赋值_op(int 压缩等级) {
+return (压缩器)new Deflater(压缩等级);
 }
 
 // 创建使用GZIP兼容压缩的压缩器
 public static 压缩器 创建GZIP兼容压缩器(int 压缩等级) {
-return new Deflater(压缩等级,true);
+return (压缩器)new Deflater(压缩等级,true);
 }
 
 // 设置压缩级别 0-9

@@ -1,14 +1,15 @@
 package ticode.zh.jvm;
 
 import java.util.zip.*;
-import java.io.File;
 import java.io.*;
 
-public class 解压器 extends java.util.zip.Inflater {
+import static ticode.zh.android.数组操作.取数组长度;
+
+public abstract class 解压器 extends java.util.zip.Inflater {
 
 // 创建使用GZIP兼容压缩的压缩器
 public static 解压器 创建GZIP兼容解压器() {
-return new Inflater(true);
+return (解压器)new Inflater(true);
 }
 
 // 获取ADLER-32值

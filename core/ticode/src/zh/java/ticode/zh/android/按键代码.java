@@ -1,7 +1,5 @@
 package ticode.zh.android;
 
-import android.content.Context;
-import android.view.ScaleGestureDetector;
 
 public class 按键代码 {
 public static final Integer A;

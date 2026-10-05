@@ -1,12 +1,7 @@
 package ticode.zh.android;
 
-import android.os.StrictMode;
-import android.content.Intent;
-import android.net.Uri;
-import java.io.File;
-import android.provider.Settings;
 
-public class 安卓程序包管理器 extends android.content.pm.PackageManager {
+public abstract class 安卓程序包管理器 extends android.content.pm.PackageManager {
 
 public static final int 获取标志_窗口信息 = 1;
 
@@ -52,18 +47,18 @@ return !this.equals(另一个);
 
 public 安卓程序包信息 取程序包信息(String 应用包名, int 获取标志) {
 try {
-return this.getPackageInfo(应用包名,获取标志);
+return (安卓程序包信息)this.getPackageInfo(应用包名,获取标志);
 } catch(android.content.pm.PackageManager.NameNotFoundException e) {
 throw new RuntimeException("应用不存在：" + 应用包名);
 }
 }
 
 public 安卓程序包信息 取APK包信息(String APK路径, int 获取标志) {
-return this.getPackageArchiveInfo(APK路径,获取标志);
+return (安卓程序包信息)this.getPackageArchiveInfo(APK路径,获取标志);
 }
 
 public 安卓程序包信息[] 取所有已安装程序包信息(int 获取标志) {
-return this.getInstalledPackages(获取标志).toArray(new android.content.pm.PackageInfo[0]);
+return (安卓程序包信息[])this.getInstalledPackages(获取标志).toArray(new android.content.pm.PackageInfo[0]);
 }
 
 public boolean 允许请求安装程序包() {
@@ -75,16 +70,16 @@ return this.checkPermission(权限名,应用包名);
 }
 
 public 可绘制对象 取默认窗口图标() {
-return this.getDefaultActivityIcon();
+return (可绘制对象)this.getDefaultActivityIcon();
 }
 
-public 启动信息 取程序启动信息(String 程序包名) {
-return this.getLaunchIntentForPackage(程序包名);
+public android.content.Intent 取程序启动信息(String 程序包名) {
+return (android.content.Intent)this.getLaunchIntentForPackage(程序包名);
 }
 
 public 安卓资源管理器 取资源管理器(安卓应用信息 应用信息) {
 try {
-return this.getResourcesForApplication(应用信息);
+return (安卓资源管理器)this.getResourcesForApplication(应用信息);
 } catch(android.content.pm.PackageManager.NameNotFoundException e) {
 throw new RuntimeException(e.getMessage());
 }
@@ -92,7 +87,7 @@ throw new RuntimeException(e.getMessage());
 
 public 安卓资源管理器 取资源管理器2(String 应用包名) {
 try {
-return this.getResourcesForApplication(应用包名);
+return (安卓资源管理器)this.getResourcesForApplication(应用包名);
 } catch(android.content.pm.PackageManager.NameNotFoundException e) {
 throw new RuntimeException(e.getMessage());
 }

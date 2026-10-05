@@ -3,9 +3,8 @@ package ticode.zh.android;
 import android.os.Looper;
 import android.content.Intent;
 import java.io.File;
-import android.os.Build;
 
-public class 程序崩溃处理 {
+public class 程序崩溃处理 implements Thread.UncaughtExceptionHandler {
 private Thread.UncaughtExceptionHandler mDefaultHandler;
 private static 程序崩溃处理 INSTANCE = new 程序崩溃处理();
 private android.content.Context mContext;
@@ -68,7 +67,7 @@ Thread.setDefaultUncaughtExceptionHandler(this);
 }
 
 //初始化程序崩溃处理，若不想保存到文件，第二个参数填写空或空字符串
-public static void 初始化(安卓环境 环境, String 日志保存路径) {
+public static void 初始化(android.content.Context 环境, String 日志保存路径) {
 INSTANCE.init(环境, 日志保存路径);
 }
 }

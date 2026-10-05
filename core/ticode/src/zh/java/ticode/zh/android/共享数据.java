@@ -7,17 +7,13 @@ import java.security.spec.*;
 import java.math.*;
 import javax.crypto.*;
 import javax.crypto.spec.*;
-import java.security.KeyPairGenerator;
-
-import ticode.zh.base.数字;
-import ticode.zh.base.文本;
 
 public class 共享数据 {
 private static SharedPreferences sp;
 private static SharedPreferences.Editor editor;
 
 //初始化共享数据，在使用时必须先初始化，否则会报错，参数为储存名称，可随意
-public static void 初始化(安卓环境 上下文, String 名称) {
+public static void 初始化(android.content.Context 上下文, String 名称) {
 sp = 上下文.getSharedPreferences(名称, Context.MODE_PRIVATE);
 editor = sp.edit();
 }

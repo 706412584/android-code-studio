@@ -1,13 +1,12 @@
 package ticode.zh.android;
 
 import android.hardware.*;
-import android.view.WindowManager;
 import java.util.*;
 import android.location.*;
 import android.os.*;
 import android.content.*;
 
-public class 光线传感器 extends 窗口组件 {
+public class 光线传感器 extends 窗口组件 implements SensorEventListener {
 
 private SensorManager sensors;
 @Override

@@ -1,57 +1,41 @@
 package ticode.zh.android;
 
-import android.content.Context;
-import android.view.ScaleGestureDetector;
 
-public class 触摸事件 extends android.view.MotionEvent {
+public class 触摸事件 {
 
 
 
-public 触摸动作 动作() {
-return this.getAction();
-}
+public 触摸动作 动作() {return null; }
 
 
 
 
-public 触摸动作 当前动作() {
-return this.getActionMasked();
-}
+public 触摸动作 当前动作() {return null; }
 
 
 
 
-public int 触摸点数量() {
-return this.getPointerCount();
-}
+public int 触摸点数量() {return 0; }
 
 
 
 
-public double 原始横坐标() {
-return this.getRawX();
-}
+public double 原始横坐标() {return 0; }
 
 
 
 
-public double 原始纵坐标() {
-return this.getRawY();
-}
+public double 原始纵坐标() {return 0; }
 
 
 
 
 
-public double 取横坐标(int 索引) {
-return this.getX(索引);
-}
+public double 取横坐标(int 索引) {return 0; }
 
 
 
 
 
-public double 取纵坐标(int 索引) {
-return this.getY(索引);
-}
+public double 取纵坐标(int 索引) {return 0; }
 }

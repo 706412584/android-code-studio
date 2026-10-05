@@ -1,14 +1,10 @@
 package ticode.zh.android;
 
-import android.text.SpannableStringBuilder;
 
-import ticode.zh.base.字符串;
-import ticode.zh.base.文本;
-
-public class 样式_下标 extends android.text.style.SubscriptSpan {
+public abstract class 样式_下标 extends android.text.style.SubscriptSpan {
 
 public static 样式_下标 取实例() {
-return new android.text.style.SubscriptSpan();
+return (样式_下标)new android.text.style.SubscriptSpan();
 }
 
 }

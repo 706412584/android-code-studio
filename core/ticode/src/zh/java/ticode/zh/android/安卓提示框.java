@@ -3,18 +3,16 @@ package ticode.zh.android;
 import android.media.*;
 import android.os.*;
 import java.util.*;
-import android.os.Vibrator;
-import android.content.Context;
 
-public class 安卓提示框 extends android.widget.Toast {
+public abstract class 安卓提示框 extends android.widget.Toast {
 public static final int 长时 = 1;
 public static final int 短时 = 0;
 
-public static 安卓提示框 新建提示框(安卓环境 环境) {
-return android.widget.Toast.makeText(环境,"",0);
+public static 安卓提示框 新建提示框(android.content.Context 环境) {
+return (安卓提示框)android.widget.Toast.makeText(环境,"",0);
 }
 
-public static void 弹出提示(安卓环境 环境, String 内容, boolean 长时显示) {
+public static void 弹出提示(android.content.Context 环境, String 内容, boolean 长时显示) {
 android.widget.Toast.makeText(环境, 内容, 长时显示 ? 1 : 0).show();
 }
 

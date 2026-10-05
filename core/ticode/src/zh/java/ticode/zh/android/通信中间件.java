@@ -1,6 +1,5 @@
 package ticode.zh.android;
 
-import android.os.Message;
 
-public class 通信中间件 implements android.os.IBinder {
+public abstract class 通信中间件 implements android.os.IBinder {
 }

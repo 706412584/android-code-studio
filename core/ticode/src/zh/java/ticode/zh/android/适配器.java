@@ -1,15 +1,11 @@
 package ticode.zh.android;
 
-import android.widget.AdapterView;
 import android.widget.AdapterView.*;
-import android.content.Context;
-import android.view.View;
 import android.graphics.*;
 import android.graphics.drawable.*;
-import android.widget.GridView;
 import android.view.*;
 
-public class 适配器 implements android.widget.Adapter {
+public abstract class 适配器 implements android.widget.Adapter {
 
 
 

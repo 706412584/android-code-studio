@@ -1,12 +1,12 @@
 package ticode.zh.android;
 
 import android.widget.AdapterView;
-import android.widget.AdapterView.*;
 import android.content.Context;
 import android.view.View;
+import android.widget.GridView;
+import android.widget.AdapterView.*;
 import android.graphics.*;
 import android.graphics.drawable.*;
-import android.widget.GridView;
 import android.view.*;
 
 public class 宫格列表框 extends 适配器组件 {

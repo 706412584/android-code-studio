@@ -7,10 +7,8 @@ import java.security.spec.*;
 import java.math.*;
 import javax.crypto.*;
 import javax.crypto.spec.*;
-import java.security.KeyPairGenerator;
 
 import ticode.zh.base.数字;
-import ticode.zh.base.文本;
 
 public class 位运算 {
 //将两数进行位与运算，相当于 整数1&整数2

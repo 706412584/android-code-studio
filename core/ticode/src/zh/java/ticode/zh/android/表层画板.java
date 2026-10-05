@@ -1,6 +1,5 @@
 package ticode.zh.android;
 
-import android.view.View;
 import android.content.Context;
 import android.graphics.Canvas;
 import java.lang.reflect.Field;
@@ -11,17 +10,8 @@ import android.view.Surface;
 import android.view.SurfaceView;
 import android.view.SurfaceHolder;
 import android.graphics.PixelFormat;
-import java.util.Map;
-import java.util.HashMap;
-import android.graphics.Path;
-import android.graphics.RectF;
-import android.graphics.Bitmap;
-import android.graphics.Paint;
-import android.graphics.Rect;
 
-import ticode.zh.base.对象;
-
-public class 表层画板 extends 可视化组件 {
+public class 表层画板 extends 可视化组件 implements SurfaceHolder.Callback, Runnable {
 private AtomicInteger drawCount;
 private Surface surface;
 private SurfaceView surfaceView;

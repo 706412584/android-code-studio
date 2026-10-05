@@ -1,10 +1,8 @@
 package ticode.zh.android;
 
-import android.os.Environment;
 import android.content.pm.*;
 
 import ticode.zh.jvm.Java类;
-import ticode.zh.jvm.文件;
 
 public class 启动信息 extends android.content.Intent {
 
@@ -17,15 +15,15 @@ this.putExtra(键名, 数据);
 
 
 
-public void 置数据包(数据包 数据) {
+public void 置数据包(android.os.Bundle 数据) {
 this.putExtras(数据);
 }
 
 
 
 
-public 数据包 取数据包() {
-return this.getExtras();
+public android.os.Bundle 取数据包() {
+return (android.os.Bundle)this.getExtras();
 }
 
 
@@ -147,7 +145,7 @@ this.setDataAndType(android.net.Uri.parse(URI文本),MIME文本);
 
 //获取已设置的URI，如果想获取URI本身的文本可以使用 到文本()
 public 安卓资源标识符 获取URI() {
-return this.getData();
+return (安卓资源标识符)this.getData();
 }
 
 //获取已设置的MIME
@@ -170,7 +168,7 @@ public static final String 音频文件 = "audio/*";
 //应用文件，如apk,exe,app
 public static final String 应用文件 = "application/*";
 
-public void 设置类(安卓环境 环境, Java类 java类) {
+public void 设置类(android.content.Context 环境, java.lang.Class java类) {
 this.setClass(环境,java类);
 }
 
@@ -209,12 +207,12 @@ public static final int 禁用切换窗口动画标记 = 65536;
 
 
 //不指定需要切换的窗口，在全手机中寻找可用的窗口并且切换
-public void 隐式启动窗口(安卓环境 环境) {
+public void 隐式启动窗口(android.content.Context 环境) {
 环境.startActivity(this);
 }
 
 //如果手机中有可响应切换的窗口则返回真，否则返回假
-public boolean 有可响应切换窗口(安卓环境 环境) {
+public boolean 有可响应切换窗口(android.content.Context 环境) {
 return (this.resolveActivity(环境.getPackageManager()) != null);
 }
 }

@@ -1,39 +1,22 @@
 package ticode.zh.android;
 
-import android.app.Application;
-import java.lang.reflect.Method;
 import android.content.Context;
-import android.net.Uri;
-import android.widget.Toast;
-import android.provider.MediaStore;
-import android.database.Cursor;
-import android.provider.DocumentsContract;
-import android.os.Environment;
-import android.content.ContentUris;
+import android.content.Intent;
 import android.view.*;
 import android.app.*;
-import android.content.Intent;
-import android.os.Build;
 import android.content.pm.*;
-import android.provider.Settings;
-import android.os.StrictMode;
 import android.os.*;
 import android.content.*;
-import android.view.KeyEvent;
-import android.content.res.Configuration;
-import android.os.IBinder;
-import android.content.ComponentName;
 import android.graphics.drawable.*;
 
 import ticode.zh.jvm.Java类;
-import ticode.zh.jvm.文件;
 
 public class 通知栏 {
-int 通知栏_重要程度_最低 = 1;
-int 通知栏_重要程度_低 = 2;
-int 通知栏_重要程度_默认 = 3;
-int 通知栏_重要程度_高 = 4;
-int 通知栏_重要程度_最高 = 5;
+static int 通知栏_重要程度_最低 = 1;
+static int 通知栏_重要程度_低 = 2;
+static int 通知栏_重要程度_默认 = 3;
+static int 通知栏_重要程度_高 = 4;
+static int 通知栏_重要程度_最高 = 5;
 
 int ID = 1;
 int 图标;
@@ -58,7 +41,7 @@ String appName = appInfo.loadLabel(context.getPackageManager()).toString();
 渠道名称 = appName;
 }
 
-public static 通知栏 创建通知栏(安卓环境 环境) {
+public static 通知栏 创建通知栏(android.content.Context 环境) {
 return new 通知栏(环境);
 }
 
@@ -100,7 +83,7 @@ Notification notification = notificationBuilder
 notificationManager.notify(ID, notification);
 }
 
-public void 跳转通知(Java类 欲跳转窗口类, int 请求码, int 标志) {
+public void 跳转通知(java.lang.Class 欲跳转窗口类, int 请求码, int 标志) {
 Notification.Builder notificationBuilder = new Notification.Builder(mContext);
 if (android.os.Build.VERSION.SDK_INT >= 26) {
 NotificationChannel notificationChannel = new NotificationChannel(渠道ID, 渠道名称, 重要程度);

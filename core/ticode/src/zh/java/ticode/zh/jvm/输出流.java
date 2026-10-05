@@ -1,7 +1,7 @@
 package ticode.zh.jvm;
 
 
-public class 输出流 extends java.io.OutputStream {
+public abstract class 输出流 extends java.io.OutputStream {
 public void 写出(int 数据) {
 try {
 this.write(数据);

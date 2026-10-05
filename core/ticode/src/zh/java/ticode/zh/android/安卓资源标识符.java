@@ -7,50 +7,24 @@ import java.math.*;
 import java.security.*;
 import java.security.cert.*;
 import javax.net.ssl.*;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.OutputStream;
-import java.io.ByteArrayOutputStream;
-import java.net.URL;
-import java.net.HttpURLConnection;
-import java.util.Map;
-import java.util.zip.GZIPInputStream;
-import java.util.concurrent.ExecutorService;
-import java.security.SecureRandom;
-import java.security.cert.X509Certificate;
-import java.security.cert.CertificateException;
-import javax.net.ssl.SSLSession;
-import javax.net.ssl.SSLContext;
-import javax.net.ssl.X509TrustManager;
-import javax.net.ssl.HostnameVerifier;
-import javax.net.ssl.HttpsURLConnection;
 import java.util.concurrent.*;
 import android.os.*;
-import java.net.InetSocketAddress;
-import java.nio.ByteBuffer;
-import java.nio.channels.DatagramChannel;
-import android.os.Looper;
-import android.os.Handler;
 import java.nio.*;
 import java.nio.channels.*;
 
-import ticode.zh.base.异常;
-import ticode.zh.base.文本;
-import ticode.zh.base.逻辑型类;
-import ticode.zh.jvm.UUID;
 import ticode.zh.jvm.文件;
 
-public class 安卓资源标识符 extends android.net.Uri {
+public abstract class 安卓资源标识符 extends android.net.Uri {
 public static 安卓资源标识符 赋值_op(String Uri编码内容) {
-return 解析(Uri编码内容);
+return (安卓资源标识符)解析(Uri编码内容);
 }
 
 public static 安卓资源标识符 解析(String Uri编码内容) {
-return android.net.Uri.parse(Uri编码内容);
+return (安卓资源标识符)android.net.Uri.parse(Uri编码内容);
 }
 
-public static 安卓资源标识符 从文件创建(文件 文件对象) {
-return android.net.Uri.fromFile(文件对象);
+public static 安卓资源标识符 从文件创建(java.io.File 文件对象) {
+return (安卓资源标识符)android.net.Uri.fromFile(文件对象);
 }
 
 public String 协议名称() {
@@ -130,7 +104,7 @@ return this.getLastPathSegment();
 }
 
 public 安卓资源标识符 规范化方案() {
-return this.normalizeScheme();
+return (安卓资源标识符)this.normalizeScheme();
 }
 
 public static String 文本到Uri编码(String 编码内容) {

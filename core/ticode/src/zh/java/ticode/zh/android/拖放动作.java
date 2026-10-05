@@ -1,7 +1,5 @@
 package ticode.zh.android;
 
-import android.content.Context;
-import android.view.ScaleGestureDetector;
 
 public class 拖放动作 {
 public static final 拖放动作 开始拖放;

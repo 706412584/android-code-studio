@@ -14,7 +14,7 @@ private EditText et;
 private AlertDialog dialog;
 private AlertDialog.Builder builder;
 
-public 输入对话框(安卓环境 context) {
+public 输入对话框(android.content.Context context) {
 super(context);
 builder = new AlertDialog.Builder(context);
 et = new EditText(context);
@@ -118,7 +118,7 @@ e.printStackTrace();
 }
 
 //设置对话框图标, 参数为图片资源
-public void 图标(图片资源 图片) {
+public void 图标(int 图片) {
 builder.setIcon(图片);
 }
 

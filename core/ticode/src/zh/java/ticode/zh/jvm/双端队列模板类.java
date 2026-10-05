@@ -1,9 +1,7 @@
 package ticode.zh.jvm;
 
 
-import ticode.zh.base.整数类;
-
-public class 双端队列模板类<T1> extends java.util.ArrayDeque {
+public abstract class 双端队列模板类<T1> extends java.util.ArrayDeque {
 
 public int 长度() {
 return this.size();

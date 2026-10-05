@@ -1,11 +1,9 @@
 package ticode.zh.jvm;
 
 
-import ticode.zh.base.整数类;
+public abstract class 集合模板类<T1> extends java.util.ArrayList {
 
-public class 集合模板类<T1> extends java.util.ArrayList {
-
-public void 赋值_op(T1[] 成员) {
+public 集合模板类 赋值_op(T1[] 成员) {
 //		if(成员 == null) return null;
 java.util.ArrayList<T1> list = new java.util.ArrayList<>(成员.length);
 for(T1 el : 成员) {

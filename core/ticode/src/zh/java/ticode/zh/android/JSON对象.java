@@ -4,13 +4,13 @@ import org.json.*;
 import java.io.*;
 import org.xmlpull.v1.*;
 
-import ticode.zh.base.异常;
+import static ticode.zh.android.文件操作.写出文本文件;
 
-public class JSON对象 extends org.json.JSONObject {
+public abstract class JSON对象 extends org.json.JSONObject {
 
 
 
-public void 赋值_op(String JSON文本) {
+public JSON对象 赋值_op(String JSON文本) {
 if(JSON文本 == null || JSON文本.isEmpty()) {
 throw new IllegalArgumentException("JSON文本不能为空");
 }
@@ -72,7 +72,7 @@ return this.has(键名);
 
 public JSON对象 取JSON对象(String 键名) {
 try {
-return this.getJSONObject(键名);
+return (JSON对象)this.getJSONObject(键名);
 } catch (Exception e) {
 e.printStackTrace();
 }
@@ -88,7 +88,7 @@ return null;
 
 public JSON数组 取JSON数组(String 键名) {
 try {
-return this.getJSONArray(键名);
+return (JSON数组)this.getJSONArray(键名);
 } catch (JSONException e) {
 return null;
 }
@@ -252,7 +252,7 @@ return null;
 
 
 public void 写出到文件(String 文件路径) {
-Object 结果 = 到文本(3);
+String 结果 = 到文本(3);
 写出文本文件(文件路径, 结果);
 }
 

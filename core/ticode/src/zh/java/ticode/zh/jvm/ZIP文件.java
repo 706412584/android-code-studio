@@ -1,14 +1,14 @@
 package ticode.zh.jvm;
 
-import java.util.zip.*;
 import java.io.File;
+import java.util.zip.*;
 import java.io.*;
 
-public class ZIP文件 extends java.util.zip.ZipFile {
+public abstract class ZIP文件 extends java.util.zip.ZipFile {
 
-public void 赋值_op(String 路径) {
+public ZIP文件 赋值_op(String 路径) {
 try {
-return new ZipFile(new File(路径));
+return (ZIP文件)new ZipFile(new File(路径));
 } catch (java.io.IOException e) {
 throw new RuntimeException("文件读取错误：" + e.getMessage());
 }
@@ -16,7 +16,7 @@ throw new RuntimeException("文件读取错误：" + e.getMessage());
 
 public static ZIP文件 指定编码创建(String 路径, String 编码) {
 try {
-return new ZipFile(new File(路径), java.nio.charset.Charset.forName(编码));
+return (ZIP文件)new ZipFile(new File(路径), java.nio.charset.Charset.forName(编码));
 } catch (java.io.IOException e) {
 throw new RuntimeException("文件读取错误：" + e.getMessage());
 }
@@ -48,7 +48,7 @@ throw new RuntimeException("ZIP文件已关闭");
 // 返回ZIP文件中指定路径的条目，如果未找到，则返回空对象
 public ZIP条目 取条目(String 条目路径) {
 try {
-return this.getEntry(条目路径);
+return (ZIP条目)this.getEntry(条目路径);
 } catch(IllegalStateException e) {
 throw new RuntimeException("ZIP文件已关闭");
 }
@@ -59,7 +59,7 @@ public ZIP条目[] 取所有条目() {
 try {
 java.util.stream.Stream<? extends java.util.zip.ZipEntry> stream = this.stream();
 if(stream == null) {
-return new ZipEntry[0];
+return (ZIP条目[])new ZipEntry[0];
 }
 return stream.toArray(new java.util.function.IntFunction<ZipEntry[]>() {
 public ZipEntry[] apply(int size) {
@@ -74,7 +74,7 @@ throw new RuntimeException("ZIP文件已关闭");
 // 返回用于读取此ZIP条目内容的输入流
 public 输入流 取输入流(ZIP条目 条目) {
 try {
-return this.getInputStream(条目);
+return (输入流)this.getInputStream(条目);
 } catch (java.io.IOException e) {
 throw new RuntimeException("文件读取错误：" + e.getMessage());
 } catch(IllegalStateException e) {

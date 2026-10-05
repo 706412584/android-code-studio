@@ -1,12 +1,7 @@
 package ticode.zh.android;
 
-import android.os.StrictMode;
-import android.content.Intent;
-import android.net.Uri;
-import java.io.File;
-import android.provider.Settings;
 
-public class 安卓组件信息 extends android.content.pm.ComponentInfo {
+public abstract class 安卓组件信息 extends android.content.pm.ComponentInfo {
 
 public boolean 等于_op(安卓组件信息 另一个) {
 if (this == null) {
@@ -23,7 +18,7 @@ return !this.equals(另一个);
 }
 
 public 安卓应用信息 应用信息() {
-return this.applicationInfo;
+return (安卓应用信息)this.applicationInfo;
 }
 
 public void 应用信息(安卓应用信息 应用信息) {

@@ -1,27 +1,9 @@
 package ticode.zh.android;
 
-import android.view.View;
-import android.content.Context;
-import android.graphics.Canvas;
-import java.lang.reflect.Field;
-import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.locks.ReentrantLock;
-import android.os.SystemClock;
-import android.view.Surface;
-import android.view.SurfaceView;
-import android.view.SurfaceHolder;
-import android.graphics.PixelFormat;
-import java.util.Map;
-import java.util.HashMap;
-import android.graphics.Path;
-import android.graphics.RectF;
-import android.graphics.Bitmap;
 import android.graphics.Paint;
 import android.graphics.Rect;
 
-import ticode.zh.base.对象;
-
-public class 画笔对象 extends android.graphics.Paint {
+public abstract class 画笔对象 extends android.graphics.Paint {
 public static final int 画笔类型_填充 = 1;
 public static final int 画笔类型_描边 = 2;
 public static final int 画笔类型_填充和描边 = 3;
@@ -30,7 +12,7 @@ public static 画笔对象 创建画笔() {
 Paint paint = new Paint();
 paint.setAntiAlias(true);
 paint.setTextSize(45);
-return paint;
+return (画笔对象)paint;
 }
 
 public float 文字高度() {
@@ -87,7 +69,7 @@ public void 透明度(int 透明度) {
 this.setAlpha(透明度);
 }
 
-public void 字体(字体对象 字体) {
+public void 字体(android.graphics.Typeface 字体) {
 this.setTypeface(字体);
 }
 
@@ -95,9 +77,9 @@ public float 测量文字宽度(String 文字) {
 return this.measureText(文字);
 }
 
-public 矩形 测量文字界限(String 文字) {
+public android.graphics.Rect 测量文字界限(String 文字) {
 Rect bounds = new Rect();
 this.getTextBounds(文字, 0, 文字.length(), bounds);
-return bounds;
+return (android.graphics.Rect)bounds;
 }
 }

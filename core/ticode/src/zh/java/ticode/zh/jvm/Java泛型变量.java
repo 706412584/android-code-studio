@@ -1,11 +1,7 @@
 package ticode.zh.jvm;
 
-import java.lang.reflect.Modifier;
-import dalvik.system.DexFile;
 
-import ticode.zh.android.安卓环境;
-
-public class Java泛型变量 implements Java类型, java.lang.reflect.TypeVariable {
+public abstract class Java泛型变量 extends Java类型 {
 
 public boolean 等于_op(java.lang.reflect.TypeVariable 另一个) {
 if (this == null) {

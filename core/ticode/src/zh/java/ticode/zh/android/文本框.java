@@ -1,13 +1,5 @@
 package ticode.zh.android;
 
-import android.content.Context;
-import android.content.*;
-import android.content.res.*;
-import android.view.*;
-import android.widget.*;
-import android.util.TypedValue;
-import android.animation.Animator;
-import android.view.animation.Animation;
 import android.graphics.Typeface;
 import android.text.Html;
 import android.text.TextUtils;
@@ -15,38 +7,20 @@ import android.text.util.Linkify;
 import android.text.method.LinkMovementMethod;
 import java.util.regex.Pattern;
 import java.util.regex.Matcher;
+import android.content.*;
+import android.content.res.*;
+import android.view.*;
+import android.widget.*;
 import android.text.*;
 import android.text.style.*;
-import android.widget.CompoundButton;
-import android.widget.CheckBox;
-import android.widget.Switch;
-import android.widget.ImageView.ScaleType;
 import android.graphics.*;
-import android.widget.ProgressBar;
 import android.graphics.drawable.*;
-import android.widget.SeekBar;
-import android.widget.VideoView;
-import android.media.MediaPlayer;
-import android.content.pm.ActivityInfo;
-import android.content.Intent;
-import android.content.ActivityNotFoundException;
-import android.view.View;
-import android.view.ViewGroup;
-import android.net.Uri;
-import android.net.http.SslError;
-import android.os.Build;
-import android.app.Activity;
-import android.app.DownloadManager;
-import android.widget.FrameLayout;
-import java.io.File;
-import android.graphics.Bitmap;
-import android.annotation.TargetApi;
 import android.webkit.*;
 
-import ticode.zh.base.异常;
-import ticode.zh.base.文本;
 import ticode.zh.jvm.正则匹配器;
 import ticode.zh.jvm.正则表达式;
+
+import static ticode.zh.android.数组操作.取数组长度;
 
 public class 文本框 extends 可视化组件 {
 private android.text.TextWatcher watcher;
@@ -78,7 +52,7 @@ getView().setGravity(方式);
 
 
 
-public void 文本资源(文本资源 资源) {
+public void 文本资源(int 资源) {
 getView().setText(资源);
 }
 
@@ -341,8 +315,8 @@ public void 高亮2(String[] 欲高亮文本数组, Object 高亮样式, Object 
 String 文本框内容 = this.内容;
 可扩展文本 欲高亮内容 = 文本框内容;
 for (int i = 0; i < 取数组长度(欲高亮文本数组); i++) {
-正则表达式 表达式 = 正则表达式.编译("\\Q" + 欲高亮文本数组[i] + "\\E");
-正则匹配器 匹配器 = 表达式.匹配(文本框内容);
+java.util.regex.Pattern 表达式 = 正则表达式.编译("\\Q" + 欲高亮文本数组[i] + "\\E");
+java.util.regex.Matcher 匹配器 = 表达式.匹配(文本框内容);
 while (匹配器.匹配下一个()) {
 欲高亮内容.设置扩展(高亮样式,匹配器.取匹配开始位置(),匹配器.取匹配结束位置(),渲染类型);
 }

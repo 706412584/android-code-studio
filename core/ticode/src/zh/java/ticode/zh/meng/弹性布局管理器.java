@@ -1,19 +1,14 @@
 package ticode.zh.meng;
 
-import androidx.recyclerview.widget.RecyclerView.LayoutManager;
-import androidx.recyclerview.widget.LinearLayoutManager;
-import androidx.recyclerview.widget.GridLayoutManager;
-import androidx.recyclerview.widget.StaggeredGridLayoutManager;
 import android.view.ViewGroup;
 import androidx.recyclerview.widget.RecyclerView;
 import com.google.android.flexbox.FlexboxLayoutManager;
 
 import ticode.zh.android.安卓环境;
-import ticode.zh.android.窗口组件;
 
 public class 弹性布局管理器 extends 布局管理器 {
 
-public 弹性布局管理器(安卓环境 context) {
+public 弹性布局管理器(android.content.Context context) {
 super(context);
 布局管理器 = new FlexboxLayoutManager(context, 1){
 public RecyclerView.LayoutParams generateLayoutParams(ViewGroup.LayoutParams lp) {

@@ -1,15 +1,17 @@
 package ticode.zh.android;
 
 import android.content.*;
-import android.app.Activity;
 import android.view.*;
 import android.widget.*;
 import java.util.*;
 import android.util.*;
 import android.graphics.*;
 
-import ticode.zh.base.对象;
-import ticode.zh.jvm.集合;
+import static ticode.zh.android.安卓线程.延时;
+import static ticode.zh.android.流程处理.提交到主线程运行;
+import static ticode.zh.android.流程处理.提交到新线程运行;
+import static ticode.zh.android.流程处理.结束提交到主线程;
+import static ticode.zh.android.流程处理.结束提交到新线程;
 
 public class _悬浮窗_权限申请窗口 extends 窗口 {
 
@@ -28,7 +30,7 @@ if(mListener != null) mListener.onStart();
 toSetting(this);
 }
 
-public void 获得返回数据(int 请求码, int 结果码, 启动信息 数据) {
+public void 获得返回数据(int 请求码, int 结果码, android.content.Intent 数据) {
 提交到新线程运行();
 延时(100);
 提交到主线程运行(this);

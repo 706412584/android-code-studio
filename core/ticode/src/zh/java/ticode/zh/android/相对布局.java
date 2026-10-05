@@ -1,14 +1,10 @@
 package ticode.zh.android;
 
-import android.view.ViewGroup;
-import android.content.Context;
-import android.widget.FrameLayout;
-import android.graphics.*;
-import android.view.*;
-import android.widget.AbsoluteLayout;
-import android.widget.LinearLayout.LayoutParams;
+import android.widget.RelativeLayout.LayoutParams;
 import android.widget.RelativeLayout;
 import android.view.View;
+import android.graphics.*;
+import android.view.*;
 import java.util.*;
 
 public class 相对布局 extends 可调整边距布局组件 {

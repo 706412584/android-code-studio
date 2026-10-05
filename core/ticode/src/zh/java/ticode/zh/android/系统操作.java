@@ -1,5 +1,6 @@
 package ticode.zh.android;
 
+import java.lang.System;
 import java.io.*;
 import java.util.*;
 import java.lang.reflect.*;
@@ -13,37 +14,30 @@ import android.content.res.*;
 import android.os.*;
 import android.system.*;
 import android.graphics.*;
-import java.lang.System;
-import java.util.Stack;
 import android.app.*;
 import java.util.regex.*;
 import java.net.*;
 import java.math.*;
 
-import ticode.zh.base.异常;
-import ticode.zh.base.数字;
 import ticode.zh.base.文本;
 import ticode.zh.jvm.UUID;
-import ticode.zh.jvm.哈希表;
-import ticode.zh.jvm.键值对;
-import ticode.zh.jvm.集合;
 
 public class 系统操作 {
-public static int 取屏幕宽度(安卓环境 环境) {
+public static int 取屏幕宽度(android.content.Context 环境) {
 WindowManager wm = (WindowManager) 环境.getSystemService(Context.WINDOW_SERVICE);
 DisplayMetrics outMetrics = new DisplayMetrics();
 wm.getDefaultDisplay().getRealMetrics(outMetrics);
 return outMetrics.widthPixels;
 }
 
-public static int 取屏幕高度(安卓环境 环境) {
+public static int 取屏幕高度(android.content.Context 环境) {
 WindowManager wm = (WindowManager) 环境.getSystemService(Context.WINDOW_SERVICE);
 DisplayMetrics outMetrics = new DisplayMetrics();
 wm.getDefaultDisplay().getRealMetrics(outMetrics);
 return outMetrics.heightPixels;
 }
 
-public static int 取屏幕高度_不含导航栏(安卓环境 环境) {
+public static int 取屏幕高度_不含导航栏(android.content.Context 环境) {
 if (!导航栏是否显示(环境)) {
 return 取屏幕高度(环境);
 }
@@ -60,7 +54,7 @@ return heightPixel + 取状态栏高度(环境);
 return heightPixel;
 }
 
-public static int 取屏幕高度_不含导航栏和状态栏(安卓环境 环境) {
+public static int 取屏幕高度_不含导航栏和状态栏(android.content.Context 环境) {
 if (!导航栏是否显示(环境)) {
 return 取屏幕高度(环境) - 取状态栏高度(环境);
 }
@@ -78,14 +72,14 @@ heightPixel = heightPixel + statusBarHeight;
 return heightPixel - statusBarHeight;
 }
 
-public static double 取屏幕密度(安卓环境 环境) {
+public static double 取屏幕密度(android.content.Context 环境) {
 DisplayMetrics displaymetrics = new DisplayMetrics();
 WindowManager wm = (WindowManager) 环境.getSystemService(Context.WINDOW_SERVICE);
 wm.getDefaultDisplay().getMetrics(displaymetrics);
 return displaymetrics.density;
 }
 
-public static int 取状态栏高度(安卓环境 环境) {
+public static int 取状态栏高度(android.content.Context 环境) {
 if (Build.VERSION.SDK_INT < 29) {
 try {
 Class<?> c = Class.forName("com.android.internal.R$dimen");
@@ -100,7 +94,7 @@ return resources.getDimensionPixelSize(resources.getIdentifier("status_bar_heigh
 }
 }
 
-public static int 取导航栏高度(安卓环境 环境) {
+public static int 取导航栏高度(android.content.Context 环境) {
 if (Build.VERSION.SDK_INT < 17) {
 return 0;
 }
@@ -109,7 +103,7 @@ return resources.getDimensionPixelSize(resources.getIdentifier("navigation_bar_h
 }
 
 //判断系统导航栏是否开启
-public static boolean 导航栏是否显示(安卓环境 环境) {
+public static boolean 导航栏是否显示(android.content.Context 环境) {
 if (Build.VERSION.SDK_INT < 17) {
 return false;
 }
@@ -127,12 +121,12 @@ return true;
 return false;
 }
 
-public static void 置剪切板文本(安卓环境 环境, String 文本) {
+public static void 置剪切板文本(android.content.Context 环境, String 文本) {
 ClipboardManager clipboard = (ClipboardManager) 环境.getSystemService("clipboard");
 clipboard.setText(文本);
 }
 
-public static String 取剪切板文本(安卓环境 环境) {
+public static String 取剪切板文本(android.content.Context 环境) {
 ClipboardManager clipboard = (ClipboardManager) 环境.getSystemService("clipboard");
 if (clipboard.hasText()) {
 String clipText =  clipboard.getText().toString();
@@ -141,7 +135,7 @@ return clipText;
 return "";
 }
 
-public static int 取屏幕刷新率(安卓环境 上下文环境) {
+public static int 取屏幕刷新率(android.content.Context 上下文环境) {
 return (int) 上下文环境.getDisplay().getRefreshRate();
 }
 
@@ -203,7 +197,7 @@ bitmap.recycle();
 });
 }
 
-public static 位图对象 截屏_位图(安卓窗口 窗口环境) {
+public static android.graphics.Bitmap 截屏_位图(安卓窗口 窗口环境) {
 try {
 View decorView = 窗口环境.getWindow().getDecorView();
 Bitmap bitmap = Bitmap.createBitmap(decorView.getWidth(), decorView.getHeight(), Bitmap.Config.ARGB_8888);

@@ -2,13 +2,11 @@ package ticode.zh.jvm;
 
 import java.util.concurrent.*;
 
-import ticode.zh.base.整数类;
-
 public class 线程池 {
 public static ExecutorService cachedThreadPool;
 public static ExecutorService fixedThreadPool;
 
-int 线程池大小;
+static int 线程池大小;
 
 public static Object 提交到缓存线程池运行() {
 if (线程池.cachedThreadPool == null || 线程池.cachedThreadPool.isShutdown()) {

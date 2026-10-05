@@ -1,7 +1,5 @@
 package ticode.zh.android;
 
-import android.app.Application;
-import java.lang.reflect.Method;
 import android.content.Context;
 import android.net.Uri;
 import android.widget.Toast;
@@ -10,25 +8,21 @@ import android.database.Cursor;
 import android.provider.DocumentsContract;
 import android.os.Environment;
 import android.content.ContentUris;
-import android.view.*;
-import android.app.*;
 import android.content.Intent;
 import android.os.Build;
-import android.content.pm.*;
 import android.provider.Settings;
 import android.os.StrictMode;
+import android.content.ComponentName;
+import android.view.*;
+import android.app.*;
+import android.content.pm.*;
 import android.os.*;
 import android.content.*;
-import android.view.KeyEvent;
-import android.content.res.Configuration;
-import android.os.IBinder;
-import android.content.ComponentName;
 import android.graphics.drawable.*;
 
-import ticode.zh.jvm.Java类;
 import ticode.zh.jvm.文件;
 
-public class 安卓窗口 extends android.app.Activity {
+public abstract class 安卓窗口 extends android.app.Activity {
 
 public static void newActivity(android.app.Activity activity, Class<?> clazz) {
 android.content.Intent intent = new android.content.Intent(activity, clazz);
@@ -56,7 +50,7 @@ activity.startActivityForResult(intent, requestCode);
 
 
 
-public void 主题(主题资源 主题) {
+public void 主题(int 主题) {
 this.setTheme(主题);
 }
 
@@ -211,7 +205,7 @@ this.setRequestedOrientation(屏幕方向);
 
 
 public 应用 取全局应用() {
-return this.getApplication();
+return (应用)this.getApplication();
 }
 
 //启动服务
@@ -221,7 +215,7 @@ this.startService(intent);
 }
 
 //启动服务
-public Object 启动服务(安卓服务 欲启动服务, 启动信息 欲传递参数) {
+public Object 启动服务(安卓服务 欲启动服务, android.content.Intent 欲传递参数) {
 欲传递参数.setComponent(new ComponentName(this, 欲启动服务.class));
 this.startService(欲传递参数);
 }
@@ -263,7 +257,7 @@ return this.finish();
 
 
 
-public Object 切换窗口(安卓窗口 欲切换窗口, 启动信息 欲传递参数) {
+public Object 切换窗口(安卓窗口 欲切换窗口, android.content.Intent 欲传递参数) {
 if (欲传递参数 == null) {
 安卓窗口.newActivity(this, 欲切换窗口.class);
 } else {
@@ -278,7 +272,7 @@ if (欲传递参数 == null) {
 
 
 
-public Object 切换窗口2(安卓窗口 欲切换窗口, int 请求码, 启动信息 欲传递参数) {
+public Object 切换窗口2(安卓窗口 欲切换窗口, int 请求码, android.content.Intent 欲传递参数) {
 if (欲传递参数 == null) {
 安卓窗口.newActivityForResult(this, 欲切换窗口.class, 请求码);
 } else {
@@ -287,7 +281,7 @@ if (欲传递参数 == null) {
 }
 
 //在切换窗口时播放自定义动画
-public void 播放切换动画(动画资源 进入新窗口动画资源ID, 动画资源 隐藏当前窗口动画资源ID) {
+public void 播放切换动画(int 进入新窗口动画资源ID, int 隐藏当前窗口动画资源ID) {
 this.overridePendingTransition(进入新窗口动画资源ID, 隐藏当前窗口动画资源ID);
 }
 
@@ -317,8 +311,8 @@ break;
 
 
 
-public 启动信息 取启动信息() {
-return this.getIntent();
+public android.content.Intent 取启动信息() {
+return (android.content.Intent)this.getIntent();
 }
 
 public Object 取系统服务(String 名称) {
@@ -326,7 +320,7 @@ return this.getSystemService(名称);
 }
 
 //如果上一个窗口启动本窗口时要求返回数据，可使用本方法进行返回
-public void 置返回数据(int 结果码, 启动信息 欲返回数据) {
+public void 置返回数据(int 结果码, android.content.Intent 欲返回数据) {
 this.setResult(结果码, 欲返回数据);
 }
 
@@ -360,14 +354,14 @@ public void 申请文件管理权限() {
 if (设备信息.安卓版本号 < 30) {
 return;
 }
-启动信息 it = new 启动信息(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION);
+android.content.Intent it = new android.content.Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION);
 it.setData(android.net.Uri.parse("package:" + 安卓环境.取自身包名(this)));
 this.startActivity(it);
 }
 public void 选择图片(int 请求码) {
-this.startActivityForResult(new 启动信息(启动信息.ACTION_PICK,MediaStore.Images.Media.EXTERNAL_CONTENT_URI), 请求码);
+this.startActivityForResult(new android.content.Intent(启动信息.ACTION_PICK,MediaStore.Images.Media.EXTERNAL_CONTENT_URI), 请求码);
 }
-public String 解析图片地址(启动信息 数据) {
+public String 解析图片地址(android.content.Intent 数据) {
 if (null != 数据) {
 Uri selectedImage = 数据.getData();
 String[] filePathColumn = {MediaStore.Images.Media.DATA};
@@ -386,7 +380,7 @@ intent.setType("*/*");
 intent.addCategory(Intent.CATEGORY_OPENABLE);
 this.startActivityForResult(intent, 请求码);
 }
-public String 解析文件地址(启动信息 数据) {
+public String 解析文件地址(android.content.Intent 数据) {
 if (null != 数据) {
 return FileChooseUtil.getInstance(this).getChooseFileResultPath(数据.getData());
 }
@@ -553,7 +547,7 @@ return "com.android.providers.media.documents".equals(uri.getAuthority());
 public boolean 打开Uri(String uri文本) {
 try {
 android.net.Uri uri = android.net.Uri.parse(uri文本);
-启动信息 intent = new 启动信息("android.intent.action.VIEW", uri);
+android.content.Intent intent = new android.content.Intent("android.intent.action.VIEW", uri);
 this.startActivity(intent);
 return true;
 } catch (Exception e) {
@@ -565,7 +559,7 @@ return false;
 public boolean 打开QQ聊天(String QQ号码) {
 try {
 android.net.Uri uri = android.net.Uri.parse("mqqwpa://im/chat?chat_type=wpa&uin=" + QQ号码 + "&version=1");
-启动信息 intent = new 启动信息("android.intent.action.VIEW", uri);
+android.content.Intent intent = new android.content.Intent("android.intent.action.VIEW", uri);
 this.startActivity(intent);
 return true;
 } catch (Exception e) {
@@ -576,7 +570,7 @@ return false;
 //打开QQ进行临时会话，第一个参数为当前窗口环境，第二个参数为QQ群号码
 public boolean 打开QQ加群(安卓窗口 窗口, String 群号) {
 try {
-启动信息 intent = new 启动信息("android.intent.action.VIEW",
+android.content.Intent intent = new android.content.Intent("android.intent.action.VIEW",
 android.net.Uri.parse("mqqapi://card/show_pslcard?src_type=internal&version=1&uin=" + 群号 + "&card_type=group&source=qrcode"));
 窗口.startActivity(intent);
 return true;
@@ -587,12 +581,12 @@ return false;
 
 //打开系统分享，分享图片与文本
 public void 一键分享(String 内容, String 图片路径) {
-启动信息 intent = new 启动信息("android.intent.action.SEND");
+android.content.Intent intent = new android.content.Intent("android.intent.action.SEND");
 if (图片路径 == null) {
 intent.setType("text/plain");
 } else {
 intent.setType("image/*");
-intent.putExtra("android.intent.extra.STREAM", android.net.Uri.fromFile(new 文件(图片路径)));
+intent.putExtra("android.intent.extra.STREAM", android.net.Uri.fromFile(new java.io.File(图片路径)));
 }
 intent.putExtra("android.intent.extra.SUBJECT", "分享到");
 intent.putExtra("android.intent.extra.TEXT", 内容);

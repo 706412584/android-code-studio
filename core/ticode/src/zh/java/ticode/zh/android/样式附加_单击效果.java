@@ -1,11 +1,7 @@
 package ticode.zh.android;
 
-import android.text.SpannableStringBuilder;
 
-import ticode.zh.base.字符串;
-import ticode.zh.base.文本;
-
-public class 样式附加_单击效果 {
+public class 样式附加_单击效果 extends android.text.style.ClickableSpan {
 
 private boolean underline;
 @Override

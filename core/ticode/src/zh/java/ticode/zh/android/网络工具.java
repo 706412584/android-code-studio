@@ -1,12 +1,5 @@
 package ticode.zh.android;
 
-import java.io.*;
-import java.net.*;
-import java.util.*;
-import java.math.*;
-import java.security.*;
-import java.security.cert.*;
-import javax.net.ssl.*;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -14,8 +7,6 @@ import java.io.ByteArrayOutputStream;
 import java.net.URL;
 import java.net.HttpURLConnection;
 import java.util.Map;
-import java.util.zip.GZIPInputStream;
-import java.util.concurrent.ExecutorService;
 import java.security.SecureRandom;
 import java.security.cert.X509Certificate;
 import java.security.cert.CertificateException;
@@ -24,21 +15,20 @@ import javax.net.ssl.SSLContext;
 import javax.net.ssl.X509TrustManager;
 import javax.net.ssl.HostnameVerifier;
 import javax.net.ssl.HttpsURLConnection;
+import java.io.*;
+import java.net.*;
+import java.util.*;
+import java.math.*;
+import java.security.*;
+import java.security.cert.*;
+import javax.net.ssl.*;
 import java.util.concurrent.*;
 import android.os.*;
-import java.net.InetSocketAddress;
-import java.nio.ByteBuffer;
-import java.nio.channels.DatagramChannel;
-import android.os.Looper;
-import android.os.Handler;
 import java.nio.*;
 import java.nio.channels.*;
 
-import ticode.zh.base.异常;
 import ticode.zh.base.文本;
-import ticode.zh.base.逻辑型类;
 import ticode.zh.jvm.UUID;
-import ticode.zh.jvm.文件;
 
 public class 网络工具 {
 java.util.Map<String,String> 请求头;
@@ -80,7 +70,7 @@ this.是否支持重定向 = 是否支持;
 
 
 public void 取网页源码(String 网址, String cookie, int 超时, String 编码) {
-Object 结果 = 取网页源码_同步_内部(网址, cookie, 超时, 编码);
+Object[] 结果 = 取网页源码_同步_内部(网址, cookie, 超时, 编码);
 if (结果 == null) {
 取网页源码失败();
 } else {
@@ -98,7 +88,7 @@ String cookie = (String) 结果[1];
 
 
 public String 取网页源码_同步(String 网址, String cookie, int 超时, String 编码) {
-Object 结果 = 取网页源码_字节集_同步(网址, cookie, 超时, 编码);
+byte[] 结果 = 取网页源码_字节集_同步(网址, cookie, 超时, 编码);
 if (结果 == null) {
 return ("");
 } else {
@@ -134,7 +124,7 @@ return 发送请求_内部(网址, "GET",null,null,cookie, 超时, 编码);
 
 
 public void 发送数据(String 网址, Object 欲发送数据, String cookie, int 超时, String 编码) {
-Object 结果 = 发送数据_同步_内部(网址, 欲发送数据, cookie, 超时, 编码);
+Object[] 结果 = 发送数据_同步_内部(网址, 欲发送数据, cookie, 超时, 编码);
 if (结果 == null) {
 发送数据失败();
 } else {
@@ -153,7 +143,7 @@ String cookie = (String) 结果[1];
 
 
 public String 发送数据_同步(String 网址, Object 欲发送数据, String cookie, int 超时, String 编码) {
-Object 结果 = 发送数据_字节集_同步(网址, 欲发送数据, cookie, 超时, 编码);
+byte[] 结果 = 发送数据_字节集_同步(网址, 欲发送数据, cookie, 超时, 编码);
 if (结果 == null) {
 return ("");
 } else {
@@ -191,7 +181,7 @@ return 发送请求_内部(网址, "POST",null, 欲发送数据, cookie, 超时,
 
 
 public void 下载(String 网址, String 保存路径, String cookie, int 超时, String 编码) {
-Object 结果 = 发送请求_内部(网址, "GET", 保存路径,null, cookie, 超时, 编码);
+Object[] 结果 = 发送请求_内部(网址, "GET", 保存路径,null, cookie, 超时, 编码);
 if (结果 == null) {
 下载失败();
 } else {
@@ -210,7 +200,7 @@ String 结果cookie = ((String)结果[0]);
 
 
 public boolean 下载_同步(String 网址, String 保存路径, String cookie, int 超时, String 编码) {
-Object 结果 = 发送请求_内部(网址, "GET", 保存路径,null, cookie, 超时, 编码);
+Object[] 结果 = 发送请求_内部(网址, "GET", 保存路径,null, cookie, 超时, 编码);
 if (结果 == null) {
 return (false);
 }
@@ -228,7 +218,7 @@ return (true);
 
 
 public void 上传(String 网址, String 文件路径, String 键名, String cookie, int 超时, String 编码) {
-Object 结果 = 上传_内部(网址, 文件路径, 键名, null, cookie, 超时, 编码);
+Object[] 结果 = 上传_内部(网址, 文件路径, 键名, null, cookie, 超时, 编码);
 if (结果 == null) {
 上传失败();
 } else {
@@ -272,7 +262,7 @@ return new String(bytes);
 
 
 public void 上传2(String 网址, String 文件路径, String 键名, String 参数, String cookie, int 超时, String 编码) {
-Object 结果 = 上传_内部(网址, 文件路径, 键名,参数, cookie, 超时, 编码);
+Object[] 结果 = 上传_内部(网址, 文件路径, 键名,参数, cookie, 超时, 编码);
 if (结果 == null) {
 上传失败();
 } else {

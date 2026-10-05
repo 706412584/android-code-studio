@@ -1,32 +1,7 @@
 package ticode.zh.android;
 
 import android.content.Context;
-import android.content.*;
-import android.content.res.*;
-import android.view.*;
-import android.widget.*;
-import android.util.TypedValue;
-import android.animation.Animator;
-import android.view.animation.Animation;
-import android.graphics.Typeface;
-import android.text.Html;
-import android.text.TextUtils;
-import android.text.util.Linkify;
-import android.text.method.LinkMovementMethod;
-import java.util.regex.Pattern;
-import java.util.regex.Matcher;
-import android.text.*;
-import android.text.style.*;
-import android.widget.CompoundButton;
-import android.widget.CheckBox;
-import android.widget.Switch;
-import android.widget.ImageView.ScaleType;
-import android.graphics.*;
 import android.widget.ProgressBar;
-import android.graphics.drawable.*;
-import android.widget.SeekBar;
-import android.widget.VideoView;
-import android.media.MediaPlayer;
 import android.content.pm.ActivityInfo;
 import android.content.Intent;
 import android.content.ActivityNotFoundException;
@@ -41,12 +16,17 @@ import android.widget.FrameLayout;
 import java.io.File;
 import android.graphics.Bitmap;
 import android.annotation.TargetApi;
+import android.content.*;
+import android.content.res.*;
+import android.view.*;
+import android.widget.*;
+import android.text.*;
+import android.text.style.*;
+import android.graphics.*;
+import android.graphics.drawable.*;
 import android.webkit.*;
 
 import ticode.zh.base.异常;
-import ticode.zh.base.文本;
-import ticode.zh.jvm.正则匹配器;
-import ticode.zh.jvm.正则表达式;
 
 public class 浏览框 extends 可视化组件 {
 
@@ -127,7 +107,7 @@ return getView().getContentHeight();
 }
 
 //获取当前页面的 favicon
-public 位图对象 网页图标() {
+public android.graphics.Bitmap 网页图标() {
 return getView().getFavicon();
 }
 
@@ -272,7 +252,7 @@ return downloadId;
 }
 
 //上传文件的回调
-public void 回调(int 请求码, int 结果码, 启动信息 数据) {
+public void 回调(int 请求码, int 结果码, android.content.Intent 数据) {
 if (请求码 == 5173) {
 if (null == message_upload) {
 return;
@@ -354,7 +334,7 @@ public void 进度值改变(int 进度) { } // 事件
 public void 接收到标题(String 网址) { } // 事件
 
 //接收到网页图标触发该事件，返回可绘制对象
-public void 接收到图标(位图对象 图标) { } // 事件
+public void 接收到图标(android.graphics.Bitmap 图标) { } // 事件
 
 //网页拦截到网页请求时触发该事件，返回请求的网址
 public void 拦截到请求(String 网址) { } // 事件

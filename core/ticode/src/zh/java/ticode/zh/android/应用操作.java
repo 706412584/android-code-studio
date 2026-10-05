@@ -8,7 +8,7 @@ import android.provider.Settings;
 
 public class 应用操作 {
 
-public static boolean 应用是否已安装(安卓环境 环境, String 应用包名) {
+public static boolean 应用是否已安装(android.content.Context 环境, String 应用包名) {
 try {
 安卓程序包信息 信息 = 环境.取程序包管理器().取程序包信息(应用包名);
 return 信息 != null;
@@ -16,7 +16,7 @@ return 信息 != null;
 return false;
 }
 
-public static void 安装应用(安卓环境 环境, String 应用路径) {
+public static void 安装应用(android.content.Context 环境, String 应用路径) {
 try {
 Intent intent = new Intent(Intent.ACTION_VIEW);
 StrictMode.VmPolicy.Builder builder = new StrictMode.VmPolicy.Builder();
@@ -29,7 +29,7 @@ intent.setDataAndType(data, "application/vnd.android.package-archive");
 } catch (Exception e) { }
 }
 
-public static void 卸载应用(安卓环境 环境, String 应用包名) {
+public static void 卸载应用(android.content.Context 环境, String 应用包名) {
 try {
 Intent intent = new Intent(Intent.ACTION_DELETE);
 intent.setData(Uri.parse("package:" + 应用包名));
@@ -37,9 +37,9 @@ intent.setData(Uri.parse("package:" + 应用包名));
 } catch (Exception e) { }
 }
 
-public static boolean 打开应用(安卓环境 环境, String 应用包名) {
+public static boolean 打开应用(android.content.Context 环境, String 应用包名) {
 try {
-启动信息 启动信息1 = 环境.取程序包管理器().取程序启动信息(应用包名);
+android.content.Intent 启动信息1 = 环境.取程序包管理器().取程序启动信息(应用包名);
 启动信息1.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
 环境.startActivity(启动信息1);
 return true;
@@ -47,7 +47,7 @@ return true;
 return false;
 }
 
-public static void 打开应用信息页(安卓环境 环境, String 应用包名) {
+public static void 打开应用信息页(android.content.Context 环境, String 应用包名) {
 try {
 Intent intent = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS);
 intent.setData(Uri.parse("package:" + 应用包名));

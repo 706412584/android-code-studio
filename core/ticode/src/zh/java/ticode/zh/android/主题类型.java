@@ -1,8 +1,6 @@
 package ticode.zh.android;
 
 
-import ticode.zh.jvm.输入流;
-
 public class 主题类型 {
 public static final String HOLO主题 = "@android:style/Theme.Holo";
 public static final String HOLO主题_无标题栏 = "@android:style/Theme.Holo.NoActionBar";

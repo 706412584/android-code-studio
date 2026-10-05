@@ -1,7 +1,7 @@
 package ticode.zh.jvm;
 
 
-public class 字节集输出流 extends java.io.ByteArrayOutputStream {
+public abstract class 字节集输出流 extends java.io.ByteArrayOutputStream {
 
 public void 写出(byte[] 字节集, int 起始索引, int 长度) {
 try {

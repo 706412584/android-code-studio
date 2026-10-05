@@ -1,17 +1,16 @@
 package ticode.zh.jvm;
 
 import java.util.zip.*;
-import java.io.File;
 import java.io.*;
 
-public class ZIP输出流 extends java.util.zip.ZipOutputStream {
+public abstract class ZIP输出流 extends java.util.zip.ZipOutputStream {
 
-public void 赋值_op(输出流 输出流1) {
-return new ZipOutputStream(输出流1);
+public ZIP输出流 赋值_op(输出流 输出流1) {
+return (ZIP输出流)new ZipOutputStream(输出流1);
 }
 
 public static ZIP输出流 指定编码创建(输出流 输出流1, String 编码) {
-return new ZipOutputStream(输出流1,java.nio.charset.Charset.forName(编码));
+return (ZIP输出流)new ZipOutputStream(输出流1,java.nio.charset.Charset.forName(编码));
 }
 
 // 设置ZIP文件注释内容

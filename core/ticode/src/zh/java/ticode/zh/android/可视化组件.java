@@ -1,52 +1,20 @@
 package ticode.zh.android;
 
 import android.content.Context;
+import android.util.TypedValue;
+import android.animation.Animator;
+import android.view.animation.Animation;
+import android.view.View;
+import android.view.ViewGroup;
 import android.content.*;
 import android.content.res.*;
 import android.view.*;
 import android.widget.*;
-import android.util.TypedValue;
-import android.animation.Animator;
-import android.view.animation.Animation;
-import android.graphics.Typeface;
-import android.text.Html;
-import android.text.TextUtils;
-import android.text.util.Linkify;
-import android.text.method.LinkMovementMethod;
-import java.util.regex.Pattern;
-import java.util.regex.Matcher;
 import android.text.*;
 import android.text.style.*;
-import android.widget.CompoundButton;
-import android.widget.CheckBox;
-import android.widget.Switch;
-import android.widget.ImageView.ScaleType;
 import android.graphics.*;
-import android.widget.ProgressBar;
 import android.graphics.drawable.*;
-import android.widget.SeekBar;
-import android.widget.VideoView;
-import android.media.MediaPlayer;
-import android.content.pm.ActivityInfo;
-import android.content.Intent;
-import android.content.ActivityNotFoundException;
-import android.view.View;
-import android.view.ViewGroup;
-import android.net.Uri;
-import android.net.http.SslError;
-import android.os.Build;
-import android.app.Activity;
-import android.app.DownloadManager;
-import android.widget.FrameLayout;
-import java.io.File;
-import android.graphics.Bitmap;
-import android.annotation.TargetApi;
 import android.webkit.*;
-
-import ticode.zh.base.异常;
-import ticode.zh.base.文本;
-import ticode.zh.jvm.正则匹配器;
-import ticode.zh.jvm.正则表达式;
 
 public class 可视化组件 extends 窗口组件 {
 public static final String 横坐标设置错误 = "横坐标属性只能在组件父布局为自适应布局时使用";
@@ -429,7 +397,7 @@ return view.isFocusable();
 
 
 
-public void 背景图片(图片资源 图片) {
+public void 背景图片(int 图片) {
 view.setBackgroundResource(图片);
 }
 
@@ -472,7 +440,7 @@ return (布局组件) parent.getTag();
 
 
 public void 从父组件中移除() {
-Object 父组件 = 取父组件();
+布局组件 父组件 = 取父组件();
 if (父组件 != null) {
 父组件.移除组件(this);
 }
@@ -711,7 +679,7 @@ public void 被长按() { } // 事件
 
 
 
-public boolean 被触摸(触摸事件 来源事件) { return false; } // 事件
+public boolean 被触摸(android.view.MotionEvent 来源事件) { return false; } // 事件
 
 
 

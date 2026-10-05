@@ -1,7 +1,6 @@
 package ticode.zh.jvm;
 
 import java.util.zip.*;
-import java.io.File;
 import java.io.*;
 
 public class GZIP操作 {
@@ -33,9 +32,9 @@ return 结果;
 }
 
 public static void 压缩文件(String 原文件路径, String 压缩后文件路径) {
-文件 原文件 = 原文件路径;
+java.io.File 原文件 = 原文件路径;
 文件输入流 文件输入流1 = 原文件;
-文件 输出文件 = 压缩后文件路径;
+java.io.File 输出文件 = 压缩后文件路径;
 文件输出流 文件输出流1 = 创建文件输出流(输出文件);
 GZIP输出流 GZIP输出流1 = 文件输出流1;
 byte[] 缓冲 = new byte[4096];
@@ -50,9 +49,9 @@ GZIP输出流1.关闭();
 }
 
 public static void 解压文件(String 欲解压文件路径, String 输出文件路径) {
-文件 欲解压文件 = 欲解压文件路径;
+java.io.File 欲解压文件 = 欲解压文件路径;
 文件输入流 文件输入流1 = 欲解压文件;
-文件 输出文件 = 输出文件路径;
+java.io.File 输出文件 = 输出文件路径;
 文件输出流 文件输出流1 = 创建文件输出流(输出文件);
 GZIP输入流 GZIP输入流1 = 文件输入流1;
 byte[] 缓冲 = new byte[1024];
@@ -66,7 +65,7 @@ GZIP输入流1.关闭();
 文件输出流1.关闭();
 }
 
-public static 文件输出流 创建文件输出流(文件 文件1) {
+public static 文件输出流 创建文件输出流(java.io.File 文件1) {
 try {
 return new java.io.FileOutputStream(文件1);
 } catch (Exception e) {

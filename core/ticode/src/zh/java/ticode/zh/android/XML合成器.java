@@ -4,8 +4,6 @@ import org.json.*;
 import java.io.*;
 import org.xmlpull.v1.*;
 
-import ticode.zh.base.异常;
-
 public class XML合成器 {
 
 //开始定义一个XML文档，返回开始文档的结果，如果成功返回真，反之则假

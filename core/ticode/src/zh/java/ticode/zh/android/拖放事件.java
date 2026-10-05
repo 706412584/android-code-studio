@@ -1,14 +1,12 @@
 package ticode.zh.android;
 
-import android.content.Context;
-import android.view.ScaleGestureDetector;
 
-public class 拖放事件 extends android.view.DragEvent {
+public abstract class 拖放事件 extends android.view.DragEvent {
 
 
 
 public 拖放动作 动作() {
-return this.getAction();
+return (拖放动作)this.getAction();
 }
 
 

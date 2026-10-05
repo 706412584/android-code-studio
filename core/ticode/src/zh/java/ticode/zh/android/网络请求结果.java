@@ -1,5 +1,6 @@
 package ticode.zh.android;
 
+import java.net.HttpURLConnection;
 import java.io.*;
 import java.net.*;
 import java.util.*;
@@ -7,38 +8,10 @@ import java.math.*;
 import java.security.*;
 import java.security.cert.*;
 import javax.net.ssl.*;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.OutputStream;
-import java.io.ByteArrayOutputStream;
-import java.net.URL;
-import java.net.HttpURLConnection;
-import java.util.Map;
-import java.util.zip.GZIPInputStream;
-import java.util.concurrent.ExecutorService;
-import java.security.SecureRandom;
-import java.security.cert.X509Certificate;
-import java.security.cert.CertificateException;
-import javax.net.ssl.SSLSession;
-import javax.net.ssl.SSLContext;
-import javax.net.ssl.X509TrustManager;
-import javax.net.ssl.HostnameVerifier;
-import javax.net.ssl.HttpsURLConnection;
 import java.util.concurrent.*;
 import android.os.*;
-import java.net.InetSocketAddress;
-import java.nio.ByteBuffer;
-import java.nio.channels.DatagramChannel;
-import android.os.Looper;
-import android.os.Handler;
 import java.nio.*;
 import java.nio.channels.*;
-
-import ticode.zh.base.异常;
-import ticode.zh.base.文本;
-import ticode.zh.base.逻辑型类;
-import ticode.zh.jvm.UUID;
-import ticode.zh.jvm.文件;
 
 public class 网络请求结果 {
 public int resCode;

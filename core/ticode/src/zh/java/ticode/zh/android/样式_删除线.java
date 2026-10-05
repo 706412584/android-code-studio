@@ -1,13 +1,9 @@
 package ticode.zh.android;
 
-import android.text.SpannableStringBuilder;
 
-import ticode.zh.base.字符串;
-import ticode.zh.base.文本;
-
-public class 样式_删除线 extends android.text.style.StrikethroughSpan {
+public abstract class 样式_删除线 extends android.text.style.StrikethroughSpan {
 
 public static 样式_删除线 取实例() {
-return new android.text.style.StrikethroughSpan();
+return (样式_删除线)new android.text.style.StrikethroughSpan();
 }
 }

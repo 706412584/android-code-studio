@@ -11,7 +11,7 @@ import android.graphics.*;
 public class 弹出式菜单 extends 窗口组件 {
 
 private PopupMenu mPopupMenu;
-public 弹出式菜单(安卓环境 context) {
+public 弹出式菜单(android.content.Context context) {
 super(context);
 }
 

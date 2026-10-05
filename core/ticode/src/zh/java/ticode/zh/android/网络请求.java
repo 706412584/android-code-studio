@@ -1,12 +1,5 @@
 package ticode.zh.android;
 
-import java.io.*;
-import java.net.*;
-import java.util.*;
-import java.math.*;
-import java.security.*;
-import java.security.cert.*;
-import javax.net.ssl.*;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -24,21 +17,22 @@ import javax.net.ssl.SSLContext;
 import javax.net.ssl.X509TrustManager;
 import javax.net.ssl.HostnameVerifier;
 import javax.net.ssl.HttpsURLConnection;
+import java.io.*;
+import java.net.*;
+import java.util.*;
+import java.math.*;
+import java.security.*;
+import java.security.cert.*;
+import javax.net.ssl.*;
 import java.util.concurrent.*;
 import android.os.*;
-import java.net.InetSocketAddress;
-import java.nio.ByteBuffer;
-import java.nio.channels.DatagramChannel;
-import android.os.Looper;
-import android.os.Handler;
 import java.nio.*;
 import java.nio.channels.*;
 
-import ticode.zh.base.异常;
-import ticode.zh.base.文本;
-import ticode.zh.base.逻辑型类;
-import ticode.zh.jvm.UUID;
-import ticode.zh.jvm.文件;
+import static ticode.zh.android.流程处理.提交到新线程运行;
+import static ticode.zh.android.流程处理.是否处于主线程;
+import static ticode.zh.android.流程处理.等待新线程执行完毕;
+import static ticode.zh.android.流程处理.结束提交到新线程;
 
 public class 网络请求 {
 public static ExecutorService cachedThreadPool;
@@ -67,10 +61,10 @@ HttpsURLConnection.setDefaultSSLSocketFactory(context.getSocketFactory());
 }
 }
 
-int 全局网络请求超时 = 6000;
-boolean 全局网络请求GZIP压缩 = false;
-java.util.Map<String,String> 全局网络请求头;
-Object 全局POST提交数据 = null;
+static int 全局网络请求超时 = 6000;
+static boolean 全局网络请求GZIP压缩 = false;
+static java.util.Map<String,String> 全局网络请求头;
+static Object 全局POST提交数据 = null;
 
 public static int 取网络请求超时() {
 return 全局网络请求超时;

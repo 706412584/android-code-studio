@@ -1,21 +1,18 @@
 package ticode.zh.android;
 
+import java.util.zip.CRC32;
 import java.io.*;
 import java.util.*;
 import java.util.zip.*;
 import java.util.regex.*;
 import java.text.*;
 import java.nio.channels.*;
-import java.util.zip.CRC32;
 import java.security.*;
-import android.content.Intent;
-import android.net.Uri;
 import android.content.*;
 import android.provider.*;
 import android.graphics.*;
 
 import ticode.zh.jvm.文件;
-import ticode.zh.jvm.集合;
 
 public class 文件操作 {
 
@@ -76,7 +73,7 @@ return 文件名;
 }
 
 public static String 取文件名(String 路径) {
-文件 目标文件 = 路径;
+java.io.File 目标文件 = 路径;
 return (目标文件.取文件名());
 }
 
@@ -296,7 +293,7 @@ long size = 取文件大小2(路径);
 return convertFileSize(size,保留位数);
 }
 
-public static boolean 写出资源文件(安卓环境 窗口环境, String 文件名称, String 欲写到路径) {
+public static boolean 写出资源文件(android.content.Context 窗口环境, String 文件名称, String 欲写到路径) {
 try {
 InputStream stream = 窗口环境.getAssets().open(文件名称);
 File file = new File(欲写到路径);
@@ -313,7 +310,7 @@ throw new RuntimeException("写出资源文件( "  + 文件名称 + "或" + 欲�
 }
 }
 
-public static String 读入资源文件(安卓环境 窗口环境, String 文件名称, String 编码) {
+public static String 读入资源文件(android.content.Context 窗口环境, String 文件名称, String 编码) {
 try {
 InputStream inputstream = 窗口环境.getAssets().open(文件名称);
 if (inputstream == null) {
@@ -442,11 +439,11 @@ return paths;
 
 
 public static void 取所有文件路径(String 目标路径, java.util.List<String> 输出结果) {
-文件 目标 = 文件.从路径创建(目标路径);
+java.io.File 目标 = 文件.从路径创建(目标路径);
 if (目标.为文件夹()) {
 Object 子文件数组 = 目标.取子文件数组();
 if (子文件数组 != null) {
-while (子文件数组 -> 子文件) {
+for (var 子文件 : 子文件数组) {
 取所有文件路径(子文件.取绝对路径(),输出结果);
 }
 }

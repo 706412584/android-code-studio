@@ -13,20 +13,10 @@ import android.content.res.*;
 import android.os.*;
 import android.system.*;
 import android.graphics.*;
-import java.lang.System;
-import java.util.Stack;
 import android.app.*;
 import java.util.regex.*;
 import java.net.*;
 import java.math.*;
-
-import ticode.zh.base.异常;
-import ticode.zh.base.数字;
-import ticode.zh.base.文本;
-import ticode.zh.jvm.UUID;
-import ticode.zh.jvm.哈希表;
-import ticode.zh.jvm.键值对;
-import ticode.zh.jvm.集合;
 
 public class ROOT操作 {
 public static boolean 是否ROOT() {
@@ -64,7 +54,7 @@ public static String 执行二进制文件(String 文件路径, String[] 环境�
 return 执行ROOT命令("chmod 777 " + 文件路径, 环境变量, 工作目录) + 执行ROOT命令(文件路径, 环境变量, 工作目录);
 }
 
-public static String 免ROOT执行二进制文件(安卓环境 环境, String 文件路径, String[] 环境变量, String 工作目录) {
+public static String 免ROOT执行二进制文件(android.content.Context 环境, String 文件路径, String[] 环境变量, String 工作目录) {
 Object 私有二进制文件路径 = 环境.取内部私有缓存目录路径() + "/" + 文件操作.取文件名(文件路径);
 文件操作.复制文件(文件路径, 私有二进制文件路径);
 return 执行命令("chmod 777 " + 私有二进制文件路径, 环境变量, 工作目录) + 执行命令(私有二进制文件路径, 环境变量, 工作目录);
