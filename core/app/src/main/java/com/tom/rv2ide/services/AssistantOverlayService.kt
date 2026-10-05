@@ -297,14 +297,25 @@ class AssistantOverlayService : Service(), LifecycleOwner {
       }
       overlayExpanded = expanded
       if (expanded) {
-        // 展开：恢复**原有**锚定（右下 + 零偏移）。拖动把 gravity 换成了左上，
-        // 若展开时只归零 x/y 而不换回 gravity，面板会跑到左上角——与改动前的观感不同。
-        // 展开态的位置是既有设计，不归拖动管，原样保留。
-        lp.gravity = Gravity.BOTTOM or Gravity.END
+        // 展开：**窗口自己长到全屏**。
+        //
+        // 不能只让卡片 match_parent：窗口是 WRAP_CONTENT（见 [buildLayoutParams]，
+        // 为避免全屏吞触摸），窗口按内容测量，卡片在 wrap 窗口里的 match_parent
+        // 会退化成 wrap —— 面板永远只有内容大小，标题栏那个「全屏」键点了毫无反应。
+        // 实测：收起态窗口 220×220（FAB），点开后只有 994×968 挤在右下角。
+        //
+        // 因此展开态必须把窗口尺寸也一起改掉，卡片才真正有铺满的空间。
+        lp.width = WindowManager.LayoutParams.MATCH_PARENT
+        lp.height = WindowManager.LayoutParams.MATCH_PARENT
+        lp.gravity = Gravity.TOP or Gravity.START
         lp.x = 0
         lp.y = 0
       } else {
-        // 收起：回到用户拖动的落点（左上锚定 + 屏幕坐标）。
+        // 收起：窗口缩回 FAB 大小，并回到用户拖动的落点。
+        // 用 WRAP_CONTENT 让窗口自然贴合 FAB，而不是写死 56dp——不同主题/字号下
+        // FAB 尺寸可能不同，写死会露出透明边或裁掉圆角。
+        lp.width = WindowManager.LayoutParams.WRAP_CONTENT
+        lp.height = WindowManager.LayoutParams.WRAP_CONTENT
         lp.gravity = Gravity.START or Gravity.TOP
         lp.x = collapsedX
         lp.y = collapsedY

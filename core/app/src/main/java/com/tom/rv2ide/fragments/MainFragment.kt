@@ -52,6 +52,7 @@ import com.tom.rv2ide.databinding.FragmentMainBinding
 import com.tom.rv2ide.models.MainScreenAction
 import com.tom.rv2ide.preferences.internal.GeneralPreferences
 import com.tom.rv2ide.resources.R.string
+import com.tom.rv2ide.services.AssistantOverlayService
 import com.tom.rv2ide.tasks.runOnUiThread
 import com.tom.rv2ide.templates.preferences.WizardPreferences
 import com.tom.rv2ide.utils.DialogUtils
@@ -233,6 +234,26 @@ class MainFragment : BaseFragment() {
     }
     val dir = File(path)
     return if (dir.exists() && dir.isDirectory) dir else null
+  }
+
+  /**
+   * 应用外悬浮开着时，隐藏本页的内悬浮入口，避免两个入口同时出现。
+   *
+   * <p><b>为什么在 onResume 判断</b>：应用外悬浮是系统窗口，用户在别处开/关它不会通知本页；
+   * 只有回到 ACS 时才有机会对齐。onResume 正是「回到前台」的那一刻。
+   *
+   * <p><b>为什么内悬浮优先（外部让位）</b>：应用外悬浮的意义是「人不在 ACS 里」也能用助手；
+   * 一旦回到 ACS，内悬浮嵌在界面里、不遮挡内容、也不需要 SYSTEM_ALERT_WINDOW 权限，
+   * 是更自然的形态。因此回到前台就恢复内悬浮，外部窗口保持后台常驻（用户切出去时它仍在）。
+   */
+  override fun onResume() {
+    super.onResume()
+    val view = assistant ?: return
+    if (AssistantOverlayService.isShowing) {
+      view.suppressForExternalOverlay()
+    } else {
+      view.restoreAfterExternalOverlay()
+    }
   }
 
   override fun onDestroyView() {

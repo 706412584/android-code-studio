@@ -341,6 +341,49 @@ class FloatingAssistantView(
    */
   var defaultBottomOffsetPx: Int = 0
 
+  /**
+   * 被外部悬浮（应用外系统悬浮）接管时的可见性存档。
+   *
+   * <p>存的是「接管前 FAB 是否可见 / 面板是否展开」这一对状态。应用外悬浮关掉后要按原样
+   * 恢复，不能一律显示成收起态——用户可能正开着面板去开的悬浮窗。
+   *
+   * <p>null 表示当前未被接管（正常态）。用 null 而非布尔：需要区分「没被接管」与
+   * 「被接管且接管前恰好是收起态」，否则恢复时会误判。
+   */
+  private var suppressedVisibility: Pair<Boolean, Boolean>? = null
+
+  /**
+   * 隐藏本视图，让位给应用外悬浮。
+   *
+   * <p><b>为什么需要互斥</b>：应用外悬浮（[com.tom.rv2ide.services.AssistantOverlayService]）
+   * 挂在系统窗口层，**不看宿主是否在前台**；而本视图挂在主屏/编辑器的容器里。两者同时开着
+   * 时，ACS 一在前台就会看到两个悬浮入口叠在一起——用户不知道该点哪个，也分不清哪个在响应。
+   * 因此由宿主在 onResume 里按 [com.tom.rv2ide.services.AssistantOverlayService.isShowing]
+   * 二选一。
+   *
+   * <p>只改可见性、不动会话状态：隐藏期间 agent 仍在跑（协程挂在宿主 lifecycleScope 上），
+   * 恢复后消息照旧在列表里。重复调用是幂等的。
+   */
+  fun suppressForExternalOverlay() {
+    if (suppressedVisibility != null) {
+      return
+    }
+    suppressedVisibility = fabBinding.root.isVisible to binding.assistantOverlay.isVisible
+    fabBinding.root.isVisible = false
+    binding.assistantOverlay.isVisible = false
+  }
+
+  /** 应用外悬浮关闭后，按 [suppressForExternalOverlay] 存档的可见性恢复本视图。 */
+  fun restoreAfterExternalOverlay() {
+    val saved = suppressedVisibility ?: return
+    suppressedVisibility = null
+    // INLINE 形态没有 FAB（见 attach），恢复时不能碰它。
+    if (defaultMode != Mode.INLINE) {
+      fabBinding.root.isVisible = saved.first
+    }
+    binding.assistantOverlay.isVisible = saved.second
+  }
+
   /** 把两个视图挂到父容器上。父容器应是 `FrameLayout`（FAB 靠 gravity 定位）。 */
   fun attach() {
     // INLINE 是「页面本身」，没有可收起的宿主：不挂 FAB，也不装拖拽。
