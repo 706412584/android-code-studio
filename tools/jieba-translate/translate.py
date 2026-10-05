@@ -141,6 +141,13 @@ def subst(body, params, tparams, in_code=False):
         if tok.startswith('<') and tok.endswith('>'):
             return tok[1:-1]
         return tok
+    # 结绳编译期占位符 `#[debug]`/`#[date]`/`#[time]`/`#[line]`/`#[source]`：
+    # 由结绳编译器替换。Java 里给合理默认值（`#[debug]` → false 等），
+    # 否则 `#` 是非法字符，整个类语法错、javac 跳过全工程语义分析。
+    _PLACEHOLDER = {'debug': 'false', 'date': '""', 'time': '0L',
+                    'line': '0', 'source': '""'}
+    body = re.sub(r'#\[([a-zA-Z_]+)\]',
+                  lambda m: _PLACEHOLDER.get(m.group(1), 'null'), body)
     body = re.sub(r'@模板类型(\d*)', lambda m: 'T' + (m.group(1) or '1'), body)
     body = re.sub(r'#(<[^>]+>|[A-Za-z_一-鿿][A-Za-z0-9_一-鿿]*)', rep_hash, body)
     # 结绳字面量与逻辑词。用词边界，避免把 `空布局`(类名) 里的 `空` 换成 null。
@@ -401,6 +408,18 @@ class Translator:
     # 无法机械转译，需人工改写。按类名跳过。
     MACRO_CLASSES = {'线程锁'}
 
+    # 跨方法「块宏」：结绳把 `new Runnable(){ public void run(){` 开在一个
+    # @嵌入式代码 方法里、闭合的 `}})` 写在**另一个**方法里，Java 的方法边界
+    # 无法表达。这些方法的**方法体丢弃**（保留空方法签名），类即可配平；
+    # 同类的其它方法（如 是否处于主线程）照常生成，调用点才能解析。
+    MACRO_METHODS = {
+        '流程处理': {'容错运行', '容错处理', '结束容错',
+                 '开始俘获异常', '俘获所有异常', '取俘获异常', '结束俘获异常',
+                 '提交到新线程运行', '结束提交到新线程',
+                 '提交到主线程运行', '提交到主线程运行2', '结束提交到主线程'},
+        '网络请求': {'GET异步请求', 'POST异步请求', '结束网络请求'},
+    }
+
     def parse_class(self, decl):
         # 类名可能带泛型实参（数组排序器<模板类型1>），先把泛型摘掉再取名字。
         m = re.match(r'^(类|公开类|抽象类)\s+([^\s:<]+)\s*(<[^>]*>)?\s*(?::\s*(.+))?$', decl)
@@ -523,8 +542,12 @@ class Translator:
                 jm = self._join(s)
                 mm = re.match(r'^方法\s+([^\s(]+)', jm)
                 if mm and mm.group(1) in DROP_METHODS_NO_EXTERNAL.get(name, ()):
-                    # 该方法依赖库外缺失的 Java 类（如 tdr.util.TDRSender）→ 整段跳过
+                    # 依赖库外缺失的 Java 类 → 整段跳过（方法一并去掉）
                     self._skip_method_body()
+                    continue
+                if mm and mm.group(1) in self.MACRO_METHODS.get(name, ()):
+                    # 跨方法块宏 → 保留签名、丢弃方法体（类才能配平）
+                    self.parse_method(jm, stub=True)
                     continue
                 self.parse_method(jm); continue
             if s.startswith('属性读'):
@@ -645,7 +668,7 @@ class Translator:
             if t in ('结束 方法', '结束方法'):
                 return
 
-    def parse_method(self, s):
+    def parse_method(self, s, stub=False):
         s = self.next_joined() if False else s
         m = re.match(r'^方法\s+([^\s(]+)\s*\((.*)\)\s*(?:(?::|为)\s*(.+))?$', s)
         if not m:
@@ -653,6 +676,16 @@ class Translator:
         name, ps, ret = m.group(1), m.group(2), (m.group(3) or '').strip()
         jret = map_type(ret, self.tparams) if ret else 'void'
         params, names = self.parse_params(ps)
+        if stub:
+            # 跨方法块宏的**定义**：只保留签名 + 空体，丢弃无法表达的方法体。
+            # 调用点不受影响（parse_body 里另有处理），类花括号得以配平。
+            self.pending_static = False
+            self.pending_embedded = False
+            self.emit('public %s%s %s(%s) { %s}' % (
+                'static ' if self.pending_static else '', jret, name, params,
+                '' if jret == 'void' else 'return null; '))
+            self._skip_method_body()
+            return
         # 运算符重载 → 具名方法
         self.embedded = self.pending_embedded; self.pending_embedded = False
         is_op = name in self.OPMAP
