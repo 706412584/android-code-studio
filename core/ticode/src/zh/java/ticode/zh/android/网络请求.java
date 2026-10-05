@@ -120,7 +120,7 @@ runnable.run();
 return 结果;
 }
 
-public void GET异步请求(String 网址, String Cookie, String 编码) { }
+public static void GET异步请求(String 网址, String Cookie, String 编码) { }
 
 public static void POST提交数据(Object 提交数据) {
 全局POST提交数据 = 提交数据;
@@ -152,13 +152,13 @@ runnable.run();
 return 结果;
 }
 
-public void POST异步请求(String 网址, String Cookie, String 编码) { }
+public static void POST异步请求(String 网址, String Cookie, String 编码) { }
 
 public static 网络请求结果 取网络请求结果() {
 return httpGetResult;
 }
 
-public void 结束网络请求() { }
+public static void 结束网络请求() { }
 
 public static byte[] httpRequest(网络请求结果 result, String url, String cookie, String charset, String method) throws IOException {
 if (!url.startsWith("http://") && !url.startsWith("https://")) {

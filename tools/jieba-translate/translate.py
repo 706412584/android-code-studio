@@ -764,6 +764,12 @@ class Translator:
         if m_imp:
             self.imports.append(m_imp.group(1))
             return
+        # @后缀代码("extends X") / ("implements Y")：结绳把基类/接口写在注解里，
+        # 类声明行不带 `:`。此前该注解被丢弃 → 类丢失基类，父类方法全「找不到符号」。
+        m_suf = re.match(r'^@后缀代码\("([^"]*)"\)', s)
+        if m_suf:
+            self.pending_suffix = m_suf.group(1)
+            return
         if s.startswith('@嵌入式代码'):
             # 必须写 pending_embedded：parse_method 开头用
             # `self.embedded = self.pending_embedded` 覆盖 self.embedded，
@@ -847,6 +853,18 @@ class Translator:
             if al not in ('int', 'long', 'short', 'byte', 'char', 'float',
                           'double', 'boolean', 'void'):
                 extends = ' extends ' + al
+        # @后缀代码("extends X") / ("implements Y")：结绳把基类/接口写在注解里，
+        # 类声明行不带 `:`。此前该注解被丢弃 → 类丢基类，父类方法/字段全
+        # 「找不到符号」（实测 高级适配器 的 notifyDataSetChanged、X窗口 的
+        # super.onResume、高级列表项目触摸辅助器 的 super.onSelectedChanged…）。
+        # @指代类 优先（它才是具体平台类），仅无 alias 时采用后缀代码。
+        if self.pending_suffix and not self.alias:
+            sfx = self.pending_suffix.strip()
+            # 追加在 extends 之后（`class A extends B implements X` 合法）；
+            # 若写成 `implements X` 而 extends 是类，反而非法，故不转换。
+            if sfx and sfx not in extends:
+                extends = (extends + ' ' + sfx) if extends else (' ' + sfx)
+        self.pending_suffix = None
         # name in NON_EXTEND：目标是 final/接口/枚举/私有构造器，不能 extends。
         # 不生成 extends —— 本类退化成「同名静态壳」（只承载静态工厂方法）；
         # 类型位置由 map_type_cls 映射成目标原生类型。
@@ -1070,10 +1088,14 @@ class Translator:
         if stub:
             # 跨方法块宏的**定义**：只保留签名 + 空体，丢弃无法表达的方法体。
             # 调用点不受影响（parse_body 里另有处理），类花括号得以配平。
+            # 注意：is_static 必须在清空 pending_static **之前**取，
+            # 否则所有存根方法都生成成实例方法（原 `static ` 判断读的是已被
+            # 置 False 的字段），全局类里按名调用的 `提交到新线程运行()` 全挂。
+            is_static = self.pending_static
             self.pending_static = False
             self.pending_embedded = False
             self.emit('public %s%s %s(%s) { %s}' % (
-                'static ' if self.pending_static else '', jret, name, params,
+                'static ' if is_static else '', jret, name, params,
                 '' if jret == 'void' else 'return null; '))
             self._skip_method_body()
             return

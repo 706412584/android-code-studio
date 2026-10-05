@@ -112,23 +112,23 @@ public static Object 自除(Object 自身变量, Object 自除值) {
 return 自身变量 /= 自除值;
 }
 
-public void 容错运行(Object 代码) { }
+public static void 容错运行(Object 代码) { }
 
-public void 容错处理() { }
+public static void 容错处理() { }
 
-public void 结束容错() { }
+public static void 结束容错() { }
 
-public void 开始俘获异常() { }
+public static void 开始俘获异常() { }
 
-public void 俘获所有异常() { }
+public static void 俘获所有异常() { }
 
-public 异常 取俘获异常() { return null; }
+public static 异常 取俘获异常() { return null; }
 
-public void 结束俘获异常() { }
+public static void 结束俘获异常() { }
 
-public void 提交到新线程运行() { }
+public static void 提交到新线程运行() { }
 
-public void 结束提交到新线程() { }
+public static void 结束提交到新线程() { }
 
 public static Object 等待新线程执行完毕() {
 try {
@@ -141,9 +141,9 @@ public static boolean 是否处于主线程() {
 return Thread.currentThread() == android.os.Looper.getMainLooper().getThread();
 }
 
-public void 提交到主线程运行(安卓窗口 窗口) { }
+public static void 提交到主线程运行(安卓窗口 窗口) { }
 
-public void 提交到主线程运行2() { }
+public static void 提交到主线程运行2() { }
 
 public static void 提交主线程任务(可执行任务 任务, long 延时) {
 流程处理.mainHandler.postDelayed(任务,延时);
@@ -153,5 +153,5 @@ public static void 移除主线程任务(可执行任务 任务) {
 流程处理.mainHandler.removeCallbacks(任务);
 }
 
-public void 结束提交到主线程() { }
+public static void 结束提交到主线程() { }
 }
