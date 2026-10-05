@@ -10,6 +10,22 @@
 本库内或 Object），其余类需人工处理基类垫片。
 """
 import io, os, re, sys, glob, collections
+# 与本脚本同目录的 class_map.py / dedup_set.py（原为个人工作目录的绝对路径）。
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from class_map import CLASS_MAP, PACKAGE_MAP   # 结绳类名/包名 → 英文
+from dedup_set import CONFIRMED as DROP_CLASSES   # 与模板重叠、需剔除的类
+
+# 语言模式：en=英文类名+ticode.* 包；zh=中文类名+ticode.zh.* 包
+LANG = os.environ.get('TICODE_LANG', 'en')
+
+PKG_ZH = {'结绳.JVM': 'ticode.zh.jvm', '结绳.Meng': 'ticode.zh.meng',
+          '结绳.基本': 'ticode.zh.base', '结绳.安卓': 'ticode.zh.android'}
+
+def map_pkg(p):
+    return PKG_ZH.get(p, p) if LANG == 'zh' else PACKAGE_MAP.get(p, p)
+
+def map_cls(n):
+    return n if LANG == 'zh' else CLASS_MAP.get(n, n)
 
 # 结绳类型 → Java 类型
 TYPE_MAP = {
@@ -46,10 +62,60 @@ def map_type(t, tparams):
         return 'java.util.List<Integer>'
     if t == '文本到文本哈希表':
         return 'java.util.Map<String,String>'
-    return TYPE_MAP.get(t, t)
+    # 先查基础类型表（int/String/Object…），再映射本库类名（安卓窗口→AndroidActivity）。
+    # map_cls 在中文版是恒等函数，英文版才改名，故两版共用这一条路径。
+    return map_cls(TYPE_MAP.get(t, t))
 
-def subst(body, params, tparams):
+def _brace_balance(text):
+    """剥离字符串/字符字面量与行注释后的 { } 净余额。0 表示配平。"""
+    out = 0
+    for ln in text.split('\n'):
+        t = _STR_LIT.sub('', ln)
+        t = re.sub(r'//.*', '', t)
+        out += t.count('{') - t.count('}')
+    return out
+
+
+_STR_LIT = re.compile(r'"(?:\\.|[^"\\])*"|\'(?:\\.|[^\'\\])*\'')
+
+
+# @code 块内裸中文类名的整词匹配（按长度倒序，长名优先）。
+_CLASSNAME_RE = re.compile(
+    # 前瞻/后顾必须同时排除 CJK：否则 `TextBox` 会匹配进 `开始TextBox` 里，
+    # 把中文标识符切碎（`开始TextBox` → `开始TextBox`）。
+    r'(?<![A-Za-z0-9_一-鿿])(' +
+    '|'.join(re.escape(k) for k in sorted(CLASS_MAP, key=len, reverse=True)) +
+    r')(?![A-Za-z0-9_一-鿿])')
+
+
+# 结绳表达式里的类引用（非 @code 上下文也出现）：
+#   `设备信息.安卓版本号`（静态字段）  /  `new 高级适配器(...)`（构造）
+# 只在「后跟 . 」或「前有 new」时替换，避免误伤与类名同名的变量
+# （如 `变量 文本 : 文本` 里的变量名 `文本`）。
+_NAMES = '|'.join(re.escape(k) for k in sorted(CLASS_MAP, key=len, reverse=True))
+_CLASSNAME_DOT_RE = re.compile(r'(?<![A-Za-z0-9_一-鿿])(' + _NAMES + r')(?=\s*\.)')
+_CLASSNAME_NEW_RE = re.compile(r'(new\s+)(' + _NAMES + r')(?![A-Za-z0-9_一-鿿])')
+
+
+def subst(body, params, tparams, in_code=False):
     """把 #x / #this / #<T> 换成 Java。"""
+    # 字符串/字符字面量先摘出：下面所有变换都是「文本级」正则，不区分
+    # 代码与字面量。字面量里的 `{a,b}`、`(x : y)`、`空/真/假` 会被误改；
+    # 更糟的是跨字面量的括号/花括号会被配成一对（实测 `添加JS接口` 的 JS 串）。
+    _lits = []
+
+    def _stash_lit(text):
+        _lits.append(text)
+        return '\x00%d\x00' % (len(_lits) - 1)
+
+    def _stash(m):
+        return _stash_lit(m.group(0))
+
+    # [[...]] 先摘：它内部可能有引号，且转义要在摘普通字符串之前完成。
+    body = re.sub(r'\[\[([^\]]*)\]\]',
+                  lambda m: _stash_lit('"' + m.group(1).replace('"', chr(92) + '"') + '"'), body)
+    body = _STR_LIT.sub(_stash, body)
+
     def rep_hash(m):
         tok = m.group(1)
         if tok == 'this':
@@ -73,18 +139,52 @@ def subst(body, params, tparams):
     body = re.sub(r'\[\[([^\]]*)\]\]', lambda m: '"' + m.group(1).replace('"', chr(92) + '"') + '"', body)  # [[...]] 文本字面量
     body = re.sub(r'\(([一-鿿A-Za-z_][\w一-鿿]*)\s*:\s*([一-鿿A-Za-z_][\w一-鿿.]*)\)',
                   lambda m: '((%s)%s)' % (map_type(m.group(2), tparams), m.group(1)), body)  # (名 : 类型) 强转
+    def _at_map(m):
+        # `@X` 或 `@X.Y.Z`：只按**首段**判断是不是本库类名，其余（`.成员`）原样保留。
+        # 反例：`#<@启动信息>.FLAG_ACTIVITY_NEW_TASK` 展开成 `@启动信息.FLAG_...`，
+        # 贪婪正则会连 `.FLAG_...` 一起吃进组 1，导致查表失败、`@` 残留。
+        full = m.group(1)
+        head = full.split('.')[0]
+        if head in CLASS_MAP:
+            return map_type(head, tparams) + full[len(head):]
+        return '@' + full
+
     JAVA_ANN = ('Override', 'Deprecated', 'SuppressWarnings', 'SafeVarargs', 'FunctionalInterface')
+
+    def _at_map_decl(m):
+        full = m.group(1)
+        head = full.split('.')[0]
+        if head in JAVA_ANN:
+            return '@' + full
+        if head in CLASS_MAP:
+            return map_type(head, tparams) + full[len(head):]
+        return map_type(head, tparams) + full[len(head):]
+
     body = re.sub(r'@([一-鿿A-Za-z_][一-鿿A-Za-z0-9_.]*)',
-                  lambda m: ('@' + m.group(1)) if m.group(1) in JAVA_ANN else map_type(m.group(1), tparams),
-                  body)  # @类型 / Java 注解
+                  _at_map if in_code else _at_map_decl, body)
+    if in_code:
+        # @code 里的裸中文类名（`private 可视化组件 root;`、`new 高级适配器(...)`）。
+        # 按长度倒序，避免短名先匹配吃掉长名的前缀。
+        body = _CLASSNAME_RE.sub(lambda m: map_cls(m.group(1)), body)
+    else:
+        # 结绳表达式里的类引用（`设备信息.安卓版本号`、`new 高级适配器(...)`）。
+        body = _CLASSNAME_DOT_RE.sub(lambda m: map_cls(m.group(1)), body)
+        body = _CLASSNAME_NEW_RE.sub(lambda m: m.group(1) + map_cls(m.group(2)), body)
     for k, v in (('本对象', 'this'), ('且', '&&'), ('或', '||'), ('非', '!'), ('空', 'null'),
                  ('真', 'true'), ('假', 'false')):
         body = re.sub(B % k, v, body)
     # 结绳数组字面量 {a,b}（Java 里是初始化块语法，作表达式非法）
     body = re.sub(r'\{([^{};]*,[^{};]*)\}', lambda m: 'new Object[]{' + m.group(1) + '}', body)
-    body = re.sub(r'new\s+([\w一-鿿<>\[\]]+)\[\]new Object\[\]\{', lambda m: 'new ' + m.group(1) + '[]{', body)
+    body = re.sub(r'new\s+([\w一-鿿<>\[\]]+)\[\]\s*new Object\[\]\{', lambda m: 'new ' + m.group(1) + '[]{', body)
     body = body.replace('new Object[] new Object[]{', 'new Object[]{')
+    # 还原字面量
+    body = re.sub(r'\x00(\d+)\x00', lambda m: _lits[int(m.group(1))], body)
     return body
+
+def _paren_open(s):
+    """字符串/字符字面量之外的「净开括号数」。>0 表示语句未闭合、需续行。"""
+    return _STR_LIT.sub('', s).count('(') - _STR_LIT.sub('', s).count(')')
+
 
 def extract_paren(s, start):
     """从 s[start]=='(' 起做括号配平，返回括号内文本。"""
@@ -114,18 +214,64 @@ def split_top(s, sep=','):
         out.append(cur)
     return [x.strip() for x in out if x.strip()]
 
+
+def _cross_refs(t):
+    """返回本文件引用的 (其它包, 类名) 集合。
+
+    判据：文本里出现某个**已知类名**（中文版是中文名，英文版是映射后的英文名），
+    且它属于**本文件之外的包**。用于生成 import。
+    """
+    text = '\n'.join(t.out)
+    own = t.pkg
+    out = set()
+    for jb_pkg, cls_set in _LIB_CLASSES.items():
+        mapped_pkg = map_pkg(jb_pkg)
+        if mapped_pkg == own:
+            continue
+        for cls in cls_set:
+            j = map_cls(cls)
+            if j == cls and LANG == 'zh':
+                pass
+            # 词边界匹配类名（避免子串误判）
+            if re.search(r'(?<![\w\u4e00-\u9fff])' + re.escape(j) + r'(?![\w\u4e00-\u9fff])', text):
+                out.add((mapped_pkg, j))
+    return out
+
+
+def _load_lib_classes(src):
+    """扫描源 .t，建立 结绳包名 -> 类名集合（供跨包 import 判定）。"""
+    global _LIB_CLASSES
+    _LIB_CLASSES = {}
+    for p in glob.glob(os.path.join(src, '**', '*.t'), recursive=True):
+        pkg = ''
+        for ln in io.open(p, encoding='utf-8', errors='replace'):
+            t = ln.strip()
+            if t.startswith('包名'):
+                pkg = t[2:].strip()
+            m = re.match(r'^(?:类|公开类|抽象类)\s+([^\s:<]+)', t)
+            if m and pkg:
+                _LIB_CLASSES.setdefault(pkg, set()).add(m.group(1))
+
+
+_LIB_CLASSES = {}
+
 class Translator:
     def __init__(self, path):
         self.path = path
+        self.lang = LANG
         self.lines = io.open(path, encoding='utf-8', errors='replace').read().split('\n')
         self.i = 0
         self.out = []
         self.pkg = ''
         self.embedded = False
         self.pending_embedded = False
+        self.pending_static = False
+        self.cur_ret = 'void'   # 当前方法返回类型（决定 `code expr` 是否补 return）
         self.alias = None
         self.used_names = set()
         self.used_class_names = set()
+        self.cur_class_zh = ''
+        self.cur_class_out = ''
         self.imports = []
         self.tparams = []
         # 块注释扫描。块起始用 `'*/' not in t`，同行闭合的 `/* x */ code` 保持原样。
@@ -139,13 +285,18 @@ class Translator:
                 if '*/' in t:
                     in_c = False
                 continue
-            if t.startswith('/*') and '*/' not in t:
-                in_c = True
-                self.comment_lines.add(idx)
-                self.lines[idx] = ''
-            elif t.startswith('/*') and t.endswith('*/'):
-                self.comment_lines.add(idx)
-                self.lines[idx] = ''
+            if t.startswith('/*'):
+                # 同行闭合判定必须从 index 2 起找 '*/'：
+                # `/*/`（如 `/*//说明`）在偏移 1-2 处就有 `*/`，
+                # 用 `'*/' not in t` 会把「块开始」误判成「已闭合」，
+                # 结果两个分支都不命中，注释体被当 Java 原样输出。
+                if '*/' in t[2:]:
+                    self.comment_lines.add(idx)
+                    self.lines[idx] = ''
+                else:
+                    in_c = True
+                    self.comment_lines.add(idx)
+                    self.lines[idx] = ''
 
     def peek(self, k=0):
         j = self.i + k
@@ -155,18 +306,24 @@ class Translator:
         v = self.peek(); self.i += 1; return v
 
     def _join(self, s):
-        while s.count('(') > s.count(')') and self.i < len(self.lines):
+        while _paren_open(s) > 0 and self.i < len(self.lines):
             s = s.rstrip() + ' ' + self.next().strip()
         return s
 
     def next_joined(self):
         """读一行；若括号未闭合，继续拼接后续行（结绳参数表可跨行）。"""
         v = self.next()
-        while v.count('(') > v.count(')') and self.i < len(self.lines):
+        while _paren_open(v) > 0 and self.i < len(self.lines):
             v = v.rstrip() + ' ' + self.next().strip()
         return v
 
     def emit(self, s, indent=0):
+        # 构造器名跟随类名：结绳 code 块里写作 `public 中文类名(...)`，
+        # 类名英文化后必须同步，否则 Java 判为「缺返回类型的方法声明」。
+        if (self.cur_class_zh and self.cur_class_zh != self.cur_class_out
+                and self.cur_class_zh in s):
+            s = re.sub(r'(?<![\w一-鿿])' + re.escape(self.cur_class_zh)
+                       + r'(?![\w一-鿿])', self.cur_class_out, s)
         self.out.append('    ' * indent + s)
 
     def parse(self):
@@ -184,7 +341,7 @@ class Translator:
             if s.startswith('//') or s.startswith('/*') or s.startswith('*'):
                 self.emit(s); continue
             if s.startswith('包名'):
-                self.pkg = out_package(s[2:].strip()); continue
+                self.pkg = map_pkg(s[2:].strip()); continue
             m = re.match(r'^@导入Java\("([^"]+)"\)', s)
             if m:
                 self.imports.append(m.group(1)); continue
@@ -197,7 +354,13 @@ class Translator:
 
     def handle_annotation(self, s):
         if s.startswith('@嵌入式代码'):
-            self.embedded = True
+            # 必须写 pending_embedded：parse_method 开头用
+            # `self.embedded = self.pending_embedded` 覆盖 self.embedded，
+            # 只设 self.embedded 会被立刻冲掉，@嵌入式代码 形同不存在。
+            self.pending_embedded = True
+            return
+        if s.startswith('@静态'):
+            self.pending_static = True
             return
         if s.startswith('@指代类'):
             # 记录：本类直接包裹该 Java 类
@@ -217,6 +380,7 @@ class Translator:
         if not m:
             self.emit('// TODO 无法解析的类声明: ' + decl); return
         kw, name, tp, base = m.group(1), m.group(2), m.group(3), m.group(4)
+        jname = map_cls(name)          # 输出用的类名（英文版会变）
         self.tparams = []
         if tp:
             for p in re.findall(r'模板类型(\d*)', tp):
@@ -231,17 +395,41 @@ class Translator:
                 bargs = bm.group(2)
                 if bargs:
                     jargs = ', '.join(map_type(x, self.tparams) for x in split_top(bargs[1:-1]))
-                    extends = ' extends %s<%s>' % (bname, jargs)
+                    extends = ' extends %s<%s>' % (map_cls(bname), jargs)
                 else:
-                    extends = ' extends ' + bname
+                    extends = ' extends ' + map_cls(bname)
             else:
-                extends = ' extends ' + b
+                extends = ' extends ' + map_cls(b)
+        # @指代类("X")：结绳「本类包装 Java 类 X」。无显式基类时让生成的类
+        # extends X，否则 X 的方法/字段全不可见（实测约 1500 处「找不到符号」：
+        # `this.append(...)`、`this.getWindow()`、`this.getSystemService(...)` 等）。
+        # 基本类型别名（int/long/…）无法继承，跳过。
+        # @指代类 优先于显式基类：它才是具体的 Android/JDK 平台类（Activity、
+        # Application、Context…），提供 getWindow()/overridePendingTransition() 等
+        # 平台 API；显式基类（如 安卓环境 : Context）只是同一平台类的薄抽象。
+        # 若两者都写，取别名——否则平台方法全部「找不到符号」（实测 25 处 getWindow）。
+        if self.alias:
+            al = self.alias.strip()
+            if al not in ('int', 'long', 'short', 'byte', 'char', 'float',
+                          'double', 'boolean', 'void'):
+                extends = ' extends ' + al
         tdecl = ('<' + ', '.join(self.tparams) + '>') if self.tparams else ''
         JAVA_SIMPLE = {'UUID','Date','Timer','File','Thread','String','Integer','Long',
                        'Boolean','Double','Float','Object','Math','System','Runtime'}
         if self.alias and name in JAVA_SIMPLE and name not in self.used_class_names:
             name = name + '扩展'          # 与 java.* 简单名同名会遮蔽，加后缀区分
         self.used_class_names.add(name)
+        if name in DROP_CLASSES:
+            # 与 QuickDevelop 模板重叠：跳过整个类（含类体），不产出文件。
+            # 必须逐类判断——一个 .t 文件含多个类，被剔的未必是首个。
+            depth = 1
+            while self.i < len(self.lines) and depth > 0:
+                tt = self.next().strip()
+                if re.match(r'^(?:类|公开类|抽象类)\s', tt):
+                    depth += 1
+                elif tt == '结束 类':
+                    depth -= 1
+            return
         if name in self.MACRO_CLASSES:
             # 跳过类体，输出占位说明
             self.emit('')
@@ -256,12 +444,24 @@ class Translator:
             return
         self.emit('')
         self.used_names = set()
+        # 记录「中文类名 → 输出类名」，供 subst 替换构造器名。
+        self.cur_class_zh = name
+        self.cur_class_out = jname
         self.emit('public %sclass %s%s%s {' % (
-            'abstract ' if kw == '抽象类' else '', name, tdecl, extends))
+            'abstract ' if kw == '抽象类' else '', jname, tdecl, extends))
         # 类体
+        in_code = False
         while self.i < len(self.lines):
             idx = self.i
             raw = self.next(); s = raw.strip()
+            if s == '@code':
+                in_code = True; continue
+            if s == '@end':
+                in_code = False; continue
+            if in_code:
+                # @code 块内是原生 Java，必须原样输出（只做 #x/字面量替换），
+                # 否则 `@Override protected void f(){` 这类行会被 `@` 分支吞掉。
+                self.emit(subst(s, [], self.tparams, in_code=True)); continue
             if idx in self.comment_lines:
                 # 块注释已被清空（见 __init__）；这里必须 emit 清空后的内容，
                 # 否则会把 `/* ... 结束 方法*/` 这类含终止关键字的注释原样吐出来。
@@ -273,7 +473,7 @@ class Translator:
             if s in ('结束 类',) or s == '结束类':
                 break
             if s.startswith('@'):
-                self.pending_ann = s
+                self.handle_annotation(s)
                 continue
             if s.startswith('常量'):
                 self.parse_const(s); continue
@@ -294,6 +494,12 @@ class Translator:
                 self.parse_method(j); continue
             if s.startswith('如果'):
                 self.parse_if(s); continue
+            if s.startswith('假如'):
+                self.parse_switch(s); continue
+            if s.startswith('容错处理'):
+                self.emit('try {'); continue
+            if s.startswith('结束容错'):
+                self.emit('} catch (Exception e) { }'); continue
             if s.startswith('循环'):
                 self.parse_while(s); continue
             if s.startswith('返回'):
@@ -307,8 +513,6 @@ class Translator:
                     self.emit('return ' + subst(body, [], self.tparams) + ';')
                 else:
                     self.emit(subst(body, [], self.tparams))
-                continue
-            if s == '@code' or s == '@end':
                 continue
             # 其它（表达式、赋值）
             self.emit(subst(s, [], self.tparams))
@@ -325,7 +529,8 @@ class Translator:
         return 'Object'
 
     def parse_const(self, s):
-        m = re.match(r'^常量\s+([^\s:]+)\s*(?::\s*([^=]+))?\s*(?:=\s*(.+))?$', s)
+        self.pending_static = False
+        m = re.match(r'^常量\s+([^\s:]+)\s*(?:(?::|为)\s*([^=]+))?\s*(?:=\s*(.+))?$', s)
         name, typ, val = m.group(1), (m.group(2) or '').strip(), (m.group(3) or '').strip()
         if val.startswith('code '):
             val = val[5:].strip()
@@ -336,7 +541,9 @@ class Translator:
     BARE_ARRAY = re.compile(r'^([一-鿿A-Za-z_][一-鿿A-Za-z0-9_.]*)\[([^\]]+)\]\s+([一-鿿A-Za-z_][一-鿿A-Za-z0-9_]*)\s*(?:=\s*(.+?))?;?$')
 
     def parse_var(self, s):
-        m = re.match(r'^变量\s+([^\s:]+)\s*(?::\s*([^=]+))?\s*(?:=\s*(.+))?$', s)
+        self.pending_static = False
+        s = self._join(s)   # 结绳允许 `变量 x : 类型 = 表达式` 跨行续写
+        m = re.match(r'^变量\s+([^\s:]+)\s*(?:(?::|为)\s*([^=]+))?\s*(?:=\s*(.+))?$', s)
         name, typ, val = m.group(1), (m.group(2) or '').strip(), (m.group(3) or '').strip()
         am = re.match(r'^(.+?)\[(.+)\]$', typ)   # 字节[1024] / 整数[宽度*高度]
         if am:
@@ -390,21 +597,33 @@ class Translator:
         name = self.op_name(name)
         if is_op:
             name = name + '_op'   # Java 无运算符重载；与具名方法并存会重名，统一加后缀
+        # `@嵌入式代码 方法 f(...)`（无返回类型）等价于「表达式即返回值」：
+        # 方法体只有一条 `code expr`，若按 void 生成会得到 `return expr;` → 类型错误。
+        if self.embedded and jret == 'void':
+            jret = 'Object'
+        is_static = self.pending_static
+        self.pending_static = False
         self.used_names.add(name)
         self.embedded = False
-        self.emit('public %s %s(%s) {' % (jret, name, params))
+        self.cur_ret = jret
+        self.emit('public %s%s %s(%s) {' % ('static ' if is_static else '', jret, name, params))
         self.parse_body()
+        self.cur_ret = 'void'
 
     def parse_prop_read(self, s):
+        self.pending_static = False
         m = re.match(r'^属性读\s+([^\s(]+)\s*\(\s*\)\s*(?:(?::|为)\s*(.+))?$', s)
         name, ret = m.group(1), (m.group(2) or '').strip()
         jret = map_type(ret, self.tparams) if ret else 'Object'
         self.embedded = self.pending_embedded; self.pending_embedded = False
         self.embedded = False
+        self.cur_ret = jret
         self.emit('public %s %s() {' % (jret, name))
         self.parse_body()
+        self.cur_ret = 'void'
 
     def parse_prop_write(self, s):
+        self.pending_static = False
         m = re.match(r'^属性写\s+([^\s(]+)\s*\(([^)]*)\)$', s)
         name, ps = m.group(1), m.group(2)
         params, names = self.parse_params(ps)
@@ -421,15 +640,52 @@ class Translator:
         return self.OPMAP.get(name, name)
 
     def parse_event(self, s):
+        self.pending_static = False
         m = re.match(r'^定义事件\s+([^\s(]+)\s*\(([^)]*)\)\s*(?:(?::|为)\s*(.+))?$', s)
         name, ps, ret = m.group(1), m.group(2), (m.group(3) or '').strip()
         jret = map_type(ret, self.tparams) if ret else 'void'
         params, names = self.parse_params(ps)
-        self.emit('public %s %s(%s) { return %s; } // 事件' % (
-            jret, name, params, 'false' if jret == 'boolean' else ('0' if jret in ('int','long','double','float') else 'null')))
+        if jret == 'void':
+            self.emit('public void %s(%s) { } // 事件' % (name, params))
+        else:
+            self.emit('public %s %s(%s) { return %s; } // 事件' % (
+                jret, name, params, 'false' if jret == 'boolean' else ('0' if jret in ('int','long','double','float') else 'null')))
+
+    # 控制流/声明头行：以这些词开头且不以 `;` 结尾时，绝不能补 `;`
+    # （`if (...)` 换行体、`else`、`catch (E e)`、`public void f()` 等）。
+    HEAD_KW = ('if', 'else', 'for', 'while', 'switch', 'case', 'default', 'do',
+               'try', 'catch', 'finally', 'synchronized', 'return', 'throw',
+               'break', 'continue', 'class', 'interface', 'enum', 'public',
+               'private', 'protected', 'static', 'final', 'abstract', 'native')
+
+    @staticmethod
+    def _needs_semi(b):
+        """@code 块内该行是否缺分号（结绳允许省略，Java 不允许）。
+
+        保守策略：只在「看起来是完整语句、且明显不是续行/控制流头」时才补。
+        """
+        t = b.strip()
+        if not t:
+            return False
+        if t.endswith((';', '{', '}', ',', ':', '(')):
+            return False
+        if t.startswith(('//', '/*', '*', '}', '@')):
+            return False            # 注释 / 注解（@Override 等）不补分号
+        if t.startswith(('+', '-', '*', '/', '=', '.', '?', ':')):
+            return False            # 续行（上一行的表达式没写完）
+        if t.endswith(('+', '-', '*', '/', '=', '&&', '||', '.', '?', '&', '|', '=')):
+            return False
+        if re.search(r'\bnew$', t):
+            return False            # `= new` 换行接构造器，属续行
+        if _paren_open(t) > 0:
+            return False            # 括号未闭合，后面还有续行
+        for kw in Translator.HEAD_KW:
+            if t == kw or t.startswith(kw + ' ') or t.startswith(kw + '('):
+                return False        # 控制流/声明头行
+        return True
 
     def consume_code_block(self):
-        """消费 @code ... @end，块内是 Java。"""
+        """消费 @code ... @end，块内是 Java（原样输出 + 补分号）。"""
         buf = []
         while self.i < len(self.lines):
             r2 = self.next(); s2 = r2.strip()
@@ -437,10 +693,26 @@ class Translator:
                 break
             buf.append(s2)
         if len(buf) == 1 and not re.match(r'^(if|for|while|try|return|throw|\{)', buf[0]) and not buf[0].endswith(';'):
-            self.emit('return ' + subst(buf[0], [], self.tparams) + ';')
+            # 单表达式 @code：非 void 方法补 `return`；void 方法只作语句。
+            pre = 'return ' if self.cur_ret != 'void' else ''
+            self.emit(pre + subst(buf[0], [], self.tparams, in_code=True) + ';')
         else:
-            for b in buf:
-                self.emit(subst(b, [], self.tparams))
+            for k, b in enumerate(buf):
+                body = subst(b, [], self.tparams, in_code=True)
+                # 下一条有效行（跳过注释与空行）
+                nxt = ''
+                for m2 in range(k + 1, len(buf)):
+                    c = buf[m2].strip()
+                    if c and not c.startswith(('//', '/*', '*')):
+                        nxt = c; break
+                if self._needs_semi(b):
+                    if not (nxt.startswith(('{', '}', '[', ')', '+', '-', '*', '/', '.', '?', ':', '&', '|', '='))
+                            or nxt.startswith(('else', 'catch', 'finally'))):
+                        body += ';'
+                elif body.endswith(';') and nxt.startswith(')'):
+                    # 反向误补：`f(a, b;` 后面跟 `)` —— 去掉本行的 `;`
+                    body = body[:-1]
+                self.emit(body)
 
     def parse_body(self):
         """读方法/属性体，直到 结束 方法 / 结束 属性。"""
@@ -458,6 +730,12 @@ class Translator:
                 self.emit(s); continue
             if s.startswith('如果'):
                 self.parse_if(s); continue
+            if s.startswith('假如'):
+                self.parse_switch(s); continue
+            if s.startswith('容错处理'):
+                self.emit('try {'); continue
+            if s.startswith('结束容错'):
+                self.emit('} catch (Exception e) { }'); continue
             if s.startswith('循环'):
                 self.parse_while(s); continue
             if s.startswith('返回'):
@@ -479,10 +757,21 @@ class Translator:
                 break
             if s2 == '@code':
                 self.consume_code_block(); continue
-            if s2 == '否则':
+            if s2.startswith('否则'):
+                rest = s2[2:].strip()
+                if rest.endswith('则'):
+                    rest = rest[:-1].strip()
+                if rest:
+                    self.emit('} else if (%s) {' % subst(rest, [], self.tparams)); continue
                 self.emit('} else {'); continue
             if s2.startswith('如果'):
                 self.parse_if(s2); continue
+            if s2.startswith('假如'):
+                self.parse_switch(s2); continue
+            if s2.startswith('容错处理'):
+                self.emit('try {'); continue
+            if s2.startswith('结束容错'):
+                self.emit('} catch (Exception e) { }'); continue
             if s2.startswith('循环'):
                 self.parse_while(s2); continue
             if s2.startswith('返回'):
@@ -492,6 +781,42 @@ class Translator:
                 self.parse_var(s2); continue
             if s2 == '':
                 self.emit(''); continue
+            self.emit_stmt(s2)
+        self.emit('}')
+
+    def parse_switch(self, s):
+        """`假如 表达式` ... `是 值` ... `结束 假如` → Java switch。"""
+        expr = s[2:].strip()
+        self.emit('switch (%s) {' % subst(expr, [], self.tparams))
+        while self.i < len(self.lines):
+            raw = self.next(); s2 = raw.strip()
+            if s2 in ('结束 假如', '结束假如'):
+                break
+            if s2 == '':
+                self.emit(''); continue
+            if s2.startswith('//') or s2.startswith('/*') or s2.startswith('*'):
+                self.emit(s2); continue
+            if s2.startswith('是 '):
+                self.emit('case %s:' % subst(s2[2:].strip(), [], self.tparams)); continue
+            if s2.startswith('否则'):
+                self.emit('default:'); continue
+            if s2 == '@code':
+                self.consume_code_block(); continue
+            if s2.startswith('如果'):
+                self.parse_if(s2); continue
+            if s2.startswith('假如'):
+                self.parse_switch(s2); continue
+            if s2.startswith('循环'):
+                self.parse_while(s2); continue
+            if s2.startswith('返回'):
+                r = s2[2:].strip()
+                self.emit('return;' if r in ('', '()') else 'return ' + subst(r, [], self.tparams) + ';'); continue
+            if s2.startswith('变量'):
+                self.parse_var(s2); continue
+            if s2.startswith('容错处理'):
+                self.emit('try {'); continue
+            if s2.startswith('结束容错'):
+                self.emit('} catch (Exception e) { }'); continue
             self.emit_stmt(s2)
         self.emit('}')
 
@@ -533,7 +858,8 @@ class Translator:
             s = s[5:].strip()
             body = subst(s, [], self.tparams)
             if not re.match(r'^(if|for|while|try|synchronized|return|throw|\{|\})', s) and not body.endswith(';'):
-                self.emit('return ' + body + ';')
+                pre = 'return ' if self.cur_ret != 'void' else ''
+                self.emit(pre + body + ';')
             else:
                 self.emit(body)
             return
@@ -553,6 +879,23 @@ class Translator:
             self.emit(body); return
         self.emit(body + ';')
 
+
+
+def _peek_class_name(path):
+    for ln in io.open(path, encoding='utf-8', errors='replace'):
+        m = re.match(r'^\s*(?:类|公开类|抽象类)\s+([^\s:<]+)', ln)
+        if m:
+            return m.group(1)
+    return ''
+
+
+def _first_class_name(t):
+    for ln in t.out:
+        m = re.match(r'public (?:abstract )?class ([^\s<{]+)', ln.strip())
+        if m:
+            return m.group(1)
+    return ''
+
 def translate(path, outdir):
     t = Translator(path)
     t.parse()
@@ -567,24 +910,63 @@ def translate(path, outdir):
         else:
             head.append('import %s;' % imp)
     head.append('')
+    # 跨包引用必须显式 import：本库 40 个文件引用了其它包的类，而原 .t 靠
+    # 「同包解析」并不写 import。全量编译时 javac 会从 sourcepath 隐式加载，
+    # 掩盖这个问题；两套映射下包名不同，必须补上。
+    for other_pkg, other_cls in sorted(_cross_refs(t)):
+        head.append('import %s.%s;' % (other_pkg, other_cls))
+    if any(_cross_refs(t)):
+        head.append('')
     # 一个 .t 文件含多个顶层类，而 Java 每个 public 类必须独占同名文件——
     # 按顶层 `public (abstract )?class ` 切分，各自成文件。
     NL = chr(10)
     body = '\n'.join(t.out)
-    # 只在**花括号深度 0** 处切分：@code 块里可能有嵌套 Java 类
-    # （如 `public class ItemClickListener extends ... {`），按行首切会把它切成独立文件。
-    parts, cur, depth = [], [], 0
-    for ln in body.split(NL):
-        st = ln.strip()
-        if depth == 0 and re.match(r'^public (?:abstract )?class ', st):
-            if cur:
-                parts.append(NL.join(cur))
-            cur = [ln]
-        else:
-            cur.append(ln)
-        depth += ln.count('{') - ln.count('}')
-    if cur:
-        parts.append(NL.join(cur))
+    # 构造器名跟随类名：结绳 code 块里写作 `public 中文类名(...)`，
+    # 类名英文化后必须同步，否则 Java 认为是缺返回类型的方法声明。
+    if LANG != 'zh' and t.cur_class_zh and t.cur_class_zh != t.cur_class_out:
+        body = re.sub(r'(?<![\w\u4e00-\u9fff])' + re.escape(t.cur_class_zh) + r'(?![\w\u4e00-\u9fff])',
+                      t.cur_class_out, body)
+    # 一个 .t 文件含多个顶层类，而 Java 每个 public 类必须独占同名文件。
+    # 切分必须**花括号配平感知**：@code 块里可能有嵌套 Java 类（按行首切会
+    # 误切），也可能有失衡的类（`网络请求`：两个 @嵌入式代码 异步方法只开
+    # 不闭，闭合花括号写在第三个方法里）——朴素「深度 0 切」会把后续完好的
+    # 类一起吞进失衡类，产出非法 Java。
+    #
+    # 算法：从每个顶层 class 行起向前累积到花括号首次 ≤0；到末尾仍未回 0
+    # 则该类失衡。此时找**第一个**「起于该行即配平」的后续 class 救尾部
+    # （失衡段交给写出阶段跳过），并从该行继续正常切分。
+    def _split(pool):
+        res = []
+        i = 0
+        while i < len(pool):
+            if not re.match(r'^public (?:abstract )?class ', pool[i].strip()):
+                i += 1
+                continue
+            bal = 0
+            j = i
+            while j < len(pool):
+                bal += _brace_balance(pool[j])
+                if bal <= 0:
+                    break
+                j += 1
+            if j < len(pool) and bal == 0:
+                res.append(NL.join(pool[i:j + 1]))
+                i = j + 1
+            else:
+                cut = -1
+                for k in range(i + 1, len(pool)):
+                    if (re.match(r'^public (?:abstract )?class ', pool[k].strip())
+                            and _brace_balance(NL.join(pool[k:])) == 0):
+                        cut = k; break
+                if cut > 0:
+                    res.append(NL.join(pool[i:cut]))   # 失衡段（写出时跳过）
+                    i = cut
+                else:
+                    res.append(NL.join(pool[i:]))      # 整段失衡
+                    i = len(pool)
+        return res
+
+    parts = _split(body.split(NL))
     rel = t.pkg.replace('.', '/') if t.pkg else ''
     d = os.path.join(outdir, rel)
     os.makedirs(d, exist_ok=True)
@@ -593,14 +975,18 @@ def translate(path, outdir):
         nm = re.search(r'public (?:abstract )?class ([^\s<{]+)', p)
         if not nm:
             continue
+        if _brace_balance(p) != 0:
+            sys.stderr.write('WARN 跳过不配平的类 %s（源文件花括号失衡）\n' % nm.group(1))
+            continue
         fn = nm.group(1) + '.java'
         io.open(os.path.join(d, fn), 'w', encoding='utf-8').write('\n'.join(head) + '\n' + p)
         n += 1
-    return (os.path.basename(path).replace('.t', '')), n
+    return map_cls(_first_class_name(t) or ''), n
 
 if __name__ == '__main__':
     src = sys.argv[1]
     outdir = sys.argv[2]
+    _load_lib_classes(src)
     files = glob.glob(os.path.join(src, '**', '*.t'), recursive=True)
     for f in sorted(files):
         try:

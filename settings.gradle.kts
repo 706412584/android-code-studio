@@ -96,6 +96,8 @@ include(
   ":core:ai-protocol",
   ":core:ai-tool",
   ":core:ai-tool-api",
+  // ":core:ticode",   // 结绳基本库移植：代码尚未语义可编译（~1350 处错误），
+  //                     暂不接入构建；编译用 core/ticode/build.gradle.kts + 直接 javac。
   ":core:app",
   ":ideconfigurations",
   ":core:common",

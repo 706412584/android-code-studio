@@ -1,0 +1,236 @@
+package ticode.android;
+
+
+public class PackageInfo2 extends android.content.pm.PackageInfo {
+
+public static final int 安装位置_自动 = 0;
+
+public static final int 安装位置_内部 = 1;
+
+public static final int 安装位置_首选外部 = 2;
+
+public static final int 请求权限标志_已授予 = 2;
+
+public boolean 等于_op(PackageInfo2 另一个) {
+if (this == null) {
+return 另一个 == null;
+}
+return this.equals(另一个);
+}
+
+public boolean 不等于_op(PackageInfo2 另一个) {
+if (this == null) {
+return 另一个 != null;
+}
+return !this.equals(另一个);
+}
+
+public WindowInfo[] 窗口信息集() {
+return this.activities;
+}
+
+public void 窗口信息集(WindowInfo[] 窗口信息集) {
+this.activities = 窗口信息集;
+}
+
+public WindowInfo[] 广播接收器信息集() {
+return this.receivers;
+}
+
+public void 广播接收器信息集(WindowInfo[] 广播接收器信息集) {
+this.receivers = 广播接收器信息集;
+}
+
+public AppInfo 应用信息() {
+return this.applicationInfo;
+}
+
+public void 应用信息(AppInfo 应用信息) {
+this.applicationInfo = 应用信息;
+}
+
+public PackageConfigInfo[] 配置信息集() {
+return this.configPreferences;
+}
+
+public void 配置信息集(PackageConfigInfo[] 配置信息集) {
+this.configPreferences = 配置信息集;
+}
+
+public FeatureGroupInfo[] 功能组信息集() {
+return this.featureGroups;
+}
+
+public void 功能组信息集(FeatureGroupInfo[] 功能组信息集) {
+this.featureGroups = 功能组信息集;
+}
+
+public InstrumentationInfo[] 测试器信息集() {
+return this.instrumentation;
+}
+
+public void 测试器信息集(InstrumentationInfo[] 测试器信息集) {
+this.instrumentation = 测试器信息集;
+}
+
+public PackagePermissionInfo[] 权限信息集() {
+return this.permissions;
+}
+
+public void 权限信息集(PackagePermissionInfo[] 权限信息集) {
+this.permissions = 权限信息集;
+}
+
+public FeatureInfo[] 功能信息集() {
+return this.reqFeatures;
+}
+
+public void 功能信息集(FeatureInfo[] 功能信息集) {
+this.reqFeatures = 功能信息集;
+}
+
+public ServiceInfo[] 服务信息集() {
+return this.services;
+}
+
+public void 服务信息集(ServiceInfo[] 服务信息集) {
+this.services = 服务信息集;
+}
+
+public SignatureData[] 签名数据集() {
+return this.signatures;
+}
+
+public void 签名数据集(SignatureData[] 签名数据集) {
+this.signatures = 签名数据集;
+}
+
+public SignatureInfo 签名信息() {
+return this.signingInfo;
+}
+
+public void 签名信息(SignatureInfo 签名信息) {
+this.signingInfo = 签名信息;
+}
+
+public int 修订码() {
+return this.baseRevisionCode;
+}
+
+public void 修订码(int 修订码) {
+this.baseRevisionCode = 修订码;
+}
+
+public long 首次安装时间() {
+return this.firstInstallTime;
+}
+
+public void 首次安装时间(long 首次安装时间) {
+this.firstInstallTime = 首次安装时间;
+}
+
+public int[] 组id() {
+return this.gids;
+}
+
+public void 组id(int[] 组id) {
+this.gids = 组id;
+}
+
+public int 安装位置() {
+return this.installLocation;
+}
+
+public void 安装位置(int 安装位置) {
+this.installLocation = 安装位置;
+}
+
+public boolean 是apex包() {
+return this.isApex;
+}
+
+public void 是apex包(boolean 是apex包) {
+this.isApex = 是apex包;
+}
+
+public long 上次更新时间() {
+return this.lastUpdateTime;
+}
+
+public void 上次更新时间(long 上次更新时间) {
+this.lastUpdateTime = 上次更新时间;
+}
+
+public String 应用包名() {
+return this.packageName;
+}
+
+public void 应用包名(String 应用包名) {
+this.packageName = 应用包名;
+}
+
+public String[] 请求权限() {
+return this.requestedPermissions;
+}
+
+public void 请求权限(String[] 请求权限) {
+this.requestedPermissions = 请求权限;
+}
+
+public int[] 请求权限标志() {
+return this.requestedPermissionsFlags;
+}
+
+public void 请求权限标志(int[] 请求权限标志) {
+this.requestedPermissionsFlags = 请求权限标志;
+}
+
+public String 共享用户id() {
+return this.sharedUserId;
+}
+
+public void 共享用户id(String 共享用户id) {
+this.sharedUserId = 共享用户id;
+}
+
+public int 共享用户标签资源id() {
+return this.sharedUserLabel;
+}
+
+public void 共享用户标签资源id(int 共享用户标签资源id) {
+this.sharedUserLabel = 共享用户标签资源id;
+}
+
+public String[] 拆分名称() {
+return this.splitNames;
+}
+
+public void 拆分名称(String[] 拆分名称) {
+this.splitNames = 拆分名称;
+}
+
+public int[] 拆分修订码() {
+return this.splitRevisionCodes;
+}
+
+public void 拆分修订码(int[] 拆分修订码) {
+this.splitRevisionCodes = 拆分修订码;
+}
+
+public int 版本号() {
+return this.versionCode;
+}
+
+public void 版本号(int 版本号) {
+this.versionCode = 版本号;
+}
+
+public String 版本名称() {
+return this.versionName;
+}
+
+public void 版本名称(String 版本名称) {
+this.versionName = 版本名称;
+}
+
+}

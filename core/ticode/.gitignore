@@ -1,0 +1,7 @@
+# 构建产物
+/build/
+
+# 编译期依赖 jar（共约 27M，不入库）。
+# android.jar 与 utilities/framework-stubs/libs/android.jar 逐字节相同，可直接复制；
+# 其余三个从本机 Gradle 缓存的 AAR 里取 classes.jar。重建步骤见 libs/README.md。
+/libs/*.jar

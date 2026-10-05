@@ -1,0 +1,52 @@
+package ticode.android;
+
+import android.graphics.drawable.Drawable;
+import android.graphics.Color;
+import android.graphics.Bitmap;
+import android.graphics.Bitmap.Config;
+import android.graphics.Bitmap.CompressFormat;
+import android.graphics.drawable.GradientDrawable;
+import android.graphics.*;
+import android.graphics.drawable.*;
+import android.graphics.drawable.shapes.*;
+import android.content.res.*;
+import android.graphics.drawable.GradientDrawable;
+import android.os.Build;
+
+import ticode.base.LongBox;
+import ticode.jvm.FileInputStream2;
+import ticode.jvm.FileOutputStream2;
+import ticode.jvm.JInputStream;
+import ticode.jvm.JOutputStream;
+
+public class BitmapConfig2 extends android.graphics.Bitmap.Config {
+
+public static final BitmapConfig2 ALPHA_8;
+
+public static final BitmapConfig2 RGB_565;
+
+public static final BitmapConfig2 ARGB_4444;
+
+public static final BitmapConfig2 ARGB_8888;
+
+public static final BitmapConfig2 RGBA_F16;
+
+public static final BitmapConfig2 HARDWARE;
+
+public static BitmapConfig2 到配置(String 配置名) {
+return Config.valueOf(配置名);
+}
+
+public static BitmapConfig2[] 配置列表() {
+return Config.values();
+}
+
+static {
+ALPHA_8=Config.ALPHA_8;
+RGB_565=Config.RGB_565;
+ARGB_4444=Config.ARGB_4444;
+ARGB_8888=Config.ARGB_8888;
+RGBA_F16=Config.RGBA_F16;
+HARDWARE=Config.HARDWARE;
+}
+}

@@ -1,0 +1,63 @@
+package ticode.android;
+
+import android.content.Context;
+import android.content.*;
+import android.content.res.*;
+import android.view.*;
+import android.widget.*;
+import android.graphics.Typeface;
+import android.text.Html;
+import android.text.TextUtils;
+import android.widget.CompoundButton;
+import android.widget.RadioButton;
+import android.widget.CompoundButton;
+import android.widget.CheckBox;
+import android.widget.CompoundButton;
+import android.widget.Switch;
+import android.widget.CompoundButton;
+import android.widget.ImageView.ScaleType;
+import android.graphics.*;
+import android.widget.ProgressBar;
+import android.graphics.drawable.*;
+import android.graphics.*;
+import android.widget.ProgressBar;
+import android.graphics.drawable.*;
+import android.graphics.*;
+import android.widget.SeekBar;
+import android.graphics.drawable.*;
+import android.widget.RatingBar;
+import android.widget.VideoView;
+import android.media.MediaPlayer;
+import android.content.Context;
+import android.content.pm.ActivityInfo;
+import android.content.Intent;
+import android.content.ActivityNotFoundException;
+import android.view.View;
+import android.view.ViewGroup;
+import android.net.Uri;
+import android.net.http.SslError;
+import android.os.Build;
+import android.app.Activity;
+import android.app.DownloadManager;
+import android.widget.FrameLayout;
+import java.io.File;
+import android.graphics.Bitmap;
+import android.annotation.TargetApi;
+import android.widget.ProgressBar;
+import android.webkit.*;
+
+import ticode.jvm.JMatcher;
+import ticode.jvm.JRegex;
+
+public class TouchGesture {
+public static final TouchGesture 左移 = 0;
+public static final TouchGesture 右移 = 1;
+public static final TouchGesture 上移 = 2;
+public static final TouchGesture 下移 = 3;
+public static final TouchGesture 左滑 = 4;
+public static final TouchGesture 右滑 = 5;
+public static final TouchGesture 上滑 = 6;
+public static final TouchGesture 下滑 = 7;
+public static final TouchGesture 单击 = 8;
+public static final TouchGesture 双击 = 9;
+}
