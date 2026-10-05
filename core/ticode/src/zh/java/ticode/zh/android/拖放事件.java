@@ -3,7 +3,7 @@ package ticode.zh.android;
 import android.content.Context;
 import android.view.ScaleGestureDetector;
 
-public class 拖放事件 {
+public class 拖放事件 extends android.view.DragEvent {
 
 
 

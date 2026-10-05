@@ -479,7 +479,7 @@ if (父组件 != null) {
 
 
 
-public android.view.ViewPropertyAnimator 取动画播放器() {
+public PropertyAnimator 取动画播放器() {
 ViewPropertyAnimator animator = view.animate();
 animator.setListener(new android.animation.Animator.AnimatorListener() {
 @Override
@@ -709,7 +709,7 @@ public void 被长按() { } // 事件
 
 
 
-public boolean 被触摸(android.view.MotionEvent 来源事件) { return false; } // 事件
+public boolean 被触摸(TouchEvent2 来源事件) { return false; } // 事件
 
 
 
@@ -723,7 +723,7 @@ public void 触摸手势(TouchGesture 手势) { } // 事件
 
 
 
-public boolean 被拖放(android.view.DragEvent 来源事件) { return false; } // 事件
+public boolean 被拖放(DragEvent2 来源事件) { return false; } // 事件
 
 //组件焦点改变时事件
 public void 焦点被改变(boolean 是否获得焦点) { } // 事件

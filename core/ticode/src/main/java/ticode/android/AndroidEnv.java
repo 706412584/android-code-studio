@@ -47,7 +47,7 @@ return this.getResources();
 }
 
 //获取安卓附加资源管理器
-public android.content.res.AssetManager 取附加资源管理器() {
+public ExtraResourceManager 取附加资源管理器() {
 return this.getAssets();
 }
 

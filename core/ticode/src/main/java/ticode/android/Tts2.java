@@ -4,6 +4,8 @@ import android.speech.tts.TextToSpeech;
 import java.util.*;
 import android.content.*;
 
+import ticode.jvm.JLocale;
+
 public class Tts2 extends WindowComponent {
 
 private Context context;
@@ -38,7 +40,7 @@ mSpeech.setPitch((float) 音调);
 }
 
 //设置语言环境
-public void 语言(java.util.Locale 语言) {
+public void 语言(JLocale 语言) {
 mSpeech.setLanguage(语言);
 }
 

@@ -203,7 +203,7 @@ bitmap.recycle();
 });
 }
 
-public static android.graphics.Bitmap 截屏_位图(安卓窗口 窗口环境) {
+public static 位图对象 截屏_位图(安卓窗口 窗口环境) {
 try {
 View decorView = 窗口环境.getWindow().getDecorView();
 Bitmap bitmap = Bitmap.createBitmap(decorView.getWidth(), decorView.getHeight(), Bitmap.Config.ARGB_8888);

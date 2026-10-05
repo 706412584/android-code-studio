@@ -85,7 +85,7 @@ public void 透明度(int 透明度) {
 this.setAlpha(透明度);
 }
 
-public void 字体(android.graphics.Typeface 字体) {
+public void 字体(TypefaceObject 字体) {
 this.setTypeface(字体);
 }
 

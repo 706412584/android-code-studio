@@ -28,7 +28,7 @@ return scaleGestureDetector;
 }
 
 // 处理触摸事件(重要的,必须要传递触摸事件才能进行处理)
-public boolean 处理触摸事件(android.view.MotionEvent 触摸事件) {
+public boolean 处理触摸事件(TouchEvent2 触摸事件) {
 return getScale().onTouchEvent(触摸事件);
 }
 

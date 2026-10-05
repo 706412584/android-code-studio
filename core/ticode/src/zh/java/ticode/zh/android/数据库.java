@@ -3,13 +3,13 @@ package ticode.zh.android;
 import java.io.File;
 import android.database.sqlite.SQLiteDatabase;
 
-public class 数据库 {
+public class 数据库 extends android.database.sqlite.SQLiteDatabase {
 
 
 
 
 
-public static android.database.sqlite.SQLiteDatabase 打开数据库(String 数据库路径) {
+public static 数据库 打开数据库(String 数据库路径) {
 File file = new File(数据库路径);
 File dirs = file.getParentFile();
 if (!dirs.exists() && !dirs.mkdirs()) return null;

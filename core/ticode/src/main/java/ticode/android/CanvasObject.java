@@ -86,7 +86,7 @@ bitmapCacheHandler = new BitmapCacheHandler();
 return bitmapCacheHandler;
 }
 
-public static CanvasObject 创建画布(android.graphics.Bitmap 位图) {
+public static CanvasObject 创建画布(BitmapObject 位图) {
 return new Canvas(位图);
 }
 
@@ -188,12 +188,12 @@ path.quadTo(辅助X坐标, 辅助Y坐标, 结束X坐标, 结束Y坐标);
 this.drawPath(path, 画笔);
 }
 
-public void 画位图(float X坐标, float Y坐标, android.graphics.Bitmap 位图, PaintObject 画笔) {
+public void 画位图(float X坐标, float Y坐标, BitmapObject 位图, PaintObject 画笔) {
 if (位图 == null || 位图.isRecycled()) return;
 this.drawBitmap(位图, X坐标, Y坐标, 画笔);
 }
 
-public void 画缩放位图(float X坐标, float Y坐标, float 宽度, float 高度, android.graphics.Bitmap 位图, PaintObject 画笔) {
+public void 画缩放位图(float X坐标, float Y坐标, float 宽度, float 高度, BitmapObject 位图, PaintObject 画笔) {
 if (位图 == null || 位图.isRecycled()) return;
 if (rectF == null) {
 rectF = new RectF();

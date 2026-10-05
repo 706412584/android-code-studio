@@ -2,7 +2,7 @@ package ticode.zh.android;
 
 import android.net.wifi.WifiManager;
 
-public class WiFi信息 {
+public class WiFi信息 extends android.net.wifi.WifiInfo {
 public String SSID() {
 return this.getSSID();
 }

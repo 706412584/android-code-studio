@@ -16,7 +16,7 @@ public WifiScanResult[] 取WiFi扫描结果() {
 return glq.getScanResults().toArray(new WifiScanResult[0]);
 }
 
-public android.net.wifi.WifiInfo 取当前连接信息() {
+public WifiInfo2 取当前连接信息() {
 return glq.getConnectionInfo();
 }
 

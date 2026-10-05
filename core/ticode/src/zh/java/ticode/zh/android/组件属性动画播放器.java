@@ -1,7 +1,7 @@
 package ticode.zh.android;
 
 
-public class 组件属性动画播放器 {
+public class 组件属性动画播放器 extends android.view.ViewPropertyAnimator {
 //获取动画的播放时长
 public long 播放时间() {
 return this.getDuration();

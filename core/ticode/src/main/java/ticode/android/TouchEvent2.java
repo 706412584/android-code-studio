@@ -3,7 +3,7 @@ package ticode.android;
 import android.content.Context;
 import android.view.ScaleGestureDetector;
 
-public class TouchEvent2 extends InputEvent2 {
+public class TouchEvent2 extends android.view.MotionEvent {
 
 
 
