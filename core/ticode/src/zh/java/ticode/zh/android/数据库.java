@@ -1,7 +1,6 @@
 package ticode.zh.android;
 
 import java.io.File;
-import java.util.ArrayList;
 import android.database.sqlite.SQLiteDatabase;
 
 public class 数据库 {

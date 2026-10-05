@@ -1,6 +1,5 @@
 package ticode.jvm;
 
-import java.io.Serializable;
 
 public class ByteArrayInputStream2 extends java.io.ByteArrayInputStream {
 public void 赋值_op(byte[] 字节集) {

@@ -1,6 +1,5 @@
 package ticode.jvm;
 
-import java.io.Serializable;
 
 public class BufferedOutputStream2 extends java.io.BufferedOutputStream {
 public void 赋值_op(JOutputStream 目标输出流) {

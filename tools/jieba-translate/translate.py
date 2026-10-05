@@ -13,7 +13,13 @@ import io, os, re, sys, glob, collections
 # 与本脚本同目录的 class_map.py / dedup_set.py / alias_nonextend.py。
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from class_map import CLASS_MAP, PACKAGE_MAP   # 结绳类名/包名 → 英文
-from dedup_set import CONFIRMED as DROP_CLASSES   # 与模板重叠、需剔除的类
+# 库外缺失的包：源码用 @导入Java / @外部Java文件 引用，但那些 .java 从未随库发布。
+# 对这些包的 import（含 `pkg.*` 星号形式）一律丢弃，否则报「程序包不存在」。
+MISSING_PACKAGES = ('rn_1', 'tdr.util', 'com.Meng.decoration')
+
+from dedup_set import (CONFIRMED as DROP_CLASSES,          # 与模板重叠、需剔除的类
+                       DROP_CLASSES_NO_EXTERNAL,         # 依赖库外缺失 Java 类的孤立件
+                       DROP_METHODS_NO_EXTERNAL)         # 只剔方法、保留类
 from alias_nonextend import NON_EXTEND, NON_EXTEND_KIND   # @指代类 里不可继承的目标
 
 # 语言模式：en=英文类名+ticode.* 包；zh=中文类名+ticode.zh.* 包
@@ -280,6 +286,7 @@ class Translator:
         self.pending_embedded = False
         self.pending_static = False
         self.cur_ret = 'void'   # 当前方法返回类型（决定 `code expr` 是否补 return）
+        self.try_open = False   # 容错处理() 开了 try，等 结束容错() 收
         self.alias = None
         self.used_names = set()
         self.used_class_names = set()
@@ -452,7 +459,7 @@ class Translator:
         if self.alias and name in JAVA_SIMPLE and name not in self.used_class_names:
             name = name + '扩展'          # 与 java.* 简单名同名会遮蔽，加后缀区分
         self.used_class_names.add(name)
-        if name in DROP_CLASSES:
+        if name in DROP_CLASSES or name in DROP_CLASSES_NO_EXTERNAL:
             # 与 QuickDevelop 模板重叠：跳过整个类（含类体），不产出文件。
             # 必须逐类判断——一个 .t 文件含多个类，被剔的未必是首个。
             depth = 1
@@ -513,7 +520,13 @@ class Translator:
             if s.startswith('变量'):
                 self.parse_var(s); continue
             if s.startswith('方法'):
-                self.parse_method(self._join(s)); continue
+                jm = self._join(s)
+                mm = re.match(r'^方法\s+([^\s(]+)', jm)
+                if mm and mm.group(1) in DROP_METHODS_NO_EXTERNAL.get(name, ()):
+                    # 该方法依赖库外缺失的 Java 类（如 tdr.util.TDRSender）→ 整段跳过
+                    self._skip_method_body()
+                    continue
+                self.parse_method(jm); continue
             if s.startswith('属性读'):
                 self.parse_prop_read(self._join(s)); continue
             if s.startswith('属性写'):
@@ -530,9 +543,11 @@ class Translator:
             if s.startswith('假如'):
                 self.parse_switch(s); continue
             if s.startswith('容错处理'):
-                self.emit('try {'); continue
+                self.emit('try {'); self.try_open = True; continue
             if s.startswith('结束容错'):
-                self.emit('} catch (Exception e) { }'); continue
+                if self.try_open:
+                    self.emit('} catch (Exception e) { }'); self.try_open = False
+                continue
             if s.startswith('循环'):
                 self.parse_while(s); continue
             if s.startswith('返回'):
@@ -622,6 +637,13 @@ class Translator:
                 else:
                     out.append('Object ' + p); names.append(p)
         return ', '.join(out), names
+
+    def _skip_method_body(self):
+        """跳过当前方法的整个方法体（直到 `结束 方法`），不产出任何代码。"""
+        while self.i < len(self.lines):
+            t = self.next().strip()
+            if t in ('结束 方法', '结束方法'):
+                return
 
     def parse_method(self, s):
         s = self.next_joined() if False else s
@@ -756,6 +778,7 @@ class Translator:
 
     def parse_body(self):
         """读方法/属性体，直到 结束 方法 / 结束 属性。"""
+        self.try_open = False
         while self.i < len(self.lines):
             raw = self.next(); s = raw.strip()
             if s in ('结束 方法', '结束 属性', '结束 事件', '结束方法', '结束属性', '结束事件'):
@@ -773,9 +796,11 @@ class Translator:
             if s.startswith('假如'):
                 self.parse_switch(s); continue
             if s.startswith('容错处理'):
-                self.emit('try {'); continue
+                self.emit('try {'); self.try_open = True; continue
             if s.startswith('结束容错'):
-                self.emit('} catch (Exception e) { }'); continue
+                if self.try_open:
+                    self.emit('} catch (Exception e) { }'); self.try_open = False
+                continue
             if s.startswith('循环'):
                 self.parse_while(s); continue
             if s.startswith('返回'):
@@ -784,6 +809,11 @@ class Translator:
             if s.startswith('变量'):
                 self.parse_var(s); continue
             self.emit_stmt(s)
+        # 结绳的 容错处理()/结束容错() 可能跨方法（开在方法A末尾、闭在方法B开头），
+        # 那样花括号必失衡。方法结束时若 try 仍开着，就地补 catch 收口。
+        if self.try_open:
+            self.emit('} catch (Exception e) { }')
+            self.try_open = False
         self.emit('}')
 
     def parse_if(self, s):
@@ -809,9 +839,11 @@ class Translator:
             if s2.startswith('假如'):
                 self.parse_switch(s2); continue
             if s2.startswith('容错处理'):
-                self.emit('try {'); continue
+                self.emit('try {'); self.try_open = True; continue
             if s2.startswith('结束容错'):
-                self.emit('} catch (Exception e) { }'); continue
+                if self.try_open:
+                    self.emit('} catch (Exception e) { }'); self.try_open = False
+                continue
             if s2.startswith('循环'):
                 self.parse_while(s2); continue
             if s2.startswith('返回'):
@@ -854,9 +886,11 @@ class Translator:
             if s2.startswith('变量'):
                 self.parse_var(s2); continue
             if s2.startswith('容错处理'):
-                self.emit('try {'); continue
+                self.emit('try {'); self.try_open = True; continue
             if s2.startswith('结束容错'):
-                self.emit('} catch (Exception e) { }'); continue
+                if self.try_open:
+                    self.emit('} catch (Exception e) { }'); self.try_open = False
+                continue
             self.emit_stmt(s2)
         self.emit('}')
 
@@ -940,6 +974,7 @@ def translate(path, outdir):
     t = Translator(path)
     t.parse()
     # 组装
+    body_all = chr(10).join(t.out)   # 先算出来，供 import 过滤判定
     head = []
     if t.pkg:
         head.append('package %s;' % t.pkg)
@@ -950,6 +985,15 @@ def translate(path, outdir):
     # 星号导入与单类型导入分开去重；保留首次出现者。
     _seen_simple, _seen_star = set(), set()
     for imp in t.imports:
+        # 只保留 body 里**真正用到**的导入（星号导入无法廉价判定，一律保留）。
+        # 类体里的 @导入Java 会进文件级 imports，使同文件其它类也带上它；
+        # 若该包在库外不存在（如 tdr.util），未使用也会报「程序包不存在」。
+        if any(imp == p or imp.startswith(p + '.') for p in MISSING_PACKAGES):
+            continue
+        if not imp.endswith('.*'):
+            simple = imp.rsplit('.', 1)[-1]
+            if not re.search(r'(?<![\w.])' + re.escape(simple) + r'(?![\w])', body_all):
+                continue
         if imp.endswith('.*'):
             if imp in _seen_star:
                 continue

@@ -1,6 +1,5 @@
 package ticode.zh.jvm;
 
-import java.io.Serializable;
 
 public class 缓冲输出流 extends java.io.BufferedOutputStream {
 public void 赋值_op(输出流 目标输出流) {

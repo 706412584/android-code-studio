@@ -2,7 +2,6 @@ package ticode.jvm;
 
 import java.lang.reflect.Modifier;
 import dalvik.system.DexFile;
-import java.util.Enumeration;
 
 import ticode.android.AndroidEnv;
 

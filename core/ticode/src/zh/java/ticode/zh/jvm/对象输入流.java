@@ -1,6 +1,5 @@
 package ticode.zh.jvm;
 
-import java.io.Serializable;
 
 public class 对象输入流 extends java.io.ObjectInputStream {
 public void 赋值_op(输入流 目标输入流) {

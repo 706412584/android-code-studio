@@ -9,8 +9,6 @@ import android.widget.AbsoluteLayout;
 import android.widget.LinearLayout.LayoutParams;
 import android.widget.RelativeLayout;
 import android.view.View;
-import android.widget.GridLayout;
-import rn_1.*;
 import java.util.*;
 
 public class 可调整边距布局组件 extends 布局组件 {

@@ -2,7 +2,6 @@ package ticode.zh.android;
 
 import android.content.Context;
 import android.view.ScaleGestureDetector;
-import android.view.ScaleGestureDetector.OnScaleGestureListener;
 
 public class 按键动作 {
 public static final 按键动作 按下;

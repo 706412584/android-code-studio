@@ -1,6 +1,5 @@
 package ticode.zh.jvm;
 
-import java.io.Serializable;
 
 public class 缓冲输入流 extends java.io.BufferedInputStream {
 public void 赋值_op(输入流 目标输入流) {

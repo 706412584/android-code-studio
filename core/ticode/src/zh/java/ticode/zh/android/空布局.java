@@ -9,8 +9,6 @@ import android.widget.AbsoluteLayout;
 import android.widget.LinearLayout.LayoutParams;
 import android.widget.RelativeLayout;
 import android.view.View;
-import android.widget.GridLayout;
-import rn_1.*;
 import java.util.*;
 
 public class 空布局 extends 布局组件 {

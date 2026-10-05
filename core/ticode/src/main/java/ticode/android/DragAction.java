@@ -2,7 +2,6 @@ package ticode.android;
 
 import android.content.Context;
 import android.view.ScaleGestureDetector;
-import android.view.ScaleGestureDetector.OnScaleGestureListener;
 
 public class DragAction {
 public static final DragAction 开始拖放;

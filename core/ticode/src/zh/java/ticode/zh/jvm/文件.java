@@ -1,6 +1,5 @@
 package ticode.zh.jvm;
 
-import java.io.Serializable;
 
 public class 文件 extends java.io.File {
 public Object 赋值_op(String 文件路径) {

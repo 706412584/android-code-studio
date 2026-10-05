@@ -1,6 +1,5 @@
 package ticode.zh.jvm;
 
-import java.io.Serializable;
 
 public class 字节集输入流 extends java.io.ByteArrayInputStream {
 public void 赋值_op(byte[] 字节集) {

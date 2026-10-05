@@ -30,6 +30,36 @@ CONFIRMED = {
     '自定义下拉列表框',     # 继承 下拉列表框
 }
 
+# 依赖**库外缺失的 Java 类**、且本身无任何引用者的孤立件（2026-10 核实）。
+#
+# 缺失的类全盘无源码，来源是结绳的 `@外部Java文件("../../extra_java/...")`，
+# 那些 .java 从未随库发布：
+#   rn_1.GIFView / rn_1.CircleBarView   （GIF 与圆形进度条控件）
+#   com.Meng.decoration.SpacesItemDecoration / GridSpaceItemDecoration（RecyclerView 装饰线）
+#   tdr.util.TDRSender                   （结绳调试信息上报 SDK，第三方）
+#
+# 判定为可丢的依据（逐项核实）：
+#   - GIF动画框 / 圆形进度条 / 分割线家族(6 个)：**被其他文件引用 0 次**，
+#     是库里的孤立件，去掉不影响任何保留类。
+#   - 常用操作：其余方法（运行报错/调试输出）被引用；唯一依赖 TDRSender 的
+#     `发送调试信息` 标了 `@调试` 且**零调用点**——只剔该方法，类保留。
+DROP_CLASSES_NO_EXTERNAL = {
+    'GIF动画框',        # 依赖 rn_1.GIFView
+    '圆形进度条',        # 依赖 rn_1.CircleBarView
+    '分割线',          # 依赖 com.Meng.decoration.*（基类，无子类可留）
+    '宫格分割线',
+    '弹性分割线',
+    '弹性分割线_方向',
+    '瀑布流分割线',
+    '线性分割线',
+}
+
+# 「只剔方法、保留类」：类里个别方法依赖库外缺失的 Java 类。
+# 键=类名，值=要剔的方法名集合。
+DROP_METHODS_NO_EXTERNAL = {
+    '常用操作': {'发送调试信息'},   # 依赖 tdr.util.TDRSender（结绳调试上报 SDK）
+}
+
 # 名字相同但**职责不同**，必须保留（否则破坏引用）
 NOT_OVERLAP = {
     '文本',   # 结绳=基础字符串类型；模板=TextView 控件

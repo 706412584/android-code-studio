@@ -2,7 +2,6 @@ package ticode.zh.android;
 
 import android.content.Context;
 import android.view.ScaleGestureDetector;
-import android.view.ScaleGestureDetector.OnScaleGestureListener;
 
 public class 触摸事件 extends 输入事件 {
 

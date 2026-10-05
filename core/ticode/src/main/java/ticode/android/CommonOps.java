@@ -15,7 +15,6 @@ import android.system.*;
 import android.graphics.*;
 import java.lang.System;
 import java.util.Stack;
-import tdr.util.TDRSender;
 import android.app.*;
 import java.util.regex.*;
 import java.net.*;
@@ -34,13 +33,6 @@ public class CommonOps {
 
 
 
-public static void 发送调试信息(Object 信息) {
-if (信息 instanceof Exception) {
-tdr.util.TDRSender.sendCrash((Exception) 信息);
-} else {
-tdr.util.TDRSender.sendLogcatLine(String.valueOf(信息));
-}
-}
 
 public static void 运行报错(String 错误信息) {
 throw new RuntimeException(错误信息);

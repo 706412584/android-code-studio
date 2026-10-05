@@ -1,6 +1,5 @@
 package ticode.zh.jvm;
 
-import java.io.Serializable;
 
 public class 输出流 extends java.io.OutputStream {
 public void 写出(int 数据) {

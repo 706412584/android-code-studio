@@ -2,7 +2,6 @@ package ticode.android;
 
 import android.content.Context;
 import android.view.ScaleGestureDetector;
-import android.view.ScaleGestureDetector.OnScaleGestureListener;
 
 public class KeyAction {
 public static final KeyAction 按下;

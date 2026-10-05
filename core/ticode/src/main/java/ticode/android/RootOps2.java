@@ -15,7 +15,6 @@ import android.system.*;
 import android.graphics.*;
 import java.lang.System;
 import java.util.Stack;
-import tdr.util.TDRSender;
 import android.app.*;
 import java.util.regex.*;
 import java.net.*;

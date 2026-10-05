@@ -1,6 +1,5 @@
 package ticode.zh.jvm;
 
-import java.io.Serializable;
 
 public class 输入流 extends java.io.InputStream {
 public int 读取() {

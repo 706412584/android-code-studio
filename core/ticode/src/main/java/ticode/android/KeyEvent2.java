@@ -2,7 +2,6 @@ package ticode.android;
 
 import android.content.Context;
 import android.view.ScaleGestureDetector;
-import android.view.ScaleGestureDetector.OnScaleGestureListener;
 
 public class KeyEvent2 extends android.view.KeyEvent {
 

@@ -1,6 +1,5 @@
 package ticode.jvm;
 
-import java.io.Serializable;
 
 public class JInputStream extends java.io.InputStream {
 public int 读取() {

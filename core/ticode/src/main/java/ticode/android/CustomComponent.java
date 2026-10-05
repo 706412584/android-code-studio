@@ -2,8 +2,6 @@ package ticode.android;
 
 import android.view.ViewGroup;
 
-import ticode.jvm.JInputStream;
-
 public class CustomComponent extends LayoutComponent {
 public CustomComponent(android.content.Context context) {
 super(context);

@@ -2,8 +2,6 @@ package ticode.zh.android;
 
 import android.view.ViewGroup;
 
-import ticode.zh.jvm.输入流;
-
 public class 自定义组件 extends 布局组件 {
 public 自定义组件(android.content.Context context) {
 super(context);

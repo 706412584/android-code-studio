@@ -1,6 +1,5 @@
 package ticode.zh.android;
 
-import java.util.ArrayList;
 import android.net.wifi.WifiManager;
 
 public class WiFi管理器 extends 窗口组件 {

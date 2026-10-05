@@ -1,6 +1,5 @@
 package ticode.jvm;
 
-import java.io.Serializable;
 
 public class ByteArrayOutputStream2 extends java.io.ByteArrayOutputStream {
 

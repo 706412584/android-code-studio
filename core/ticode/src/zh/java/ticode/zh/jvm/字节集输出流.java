@@ -1,6 +1,5 @@
 package ticode.zh.jvm;
 
-import java.io.Serializable;
 
 public class 字节集输出流 extends java.io.ByteArrayOutputStream {
 

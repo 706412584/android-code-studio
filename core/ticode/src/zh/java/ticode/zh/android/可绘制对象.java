@@ -1,7 +1,6 @@
 package ticode.zh.android;
 
 import android.graphics.drawable.Drawable;
-import android.graphics.Color;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.Bitmap.Config;

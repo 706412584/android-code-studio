@@ -1,6 +1,5 @@
 package ticode.jvm;
 
-import java.io.Serializable;
 
 public class FileInputStream2 extends java.io.FileInputStream {
 public void 赋值_op(JFile 目标文件) {

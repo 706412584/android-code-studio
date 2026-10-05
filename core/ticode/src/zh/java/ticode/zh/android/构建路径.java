@@ -10,7 +10,6 @@ import android.os.SystemClock;
 import android.view.Surface;
 import android.view.SurfaceView;
 import android.view.SurfaceHolder;
-import android.graphics.Color;
 import android.graphics.PixelFormat;
 import java.util.Map;
 import java.util.HashMap;

@@ -1,6 +1,5 @@
 package ticode.zh.jvm;
 
-import java.io.Serializable;
 
 public class 文件输入流 extends java.io.FileInputStream {
 public void 赋值_op(文件 目标文件) {

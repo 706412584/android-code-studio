@@ -23,7 +23,6 @@ import android.view.KeyEvent;
 import android.content.res.Configuration;
 import android.os.IBinder;
 import android.content.ComponentName;
-import android.content.ServiceConnection;
 import android.graphics.drawable.*;
 
 import ticode.jvm.JFile;

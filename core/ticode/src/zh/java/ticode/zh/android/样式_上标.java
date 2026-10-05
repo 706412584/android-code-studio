@@ -1,7 +1,6 @@
 package ticode.zh.android;
 
 import android.text.SpannableStringBuilder;
-import android.text.SpannableString;
 
 import ticode.zh.base.字符串;
 import ticode.zh.base.文本;

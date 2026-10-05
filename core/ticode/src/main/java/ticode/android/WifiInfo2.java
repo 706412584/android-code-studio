@@ -1,6 +1,5 @@
 package ticode.android;
 
-import java.util.ArrayList;
 import android.net.wifi.WifiManager;
 
 public class WifiInfo2 {
