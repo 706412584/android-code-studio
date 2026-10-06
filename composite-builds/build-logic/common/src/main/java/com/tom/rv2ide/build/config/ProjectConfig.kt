@@ -67,7 +67,7 @@ val Project.projectVersionCode: Int
     // 必须与仓库根目录 updater.json 里的 versionCode 保持同步：应用启动时拿本地
     // versionCode 与清单比对来决定是否提示更新。若这里落后于清单，每次启动都会弹
     // 「可用更新」——即使装的已经是最新代码，用户也只能反复点「稍后」。
-    val baseVersionCode = System.getenv("PROJECT_CONFIG_KT_BASE_VERSION_CODE")?.toIntOrNull() ?: 1025
+    val baseVersionCode = System.getenv("PROJECT_CONFIG_KT_BASE_VERSION_CODE")?.toIntOrNull() ?: 1026
     // Default value (1020) is used if not specified. The middle digit (e.g., 10<2>0) represents the revision version, such as 1.0.0+gh.r0<2>.
     
     val versionCode = baseVersionCode
