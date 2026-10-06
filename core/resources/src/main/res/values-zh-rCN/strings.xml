@@ -299,6 +299,27 @@
   <string name="ai_agent_codegraph_index_failed">索引 %1$s 失败：%2$s</string>
   <string name="ai_agent_codegraph_index_done_all">所选项目已全部建好索引</string>
 
+  <!-- 聊天外观定制 -->
+  <string name="ai_agent_ui_text_size_title">聊天字号</string>
+  <string name="ai_agent_ui_text_size_summary">助手面板里消息正文的字号</string>
+  <string name="ai_agent_ui_card_scale_title">卡片大小</string>
+  <string name="ai_agent_ui_card_scale_summary">消息与工具卡片的内边距和圆角</string>
+  <string name="ai_agent_ui_text_color_title">助手正文颜色</string>
+  <string name="ai_agent_ui_text_color_summary">只作用于助手的回复文本（用户气泡保持主题色）</string>
+  <string name="ai_agent_ui_avatar_title">助手头像</string>
+  <string name="ai_agent_ui_avatar_summary">显示在助手回复的左侧</string>
+  <string name="ai_agent_ui_avatar_pick">选择一张图片…</string>
+  <string name="ai_agent_ui_avatar_reset">清除自定义图片</string>
+  <string name="ai_agent_ui_avatar_custom">自定义图片</string>
+  <string name="ai_agent_ui_avatar_default">机器人</string>
+  <string name="ai_agent_ui_avatar_builtin_section">内置头像</string>
+  <string name="ai_agent_ui_avatar_anime">动漫助手</string>
+  <string name="ai_agent_ui_avatar_cat">猫咪</string>
+  <string name="ai_agent_ui_avatar_fox">狐狸</string>
+  <string name="ai_agent_ui_avatar_spark">星火</string>
+  <string name="ai_agent_ui_color_follow_theme">跟随主题</string>
+  <string name="ai_agent_ui_size_value">%1$s</string>
+
   <!-- 对话模式与提示词模板 -->
   <string name="ai_agent_chat_mode_title">对话模式</string>
   <string name="ai_agent_chat_mode_summary">助手被允许做到什么程度</string>

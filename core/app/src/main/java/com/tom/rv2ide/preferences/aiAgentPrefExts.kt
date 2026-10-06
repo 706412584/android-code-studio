@@ -24,6 +24,7 @@ import androidx.preference.Preference
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.tom.rv2ide.R
 import com.tom.rv2ide.activities.FolderPickerActivity
+import com.tom.rv2ide.artificial.agent.AssistantUiStyleStore
 import com.tom.rv2ide.artificial.agent.ShizukuShellBackend
 import com.tom.rv2ide.artificial.agent.codegraph.CodeGraphInstaller
 import com.tom.rv2ide.artificial.agent.codegraph.CodeGraphManager
@@ -423,7 +424,281 @@ private class AssistantOverlayPreference(
       com.termux.shared.android.PermissionUtils.checkDisplayOverOtherAppsPermission(context)
 }
 
-/** 高级：提示词模板与自动切换服务商。改动频率低，但出问题时要能找到。 */
+/**
+ * 助手聊天字号。
+ *
+ * <p>滑块而非列表选择：字号是连续量，用户想「再小一点点」时不该被迫接受整档跳变。
+ * 与编辑器的字号设置（[TextSize]）用同一套交互，用户不必学两种。
+ *
+ * <p>范围 10–20sp、默认 13sp，取自 [AssistantUiStyleStore] 的常量——**不在这里另写一份**，
+ * 否则两处漂移时会出现「滑到 10 却存了 9」这类不一致。
+ */
+@Parcelize
+private class AssistantTextSizePreference(
+    override val key: String = "assistant_ui_text_size_pref",
+    override val title: Int = R.string.ai_agent_ui_text_size_title,
+    override val summary: Int? = R.string.ai_agent_ui_text_size_summary,
+) : DialogPreference() {
+
+  override fun onConfigureDialog(preference: Preference, dialog: MaterialAlertDialogBuilder) {
+    val context = preference.context
+    val store = AssistantUiStyleStore(context)
+    val slider =
+        com.google.android.material.slider.Slider(context).apply {
+          valueFrom = AssistantUiStyleStore.MIN_TEXT_SIZE
+          valueTo = AssistantUiStyleStore.MAX_TEXT_SIZE
+          stepSize = 1f
+          value = store.textSize
+          setLabelFormatter { "${it.toInt()}sp" }
+        }
+    val container =
+        android.widget.FrameLayout(context).apply {
+          val pad = (16 * context.resources.displayMetrics.density).toInt()
+          setPadding(pad, pad, pad, pad)
+          addView(slider)
+        }
+    dialog.setView(container)
+    dialog.setPositiveButton(android.R.string.ok) { iface, _ ->
+      store.textSize = slider.value
+      iface.dismiss()
+    }
+    dialog.setNegativeButton(android.R.string.cancel, null)
+    dialog.setNeutralButton(string.reset) { iface, _ ->
+      store.textSize = AssistantUiStyleStore.DEFAULT_TEXT_SIZE
+      iface.dismiss()
+    }
+  }
+}
+
+/** 助手卡片大小（消息卡片与工具卡片的内边距、圆角）。 */
+@Parcelize
+private class AssistantCardScalePreference(
+    override val key: String = "assistant_ui_card_scale_pref",
+    override val title: Int = R.string.ai_agent_ui_card_scale_title,
+    override val summary: Int? = R.string.ai_agent_ui_card_scale_summary,
+) : DialogPreference() {
+
+  override fun onConfigureDialog(preference: Preference, dialog: MaterialAlertDialogBuilder) {
+    val context = preference.context
+    val store = AssistantUiStyleStore(context)
+    val slider =
+        com.google.android.material.slider.Slider(context).apply {
+          valueFrom = AssistantUiStyleStore.MIN_CARD_SCALE
+          valueTo = AssistantUiStyleStore.MAX_CARD_SCALE
+          stepSize = 0.05f
+          value = store.cardScale
+          setLabelFormatter { String.format(java.util.Locale.US, "%.2f×", it) }
+        }
+    val container =
+        android.widget.FrameLayout(context).apply {
+          val pad = (16 * context.resources.displayMetrics.density).toInt()
+          setPadding(pad, pad, pad, pad)
+          addView(slider)
+        }
+    dialog.setView(container)
+    dialog.setPositiveButton(android.R.string.ok) { iface, _ ->
+      store.cardScale = slider.value
+      iface.dismiss()
+    }
+    dialog.setNegativeButton(android.R.string.cancel, null)
+    dialog.setNeutralButton(string.reset) { iface, _ ->
+      store.cardScale = AssistantUiStyleStore.DEFAULT_CARD_SCALE
+      iface.dismiss()
+    }
+  }
+}
+
+/**
+ * 助手正文颜色。
+ *
+ * <p><b>预设色板而不是自由取色</b>：助手正文铺在面板底色上，对比度靠色板保证；
+ * 自由取色很容易调出「浅灰底 + 浅灰字」这种不可读的组合，而用户未必意识到是自己调的。
+ * 另：仓库里已有的 ColorPickerDialog 属于 assetstudio 模块（绑了它的依赖），
+ * 搬进设置页会把整套资源工作室依赖拖进来。
+ *
+ * <p>只作用于**助手正文**（Role.ASSISTANT）：用户气泡与过程信息保持主题色——
+ * 它们各自有底色，覆盖前景色会破坏主题对比度。
+ */
+@Parcelize
+private class AssistantTextColorPreference(
+    override val key: String = "assistant_ui_text_color_pref",
+    override val title: Int = R.string.ai_agent_ui_text_color_title,
+    override val summary: Int? = R.string.ai_agent_ui_text_color_summary,
+) : BasePreference() {
+
+  /** 预设色板：值 | 显示名。0 = 跟随主题（哨兵值，见 AssistantUiStyleStore）。 */
+  private val presets =
+      arrayOf(
+          "0|跟随主题",
+          "${0xFF1F1F1F.toInt()}|深灰（浅色主题）",
+          "${0xFFE6E1E5.toInt()}|浅灰（深色主题）",
+          "${0xFF2E7D32.toInt()}|护眼绿",
+          "${0xFF1565C0.toInt()}|沉稳蓝",
+          "${0xFF6A1B9A.toInt()}|雅致紫",
+      )
+
+  override fun onCreatePreference(context: Context): Preference {
+    return androidx.preference.Preference(context).apply {
+      key = "assistant_ui_text_color_pref"
+      title = context.getString(R.string.ai_agent_ui_text_color_title)
+      summary = describeColor(context, AssistantUiStyleStore(context).textColor)
+    }
+  }
+
+  override fun onPreferenceClick(preference: Preference): Boolean {
+    val context = preference.context
+    val store = AssistantUiStyleStore(context)
+    val values = presets.map { it.substringBefore('|').toInt() }.toTypedArray()
+    val shown = presets.map { it.substringAfter('|') }.toTypedArray()
+    val checked = values.indexOf(store.textColor).coerceAtLeast(0)
+
+    com.google.android.material.dialog.MaterialAlertDialogBuilder(context)
+        .setTitle(R.string.ai_agent_ui_text_color_title)
+        .setSingleChoiceItems(shown, checked) { dialog, which ->
+          store.textColor = values[which]
+          preference.summary = shown[which]
+          dialog.dismiss()
+        }
+        .setNegativeButton(android.R.string.cancel, null)
+        .show()
+    return true
+  }
+
+  /** 当前值 → 可读摘要；不在色板里（手工改过偏好文件）时显示原始色值。 */
+  private fun describeColor(context: Context, color: Int): String {
+    presets.forEach { entry ->
+      if (entry.substringBefore('|').toInt() == color) {
+        return entry.substringAfter('|')
+      }
+    }
+    return String.format("#%08X", color)
+  }
+}
+
+/**
+ * 助手头像选择。
+ *
+ * <p>经 [com.tom.rv2ide.activities.AvatarPickerActivity] 选图：Preference 拿不到
+ * Activity 与 result API，仓库的既定解法是「蹦床 Activity + 静态回调」
+ * （与 FolderPickerActivity 同一模式）。
+ *
+ * <p>选中后 Activity 已把图片拷进私有目录，这里只存路径。存路径而不是 Uri：
+ * `ACTION_GET_CONTENT` 不授予持久读权限，重启后 Uri 就失效了。
+ */
+@Parcelize
+private class AssistantAvatarPreference(
+    override val key: String = "assistant_avatar_pref",
+    override val title: Int = R.string.ai_agent_ui_avatar_title,
+    override val summary: Int? = R.string.ai_agent_ui_avatar_summary,
+) : BasePreference() {
+
+  override fun onCreatePreference(context: Context): Preference {
+    return androidx.preference.Preference(context).apply {
+      key = "assistant_avatar_pref"
+      title = context.getString(R.string.ai_agent_ui_avatar_title)
+      summary = describeAvatar(context, AssistantUiStyleStore(context))
+    }
+  }
+
+  override fun onPreferenceClick(preference: Preference): Boolean {
+    val context = preference.context
+    val store = AssistantUiStyleStore(context)
+    val hasCustom = store.avatarPath != null
+
+    // 两个层级：先选「内置头像 or 自定义图片」，内置那一支再弹具体头像。
+    // 不用一个超长列表混装：内置 5 个 + 自定义 2 个动作放一起，用户分不清
+    // 「选这个」与「做那个」的区别。
+    val builtinLabels =
+        AssistantUiStyleStore.AVATAR_BUILTINS.map { builtinLabel(context, it) }.toTypedArray()
+    val actions =
+        if (hasCustom) {
+          arrayOf(
+              context.getString(R.string.ai_agent_ui_avatar_builtin_section),
+              context.getString(R.string.ai_agent_ui_avatar_pick),
+              context.getString(R.string.ai_agent_ui_avatar_reset),
+          )
+        } else {
+          arrayOf(
+              context.getString(R.string.ai_agent_ui_avatar_builtin_section),
+              context.getString(R.string.ai_agent_ui_avatar_pick),
+          )
+        }
+
+    com.google.android.material.dialog.MaterialAlertDialogBuilder(context)
+        .setTitle(R.string.ai_agent_ui_avatar_title)
+        .setItems(actions) { _, which ->
+          when (which) {
+            0 -> showBuiltinPicker(context, store, preference, builtinLabels)
+            1 -> pickCustomAvatar(context, store, preference)
+            else -> {
+              store.avatarPath = null
+              preference.summary = describeAvatar(context, store)
+            }
+          }
+        }
+        .setNegativeButton(android.R.string.cancel, null)
+        .show()
+    return true
+  }
+
+  /** 内置头像单选。选中即写入；自定义图片存在时也立即生效（它优先级更低）。 */
+  private fun showBuiltinPicker(
+      context: Context,
+      store: AssistantUiStyleStore,
+      preference: Preference,
+      labels: Array<String>,
+  ) {
+    val checked = AssistantUiStyleStore.AVATAR_BUILTINS.indexOf(store.avatarBuiltin).coerceAtLeast(0)
+    com.google.android.material.dialog.MaterialAlertDialogBuilder(context)
+        .setTitle(R.string.ai_agent_ui_avatar_builtin_section)
+        .setSingleChoiceItems(labels, checked) { dialog, which ->
+          store.avatarBuiltin = AssistantUiStyleStore.AVATAR_BUILTINS[which]
+          // 选了内置头像就意味着不再想要自定义图片——一并清掉，否则用户会困惑
+          // 「我明明选了猫，显示的还是自己那张图」（自定义优先级更高）。
+          store.avatarPath = null
+          preference.summary = describeAvatar(context, store)
+          dialog.dismiss()
+        }
+        .setNegativeButton(android.R.string.cancel, null)
+        .show()
+  }
+
+  /** 拉起选图 Activity；结果经静态回调写回。 */
+  private fun pickCustomAvatar(
+      context: Context,
+      store: AssistantUiStyleStore,
+      preference: Preference,
+  ) {
+    com.tom.rv2ide.activities.AvatarPickerActivity.onAvatarPicked = { path ->
+      store.avatarPath = path
+      preference.summary = describeAvatar(context, store)
+    }
+    context.startActivity(
+        android.content.Intent(context, com.tom.rv2ide.activities.AvatarPickerActivity::class.java)
+            .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK))
+  }
+
+  private fun builtinLabel(context: Context, id: String): String =
+      when (id) {
+        AssistantUiStyleStore.AVATAR_BUILTIN_ANIME ->
+            context.getString(R.string.ai_agent_ui_avatar_anime)
+        AssistantUiStyleStore.AVATAR_BUILTIN_CAT -> context.getString(R.string.ai_agent_ui_avatar_cat)
+        AssistantUiStyleStore.AVATAR_BUILTIN_FOX -> context.getString(R.string.ai_agent_ui_avatar_fox)
+        AssistantUiStyleStore.AVATAR_BUILTIN_SPARK ->
+            context.getString(R.string.ai_agent_ui_avatar_spark)
+        else -> context.getString(R.string.ai_agent_ui_avatar_default)
+      }
+
+  private fun describeAvatar(context: Context, store: AssistantUiStyleStore): String {
+    val custom = store.avatarPath
+    if (custom != null) {
+      return context.getString(R.string.ai_agent_ui_avatar_custom)
+    }
+    return builtinLabel(context, store.avatarBuiltin)
+  }
+}
+
+/** 高级：外观定制、提示词模板与自动切换服务商。改动频率低，但出问题时要能找到。 */
 @Parcelize
 private class AdvancedPage(
     override val key: String = "idepref_ai_agent_advanced",
@@ -433,6 +708,11 @@ private class AdvancedPage(
 ) : IPreferenceScreen() {
 
   init {
+    // 外观定制放最前：它们是用户最常想改的（字号/颜色），而提示词模板属于「出问题才找」。
+    addPreference(AssistantTextSizePreference())
+    addPreference(AssistantCardScalePreference())
+    addPreference(AssistantTextColorPreference())
+    addPreference(AssistantAvatarPreference())
     addPreference(PromptTemplatePreference())
     addPreference(AutoSwitchProviderSwitch())
   }

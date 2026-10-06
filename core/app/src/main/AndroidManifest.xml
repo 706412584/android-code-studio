@@ -118,6 +118,13 @@
       android:exported="false"
       android:theme="@style/Theme.AndroidIDE" />
 
+    <!-- 助手头像选择。与 FolderPickerActivity 同样是「蹦床 Activity + 静态回调」，
+         因为发起方是 Preference（拿不到 Activity / result API）。 -->
+    <activity
+      android:name=".activities.AvatarPickerActivity"
+      android:exported="false"
+      android:theme="@style/Theme.AndroidIDE" />
+
     <activity
       android:name=".activities.FileBrowserActivity"
       android:exported="false"

@@ -126,7 +126,16 @@ class FloatingAssistantView(
   private val binding =
       LayoutAiAssistantBinding.inflate(LayoutInflater.from(context), parent, false)
 
-  private val adapter = AssistantMessageAdapter()
+  /**
+   * 聊天界面外观配置（字号 / 卡片大小 / 字体颜色 / 头像）。
+   *
+   * <p>在这里构造并注入适配器：外观改动要**立刻反映到已渲染的消息上**，
+   * 因此适配器必须在每次 `bind()` 时读最新值（而不是在构造时快照一次）。
+   * 用户在设置页改完返回时，列表会因重新布局触发 bind，从而应用新值。
+   */
+  private val uiStyleStore = AssistantUiStyleStore(context)
+
+  private val adapter = AssistantMessageAdapter(uiStyleStore)
   private val settings = AgentToolSettings(context)
 
   /**

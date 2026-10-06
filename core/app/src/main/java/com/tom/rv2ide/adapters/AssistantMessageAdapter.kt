@@ -22,6 +22,7 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.content.res.ColorStateList
 import android.graphics.Color
+import android.util.TypedValue
 import android.view.Gravity
 import android.view.LayoutInflater
 import android.view.View
@@ -35,6 +36,7 @@ import com.tom.rv2ide.R
 import com.tom.rv2ide.ai.tool.api.ToolDisplayCategory
 import com.tom.rv2ide.artificial.agent.AssistantCodeHighlighter
 import com.tom.rv2ide.artificial.agent.AssistantMarkdown
+import com.tom.rv2ide.artificial.agent.AssistantUiStyleStore
 import com.tom.rv2ide.artificial.agent.CodeFenceParser
 import com.tom.rv2ide.databinding.ItemAssistantMessageBinding
 import com.tom.rv2ide.databinding.ItemAssistantThinkingBinding
@@ -52,7 +54,16 @@ import com.tom.rv2ide.resources.R.string
  * `notifyDataSetChanged` 会让滚动位置抖动并重建全部 ViewHolder。
  * [Item] 做成不可变 data class，使"内容变了"这件事在代码里一眼可见。
  */
-class AssistantMessageAdapter : RecyclerView.Adapter<RecyclerView.ViewHolder>() {
+class AssistantMessageAdapter(
+    /**
+     * 外观配置（字号 / 卡片大小 / 字体颜色 / 头像）。
+     *
+     * <p>可为 null：适配器在若干测试与预览场景被无参构造，那些场景用内置默认值即可
+     * （与 {@link AssistantUiStyleStore} 的默认值一致）。生产路径由
+     * FloatingAssistantView 注入真实实例。
+     */
+    private val styleStore: com.tom.rv2ide.artificial.agent.AssistantUiStyleStore? = null,
+) : RecyclerView.Adapter<RecyclerView.ViewHolder>() {
 
   /**
    * 按工具名解析展示分类。
@@ -69,6 +80,48 @@ class AssistantMessageAdapter : RecyclerView.Adapter<RecyclerView.ViewHolder>() 
   /** 设置分类解析器。未设置时所有卡片按 GENERIC 渲染。 */
   fun setCategoryResolver(resolver: CategoryResolver?) {
     this.categoryResolver = resolver
+  }
+
+  // ---- 外观配置的读取入口（styleStore 为 null 时回退默认值）----
+
+  /** 该控件的目标字号（sp），已按用户设定缩放。 */
+  private fun scaledSp(baseSp: Float): Float =
+      styleStore?.scaleSp(baseSp) ?: baseSp
+
+  /** 卡片缩放系数。 */
+  private fun cardScale(): Float =
+      styleStore?.cardScale ?: AssistantUiStyleStore.DEFAULT_CARD_SCALE
+
+  /** 助手正文自定义颜色；0 表示跟随主题。 */
+  private fun customAssistantTextColor(): Int =
+      styleStore?.textColor ?: AssistantUiStyleStore.COLOR_FOLLOW_THEME
+
+  /** 自定义头像路径；null 表示用内置头像。 */
+  private fun avatarPath(): String? = styleStore?.avatarPath
+
+  /**
+   * 内置头像的资源 id。
+   *
+   * <p>自定义图片（{@link #avatarPath}）存在时优先用它——用户明确选了自己的图，
+   * 不该被内置选择覆盖。
+   */
+  private fun builtinAvatarRes(): Int =
+      when (styleStore?.avatarBuiltin ?: AssistantUiStyleStore.AVATAR_BUILTIN_DEFAULT) {
+        AssistantUiStyleStore.AVATAR_BUILTIN_ANIME -> R.drawable.assistant_avatar_anime
+        AssistantUiStyleStore.AVATAR_BUILTIN_CAT -> R.drawable.assistant_avatar_cat
+        AssistantUiStyleStore.AVATAR_BUILTIN_FOX -> R.drawable.assistant_avatar_fox
+        AssistantUiStyleStore.AVATAR_BUILTIN_SPARK -> R.drawable.assistant_avatar_spark
+        else -> R.drawable.assistant_avatar_default
+      }
+
+  /**
+   * 把 TextView 的字号设为「基准值 × 用户缩放」。
+   *
+   * <p>布局里的字号全部来自 XML 的 TextAppearance，代码里没有一处 setTextSize——
+   * 要做运行时缩放只能在这里重设。基准值见 {@link AssistantUiStyleStore.BaseSp}。
+   */
+  private fun applyTextScale(view: TextView, baseSp: Float) {
+    view.setTextSize(TypedValue.COMPLEX_UNIT_SP, scaledSp(baseSp))
   }
 
   /** 消息角色。UI 只区分"谁说的"，不关心协议层的具体类型。 */
@@ -403,7 +456,7 @@ class AssistantMessageAdapter : RecyclerView.Adapter<RecyclerView.ViewHolder>() 
     return when (viewType) {
       TYPE_TOOL_CALL -> ToolCallVH(ItemToolCallBinding.inflate(inflater, parent, false), this)
       TYPE_THINKING -> ThinkingVH(ItemAssistantThinkingBinding.inflate(inflater, parent, false), this)
-      else -> MessageVH(ItemAssistantMessageBinding.inflate(inflater, parent, false))
+      else -> MessageVH(ItemAssistantMessageBinding.inflate(inflater, parent, false), this)
     }
   }
 
@@ -419,8 +472,10 @@ class AssistantMessageAdapter : RecyclerView.Adapter<RecyclerView.ViewHolder>() 
   override fun getItemCount(): Int = items.size
 
   /** 文本消息。 */
-  class MessageVH(private val binding: ItemAssistantMessageBinding) :
-      RecyclerView.ViewHolder(binding.root) {
+  class MessageVH(
+      private val binding: ItemAssistantMessageBinding,
+      private val adapter: AssistantMessageAdapter,
+  ) : RecyclerView.ViewHolder(binding.root) {
 
     fun bind(message: Message, onRevert: ((Long, String) -> Unit)?) {
       val context = binding.root.context
@@ -460,9 +515,17 @@ class AssistantMessageAdapter : RecyclerView.Adapter<RecyclerView.ViewHolder>() 
       val isUser = message.role == Role.USER
       val params = card.layoutParams as LinearLayout.LayoutParams
       params.gravity = if (isUser) Gravity.END else Gravity.START
-      params.width =
-          if (isUser) ViewGroup.LayoutParams.WRAP_CONTENT
-          else ViewGroup.LayoutParams.MATCH_PARENT
+      // 根布局是**横向**（左头像 + 右卡片），因此宽度语义与纵向时不同：
+      // - 助手：weight=1 占满「头像之外」的剩余宽度。用 MATCH_PARENT 会按整行宽度
+      //   计算而不扣除头像那一列，右侧溢出屏幕（横向 LinearLayout 不做自动扣除）。
+      // - 用户：WRAP_CONTENT + 无 weight，气泡按内容收缩、靠右（头像 gone 不占位）。
+      if (isUser) {
+        params.width = ViewGroup.LayoutParams.WRAP_CONTENT
+        params.weight = 0f
+      } else {
+        params.width = 0
+        params.weight = 1f
+      }
       card.layoutParams = params
 
       // 用户气泡的宽度上限。纯 WRAP_CONTENT 遇到一条长消息会顶满整个面板宽度，
@@ -506,15 +569,59 @@ class AssistantMessageAdapter : RecyclerView.Adapter<RecyclerView.ViewHolder>() 
       binding.messageRole.setTextColor(textColor)
       // 正文颜色只给文本段，不给代码块：代码块有自己的底色与 token 配色，
       // 统一染成气泡的前景色会把语法高亮整片覆盖掉。
+      //
+      // 用户自定义色**只作用于助手正文**（Role.ASSISTANT）：用户气泡与过程信息
+      // 保持主题色。理由是可读性——用户可能调出一个在 colorPrimaryContainer 上
+      // 对比度不足的颜色，而助手正文铺在面板底色上，容错度高得多。
+      val assistantCustom = adapter.customAssistantTextColor()
+      val overrideColor =
+          if (message.role == Role.ASSISTANT && assistantCustom != 0) assistantCustom else null
       for (i in 0 until content.childCount) {
         val child = content.getChildAt(i)
         if (child is TextView) {
-          child.setTextColor(textColor)
+          child.setTextColor(overrideColor ?: textColor)
         }
       }
 
       // 角色标签只在过程信息上显示，见布局注释。
       binding.messageRole.visibility = if (message.role == Role.TRACE) View.VISIBLE else View.GONE
+
+      // ---- 外观：字号 / 头像 ----
+
+      // 字号按用户设定缩放。只作用于文本段与角色标签；代码块有自己的等宽字号，
+      // 缩放它会让代码行宽与容器不匹配（见 renderAssistantContent）。
+      adapter.applyTextScale(binding.messageRole, AssistantUiStyleStore.BaseSp.LABEL_SMALL)
+      for (i in 0 until content.childCount) {
+        (content.getChildAt(i) as? TextView)?.let {
+          adapter.applyTextScale(it, AssistantUiStyleStore.BaseSp.BODY_MEDIUM)
+        }
+      }
+
+      // 头像只给助手消息：用户知道自己说了什么，不需要头像确认；
+      // 过程信息是系统输出，加头像会让人误以为「AI 在自言自语地报状态」。
+      val avatar = binding.messageAvatar
+      if (message.role == Role.ASSISTANT) {
+        avatar.visibility = View.VISIBLE
+        val builtin = adapter.builtinAvatarRes()
+        val custom = adapter.avatarPath()
+        if (custom != null) {
+          // 自定义图片优先于内置选择：用户明确选了自己的图。
+          com.bumptech.glide.Glide.with(avatar)
+              .load(java.io.File(custom))
+              .circleCrop()
+              .placeholder(builtin)
+              .error(builtin)
+              .into(avatar)
+        } else {
+          // 无自定义头像时用内置资源。先清掉可能残留的 Glide 请求，
+          // 否则 ViewHolder 复用时会闪出上一条消息的头像。
+          com.bumptech.glide.Glide.with(avatar).clear(avatar)
+          avatar.setImageResource(builtin)
+        }
+      } else {
+        com.bumptech.glide.Glide.with(avatar).clear(avatar)
+        avatar.visibility = View.GONE
+      }
 
       // 撤销按钮：只有携带 diffId 的消息才可能显示，且默认收起、长按才展开。
       // 已撤销时改为禁用并换文案——让按钮消失会让用户怀疑自己是否点到了，
@@ -707,7 +814,42 @@ class AssistantMessageAdapter : RecyclerView.Adapter<RecyclerView.ViewHolder>() 
             }
       }
 
+      // ---- 外观：字号 / 卡片大小 ----
+      // 工具卡片是「可扫描的过程索引」：用户靠它快速定位「哪一步读了文件、哪一步改了代码」。
+      // 各控件按各自的基准字号缩放，保持原有层级（工具名 > 摘要 > 输入输出）。
+      adapter.applyTextScale(binding.toolName, AssistantUiStyleStore.BaseSp.LABEL_MEDIUM)
+      adapter.applyTextScale(binding.toolStatus, AssistantUiStyleStore.BaseSp.LABEL_SMALL)
+      adapter.applyTextScale(binding.toolChevron, AssistantUiStyleStore.BaseSp.LABEL_SMALL)
+      adapter.applyTextScale(binding.toolSummary, AssistantUiStyleStore.BaseSp.BODY_SMALL)
+      adapter.applyTextScale(binding.toolInput, AssistantUiStyleStore.BaseSp.BODY_SMALL)
+      adapter.applyTextScale(binding.toolOutput, AssistantUiStyleStore.BaseSp.BODY_SMALL)
+      applyCardScale(binding.toolCard, adapter.cardScale())
+
       binding.toolCard.setOnClickListener { adapter.toggleExpanded(call.id) }
+    }
+
+    /**
+     * 按缩放系数重设卡片的**内边距与圆角**。
+     *
+     * <p>这些值原本硬编码在 item_tool_call.xml（padding 12/8/12/8dp、圆角 12dp）。
+     * 运行时重设而不是改 XML：XML 是静态的，而缩放是用户可调的——改 XML 只能二选一，
+     * 运行时 API（setContentPadding / radius）两者都能表达。
+     *
+     * <p>padding 用**基准值 × 系数**而不是直接乘当前 padding：ViewHolder 会被复用，
+     * 累乘会让卡片在滚动中越变越大。基准值与 XML 里的初始值保持一致。
+     */
+    private fun applyCardScale(card: com.google.android.material.card.MaterialCardView, scale: Float) {
+      val density = card.resources.displayMetrics.density
+      fun dp(value: Float): Int = (value * density).toInt()
+      card.setContentPadding(
+          dp(12f * scale),
+          dp(8f * scale),
+          dp(12f * scale),
+          dp(8f * scale),
+      )
+      // radius 是 Float（MaterialCardView 的半径以 px 为单位但类型是 Float），
+      // dp() 返回 Int —— 必须显式转换，否则 Assignment type mismatch。
+      card.radius = dp(12f * scale).toFloat()
     }
   }
 
@@ -742,8 +884,32 @@ class AssistantMessageAdapter : RecyclerView.Adapter<RecyclerView.ViewHolder>() 
               else string.ai_assistant_tool_expand
           )
 
+      // ---- 外观：字号 / 卡片大小 ----
+      adapter.applyTextScale(binding.thinkingLabel, AssistantUiStyleStore.BaseSp.LABEL_MEDIUM)
+      adapter.applyTextScale(binding.thinkingChevron, AssistantUiStyleStore.BaseSp.LABEL_SMALL)
+      adapter.applyTextScale(binding.thinkingText, AssistantUiStyleStore.BaseSp.BODY_SMALL)
+      applyCardScale(binding.thinkingCard, adapter.cardScale())
+
       // 整行可点：只有箭头可点会让折叠区很难命中。
       binding.thinkingHeader.setOnClickListener { adapter.toggleThinkingExpanded(thinking.id) }
+    }
+
+    /**
+     * 按缩放系数重设思考卡片的**内边距与圆角**。
+     *
+     * <p>基准值与 item_assistant_thinking.xml 里的初始值一致（padding 12/8、圆角 12dp）。
+     * 用基准值乘系数而不是乘当前值：ViewHolder 复用下累乘会越滚越大。
+     */
+    private fun applyCardScale(card: com.google.android.material.card.MaterialCardView, scale: Float) {
+      val density = card.resources.displayMetrics.density
+      fun dp(value: Float): Int = (value * density).toInt()
+      card.setContentPadding(
+          dp(12f * scale),
+          dp(8f * scale),
+          dp(12f * scale),
+          dp(8f * scale),
+      )
+      card.radius = dp(12f * scale).toFloat()
     }
   }
 

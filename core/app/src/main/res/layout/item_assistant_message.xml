@@ -20,11 +20,34 @@
   xmlns:tools="http://schemas.android.com/tools"
   android:layout_width="match_parent"
   android:layout_height="wrap_content"
-  android:orientation="vertical"
+  android:orientation="horizontal"
   android:paddingStart="16dp"
   android:paddingEnd="16dp"
   android:paddingTop="4dp"
   android:paddingBottom="4dp">
+
+  <!--
+    助手头像。
+
+    只在助手消息上显示（由适配器按 role 控制可见性）：用户知道自己说了什么，
+    过程信息是系统输出——给它们加头像只会稀释「这是 AI 说的话」这个信号。
+
+    位置在消息行**最左侧、卡片之外**，与内容并排：助手消息是「铺满宽度的文档」
+    而非气泡（见下方注释），把头像塞进文档内部会与代码块争横向空间。
+
+    visibility 默认 gone：用户消息不占这一列，其右对齐与宽度计算不受影响。
+  -->
+  <ImageView
+    android:id="@+id/messageAvatar"
+    android:layout_width="28dp"
+    android:layout_height="28dp"
+    android:layout_marginTop="2dp"
+    android:layout_marginEnd="8dp"
+    android:contentDescription="@string/ai_assistant_role_assistant"
+    android:scaleType="fitCenter"
+    android:src="@drawable/assistant_avatar_default"
+    android:visibility="gone"
+    tools:visibility="visible" />
 
   <com.google.android.material.card.MaterialCardView
     android:id="@+id/messageCard"

@@ -304,6 +304,27 @@
   <string name="ai_agent_codegraph_index_failed">Indexing %1$s failed: %2$s</string>
   <string name="ai_agent_codegraph_index_done_all">All selected projects indexed</string>
 
+  <!-- Chat appearance customization -->
+  <string name="ai_agent_ui_text_size_title">Chat text size</string>
+  <string name="ai_agent_ui_text_size_summary">Message text size in the assistant panel</string>
+  <string name="ai_agent_ui_card_scale_title">Card size</string>
+  <string name="ai_agent_ui_card_scale_summary">Padding and corner radius of message and tool cards</string>
+  <string name="ai_agent_ui_text_color_title">Assistant text color</string>
+  <string name="ai_agent_ui_text_color_summary">Color of assistant reply text (user bubbles keep the theme color)</string>
+  <string name="ai_agent_ui_avatar_title">Assistant avatar</string>
+  <string name="ai_agent_ui_avatar_summary">Shown next to assistant replies</string>
+  <string name="ai_agent_ui_avatar_pick">Pick an image…</string>
+  <string name="ai_agent_ui_avatar_reset">Remove custom image</string>
+  <string name="ai_agent_ui_avatar_custom">Custom image</string>
+  <string name="ai_agent_ui_avatar_default">Robot</string>
+  <string name="ai_agent_ui_avatar_builtin_section">Built-in avatars</string>
+  <string name="ai_agent_ui_avatar_anime">Anime assistant</string>
+  <string name="ai_agent_ui_avatar_cat">Cat</string>
+  <string name="ai_agent_ui_avatar_fox">Fox</string>
+  <string name="ai_agent_ui_avatar_spark">Spark</string>
+  <string name="ai_agent_ui_color_follow_theme">Follow theme</string>
+  <string name="ai_agent_ui_size_value">%1$s</string>
+
   <!-- Chat mode and prompt templates -->
   <string name="ai_agent_chat_mode_title">Chat mode</string>
   <string name="ai_agent_chat_mode_summary">How much the assistant is allowed to do</string>
