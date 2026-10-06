@@ -105,23 +105,24 @@ public void 最大行数(int 行) {
 getView().setMaxLine(行);
 }
 
-public void 分割线(可绘制对象 图片) {
+public void 分割线(android.graphics.drawable.Drawable 图片) {
 getView().setDividerDrawable(图片);
 }
 
-public 可绘制对象 分割线_纵向() {
-return (可绘制对象)getView().getDividerDrawableVertical();
+// 返回原生 Drawable：框架的 DividerDrawable 不是 ticode 壳的子类（原强转必崩）。
+public android.graphics.drawable.Drawable 分割线_纵向() {
+return getView().getDividerDrawableVertical();
 }
 
-public void 分割线_纵向(可绘制对象 图片) {
+public void 分割线_纵向(android.graphics.drawable.Drawable 图片) {
 getView().setDividerDrawableVertical(图片);
 }
 
-public 可绘制对象 分割线_横向() {
-return (可绘制对象)getView().getDividerDrawableHorizontal();
+public android.graphics.drawable.Drawable 分割线_横向() {
+return getView().getDividerDrawableHorizontal();
 }
 
-public void 分割线_横向(可绘制对象 图片) {
+public void 分割线_横向(android.graphics.drawable.Drawable 图片) {
 getView().setDividerDrawableHorizontal(图片);
 }
 

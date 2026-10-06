@@ -35,7 +35,9 @@ this.setDuration(时长);
 
 
 public 可视化组件 布局() {
-return (可视化组件) this.getView().getTag();
+// getTag() 可能为 null / 非 可视化组件；直接强转会崩。
+Object tag = this.getView().getTag();
+return tag instanceof 可视化组件 ? (可视化组件) tag : null;
 }
 
 

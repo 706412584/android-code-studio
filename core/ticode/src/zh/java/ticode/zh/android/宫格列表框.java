@@ -15,13 +15,15 @@ super(context);
 getView().setOnItemClickListener(new OnItemClickListener() {
 @Override
 public void onItemClick(AdapterView<?> p1, View p2, int p3, long p4) {
-项目被单击((可视化组件) p2.getTag(), p3);
+Object tag = p2.getTag();
+项目被单击(tag instanceof 可视化组件 ? (可视化组件) tag : null, p3);
 }
 });
 getView().setOnItemLongClickListener(new  OnItemLongClickListener() {
 @Override
 public boolean onItemLongClick(AdapterView<?> p1, View p2, int p3, long p4) {
-return 项目被长按((可视化组件) p2.getTag(), p3);
+Object tag = p2.getTag();
+return 项目被长按(tag instanceof 可视化组件 ? (可视化组件) tag : null, p3);
 }
 });
 }

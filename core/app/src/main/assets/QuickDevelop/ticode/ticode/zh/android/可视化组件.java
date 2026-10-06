@@ -433,7 +433,9 @@ ViewGroup parent = (ViewGroup) view.getParent();
 if (parent == null) {
 return null;
 }
-return (布局组件) parent.getTag();
+// 父 view 的 tag 可能为 null / 非 布局组件；直接强转会崩。
+Object tag = parent.getTag();
+return tag instanceof 布局组件 ? (布局组件) tag : null;
 }
 
 

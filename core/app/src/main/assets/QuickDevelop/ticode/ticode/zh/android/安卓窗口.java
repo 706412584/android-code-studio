@@ -204,8 +204,9 @@ this.setRequestedOrientation(屏幕方向);
 
 
 
-public 应用 取全局应用() {
-return (应用)this.getApplication();
+// 返回原生 Application：getApplication() 是框架实例，不可能是 ticode 的 abstract 壳。
+public android.app.Application 取全局应用() {
+return this.getApplication();
 }
 
 //启动服务

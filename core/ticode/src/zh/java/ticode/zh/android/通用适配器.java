@@ -25,10 +25,14 @@ return 取项目ID(position);
 @Override
 public View getView(int position, View view, ViewGroup parent) {
 if (view == null) {
-return 取项目布局(position, null).getView();
+可视化组件 新 = 取项目布局(position, null);
+return 新 == null ? null : 新.getView();
 } else {
-可视化组件 v = (可视化组件) view.getTag();
-return 取项目布局(position, v).getView();
+// tag 可能为 null 或非 可视化组件（如复用他人 view），直接强转会崩。
+Object tag = view.getTag();
+可视化组件 v = tag instanceof 可视化组件 ? (可视化组件) tag : null;
+可视化组件 新 = 取项目布局(position, v);
+return 新 == null ? null : 新.getView();
 }
 }
 

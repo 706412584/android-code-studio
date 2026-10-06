@@ -26,7 +26,13 @@ addComponent(组件);
 }
 
 public 可视化组件 取子组件(int 索引) {
-return (可视化组件)getView().getChildAt(索引).getTag();
+// 子 view 的 tag 可能为 null / 非 可视化组件；直接强转会崩。
+View 子 = getView().getChildAt(索引);
+if (子 == null) {
+return null;
+}
+Object tag = 子.getTag();
+return tag instanceof 可视化组件 ? (可视化组件) tag : null;
 }
 
 public int 取子组件数量() {
