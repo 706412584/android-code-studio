@@ -43,6 +43,8 @@ import com.tom.rv2ide.ai.protocol.ModelCompletionResponse;
 import com.tom.rv2ide.ai.protocol.ModelConfig;
 import com.tom.rv2ide.ai.protocol.ModelMessage;
 import com.tom.rv2ide.ai.protocol.UserModelMessage;
+import com.tom.rv2ide.ai.tool.CodeGraphTool;
+import com.tom.rv2ide.artificial.agent.codegraph.CodeGraphInstaller;
 import com.tom.rv2ide.ai.tool.DiffStore;
 import com.tom.rv2ide.ai.tool.api.ErrorLog;
 import com.tom.rv2ide.artificial.agents.Agents;
@@ -691,6 +693,26 @@ public final class AgentOrchestrator {
     // 效果只落在自己那份上——用户切后端后，一部分工具还走旧后端，行为不一致且难排查。
     ShellBackendRegistry shellBackends = buildShellBackends();
     registry.register(new ShellExecuteTool(shellBackends));
+
+    // CodeGraph 代码知识图谱（复用同一个 shell 后端执行 acs-codegraph）。
+    // 注册后助手才能主动按符号查源码/调用关系/影响面，而不是靠 shell_execute 手敲
+    // —— 后者它并不知道有这个工具，会回答「找不到 codegraph 工具」。
+    // 注入就绪探测：纯 Java 的 ai-tool 模块不知道安装路径（在 termux 模块且按包名替换），
+    // 由这里告诉它，以便 promptSupplement 只在真装了 codegraph 时才要求「优先使用」。
+    CodeGraphTool.setAvailabilityProbe(
+        new CodeGraphTool.AvailabilityProbe() {
+          @Override
+          public boolean isReady() {
+            return CodeGraphInstaller.INSTANCE.isInstalled();
+          }
+
+          @Override
+          public String wrapperPath() {
+            // 绝对路径：shell 后端不设 PATH，裸名会 command not found。
+            return CodeGraphInstaller.INSTANCE.wrapperFile().getAbsolutePath();
+          }
+        });
+    registry.register(new CodeGraphTool(shellBackends));
 
     // 运行测试闭环：构建 → 安装 → 启动 → 读日志
     registry.register(new GradleBuildTool(this::lookupBuildService));

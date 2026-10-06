@@ -81,6 +81,9 @@ public final class ToolNames {
     public static final String PHONE_BASELINE = "phone_baseline";
     /** 执行一个动作并连拍多帧（动作级截图回归）。 */
     public static final String PHONE_ACTION_CAPTURE = "phone_action_capture";
+
+    /** CodeGraph 代码知识图谱：按符号查源码 / 调用关系 / 影响面（`acs-codegraph`）。 */
+    public static final String CODEGRAPH = "codegraph";
     /** 两张截图逐像素对比并生成差异图。 */
     public static final String PHONE_SCREENSHOT_COMPARE = "phone_screenshot_compare";
 
