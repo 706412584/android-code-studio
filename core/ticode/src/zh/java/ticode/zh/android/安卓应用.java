@@ -30,7 +30,8 @@ public void onPreInit() {
 public void onInit() {
 }
 
-public static 应用 取安卓应用() {
+// 返回原生 Application：运行时拿到的是框架实例，不是 ticode 壳（原强转必崩）。
+public static android.app.Application 取安卓应用() {
 if (application == null) {
 try {
 Class<?> activityThreadClass = Class.forName("android.app.ActivityThread");
@@ -40,7 +41,7 @@ application = (Application) currentApplicationMethod.invoke(null);
 } catch (Exception e) {
 }
 }
-return (应用)application;
+return application;
 }
 
 public void 即将创建() {

@@ -3,7 +3,7 @@ package ticode.zh.android;
 import android.graphics.Paint;
 import android.graphics.Rect;
 
-public abstract class 画笔对象 extends android.graphics.Paint {
+public class 画笔对象 extends android.graphics.Paint {
 public static final int 画笔类型_填充 = 1;
 public static final int 画笔类型_描边 = 2;
 public static final int 画笔类型_填充和描边 = 3;
@@ -12,7 +12,7 @@ public static 画笔对象 创建画笔() {
 Paint paint = new Paint();
 paint.setAntiAlias(true);
 paint.setTextSize(45);
-return (画笔对象)paint;
+return new 画笔对象();
 }
 
 public float 文字高度() {

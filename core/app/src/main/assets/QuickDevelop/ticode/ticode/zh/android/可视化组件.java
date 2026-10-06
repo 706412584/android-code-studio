@@ -660,7 +660,7 @@ if (是否支持) {
 view.setOnKeyListener(new View.OnKeyListener() {
 @Override
 public boolean onKey(View view, int keyCode, android.view.KeyEvent event) {
-return 按键输入(keyCode, (按键事件)event);
+return 按键输入(keyCode, event);
 }
 });
 } else {
@@ -703,7 +703,8 @@ public void 焦点被改变(boolean 是否获得焦点) { } // 事件
 
 
 
-public boolean 按键输入(int 键代码, 按键事件 来源事件) { return false; } // 事件
+// 参数用原生 KeyEvent：框架回调传的就是原生事件，无法强转成 ticode 壳。
+public boolean 按键输入(int 键代码, android.view.KeyEvent 来源事件) { return false; } // 事件
 
 //组件动画开始播放时触发该事件
 public void 动画开始播放() { } // 事件

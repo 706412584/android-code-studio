@@ -5,10 +5,9 @@ import android.graphics.RectF;
 
 import ticode.zh.base.对象;
 
-public abstract class 构建路径 extends android.graphics.Path {
+public class 构建路径 extends android.graphics.Path {
 public static 构建路径 创建路径() {
-Path path = new Path();
-return (构建路径)path;
+return new 构建路径();
 }
 
 
@@ -128,9 +127,10 @@ return 区域.contains((int) x, (int) y);
 
 // 取两个区域共同包含的区域
 public 构建路径 交集(构建路径 区域1, 构建路径 区域2) {
-Path resultPath = new Path(区域1);
+构建路径 resultPath = new 构建路径();
+resultPath.set(区域1);
 resultPath.op(区域2, Path.Op.INTERSECT);
-return (构建路径)resultPath;
+return resultPath;
 }
 
 // 保留未被参数区域覆盖的区域

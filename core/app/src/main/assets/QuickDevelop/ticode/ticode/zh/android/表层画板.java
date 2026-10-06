@@ -73,7 +73,7 @@ canvas = surfaceHolder.lockHardwareCanvas();
 if (canvas != null) {
 lastLockTime = SystemClock.uptimeMillis();
 try {
-绘制操作((画布对象)canvas);
+绘制操作(canvas);
 drawCount.decrementAndGet();
 if (SystemClock.uptimeMillis() - lastFpsTime >= 1000) {
 fps = tempFps;
@@ -156,7 +156,9 @@ public void 刷新显示() {
 drawCount.incrementAndGet();
 }
 
-public void 绘制操作(画布对象 画布) { } // 事件
+// 参数用原生 Canvas：框架在 onDraw/lockCanvas 里创建的是原生 Canvas，
+// 无法强转成 画布对象（那是 ticode 的子类，此处不存在实例）。
+public void 绘制操作(android.graphics.Canvas 画布) { } // 事件
 
 public void 被创建() { } // 事件
 

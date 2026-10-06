@@ -67,8 +67,9 @@ public int 获取前台服务类型() {
 return this.getForegroundServiceType();
 }
 
-public 安卓应用信息 应用信息() {
-return (安卓应用信息)this.applicationInfo;
+// 返回原生类型：applicationInfo 字段是原生 ApplicationInfo，不是 ticode 壳。
+public android.content.pm.ApplicationInfo 应用信息() {
+return this.applicationInfo;
 }
 public int 描述资源id() {
 return this.descriptionRes;

@@ -33,7 +33,7 @@ super.onSizeChanged(w, h, oldw, oldh);
 @Override
 protected void onDraw(Canvas canvas) {
 super.onDraw(canvas);
-绘制操作((画布对象)canvas);
+绘制操作(canvas);
 }
 };
 return view;
@@ -50,5 +50,7 @@ public void 被布局(boolean 是否变化, int 左, int 上, int 宽度, int �
 
 public void 被改变(int 新宽度, int 新高度, int 旧宽度, int 旧高度) { } // 事件
 
-public void 绘制操作(画布对象 画布) { } // 事件
+// 参数用原生 Canvas：框架在 onDraw/lockCanvas 里创建的是原生 Canvas，
+// 无法强转成 画布对象（那是 ticode 的子类，此处不存在实例）。
+public void 绘制操作(android.graphics.Canvas 画布) { } // 事件
 }

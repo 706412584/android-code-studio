@@ -5,11 +5,14 @@ import java.util.concurrent.*;
 public abstract class 并发集合模板类<T1> extends java.util.Vector<T1> {
 
 public 并发集合模板类 赋值_op(T1[] 成员) {
-java.util.Vector<T1> list = new java.util.Vector<>(成员.length);
-for(T1 el : 成员) {
-list.add(el);
+// 同 集合模板类：原写法强转 Vector→本壳，必崩。改为修改 this。
+this.clear();
+if (成员 != null) {
+for (T1 el : 成员) {
+this.add(el);
 }
-return (并发集合模板类)list;
+}
+return this;
 }
 
 public T1 取索引_op(int 索引) {

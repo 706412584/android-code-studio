@@ -4,12 +4,15 @@ package ticode.zh.jvm;
 public abstract class 集合模板类<T1> extends java.util.ArrayList<T1> {
 
 public 集合模板类 赋值_op(T1[] 成员) {
-//		if(成员 == null) return null;
-java.util.ArrayList<T1> list = new java.util.ArrayList<>(成员.length);
-for(T1 el : 成员) {
-list.add(el);
+// 原写法 `return (集合模板类) new ArrayList<>()` 必崩：ArrayList 不是本壳的子类实例。
+// 改为直接修改 this（赋值语义，与结绳一致）。
+this.clear();
+if (成员 != null) {
+for (T1 el : 成员) {
+this.add(el);
 }
-return (集合模板类)list;
+}
+return this;
 }
 
 public T1 取索引_op(int 索引) {

@@ -91,7 +91,9 @@ return 取项目数量();
 
 //使用集合时返回数据，可能为空
 public 集合 取数据() {
-return (集合)dataList;
+集合 结果 = new 集合();
+结果.addAll(dataList);
+return 结果;
 }
 
 public void 置数据(Object 数据集合) {

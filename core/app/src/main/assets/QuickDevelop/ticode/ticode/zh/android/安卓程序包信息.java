@@ -41,11 +41,12 @@ public void 广播接收器信息集(安卓窗口信息[] 广播接收器信息�
 this.receivers = 广播接收器信息集;
 }
 
-public 安卓应用信息 应用信息() {
-return (安卓应用信息)this.applicationInfo;
+// 返回原生类型：applicationInfo 字段是原生 ApplicationInfo，不是 ticode 壳。
+public android.content.pm.ApplicationInfo 应用信息() {
+return this.applicationInfo;
 }
 
-public void 应用信息(安卓应用信息 应用信息) {
+public void 应用信息(android.content.pm.ApplicationInfo 应用信息) {
 this.applicationInfo = 应用信息;
 }
 
