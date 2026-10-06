@@ -37,7 +37,8 @@ import org.junit.Test;
  *
  * <p>为什么需要这个测试：生成的 Java 是<b>字符串</b>，编译器不会检查它——写错一个
  * 继承类名或漏掉 import，要等用户新建工程、跑到 gradle 构建时才会暴露。这里在
- * JVM 上把产物落盘，既能断言结构（数量/重名），也让外部可以用 javac 真正编译一遍。
+ * JVM 上把产物落盘并<b>真正用 javac 编译一遍</b>（{@link #generatedSourcesCompile()}），
+ * 编译失败即测试失败，进 CI。
  */
 public class QuickDevelopSourcesTest {
 
@@ -95,12 +96,18 @@ public class QuickDevelopSourcesTest {
   }
 
   /**
-   * 把产物写到 {@code core/app/build/quickdevelop-out/}，供外部 javac 编译验证。
+   * 把产物写到 {@code core/app/build/quickdevelop-out/}，供人工核对与外部编译。
    *
    * <p>目录刻意放在 build 下：不污染源码树，且会随 {@code clean} 清掉。
    */
   @Test
   public void writeSourcesForExternalCompilation() throws IOException {
+    File base = dumpGeneratedSources();
+    assertTrue("缺少落盘目录: " + base, base.isDirectory());
+  }
+
+  /** 落盘生成的全部 ui/ 与 tool/ 源码，返回落盘根目录（{@code build/quickdevelop-out/<pkg>}）。 */
+  private File dumpGeneratedSources() throws IOException {
     File base = new File("build/quickdevelop-out/" + PKG.replace('.', '/'));
     if (base.exists()) {
       deleteRecursively(base);
@@ -116,7 +123,7 @@ public class QuickDevelopSourcesTest {
     }
     assertEquals(BASE_COUNT + EXTRA_COUNT * 2, names.size());
 
-    // 工具库同样落盘，好让 javac 一并验证（它们依赖 Android API，比组件更需要编译验证）。
+    // 工具库同样落盘（它们依赖 Android API，比组件更需要编译验证）。
     File toolDir = new File(base, "tool");
     assertTrue("无法创建工具库目录: " + toolDir, toolDir.mkdirs());
     List<Pair<String, String>> toolkits = QuickDevelopToolkits.INSTANCE.all(PKG);
@@ -133,6 +140,92 @@ public class QuickDevelopSourcesTest {
     Files.write(
         new File(base, "tool-README.md").toPath(),
         QuickDevelopToolkits.INSTANCE.readme(PKG).getBytes(StandardCharsets.UTF_8));
+    return base;
+  }
+
+  /**
+   * **真正用 javac 编译生成的 ui/ + tool/ 源码**——这是本测试类存在的核心价值。
+   *
+   * <p>为什么必须真编译：生成的 Java 是<b>字符串</b>，编译器平时看不到它。改一个继承
+   * 类名、漏一个 import、写错一个方法签名，本类里其它「断言字符串结构」的测试<b>全绿</b>，
+   * 用户建工程跑到 gradle 时才炸。此前只有 {@code tools/build-qd-project.sh} 这个
+   * <b>手工脚本</b>会编译，靠人记得跑。
+   *
+   * <p>为什么用外部 javac 进程而非 {@code javax.tools.JavaCompiler}：Android 单测的
+   * 编译 bootclasspath 是 {@code android.jar}，<b>没有 {@code javax.tools}</b> 包，
+   * 直接用会在编译测试自身时就报「程序包 javax.tools 不存在」。改为调用测试 JVM 所在的
+   * JDK 自带的 {@code bin/javac}（{@code java.home}），既真实又与 AGP 配置解耦。
+   *
+   * <p>类路径用<b>测试 JVM 自己的 {@code java.class.path}</b>：Gradle 已把 AGP 的
+   * mockable {@code android.jar} 与全部 androidx 依赖放上去。不要引用
+   * {@code core/ticode/libs/*.jar}——那些 jar <b>未入库</b>（.gitignore），
+   * 新克隆/CI 上没有。编译只需类型签名，mockable jar 足够。
+   *
+   * <p>参数写进 {@code @argfile}：测试 classpath 很长，Windows 命令行有长度上限。
+   *
+   * <p>只编译 ui/ + tool/：ticode 的 333 个文件已由 {@code tools/ticode-compile.sh}
+   * 单独把关，放进这里会拖慢单测。
+   */
+  @Test
+  public void generatedSourcesCompile() throws IOException, InterruptedException {
+    File base = dumpGeneratedSources();
+
+    List<String> sources = new ArrayList<>();
+    collectJava(new File(base, "ui"), sources);
+    collectJava(new File(base, "tool"), sources);
+    assertEquals("落盘的 ui+tool 源码数量不符", BASE_COUNT + EXTRA_COUNT * 2 + 5, sources.size());
+
+    String javacName = System.getProperty("os.name", "").toLowerCase().contains("win")
+        ? "javac.exe" : "javac";
+    File javac = new File(new File(System.getProperty("java.home"), "bin"), javacName);
+    assertTrue("找不到 javac（需在 JDK 下跑测试）: " + javac, javac.canExecute());
+
+    File outDir = new File("build/quickdevelop-classes");
+    if (outDir.exists()) {
+      deleteRecursively(outDir);
+    }
+    assertTrue("无法创建编译输出目录", outDir.mkdirs());
+
+    // @argfile：-encoding / -classpath / -d / 源码清单。
+    // 关键：javac 的 argfile 里**反斜杠是转义符**（`\a` 会被吃掉），Windows 路径
+    // 必须写成正斜杠；含空格时整体加引号。
+    StringBuilder args = new StringBuilder();
+    args.append("-encoding UTF-8\n-nowarn\n");
+    args.append("-classpath\n\"").append(slash(System.getProperty("java.class.path"))).append("\"\n");
+    args.append("-d\n\"").append(slash(outDir.getAbsolutePath())).append("\"\n");
+    for (String s : sources) {
+      args.append('"').append(slash(s)).append("\"\n");
+    }
+    File argfile = new File("build/quickdevelop-javac-args.txt");
+    Files.write(argfile.toPath(), args.toString().getBytes(StandardCharsets.UTF_8));
+
+    Process p =
+        new ProcessBuilder(javac.getAbsolutePath(), "@" + argfile.getAbsolutePath())
+            .redirectErrorStream(true)
+            .start();
+    String output = new String(p.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+    int rc = p.waitFor();
+
+    assertEquals("生成的 ui/tool 源码编译失败（javac 退出码 " + rc + "）:\n" + output, 0, rc);
+  }
+
+  /** javac 的 argfile 把 `\` 当转义符，Windows 路径要转正斜杠（classpath 的 `;` 不受影响）。 */
+  private static String slash(String p) {
+    return p.replace('\\', '/');
+  }
+
+  private static void collectJava(File dir, List<String> out) {
+    File[] files = dir.listFiles();
+    if (files == null) {
+      return;
+    }
+    for (File f : files) {
+      if (f.isDirectory()) {
+        collectJava(f, out);
+      } else if (f.getName().endsWith(".java")) {
+        out.add(f.getAbsolutePath());
+      }
+    }
   }
 
   /**
