@@ -65,7 +65,18 @@ class AssistantInputFeatures(
    */
   private val attachments = mutableListOf<Attachment>()
 
-  private data class Attachment(val uri: Uri, val name: String, val isImage: Boolean)
+  /**
+   * 一个待发附件。
+   *
+   * @param bytes 选中时**当场读出**的内容（仅图片）。见 [addAttachment] 的说明——
+   *   Photo Picker 的 URI 权限只在选择回调期间有效，等到发送时再读会拿到 null。
+   */
+  private data class Attachment(
+      val uri: Uri,
+      val name: String,
+      val isImage: Boolean,
+      val bytes: ByteArray? = null,
+  )
 
   /**
    * 附件按钮是否可用。
@@ -166,6 +177,18 @@ class AssistantInputFeatures(
    * <p>[uri] 为 null 表示用户取消、没选任何项、设备上没有可处理该 Intent 的 Activity，
    * 或宿主无法解析结果（见 `AssistantAttachments` 契约）。此时**什么都不做**：
    * 静默忽略是「取消」的正确表现，弹提示反而像出错了。
+   *
+   * <p><b>图片必须在这里当场读成字节</b>：Android 13+ 把 `ACTION_GET_CONTENT` 重定向到
+   * 系统 Photo Picker，返回 `content://media/picker_get_content/...`，其读权限**只在本次
+   * 选择回调期间有效**。若只记住 URI、等用户点「发送」时才读，权限已失效 →
+   * `openInputStream` 返回 null → 图片降级成一行文本路径，模型看不到图
+   * （实测：模型回复「I cannot see the images / path unavailable」）。
+   *
+   * <p>这与参考项目 cc-haha 的做法一致：它的 `LocalAttachment` 在下载/选择时就保留
+   * `buffer`，由调用方决定后续用 base64 还是路径——而不是把「能不能读」推迟到使用时刻。
+   *
+   * <p>读失败或超限时不缓存 bytes（保留 URI 以便走文本降级路径），不阻断附件添加：
+   * 用户至少还能看到「附了这张图」这个事实。
    */
   private fun addAttachment(uri: Uri?, isImage: Boolean) {
     if (uri == null) {
@@ -175,8 +198,26 @@ class AssistantInputFeatures(
     if (attachments.any { it.uri == uri }) {
       return
     }
-    attachments.add(Attachment(uri, name, isImage))
+    // 非图片（任意类型文件）不需要预读：它们本就以路径形式交给模型用 file 工具读。
+    val bytes = if (isImage) readImageBytes(uri) else null
+    attachments.add(Attachment(uri, name, isImage, bytes))
     renderAttachments()
+  }
+
+  /**
+   * 立刻读取图片字节；失败或超出体积上限时返回 null。
+   *
+   * <p>在这里判体积而不是留到发送时：超限的图当场就知道不该进 payload，
+   * 缓存它只会白占内存（一张 20MB 的图在附件栏里挂几分钟）。
+   */
+  private fun readImageBytes(uri: Uri): ByteArray? {
+    return try {
+      val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+      if (bytes == null || bytes.isEmpty() || bytes.size > MAX_IMAGE_BYTES) null else bytes
+    } catch (e: Exception) {
+      // 权限失效、文件被删、流读取异常：都退回「无 bytes」，走文本降级。
+      null
+    }
   }
 
   /** 从 ContentResolver 取显示名；取不到时退回 URI 的最后一段。 */
@@ -237,12 +278,13 @@ class AssistantInputFeatures(
    */
   fun imageRawInputJson(prompt: String): String? {
     val image = attachments.firstOrNull { it.isImage } ?: return null
-    val bytes =
-        try {
-          context.contentResolver.openInputStream(image.uri)?.use { it.readBytes() }
-        } catch (e: Exception) {
-          null
-        } ?: return null
+    // 优先用选择时缓存的字节。**不再在这里 openInputStream**：Photo Picker 的 URI
+    // 权限只在选择回调期间有效，此刻（用户点发送）通常已失效，现场读必然拿到 null
+    // ——这正是「AI 说看不到图片」的根因（见 addAttachment 的说明）。
+    //
+    // 缓存为空（读失败/超限/旧版本添加的附件）时退回现场读一次：对 `ACTION_OPEN_DOCUMENT`
+    // 之类带持久权限的 URI 仍然有效，作为兜底而不是主路径。
+    val bytes = image.bytes ?: readImageBytes(image.uri) ?: return null
     if (bytes.isEmpty()) {
       return null
     }

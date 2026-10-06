@@ -187,6 +187,72 @@ final class PhoneShellRunner {
     return null;
   }
 
+  /**
+   * 用**任意可用后端**执行命令（不要求 adb 权限）。
+   *
+   * <p><b>为什么需要这条路径</b>：并非所有「设备命令」都需要 adb 权限。以 logcat 为例——
+   * Termux 后端的进程 uid 在 {@code log} 组里，`logcat -d` 实测能正常读取（真机验证）；
+   * 而 {@link #exec} 严格要求 Shizuku，导致 {@code logcat_read} 工具在没装 Shizuku 的
+   * 设备上恒失败，尽管同一台设备用 `shell_execute` 跑同样的命令完全正常。
+   * 工具之间能力不一致，模型会得出「设备缺权限」的错误结论。
+   *
+   * <p>调用方（{@code LogcatReadTool}）负责判断输出是否真的可用：权限不足时
+   * logcat 通常返回空输出或非零退出码，而不是抛异常。
+   *
+   * @return 执行结果；无任何可用后端时 channel 为 {@code "none"}
+   */
+  static Output execWithAnyBackend(ShellBackendRegistry registry, String command, long timeoutMs) {
+    if (registry == null) {
+      return Output.failed("none", "没有可用的 shell 后端。");
+    }
+    ShellBackendRegistry.Resolution resolution = registry.resolveActive();
+    if (!resolution.isUsable()) {
+      String reason = resolution.getBackend() == null
+          ? "没有可用的 shell 后端。"
+          : resolution.getBackend().unavailableReason();
+      return Output.failed("none", reason);
+    }
+    ShellBackend backend = resolution.getBackend();
+    String channel = backend.hasAdbPrivileges() ? "shizuku" : "local";
+    try {
+      ShellRequest.ShellResult result =
+          backend.execute(
+              new ShellRequest(command, "", timeoutMs, null), ShellRequest.ShellOutputSink.NOOP);
+      if (result.isTimedOut()) {
+        return new Output(false, -1, true, result.getStdout(), result.getStderr(), channel,
+            "命令超时: " + command);
+      }
+      int exitCode = result.getExitCode();
+      return new Output(
+          exitCode == 0, exitCode, false, result.getStdout(), result.getStderr(), channel, "");
+    } catch (RuntimeException e) {
+      log.warn("执行失败: {}", command, e);
+      return Output.failed(channel, "执行异常: " + e.getMessage());
+    }
+  }
+
+  /**
+   * 按包名查 PID，允许任意可用后端（供 logcat 这类不强制 adb 的工具使用）。
+   *
+   * <p>与 {@link #findPid} 的区别只在后端选择：那个要求 adb 权限，这个不要求。
+   * `pidof` 在 Termux 后端下对**本机其它应用**可能因权限返回空——调用方
+   * （{@code LogcatReadTool}）据此给出提示，而不是把空结果当成「应用没运行」。
+   *
+   * @return PID；查不到时返回 null
+   */
+  static String findPidWithAnyBackend(ShellBackendRegistry registry, String packageName) {
+    if (!isValidPackage(packageName)) {
+      return null;
+    }
+    Output output = execWithAnyBackend(registry, "pidof " + packageName, 8_000L);
+    for (String token : output.combined().trim().split("\\s+")) {
+      if (token.matches("\\d+")) {
+        return token;
+      }
+    }
+    return null;
+  }
+
   private static ShellBackend resolveAdbBackend(ShellBackendRegistry registry) {
     if (registry == null) {
       return null;

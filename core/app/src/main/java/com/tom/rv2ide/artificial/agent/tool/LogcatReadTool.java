@@ -53,10 +53,11 @@ import org.slf4j.LoggerFactory;
  *       是自动化验证的关键信号。
  * </ul>
  *
- * <p><b>权限说明</b>：Android 4.1+ 起普通应用只能读取自身进程的日志。
- * 要读取其它应用的日志需要 adb 级权限（uid 2000 或 root），因此本工具需要
- * 走 {@code shell_execute} 的 Shizuku 后端；无该权限时 logcat 会返回空。
- * 结果里会说明这一点，避免模型误判「应用没有输出日志」。
+ * <p><b>权限说明</b>：Android 4.1+ 起普通应用只能读取自身进程的日志，因此本工具经
+ * {@code shell_execute} 的后端执行 {@code logcat}。**不强制要求 Shizuku**：真机实测
+ * （Android 16）Termux 后端的进程 uid 在 {@code log} 组里，`logcat -d` 能正常读取；
+ * 有 Shizuku 时走 adb 级权限更稳。权限不足时 logcat 返回空输出，结果里会说明，
+ * 避免模型误判「应用没有输出日志」。
  */
 public final class LogcatReadTool extends BaseTool {
 
@@ -86,6 +87,16 @@ public final class LogcatReadTool extends BaseTool {
   private final Context appContext;
   private final ShellBackendRegistry shellBackends;
 
+  /**
+   * 便捷构造（**不推荐**）。
+   *
+   * <p>它会自建一个 shell 后端注册表，而那个注册表**不知道用户在设置里选的后端**——
+   * 实测踩过：用户已配好 Shizuku、`shell_execute` 能正常跑 logcat，但用本构造的
+   * logcat_read 解析到 Termux（无 adb 权限）而恒失败，模型据此误判「设备缺权限」。
+   *
+   * <p>生产路径请用 {@link #LogcatReadTool(Context, ShellBackendRegistry)} 并传入
+   * 与其它工具共享的那个注册表（见 AgentOrchestrator.buildRegistry）。
+   */
   public LogcatReadTool(Context context) {
     this(context, PhoneShellRunner.defaultRegistry(context));
   }
@@ -105,7 +116,7 @@ public final class LogcatReadTool extends BaseTool {
     return "读取本机日志（logcat）。默认模式按包名与级别过滤返回原始日志。"
         + "设置 mode=crash 可做结构化崩溃判定：按 PID 读 crash buffer 的 FATAL EXCEPTION，"
         + "返回「是否崩溃 + 崩溃堆栈」（并识别 ANR）。"
-        + "注意：读取其它应用的日志需要 adb 级权限（Shizuku 后端）；"
+        + "经 shell 后端执行（有 Shizuku 时自动用 adb 级权限，无则用当前后端）；"
         + "权限不足时会返回空结果并说明原因。";
   }
 
@@ -217,7 +228,13 @@ public final class LogcatReadTool extends BaseTool {
     String pid = packageName.isEmpty() ? null : findPid(packageName);
     if (!packageName.isEmpty()) {
       if (pid == null) {
-        return error("应用 " + packageName + " 没有正在运行的进程，无法按 PID 过滤日志。请先启动它。");
+        // 两种可能都要说清：应用真没跑，或当前后端查不到别人的进程（Termux 权限较窄）。
+        // 早先只报前者，模型会据此断定「应用没在运行」——而它可能只是查不到。
+        return error(
+            "查不到应用 "
+                + packageName
+                + " 的进程。可能它未运行，也可能当前 shell 后端权限不足（无 Shizuku 时"
+                + " pidof 查不到其它应用）。可先 launch_app 启动它，或省略 packageName 读取全部日志。");
       }
       command.add("--pid=" + pid);
     }
@@ -225,9 +242,9 @@ public final class LogcatReadTool extends BaseTool {
     List<String> output = runLogcat(command);
     if (output == null) {
       return error(
-          "读取日志失败：没有可用输出。"
-              + "读取其它应用的日志需要 adb 级权限（Shizuku 后端），"
-              + "请确认 Shizuku 已安装并授权后重试。");
+          "读取日志失败：没有可用的 shell 后端（命令未执行）。"
+              + "可在「设置 → AI 助手 → Shell 后端」里检查后端状态，"
+              + "或改用 shell_execute 直接执行 logcat。");
     }
 
     StringBuilder text = new StringBuilder();
@@ -241,7 +258,7 @@ public final class LogcatReadTool extends BaseTool {
       StringBuilder sb = new StringBuilder();
       sb.append("(没有匹配的日志)\n");
       if (!packageName.isEmpty()) {
-        sb.append("提示：读取其它应用的日志需要 adb 级权限（Shizuku）。");
+        sb.append("提示：权限不足时 logcat 不会输出其它应用的日志；");
         sb.append("若当前 shell 后端是 Termux，普通应用只能读取自身进程的日志。\n");
       }
       return ok(sb.toString());
@@ -543,10 +560,18 @@ public final class LogcatReadTool extends BaseTool {
    * @return 输出行；执行失败或超时返回 null
    */
   private List<String> runLogcat(List<String> command) {
-    // 经统一执行器（严格要求 Shizuku）：logcat 读取其它应用需要 adb 级权限，
-    // 本地 app uid 只能读到本应用自己的日志（Android 4.1+）。
+    // 用**任意可用后端**而不是严格要求 Shizuku 的那条路径。
+    //
+    // 真机实测（Android 16 / PJA110）：没装 Shizuku 时 `shell_execute` 走 Termux 后端
+    // 执行 `logcat -d` 能正常读到日志（Termux 进程 uid 在 log 组），而此前本工具因
+    // 强制要求 Shizuku 恒失败——同一台设备、同一条命令，两个工具给出相反结论，
+    // 模型据此得出「设备缺 adb 权限」的错误诊断（实际它自己就能读）。
+    //
+    // 权限真的不足时 logcat 返回空输出或非零退出码，由调用方按输出内容判断，
+    // 而不是在这里一刀切拒绝。
     String cmd = joinCommand(command);
-    PhoneShellRunner.Output output = PhoneShellRunner.exec(shellBackends, cmd, TIMEOUT_MS);
+    PhoneShellRunner.Output output =
+        PhoneShellRunner.execWithAnyBackend(shellBackends, cmd, TIMEOUT_MS);
     if ("none".equals(output.channel) || output.timedOut) {
       return null;
     }
@@ -574,7 +599,7 @@ public final class LogcatReadTool extends BaseTool {
   }
 
   /**
-   * 按包名查找进程 PID（经统一执行器，严格要求 Shizuku）。
+   * 按包名查找进程 PID（经统一执行器，任意可用后端）。
    *
    * <p>找不到时返回 null——调用方据此给出明确提示，而不是返回一个空日志列表。
    */
@@ -582,6 +607,8 @@ public final class LogcatReadTool extends BaseTool {
     if (!PhoneShellRunner.isValidPackage(packageName)) {
       return null;
     }
-    return PhoneShellRunner.findPid(shellBackends, packageName);
+    // 与 runLogcat 一致用宽松后端：Shizuku 与 Termux 都能查 pidof（后者权限更弱，
+    // 查不到时返回 null，调用方会提示「可能未运行或权限不足」而不是断言没运行）。
+    return PhoneShellRunner.findPidWithAnyBackend(shellBackends, packageName);
   }
 }

@@ -1021,8 +1021,15 @@ public final class AgentOrchestrator {
     // 运行测试闭环：构建 → 安装 → 启动 → 读日志
     registry.register(new GradleBuildTool(this::lookupBuildService));
     registry.register(new InstallApkTool(appContext));
-    registry.register(new LaunchAppTool(appContext));
-    registry.register(new LogcatReadTool(appContext));
+    // 同 LogcatReadTool：必须传共享的 shellBackends。只传 context 会让它自建一个
+    // registry（见 LaunchAppTool(Context) 构造），而自建的不知道用户选的后端——
+    // 用户配好 Shizuku 时，启动应用仍会退化成「需要用户点确认」的 Intent 路径。
+    registry.register(new LaunchAppTool(appContext, shellBackends));
+    // 必须传共享的 shellBackends：只传 context 会让工具自建一个 registry
+    // （见 LogcatReadTool(Context) 构造），而自建的那个不知道用户选的后端——
+    // 实测：用户已配好 Shizuku 且 shell_execute 能跑 logcat，但 logcat_read 因
+    // 自建 registry 解析到 Termux（无 adb 权限）而恒失败，模型据此误判「设备缺权限」。
+    registry.register(new LogcatReadTool(appContext, shellBackends));
 
     // ---- 真机测试工具集（经 Shizuku 走 adb 级权限，不需要无障碍服务）----
     // 全部复用上面那一份 shell 后端注册表，与 shell_execute 看到同一个 active 后端。
