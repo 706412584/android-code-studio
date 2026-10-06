@@ -531,6 +531,34 @@ private class ChatModePreference(
 }
 
 /**
+ * 把「内容可长的滚动区」限制为屏幕高度的固定比例。
+ *
+ * <p><b>必须在 dialog.show() 之后调用</b>：{@code AlertController.setupCustomContent}
+ * 会把自定义视图的 layoutParams 覆盖成 {@code (MATCH_PARENT, WRAP_CONTENT)}，
+ * 在 setView 之前设的任何固定高度都会被丢弃。WRAP_CONTENT 下的 ScrollView 随内容
+ * 长高——粘贴长文时对话框被撑爆、底部按钮栏被挤出窗口（用户报的「保存按钮不见了」
+ * 与「好像有字数限制」都源于此，实际并没有长度限制）。
+ *
+ * <p>用屏幕高度的 45%：标题 + 提示 + 按钮都留在可见区，正文超出部分在框内滚动。
+ *
+ * <p>放文件顶层而非某个 Preference 类里：提示词模板、内置 agent、自定义 agent
+ * 三处编辑对话框都有多行长文本字段，共用这一个实现。
+ */
+private fun clampDialogScrollHeight(
+    dialog: android.app.Dialog,
+    scroll: android.widget.ScrollView,
+    context: Context,
+) {
+  dialog.setOnShowListener {
+    scroll.layoutParams =
+        android.widget.FrameLayout.LayoutParams(
+            android.widget.FrameLayout.LayoutParams.MATCH_PARENT,
+            (context.resources.displayMetrics.heightPixels * 0.45f).toInt(),
+        )
+  }
+}
+
+/**
  * 系统提示词模板编辑。
  *
  * <p><b>为什么需要这个入口</b>：提示词直接决定模型的行为风格。此前它硬编码在
@@ -656,14 +684,6 @@ private class PromptTemplatePreference(
     val scroll =
         android.widget.ScrollView(context).apply {
           addView(editText)
-          // 固定高度而非 WRAP_CONTENT：提示词动辄几十行，WRAP_CONTENT 会把对话框
-          // 撑到满屏、按钮被挤出窗口。取屏幕高度的 45%，标题 + 提示 + 按钮都留在
-          // 可见区，正文超出部分在框内滚动。这是「保存按钮看得见」的根本保证。
-          layoutParams =
-              android.widget.LinearLayout.LayoutParams(
-                  android.widget.LinearLayout.LayoutParams.MATCH_PARENT,
-                  (context.resources.displayMetrics.heightPixels * 0.45f).toInt(),
-              )
           setPadding(dp(4), dp(4), dp(4), dp(4))
         }
 
@@ -679,21 +699,28 @@ private class PromptTemplatePreference(
           }
         }
 
-    com.google.android.material.dialog.MaterialAlertDialogBuilder(context)
-        .setTitle(templateId)
-        .setMessage(hint)
-        .setView(scroll)
-        // 显式写「保存」而不是「确定」：用户要的就是一个明确的保存入口。
-        .setPositiveButton(R.string.ai_agent_prompt_template_save) { _, _ ->
-          store.write(templateId, editText.text?.toString().orEmpty())
-          preference.summary = describe(context)
-        }
-        .setNeutralButton(R.string.ai_agent_prompt_template_reset) { _, _ ->
-          store.reset(templateId)
-          preference.summary = describe(context)
-        }
-        .setNegativeButton(android.R.string.cancel, null)
-        .show()
+    val dialog =
+        com.google.android.material.dialog.MaterialAlertDialogBuilder(context)
+            .setTitle(templateId)
+            .setMessage(hint)
+            .setView(scroll)
+            // 显式写「保存」而不是「确定」：用户要的就是一个明确的保存入口。
+            .setPositiveButton(R.string.ai_agent_prompt_template_save) { _, _ ->
+              store.write(templateId, editText.text?.toString().orEmpty())
+              preference.summary = describe(context)
+            }
+            .setNeutralButton(R.string.ai_agent_prompt_template_reset) { _, _ ->
+              store.reset(templateId)
+              preference.summary = describe(context)
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .create()
+
+    // 高度限制见 clampDialogScrollHeight：setView 时设的固定高度会被 AlertController
+    // 覆盖成 WRAP_CONTENT，长文会把对话框撑爆、保存按钮被挤出窗口。
+    // 这不是字数限制（存储层与输入框都没有长度限制），是布局问题。
+    clampDialogScrollHeight(dialog, scroll, context)
+    dialog.show()
   }
 }
 
@@ -887,27 +914,32 @@ private class AgentsPreference(
       container.addView(box)
     }
 
-    com.google.android.material.dialog.MaterialAlertDialogBuilder(context)
-        .setTitle(existing.name)
-        .setView(android.widget.ScrollView(context).apply { addView(container) })
-        .setPositiveButton(android.R.string.ok) { _, _ ->
-          val updated =
-              com.tom.rv2ide.ai.agent.builtin.BuiltinAgent(
-                  existing.id,
-                  existing.name,
-                  descriptionField.text?.toString().orEmpty(),
-                  promptField.text?.toString().orEmpty(),
-                  checks.filter { it.value.isChecked }.keys.toList(),
-                  existing.isEnabled,
-              )
-          val error = store.save(updated)
-          if (error.isNotEmpty()) {
-            Toast.makeText(context, error, Toast.LENGTH_LONG).show()
-          }
-          preference.summary = describe(context)
-        }
-        .setNegativeButton(android.R.string.cancel, null)
-        .show()
+    val scroll =
+        android.widget.ScrollView(context).apply { addView(container) }
+    val dialog =
+        com.google.android.material.dialog.MaterialAlertDialogBuilder(context)
+            .setTitle(existing.name)
+            .setView(scroll)
+            .setPositiveButton(android.R.string.ok) { _, _ ->
+              val updated =
+                  com.tom.rv2ide.ai.agent.builtin.BuiltinAgent(
+                      existing.id,
+                      existing.name,
+                      descriptionField.text?.toString().orEmpty(),
+                      promptField.text?.toString().orEmpty(),
+                      checks.filter { it.value.isChecked }.keys.toList(),
+                      existing.isEnabled,
+                  )
+              val error = store.save(updated)
+              if (error.isNotEmpty()) {
+                Toast.makeText(context, error, Toast.LENGTH_LONG).show()
+              }
+              preference.summary = describe(context)
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .create()
+    clampDialogScrollHeight(dialog, scroll, context)
+    dialog.show()
   }
 
   // ---- 自定义 agent：动作 + 编辑 ----
@@ -978,28 +1010,33 @@ private class AgentsPreference(
     container.addView(descriptionField)
     container.addView(promptField)
 
-    com.google.android.material.dialog.MaterialAlertDialogBuilder(context)
-        .setTitle(
-            if (existing == null) R.string.ai_agent_agents_add
-            else R.string.ai_agent_agents_edit)
-        .setMessage(R.string.ai_agent_custom_agents_hint)
-        .setView(android.widget.ScrollView(context).apply { addView(container) })
-        .setPositiveButton(android.R.string.ok) { _, _ ->
-          val agent =
-              com.tom.rv2ide.ai.agent.command.CustomAgent(
-                  nameField.text?.toString().orEmpty(),
-                  descriptionField.text?.toString().orEmpty(),
-                  promptField.text?.toString().orEmpty(),
-                  existing?.isEnabled ?: true,
-              )
-          val error = store.save(agent)
-          if (error.isNotEmpty()) {
-            Toast.makeText(context, error, Toast.LENGTH_LONG).show()
-          }
-          preference.summary = describe(context)
-        }
-        .setNegativeButton(android.R.string.cancel, null)
-        .show()
+    val scroll =
+        android.widget.ScrollView(context).apply { addView(container) }
+    val dialog =
+        com.google.android.material.dialog.MaterialAlertDialogBuilder(context)
+            .setTitle(
+                if (existing == null) R.string.ai_agent_agents_add
+                else R.string.ai_agent_agents_edit)
+            .setMessage(R.string.ai_agent_custom_agents_hint)
+            .setView(scroll)
+            .setPositiveButton(android.R.string.ok) { _, _ ->
+              val agent =
+                  com.tom.rv2ide.ai.agent.command.CustomAgent(
+                      nameField.text?.toString().orEmpty(),
+                      descriptionField.text?.toString().orEmpty(),
+                      promptField.text?.toString().orEmpty(),
+                      existing?.isEnabled ?: true,
+                  )
+              val error = store.save(agent)
+              if (error.isNotEmpty()) {
+                Toast.makeText(context, error, Toast.LENGTH_LONG).show()
+              }
+              preference.summary = describe(context)
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .create()
+    clampDialogScrollHeight(dialog, scroll, context)
+    dialog.show()
   }
 }
 

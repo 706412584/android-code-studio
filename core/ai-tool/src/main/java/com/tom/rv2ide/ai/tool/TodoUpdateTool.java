@@ -49,10 +49,41 @@ public final class TodoUpdateTool extends BaseTool {
   /** 单项内容长度上限。 */
   static final int MAX_CONTENT_CHARS = 200;
 
-  private final TodoStateStore store;
+  /**
+   * 按会话解析存储。
+   *
+   * <p>工具模块（纯 Java、零 Android 依赖）不知道会话文件放在哪，因此存储的**创建**
+   * 由装配方（app 层的 AgentOrchestrator）提供。做成回调而非固定实例，是因为待办必须
+   * 按会话隔离——固定实例会让 A 项目的待办出现在 B 项目的会话里。
+   */
+  public interface StoreResolver {
+    /** @param conversationId 当前运行的会话 id，可能为 null（未开始会话） */
+    TodoStateStore resolve(String conversationId);
+  }
 
+  private final TodoStateStore store;
+  private final StoreResolver resolver;
+
+  /** 固定存储（单测与不需要隔离的调用方）。 */
   public TodoUpdateTool(TodoStateStore store) {
     this.store = store == null ? TodoStateStore.none() : store;
+    this.resolver = null;
+  }
+
+  /** 按会话解析存储（app 层装配用）。 */
+  public TodoUpdateTool(StoreResolver resolver) {
+    this.store = null;
+    this.resolver = resolver;
+  }
+
+  /** 本次调用该用哪个存储：有 resolver 时按上下文里的会话 id 解析。 */
+  private TodoStateStore storeFor(ToolContext context) {
+    if (resolver == null) {
+      return store;
+    }
+    String conversationId = context == null ? null : context.getConversationId();
+    TodoStateStore resolved = resolver.resolve(conversationId);
+    return resolved == null ? TodoStateStore.none() : resolved;
   }
 
   @Override
@@ -146,7 +177,7 @@ public final class TodoUpdateTool extends BaseTool {
       items.add(new TodoItem(content, raw.optString("status", TodoItem.STATUS_PENDING)));
     }
 
-    store.setItems(items);
+    storeFor(context).setItems(items);
 
     if (items.isEmpty()) {
       return ok("待办列表已清空。");

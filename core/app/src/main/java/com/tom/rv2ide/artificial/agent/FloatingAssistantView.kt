@@ -2474,7 +2474,10 @@ class FloatingAssistantView(
           // 顺序与实时渲染一致：先思考块，再工具卡片，最后正文。
           val reasoning = message.getReasoningContent()
           if (!reasoning.isNullOrBlank()) {
-            adapter.appendThinking(reasoning, null)
+            // streaming=false：这是历史回放，推理早已结束。传默认值 true 会让
+            // 回放出的块永久显示「思考中」与进度动画（重启后历史里全是卡住的
+            // 思考块）——历史条目只记录「思考过什么」，不记录「是否仍在思考」。
+            adapter.appendThinking(reasoning, null, streaming = false)
           }
           val calls = message.getToolCalls()
           if (calls != null) {
@@ -2595,7 +2598,9 @@ class FloatingAssistantView(
    * 的空间，而「没有任务」是常态（普通问答不产生任务清单）。
    */
   private fun refreshTodos() {
-    val todos = orchestrator.todos
+    // 按**当前显示的**会话读取：待办是会话级的，读全局的会把上一个项目的
+    // 任务清单显示在刚开的会话里（用户以为 agent 搞错了项目）。
+    val todos = orchestrator.getTodos(displayedConversationId)
     val card = binding.assistantTodos.todoCard
     if (todos.isEmpty()) {
       card.isVisible = false

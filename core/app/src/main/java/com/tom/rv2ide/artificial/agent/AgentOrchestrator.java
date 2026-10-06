@@ -155,12 +155,17 @@ public final class AgentOrchestrator {
   private final com.tom.rv2ide.ai.agent.builtin.BuiltinAgentStore builtinAgentStore;
 
   /**
-   * 待办列表存储，跨运行保留。
+   * 按会话隔离的待办存储。
    *
-   * <p>必须持久化：待办是模型「记住自己做到哪一步」的依据，只在内存里的话进程被回收后
-   * 模型会从头再来一遍，用户看到的是重复劳动。
+   * <p><b>为什么必须按会话隔离</b>：待办是「这个会话里正在做的事」。此前用单一全局文件
+   * （{@code filesDir/ai/todos.json}）时，在 A 项目开的待办会在 B 项目的会话里照常显示
+   * ——用户在别的项目新建会话，看到的却是上一个项目的任务清单，误以为 agent 搞错了项目。
+   *
+   * <p>键为会话 id（UUID，文件名安全）。缓存实例避免每次 UI 刷新都重读磁盘
+   * （{@code refreshTodos} 在每次工具结束后调用，且跑在主线程）。
    */
-  private final TodoStateStore todoStore;
+  private final java.util.Map<String, TodoStateStore> todoStores =
+      new java.util.concurrent.ConcurrentHashMap<>();
 
   /**
    * 长期记忆存储，跨会话保留。
@@ -457,7 +462,7 @@ public final class AgentOrchestrator {
     this.settings = new AgentToolSettings(appContext);
     this.diffStore = diffStore;
     this.conversationStore = conversationStore;
-    this.todoStore = new com.tom.rv2ide.ai.tool.FileTodoStateStore(defaultTodoFile(appContext));
+    // todoStore 不再在此构造：它按会话创建（见 todoStoreFor）。
     this.memoryStore = new com.tom.rv2ide.ai.tool.memory.MemoryStore(defaultMemoryFile(appContext));
     // 先把内置 skill 播种到用户目录，再加载——顺序不能反，否则首次启动时
     // 注册表扫到的是空目录，内置 skill 要等下次构造才出现。
@@ -576,6 +581,24 @@ public final class AgentOrchestrator {
   /** 待办文件：{@code filesDir/ai/todos.json}。 */
   private static File defaultTodoFile(Context context) {
     return new File(new File(context.getFilesDir(), "ai"), "todos.json");
+  }
+
+  /**
+   * 某会话的待办文件：{@code filesDir/ai/todos/<会话id>.json}。
+   *
+   * <p>放在子目录而不是平铺在 {@code ai/} 下：待办文件与会话一一对应，数量随会话增长；
+   * 平铺会与 {@code diffs.jsonl}、{@code memories.json} 等混在一起，难以清理。
+   *
+   * <p>会话 id 为 null/空时回退到旧的全局文件：未开始会话时（首次运行前）不该写进
+   * 一个以空串命名的文件。
+   */
+  private static File todoFileFor(Context context, String conversationId) {
+    if (conversationId == null || conversationId.isEmpty()) {
+      return defaultTodoFile(context);
+    }
+    // 防御：会话 id 是 UUID，但万一将来换成别的格式，路径分隔符会逃出目录。
+    String safe = conversationId.replaceAll("[^A-Za-z0-9._-]", "_");
+    return new File(new File(new File(context.getFilesDir(), "ai"), "todos"), safe + ".json");
   }
 
   /** 会话日志目录：{@code filesDir/ai/conversations}。 */
@@ -888,14 +911,28 @@ public final class AgentOrchestrator {
   }
 
   /**
-   * 当前任务清单（供界面渲染任务卡片）。
+   * 取某会话的待办存储，不存在则创建。
+   *
+   * <p>缓存实例：{@code refreshTodos} 在每次工具结束后都会调用，每次新建会重读磁盘
+   * （FileTodoStateStore 构造时 load）——而它跑在主线程。
+   */
+  private TodoStateStore todoStoreFor(String conversationId) {
+    String key = conversationId == null || conversationId.isEmpty() ? "" : conversationId;
+    return todoStores.computeIfAbsent(
+        key, k -> new com.tom.rv2ide.ai.tool.FileTodoStateStore(todoFileFor(appContext, k)));
+  }
+
+  /**
+   * 某会话的任务清单（供界面渲染任务卡片）。
+   *
+   * <p>按会话隔离：传 null 时读「无会话」的兜底存储（与旧行为一致）。
    *
    * <p>返回副本而不是内部列表：界面在别的线程读，直接给出内部引用会在
    * {@code todo_update} 写入时产生并发修改。
    */
-  public List<com.tom.rv2ide.ai.tool.TodoItem> getTodos() {
+  public List<com.tom.rv2ide.ai.tool.TodoItem> getTodos(String conversationId) {
     try {
-      return todoStore.getItems();
+      return todoStoreFor(conversationId).getItems();
     } catch (RuntimeException e) {
       return new ArrayList<>();
     }
@@ -1004,7 +1041,9 @@ public final class AgentOrchestrator {
     registry.register(new PhoneTestScenarioTool(appContext));
 
     // 任务计划：把模型的计划外化成可见状态，使长任务不丢进度。
-    registry.register(new TodoUpdateTool(todoStore));
+    // 存储按会话隔离（见 todoStoreFor）——这里传解析器，执行时从 ToolContext
+    // 取本次运行的会话 id，再取对应的存储。
+    registry.register(new TodoUpdateTool(this::todoStoreFor));
 
     // 长期记忆：跨会话保留的项目约定与用户偏好。
     registry.register(new com.tom.rv2ide.ai.tool.memory.MemoryUpdateTool(memoryStore));
@@ -1442,12 +1481,13 @@ public final class AgentOrchestrator {
     // 待办状态注入提示词：只存不读等于没记——模型必须在每轮都看到「我做到哪了」，
     // 才能在几十轮工具调用之后不丢失进度。
     // 模式与模型信息同样注入，使模板能按模式/模型差异化措辞。
+    // 待办按会话隔离：注入的必须是**本会话**的清单，否则模型会看到别的项目的任务。
     String systemPrompt =
         promptBuilder.build(
             runWorkspace.getAbsolutePath(),
             tools,
             nativeTools,
-            todoStore.renderForPrompt(),
+            todoStoreFor(conversationId).renderForPrompt(),
             chatMode,
             new AgentPromptBuilder.ModelInfo(
                 providerId, modelId, config.getProtocolType().getLabel()));

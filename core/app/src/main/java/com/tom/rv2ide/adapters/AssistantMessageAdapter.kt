@@ -299,8 +299,13 @@ class AssistantMessageAdapter : RecyclerView.Adapter<RecyclerView.ViewHolder>() 
    *
    * <p>[lastThinkingId] 为 null 时新建一块。一次运行里的多轮推理会各建一块——
    * 因为中间隔着工具调用，合并成一块会让「这段推理属于哪一步」看不出来。
+   *
+   * @param streaming 新建的块是否标记为「仍在生成」。**回放历史时必须传 false**：
+   *     历史里的推理早已结束，传 true（默认）会让回放出的块永久显示「思考中」与
+   *     进度动画——重启应用后历史对话里所有思考块都卡在思考态，正是这个默认值造成的。
+   *     追加到既有块时该参数无效（块自身的状态保持不变）。
    */
-  fun appendThinking(delta: String, lastThinkingId: Long?): Long {
+  fun appendThinking(delta: String, lastThinkingId: Long?, streaming: Boolean = true): Long {
     // 纯空白增量不建块，也不追加。模型在轮次边界会吐出 "\n" 之类的增量，
     // 建出来的块标题是「思考过程」但内容是空的——用户看到一排空折叠条，
     // 以为是渲染坏了。
@@ -317,7 +322,7 @@ class AssistantMessageAdapter : RecyclerView.Adapter<RecyclerView.ViewHolder>() 
       }
     }
     val id = nextId++
-    items.add(Thinking(id, delta, streaming = true, expanded = false))
+    items.add(Thinking(id, delta, streaming = streaming, expanded = false))
     notifyItemInserted(items.size - 1)
     return id
   }
