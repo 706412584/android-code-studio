@@ -8,6 +8,13 @@
 # en: core/ticode/src/main/java（英文版，包 ticode.*）
 # 输出: 错误总数 + 按文件聚合 + 明细（UTF-8）
 # 陷阱: javac 的 @argfile 必须用 Windows 路径；源码 UTF-8（中文标识符）。
+#
+# 环境变量:
+#   ANDROID_JAR  覆盖 android.jar（默认 libs/android.jar）。
+#                指定低版本 SDK 的 android.jar 可查出"compileSdk 高、设备版本低"
+#                导致的 API 级别不匹配（NoSuchMethodError/NoSuchFieldError）：
+#                  ANDROID_JAR=D:/android/platforms/android-28/android.jar \
+#                    bash tools/ticode-compile.sh zh
 set -u
 MODE="${1:-zh}"
 MAXERRS="${2:-2000}"

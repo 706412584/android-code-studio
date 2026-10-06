@@ -101,6 +101,35 @@ Activity/Context/Drawable/PackageManager 等类，**恰好与已抓到的 CCE �
 - `大整数#减_op` NPE —— Unsafe 造的 BigInteger 内部 `mag` 数组为 null（真实 `new 大整数("1",10)` 正常）
 - `安卓提示框#新建提示框` —— 覆盖驱动在后台线程跑，Toast 要求 Looper（真实用法在主线程）
 
+## 静态扫描：API 级别不匹配（用低版本 SDK jar 编译）
+
+ticode 用 **compileSdk 36** 编译，API 30+ 的符号编译期不报错，但在低版本设备上
+`NoSuchMethodError` / `NoSuchFieldError` / 类加载失败 —— 这类**只有跑在旧设备上才暴露**。
+
+定位方法：**用低版本 SDK 的 `android.jar` 重新编译 ticode**（编译期就能看出符号缺失）。
+`tools/ticode-compile.sh` 支持 `ANDROID_JAR` 环境变量覆盖：
+
+```bash
+# 设备是 SDK 29，但本机无 android-29；用 android-28（API≤29 崩因的超集）
+ANDROID_JAR=D:/android/platforms/android-28/android.jar bash tools/ticode-compile.sh zh
+```
+
+android-28 编译报 **14 处**（android-36 编译 0 错）：
+
+| 符号 | 引入版本 | 修法 |
+|---|---|---|
+| `WifiInfo.getTxLinkSpeedMbps/getRxLinkSpeedMbps` | 29 | 反射 |
+| `WifiInfo.getWifiStandard/getMaxSupported*LinkSpeedMbps` | 30 | 反射 |
+| `WifiInfo.getPasspointFqdn/getPasspointProviderFriendlyName` | 30 | 反射 |
+| `Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION` | 30 | 字符串字面量 |
+| `Bitmap.CompressFormat.WEBP_LOSSY/WEBP_LOSSLESS` | 30 | 反射取字段 |
+| `PackageInfo.isApex` | 29 | 反射读写 |
+| `ServiceInfo.getForegroundServiceType()` | 29 | 反射 |
+| `Build.VERSION_CODES.R` | 30 | 字面量 `30` |
+| `Context.getDisplay()` / `Activity.getDisplay()` ×3 | 30 | `WindowManager.getDefaultDisplay()`（全版本） |
+
+验证：android-28 与 android-36 **均编译 0 错误**；真机 `NoSuchMethodError`/`NoSuchFieldError` 归零。
+
 ## 剩余 316 未覆盖 = 反射可达性的真实天花板
 
 | 原因 | 数量 | 说明 |
