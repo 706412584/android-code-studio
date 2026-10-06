@@ -654,10 +654,15 @@ object QuickDevelopSources {
       import ${uiPackage(packageId)}.页面;
       import ${uiPackage(packageId)}.输入框;
 
+      // ticode：结绳语言基本库（Java 移植）。演示它在模板工程里可直接调用。
+      import ticode.zh.android.加解密操作;
+      import ticode.zh.jvm.GZIP操作;
+
       /**
        * 用中文组件搭出的示例页面。
        *
-       * <p>界面结构：标题 + 输入框 + 按钮 + 结果文本，点按钮回显输入内容。
+       * <p>界面结构：标题 + 输入框 + 按钮 + 结果文本，点按钮回显输入内容，
+       * 并附带一段 ticode 计算（MD5 + GZIP 往返），演示 `:ticode` 模块的用法。
        */
       public class MainActivity extends 页面 {
 
@@ -684,7 +689,25 @@ object QuickDevelopSources {
                           @Override
                           public void run() {
                               String value = 输入.取值();
-                              结果.文字(value.isEmpty() ? "你还没有输入内容" : "你输入了：" + value);
+                              if (value.isEmpty()) {
+                                  结果.文字("你还没有输入内容");
+                                  return;
+                              }
+                              // ticode 探针：MD5 + GZIP 往返，既作示例也便于端到端验证。
+                              String 摘要 = 加解密操作.MD5加密(value, "UTF-8");
+                              String 压缩 = "?";
+                              try {
+                                  byte[] gz = GZIP操作.压缩字节集(value.getBytes("UTF-8"));
+                                  byte[] back = GZIP操作.解压字节集(gz);
+                                  String 解压 = new String(back, "UTF-8");
+                                  压缩 = (gz.length + "B→" + back.length + "B")
+                                          + (解压.equals(value) ? " ✓" : " ✗");
+                              } catch (Exception e) {
+                                  压缩 = "GZIP 失败: " + e;
+                              }
+                              结果.文字("你输入了：" + value
+                                      + "\nMD5：" + 摘要
+                                      + "\nGZIP：" + 压缩);
                           }
                       });
 
