@@ -1,9 +1,11 @@
 package ticode.zh.android;
 
 
-public abstract class 安卓线程 extends Thread {
-public static 安卓线程 取当前线程() {
-return (安卓线程)Thread.currentThread();
+public class 安卓线程 extends Thread {
+// 当前线程是框架创建的普通 Thread，不可能是 安卓线程 子类，强转必 ClassCastException。
+// 返回原生 Thread（调用方需要 ID/名称时用 Thread 自身方法）。
+public static Thread 取当前线程() {
+return Thread.currentThread();
 }
 
 public static long 取当前线程ID() {

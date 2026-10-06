@@ -2,7 +2,7 @@ package ticode.zh.android;
 
 import android.content.pm.*;
 
-public abstract class 启动信息过滤器 extends android.content.IntentFilter {
+public class 启动信息过滤器 extends android.content.IntentFilter {
 
 public void 置优先级(int 优先级) {
 this.setPriority(优先级);

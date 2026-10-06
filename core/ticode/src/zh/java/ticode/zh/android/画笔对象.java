@@ -4,6 +4,9 @@ import android.graphics.Paint;
 import android.graphics.Rect;
 
 public class 画笔对象 extends android.graphics.Paint {
+// 具体化后必须显式调 super()：父类（Path/Paint/…）有 native 字段，
+// 不调则实例未初始化，一用就 SIGSEGV。
+public 画笔对象() { super(); }
 public static final int 画笔类型_填充 = 1;
 public static final int 画笔类型_描边 = 2;
 public static final int 画笔类型_填充和描边 = 3;

@@ -1,7 +1,7 @@
 package ticode.zh.android;
 
 
-public abstract class 安卓测试器信息 extends android.content.pm.InstrumentationInfo {
+public class 安卓测试器信息 extends android.content.pm.InstrumentationInfo {
 
 public boolean 等于_op(安卓测试器信息 另一个) {
 if (this == null) {

@@ -165,7 +165,12 @@ this.clipPath(路径);
 }
 
 public boolean 是否在裁剪区域(float x, float y) {
-return this.quickReject(x, y, x + 1, y + 1);
+// quickReject 是 Canvas 的隐藏 API（@hide），设备 framework 里没有 → NoSuchMethodError。
+// 用 getClipBounds 做等价判定：点所在的 1x1 矩形是否完全落在裁剪区之外。
+android.graphics.Rect 裁剪 = new android.graphics.Rect();
+if (!this.getClipBounds(裁剪)) return false;   // 无裁剪区 → 不会被裁剪
+android.graphics.Rect 点 = new android.graphics.Rect((int) x, (int) y, (int) x + 1, (int) y + 1);
+return !android.graphics.Rect.intersects(裁剪, 点);
 }
 
 public void 画贝塞尔曲线(float 起始X坐标, float 起始Y坐标, float 辅助X坐标, float 辅助Y坐标, float 结束X坐标, float 结束Y坐标, 画笔对象 画笔) {

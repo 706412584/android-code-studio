@@ -1,7 +1,7 @@
 package ticode.zh.android;
 
 
-public abstract class 安卓程序权限信息 extends android.content.pm.PermissionInfo {
+public class 安卓程序权限信息 extends android.content.pm.PermissionInfo {
 
 public static final int 标志_扣费 = 1;;
 

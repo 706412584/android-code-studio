@@ -5,7 +5,7 @@ import java.util.concurrent.*;
 
 import ticode.zh.jvm.Java类;
 
-public abstract class 对象 extends Object {
+public class 对象 extends Object {
 
 
 

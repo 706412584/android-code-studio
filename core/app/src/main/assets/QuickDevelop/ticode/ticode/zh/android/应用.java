@@ -7,5 +7,5 @@ import android.os.*;
 import android.content.*;
 import android.graphics.drawable.*;
 
-public abstract class 应用 extends android.app.Application {
+public class 应用 extends android.app.Application {
 }

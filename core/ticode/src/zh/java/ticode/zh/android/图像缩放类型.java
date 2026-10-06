@@ -11,7 +11,7 @@ import android.graphics.*;
 import android.graphics.drawable.*;
 import android.webkit.*;
 
-public abstract class 图像缩放类型 {
+public class 图像缩放类型 {
 public static final android.widget.ImageView.ScaleType 矩阵;
 public static final android.widget.ImageView.ScaleType 完全拉伸;
 public static final android.widget.ImageView.ScaleType 左上;

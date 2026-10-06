@@ -3,7 +3,7 @@ package ticode.zh.base;
 import android.os.*;
 import java.util.concurrent.*;
 
-public abstract class 整数 extends 基本类型模板类<整数类> {
+public class 整数 extends 基本类型模板类<整数类> {
 public static byte 到字节(int 值) {
 return (byte)值;
 }

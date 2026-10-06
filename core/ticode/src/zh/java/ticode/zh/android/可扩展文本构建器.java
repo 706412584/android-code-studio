@@ -4,7 +4,7 @@ package ticode.zh.android;
 import ticode.zh.base.字符串;
 import ticode.zh.base.文本;
 
-public abstract class 可扩展文本构建器 extends android.text.SpannableStringBuilder {
+public class 可扩展文本构建器 extends android.text.SpannableStringBuilder {
 
 //字符串 包括 文本(String)
 public 可扩展文本构建器(CharSequence 初始字符串) { super(初始字符串); }

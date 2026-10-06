@@ -6,7 +6,7 @@ import android.graphics.drawable.*;
 import android.graphics.drawable.shapes.*;
 import android.content.res.*;
 
-public abstract class 绘制和形状 {
+public class 绘制和形状 {
 public static final android.graphics.drawable.GradientDrawable.Orientation 绘制_从上往下;
 public static final android.graphics.drawable.GradientDrawable.Orientation 绘制_从右上角到左下角;
 public static final android.graphics.drawable.GradientDrawable.Orientation 绘制_从右往左;

@@ -2,7 +2,7 @@ package ticode.zh.jvm;
 
 import java.util.concurrent.*;
 
-public abstract class 并发哈希表模板类<T1, T2> extends java.util.concurrent.ConcurrentHashMap<T1, T2> {
+public class 并发哈希表模板类<T1, T2> extends java.util.concurrent.ConcurrentHashMap<T1, T2> {
 public T2 取索引_op(T1 键) {
 return 取项目(键);
 }

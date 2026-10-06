@@ -102,11 +102,13 @@ return this.内部对象.getQueryParameter(参数名称);
 }
 
 public String[] 取所有参数名() {
-return (String[])this.内部对象.getQueryParameterNames().toArray();
+// getQueryParameterNames() 是 Set，toArray() 返回 Object[]，不能强转 String[]。
+return this.内部对象.getQueryParameterNames().toArray(new String[0]);
 }
 
 public java.util.List<String> 取路径片段() {
-return (java.util.ArrayList)this.内部对象.getPathSegments();
+// getPathSegments() 返回 List<String>（Uri.PathSegments），不是 ArrayList，强转必崩。
+return new java.util.ArrayList<>(this.内部对象.getPathSegments());
 }
 
 public String 获取最后路径片段() {

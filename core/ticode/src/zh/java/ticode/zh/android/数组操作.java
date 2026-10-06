@@ -60,14 +60,17 @@ return list;
 
 
 public static String 数组到文本(Object 数组) {
-return java.util.Arrays.toString((Object[])数组);
+// 入参可能是数组、集合或任意对象；只有数组能强转 Object[]（集合/字符串强转必崩）。
+if (数组 instanceof Object[]) return java.util.Arrays.toString((Object[])数组);
+return String.valueOf(数组);
 }
 
 
 
 
 public static String 数组到文本2(Object 数组) {
-return java.util.Arrays.deepToString((Object[])数组);
+if (数组 instanceof Object[]) return java.util.Arrays.deepToString((Object[])数组);
+return String.valueOf(数组);
 }
 
 

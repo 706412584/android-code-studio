@@ -6,6 +6,9 @@ import android.graphics.RectF;
 import ticode.zh.base.对象;
 
 public class 构建路径 extends android.graphics.Path {
+// 具体化后必须显式调 super()：父类（Path/Paint/…）有 native 字段，
+// 不调则实例未初始化，一用就 SIGSEGV。
+public 构建路径() { super(); }
 public static 构建路径 创建路径() {
 return new 构建路径();
 }

@@ -1,7 +1,7 @@
 package ticode.zh.android;
 
 
-public abstract class 按键事件 extends android.view.KeyEvent {
+public class 按键事件 extends android.view.KeyEvent {
 public 按键事件() { super(0, 0); }
 
 

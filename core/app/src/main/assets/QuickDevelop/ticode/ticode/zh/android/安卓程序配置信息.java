@@ -1,7 +1,7 @@
 package ticode.zh.android;
 
 
-public abstract class 安卓程序配置信息 extends android.content.pm.ConfigurationInfo {
+public class 安卓程序配置信息 extends android.content.pm.ConfigurationInfo {
 
 public static final int GLES版本_未定义 = 0;
 

@@ -18,7 +18,7 @@ TMP="/d/android/tmp"
 
 if [ "$MODE" = "en" ]; then SRC="$ROOT/src/main/java"; else SRC="$ROOT/src/zh/java"; fi
 
-CP="$(cygpath -w "$ROOT/libs/android.jar")"
+CP="$(cygpath -w "${ANDROID_JAR:-$ROOT/libs/android.jar}")"
 for j in "$ROOT"/libs/*.jar "$ROOT"/libs/androidx/*.jar; do CP="$CP;$(cygpath -w "$j")"; done
 
 OUT="$TMP/out-$MODE"; rm -rf "$OUT"; mkdir -p "$OUT"

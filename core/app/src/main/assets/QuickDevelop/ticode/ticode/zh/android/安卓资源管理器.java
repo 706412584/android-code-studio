@@ -1,7 +1,7 @@
 package ticode.zh.android;
 
 
-public abstract class 安卓资源管理器 extends android.content.res.Resources {
+public class 安卓资源管理器 extends android.content.res.Resources {
 public 安卓资源管理器() { super(null, null, null); }
 
 public android.content.res.AssetManager 取附加资源管理器() {

@@ -102,7 +102,10 @@ public void 交换项目(int 索引, int 目标索引) {
 }
 
 public void 交换集合数据(Object 集合, int 索引, int 目标索引) {
+// 入参是 Object，可能是 List 也可能不是；直接强转 List 会在非列表时崩。
+if (集合 instanceof java.util.List) {
 java.util.Collections.swap((java.util.List)集合, 索引, 目标索引);
+}
 }
 
 //移除项目视图
@@ -111,7 +114,9 @@ public void 移除项目(int 索引) {
 }
 
 public void 移除集合数据(Object 集合, int 索引) {
+if (集合 instanceof java.util.List) {
 ((java.util.List)集合).remove(索引);
+}
 }
 
 //拖拽中触发

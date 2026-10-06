@@ -6,7 +6,7 @@ import android.graphics.drawable.*;
 import android.graphics.drawable.shapes.*;
 import android.content.res.*;
 
-public abstract class 位图压缩格式 {
+public class 位图压缩格式 {
 public static final android.graphics.Bitmap.CompressFormat JPEG = CompressFormat.JPEG;
 
 public static final android.graphics.Bitmap.CompressFormat PNG = CompressFormat.PNG;

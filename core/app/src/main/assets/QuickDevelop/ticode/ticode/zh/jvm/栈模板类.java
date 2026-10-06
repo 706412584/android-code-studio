@@ -1,7 +1,7 @@
 package ticode.zh.jvm;
 
 
-public abstract class 栈模板类<T1> extends java.util.Stack<T1> {
+public class 栈模板类<T1> extends java.util.Stack<T1> {
 
 public int 长度() {
 return this.size();

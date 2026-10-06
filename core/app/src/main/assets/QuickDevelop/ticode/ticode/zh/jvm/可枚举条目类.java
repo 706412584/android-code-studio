@@ -1,5 +1,5 @@
 package ticode.zh.jvm;
 
 
-public abstract class 可枚举条目类<T1> {
+public class 可枚举条目类<T1> {
 }

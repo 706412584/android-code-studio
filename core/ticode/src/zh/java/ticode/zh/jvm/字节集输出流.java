@@ -2,6 +2,9 @@ package ticode.zh.jvm;
 
 
 public class 字节集输出流 extends java.io.ByteArrayOutputStream {
+// 具体化后必须显式调 super()：父类（Path/Paint/…）有 native 字段，
+// 不调则实例未初始化，一用就 SIGSEGV。
+public 字节集输出流() { super(); }
 
 public void 写出(byte[] 字节集, int 起始索引, int 长度) {
 try {

@@ -1,7 +1,7 @@
 package ticode.zh.jvm;
 
 
-public abstract class 集合模板类<T1> extends java.util.ArrayList<T1> {
+public class 集合模板类<T1> extends java.util.ArrayList<T1> {
 
 public 集合模板类 赋值_op(T1[] 成员) {
 // 原写法 `return (集合模板类) new ArrayList<>()` 必崩：ArrayList 不是本壳的子类实例。

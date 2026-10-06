@@ -1,7 +1,7 @@
 package ticode.zh.android;
 
 
-public abstract class 安卓窗口信息 extends android.content.pm.ActivityInfo {
+public class 安卓窗口信息 extends android.content.pm.ActivityInfo {
 
 public static final int 颜色模式_默认 = 0;
 

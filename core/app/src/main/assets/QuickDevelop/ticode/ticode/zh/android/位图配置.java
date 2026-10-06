@@ -6,7 +6,7 @@ import android.graphics.drawable.*;
 import android.graphics.drawable.shapes.*;
 import android.content.res.*;
 
-public abstract class 位图配置 {
+public class 位图配置 {
 
 public static final android.graphics.Bitmap.Config ALPHA_8;
 

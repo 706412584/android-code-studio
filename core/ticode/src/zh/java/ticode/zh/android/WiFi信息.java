@@ -25,8 +25,20 @@ return this.内部对象.getRssi();
 }
 
 //勿用会崩溃
+// 以下 4 个方法是 API 30+ 才加入 WifiInfo 的；低版本（如 Android 10）直接调用
+// 会 NoSuchMethodError。用反射调用，缺失时返回 -1。
+private int 反射取速率(String 方法名) {
+try {
+java.lang.reflect.Method m = android.net.wifi.WifiInfo.class.getMethod(方法名);
+Object r = m.invoke(this.内部对象);
+return r instanceof Integer ? (Integer) r : -1;
+} catch (Throwable t) {
+return -1;
+}
+}
+
 public int WiFi标准() {
-return this.内部对象.getWifiStandard();
+return 反射取速率("getWifiStandard");
 }
 
 public int 连接速率() {
@@ -36,17 +48,17 @@ return this.内部对象.getLinkSpeed();
 public int 发送速率() {
 return this.内部对象.getTxLinkSpeedMbps();
 }
-//勿用会崩溃
+
 public int 最大发速率() {
-return this.内部对象.getMaxSupportedTxLinkSpeedMbps();
+return 反射取速率("getMaxSupportedTxLinkSpeedMbps");
 }
 
 public int 接收速率() {
 return this.内部对象.getRxLinkSpeedMbps();
 }
-//勿用会崩溃
+
 public int 最大接收速率() {
-return this.内部对象.getMaxSupportedRxLinkSpeedMbps();
+return 反射取速率("getMaxSupportedRxLinkSpeedMbps");
 }
 
 public int 频率() {

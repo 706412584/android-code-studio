@@ -6,7 +6,7 @@ import org.xmlpull.v1.*;
 
 import static ticode.zh.android.文件操作.写出文本文件;
 
-public abstract class JSON对象 extends org.json.JSONObject {
+public class JSON对象 extends org.json.JSONObject {
 
 
 

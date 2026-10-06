@@ -4,7 +4,7 @@ import android.media.*;
 import android.os.*;
 import java.util.*;
 
-public abstract class 安卓提示框 extends android.widget.Toast {
+public class 安卓提示框 extends android.widget.Toast {
 public 安卓提示框() { super(null); }
 public static final int 长时 = 1;
 public static final int 短时 = 0;

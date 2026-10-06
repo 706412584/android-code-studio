@@ -1,7 +1,7 @@
 package ticode.zh.android;
 
 
-public abstract class 安卓程序包信息 extends android.content.pm.PackageInfo {
+public class 安卓程序包信息 extends android.content.pm.PackageInfo {
 
 public static final int 安装位置_自动 = 0;
 

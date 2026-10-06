@@ -1,7 +1,7 @@
 package ticode.zh.jvm;
 
 
-public abstract class 哈希表模板类<T1, T2> extends java.util.HashMap<T1, T2> {
+public class 哈希表模板类<T1, T2> extends java.util.HashMap<T1, T2> {
 public T2 取索引_op(T1 键) {
 return 取项目(键);
 }

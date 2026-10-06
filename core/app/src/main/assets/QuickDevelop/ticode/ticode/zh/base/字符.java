@@ -3,7 +3,7 @@ package ticode.zh.base;
 import android.os.*;
 import java.util.concurrent.*;
 
-public abstract class 字符 extends 基本类型模板类<字符类> {
+public class 字符 extends 基本类型模板类<字符类> {
 // 基础类型扩展方法：Java 无扩展方法，且 `char` 是原始类型，
 // 实例方法体里的 `#this`（壳对象）无法当 char 用 → 改为静态 + 显式值参数。
 public static boolean 为数字(char 值) {

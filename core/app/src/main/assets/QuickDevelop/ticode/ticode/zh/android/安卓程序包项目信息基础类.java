@@ -1,7 +1,7 @@
 package ticode.zh.android;
 
 
-public abstract class 安卓程序包项目信息基础类 extends android.content.pm.PackageItemInfo {
+public class 安卓程序包项目信息基础类 extends android.content.pm.PackageItemInfo {
 
 public boolean 等于_op(安卓程序包项目信息基础类 另一个) {
 if (this == null) {

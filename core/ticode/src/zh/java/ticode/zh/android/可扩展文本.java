@@ -1,7 +1,7 @@
 package ticode.zh.android;
 
 
-public abstract class 可扩展文本 extends android.text.SpannableString {
+public class 可扩展文本 extends android.text.SpannableString {
 
 public static final int 包括开始和结束 = 1;
 //表示标记的范围从start到end-1，包括start，但不包括end.

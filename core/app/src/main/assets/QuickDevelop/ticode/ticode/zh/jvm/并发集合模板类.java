@@ -2,7 +2,7 @@ package ticode.zh.jvm;
 
 import java.util.concurrent.*;
 
-public abstract class 并发集合模板类<T1> extends java.util.Vector<T1> {
+public class 并发集合模板类<T1> extends java.util.Vector<T1> {
 
 public 并发集合模板类 赋值_op(T1[] 成员) {
 // 同 集合模板类：原写法强转 Vector→本壳，必崩。改为修改 this。

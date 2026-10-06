@@ -5,7 +5,7 @@ import java.io.StringWriter;
 import android.os.*;
 import java.util.concurrent.*;
 
-public abstract class 异常 extends Throwable {
+public class 异常 extends Throwable {
 public String 取异常信息() {
 return this.getMessage();
 }

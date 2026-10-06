@@ -37,6 +37,8 @@ public Java类加载器 取父加载器() {
 return (Java类加载器)this.getParent();
 }
 public static Java类加载器 取系统类加载器() {
-return (Java类加载器)java.lang.ClassLoader.getSystemClassLoader();
+// 系统类加载器是框架的 PathClassLoader，不是 Java类加载器 子类，强转必 ClassCastException。
+java.lang.ClassLoader 原 = java.lang.ClassLoader.getSystemClassLoader();
+return 原 instanceof Java类加载器 ? (Java类加载器)原 : null;
 }
 }

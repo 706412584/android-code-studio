@@ -1,7 +1,7 @@
 package ticode.zh.android;
 
 
-public abstract class 安卓应用信息 extends android.content.pm.ApplicationInfo {
+public class 安卓应用信息 extends android.content.pm.ApplicationInfo {
 
 public static final int 类别_未定义 = -1;
 
