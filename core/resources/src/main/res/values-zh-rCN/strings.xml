@@ -340,6 +340,8 @@
   <string name="ai_assistant_code_plaintext">纯文本</string>
   <string name="ai_assistant_code_lines">%1$d 行</string>
   <string name="ai_assistant_compact_busy">正在运行中，暂时无法压缩上下文。</string>
+  <!-- 排队发送。序号从 1 开始；轮到它时会变成 1。 -->
+  <string name="ai_assistant_queued">已排队（前面还有 %1$d 条）。当前这轮结束后自动发出。</string>
   <string name="ai_assistant_compact_failed">没有可压缩的内容，或压缩失败。</string>
   <string name="ai_assistant_compact_done">上下文已压缩：%1$s</string>
   <string name="ai_assistant_todo_progress">任务 · %1$d/%2$d 完成</string>

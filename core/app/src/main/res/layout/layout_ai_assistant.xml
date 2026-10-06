@@ -359,8 +359,37 @@
           </com.google.android.material.textfield.TextInputLayout>
 
           <!--
-            发送 / 停止。运行时换成停止图标与 error 配色——这是「agent 正在跑」
-            最直接的状态信号，与底部的动作条互为补充。
+            停止。**只在运行中可见**（默认 GONE，由 setRunningUi 切换）。
+
+            为什么单独一个按钮而不是复用发送键：运行中用户有两种意图——「我要再发一条」
+            与「停下来」，它们互斥。此前发送键在运行中变成停止，于是想连发第二条的人
+            点下去会**取消正在跑的任务**（实测如此）。分成两个键后语义各自唯一：
+            发送键永远只发送（运行中则排队），停止键永远只停止。
+
+            放在发送键**左侧**：发送是高频动作，位置不该随运行状态变化；把停止插在
+            它与输入框之间，用户手不会误触（要停止得往左移一格）。
+          -->
+          <com.google.android.material.button.MaterialButton
+            android:id="@+id/assistantStop"
+            style="@style/Widget.Material3.Button.IconButton.Filled"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:layout_marginStart="6dp"
+            android:layout_marginBottom="4dp"
+            android:contentDescription="@string/ai_assistant_stop"
+            android:insetTop="0dp"
+            android:insetBottom="0dp"
+            android:visibility="gone"
+            app:backgroundTint="?attr/colorErrorContainer"
+            app:icon="@drawable/ic_stop_generation"
+            app:iconSize="22dp"
+            app:iconGravity="textStart"
+            app:iconPadding="0dp"
+            app:iconTint="?attr/colorOnErrorContainer" />
+
+          <!--
+            发送。运行中保持「发送」语义（点它 = 把这条排进队列），不再变成停止。
+            运行态的信号由左侧的停止键与底部的动作条共同承担。
           -->
           <com.google.android.material.button.MaterialButton
             android:id="@+id/assistantSend"

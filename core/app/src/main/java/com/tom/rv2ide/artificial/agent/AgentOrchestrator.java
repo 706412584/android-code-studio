@@ -194,6 +194,262 @@ public final class AgentOrchestrator {
   private final java.util.Map<String, ModelCancellationToken> activeCancellations =
       new java.util.concurrent.ConcurrentHashMap<>();
 
+  /**
+   * 按会话订阅事件流的监听器集合（会话级广播）。
+   *
+   * <p><b>为什么需要它</b>：三个入口（内联页 / 真全屏 / 应用外悬浮）共享同一个
+   * orchestrator 单例，但事件回调原本是**发起方私有**的——{@code run(..., listener)}
+   * 只把事件发给发起那次运行的那个视图。于是「A 在跑，B 打开」时 B 收不到任何事件，
+   * 只能读磁盘历史，而历史里没有思考过程与工具开始记录。
+   *
+   * <p>按会话 id 多播后，任何订阅了该会话的视图都能实时收到增量。
+   *
+   * <p>集合用 {@link java.util.concurrent.CopyOnWriteArrayList}：订阅/退订在
+   * 主线程（视图生命周期），而事件在 agent 循环线程发出，二者并发。
+   */
+  private final java.util.Map<String, java.util.List<AgentEvent.Listener>> conversationListeners =
+      new java.util.concurrent.ConcurrentHashMap<>();
+
+  /**
+   * 「事件落盘 + 转发」与「订阅 + 读历史」之间的互斥锁。
+   *
+   * <p>没有它就会出现本次要修的这类丢消息竞态：视图订阅前产生的增量既不在它读到的
+   * 历史里、也不会发给它，那段内容在界面上凭空消失。加锁后两个操作成为原子，
+   * 见 {@link #subscribeWithHistory}。
+   *
+   * <p>只锁「转发」这一段，不锁整个 agent 循环——工具执行（可能几分钟）不在临界区内。
+   */
+  private final Object deliveryLock = new Object();
+
+  /**
+   * 指定会话是否正在运行。
+   *
+   * <p>视图据此判断「该排队还是直接发」以及「按钮显示发送还是停止」。判定依据是
+   * {@link #activeCancellations} 而不是视图自己的 job 表：运行可能在**另一个入口**
+   * 发起（A 在跑、用户在 B 里输入），只有 orchestrator 知道全部正在跑的会话。
+   */
+  public boolean isRunning(String conversationId) {
+    return conversationId != null
+        && !conversationId.isEmpty()
+        && activeCancellations.containsKey(conversationId);
+  }
+
+  /** 一条排队的请求：完整记下发起一次运行所需的全部参数。 */
+  private static final class QueuedRequest {
+    final String providerId;
+    final String modelId;
+    final String userRequest;
+    final String customBaseUrl;
+    final String rawInputJson;
+    final String reasoningEffort;
+
+    QueuedRequest(
+        String providerId,
+        String modelId,
+        String userRequest,
+        String customBaseUrl,
+        String rawInputJson,
+        String reasoningEffort) {
+      this.providerId = providerId;
+      this.modelId = modelId;
+      this.userRequest = userRequest;
+      this.customBaseUrl = customBaseUrl;
+      this.rawInputJson = rawInputJson;
+      this.reasoningEffort = reasoningEffort;
+    }
+  }
+
+  /**
+   * 按会话的待发送队列（串行）。
+   *
+   * <p><b>为什么队列必须在 orchestrator 而不是视图里</b>：三个入口共享本单例，而运行
+   * 可能是**另一个入口**发起的。若队列挂在视图上，用户在 B 里排的消息要等 B 自己发起
+   * 的那次运行结束才可能被消化——而那次运行可能是 A 发起的，B 的 finally 永远不会跑，
+   * 消息就永久卡在队列里。放在这里，谁发起运行、谁结束运行，都由同一份队列决定下一步。
+   */
+  private final java.util.Map<String, java.util.ArrayDeque<QueuedRequest>> queuedRequests =
+      new java.util.concurrent.ConcurrentHashMap<>();
+
+  /**
+   * 把一条请求排进该会话的队列，返回它在队列中的位置（从 1 开始）。
+   *
+   * <p>调用方应先在 {@link #isRunning} 为 true 时才入队；这里不重复判定——判定与入队
+   * 之间的时间差由 {@link #drainQueued} 兜底（队列里的请求总会被发出）。
+   *
+   * @return 前面已有几条（1 表示下一个就是它）
+   */
+  public int enqueue(
+      String conversationId,
+      String providerId,
+      String modelId,
+      String userRequest,
+      String customBaseUrl,
+      String rawInputJson,
+      String reasoningEffort) {
+    if (conversationId == null || conversationId.isEmpty()) {
+      return 0;
+    }
+    java.util.ArrayDeque<QueuedRequest> queue =
+        queuedRequests.computeIfAbsent(
+            conversationId, k -> new java.util.ArrayDeque<>());
+    synchronized (queue) {
+      queue.addLast(
+          new QueuedRequest(
+              providerId, modelId, userRequest, customBaseUrl, rawInputJson, reasoningEffort));
+      return queue.size();
+    }
+  }
+
+  /** 丢弃某会话的待发送队列（会话被删除、或用户取消运行并清空后续时调用）。 */
+  public void clearQueue(String conversationId) {
+    if (conversationId == null || conversationId.isEmpty()) {
+      return;
+    }
+    queuedRequests.remove(conversationId);
+  }
+
+  /**
+   * 取出并启动该会话队列里的下一条请求；队列空时什么也不做。
+   *
+   * <p><b>为什么另起线程</b>：本方法在运行的 `finally` 里被调用，而那次运行的栈还没退完；
+   * 直接递归会一直叠栈（用户排 10 条就是 10 层），且会把上一条的收尾拖到下一条之后。
+   * 新线程让两条运行彻底串行且互不嵌套——上一次 run 已返回、令牌已移除，新一次从头开始。
+   *
+   * <p>队列里的请求**没有 listener**：它的所有事件都经会话广播送达各订阅视图
+   * （与视图发起时一致）。
+   */
+  private void drainQueued(String conversationId) {
+    if (conversationId == null || conversationId.isEmpty()) {
+      return;
+    }
+    java.util.ArrayDeque<QueuedRequest> queue = queuedRequests.get(conversationId);
+    if (queue == null) {
+      return;
+    }
+    final QueuedRequest next;
+    synchronized (queue) {
+      next = queue.pollFirst();
+      if (queue.isEmpty()) {
+        queuedRequests.remove(conversationId);
+      }
+    }
+    if (next == null) {
+      return;
+    }
+    Thread worker =
+        new Thread(
+            () -> {
+              // 获取所有订阅者（不包括发起者 null），广播所有事件
+              java.util.List<AgentEvent.Listener> subscribers =
+                  conversationListeners.computeIfAbsent(
+                      conversationId, k -> new java.util.concurrent.CopyOnWriteArrayList<>());
+              // 创建一个包装器，在广播前转发事件给所有订阅者
+              AgentEvent.Listener fanOut =
+                  event -> {
+                    // 将事件广播给所有订阅者（包括原先的 listener），确保队列中的请求也能收到流式事件
+                    broadcastExcept(conversationId, event, null);
+                  };
+
+              // 运行队列中的请求
+              runInConversation(
+                  conversationId,
+                  next.providerId,
+                  next.modelId,
+                  next.userRequest,
+                  next.customBaseUrl,
+                  fanOut,  // 使用包装器作为 listener
+                  next.rawInputJson,
+                  next.reasoningEffort);
+            },
+            "agent-queued");
+    worker.setDaemon(true);
+    worker.start();
+  }
+
+  /**
+   * 订阅一个会话，并**原子地**取回此刻的历史快照。
+   *
+   * <p><b>为什么必须原子</b>：界面要同时做两件事——把已有历史画出来、接收后续增量。
+   * 分两步做必然出错：先订阅再读历史，读到的那段会被画第二遍；先读历史再订阅，
+   * 两步之间产生的事件永久丢失（用户看到「中间少了一段」，正是本次要修的问题）。
+   *
+   * <p>这里用 {@link #deliveryLock} 把「订阅 + 读历史」与「落盘 + 转发」互斥：
+   * <ul>
+   *   <li>某事件的两步都发生在本次临界区**之前** → 它在快照里，且当时还没订阅 → 不重复
+   *   <li>某事件发生在本次临界区**之后** → 订阅已生效会收到它，而它不在快照里 → 不丢
+   * </ul>
+   * 两个方向都被覆盖，因此「快照 + 后续增量」恰好拼成完整且无重复的视图。
+   *
+   * <p>代价是 agent 循环在转发事件时会短暂持锁（订阅方回调必须快速返回、不得回调本类；
+   * 视图侧只做「切主线程」），以及订阅时会在锁内读一次会话文件。订阅是低频操作
+   * （打开面板/切换会话），这点开销换掉一整类丢消息/重复消息的竞态是划算的。
+   *
+   * @return 该会话折叠后的历史消息；会话不存在时为空列表
+   */
+  public List<ModelMessage> subscribeWithHistory(
+      String conversationId, AgentEvent.Listener listener) {
+    if (conversationId == null || conversationId.isEmpty() || listener == null) {
+      return new ArrayList<>();
+    }
+    synchronized (deliveryLock) {
+      subscribe(conversationId, listener);
+      return loadConversationMessages(conversationId);
+    }
+  }
+
+  /** 订阅某会话的事件流。重复订阅同一实例不会重复收到事件。 */
+  public void subscribe(String conversationId, AgentEvent.Listener listener) {
+    if (conversationId == null || conversationId.isEmpty() || listener == null) {
+      return;
+    }
+    java.util.List<AgentEvent.Listener> list =
+        conversationListeners.computeIfAbsent(
+            conversationId, k -> new java.util.concurrent.CopyOnWriteArrayList<>());
+    if (!list.contains(listener)) {
+      list.add(listener);
+    }
+  }
+
+  /** 退订。会话的订阅表空了就移除，避免条目随会话数累积。 */
+  public void unsubscribe(String conversationId, AgentEvent.Listener listener) {
+    if (conversationId == null || conversationId.isEmpty() || listener == null) {
+      return;
+    }
+    java.util.List<AgentEvent.Listener> list = conversationListeners.get(conversationId);
+    if (list == null) {
+      return;
+    }
+    list.remove(listener);
+    if (list.isEmpty()) {
+      // remove(key, value) 语义：仅当当前值仍是这个空表时才移除，避免并发下误删新表。
+      conversationListeners.remove(conversationId, list);
+    }
+  }
+
+  /**
+   * 把一个事件发给该会话的全部订阅者，跳过指定实例（发起方已单独收到，避免重复）。
+   *
+   * <p>单个订阅者抛异常只吞掉、不中断：事件流是「一个生产者、多个消费者」，
+   * 某个视图渲染出错不该让另一个视图看不到后续输出。
+   */
+  private void broadcastExcept(
+      String conversationId, AgentEvent event, AgentEvent.Listener except) {
+    java.util.List<AgentEvent.Listener> subs = conversationListeners.get(conversationId);
+    if (subs == null) {
+      return;
+    }
+    for (AgentEvent.Listener sub : subs) {
+      if (sub == except) {
+        continue;
+      }
+      try {
+        sub.onEvent(event);
+      } catch (RuntimeException e) {
+        // 见方法注释：单个订阅者出错不影响其它视图。
+      }
+    }
+  }
+
   public AgentOrchestrator(Context context, DiffStore diffStore) {
     this(context, diffStore, new FileConversationStore(defaultConversationDir(context)));
   }
@@ -1039,6 +1295,50 @@ public final class AgentOrchestrator {
     // 必须**跟随会话**，而不是跟随「视图当前打开的项目」——后者会让「历史属于 A 项目、
     // 工具却作用于 B 项目」的错配重新出现（见 restoreMostRecentConversation 的注释）。
     String conversationId = ensureConversation(requestedConversationId);
+    // 令牌在这里登记，覆盖**整个**运行区间（含前置校验）。
+    //
+    // 为什么不放在 executeRun 里：它同时是 {@link #isRunning} 的判据，而视图靠它决定
+    // 「排队还是直接发」。若登记晚于前置校验，校验失败那次（未设工作区、服务商未配置）
+    // 期间 isRunning 为 false——此时用户再发一条会直接发起第二次运行，两条并发写同一份
+    // 会话历史。前置校验的窗口虽短，但「配置有问题时用户连发几条」正是最容易撞上的场景。
+    ModelCancellationToken runCancellation = new ModelCancellationToken();
+    activeCancellations.put(conversationId, runCancellation);
+    try {
+      return executeRun(
+          conversationId,
+          providerId,
+          modelId,
+          userRequest,
+          customBaseUrl,
+          listener,
+          rawInputJson,
+          reasoningEffort);
+    } finally {
+      // 通知所有订阅者「本会话这次运行结束了」。必须广播而不是只靠调用方自己的
+      // 协程收尾：运行可能是另一个入口发起的，那些视图没有对应的 job，只有这个
+      // 事件能让它们把停止键与状态条收掉（见 AgentEvent.Type.RUN_FINISHED）。
+      //
+      // 顺序：先广播终点、再取队列。这样订阅者看到的是「结束 → （若有）新的开始」，
+      // 而不是两条运行的状态交错。
+      broadcastExcept(conversationId, AgentEvent.runFinished(), null);
+      // 无论本次运行因何结束（正常 / 失败 / 取消 / 前置校验不通过），都要消化本会话
+      // 排队的下一条请求。**必须在这里而不是 executeRun 的 finally**：前置校验
+      // （未设工作区、服务商未配置）是直接 return 的，不会进入那边的 try，
+      // 队列就会永久卡住——而「配置有问题」恰恰是用户最容易连着发几条的场景。
+      drainQueued(conversationId);
+    }
+  }
+
+  /** 真正执行一次运行。会话 id 已由 {@link #runInConversation} 解析并负责收尾。 */
+  private AgentRunResult executeRun(
+      String conversationId,
+      String providerId,
+      String modelId,
+      String userRequest,
+      String customBaseUrl,
+      AgentEvent.Listener listener,
+      String rawInputJson,
+      String reasoningEffort) {
     String sessionCwd = cwdOf(conversationId);
     File runWorkspace = resolveRunWorkspace(conversationId);
     if (runWorkspace == null) {
@@ -1098,9 +1398,16 @@ public final class AgentOrchestrator {
     // 注册在这里而不是 buildRegistry 里，因为它需要本次运行的 endpoint / 模型 / 取消令牌。
     // 取消令牌必须在 AgentSession 之前创建：子 agent 要挂在它上面才能随父级一起停——
     // 否则用户点了取消，主循环停了而子 agent 仍在烧额度。
-    ModelCancellationToken cancellation = new ModelCancellationToken();
-    // 按会话登记取消令牌：并发两个会话时，各自只停自己的。
-    activeCancellations.put(conversationId, cancellation);
+    //
+    // 令牌在 runInConversation 里就已登记（见那里的注释），这里取回同一个实例，
+    // 不重复创建：它同时承担「本会话正在运行」的标志，必须覆盖包括前置校验在内的
+    // 整个运行区间。
+    ModelCancellationToken cancellation = activeCancellations.get(conversationId);
+    if (cancellation == null) {
+      // 兜底：正常路径不会走到（runInConversation 已登记）。
+      cancellation = new ModelCancellationToken();
+      activeCancellations.put(conversationId, cancellation);
+    }
 
     SubAgentRunnerImpl subAgentRunner =
         new SubAgentRunnerImpl(
@@ -1189,8 +1496,34 @@ public final class AgentOrchestrator {
         entries.isEmpty() ? new ArrayList<>() : ConversationHistory.fold(entries);
 
     // 落盘与 UI 渲染共用同一事件流：先持久化（不受 UI 影响），再转发给调用方。
+    //
+    // 转发目标是**广播**：本次运行的发起方 listener 与所有订阅了本会话的视图都收到。
+    // 这样「A 在跑、B 打开同一会话」时 B 也能实时看到流式增量，而不是只能读历史。
+    // 两条投递路径：
+    //  1. 本次运行的 listener（无 UI 的调用方，如测试/子 agent 编排），
+    //  2. 该会话的全部订阅者（视图）。
+    // 从广播里排除 listener，避免「既传了 listener 又订阅了同一实例」时收到两遍。
+    final String broadcastConversationId = conversationId;
+    AgentEvent.Listener fanOut =
+        event -> {
+          if (listener != null) {
+            listener.onEvent(event);
+          }
+          broadcastExcept(broadcastConversationId, event, listener);
+        };
     PersistingListener persistingListener =
-        new PersistingListener(conversationId, userRequest, listener);
+        new PersistingListener(conversationId, userRequest, fanOut);
+
+    // 告知订阅者「用户发了这条」。必须在 PersistingListener 构造之后：构造函数里
+    // 已把用户消息落盘，因此订阅者收到本事件时读到的历史一定包含它——否则会出现
+    // 「事件已到、但快照里还没有」的窗口（订阅方会把它当新消息、回放时再出现一次）。
+    //
+    // 只广播、不经 `listener` 转发：发起方在本地已经画了用户气泡（execute 里的
+    // adapter.append），再收一次会重复。
+    broadcastExcept(conversationId, AgentEvent.userMessage(userRequest), null);
+    // 运行起点分界，见 AgentEvent.Type.RUN_STARTED。订阅方（运行中途打开另一个入口）
+    // 据此把「历史里本轮已完成的那段」与「订阅后到达的新增量」分开，不再拼进同一气泡。
+    broadcastExcept(conversationId, AgentEvent.runStarted(), null);
 
     // 上下文管理（P0-2）：预算里必须扣掉系统提示词与工具定义——它们不占历史预算
     // 但确实占窗口；协议不支持原生工具时工具定义不随请求发出，也就不该扣。
@@ -1468,6 +1801,15 @@ public final class AgentOrchestrator {
     private final String conversationId;
     private final AgentEvent.Listener downstream;
 
+    /**
+     * 本轮累积的推理文本。
+     *
+     * <p>模型以增量（{@code REASONING_DELTA}）给出思考过程，而 {@code AgentSession} 只转发
+     * 增量、不累积。因此要落盘完整思考，只能在这里累积——它是事件流的唯一汇聚点。
+     * 每轮 {@code TURN_FINISHED} 时写进 {@code AssistantMessageEntry.reasoningContent} 后清空。
+     */
+    private final StringBuilder reasoningBuffer = new StringBuilder();
+
     PersistingListener(String conversationId, String userRequest, AgentEvent.Listener downstream) {
       this.conversationId = conversationId;
       this.downstream = downstream;
@@ -1476,9 +1818,14 @@ public final class AgentOrchestrator {
 
     @Override
     public void onEvent(AgentEvent event) {
-      persist(event);
-      if (downstream != null) {
-        downstream.onEvent(event);
+      // 「落盘 + 转发」整体持锁，与「订阅 + 读历史」（见 subscribeWithHistory）互斥。
+      // 少了这把锁就会出现丢消息：订阅方读到的历史里没有这个事件（还没落盘）、
+      // 它又发生在订阅生效之前（收不到），于是那段内容在界面上凭空消失。
+      synchronized (deliveryLock) {
+        persist(event);
+        if (downstream != null) {
+          downstream.onEvent(event);
+        }
       }
     }
 
@@ -1487,14 +1834,21 @@ public final class AgentOrchestrator {
         return;
       }
       switch (event.getType()) {
+        case REASONING_DELTA:
+          // 累积本轮思考；不落盘（增量太碎），由 TURN_FINISHED 一并写入。
+          if (event.getMessage() != null) {
+            reasoningBuffer.append(event.getMessage());
+          }
+          break;
         case TURN_FINISHED:
           appendEntry(
               AssistantMessageEntry.create(
                   null,
                   System.currentTimeMillis(),
                   event.getMessage(),
-                  "",
+                  reasoningBuffer.toString(),
                   event.getToolCalls()));
+          reasoningBuffer.setLength(0);
           break;
         case TOOL_FINISHED:
           if (event.getToolResult() != null) {

@@ -345,6 +345,8 @@
   <string name="ai_assistant_code_plaintext">TEXT</string>
   <string name="ai_assistant_code_lines">%1$d lines</string>
   <string name="ai_assistant_compact_busy">Cannot compact while a run is in progress.</string>
+  <!-- Sent-message queue. Position starts at 1; it becomes 1 when the running turn ends. -->
+  <string name="ai_assistant_queued">Queued (%1$d in queue). It will be sent when the current run finishes.</string>
   <string name="ai_assistant_compact_failed">Nothing to compact, or compaction failed.</string>
   <string name="ai_assistant_compact_done">Context compacted: %1$s</string>
   <string name="ai_assistant_todo_progress">Tasks · %1$d/%2$d done</string>

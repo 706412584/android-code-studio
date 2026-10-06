@@ -182,6 +182,64 @@ class FloatingAssistantView(
       sessionUi.getOrPut(conversationId) { SessionUiState() }
 
   /**
+   * 本视图的事件接收器。
+   *
+   * <p>订阅关系是**按会话**建立的（见 [subscribeToConversation]），因此收到的事件一定
+   * 属于订阅时那个会话；过滤交给 [handleEvent] 里已有的 `displayedConversationId` 守卫。
+   *
+   * <p><b>这是本视图唯一的投递路径</b>：发起运行时不再传 listener（否则同一事件会被
+   * 投递两遍，每个增量渲染两次）。好处是「谁在跑」与「谁在看」解耦——任何入口打开
+   * 同一会话都能实时收到，而不只是发起那一次运行的那个视图。
+   *
+   * <p>回调来自 agent 循环线程，绝不在其中碰控件——只投递。
+   */
+  private val broadcastListener =
+      com.tom.rv2ide.ai.agent.AgentEvent.Listener { event ->
+        // 事件里不带会话 id，因此按「订阅时记下的会话」路由。会话在运行中途被切换时，
+        // displayedConversationId 已变，handleEvent 的守卫会丢弃不属于当前显示的增量。
+        val id = subscribedConversationId
+        if (id == null) {
+          return@Listener
+        }
+        // 回放进行中：先攒起来。直接渲染会与稍后的回放重复（同一段历史出现两遍），
+        // 因为回放是整表重画、而此刻列表里还是上一个会话的内容。
+        synchronized(pendingLock) {
+          if (replayingConversationId == id) {
+            pendingLiveEvents.add(event)
+            return@Listener
+          }
+        }
+        handleEvent(id, event)
+      }
+
+  /**
+   * 当前订阅的会话 id。
+   *
+   * <p>事件本身不带会话维度（[com.tom.rv2ide.ai.agent.AgentEvent] 是纯事件），
+   * 因此「这条事件属于哪个会话」只能由订阅时的绑定关系决定。切换显示会话时
+   * 必须先退订旧的再订阅新的，否则旧会话的增量会按新 id 渲染。
+   *
+   * <p>`@Volatile`：在 IO 线程（[loadAndSubscribe] 里订阅时）写，在事件线程
+   * （[broadcastListener] 里）读。不加会出现事件线程读到旧值、把增量渲染进错误会话。
+   */
+  @Volatile private var subscribedConversationId: String? = null
+
+  /**
+   * 正在回放的会话 id；非 null 期间实时事件进 [pendingLiveEvents] 而不直接渲染。
+   *
+   * <p>只在 [pendingLock] 内读写：事件来自 agent 循环线程，而回放与补放在主线程，
+   * 两者必须互斥，否则「补放前刚到达的事件」会被 clear 掉、永久丢失。
+   */
+  private var replayingConversationId: String? = null
+
+  /** 保护 [replayingConversationId] 与 [pendingLiveEvents] 的锁。 */
+  private val pendingLock = Any()
+
+  /** 回放期间攒下的实时事件，回放结束后按序补放。 */
+  private val pendingLiveEvents =
+      java.util.ArrayList<com.tom.rv2ide.ai.agent.AgentEvent>()
+
+  /**
    * 当前**显示**在消息列表里的会话 id。
    *
    * <p>事件入口据此过滤：只有属于当前显示会话的事件才写控件；后台会话的事件仍由
@@ -426,6 +484,7 @@ class FloatingAssistantView(
     // 不设 OnClickListener：拖动用的 OnTouchListener 会消费全部事件，click 永远不会触发。
     // 打开面板的动作用 ACTION_UP 且未进入拖动时手动调用 open()（见 setUpDragging）。
     binding.assistantSend.setOnClickListener { onSendClicked() }
+    binding.assistantStop.setOnClickListener { onStopClicked() }
     // 工具条上的服务商与模型标签：两者都点开同一个选择器。
     // 分成两个可点控件而不是合成一个：服务商名与模型名各自独立省略，
     // 窄面板下仍能读出「哪个服务商」；合成一段时两段文字会一起被压成省略号。
@@ -769,17 +828,74 @@ class FloatingAssistantView(
     }
     // 记录正在显示的会话：后台会话事件据此被过滤掉。
     displayedConversationId = id
+    loadAndSubscribe(id) {}
+  }
+
+  /**
+   * 订阅指定会话、回放它的历史，并把回放期间到达的实时事件补放上去。
+   *
+   * <p><b>为什么要分「回放中」与「回放后」两段</b>：订阅与取历史由 orchestrator
+   * 原子完成（见 `AgentOrchestrator.subscribeWithHistory`），因此**快照之后**到达的
+   * 事件一定不在快照里——它们要么被丢弃（若直接渲染，会与稍后的回放重复）、
+   * 要么被漏掉（若等回放结束才订阅）。两者都不行。
+   *
+   * <p>做法是回放期间把实时事件压进 [pendingLiveEvents]，回放结束后按原序补放。
+   * 由于快照与这些事件互斥（同一把锁），补放的内容与快照**不重叠**，也不会漏。
+   *
+   * <p>整个订阅+读盘在 IO 线程：历史文件可能很大，主线程读会卡住输入框。
+   */
+  private fun loadAndSubscribe(
+      conversationId: String,
+      afterReplay: () -> Unit,
+  ) {
+    synchronized(pendingLock) {
+      replayingConversationId = conversationId
+      pendingLiveEvents.clear()
+    }
     lifecycleScope.launch(Dispatchers.IO) {
-      val messages = orchestrator.loadConversationMessages(id)
-      if (messages.isEmpty()) {
-        return@launch
-      }
+      val messages = subscribeToConversation(conversationId)
       withContext(Dispatchers.Main) {
         replayMessages(messages)
-        lastOpenedConversationId = id
+        lastOpenedConversationId = conversationId
         updateEmptyState()
+        // 回放完成：在锁内取走缓冲并解除缓冲态。取走与解除必须同时发生——若先解除
+        // 再取，这中间到达的事件会直接渲染（早于缓冲内容），顺序错乱；若先取再解除，
+        // 中间到达的事件会进缓冲却永远没人补放（已取完了）。
+        val buffered: List<com.tom.rv2ide.ai.agent.AgentEvent>
+        synchronized(pendingLock) {
+          buffered = java.util.ArrayList(pendingLiveEvents)
+          pendingLiveEvents.clear()
+          replayingConversationId = null
+        }
+        for (event in buffered) {
+          handleEvent(conversationId, event)
+        }
+        syncRunningUiForDisplayed()
+        afterReplay()
       }
     }
+  }
+
+  /**
+   * 订阅指定会话并取回它的历史快照。**必须在 IO 线程调用**（会读盘）。
+   *
+   * <p>先退订上一个会话：事件本身不带会话维度，同时订阅两个会让增量按错误的会话渲染。
+   */
+  private fun subscribeToConversation(
+      conversationId: String,
+  ): List<com.tom.rv2ide.ai.protocol.ModelMessage> {
+    if (subscribedConversationId != null && subscribedConversationId != conversationId) {
+      orchestrator.unsubscribe(subscribedConversationId, broadcastListener)
+    }
+    subscribedConversationId = conversationId
+    return orchestrator.subscribeWithHistory(conversationId, broadcastListener)
+  }
+
+  /** 退订当前会话（视图销毁时调用，避免 orchestrator 的订阅表泄漏视图）。 */
+  private fun unsubscribeFromConversation() {
+    val id = subscribedConversationId ?: return
+    orchestrator.unsubscribe(id, broadcastListener)
+    subscribedConversationId = null
   }
 
   /** 是否已尝试过恢复会话；避免每次 open() 都回放。 */
@@ -809,6 +925,10 @@ class FloatingAssistantView(
     // 视图销毁要停掉**所有**会话的运行：协程挂在 lifecycleScope 上会随之取消，
     // 但 orchestrator 的取消令牌与 MCP 连接需要显式收尾。
     cancelAll()
+    // 退订事件广播。**必须**做：orchestrator 是进程级单例，不退订会让它的订阅表
+    // 一直持有本视图（及其 binding/Adapter），销毁后既泄漏内存，又会在下一个
+    // 事件到来时往已 detach 的控件里写数据。
+    unsubscribeFromConversation()
     // 销毁是不可逆的：先从存活集合摘除自己，再让出回调。
     // 顺序很关键——若先 release，可能把回调交接回本视图自己（它仍在集合里），
     // 于是销毁后的视图仍持有回调并往已 detach 的控件里写数据。
@@ -1098,8 +1218,9 @@ class FloatingAssistantView(
    */
   private fun compactConversation() {
     // 只检查**当前显示的**会话：压缩作用的对象是它，别的会话在跑不影响。
+    // 用 orchestrator 的运行态：运行可能在别的入口发起，本视图的 job 表看不到。
     val displayed = displayedConversationId
-    if (displayed != null && executionJobs[displayed]?.isActive == true) {
+    if (displayed != null && isConversationRunning(displayed)) {
       appendTrace(context.getString(string.ai_assistant_compact_busy))
       return
     }
@@ -1140,13 +1261,51 @@ class FloatingAssistantView(
       appendTrace(context.getString(string.ai_assistant_error, "IOException", "无法创建会话"))
       return
     }
-    if (executionJobs[conversationId]?.isActive == true) {
+
+    // 该会话已在跑（可能是本视图发起的，也可能是**另一个入口**发起的——三个入口
+    // 共享 orchestrator 单例）：入队，等它结束后串行发出。
+    //
+    // 此前这里直接 `return`，用户连发两条时第二条被静默丢弃：界面上什么都没发生，
+    // 用户以为已经发出去了。排队让「我发的每条都会被处理」成立，顺序即输入顺序。
+    //
+    // 判定用 orchestrator.isRunning 而不是本视图的 executionJobs：运行可能在别的
+    // 入口发起（A 在跑、用户在 B 里输入），只有 orchestrator 知道全部正在跑的会话。
+    if (isConversationRunning(conversationId)) {
+      enqueueSend(conversationId, userRequest, reasoningEffort, imagePayload)
       return
     }
+    startRun(conversationId, userRequest, reasoningEffort, imagePayload)
+  }
 
+  /**
+   * 指定会话是否正在运行。
+   *
+   * <p>以 orchestrator 的取消令牌表为准：运行可能在**别的入口**发起，本视图的 job 表
+   * 看不到它，据此判断会让消息在「另一个入口正在跑」时直接发起、两个循环并发写同一份
+   * 历史。本视图自己的 job 表仅作兜底（极端时序下令牌已移除而协程还在收尾）。
+   */
+  private fun isConversationRunning(conversationId: String): Boolean =
+      orchestrator.isRunning(conversationId) || executionJobs[conversationId]?.isActive == true
+
+  /**
+   * 真正发起一次运行（**不做排队判定**）。
+   *
+   * <p>与 [execute] 分开是为了让队列消化走这条路：从 `finally` 里取队首再调 [execute]
+   * 时，本协程尚未从 [executionJobs] 摘除（`invokeOnCompletion` 还没跑），
+   * [isConversationRunning] 仍为 true，于是又会入队——队列永远原地打转。
+   * 这里跳过判定直接跑，因为调用方已经确认「当前没有其它运行」。
+   */
+  private fun startRun(
+      conversationId: String,
+      userRequest: String,
+      reasoningEffort: String?,
+      imagePayload: String?,
+  ) {
     // 用户在当前视图里发消息，就是要看这个会话：切显示过去，并清掉上一会话的渲染指针。
     displayedConversationId = conversationId
     lastOpenedConversationId = conversationId
+    // 先登记回显标记再画气泡：orchestrator 广播该消息时会命中它，避免画第二遍。
+    markLocalEcho(conversationId, userRequest)
     adapter.append(AssistantMessageAdapter.Role.USER, userRequest)
     val ui = uiState(conversationId)
     ui.streamingMessageId = null
@@ -1197,7 +1356,11 @@ class FloatingAssistantView(
                     modelId,
                     userRequest,
                     customBaseUrl,
-                    { event -> handleEvent(conversationId, event) },
+                    // listener 传 null：本视图的事件**只**从会话订阅走（见 broadcastListener）。
+                    // 若这里再传 handleEvent，同一事件会被投递两遍——一遍由 orchestrator
+                    // 直接回调、一遍由广播给订阅者——于是每个增量渲染两次（气泡里出现
+                    // 重复文字、工具卡片出现两张）。订阅是唯一的投递路径。
+                    null,
                     imagePayload,
                     reasoningEffort,
                 )
@@ -1245,17 +1408,16 @@ class FloatingAssistantView(
                 "provider=$providerId model=$modelId",
             )
           } finally {
-            // 必须放在 finally：run() 抛异常或协程被取消时也要恢复 UI，
-            // 否则按钮会永久停留在「停止」态，用户再也发不出请求。
+            // 运行态**不在这里收尾**：收尾动作（收掉停止键、停状态条、收重试卡片）
+            // 统一由 RUN_FINISHED 事件驱动（见 handleEvent）。理由有二：
+            //  1. 队列由 orchestrator 在它自己的 finally 里紧接着发起下一条，本视图的
+            //     finally 与那个时机有竞态——先收后开会让停止键闪一下。
+            //  2. 运行可能由**另一个入口**发起，本视图的 finally 根本不会跑，
+            //     那种情况下只有 RUN_FINISHED 能收尾。
+            // 这里只做与「本视图自己发起的这次运行」相关的收尾（状态摘要行）。
             withContext(kotlinx.coroutines.NonCancellable) {
               withContext(Dispatchers.Main) {
-                // 只有当前显示的会话才允许改运行态：后台会话结束不该把正在看的
-                // 另一个会话的「停止」按钮切回「发送」。
                 if (displayedConversationId == conversationId) {
-                  setRunningUi(false)
-                  // 状态条同理：不在这里停，取消/异常后动画会一直转，
-                  // 看起来像还在跑。
-                  binding.assistantWorking.stopWorking()
                   // 重试卡片收掉——**除非它正在报告「重试用尽」**。
                   // 那条信息必须留在屏幕上：用户需要知道失败前重试过几次，
                   // 而运行结束后再没有任何地方会显示它。
@@ -1270,6 +1432,70 @@ class FloatingAssistantView(
     executionJobs[conversationId] = job
     // 结束后自摘，避免 Map 随会话数无限增长（job 已完成时 remove 是 no-op 安全的）。
     job.invokeOnCompletion { executionJobs.remove(conversationId, job) }
+  }
+
+  /**
+   * 标记「本视图即将发出一条用户消息」，用于在广播回来时跳过它。
+   *
+   * <p>本视图在 [startRun] 里本地画了用户气泡；同一条消息还会被 orchestrator 广播
+   * 回来（[com.tom.rv2ide.ai.agent.AgentEvent.Type.USER_MESSAGE]）。不区分就会出现
+   * 两个一模一样的用户气泡。这里记下「刚发的内容」，广播到达时消费掉它。
+   *
+   * <p>用内容而非 id 匹配：事件里只有文本。风险是「用户连发两条完全相同的消息」时
+   * 第二条的回显会被误吞——代价是少画一个气泡（另一条已画出），比多画一个可接受。
+   */
+  private fun markLocalEcho(conversationId: String, text: String) {
+    localEchoes.add(conversationId to text)
+    // 上限保护：运行在广播前就失败（例如未设工作区）时标记不会被消费。
+    // 不设上限的话，反复失败会让这个列表无界增长。
+    while (localEchoes.size > MAX_LOCAL_ECHOES) {
+      localEchoes.removeAt(0)
+    }
+  }
+
+  /** 消费一条待回显标记；命中则说明该事件是本视图自己发的。 */
+  private fun consumeLocalEcho(conversationId: String, text: String): Boolean =
+      localEchoes.remove(conversationId to text)
+
+  /** 待回显的本地消息（会话 id + 内容）。仅主线程访问。 */
+  private val localEchoes = java.util.ArrayList<Pair<String, String>>()
+
+  /**
+   * 把一条请求排进 orchestrator 的会话队列，并告诉用户它在队列里的位置。
+   *
+   * <p>同时把用户气泡画出来（[startRun] 里也画，但那条路径是真正发起运行；排队这条
+   * 必须先画）：不画的话用户点了发送却什么都看不到，与「被静默丢弃」观感完全一样
+   * ——这正是排队要修的问题。
+   */
+  private fun enqueueSend(
+      conversationId: String,
+      text: String,
+      reasoningEffort: String?,
+      imagePayload: String?,
+  ) {
+    displayedConversationId = conversationId
+    lastOpenedConversationId = conversationId
+    markLocalEcho(conversationId, text)
+    adapter.append(AssistantMessageAdapter.Role.USER, text)
+    scrollToBottom()
+    val agents = Agents(context)
+    val providerId = agents.getProvider()
+    val modelId =
+        AgentModelConfigs.modelIdFor(providerId, agents.getAgent(), inputFeatures.currentSlot())
+    // 位置取 orchestrator 的队列长度：它是全局真相（本视图看不到别的入口排了什么）。
+    val ahead =
+        orchestrator.enqueue(
+            conversationId,
+            providerId,
+            modelId,
+            text,
+            AgentOrchestrator.customBaseUrlFor(context, providerId),
+            imagePayload,
+            reasoningEffort,
+        )
+    // 只显示「前面还有几条」，不显示总数：用户关心的是还要等多久（前面几条），
+    // 总数对「什么时候轮到我」没有信息量。
+    appendTrace(context.getString(string.ai_assistant_queued, ahead))
   }
 
   /**
@@ -1310,6 +1536,60 @@ class FloatingAssistantView(
   private fun handleEvent(conversationId: String, event: com.tom.rv2ide.ai.agent.AgentEvent) {
     val ui = uiState(conversationId)
     when (event.type) {
+      com.tom.rv2ide.ai.agent.AgentEvent.Type.RUN_STARTED -> {
+        // 运行起点分界：重置本会话的渲染指针，让下一个增量另起一段，而不是追加进
+        // 历史里那条「已完成」的助手气泡（见 AgentEvent.Type.RUN_STARTED）。
+        // 不碰列表内容——历史照旧显示，只是不再往里续写。
+        //
+        // 切主线程：本分支由事件线程进入，而 ui 的字段与其它分支一样只在主线程读写
+        // （其它分支都在 lifecycleScope.launch(Dispatchers.Main) 里改它）。
+        lifecycleScope.launch(Dispatchers.Main) {
+          ui.streamingMessageId = null
+          ui.lastThinkingId = null
+          ui.lastToolCardId = null
+          ui.streamedThisRun = false
+          // 显示停止键：运行可能是**别的入口**发起的，本视图的 job 表看不到它，
+          // 只有这个事件能告诉它「现在有运行，且停止键该出现」。
+          if (displayedConversationId == conversationId) {
+            setRunningUi(true)
+            binding.assistantWorking.bind(isThinking = false)
+            binding.assistantWorking.startWorking()
+          }
+        }
+      }
+      com.tom.rv2ide.ai.agent.AgentEvent.Type.RUN_FINISHED -> {
+        // 运行结束（含失败/取消）。由 orchestrator 在 finally 里广播，因此**任何入口**
+        // 都能收到——本视图据此收掉停止键。少了它，别的入口发起并结束的运行会让
+        // 本视图的停止键永久停在那里（点下去只会对已经不存在的运行发取消）。
+        lifecycleScope.launch(Dispatchers.Main) {
+          if (displayedConversationId != conversationId) {
+            return@launch
+          }
+          // 若该会话仍有排队请求，orchestrator 会在同一 finally 里紧接着发起下一条，
+          // 那时会再收到 RUN_STARTED。这里先按「已结束」收尾，由后续事件重新点亮。
+          setRunningUi(false)
+          binding.assistantWorking.stopWorking()
+          if (!ui.retryCardPinned) {
+            hideRetryCard()
+          }
+        }
+      }
+      com.tom.rv2ide.ai.agent.AgentEvent.Type.USER_MESSAGE -> {
+        lifecycleScope.launch(Dispatchers.Main) {
+          // 本视图自己发出的消息不走这条路：startRun 已本地画过气泡，若这里再画
+          // 会出现两个一模一样的用户气泡。用「待回显」标记识别并消费掉它。
+          // 标记的读写都必须在主线程（startRun 在主线程登记）。
+          if (consumeLocalEcho(conversationId, event.message)) {
+            return@launch
+          }
+          // 订阅方（另一个入口）发来的：画出来，否则 B 看到的是「助手在自言自语」。
+          if (displayedConversationId != conversationId) {
+            return@launch
+          }
+          adapter.append(AssistantMessageAdapter.Role.USER, event.message)
+          scrollToBottom()
+        }
+      }
       com.tom.rv2ide.ai.agent.AgentEvent.Type.REASONING_DELTA -> {
         val delta = event.message
         if (delta.isEmpty()) {
@@ -1540,24 +1820,26 @@ class FloatingAssistantView(
   }
 
   /**
-   * 发送按钮的点击：运行中 = 停止，空闲 = 发送。
+   * 发送按钮的点击：**永远只发送**。
    *
-   * <p>一个按钮承担两个动作，而不是在运行时禁用发送、另加一个停止按钮：
-   * 工具条在贴边形态下整行只有约 236dp，多一个按钮就要挤掉模型标签或圆环。
-   * 而「发送」与「停止」本来就是同一位置的互斥状态，参考项目（cc-haha）
-   * 也是同一个按钮换图标。
+   * <p>运行中则由 [execute] 把消息排进队列，而不是像此前那样让同一个按钮变成「停止」——
+   * 那种二合一让「我要再发一条」与「我要停下来」两个互斥意图共用一个控件，想连发的
+   * 用户点下去实际取消了任务（实测如此）。停止现在由左侧独立的 [binding.assistantStop]
+   * 承担。
    */
   private fun onSendClicked() {
-    val displayed = displayedConversationId
-    if (displayed != null && executionJobs[displayed]?.isActive == true) {
-      // 只取消当前显示的会话：后台会话继续跑（多项目并行）。
-      cancel(displayed)
-      // 取消后立刻切回发送态：用户点这个按钮的意图是「我现在要输入」，
-      // 让他等 finally 里的恢复会有一段「点了没反应」的空窗。
-      setRunningUi(false)
-      return
-    }
     sendFromInput()
+  }
+
+  /** 停止按钮：取消**当前显示会话**的运行。 */
+  private fun onStopClicked() {
+    val displayed = displayedConversationId ?: return
+    // 只取消当前显示的会话：后台会话继续跑（多项目并行）。
+    cancel(displayed)
+    // 立刻切回非运行态：用户点这个按钮的意图是「现在就停」，让他等 finally 里的恢复
+    // 会有一段「点了没反应」的空窗。
+    setRunningUi(false)
+    binding.assistantWorking.stopWorking()
   }
 
   /**
@@ -1572,38 +1854,13 @@ class FloatingAssistantView(
    * 此前只有「按钮置灰」一条，用户既不知道能不能中断，也看不出 agent 在读文件还是卡住了。
    */
   private fun setRunningUi(running: Boolean) {
-    val send = binding.assistantSend
-    send.setIconResource(
-        if (running) com.tom.rv2ide.R.drawable.ic_stop_generation
-        else com.tom.rv2ide.R.drawable.ic_arrow_upward)
-    send.contentDescription =
-        context.getString(
-            if (running) string.ai_assistant_stop else string.ai_assistant_send)
-    // 运行中用 errorContainer 底 + onErrorContainer 图标：与「发送」的实心主色形成
-    // 明确对比，扫一眼就知道现在处于哪个状态。
+    // 发送键**不再随运行状态换图标**：运行中它仍是「发送」，点它把消息排进队列
+    // （见 execute）。运行态由左侧独立的停止键承担——此前两态合一，想连发第二条的
+    // 用户点下去会取消正在跑的任务（实测如此）。
     //
-    // attr 的命名空间要逐个确认，写错编译不过：
-    // - colorPrimary 取**应用**命名空间（com.tom.rv2ide.R.attr）。Material 的 R.attr 里
-    //   确实没有它，但应用侧有，且 ACS 主题定义的正是应用那一份。
-    //   早先写 android.R.attr.colorPrimary 能碰巧取对，是因为框架默认浅色主题的
-    //   colorPrimary 与 ACS 的 colorPrimary 恰好同值（#6F5A4A）——一旦用户主题偏离
-    //   这个默认值就会取错，属于靠巧合成立。
-    // - colorOnPrimary 只在 Material 里（Material 的 R.attr），框架里没有
-    // - colorErrorContainer / colorOnErrorContainer 都是 Material 独有
-    //
-    // 背景与前景必须来自**同一套**主题定义，否则换主题时会出现「主色变了、
-    // 前景没变」的低对比组合。应用命名空间的 colorPrimary 与 Material 命名空间的
-    // colorOnPrimary 是同一次主题定义里的一对，配在一起是对的。
-    val bgAttr =
-        if (running) com.google.android.material.R.attr.colorErrorContainer
-        else com.tom.rv2ide.R.attr.colorPrimary
-    val fgAttr =
-        if (running) com.google.android.material.R.attr.colorOnErrorContainer
-        else com.google.android.material.R.attr.colorOnPrimary
-    send.setBackgroundTintList(
-        android.content.res.ColorStateList.valueOf(MaterialColors.getColor(send, bgAttr)))
-    send.setIconTint(
-        android.content.res.ColorStateList.valueOf(MaterialColors.getColor(send, fgAttr)))
+    // 停止键只在运行中可见。放在发送键左侧：发送是高频动作，位置不该变。
+    binding.assistantStop.isVisible = running
+    binding.assistantStop.setOnClickListener { onStopClicked() }
 
     // 状态条与分隔线在这里一并显隐。
     //
@@ -1630,7 +1887,10 @@ class FloatingAssistantView(
    * 按钮必须回到「发送」；反之切到正在跑的会话要显示「停止」。
    */
   private fun syncRunningUiForDisplayed() {
-    val running = displayedConversationId?.let { executionJobs[it]?.isActive } == true
+    // 看 orchestrator 的全局运行态：停止键要能停掉**任何入口**发起的运行
+    // （A 在跑、用户切到 B，在 B 里按停止应当能停下 A 的任务）。发送键不受影响
+    // ——它永远只发送（运行中则排队），所以「别的入口在跑」不会误伤用户意图。
+    val running = displayedConversationId?.let { isConversationRunning(it) } == true
     setRunningUi(running)
     if (running) {
       binding.assistantWorking.startWorking()
@@ -2145,11 +2405,10 @@ class FloatingAssistantView(
     val convId = summary.getId()
     // 切换显示：把该会话标为当前显示，后台会话事件从此不再写控件。
     displayedConversationId = convId
-    // 只取消**目标会话自身**正在跑的运行（几乎不会发生：正在显示才可能被点）。
+    // 只取消**目标会话自身**正在跑的运行（几乎不可能发生：正在跑的会话被点开时
+    // 保留它继续跑——用户要看的是它跑到哪了，不是把它停掉）。
     // 绝不取消其它会话——那会杀掉用户并行跑着的任务。
-    cancel(convId)
     lifecycleScope.launch(Dispatchers.IO) {
-      val messages = orchestrator.loadConversationMessages(convId)
       // 会话绑定 cwd 时，面板跟随它切项目。在 IO 线程设置：setWorkspace 会读会话列表。
       val cwd = summary.getCwd()
       val projectDir = if (cwd.isNotBlank()) File(cwd) else null
@@ -2167,15 +2426,14 @@ class FloatingAssistantView(
           conversationAdapter.setCurrentCwd(projectDir.absolutePath)
         }
         orchestrator.openConversation(convId)
-        lastOpenedConversationId = convId
-        replayMessages(messages)
         conversationAdapter.setActive(convId)
-        // 发送/停止按钮与状态条要反映**新显示会话**的运行状态：A 会话在跑、切到空闲的
-        // B 会话后，按钮必须回到「发送」，否则用户会以为 B 也在跑。
-        syncRunningUiForDisplayed()
-        // 打开后自动收起抽屉：用户的意图是「看这个会话」，不是继续浏览列表。
-        if (binding.assistantDrawerOverlay.isVisible) {
-          toggleConversationPanel()
+        // 订阅 + 回放。**不再在切会话时取消该会话的运行**：它可能正在跑，而用户点开
+        // 就是想看实时输出——订阅后就能收到后续增量（历史由 subscribeWithHistory 原子取回）。
+        loadAndSubscribe(convId) {
+          // 打开后自动收起抽屉：用户的意图是「看这个会话」，不是继续浏览列表。
+          if (binding.assistantDrawerOverlay.isVisible) {
+            toggleConversationPanel()
+          }
         }
       }
     }
@@ -2184,9 +2442,15 @@ class FloatingAssistantView(
   /**
    * 把历史消息回放到列表。
    *
-   * <p>只回放用户与助手的文本，工具调用与推理不还原：会话日志里它们是独立条目类型，
-   * 还原需要重建完整的卡片与折叠状态，而历史消息的主要用途是「找回上下文」，
-   * 文本已经够用。宁可少显示，也不显示错的。
+   * <p>用户与助手文本、**思考过程**、**工具卡片（含结果）**都还原——三者都在会话日志里：
+   * 思考由 {@code AgentOrchestrator.PersistingListener} 累积后写入
+   * {@code AssistantMessageEntry.reasoningContent}；工具调用在其 {@code toolCalls} 字段；
+   * 工具结果是一条独立的 {@code ToolResultEntry}，折叠后变成 {@code ToolModelMessage}。
+   *
+   * <p><b>顺序不变量</b>：折叠产出的顺序是「助手条目（含其 toolCalls）→ 各工具结果」，
+   * 与实时渲染一致（TURN_FINISHED 先于 TOOL_STARTED/TOOL_FINISHED）。因此这里按顺序
+   * 建卡片、并按顺序回填结果即可，不需要靠 id 关联——{@code ToolModelMessage} 自带
+   * toolCallId，但结果与调用的**先后**已经足够确定配对。
    */
   private fun replayMessages(messages: List<com.tom.rv2ide.ai.protocol.ModelMessage>) {
     adapter.clear()
@@ -2199,14 +2463,54 @@ class FloatingAssistantView(
       ui.lastToolCardId = null
     }
     throttle.reset()
+    // 待回填的工具卡片，按建立顺序排队。工具结果到达时取队首回填——
+    // 与实时路径用 lastToolCardId 的语义一致（成对、按序）。
+    val pendingToolCards = java.util.ArrayDeque<Long>()
     for (message in messages) {
       when (message) {
         is com.tom.rv2ide.ai.protocol.UserModelMessage ->
             adapter.append(AssistantMessageAdapter.Role.USER, message.getContent())
         is com.tom.rv2ide.ai.protocol.AssistantModelMessage -> {
+          // 顺序与实时渲染一致：先思考块，再工具卡片，最后正文。
+          val reasoning = message.getReasoningContent()
+          if (!reasoning.isNullOrBlank()) {
+            adapter.appendThinking(reasoning, null)
+          }
+          val calls = message.getToolCalls()
+          if (calls != null) {
+            for (call in calls) {
+              val id =
+                  adapter.appendToolCall(
+                      toolName = call.name,
+                      summary = summarizeArgs(call.arguments),
+                      input = call.arguments.orEmpty(),
+                  )
+              pendingToolCards.addLast(id)
+            }
+          }
           val text = message.getContent()
           if (!text.isNullOrBlank()) {
             adapter.append(AssistantMessageAdapter.Role.ASSISTANT, text)
+          }
+        }
+        is com.tom.rv2ide.ai.protocol.ToolModelMessage -> {
+          // 回填到最早一张仍在等待的卡片。卡片用运行中状态建出来，不回填就会永久停在
+          // 「运行中」——历史里一条早已结束的工具显示成还在跑，是明确的错误信息。
+          val cardId = pendingToolCards.pollFirst()
+          if (cardId != null) {
+            adapter.completeToolCall(
+                cardId, message.getContent(), message.isToolError())
+          } else {
+            // 找不到对应卡片（历史被压缩截断，或旧日志里结果条目缺少前导调用）：
+            // 单独渲染一张已完成的卡片。宁可多一条，也不静默丢弃——用户需要知道
+            // 「这个工具跑过，输出是什么」。
+            val id =
+                adapter.appendToolCall(
+                    toolName = message.getToolName(),
+                    summary = "",
+                    input = "",
+                )
+            adapter.completeToolCall(id, message.getContent(), message.isToolError())
           }
         }
         else -> {}
@@ -2237,6 +2541,13 @@ class FloatingAssistantView(
     cancel(deletedId)
     executionJobs.remove(deletedId)
     sessionUi.remove(deletedId)
+    // 被删的正是订阅中的会话时要退订：它的文件已不存在，继续收它的增量没有意义，
+    // 且 handleEvent 会往一个已清空的列表里写。
+    if (subscribedConversationId == deletedId) {
+      unsubscribeFromConversation()
+    }
+    // 该会话排队中的消息也一并丢弃：目标已不存在，发出去只会落进一个新建的会话。
+    orchestrator.clearQueue(deletedId)
     lifecycleScope.launch(Dispatchers.IO) {
       try {
         orchestrator.deleteConversation(deletedId)
@@ -2376,6 +2687,9 @@ class FloatingAssistantView(
 
   /** 真正建会话：把项目目录作为 cwd 写进会话元信息。 */
   private fun beginNewConversation(projectDir: File?) {
+    // 退订旧会话：新会话的历史为空，继续收旧会话的增量会让两个会话的内容混在
+    // 同一个列表里（旧会话若还在后台跑，它的增量会继续渲染进来）。
+    unsubscribeFromConversation()
     adapter.clear()
     displayedConversationId = null
     lastOpenedConversationId = null
@@ -2388,6 +2702,9 @@ class FloatingAssistantView(
       }
       try {
         val summary = orchestrator.newConversation(projectDir?.absolutePath)
+        // 订阅也在 IO 线程完成（会读盘，虽然新会话为空）：与上面同一个协程，
+        // 保证「建好会话」与「订阅它」之间没有窗口——中间产生的增量不会丢。
+        val messages = subscribeToConversation(summary.id)
         withContext(Dispatchers.Main) {
           displayedConversationId = summary.id
           lastOpenedConversationId = summary.id
@@ -2399,6 +2716,10 @@ class FloatingAssistantView(
             conversationAdapter.setCurrentCwd(projectDir.absolutePath)
           }
           conversationAdapter.setActive(summary.id)
+          // 新会话通常为空，但走同一条回放路径：若期间已有内容（例如 orchestrator
+          // 自动补了一条），也能一致地渲染出来。
+          replayMessages(messages)
+          syncRunningUiForDisplayed()
         }
       } catch (e: java.io.IOException) {
         // 开新会话失败不该阻断对话：orchestrator 会在下次 run 时再尝试。
@@ -2638,8 +2959,17 @@ class FloatingAssistantView(
     /** 模型名的常规最大宽度（dp）。约 13 个半角字符，够显示 `deepseek-v4.1-flash`。 */
     private const val MODEL_MAX_WIDTH_DP = 124
 
-    /** 极窄时模型名的最大宽度（dp）。约 6 个字符——够认出是哪家模型即可。 */
-    private const val MODEL_MAX_WIDTH_NARROW_DP = 62
+  /** 极窄时模型名的最大宽度（dp）。约 6 个字符——够认出是哪家模型即可。 */
+  private const val MODEL_MAX_WIDTH_NARROW_DP = 62
+
+  /**
+   * 待回显标记的上限。
+   *
+   * <p>正常情况下标记会在广播回来时立刻被消费（同一轮内）。只有「运行在广播前就失败」
+   * （未设工作区、无法创建会话）才留下未消费的标记，因此一个小上限就够，
+   * 作用是防止反复失败导致列表无界增长。
+   */
+  private const val MAX_LOCAL_ECHOES = 32
 
     private fun summarizeArgs(args: String?): String {
       if (TextUtils.isEmpty(args)) {

@@ -38,6 +38,39 @@ public final class AgentEvent {
   public enum Type {
     /** 一轮模型请求开始。 */
     TURN_STARTED,
+    /**
+     * 一条用户消息进入本会话。
+     *
+     * <p><b>为什么需要它</b>：会话级广播下同一会话可能有多个视图在显示。发起方当然
+     * 知道自己发了什么（它本地就画了气泡），但**订阅方**（A 在跑、用户随后打开 B）
+     * 只能靠事件流得知——否则 B 看到的对话里，用户那一侧的消息是缺失的，
+     * 读起来像助手在自言自语。
+     */
+    USER_MESSAGE,
+    /**
+     * 一次运行的**起点分界**（仅由 orchestrator 产生，不是模型轮次）。
+     *
+     * <p><b>为什么需要它</b>：视图可能在运行中途才订阅（用户打开另一个入口）。
+     * 它回放的历史里，本轮已有的文本会表现为一条**已完成**的助手气泡；若没有分界，
+     * 订阅后到达的增量会继续追加进那个气泡，把「已经说完的一段」和「正在说的新一段」
+     * 混在一起，用户看到的是两段拼接的乱码。
+     *
+     * <p>视图收到它即重置本会话的渲染指针（流式气泡 / 思维块 / 工具卡片），
+     * 下一个增量因此另起一段。
+     */
+    RUN_STARTED,
+    /**
+     * 一次运行的**终点**（仅由 orchestrator 产生）。
+     *
+     * <p><b>为什么需要它</b>：视图要把「停止」键收掉、把状态条停掉，而运行可能是
+     * **另一个入口**发起的——那种情况下本视图没有对应的 job，收不到任何「我的协程
+     * 结束了」的信号。用事件表达后，任何订阅者都能一致地收尾。
+     *
+     * <p>若该会话还有排队请求，orchestrator 会在发出它之后紧接着发起下一条，
+     * 于是订阅者会先收到本事件、再收到新的 {@link #RUN_STARTED}——状态先落后起，
+     * 结果正确（中间那次闪烁不可见，两者在同一帧内）。
+     */
+    RUN_FINISHED,
     /** 模型输出的文本增量（流式）。 */
     TEXT_DELTA,
     /** 模型的推理过程增量（部分模型支持）。 */
@@ -115,6 +148,21 @@ public final class AgentEvent {
 
   public static AgentEvent turnStarted(int turnIndex) {
     return new AgentEvent(Type.TURN_STARTED, "turn " + turnIndex, null, null, null);
+  }
+
+  /** 一条用户消息（内容在 {@link #getMessage()}）。 */
+  public static AgentEvent userMessage(String text) {
+    return new AgentEvent(Type.USER_MESSAGE, text, null, null, null);
+  }
+
+  /** 一次运行的起点分界。见 {@link Type#RUN_STARTED}。 */
+  public static AgentEvent runStarted() {
+    return new AgentEvent(Type.RUN_STARTED, "", null, null, null);
+  }
+
+  /** 一次运行的终点。见 {@link Type#RUN_FINISHED}。 */
+  public static AgentEvent runFinished() {
+    return new AgentEvent(Type.RUN_FINISHED, "", null, null, null);
   }
 
   public static AgentEvent textDelta(String delta) {
