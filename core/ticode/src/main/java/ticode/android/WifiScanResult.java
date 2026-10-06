@@ -1,6 +1,5 @@
 package ticode.android;
 
-import android.net.wifi.WifiManager;
 
 public class WifiScanResult extends android.net.wifi.ScanResult {
 public static final int 带宽160MHZ = 3;

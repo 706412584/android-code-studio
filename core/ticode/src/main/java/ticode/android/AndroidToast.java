@@ -3,8 +3,6 @@ package ticode.android;
 import android.media.*;
 import android.os.*;
 import java.util.*;
-import android.os.Vibrator;
-import android.content.Context;
 
 public class AndroidToast extends android.widget.Toast {
 public static final int 长时 = 1;

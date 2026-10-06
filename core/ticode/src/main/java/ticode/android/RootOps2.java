@@ -13,19 +13,10 @@ import android.content.res.*;
 import android.os.*;
 import android.system.*;
 import android.graphics.*;
-import java.lang.System;
-import java.util.Stack;
 import android.app.*;
 import java.util.regex.*;
 import java.net.*;
 import java.math.*;
-
-import ticode.base.JException;
-import ticode.base.TextBox;
-import ticode.jvm.JCollection;
-import ticode.jvm.JHashMap;
-import ticode.jvm.KeyValuePair;
-import ticode.jvm.UUID;
 
 public class RootOps2 {
 public static boolean 是否ROOT() {
@@ -42,7 +33,7 @@ return false;
 
 public static String 执行命令(String 命令, String[] 环境变量, String 工作目录) {
 try {
-Process process = Runtime.getRuntime().exec(命令, 环境变量, 工作目录 == null ? null : new File(工作目录));
+java.lang.Process process = Runtime.getRuntime().exec(命令, 环境变量, 工作目录 == null ? null : new File(工作目录));
 process.waitFor();
 InputStream es = process.getErrorStream();
 InputStream is = es.available() > 0 ? es : process.getInputStream();

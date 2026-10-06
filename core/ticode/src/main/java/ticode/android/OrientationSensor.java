@@ -1,13 +1,13 @@
 package ticode.android;
 
-import android.hardware.*;
 import android.view.WindowManager;
+import android.hardware.*;
 import java.util.*;
 import android.location.*;
 import android.os.*;
 import android.content.*;
 
-public class OrientationSensor extends WindowComponent {
+public class OrientationSensor extends WindowComponent implements SensorEventListener {
 @Override
 public void onSensorChanged(SensorEvent event) {
 if (event.sensor.getType() == 3 && this.enabled) {

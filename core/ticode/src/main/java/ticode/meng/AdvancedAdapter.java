@@ -1,22 +1,20 @@
 package ticode.meng;
 
+import androidx.recyclerview.widget.RecyclerView;
 import androidx.recyclerview.widget.*;
 import androidx.recyclerview.widget.RecyclerView.*;
 import android.view.*;
 import android.widget.*;
-import androidx.recyclerview.widget.RecyclerView;
-import androidx.recyclerview.widget.ItemTouchHelper;
 
-import ticode.android.Adapter2;
 import ticode.android.AndroidActivity;
 import ticode.android.AndroidEnv;
 import ticode.android.ComponentContainer;
 import ticode.android.VisualComponent;
 import ticode.jvm.JCollection;
 
-public class AdvancedAdapter {
+public class AdvancedAdapter extends androidx.recyclerview.widget.RecyclerView.Adapter {
 
-AdvancedListView 列表;
+public AdvancedListView 列表;
 
 public int itemCount = -1;
 public java.util.ArrayList dataList;
@@ -37,6 +35,7 @@ return new AdvancedAdapter((java.util.ArrayList)集合);
 
 public Object 赋值_op(JCollection 集合) {
 new AdvancedAdapter(集合);
+return this;
 }
 
 //更新数量

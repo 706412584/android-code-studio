@@ -1,13 +1,12 @@
 package ticode.android;
 
 import android.hardware.*;
-import android.view.WindowManager;
 import java.util.*;
 import android.location.*;
 import android.os.*;
 import android.content.*;
 
-public class LightSensor extends WindowComponent {
+public class LightSensor extends WindowComponent implements SensorEventListener {
 
 private SensorManager sensors;
 @Override

@@ -5,7 +5,6 @@ import java.util.TimerTask;
 import android.os.Handler;
 import android.os.Message;
 import android.os.Looper;
-import java.util.UUID;
 
 public class JTimer {
 private Timer timer = new Timer();

@@ -1,9 +1,9 @@
 package ticode.jvm;
 
-import java.lang.reflect.Modifier;
-import dalvik.system.DexFile;
 
 import ticode.android.AndroidEnv;
+
+import static ticode.android.ArrayOps.取数组长度;
 
 public class ReflectOps {
 
@@ -21,7 +21,7 @@ return false;
 // 设置某个字段的值，如果是静态字段，可省略类实例
 public static boolean 设置字段值2(JavaClass 字段所在类, Object 类实例, String 字段名, Object 值) {
 try {
-JavaField 字段 = 字段所在类.取字段(字段名);
+JavaField 字段 = 字段所在类.getDeclaredField(字段名);
 设置字段值3(类实例,字段,值);
 return true;
 } catch(Exception e) {
@@ -53,7 +53,7 @@ return null;
 // 获取某个字段的值，如果是静态字段，可省略类实例
 public static Object 获取字段值2(JavaClass 字段所在类, Object 类实例, String 字段名) {
 try {
-JavaField 字段 = 字段所在类.取字段(字段名);
+JavaField 字段 = 字段所在类.getDeclaredField(字段名);
 return 获取字段值3(类实例,字段);
 } catch(Exception e) {
 return null;
@@ -84,7 +84,7 @@ return null;
 public static Object 执行无参方法2(JavaClass 方法所在类, Object 类实例, String 方法名) {
 try {
 JavaMethod 方法1 = 方法所在类.取方法(方法名);
-return 执行方法3(类实例,方法1);
+return 执行方法3(类实例,方法1,null);
 } catch(Exception e) {
 return null;
 }
@@ -157,7 +157,7 @@ try {
 java.util.List<java.lang.reflect.Field> list = new java.util.ArrayList<>();
 JavaField[] 字段集 = 字段所在类.取所有字段();
 int i;
-while (i) {
+for (i = 0; i < (字段集).length; i++) {
 JavaField 字段 = 字段集[i];
 if (字段 != null && 字段.类型.完整类名 == 字段类型) {
 list.add(字段);

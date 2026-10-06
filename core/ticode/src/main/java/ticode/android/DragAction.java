@@ -1,14 +1,12 @@
 package ticode.android;
 
-import android.content.Context;
-import android.view.ScaleGestureDetector;
 
 public class DragAction {
-public static final DragAction 开始拖放;
+public static final int 开始拖放;
 
-public static final DragAction 结束拖放;
+public static final int 结束拖放;
 
-public static final DragAction 放下;
+public static final int 放下;
 
 static {
 开始拖放 = android.view.DragEvent.ACTION_DRAG_STARTED;

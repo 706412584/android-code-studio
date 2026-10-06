@@ -1,15 +1,10 @@
 package ticode.meng;
 
-import androidx.recyclerview.widget.RecyclerView.LayoutManager;
-import androidx.recyclerview.widget.LinearLayoutManager;
-import androidx.recyclerview.widget.GridLayoutManager;
-import androidx.recyclerview.widget.StaggeredGridLayoutManager;
 import android.view.ViewGroup;
 import androidx.recyclerview.widget.RecyclerView;
 import com.google.android.flexbox.FlexboxLayoutManager;
 
 import ticode.android.AndroidEnv;
-import ticode.android.WindowComponent;
 
 public class FlexLayoutManager extends LayoutManager2 {
 
@@ -36,43 +31,43 @@ public int 子视图数量() {
 return getLM().getFlexItemCount();
 }
 
-public FlexDirection 主轴方向() {
+public int 主轴方向() {
 return getLM().getFlexDirection();
 }
 
-public void 主轴方向(FlexDirection 方向) {
+public void 主轴方向(int 方向) {
 getLM().setFlexDirection(方向);
 }
 
-public FlexWrap 换行策略() {
+public int 换行策略() {
 return getLM().getFlexWrap();
 }
 
-public void 换行策略(FlexWrap 策略) {
+public void 换行策略(int 策略) {
 getLM().setFlexWrap(策略);
 }
 
-public FlexJustifyContent 主轴对齐方式() {
+public int 主轴对齐方式() {
 return getLM().getJustifyContent();
 }
 
-public void 主轴对齐方式(FlexJustifyContent 对齐) {
+public void 主轴对齐方式(int 对齐) {
 getLM().setJustifyContent(对齐);
 }
 
-public FlexAlignContent 测轴对齐方式_多行() {
+public int 测轴对齐方式_多行() {
 return getLM().getAlignContent();
 }
 
-public void 侧轴对齐方式_多行(FlexAlignContent 对齐) {
+public void 侧轴对齐方式_多行(int 对齐) {
 getLM().setAlignContent(对齐);
 }
 
-public FlexAlignItems 测轴对齐方式_单行() {
+public int 测轴对齐方式_单行() {
 return getLM().getAlignItems();
 }
 
-public void 侧轴对齐方式_单行(FlexAlignItems 对齐) {
+public void 侧轴对齐方式_单行(int 对齐) {
 getLM().setAlignItems(对齐);
 }
 

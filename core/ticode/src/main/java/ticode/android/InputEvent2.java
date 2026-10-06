@@ -1,7 +1,5 @@
 package ticode.android;
 
-import android.content.Context;
-import android.view.ScaleGestureDetector;
 
 public class InputEvent2 extends android.view.InputEvent {
 

@@ -1,11 +1,7 @@
 package ticode.jvm;
 
-import java.lang.reflect.Modifier;
-import dalvik.system.DexFile;
 
-import ticode.android.AndroidEnv;
-
-public class JavaParameterizedType implements JavaType, java.lang.reflect.ParameterizedType {
+public class JavaParameterizedType extends JavaType {
 
 public boolean 等于_op(java.lang.reflect.ParameterizedType 另一个) {
 if (this == null) {
@@ -31,4 +27,7 @@ public java.lang.reflect.Type 类型() {
 return this.getRawType();
 }
 
+public String 类型名称() {
+return this.getTypeName();
+}
 }

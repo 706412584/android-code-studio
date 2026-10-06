@@ -1,8 +1,9 @@
 package ticode.jvm;
 
 import java.util.zip.*;
-import java.io.File;
 import java.io.*;
+
+import static ticode.android.ArrayOps.取数组长度;
 
 public class Deflater2 extends java.util.zip.Deflater {
 
@@ -16,7 +17,7 @@ public static final int 压缩策略_小值数据 = 1;
 public static final int 压缩策略_霍夫曼编码 = 2;
 
 // 创建压缩器对象并指定压缩等级(0-9)
-public void 赋值_op(int 压缩等级) {
+public Deflater2 赋值_op(int 压缩等级) {
 return new Deflater(压缩等级);
 }
 
@@ -71,14 +72,14 @@ return this.finished();
 // 向压缩器中设置欲压缩数据
 public void 设置欲压缩数据(byte[] 数据, int 起始偏移量, int 长度) {
 if (长度 == -1) {
-长度 = 取数组长度(数据);
+长度 = (数据).length;
 }
 this.setInput(数据,起始偏移量,长度);
 }
 
 public void 设置字典(byte[] 字典, int 起始偏移量, int 长度) {
 if (长度 == -1) {
-长度 = 取数组长度(字典);
+长度 = (字典).length;
 }
 this.setDictionary(字典,起始偏移量,长度);
 }

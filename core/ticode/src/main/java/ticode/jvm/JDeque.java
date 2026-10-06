@@ -1,8 +1,6 @@
 package ticode.jvm;
 
 
-import ticode.base.IntegerBox;
-
 public class JDeque extends DequeTemplate<Object> {
 
 public static JDeque 从集合创建(JCollection 集合1) {

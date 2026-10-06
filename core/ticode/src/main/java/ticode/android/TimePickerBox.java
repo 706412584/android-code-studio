@@ -48,7 +48,7 @@ e.printStackTrace();
 }
 
 //设置对话框图标, 参数为图片资源
-public void 图标(ImageResource 图片) {
+public void 图标(int 图片) {
 dialog.setIcon(图片);
 }
 

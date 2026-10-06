@@ -1,15 +1,6 @@
 package ticode.meng;
 
-import androidx.recyclerview.widget.RecyclerView.LayoutManager;
-import androidx.recyclerview.widget.LinearLayoutManager;
-import androidx.recyclerview.widget.GridLayoutManager;
 import androidx.recyclerview.widget.StaggeredGridLayoutManager;
-import android.view.ViewGroup;
-import androidx.recyclerview.widget.RecyclerView;
-import com.google.android.flexbox.FlexboxLayoutManager;
-
-import ticode.android.AndroidEnv;
-import ticode.android.WindowComponent;
 
 public class StaggeredLayoutManager extends LayoutManager2 {
 public StaggeredLayoutManager(android.content.Context context) {
@@ -30,7 +21,7 @@ public void 禁用间隙自动填充(boolean 是否) {
 getLM().setGapStrategy(是否 ? 0 : 2);
 }
 
-public void 排列方向(LayoutManagerOrientation 排列方向) {
+public void 排列方向(int 排列方向) {
 int 方向;
 方向 = 排列方向;
 switch (方向) {

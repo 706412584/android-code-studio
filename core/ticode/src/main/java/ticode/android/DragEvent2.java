@@ -1,13 +1,11 @@
 package ticode.android;
 
-import android.content.Context;
-import android.view.ScaleGestureDetector;
 
 public class DragEvent2 extends android.view.DragEvent {
 
 
 
-public DragAction 动作() {
+public int 动作() {
 return this.getAction();
 }
 

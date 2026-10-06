@@ -1,10 +1,6 @@
 package ticode.android;
 
-import android.os.Environment;
 import android.content.pm.*;
-
-import ticode.jvm.JFile;
-import ticode.jvm.JavaClass;
 
 public class ComponentContainer extends WindowComponent {
 public final static int ID = -101;

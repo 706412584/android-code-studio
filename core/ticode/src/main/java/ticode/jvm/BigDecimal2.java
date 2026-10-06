@@ -3,7 +3,8 @@ package ticode.jvm;
 
 public class BigDecimal2 extends java.math.BigDecimal {
 public Object 赋值_op(String 值) {
-return new java.math.BigDecimal(值);
+new java.math.BigDecimal(值);
+return this;
 }
 
 public BigDecimal2 加_op(BigDecimal2 另一个大数字) {

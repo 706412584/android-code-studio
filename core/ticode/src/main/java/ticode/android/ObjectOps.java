@@ -13,19 +13,13 @@ import android.content.res.*;
 import android.os.*;
 import android.system.*;
 import android.graphics.*;
-import java.lang.System;
-import java.util.Stack;
 import android.app.*;
 import java.util.regex.*;
 import java.net.*;
 import java.math.*;
 
-import ticode.base.JException;
-import ticode.base.TextBox;
-import ticode.jvm.JCollection;
 import ticode.jvm.JHashMap;
 import ticode.jvm.KeyValuePair;
-import ticode.jvm.UUID;
 
 public class ObjectOps {
 public static KeyValuePair 键值对(Object 键, Object 值) {
@@ -35,7 +29,7 @@ return 结果;
 
 public static JHashMap 哈希表(KeyValuePair[] 值) {
 JHashMap 结果;
-while (值 -> v) {
+for (var v : 值) {
 结果[v.键] = v.值;
 }
 return 结果;

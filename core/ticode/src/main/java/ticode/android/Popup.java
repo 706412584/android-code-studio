@@ -39,7 +39,7 @@ return container;
 }
 
 //设置弹窗对话风格
-public void 动画资源(AnimationResource 动画) {
+public void 动画资源(int 动画) {
 mPopupWindow.setAnimationStyle(动画);
 }
 
@@ -59,12 +59,12 @@ mPopupWindow.setBackgroundDrawable(new ColorDrawable(背景颜色));
 }
 
 //设置弹窗背景图片，参数为图片资源
-public void 背景图片(ImageResource 图片) {
+public void 背景图片(int 图片) {
 mPopupWindow.setBackgroundDrawable(context.getDrawable(图片));
 }
 
 //设置弹窗背景九宫格图片，参数为点九图资源
-public void 点九图(ImageResource 图片) {
+public void 点九图(int 图片) {
 Bitmap bitmap = BitmapFactory.decodeResource(context.getResources(), 图片);
 NinePatchDrawable drawable = new NinePatchDrawable(bitmap, bitmap.getNinePatchChunk(), new Rect(), 图片 + "");
 mPopupWindow.setBackgroundDrawable(drawable);

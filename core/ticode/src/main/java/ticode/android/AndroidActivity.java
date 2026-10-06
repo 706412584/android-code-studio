@@ -1,7 +1,5 @@
 package ticode.android;
 
-import android.app.Application;
-import java.lang.reflect.Method;
 import android.content.Context;
 import android.net.Uri;
 import android.widget.Toast;
@@ -10,23 +8,19 @@ import android.database.Cursor;
 import android.provider.DocumentsContract;
 import android.os.Environment;
 import android.content.ContentUris;
-import android.view.*;
-import android.app.*;
 import android.content.Intent;
 import android.os.Build;
-import android.content.pm.*;
 import android.provider.Settings;
 import android.os.StrictMode;
+import android.content.ComponentName;
+import android.view.*;
+import android.app.*;
+import android.content.pm.*;
 import android.os.*;
 import android.content.*;
-import android.view.KeyEvent;
-import android.content.res.Configuration;
-import android.os.IBinder;
-import android.content.ComponentName;
 import android.graphics.drawable.*;
 
 import ticode.jvm.JFile;
-import ticode.jvm.JavaClass;
 
 public class AndroidActivity extends android.app.Activity {
 
@@ -56,7 +50,7 @@ activity.startActivityForResult(intent, requestCode);
 
 
 
-public void 主题(ThemeResource 主题) {
+public void 主题(int 主题) {
 this.setTheme(主题);
 }
 
@@ -216,25 +210,25 @@ return this.getApplication();
 
 //启动服务
 public Object 启动服务(AndroidService 欲启动服务) {
-Intent intent = new Intent(this, 欲启动服务.class);
+Intent intent = new Intent(this, AndroidService.class);
 this.startService(intent);
 }
 
 //启动服务
 public Object 启动服务(AndroidService 欲启动服务, Intent2 欲传递参数) {
-欲传递参数.setComponent(new ComponentName(this, 欲启动服务.class));
+欲传递参数.setComponent(new ComponentName(this, AndroidService.class));
 this.startService(欲传递参数);
 }
 
 //绑定服务
 public Object 绑定服务(AndroidService 欲绑定服务, ServiceConnection2 连接, int 标志) {
-Intent intent = new Intent(this, 欲绑定服务.class);
+Intent intent = new Intent(this, AndroidService.class);
 this.bindService(intent,连接,标志);
 }
 
 //关闭指定服务类
 public Object 关闭服务(AndroidService 欲关闭服务) {
-Intent intent = new Intent(this, 欲关闭服务.class);
+Intent intent = new Intent(this, AndroidService.class);
 this.stopService(intent);
 }
 
@@ -255,7 +249,7 @@ this.moveTaskToBack(true);
 
 
 public Object 关闭窗口() {
-return this.finish();
+this.finish();
 }
 
 
@@ -265,9 +259,9 @@ return this.finish();
 
 public Object 切换窗口(AndroidActivity 欲切换窗口, Intent2 欲传递参数) {
 if (欲传递参数 == null) {
-AndroidActivity.newActivity(this, 欲切换窗口.class);
+AndroidActivity.newActivity(this, AndroidActivity.class);
 } else {
-AndroidActivity.newActivity2(this, 欲切换窗口.class, 欲传递参数);
+AndroidActivity.newActivity2(this, AndroidActivity.class, 欲传递参数);
 }
 }
 
@@ -280,14 +274,14 @@ AndroidActivity.newActivity2(this, 欲切换窗口.class, 欲传递参数);
 
 public Object 切换窗口2(AndroidActivity 欲切换窗口, int 请求码, Intent2 欲传递参数) {
 if (欲传递参数 == null) {
-AndroidActivity.newActivityForResult(this, 欲切换窗口.class, 请求码);
+AndroidActivity.newActivityForResult(this, AndroidActivity.class, 请求码);
 } else {
-AndroidActivity.newActivityForResult2(this, 欲切换窗口.class, 请求码, 欲传递参数);
+AndroidActivity.newActivityForResult2(this, AndroidActivity.class, 请求码, 欲传递参数);
 }
 }
 
 //在切换窗口时播放自定义动画
-public void 播放切换动画(AnimationResource 进入新窗口动画资源ID, AnimationResource 隐藏当前窗口动画资源ID) {
+public void 播放切换动画(int 进入新窗口动画资源ID, int 隐藏当前窗口动画资源ID) {
 this.overridePendingTransition(进入新窗口动画资源ID, 隐藏当前窗口动画资源ID);
 }
 

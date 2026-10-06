@@ -1,10 +1,10 @@
 package ticode.android;
 
+import android.os.Vibrator;
+import android.content.Context;
 import android.media.*;
 import android.os.*;
 import java.util.*;
-import android.os.Vibrator;
-import android.content.Context;
 
 public class VibratorOps extends WindowComponent {
 Vibrator vibrator;

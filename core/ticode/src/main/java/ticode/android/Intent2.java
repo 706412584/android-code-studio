@@ -1,9 +1,7 @@
 package ticode.android;
 
-import android.os.Environment;
 import android.content.pm.*;
 
-import ticode.jvm.JFile;
 import ticode.jvm.JavaClass;
 
 public class Intent2 extends android.content.Intent {
@@ -11,7 +9,7 @@ public class Intent2 extends android.content.Intent {
 
 
 public Object 置入(String 键名, Object 数据) {
-this.putExtra(键名, 数据);
+this.putExtra(键名, String.valueOf(数据));
 }
 
 

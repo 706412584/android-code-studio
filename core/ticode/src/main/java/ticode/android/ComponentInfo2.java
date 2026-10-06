@@ -1,10 +1,5 @@
 package ticode.android;
 
-import android.os.StrictMode;
-import android.content.Intent;
-import android.net.Uri;
-import java.io.File;
-import android.provider.Settings;
 
 public class ComponentInfo2 extends android.content.pm.ComponentInfo {
 
@@ -70,4 +65,37 @@ public void 拆分名称(String 拆分名称) {
 this.splitName = 拆分名称;
 }
 
+public int 横幅资源id() {
+return this.banner;
+}
+public int 图标资源id() {
+return this.icon;
+}
+public int 标签资源id() {
+return this.labelRes;
+}
+public int 徽标资源id() {
+return this.logo;
+}
+public Bundle2 元数据() {
+return this.metaData;
+}
+public String 名称() {
+return this.name;
+}
+public String 应用包名() {
+return this.packageName;
+}
+public String 获取标签(PackageManager2 管理器) {
+return this.loadLabel(管理器).toString();
+}
+public DrawableObject 获取图标(PackageManager2 管理器) {
+return this.loadIcon(管理器);
+}
+public DrawableObject 获取横幅(PackageManager2 管理器) {
+return this.loadBanner(管理器);
+}
+public DrawableObject 获取徽标(PackageManager2 管理器) {
+return this.loadLogo(管理器);
+}
 }

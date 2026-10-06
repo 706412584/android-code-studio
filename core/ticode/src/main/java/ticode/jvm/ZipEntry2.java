@@ -1,7 +1,6 @@
 package ticode.jvm;
 
 import java.util.zip.*;
-import java.io.File;
 import java.io.*;
 
 public class ZipEntry2 extends java.util.zip.ZipEntry {

@@ -1,12 +1,11 @@
 package ticode.jvm;
 
 import java.util.zip.*;
-import java.io.File;
 import java.io.*;
 
 public class InflaterOutputStream2 extends java.util.zip.InflaterOutputStream {
 
-public void 赋值_op(JOutputStream 输出流1) {
+public InflaterOutputStream2 赋值_op(JOutputStream 输出流1) {
 return new InflaterOutputStream(输出流1);
 }
 

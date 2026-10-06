@@ -1,6 +1,5 @@
 package ticode.android;
 
-import android.text.SpannableStringBuilder;
 
 public class StyleUnderline extends android.text.style.UnderlineSpan {
 

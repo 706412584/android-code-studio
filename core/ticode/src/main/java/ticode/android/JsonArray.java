@@ -4,11 +4,13 @@ import org.json.*;
 import java.io.*;
 import org.xmlpull.v1.*;
 
+import static ticode.android.FileOps.写出文本文件;
+
 public class JsonArray extends org.json.JSONArray {
 
 
 
-public void 赋值_op(String JSON文本) {
+public JsonArray 赋值_op(String JSON文本) {
 if(JSON文本 == null || JSON文本.isEmpty()) {
 throw new IllegalArgumentException("JSON文本不能为空");
 }
@@ -158,7 +160,7 @@ return null;
 
 
 public void 写出到文件(String 文件路径) {
-Object 结果 = 到文本(3);
+String 结果 = 到文本(3);
 写出文本文件(文件路径, 结果);
 }
 

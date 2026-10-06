@@ -5,7 +5,7 @@ import android.text.SpannableStringBuilder;
 public class SpannableTextBuilder extends android.text.SpannableStringBuilder {
 
 //字符串 包括 文本(String)
-public void 赋值_op(CharSequence 初始字符串) {
+public SpannableTextBuilder 赋值_op(CharSequence 初始字符串) {
 return new SpannableStringBuilder(初始字符串);
 }
 

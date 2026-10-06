@@ -2,8 +2,9 @@ package ticode.jvm;
 
 
 public class ResourceId extends java.net.URI {
-public Object 赋值_op(String URI文本) {
-return java.net.URI.create(URI文本);
+public ResourceId(String URI文本) {
+java.net.URI.create(URI文本);
+
 }
 
 

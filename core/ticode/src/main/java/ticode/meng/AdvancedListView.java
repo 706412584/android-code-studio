@@ -1,23 +1,20 @@
 package ticode.meng;
 
+import androidx.recyclerview.widget.RecyclerView;
 import androidx.recyclerview.widget.*;
 import androidx.recyclerview.widget.RecyclerView.*;
 import android.view.*;
 import android.widget.*;
-import androidx.recyclerview.widget.RecyclerView;
-import androidx.recyclerview.widget.ItemTouchHelper;
 
 import ticode.android.Adapter2;
-import ticode.android.AndroidActivity;
 import ticode.android.AndroidEnv;
 import ticode.android.ComponentContainer;
 import ticode.android.VisualComponent;
-import ticode.jvm.JCollection;
 
 public class AdvancedListView extends VisualComponent {
 
-AdvancedAdapter 适配器;
-LayoutManager2 布局器;
+public AdvancedAdapter 适配器;
+public LayoutManager2 布局器;
 
 public AdvancedListView(AndroidEnv context) {
 super(context);

@@ -1,17 +1,13 @@
 package ticode.base;
 
-import java.io.PrintWriter;
-import java.io.StringWriter;
 import android.os.*;
-import java.util.List;
 import java.util.concurrent.*;
 
-import ticode.jvm.JRegex;
-import ticode.jvm.JavaClass;
+import static ticode.android.ArrayOps.取数组长度;
 
 public class TextBuilder extends java.lang.StringBuilder {
 
-public void 赋值_op(CharSequence 初始字符串) {
+public TextBuilder 赋值_op(CharSequence 初始字符串) {
 return new StringBuilder(初始字符串);
 }
 
@@ -56,7 +52,7 @@ return this.append(追加内容);
 
 public TextBuilder 追加字符集(char[] 追加内容, int 起始偏移量, int 长度) {
 if (长度 == -1) {
-长度 = 取数组长度(追加内容);
+长度 = (追加内容).length;
 }
 return this.append(追加内容, 起始偏移量, 长度);
 }
@@ -111,7 +107,7 @@ return this.insert(插入索引位置,插入内容);
 
 public TextBuilder 插入字符集(int 插入索引位置, char[] 追加内容, int 起始偏移量, int 长度) {
 if (长度 == -1) {
-长度 = 取数组长度(追加内容);
+长度 = (追加内容).length;
 }
 return this.insert(插入索引位置,追加内容,起始偏移量,长度);
 }
@@ -163,4 +159,10 @@ public void 清空() {
 设置新长度(0);
 }
 
+public int 长度() {
+return this.length();
+}
+public char 取字符(int 索引) {
+return this.charAt(索引);
+}
 }

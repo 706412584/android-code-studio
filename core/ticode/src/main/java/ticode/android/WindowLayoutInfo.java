@@ -1,10 +1,5 @@
 package ticode.android;
 
-import android.os.StrictMode;
-import android.content.Intent;
-import android.net.Uri;
-import java.io.File;
-import android.provider.Settings;
 
 public class WindowLayoutInfo extends android.content.pm.ActivityInfo.WindowLayout {
 
@@ -22,7 +17,7 @@ return 另一个 != null;
 return !this.equals(另一个);
 }
 
-public void 赋值_op(int 宽度, float 宽度百分数, int 高度, float 高度百分数, int 对齐方式, int 最小宽度, int 最小高度) {
+public WindowLayoutInfo 赋值_op(int 宽度, float 宽度百分数, int 高度, float 高度百分数, int 对齐方式, int 最小宽度, int 最小高度) {
 return new android.content.pm.ActivityInfo.WindowLayout(宽度,宽度百分数,高度,高度百分数,对齐方式,最小宽度,最小高度);
 }
 

@@ -1,10 +1,6 @@
 package ticode.android;
 
-import android.os.Environment;
 import android.content.pm.*;
-
-import ticode.jvm.JFile;
-import ticode.jvm.JavaClass;
 
 public class MenuItem2 implements android.view.MenuItem {
 public static final int 总是显示 = 2;
@@ -50,7 +46,7 @@ this.setTitle(标题);
 
 
 
-public void 图标资源(ImageResource 图标) {
+public void 图标资源(int 图标) {
 this.setIcon(图标);
 }
 

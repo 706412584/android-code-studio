@@ -1,13 +1,11 @@
 package ticode.android;
 
-import android.content.Context;
-import android.view.ScaleGestureDetector;
 
 public class KeyEvent2 extends android.view.KeyEvent {
 
 
 
-public KeyAction 动作() {
+public int 动作() {
 return this.getAction();
 }
 
@@ -16,5 +14,11 @@ return this.getAction();
 
 public int 按键代码() {
 return this.getKeyCode();
+}
+public int 设备ID() {
+return this.getDeviceId();
+}
+public long 时间() {
+return this.getEventTime();
 }
 }

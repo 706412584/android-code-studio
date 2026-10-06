@@ -1,20 +1,18 @@
 package ticode.android;
 
-import android.content.Context;
-import android.view.ScaleGestureDetector;
 
 public class TouchEvent2 extends android.view.MotionEvent {
 
 
 
-public TouchAction 动作() {
+public int 动作() {
 return this.getAction();
 }
 
 
 
 
-public TouchAction 当前动作() {
+public int 当前动作() {
 return this.getActionMasked();
 }
 
@@ -53,5 +51,11 @@ return this.getX(索引);
 
 public double 取纵坐标(int 索引) {
 return this.getY(索引);
+}
+public int 设备ID() {
+return this.getDeviceId();
+}
+public long 时间() {
+return this.getEventTime();
 }
 }

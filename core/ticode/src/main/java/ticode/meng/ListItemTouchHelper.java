@@ -1,22 +1,17 @@
 package ticode.meng;
 
+import androidx.recyclerview.widget.RecyclerView;
+import androidx.recyclerview.widget.ItemTouchHelper;
 import androidx.recyclerview.widget.*;
 import androidx.recyclerview.widget.RecyclerView.*;
 import android.view.*;
 import android.widget.*;
-import androidx.recyclerview.widget.RecyclerView;
-import androidx.recyclerview.widget.ItemTouchHelper;
 
-import ticode.android.Adapter2;
-import ticode.android.AndroidActivity;
-import ticode.android.AndroidEnv;
 import ticode.android.ComponentContainer;
-import ticode.android.VisualComponent;
-import ticode.jvm.JCollection;
 
-public class ListItemTouchHelper {
+public class ListItemTouchHelper extends ItemTouchHelper.Callback {
 
-AdvancedListView 列表;
+public AdvancedListView 列表;
 
 ItemTouchHelper touchHelper;
 
@@ -110,7 +105,7 @@ java.util.Collections.swap((java.util.List)集合, 索引, 目标索引);
 
 //移除项目视图
 public void 移除项目(int 索引) {
-列表.取适配器().更新移除项目(索引);
+列表.取适配器().更新移除项目(索引,1);
 }
 
 public void 移除集合数据(Object 集合, int 索引) {
@@ -121,8 +116,8 @@ public void 移除集合数据(Object 集合, int 索引) {
 public boolean 项目被拖拽(ComponentContainer 容器, int 索引, ComponentContainer 目标容器, int 目标索引) { return false; } // 事件
 //滑动结束后触发
 public void 项目被滑动(ComponentContainer 容器, int 索引, int 方向) { } // 事件
-public void 项目状态改变(ComponentContainer 容器, int 索引, ListItemTouchState 状态) { } // 事件
-public void 项目操作中(ComponentContainer 容器, int 索引, double dX, double dY, ListItemTouchState 状态, boolean 手动操作) { } // 事件
+public void 项目状态改变(ComponentContainer 容器, int 索引, int 状态) { } // 事件
+public void 项目操作中(ComponentContainer 容器, int 索引, double dX, double dY, int 状态, boolean 手动操作) { } // 事件
 public void 项目操作结束(ComponentContainer 容器, int 索引) { } // 事件
 
 }

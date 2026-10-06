@@ -1,8 +1,8 @@
 package ticode.meng;
 
-import com.google.android.flexbox.*;
 import android.view.View;
 import android.view.ViewGroup;
+import com.google.android.flexbox.*;
 
 import ticode.android.AdjustableMarginLayout;
 import ticode.android.DrawableObject;
@@ -36,43 +36,43 @@ public void 移除全部视图() {
 getView().removeAllViews();
 }
 
-public FlexDirection 主轴方向() {
+public int 主轴方向() {
 return getView().getFlexDirection();
 }
 
-public void 主轴方向(FlexDirection 方向) {
+public void 主轴方向(int 方向) {
 getView().setFlexDirection(方向);
 }
 
-public FlexWrap 换行策略() {
+public int 换行策略() {
 return getView().getFlexWrap();
 }
 
-public void 换行策略(FlexWrap 策略) {
+public void 换行策略(int 策略) {
 getView().setFlexWrap(策略);
 }
 
-public FlexJustifyContent 主轴对齐方式() {
+public int 主轴对齐方式() {
 return getView().getJustifyContent();
 }
 
-public void 主轴对齐方式(FlexJustifyContent 对齐) {
+public void 主轴对齐方式(int 对齐) {
 getView().setJustifyContent(对齐);
 }
 
-public FlexAlignContent 测轴对齐方式_多行() {
+public int 测轴对齐方式_多行() {
 return getView().getAlignContent();
 }
 
-public void 侧轴对齐方式_多行(FlexAlignContent 对齐) {
+public void 侧轴对齐方式_多行(int 对齐) {
 getView().setAlignContent(对齐);
 }
 
-public FlexAlignItems 测轴对齐方式_单行() {
+public int 测轴对齐方式_单行() {
 return getView().getAlignItems();
 }
 
-public void 侧轴对齐方式_单行(FlexAlignItems 对齐) {
+public void 侧轴对齐方式_单行(int 对齐) {
 getView().setAlignItems(对齐);
 }
 
@@ -124,15 +124,15 @@ public void 分割线_横向(DrawableObject 图片) {
 getView().setDividerDrawableHorizontal(图片);
 }
 
-public void 分割线模式(FlexDividerMode 模式) {
+public void 分割线模式(int 模式) {
 getView().setShowDivider(模式);
 }
 
-public void 分割线模式_纵向(FlexDividerMode 模式) {
+public void 分割线模式_纵向(int 模式) {
 getView().setShowDividerVertical(模式);
 }
 
-public void 分割线模式_横向(FlexDividerMode 模式) {
+public void 分割线模式_横向(int 模式) {
 getView().setShowDividerHorizontal(模式);
 }
 

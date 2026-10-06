@@ -1,6 +1,5 @@
 package ticode.android;
 
-import android.text.SpannableStringBuilder;
 
 public class StyleStrikethrough extends android.text.style.StrikethroughSpan {
 

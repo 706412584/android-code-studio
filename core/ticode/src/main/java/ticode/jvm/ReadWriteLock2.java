@@ -2,8 +2,6 @@ package ticode.jvm;
 
 import java.util.concurrent.*;
 
-import ticode.base.IntegerBox;
-
 public class ReadWriteLock2 extends java.util.concurrent.locks.ReentrantReadWriteLock {
 public void 获取读锁() {
 this.readLock().lock();

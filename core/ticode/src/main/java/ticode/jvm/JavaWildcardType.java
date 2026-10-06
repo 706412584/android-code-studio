@@ -1,11 +1,7 @@
 package ticode.jvm;
 
-import java.lang.reflect.Modifier;
-import dalvik.system.DexFile;
 
-import ticode.android.AndroidEnv;
-
-public class JavaWildcardType implements JavaType, java.lang.reflect.WildcardType {
+public class JavaWildcardType extends JavaType {
 
 public boolean 等于_op(java.lang.reflect.WildcardType 另一个) {
 if (this == null) {
@@ -31,4 +27,7 @@ public java.lang.reflect.Type[] 下边界限制类型() {
 return this.getLowerBounds();
 }
 
+public String 类型名称() {
+return this.getTypeName();
+}
 }

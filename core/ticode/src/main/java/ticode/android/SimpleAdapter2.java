@@ -1,16 +1,12 @@
 package ticode.android;
 
-import android.widget.AdapterView;
 import android.widget.AdapterView.*;
-import android.content.Context;
-import android.view.View;
 import android.graphics.*;
 import android.graphics.drawable.*;
-import android.widget.GridView;
 import android.view.*;
 
 public class SimpleAdapter2 extends UniversalAdapter {
-Integer 项目数;
+public Integer 项目数;
 
 public void 更新项目(int 项目总数) {
 this.项目数 = 项目总数;

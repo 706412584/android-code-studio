@@ -2,7 +2,7 @@ package ticode.android;
 
 import android.view.ViewGroup;
 
-public class CustomComponent extends LayoutComponent {
+public abstract class CustomComponent extends LayoutComponent {
 public CustomComponent(android.content.Context context) {
 super(context);
 }

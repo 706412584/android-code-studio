@@ -1,12 +1,5 @@
 package ticode.android;
 
-import java.io.*;
-import java.net.*;
-import java.util.*;
-import java.math.*;
-import java.security.*;
-import java.security.cert.*;
-import javax.net.ssl.*;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -14,8 +7,6 @@ import java.io.ByteArrayOutputStream;
 import java.net.URL;
 import java.net.HttpURLConnection;
 import java.util.Map;
-import java.util.zip.GZIPInputStream;
-import java.util.concurrent.ExecutorService;
 import java.security.SecureRandom;
 import java.security.cert.X509Certificate;
 import java.security.cert.CertificateException;
@@ -24,45 +15,44 @@ import javax.net.ssl.SSLContext;
 import javax.net.ssl.X509TrustManager;
 import javax.net.ssl.HostnameVerifier;
 import javax.net.ssl.HttpsURLConnection;
+import java.io.*;
+import java.net.*;
+import java.util.*;
+import java.math.*;
+import java.security.*;
+import java.security.cert.*;
+import javax.net.ssl.*;
 import java.util.concurrent.*;
 import android.os.*;
-import java.net.InetSocketAddress;
-import java.nio.ByteBuffer;
-import java.nio.channels.DatagramChannel;
-import android.os.Looper;
-import android.os.Handler;
 import java.nio.*;
 import java.nio.channels.*;
 
-import ticode.base.BooleanBox;
-import ticode.base.JException;
 import ticode.base.TextBox;
-import ticode.jvm.JFile;
 import ticode.jvm.UUID;
 
 public class NetworkOps {
-java.util.Map<String,String> 请求头;
-boolean 是否支持重定向;
+public java.util.Map<String,String> 请求头;
+public boolean 是否支持重定向;
 
 
 
 
 public void 添加请求头(String 名称, String 值) {
-请求头[名称] = 值;
+请求头.put(名称, 值);
 }
 
 
 
 
 public void 移除请求头(String 名称) {
-请求头.删除项目(名称);
+请求头.remove(名称);
 }
 
 
 
 
 public void 清除请求头() {
-请求头.清空();
+请求头.clear();
 }
 
 
@@ -80,13 +70,13 @@ this.是否支持重定向 = 是否支持;
 
 
 public void 取网页源码(String 网址, String cookie, int 超时, String 编码) {
-Object 结果 = 取网页源码_同步_内部(网址, cookie, 超时, 编码);
+Object[] 结果 = 取网页源码_同步_内部(网址, cookie, 超时, 编码);
 if (结果 == null) {
 取网页源码失败();
 } else {
 byte[] content = (byte[]) 结果[0];
-String cookie = (String) 结果[1];
-取网页源码结束(TextBox.从字节集创建(content, 编码), content, cookie);
+String cookie1 = (String) 结果[1];
+取网页源码结束(TextBox.从字节集创建(content, 编码), content, cookie1);
 }
 }
 
@@ -98,7 +88,7 @@ String cookie = (String) 结果[1];
 
 
 public String 取网页源码_同步(String 网址, String cookie, int 超时, String 编码) {
-Object 结果 = 取网页源码_字节集_同步(网址, cookie, 超时, 编码);
+byte[] 结果 = 取网页源码_字节集_同步(网址, cookie, 超时, 编码);
 if (结果 == null) {
 return ("");
 } else {
@@ -134,13 +124,13 @@ return 发送请求_内部(网址, "GET",null,null,cookie, 超时, 编码);
 
 
 public void 发送数据(String 网址, Object 欲发送数据, String cookie, int 超时, String 编码) {
-Object 结果 = 发送数据_同步_内部(网址, 欲发送数据, cookie, 超时, 编码);
+Object[] 结果 = 发送数据_同步_内部(网址, 欲发送数据, cookie, 超时, 编码);
 if (结果 == null) {
 发送数据失败();
 } else {
 byte[] content = (byte[]) 结果[0];
-String cookie = (String) 结果[1];
-发送数据结束(TextBox.从字节集创建(content, 编码), content, cookie);
+String cookie1 = (String) 结果[1];
+发送数据结束(TextBox.从字节集创建(content, 编码), content, cookie1);
 }
 }
 
@@ -153,7 +143,7 @@ String cookie = (String) 结果[1];
 
 
 public String 发送数据_同步(String 网址, Object 欲发送数据, String cookie, int 超时, String 编码) {
-Object 结果 = 发送数据_字节集_同步(网址, 欲发送数据, cookie, 超时, 编码);
+byte[] 结果 = 发送数据_字节集_同步(网址, 欲发送数据, cookie, 超时, 编码);
 if (结果 == null) {
 return ("");
 } else {
@@ -191,7 +181,7 @@ return 发送请求_内部(网址, "POST",null, 欲发送数据, cookie, 超时,
 
 
 public void 下载(String 网址, String 保存路径, String cookie, int 超时, String 编码) {
-Object 结果 = 发送请求_内部(网址, "GET", 保存路径,null, cookie, 超时, 编码);
+Object[] 结果 = 发送请求_内部(网址, "GET", 保存路径,null, cookie, 超时, 编码);
 if (结果 == null) {
 下载失败();
 } else {
@@ -210,7 +200,7 @@ String 结果cookie = ((String)结果[0]);
 
 
 public boolean 下载_同步(String 网址, String 保存路径, String cookie, int 超时, String 编码) {
-Object 结果 = 发送请求_内部(网址, "GET", 保存路径,null, cookie, 超时, 编码);
+Object[] 结果 = 发送请求_内部(网址, "GET", 保存路径,null, cookie, 超时, 编码);
 if (结果 == null) {
 return (false);
 }
@@ -228,13 +218,13 @@ return (true);
 
 
 public void 上传(String 网址, String 文件路径, String 键名, String cookie, int 超时, String 编码) {
-Object 结果 = 上传_内部(网址, 文件路径, 键名, null, cookie, 超时, 编码);
+Object[] 结果 = 上传_内部(网址, 文件路径, 键名, null, cookie, 超时, 编码);
 if (结果 == null) {
 上传失败();
 } else {
 byte[] content = (byte[]) 结果[0];
-String cookie = (String) 结果[1];
-上传结束(TextBox.从字节集创建(content, 编码), content, cookie);
+String cookie1 = (String) 结果[1];
+上传结束(TextBox.从字节集创建(content, 编码), content, cookie1);
 }
 }
 
@@ -272,13 +262,13 @@ return new String(bytes);
 
 
 public void 上传2(String 网址, String 文件路径, String 键名, String 参数, String cookie, int 超时, String 编码) {
-Object 结果 = 上传_内部(网址, 文件路径, 键名,参数, cookie, 超时, 编码);
+Object[] 结果 = 上传_内部(网址, 文件路径, 键名,参数, cookie, 超时, 编码);
 if (结果 == null) {
 上传失败();
 } else {
 byte[] content = (byte[]) 结果[0];
-String cookie = (String) 结果[1];
-上传结束(TextBox.从字节集创建(content, 编码), content, cookie);
+String cookie1 = (String) 结果[1];
+上传结束(TextBox.从字节集创建(content, 编码), content, cookie1);
 }
 }
 
@@ -402,8 +392,8 @@ boas.write(tmp, 0, len);
 byte[] result = boas.toByteArray();
 boas.close();
 is.close();
-String cookie = cok.toString();
-return new Object[]{result, cookie};
+String cookie1 = cok.toString();
+return new Object[]{result, cookie1};
 }
 } catch (Exception e) {
 e.printStackTrace();

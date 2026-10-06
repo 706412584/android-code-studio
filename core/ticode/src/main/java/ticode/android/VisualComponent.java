@@ -1,50 +1,20 @@
 package ticode.android;
 
 import android.content.Context;
+import android.util.TypedValue;
+import android.animation.Animator;
+import android.view.animation.Animation;
+import android.view.View;
+import android.view.ViewGroup;
 import android.content.*;
 import android.content.res.*;
 import android.view.*;
 import android.widget.*;
-import android.util.TypedValue;
-import android.animation.Animator;
-import android.view.animation.Animation;
-import android.graphics.Typeface;
-import android.text.Html;
-import android.text.TextUtils;
-import android.text.util.Linkify;
-import android.text.method.LinkMovementMethod;
-import java.util.regex.Pattern;
-import java.util.regex.Matcher;
 import android.text.*;
 import android.text.style.*;
-import android.widget.CompoundButton;
-import android.widget.CheckBox;
-import android.widget.Switch;
-import android.widget.ImageView.ScaleType;
 import android.graphics.*;
-import android.widget.ProgressBar;
 import android.graphics.drawable.*;
-import android.widget.SeekBar;
-import android.widget.VideoView;
-import android.media.MediaPlayer;
-import android.content.pm.ActivityInfo;
-import android.content.Intent;
-import android.content.ActivityNotFoundException;
-import android.view.View;
-import android.view.ViewGroup;
-import android.net.Uri;
-import android.net.http.SslError;
-import android.os.Build;
-import android.app.Activity;
-import android.app.DownloadManager;
-import android.widget.FrameLayout;
-import java.io.File;
-import android.graphics.Bitmap;
-import android.annotation.TargetApi;
 import android.webkit.*;
-
-import ticode.jvm.JMatcher;
-import ticode.jvm.JRegex;
 
 public class VisualComponent extends WindowComponent {
 public static final String 横坐标设置错误 = "横坐标属性只能在组件父布局为自适应布局时使用";
@@ -388,11 +358,11 @@ public boolean 可视() {
 return view.getVisibility() == View.VISIBLE ? true : false;
 }
 
-public void 可视状态(ComponentVisibilityState 状态) {
+public void 可视状态(int 状态) {
 view.setVisibility(状态);
 }
 
-public ComponentVisibilityState 可视状态() {
+public int 可视状态() {
 return view.getVisibility();
 }
 
@@ -427,7 +397,7 @@ return view.isFocusable();
 
 
 
-public void 背景图片(ImageResource 图片) {
+public void 背景图片(int 图片) {
 view.setBackgroundResource(图片);
 }
 
@@ -470,7 +440,7 @@ return (LayoutComponent) parent.getTag();
 
 
 public void 从父组件中移除() {
-Object 父组件 = 取父组件();
+LayoutComponent 父组件 = 取父组件();
 if (父组件 != null) {
 父组件.移除组件(this);
 }
@@ -716,7 +686,7 @@ public boolean 被触摸(TouchEvent2 来源事件) { return false; } // 事件
 
 
 
-public void 触摸手势(TouchGesture 手势) { } // 事件
+public void 触摸手势(int 手势) { } // 事件
 
 
 

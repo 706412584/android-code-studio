@@ -13,19 +13,10 @@ import android.content.res.*;
 import android.os.*;
 import android.system.*;
 import android.graphics.*;
-import java.lang.System;
-import java.util.Stack;
 import android.app.*;
 import java.util.regex.*;
 import java.net.*;
 import java.math.*;
-
-import ticode.base.JException;
-import ticode.base.TextBox;
-import ticode.jvm.JCollection;
-import ticode.jvm.JHashMap;
-import ticode.jvm.KeyValuePair;
-import ticode.jvm.UUID;
 
 public class ConvertOps {
 
@@ -39,7 +30,7 @@ return 值.到文本();
 
 
 public static byte 整数到字节(int 值) {
-return 值.到字节();
+return (byte)(值);
 }
 
 //将中文转为unicode编码
@@ -93,14 +84,6 @@ return targets;
 }
 
 //将整数转换成字节型数组，方法名有异议，已废弃使用
-public static byte[] 整数到字节(int 值) {
-byte[] targets = new byte[4];
-targets[0] = ((byte)(值 & 0xFF));
-targets[1] = ((byte)(值 >> 8 & 0xFF));
-targets[2] = ((byte)(值 >> 16 & 0xFF));
-targets[3] = ((byte)(值 >>> 24));
-return targets;
-}
 
 //将字节型数组转换成长整数，方法名有异议，已废弃使用
 public static long 字节到长整数(byte[] 值) {
@@ -179,7 +162,7 @@ public static String 数值到金额(double 值) {
 if ((值 > 1.0E+018D) || (值 < - 1.0E+018D)) {
 return "";
 }
-String[] chineseDigits = new Object[]{ "零", "壹", "贰", "叁", "肆", "伍", "陆", "柒", "捌", "玖" };
+String[] chineseDigits = new String[]{ "零", "壹", "贰", "叁", "肆", "伍", "陆", "柒", "捌", "玖" };
 boolean negative = false;
 if (值 < 0.0D) {
 negative = true;
@@ -271,8 +254,8 @@ private static String partTranslate(int amountPart) {
 if ((amountPart < 0) || (amountPart > 10000)) {
 return "";
 }
-String[] chineseDigits = new Object[]{ "零", "壹", "贰", "叁", "肆", "伍", "陆", "柒", "捌", "玖" };
-String[] units = new Object[]{ "", "拾", "佰", "仟" };
+String[] chineseDigits = new String[]{ "零", "壹", "贰", "叁", "肆", "伍", "陆", "柒", "捌", "玖" };
+String[] units = new String[]{ "", "拾", "佰", "仟" };
 int temp = amountPart;
 String amountStr = new Integer(amountPart).toString();
 int amountStrLength = amountStr.length();

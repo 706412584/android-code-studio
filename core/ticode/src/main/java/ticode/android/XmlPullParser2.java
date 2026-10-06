@@ -5,7 +5,7 @@ import java.io.*;
 import org.xmlpull.v1.*;
 
 public class XmlPullParser2 {
-public static final Object 异常 = -1;
+public static final int 异常 = -1;
 public static final int 文档开始 = 0;
 public static final int 文档结束 = 1;
 public static final int 节点开始 = 2;

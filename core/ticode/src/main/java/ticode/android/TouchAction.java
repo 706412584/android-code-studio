@@ -1,20 +1,18 @@
 package ticode.android;
 
-import android.content.Context;
-import android.view.ScaleGestureDetector;
 
 public class TouchAction {
-public static final TouchAction 按下;
+public static final int 按下;
 
-public static final TouchAction 移动;
+public static final int 移动;
 
-public static final TouchAction 抬起;
+public static final int 抬起;
 
-public static final TouchAction 多点按下;
+public static final int 多点按下;
 
-public static final TouchAction 多点抬起;
+public static final int 多点抬起;
 
-public static final TouchAction 取消;
+public static final int 取消;
 
 static {
 按下 = android.view.MotionEvent.ACTION_DOWN;

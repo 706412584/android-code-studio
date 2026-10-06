@@ -1,17 +1,12 @@
 package ticode.android;
 
 import android.view.ViewGroup;
-import android.content.Context;
-import android.widget.FrameLayout;
+import android.view.View;
 import android.graphics.*;
 import android.view.*;
-import android.widget.AbsoluteLayout;
-import android.widget.LinearLayout.LayoutParams;
-import android.widget.RelativeLayout;
-import android.view.View;
 import java.util.*;
 
-public class AdjustableMarginLayout extends LayoutComponent {
+public abstract class AdjustableMarginLayout extends LayoutComponent {
 public AdjustableMarginLayout(android.content.Context context) {
 super(context);
 }

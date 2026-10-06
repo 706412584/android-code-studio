@@ -7,9 +7,6 @@ import java.security.spec.*;
 import java.math.*;
 import javax.crypto.*;
 import javax.crypto.spec.*;
-import java.security.KeyPairGenerator;
-
-import ticode.base.TextBox;
 
 public class PinyinOps {
 

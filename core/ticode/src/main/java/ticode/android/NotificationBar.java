@@ -1,49 +1,32 @@
 package ticode.android;
 
-import android.app.Application;
-import java.lang.reflect.Method;
 import android.content.Context;
-import android.net.Uri;
-import android.widget.Toast;
-import android.provider.MediaStore;
-import android.database.Cursor;
-import android.provider.DocumentsContract;
-import android.os.Environment;
-import android.content.ContentUris;
+import android.content.Intent;
 import android.view.*;
 import android.app.*;
-import android.content.Intent;
-import android.os.Build;
 import android.content.pm.*;
-import android.provider.Settings;
-import android.os.StrictMode;
 import android.os.*;
 import android.content.*;
-import android.view.KeyEvent;
-import android.content.res.Configuration;
-import android.os.IBinder;
-import android.content.ComponentName;
 import android.graphics.drawable.*;
 
-import ticode.jvm.JFile;
 import ticode.jvm.JavaClass;
 
 public class NotificationBar {
-int 通知栏_重要程度_最低 = 1;
-int 通知栏_重要程度_低 = 2;
-int 通知栏_重要程度_默认 = 3;
-int 通知栏_重要程度_高 = 4;
-int 通知栏_重要程度_最高 = 5;
+public static int 通知栏_重要程度_最低 = 1;
+public static int 通知栏_重要程度_低 = 2;
+public static int 通知栏_重要程度_默认 = 3;
+public static int 通知栏_重要程度_高 = 4;
+public static int 通知栏_重要程度_最高 = 5;
 
-int ID = 1;
-int 图标;
-String 标题 = "这是通知的标题";
-String 内容 = "这是通知的内容";
-String 提示 = "你有一条通知";
-int 重要程度 = 通知栏_重要程度_默认;
-boolean 自动取消 = true;
-String 渠道ID;
-String 渠道名称;
+public int ID = 1;
+public int 图标;
+public String 标题 = "这是通知的标题";
+public String 内容 = "这是通知的内容";
+public String 提示 = "你有一条通知";
+public int 重要程度 = 通知栏_重要程度_默认;
+public boolean 自动取消 = true;
+public String 渠道ID;
+public String 渠道名称;
 
 private Context mContext;
 private static NotificationManager notificationManager;

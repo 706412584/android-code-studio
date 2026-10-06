@@ -1,11 +1,7 @@
 package ticode.jvm;
 
-import java.lang.reflect.Modifier;
-import dalvik.system.DexFile;
 
-import ticode.android.AndroidEnv;
-
-public class JavaTypeVariable implements JavaType, java.lang.reflect.TypeVariable {
+public class JavaTypeVariable extends JavaType {
 
 public boolean 等于_op(java.lang.reflect.TypeVariable 另一个) {
 if (this == null) {
@@ -33,4 +29,7 @@ public java.lang.reflect.Type[] 限制类型() {
 return this.getBounds();
 }
 
+public String 类型名称() {
+return this.getTypeName();
+}
 }

@@ -1,13 +1,9 @@
 package ticode.base;
 
-import java.io.PrintWriter;
-import java.io.StringWriter;
 import android.os.*;
-import java.util.List;
 import java.util.concurrent.*;
 
 import ticode.jvm.JRegex;
-import ticode.jvm.JavaClass;
 
 public class TextBox extends String {
 
@@ -298,5 +294,11 @@ return new String(字符集);
 
 public static String 格式化(String 格式, Object[] 参数) {
 return String.format(格式, 参数);
+}
+public int 长度() {
+return this.length();
+}
+public char 取字符(int 索引) {
+return this.charAt(索引);
 }
 }

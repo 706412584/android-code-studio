@@ -1,8 +1,5 @@
 package ticode.android;
 
-import android.os.Looper;
-import android.content.Intent;
-import java.io.File;
 import android.os.Build;
 
 public class DeviceInfo {
@@ -20,7 +17,7 @@ public static final String CPU指令集2;
 
 public static final String 设备参数;
 
-String 显示屏参数;
+public static String 显示屏参数;
 
 public static final String 唯一识别码;
 

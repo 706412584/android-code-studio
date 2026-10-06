@@ -1,9 +1,7 @@
 package ticode.jvm;
 
 
-import ticode.base.IntegerBox;
-
-public class DequeTemplate<T1> extends java.util.ArrayDeque {
+public class DequeTemplate<T1> extends java.util.ArrayDeque<T1> {
 
 public int 长度() {
 return this.size();

@@ -1,9 +1,7 @@
 package ticode.jvm;
 
 
-import ticode.base.IntegerBox;
-
-public class StackTemplate<T1> extends java.util.Stack {
+public class StackTemplate<T1> extends java.util.Stack<T1> {
 
 public int 长度() {
 return this.size();

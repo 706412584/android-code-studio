@@ -1,6 +1,5 @@
 package ticode.android;
 
-import android.text.SpannableStringBuilder;
 
 public class StyleSubscript extends android.text.style.SubscriptSpan {
 

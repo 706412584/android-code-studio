@@ -4,7 +4,8 @@ package ticode.jvm;
 public class BigInteger2 extends java.math.BigInteger {
 
 public Object 赋值_op(String 值, int 基数) {
-return new java.math.BigInteger(值,基数);
+new java.math.BigInteger(值,基数);
+return this;
 }
 
 public BigInteger2 加_op(BigInteger2 另一个大整数) {

@@ -1,11 +1,7 @@
 package ticode.jvm;
 
-import java.lang.reflect.Modifier;
-import dalvik.system.DexFile;
 
-import ticode.android.AndroidEnv;
-
-public class JavaGenericArrayType implements JavaType, java.lang.reflect.GenericArrayType {
+public class JavaGenericArrayType extends JavaType {
 
 public boolean 等于_op(java.lang.reflect.GenericArrayType 另一个) {
 if (this == null) {
@@ -26,4 +22,7 @@ public java.lang.reflect.Type 数组节点() {
 return this.getGenericComponentType();
 }
 
+public String 类型名称() {
+return this.getTypeName();
+}
 }

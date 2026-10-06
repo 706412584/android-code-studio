@@ -1,10 +1,9 @@
 package ticode.android;
 
-import android.text.SpannableStringBuilder;
 
 public class StyleFontSize extends android.text.style.AbsoluteSizeSpan {
 
-public void 赋值_op(int 字体大小) {
+public StyleFontSize 赋值_op(int 字体大小) {
 return new android.text.style.AbsoluteSizeSpan(字体大小);
 }
 

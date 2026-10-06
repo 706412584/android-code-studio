@@ -1,6 +1,5 @@
 package ticode.android;
 
-import android.os.Message;
 
 public class Message2 extends android.os.Message {
 

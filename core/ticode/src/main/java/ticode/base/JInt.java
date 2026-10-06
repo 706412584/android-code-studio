@@ -1,28 +1,22 @@
 package ticode.base;
 
-import java.io.PrintWriter;
-import java.io.StringWriter;
 import android.os.*;
-import java.util.List;
 import java.util.concurrent.*;
 
-import ticode.jvm.JRegex;
-import ticode.jvm.JavaClass;
-
 public class JInt extends PrimitiveTemplate<IntegerBox> {
-public byte 到字节() {
-return (byte)this;
+public static byte 到字节(int 值) {
+return (byte)值;
 }
 
-public String 到十六进制() {
-return Integer.toHexString(this);
+public static String 到十六进制(int 值) {
+return Integer.toHexString(值);
 }
 
-public String 到八进制() {
-return Integer.toOctalString(this);
+public static String 到八进制(int 值) {
+return Integer.toOctalString(值);
 }
 
-public String 到二进制() {
-return Integer.toBinaryString(this);
+public static String 到二进制(int 值) {
+return Integer.toBinaryString(值);
 }
 }

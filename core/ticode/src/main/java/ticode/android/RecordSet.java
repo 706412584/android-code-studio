@@ -1,7 +1,5 @@
 package ticode.android;
 
-import java.io.File;
-import android.database.sqlite.SQLiteDatabase;
 
 public class RecordSet implements android.database.Cursor {
 public int 总数() {

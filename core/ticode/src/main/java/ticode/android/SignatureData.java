@@ -1,10 +1,5 @@
 package ticode.android;
 
-import android.os.StrictMode;
-import android.content.Intent;
-import android.net.Uri;
-import java.io.File;
-import android.provider.Settings;
 
 public class SignatureData extends android.content.pm.Signature {
 
@@ -22,7 +17,7 @@ return 另一个 != null;
 return !this.equals(另一个);
 }
 
-public void 赋值_op(byte[] 签名数据) {
+public SignatureData 赋值_op(byte[] 签名数据) {
 return new android.content.pm.Signature(签名数据);
 }
 

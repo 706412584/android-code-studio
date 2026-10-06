@@ -1,17 +1,15 @@
 package ticode.jvm;
 
 
-import ticode.base.IntegerBox;
+public class CollectionTemplate<T1> extends java.util.ArrayList<T1> {
 
-public class CollectionTemplate<T1> extends java.util.ArrayList {
-
-public void 赋值_op(T1[] 成员) {
+public CollectionTemplate 赋值_op(T1[] 成员) {
 //		if(成员 == null) return null;
 java.util.ArrayList<T1> list = new java.util.ArrayList<>(成员.length);
 for(T1 el : 成员) {
 list.add(el);
 }
-return list;
+return (CollectionTemplate)list;
 }
 
 public T1 取索引_op(int 索引) {
@@ -73,7 +71,7 @@ this.remove(成员);
 
 
 public T1[] 到数组() {
-return this.toArray(new T1[0]);
+return this.toArray((T1[]) new Object[0]);
 }
 
 public void 打乱集合() {

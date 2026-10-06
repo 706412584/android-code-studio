@@ -7,7 +7,6 @@ import java.security.spec.*;
 import java.math.*;
 import javax.crypto.*;
 import javax.crypto.spec.*;
-import java.security.KeyPairGenerator;
 
 import ticode.base.TextBox;
 
@@ -75,7 +74,7 @@ return Base64编码_字节集(字节集, 编码集);
 
 
 public static String Base64解码(String 欲解码内容, String 编码, String 编码集) {
-Object 字节集 = Base64解码_字节集(欲解码内容, 编码集);
+byte[] 字节集 = Base64解码_字节集(欲解码内容, 编码集);
 return TextBox.从字节集创建(字节集, 编码);
 }
 
@@ -147,7 +146,7 @@ if ((值 == null) || (密码 == null))
 return null;
 try {
 byte[] a = RC4Base(值.getBytes(编码), 密码, 编码);
-char[] hexDigits = new Object[]{ '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'A', 'B', 'C', 'D', 'E', 'F' };
+char[] hexDigits = new char[]{ '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'A', 'B', 'C', 'D', 'E', 'F' };
 int j = a.length;
 char[] str = new char[j * 2];
 int k = 0;

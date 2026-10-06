@@ -1,14 +1,17 @@
 package ticode.android;
 
 import android.content.*;
-import android.app.Activity;
 import android.view.*;
 import android.widget.*;
 import java.util.*;
 import android.util.*;
 import android.graphics.*;
 
-import ticode.jvm.JCollection;
+import static ticode.android.AndroidThread.延时;
+import static ticode.android.流程处理.提交到主线程运行;
+import static ticode.android.流程处理.提交到新线程运行;
+import static ticode.android.流程处理.结束提交到主线程;
+import static ticode.android.流程处理.结束提交到新线程;
 
 public class OverlayPermissionActivity extends Window2 {
 

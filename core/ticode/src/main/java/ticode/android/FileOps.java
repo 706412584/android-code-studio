@@ -1,20 +1,17 @@
 package ticode.android;
 
+import java.util.zip.CRC32;
 import java.io.*;
 import java.util.*;
 import java.util.zip.*;
 import java.util.regex.*;
 import java.text.*;
 import java.nio.channels.*;
-import java.util.zip.CRC32;
 import java.security.*;
-import android.content.Intent;
-import android.net.Uri;
 import android.content.*;
 import android.provider.*;
 import android.graphics.*;
 
-import ticode.jvm.JCollection;
 import ticode.jvm.JFile;
 
 public class FileOps {
@@ -77,7 +74,7 @@ return 文件名;
 
 public static String 取文件名(String 路径) {
 JFile 目标文件 = 路径;
-return (目标文件.取文件名());
+return (目标文件.getName());
 }
 
 public static String 取文件MD5(String 路径) {
@@ -443,15 +440,15 @@ return paths;
 
 public static void 取所有文件路径(String 目标路径, java.util.List<String> 输出结果) {
 JFile 目标 = JFile.从路径创建(目标路径);
-if (目标.为文件夹()) {
-Object 子文件数组 = 目标.取子文件数组();
+if (目标.isDirectory()) {
+JFile[] 子文件数组 = 目标.listFiles();
 if (子文件数组 != null) {
-while (子文件数组 -> 子文件) {
-取所有文件路径(子文件.取绝对路径(),输出结果);
+for (var 子文件 : 子文件数组) {
+取所有文件路径(子文件.getAbsolutePath(),输出结果);
 }
 }
 } else {
-输出结果.添加成员(目标.取绝对路径());
+输出结果.add(目标.getAbsolutePath());
 }
 }
 

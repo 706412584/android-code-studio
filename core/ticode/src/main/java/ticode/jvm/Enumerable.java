@@ -1,7 +1,5 @@
 package ticode.jvm;
 
 
-import ticode.base.IntegerBox;
-
-public class Enumerable<T1> extends java.util.Iterable {
+public class Enumerable<T1> implements java.util.Iterable {
 }

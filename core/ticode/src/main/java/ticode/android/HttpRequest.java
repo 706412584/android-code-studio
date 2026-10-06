@@ -1,12 +1,5 @@
 package ticode.android;
 
-import java.io.*;
-import java.net.*;
-import java.util.*;
-import java.math.*;
-import java.security.*;
-import java.security.cert.*;
-import javax.net.ssl.*;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -24,21 +17,22 @@ import javax.net.ssl.SSLContext;
 import javax.net.ssl.X509TrustManager;
 import javax.net.ssl.HostnameVerifier;
 import javax.net.ssl.HttpsURLConnection;
+import java.io.*;
+import java.net.*;
+import java.util.*;
+import java.math.*;
+import java.security.*;
+import java.security.cert.*;
+import javax.net.ssl.*;
 import java.util.concurrent.*;
 import android.os.*;
-import java.net.InetSocketAddress;
-import java.nio.ByteBuffer;
-import java.nio.channels.DatagramChannel;
-import android.os.Looper;
-import android.os.Handler;
 import java.nio.*;
 import java.nio.channels.*;
 
-import ticode.base.BooleanBox;
-import ticode.base.JException;
-import ticode.base.TextBox;
-import ticode.jvm.JFile;
-import ticode.jvm.UUID;
+import static ticode.android.流程处理.提交到新线程运行;
+import static ticode.android.流程处理.是否处于主线程;
+import static ticode.android.流程处理.等待新线程执行完毕;
+import static ticode.android.流程处理.结束提交到新线程;
 
 public class HttpRequest {
 public static ExecutorService cachedThreadPool;
@@ -67,10 +61,10 @@ HttpsURLConnection.setDefaultSSLSocketFactory(context.getSocketFactory());
 }
 }
 
-int 全局网络请求超时 = 6000;
-boolean 全局网络请求GZIP压缩 = false;
-java.util.Map<String,String> 全局网络请求头;
-Object 全局POST提交数据 = null;
+public static int 全局网络请求超时 = 6000;
+public static boolean 全局网络请求GZIP压缩 = false;
+public static java.util.Map<String,String> 全局网络请求头;
+public static Object 全局POST提交数据 = null;
 
 public static int 取网络请求超时() {
 return 全局网络请求超时;
@@ -93,11 +87,11 @@ public static void 添加网络请求头(String 名称, String 值) {
 }
 
 public static void 移除网络请求头(String 名称) {
-全局网络请求头.删除项目(名称);
+全局网络请求头.remove(名称);
 }
 
 public static void 清除网络请求头() {
-全局网络请求头.清空();
+全局网络请求头.clear();
 }
 
 public static HttpResponse GET同步请求(String 网址, String Cookie, String 编码) {
@@ -126,7 +120,7 @@ runnable.run();
 return 结果;
 }
 
-public void GET异步请求(String 网址, String Cookie, String 编码) { }
+public static void GET异步请求(String 网址, String Cookie, String 编码) { }
 
 public static void POST提交数据(Object 提交数据) {
 全局POST提交数据 = 提交数据;
@@ -158,13 +152,13 @@ runnable.run();
 return 结果;
 }
 
-public void POST异步请求(String 网址, String Cookie, String 编码) { }
+public static void POST异步请求(String 网址, String Cookie, String 编码) { }
 
 public static HttpResponse 取网络请求结果() {
 return httpGetResult;
 }
 
-public void 结束网络请求() { }
+public static void 结束网络请求() { }
 
 public static byte[] httpRequest(HttpResponse result, String url, String cookie, String charset, String method) throws IOException {
 if (!url.startsWith("http://") && !url.startsWith("https://")) {

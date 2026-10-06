@@ -3,9 +3,8 @@ package ticode.android;
 import android.os.Looper;
 import android.content.Intent;
 import java.io.File;
-import android.os.Build;
 
-public class CrashHandler {
+public class CrashHandler implements Thread.UncaughtExceptionHandler {
 private Thread.UncaughtExceptionHandler mDefaultHandler;
 private static CrashHandler INSTANCE = new CrashHandler();
 private android.content.Context mContext;

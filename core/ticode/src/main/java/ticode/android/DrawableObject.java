@@ -1,26 +1,16 @@
 package ticode.android;
 
 import android.graphics.drawable.Drawable;
-import android.graphics.Bitmap;
-import android.graphics.Canvas;
-import android.graphics.Bitmap.Config;
-import android.graphics.Bitmap.CompressFormat;
-import android.graphics.drawable.GradientDrawable;
 import android.graphics.*;
 import android.graphics.drawable.*;
 import android.graphics.drawable.shapes.*;
 import android.content.res.*;
-import android.os.Build;
 
-import ticode.base.LongBox;
 import ticode.jvm.FileInputStream2;
-import ticode.jvm.FileOutputStream2;
-import ticode.jvm.JInputStream;
-import ticode.jvm.JOutputStream;
 
 public class DrawableObject extends android.graphics.drawable.Drawable {
 
-public void 赋值_op(String 文件路径) {
+public DrawableObject 赋值_op(String 文件路径) {
 return DrawableObject.createFromPath(文件路径);
 }
 
@@ -44,9 +34,6 @@ public void 从矩形拷贝区域(Rect2 被绘制区域) {
 this.copyBounds(被绘制区域);
 }
 
-public void 从矩形拷贝区域(Rect2 被绘制区域) {
-this.copyBounds(被绘制区域);
-}
 
 public Rect2 拷贝绘制区域到矩形() {
 return this.copyBounds();

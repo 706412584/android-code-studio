@@ -1,15 +1,12 @@
 package ticode.jvm;
 
 import java.lang.reflect.Modifier;
-import dalvik.system.DexFile;
-
-import ticode.android.AndroidEnv;
 
 public class JavaField extends java.lang.reflect.Field {
 
-String 抛出异常_无法访问 = "没有开放访问权限，无法访问";
-String 抛出异常_实例错误 = "错误的类实例";
-String 抛出异常_实例为空 = "不是静态字段，类实例不能为空";
+public static String 抛出异常_无法访问 = "没有开放访问权限，无法访问";
+public static String 抛出异常_实例错误 = "错误的类实例";
+public static String 抛出异常_实例为空 = "不是静态字段，类实例不能为空";
 
 public boolean 等于_op(JavaField 另一个字段) {
 if (this == null) {

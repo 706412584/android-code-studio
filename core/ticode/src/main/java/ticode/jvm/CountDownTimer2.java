@@ -1,11 +1,5 @@
 package ticode.jvm;
 
-import java.util.Timer;
-import java.util.TimerTask;
-import android.os.Handler;
-import android.os.Message;
-import android.os.Looper;
-import java.util.UUID;
 
 public class CountDownTimer2 {
 private android.os.CountDownTimer timer;

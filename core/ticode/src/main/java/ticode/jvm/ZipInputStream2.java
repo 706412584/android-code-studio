@@ -1,12 +1,11 @@
 package ticode.jvm;
 
 import java.util.zip.*;
-import java.io.File;
 import java.io.*;
 
 public class ZipInputStream2 extends java.util.zip.ZipInputStream {
 
-public void 赋值_op(JInputStream 输入流1) {
+public ZipInputStream2 赋值_op(JInputStream 输入流1) {
 return new ZipInputStream(输入流1);
 }
 
@@ -32,4 +31,10 @@ throw new RuntimeException(e.getMessage());
 }
 }
 
+public static InflaterInputStream2 创建实例(JInputStream 输入流1, Inflater2 解压器1) {
+return new InflaterInputStream(输入流1, 解压器1);
+}
+public static InflaterInputStream2 创建实例2(JInputStream 输入流1, Inflater2 解压器1, int 大小) {
+return new InflaterInputStream(输入流1, 解压器1, 大小);
+}
 }

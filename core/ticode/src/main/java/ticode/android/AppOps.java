@@ -10,7 +10,7 @@ public class AppOps {
 
 public static boolean 应用是否已安装(AndroidEnv 环境, String 应用包名) {
 try {
-PackageInfo2 信息 = 环境.取程序包管理器().取程序包信息(应用包名);
+PackageInfo2 信息 = 环境.取程序包管理器().取程序包信息(应用包名,0);
 return 信息 != null;
 } catch (Exception e) { }
 return false;

@@ -1,5 +1,6 @@
 package ticode.android;
 
+import java.util.Stack;
 import java.io.*;
 import java.util.*;
 import java.lang.reflect.*;
@@ -13,19 +14,10 @@ import android.content.res.*;
 import android.os.*;
 import android.system.*;
 import android.graphics.*;
-import java.lang.System;
-import java.util.Stack;
 import android.app.*;
 import java.util.regex.*;
 import java.net.*;
 import java.math.*;
-
-import ticode.base.JException;
-import ticode.base.TextBox;
-import ticode.jvm.JCollection;
-import ticode.jvm.JHashMap;
-import ticode.jvm.KeyValuePair;
-import ticode.jvm.UUID;
 
 public class MathOps {
 
@@ -138,7 +130,7 @@ return Math.floor(数字);
 
 //类似于高斯取整函数，取小于或等于该数字的最大整数,返回整数值
 public static int 向下取整_整数值(double 数字) {
-return 向下取整(数字).到整数();
+return (int)(向下取整(数字));
 }
 
 //求一个数的反正弦值

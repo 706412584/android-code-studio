@@ -1,12 +1,11 @@
 package ticode.jvm;
 
 import java.util.zip.*;
-import java.io.File;
 import java.io.*;
 
 public class DeflaterInputStream2 extends java.util.zip.DeflaterInputStream {
 
-public void 赋值_op(JInputStream 输入流1) {
+public DeflaterInputStream2 赋值_op(JInputStream 输入流1) {
 return new DeflaterInputStream(输入流1);
 }
 

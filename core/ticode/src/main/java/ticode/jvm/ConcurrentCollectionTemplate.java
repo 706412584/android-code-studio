@@ -2,16 +2,14 @@ package ticode.jvm;
 
 import java.util.concurrent.*;
 
-import ticode.base.IntegerBox;
+public class ConcurrentCollectionTemplate<T1> extends java.util.Vector<T1> {
 
-public class ConcurrentCollectionTemplate<T1> extends java.util.Vector {
-
-public void 赋值_op(T1[] 成员) {
+public ConcurrentCollectionTemplate 赋值_op(T1[] 成员) {
 java.util.Vector<T1> list = new java.util.Vector<>(成员.length);
 for(T1 el : 成员) {
 list.add(el);
 }
-return list;
+return (ConcurrentCollectionTemplate)list;
 }
 
 public T1 取索引_op(int 索引) {
@@ -73,7 +71,7 @@ this.remove(成员);
 
 
 public T1[] 到数组() {
-return this.toArray(new T1[0]);
+return this.toArray((T1[]) new Object[0]);
 }
 
 public void 打乱集合() {

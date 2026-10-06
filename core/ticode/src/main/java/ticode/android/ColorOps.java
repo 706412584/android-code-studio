@@ -13,19 +13,10 @@ import android.content.res.*;
 import android.os.*;
 import android.system.*;
 import android.graphics.*;
-import java.lang.System;
-import java.util.Stack;
 import android.app.*;
 import java.util.regex.*;
 import java.net.*;
 import java.math.*;
-
-import ticode.base.JException;
-import ticode.base.TextBox;
-import ticode.jvm.JCollection;
-import ticode.jvm.JHashMap;
-import ticode.jvm.KeyValuePair;
-import ticode.jvm.UUID;
 
 public class ColorOps {
 
@@ -126,7 +117,7 @@ float R_1 = R / 255f;
 float G_1 = G / 255f;
 float B_1 = B / 255f;
 //重新拼接运算用数组
-float[] all = new Object[]{R_1, G_1, B_1};
+float[] all = new float[]{R_1, G_1, B_1};
 float max = all[0];
 float min = all[0];
 //循环查找最大值和最小值
@@ -166,32 +157,32 @@ saturation = diff / C_max;
 }
 //计算明度V
 float value = C_max;
-float[] result = new Object[]{hue, saturation, value};
+float[] result = new float[]{hue, saturation, value};
 return result;
 
 }
 //获取颜色色相，即HSV颜色格式中的Hue
 public static float 取颜色色相(int 颜色) {
 float[] hsv;
-int[] rgb = new Object[]{取颜色红色值(颜色),取颜色绿色值(颜色),取颜色蓝色值(颜色)};
+int[] rgb = new int[]{取颜色红色值(颜色),取颜色绿色值(颜色),取颜色蓝色值(颜色)};
 hsv = RGBtoHSV(rgb);
-return hsv[0];
+return (int)hsv[0];
 }
 
 //获取颜色饱和度，即HSV颜色格式中的Saturation
 public static int 取颜色饱和度(int 颜色) {
 float[] hsv;
-int[] rgb = new Object[]{取颜色红色值(颜色),取颜色绿色值(颜色),取颜色蓝色值(颜色)};
+int[] rgb = new int[]{取颜色红色值(颜色),取颜色绿色值(颜色),取颜色蓝色值(颜色)};
 hsv = RGBtoHSV(rgb);
-return hsv[1];
+return (int)hsv[1];
 }
 
 //获取颜色亮度，即HSV颜色格式中的Value
 public static int 取颜色亮度(int 颜色) {
 float[] hsv;
-int[] rgb = new Object[]{取颜色红色值(颜色),取颜色绿色值(颜色),取颜色蓝色值(颜色)};
+int[] rgb = new int[]{取颜色红色值(颜色),取颜色绿色值(颜色),取颜色蓝色值(颜色)};
 hsv = RGBtoHSV(rgb);
-return hsv[2];
+return (int)hsv[2];
 }
 
 // 根据 透明度、红色值、绿色值、蓝色值 合成一个颜色
@@ -278,11 +269,11 @@ case ARGB:
 Return=文本到颜色值(颜色);
 case RGBA:
 String argb格式;
-String color = 颜色.到大写();
-if (颜色.长度 == 7) {
+String color = 颜色.toUpperCase();
+if (颜色.length() == 7) {
 argb格式=color;
-} else if (颜色.长度 == 9) {
-argb格式="#"+ 颜色.取文本中间(7,8) + 颜色.取文本中间(1,6);
+} else if (颜色.length() == 9) {
+argb格式="#"+ 颜色.substring(7, (8) + 1) + 颜色.substring(1, (6) + 1);
 } else {
 argb格式=null;
 }
@@ -327,24 +318,24 @@ String G;
 String B;
 String returnColor;
 if (A值 < 0x10) {
-A = "0" + A值.到十六进制();
+A = "0" + Integer.toHexString(A值);
 } else {
-A = A值.到十六进制();
+A = Integer.toHexString(A值);
 }
 if (R值 < 0x10) {
-R = "0" + R值.到十六进制();
+R = "0" + Integer.toHexString(R值);
 } else {
-R = R值.到十六进制();
+R = Integer.toHexString(R值);
 }
 if (G值 < 0x10) {
-G = "0" + G值.到十六进制();
+G = "0" + Integer.toHexString(G值);
 } else {
-G = G值.到十六进制();
+G = Integer.toHexString(G值);
 }
 if (B值 < 0x10) {
-B = "0" + B值.到十六进制();
+B = "0" + Integer.toHexString(B值);
 } else {
-B = B值.到十六进制();
+B = Integer.toHexString(B值);
 }
 switch (内置格式) {
 case ARGB:
@@ -355,7 +346,7 @@ case RGB:
 returnColor = R + G + B;
 }
 if (大写 == true) {
-return "#" + returnColor.到大写();
+return "#" + returnColor.toUpperCase();
 } else {
 return "#" + returnColor;
 }

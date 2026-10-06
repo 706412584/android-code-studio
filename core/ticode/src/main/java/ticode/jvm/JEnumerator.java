@@ -1,8 +1,6 @@
 package ticode.jvm;
 
 
-import ticode.base.IntegerBox;
-
 public class JEnumerator implements java.util.Iterator {
 
 

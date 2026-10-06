@@ -1,8 +1,7 @@
 package ticode.android;
 
-import android.os.Message;
 
-public class JTask {
+public class JTask implements Runnable {
 public void run(){
 被执行();
 }

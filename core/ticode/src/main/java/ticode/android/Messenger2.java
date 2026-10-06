@@ -1,6 +1,5 @@
 package ticode.android;
 
-import android.os.Message;
 
 public class Messenger2 extends android.os.Messenger {
 

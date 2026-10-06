@@ -1,8 +1,7 @@
 package ticode.android;
 
-import android.text.SpannableStringBuilder;
 
-public class StyleClickEffect {
+public class StyleClickEffect extends android.text.style.ClickableSpan {
 
 private boolean underline;
 @Override

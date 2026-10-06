@@ -1,7 +1,7 @@
 package ticode.android;
 
-import android.content.*;
 import android.app.Activity;
+import android.content.*;
 import android.view.*;
 import android.widget.*;
 import java.util.*;
@@ -275,7 +275,7 @@ public static void 关闭指定悬浮窗(String 标记) {
 
 public static void 关闭所有悬浮窗() {
 JCollection 集合 = 取所有悬浮窗();
-while (集合 -> 值) {
+for (var 值 : 集合) {
 ((FloatingWindow)值).关闭();
 }
 }

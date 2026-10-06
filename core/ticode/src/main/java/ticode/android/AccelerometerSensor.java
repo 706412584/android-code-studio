@@ -1,13 +1,12 @@
 package ticode.android;
 
 import android.hardware.*;
-import android.view.WindowManager;
 import java.util.*;
 import android.location.*;
 import android.os.*;
 import android.content.*;
 
-public class AccelerometerSensor extends WindowComponent {
+public class AccelerometerSensor extends WindowComponent implements SensorEventListener {
 private static final int SENSOR_CACHE_SIZE = 10;
 private static final double SHAKE_THRESHOLD = 8.0d;
 private final Queue<Float> X_CACHE = new LinkedList<>();

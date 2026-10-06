@@ -1,8 +1,7 @@
 package ticode.android;
 
-import android.os.Message;
 
-public class Clock2 {
+public class Clock2 implements Runnable {
 private boolean enabled;
 private int period;
 private android.os.Handler handler = new android.os.Handler(android.os.Looper.getMainLooper());

@@ -75,7 +75,7 @@ return dialog.isIndeterminate();
 }
 
 //设置对话框图标, 参数为res图片资源ID
-public void 图标(ImageResource 图标) {
+public void 图标(int 图标) {
 dialog.setIcon(图标);
 }
 

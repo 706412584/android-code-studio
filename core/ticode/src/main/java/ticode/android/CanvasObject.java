@@ -1,26 +1,14 @@
 package ticode.android;
 
-import android.view.View;
-import android.content.Context;
 import android.graphics.Canvas;
-import java.lang.reflect.Field;
-import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.locks.ReentrantLock;
-import android.os.SystemClock;
-import android.view.Surface;
-import android.view.SurfaceView;
-import android.view.SurfaceHolder;
-import android.graphics.PixelFormat;
 import java.util.Map;
 import java.util.HashMap;
 import android.graphics.Path;
 import android.graphics.RectF;
 import android.graphics.Bitmap;
-import android.graphics.Paint;
-import android.graphics.Rect;
 
 public class CanvasObject extends android.graphics.Canvas {
-PaintObject 默认画笔 = PaintObject.创建画笔();
+public static PaintObject 默认画笔 = PaintObject.创建画笔();
 
 private static Path path;
 private static RectF rectF;
@@ -176,7 +164,7 @@ this.clipPath(路径);
 }
 
 public boolean 是否在裁剪区域(float x, float y) {
-return this.quickReject(x,y);
+return this.quickReject(x, y, x + 1, y + 1);
 }
 
 public void 画贝塞尔曲线(float 起始X坐标, float 起始Y坐标, float 辅助X坐标, float 辅助Y坐标, float 结束X坐标, float 结束Y坐标, PaintObject 画笔) {
@@ -213,7 +201,7 @@ bitmapCache.bitmap = BitmapObject.从文件路径创建位图(图片路径);
 bitmapCacheHandler.putCache(图片路径, bitmapCache);
 }
 bitmapCache.lastTime = System.currentTimeMillis();
-画位图(this, X坐标, Y坐标, bitmapCache.bitmap, 画笔);
+画位图(X坐标, Y坐标, bitmapCache.bitmap, 画笔);
 }
 
 public void 画资源图片(float X坐标, float Y坐标, String 图片路径, PaintObject 画笔) {
@@ -224,7 +212,7 @@ bitmapCache.bitmap = BitmapObject.从资源文件创建位图(AndroidApplication
 bitmapCacheHandler.putCache(图片路径, bitmapCache);
 }
 bitmapCache.lastTime = System.currentTimeMillis();
-画位图(this, X坐标, Y坐标, bitmapCache.bitmap, 画笔);
+画位图(X坐标, Y坐标, bitmapCache.bitmap, 画笔);
 }
 
 public void 画缩放图片(float X坐标, float Y坐标, float 宽度, float 高度, String 图片路径, PaintObject 画笔) {
@@ -235,7 +223,7 @@ bitmapCache.bitmap = BitmapObject.从文件路径创建位图(图片路径);
 bitmapCacheHandler.putCache(图片路径, bitmapCache);
 }
 bitmapCache.lastTime = System.currentTimeMillis();
-画缩放位图(this, X坐标, Y坐标, 宽度, 高度, bitmapCache.bitmap, 画笔);
+画缩放位图(X坐标, Y坐标, 宽度, 高度, bitmapCache.bitmap, 画笔);
 }
 
 public void 画资源缩放图片(float X坐标, float Y坐标, float 宽度, float 高度, String 图片路径, PaintObject 画笔) {
@@ -246,6 +234,6 @@ bitmapCache.bitmap = BitmapObject.从资源文件创建位图(AndroidApplication
 bitmapCacheHandler.putCache(图片路径, bitmapCache);
 }
 bitmapCache.lastTime = System.currentTimeMillis();
-画缩放位图(this, X坐标, Y坐标, 宽度, 高度, bitmapCache.bitmap, 画笔);
+画缩放位图(X坐标, Y坐标, 宽度, 高度, bitmapCache.bitmap, 画笔);
 }
 }

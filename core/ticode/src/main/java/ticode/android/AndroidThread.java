@@ -1,6 +1,5 @@
 package ticode.android;
 
-import android.os.Message;
 
 public class AndroidThread extends Thread {
 public static AndroidThread 取当前线程() {
@@ -19,7 +18,7 @@ return Thread.currentThread().getName();
 
 
 public static Object 转交其它线程执行() {
-return Thread.yield();
+Thread.yield();
 }
 
 //使线程休眠一段时间
@@ -59,7 +58,7 @@ return this.isAlive();
 
 //启动线程
 public Object 启动() {
-return this.start();
+this.start();
 }
 
 public void 中断() {

@@ -1,8 +1,9 @@
 package ticode.jvm;
 
 import java.util.zip.*;
-import java.io.File;
 import java.io.*;
+
+import static ticode.android.ArrayOps.取数组长度;
 
 public class Inflater2 extends java.util.zip.Inflater {
 
@@ -49,14 +50,14 @@ return this.finished();
 // 向解压器中设置欲解压数据
 public void 设置欲解压数据(byte[] 数据, int 起始偏移量, int 长度) {
 if (长度 == -1) {
-长度 = 取数组长度(数据);
+长度 = (数据).length;
 }
 this.setInput(数据,起始偏移量,长度);
 }
 
 public void 设置字典(byte[] 字典, int 起始偏移量, int 长度) {
 if (长度 == -1) {
-长度 = 取数组长度(字典);
+长度 = (字典).length;
 }
 this.setDictionary(字典,起始偏移量,长度);
 }

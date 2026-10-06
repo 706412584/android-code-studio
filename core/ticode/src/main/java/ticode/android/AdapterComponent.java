@@ -1,15 +1,13 @@
 package ticode.android;
 
 import android.widget.AdapterView;
-import android.widget.AdapterView.*;
 import android.content.Context;
-import android.view.View;
+import android.widget.AdapterView.*;
 import android.graphics.*;
 import android.graphics.drawable.*;
-import android.widget.GridView;
 import android.view.*;
 
-public class AdapterComponent extends VisualComponent {
+public abstract class AdapterComponent extends VisualComponent {
 public AdapterComponent(Context context) {
 super(context);
 }

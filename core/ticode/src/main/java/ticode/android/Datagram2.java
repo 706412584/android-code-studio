@@ -1,5 +1,10 @@
 package ticode.android;
 
+import java.net.InetSocketAddress;
+import java.nio.ByteBuffer;
+import java.nio.channels.DatagramChannel;
+import android.os.Looper;
+import android.os.Handler;
 import java.io.*;
 import java.net.*;
 import java.util.*;
@@ -7,38 +12,13 @@ import java.math.*;
 import java.security.*;
 import java.security.cert.*;
 import javax.net.ssl.*;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.OutputStream;
-import java.io.ByteArrayOutputStream;
-import java.net.URL;
-import java.net.HttpURLConnection;
-import java.util.Map;
-import java.util.zip.GZIPInputStream;
-import java.util.concurrent.ExecutorService;
-import java.security.SecureRandom;
-import java.security.cert.X509Certificate;
-import java.security.cert.CertificateException;
-import javax.net.ssl.SSLSession;
-import javax.net.ssl.SSLContext;
-import javax.net.ssl.X509TrustManager;
-import javax.net.ssl.HostnameVerifier;
-import javax.net.ssl.HttpsURLConnection;
 import java.util.concurrent.*;
 import android.os.*;
-import java.net.InetSocketAddress;
-import java.nio.ByteBuffer;
-import java.nio.channels.DatagramChannel;
-import android.os.Looper;
-import android.os.Handler;
 import java.nio.*;
 import java.nio.channels.*;
 
 import ticode.base.BooleanBox;
 import ticode.base.JException;
-import ticode.base.TextBox;
-import ticode.jvm.JFile;
-import ticode.jvm.UUID;
 
 public class Datagram2 {
 private DatagramChannel channel;
@@ -64,7 +44,7 @@ return isClose;
 }
 
 public void 开始监听(int 端口) {
-开始监听_内部(端口);
+开始监听_内部(端口,1024);
 }
 
 public void 开始监听_内部(int 端口, int 缓冲区大小) {
@@ -126,7 +106,7 @@ public void 发送字节集(String 地址, int 端口, byte[] 字节集) {
 }
 
 public void 发送文本_同步(String 地址, int 端口, String 内容) {
-发送字节集_同步(地址, 端口, 内容.到字节集());
+发送字节集_同步(地址, 端口, 内容.getBytes());
 }
 
 public void 发送字节集_同步(String 地址, int 端口, byte[] 字节集) {

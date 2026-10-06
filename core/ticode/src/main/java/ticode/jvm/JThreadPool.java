@@ -2,13 +2,11 @@ package ticode.jvm;
 
 import java.util.concurrent.*;
 
-import ticode.base.IntegerBox;
-
 public class JThreadPool {
 public static ExecutorService cachedThreadPool;
 public static ExecutorService fixedThreadPool;
 
-int 线程池大小;
+public static int 线程池大小;
 
 public static Object 提交到缓存线程池运行() {
 if (JThreadPool.cachedThreadPool == null || JThreadPool.cachedThreadPool.isShutdown()) {

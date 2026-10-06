@@ -13,19 +13,10 @@ import android.content.res.*;
 import android.os.*;
 import android.system.*;
 import android.graphics.*;
-import java.lang.System;
-import java.util.Stack;
 import android.app.*;
 import java.util.regex.*;
 import java.net.*;
 import java.math.*;
-
-import ticode.base.JException;
-import ticode.base.TextBox;
-import ticode.jvm.JCollection;
-import ticode.jvm.JHashMap;
-import ticode.jvm.KeyValuePair;
-import ticode.jvm.UUID;
 
 public class CommonOps {
 
@@ -40,10 +31,10 @@ throw new RuntimeException(错误信息);
 
 public static Object 调试输出(Object 内容) {
 //开启日志过滤后，结绳只会显示TieApp标签的日志信息
-return android.util.Log.i("TieApp", String.valueOf(内容));
+android.util.Log.i("TieApp", String.valueOf(内容));
 }
 
 public static Object 调试输出2(String 格式, Object[] 参数) {
-return android.util.Log.i("TieApp", String.format(格式, 参数));
+android.util.Log.i("TieApp", String.format(格式, 参数));
 }
 }

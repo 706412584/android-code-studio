@@ -1,14 +1,11 @@
 package ticode.android;
 
 import android.content.*;
-import android.app.Activity;
 import android.view.*;
 import android.widget.*;
 import java.util.*;
 import android.util.*;
 import android.graphics.*;
-
-import ticode.jvm.JCollection;
 
 public class ScreenOrientationService extends Service2 {
 

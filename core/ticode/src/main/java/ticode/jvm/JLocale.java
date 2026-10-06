@@ -1,11 +1,5 @@
 package ticode.jvm;
 
-import java.util.Timer;
-import java.util.TimerTask;
-import android.os.Handler;
-import android.os.Message;
-import android.os.Looper;
-import java.util.UUID;
 
 public class JLocale extends java.util.Locale {
 public static final JLocale 中文;
@@ -34,7 +28,7 @@ public static final JLocale 英语_加拿大;
 
 public static final JLocale 法语_加拿大;
 
-public void 赋值_op(String 语言代码, String 国家或地区代码) {
+public JLocale 赋值_op(String 语言代码, String 国家或地区代码) {
 return new java.util.Locale(语言代码, 国家或地区代码);
 }
 

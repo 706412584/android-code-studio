@@ -1,9 +1,5 @@
 package ticode.jvm;
 
-import java.lang.reflect.Modifier;
-import dalvik.system.DexFile;
-
-import ticode.android.AndroidEnv;
 
 public class JavaAnnotation implements java.lang.annotation.Annotation {
 public JavaClass 取类型() {

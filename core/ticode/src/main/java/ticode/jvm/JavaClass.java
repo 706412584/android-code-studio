@@ -1,9 +1,5 @@
 package ticode.jvm;
 
-import java.lang.reflect.Modifier;
-import dalvik.system.DexFile;
-
-import ticode.android.AndroidEnv;
 
 public class JavaClass extends java.lang.Class {
 
@@ -21,7 +17,7 @@ return 另一个类 != null;
 return !this.equals(另一个类);
 }
 
-public void 赋值_op(String 完整类名) {
+public JavaClass 赋值_op(String 完整类名) {
 try {
 Class clazz = Class.forName(完整类名);
 return clazz;
@@ -31,7 +27,7 @@ throw new RuntimeException("找不到类：" + 完整类名);
 }
 
 public static JavaClass 取指定Java类(Object 类型) {
-return 类型.class;
+return Object.class;
 }
 
 // 返回本类类名
@@ -306,4 +302,7 @@ public java.lang.annotation.Annotation[] 取所有注解() {
 return this.getAnnotations();
 }
 
+public String 类型名称() {
+return this.getTypeName();
+}
 }

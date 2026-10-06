@@ -3,8 +3,6 @@ package ticode.jvm;
 import java.util.*;
 import java.util.regex.*;
 
-import ticode.base.TextBox;
-
 public class JMatcher extends java.util.regex.Matcher {
 //将匹配到的内容全部替换
 public String 全部替换(String 内容) {

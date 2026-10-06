@@ -1,5 +1,6 @@
 package ticode.android;
 
+import java.lang.System;
 import java.io.*;
 import java.util.*;
 import java.lang.reflect.*;
@@ -13,18 +14,12 @@ import android.content.res.*;
 import android.os.*;
 import android.system.*;
 import android.graphics.*;
-import java.lang.System;
-import java.util.Stack;
 import android.app.*;
 import java.util.regex.*;
 import java.net.*;
 import java.math.*;
 
-import ticode.base.JException;
 import ticode.base.TextBox;
-import ticode.jvm.JCollection;
-import ticode.jvm.JHashMap;
-import ticode.jvm.KeyValuePair;
 import ticode.jvm.UUID;
 
 public class SystemOps {

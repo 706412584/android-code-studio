@@ -6,16 +6,10 @@ import java.util.zip.*;
 import java.util.regex.*;
 import java.text.*;
 import java.nio.channels.*;
-import java.util.zip.CRC32;
 import java.security.*;
-import android.content.Intent;
-import android.net.Uri;
 import android.content.*;
 import android.provider.*;
 import android.graphics.*;
-
-import ticode.jvm.JCollection;
-import ticode.jvm.JFile;
 
 public class CompressionOps {
 //压缩文件到输出路径，参数一为要压缩的文件(或目录)路径

@@ -1,12 +1,12 @@
 package ticode.jvm;
 
-import java.util.zip.*;
 import java.io.File;
+import java.util.zip.*;
 import java.io.*;
 
 public class ZipFile2 extends java.util.zip.ZipFile {
 
-public void 赋值_op(String 路径) {
+public ZipFile2 赋值_op(String 路径) {
 try {
 return new ZipFile(new File(路径));
 } catch (java.io.IOException e) {

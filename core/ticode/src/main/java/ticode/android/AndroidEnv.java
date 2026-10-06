@@ -4,7 +4,10 @@ import android.os.Environment;
 import android.content.pm.*;
 
 import ticode.jvm.JFile;
-import ticode.jvm.JavaClass;
+
+import static ticode.android.流程处理.提交到主线程运行2;
+import static ticode.android.流程处理.是否处于主线程;
+import static ticode.android.流程处理.结束提交到主线程;
 
 public class AndroidEnv extends android.content.Context {
 
@@ -88,7 +91,7 @@ return this.getPackageManager();
 
 public String 取自身版本名称() {
 try {
-return 取程序包管理器().取程序包信息(取自身包名()).版本名称;
+return this.getPackageManager().取程序包信息(取自身包名(),0).版本名称;
 } catch (Exception e) { }
 return "";
 }
@@ -104,7 +107,7 @@ return this.getFilesDir();
 
 
 public String 取私有目录路径() {
-return 取私有目录().取绝对路径();
+return 取私有目录().getAbsolutePath();
 }
 
 
@@ -118,7 +121,7 @@ return this.getCacheDir();
 
 
 public String 取内部私有缓存目录路径() {
-return 取内部私有缓存目录().取绝对路径();
+return 取内部私有缓存目录().getAbsolutePath();
 }
 
 public JFile 取私有缓存目录() {
@@ -148,7 +151,7 @@ return this.getDataDir();
 
 
 public String 取数据目录路径() {
-return 取数据目录().取绝对路径();
+return 取数据目录().getAbsolutePath();
 }
 
 
@@ -162,7 +165,7 @@ return Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNL
 
 
 public String 取公用下载目录路径() {
-return 取公用下载目录().取绝对路径();
+return 取公用下载目录().getAbsolutePath();
 }
 
 
@@ -176,7 +179,7 @@ return Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTU
 
 
 public String 取公用图片目录路径() {
-return 取公用图片目录().取绝对路径();
+return 取公用图片目录().getAbsolutePath();
 }
 
 
@@ -190,6 +193,6 @@ return Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUM
 
 
 public String 取公用文档目录路径() {
-return 取公用文档目录().取绝对路径();
+return 取公用文档目录().getAbsolutePath();
 }
 }

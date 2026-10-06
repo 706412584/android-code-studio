@@ -1,9 +1,6 @@
 package ticode.jvm;
 
-import java.lang.reflect.Modifier;
 import dalvik.system.DexFile;
-
-import ticode.android.AndroidEnv;
 
 public class DexFile2 extends dalvik.system.DexFile {
 public DexFile2 赋值_op(String 文件路径) {

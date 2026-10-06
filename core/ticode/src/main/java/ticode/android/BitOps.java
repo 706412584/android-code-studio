@@ -7,9 +7,6 @@ import java.security.spec.*;
 import java.math.*;
 import javax.crypto.*;
 import javax.crypto.spec.*;
-import java.security.KeyPairGenerator;
-
-import ticode.base.TextBox;
 
 public class BitOps {
 //将两数进行位与运算，相当于 整数1&整数2

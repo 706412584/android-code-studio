@@ -1,23 +1,7 @@
 package ticode.android;
 
-import android.view.View;
-import android.content.Context;
-import android.graphics.Canvas;
-import java.lang.reflect.Field;
-import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.locks.ReentrantLock;
-import android.os.SystemClock;
-import android.view.Surface;
-import android.view.SurfaceView;
-import android.view.SurfaceHolder;
-import android.graphics.PixelFormat;
-import java.util.Map;
-import java.util.HashMap;
 import android.graphics.Path;
 import android.graphics.RectF;
-import android.graphics.Bitmap;
-import android.graphics.Paint;
-import android.graphics.Rect;
 
 public class PathBuilder extends android.graphics.Path {
 public static PathBuilder 创建路径() {
@@ -145,7 +129,7 @@ this.op(区域, Path.Op.XOR);
 
 // 将第二个区域，合并进第一个区域
 public boolean 合并(PathBuilder 原区域, PathBuilder 新区域) {
-return Path.op(原区域, 新区域, Path.Op.UNION);
+return 原区域.op(新区域, Path.Op.UNION);
 }
 
 }

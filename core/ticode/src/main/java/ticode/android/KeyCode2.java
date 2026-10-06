@@ -1,7 +1,5 @@
 package ticode.android;
 
-import android.content.Context;
-import android.view.ScaleGestureDetector;
 
 public class KeyCode2 {
 public static final Integer A;

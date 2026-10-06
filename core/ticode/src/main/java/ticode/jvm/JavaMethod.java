@@ -1,9 +1,6 @@
 package ticode.jvm;
 
 import java.lang.reflect.Modifier;
-import dalvik.system.DexFile;
-
-import ticode.android.AndroidEnv;
 
 public class JavaMethod extends java.lang.reflect.Method {
 

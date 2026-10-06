@@ -1,21 +1,19 @@
 package ticode.android;
 
+import android.content.Intent;
+import android.net.Uri;
 import java.io.*;
 import java.util.*;
 import java.util.zip.*;
 import java.util.regex.*;
 import java.text.*;
 import java.nio.channels.*;
-import java.util.zip.CRC32;
 import java.security.*;
-import android.content.Intent;
-import android.net.Uri;
 import android.content.*;
 import android.provider.*;
 import android.graphics.*;
 
 import ticode.jvm.JCollection;
-import ticode.jvm.JFile;
 
 public class ImageOps {
 public static byte[] Bitmap2Bytes(Bitmap bmp) {

@@ -1,15 +1,16 @@
 package ticode.jvm;
 
 
-import ticode.base.IntegerBox;
+import static ticode.android.TextOps.格式化文本;
 
 public class KeyValuePair {
-Object 键;
-Object 值;
+public Object 键;
+public Object 值;
 
-public void 赋值_op(Object 键, Object 值) {
+public KeyValuePair(Object 键, Object 值) {
 this.键 = 键;
 this.值 = 值;
+
 }
 
 //格式: 键=值

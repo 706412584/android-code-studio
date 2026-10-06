@@ -1,12 +1,6 @@
 package ticode.meng;
 
 import com.google.android.flexbox.*;
-import android.view.View;
-import android.view.ViewGroup;
-
-import ticode.android.AdjustableMarginLayout;
-import ticode.android.DrawableObject;
-import ticode.android.VisualComponent;
 
 public class FlexDirection {
 

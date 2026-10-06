@@ -1,14 +1,12 @@
 package ticode.android;
 
-import android.content.Context;
-import android.view.ScaleGestureDetector;
 
 public class KeyAction {
-public static final KeyAction 按下;
+public static final int 按下;
 
-public static final KeyAction 放开;
+public static final int 放开;
 
-public static final KeyAction 同时按下多个;
+public static final int 同时按下多个;
 
 static {
 按下 = android.view.KeyEvent.ACTION_DOWN;

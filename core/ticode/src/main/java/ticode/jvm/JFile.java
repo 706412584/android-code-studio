@@ -3,7 +3,8 @@ package ticode.jvm;
 
 public class JFile extends java.io.File {
 public Object 赋值_op(String 文件路径) {
-return new java.io.File(文件路径);
+new java.io.File(文件路径);
+return this;
 }
 
 public static JFile 从路径创建(String 路径) {
