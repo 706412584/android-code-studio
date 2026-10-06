@@ -29,6 +29,7 @@ import com.tom.androidcodestudio.project.manager.builder.toplevel.*
 import com.tom.rv2ide.templates.*
 import com.tom.rv2ide.templates.AtcInterface
 import com.tom.rv2ide.templates.android.quickdevelop.QuickDevelopSources
+import com.tom.rv2ide.templates.android.quickdevelop.QuickDevelopTicode
 import com.tom.rv2ide.templates.android.quickdevelop.QuickDevelopToolkits
 import com.tom.rv2ide.templates.preferences.Options
 import java.io.File
@@ -207,6 +208,8 @@ class QuickDevelop : Template {
                   version(ANDROIDX_COORDINATORLAYOUT_VERSION)
                 }
             )
+            // :ticode（结绳移植）的 弹性布局 等 9 个类直接 import flexbox。
+            add(catalogVersion { name("flexbox"); version(ANDROIDX_FLEXBOX_VERSION) })
           }
 
           val plugins = buildList {
@@ -214,6 +217,14 @@ class QuickDevelop : Template {
                 catalogPlugin {
                   alias("android-application")
                   id("com.android.application")
+                  versionRef("agp")
+                }
+            )
+            // :ticode 是 Android 库模块（引用 android.* + androidx AAR，不能是 java-library）
+            add(
+                catalogPlugin {
+                  alias("android-library")
+                  id("com.android.library")
                   versionRef("agp")
                 }
             )
@@ -300,6 +311,14 @@ class QuickDevelop : Template {
                   versionRef("coordinatorlayout")
                 }
             )
+            add(
+                catalogLibrary {
+                  alias("androidx-flexbox")
+                  group("com.google.android.flexbox")
+                  name("flexbox")
+                  versionRef("flexbox")
+                }
+            )
           }
 
           val gradleDir = File(projectRoot, "gradle")
@@ -343,6 +362,8 @@ class QuickDevelop : Template {
             )
             rootProjectName(options.projectName)
             include(PRIMARY_MODULE)
+            // :ticode —— 结绳语言基本库移植（334 个中文 API 类），独立 Android 库模块
+            include(QuickDevelopTicode.MODULE_PATH)
           }
           settingsGradleWriter.writeToFile(
               projectRoot,
@@ -388,6 +409,8 @@ class QuickDevelop : Template {
             addDependency(GradleDependency("implementation(libs.androidx.cardview)"))
             addDependency(GradleDependency("implementation(libs.androidx.drawerlayout)"))
             addDependency(GradleDependency("implementation(libs.androidx.coordinatorlayout)"))
+            // 结绳移植库（独立模块）
+            addDependency(GradleDependency("implementation(project(\":ticode\"))"))
           }
 
           val appDir = File(projectRoot, "app")
@@ -407,6 +430,9 @@ class QuickDevelop : Template {
 
           // Write the Chinese-named UI components into <pkg>/ui/
           writeComponents(projectRoot, packageHelper.getPackageId())
+
+          // 结绳移植库：独立 :ticode 模块（build.gradle + 从 assets 拷 334 个 .java）
+          writeTicodeModule(context, projectRoot)
 
           // Write MainActivity (Java, uses the components)
           val activityConfig = activityConfig {
@@ -469,6 +495,53 @@ class QuickDevelop : Template {
           }
         }
       }
+
+  /**
+   * 生成结绳移植库的独立模块 `:ticode`。
+   *
+   * <h3>为什么是 Android 库模块而不是 java-library</h3>
+   *
+   * ticode 引用 `android.*`（Activity/View/Bitmap…）与 androidx（appcompat /
+   * constraintlayout / recyclerview / flexbox）。这些依赖是 **AAR**，纯
+   * `java-library` 解析不了 AAR 里的 classes.jar，所以必须用
+   * `com.android.library`（AGP 会正确处理 AAR）。
+   *
+   * <p>注意这与仓库内的 `core/ticode` 不同：那个模块为了「零 AGP、纯 javac 离线可编」
+   * 用本地 jar 垫片（`libs` 下的 jar，约 32MB）绕开 AAR。生成给用户的工程不能背这 32MB，
+   * 因此这里走标准 AGP 路径。
+   *
+   * <h3>源码来源</h3>
+   *
+   * 334 个 .java 从 APK 的 assets（`assets/QuickDevelop/ticode/`）拷贝——而不是像
+   * `QuickDevelopSources` 那样写成 Kotlin 字符串常量：那会造出 700KB 的巨型 object，
+   * 且每次改 ticode 都要重新生成字符串。assets 拷贝可递归、可脚本化同步。
+   */
+  private fun writeTicodeModule(context: Context, projectRoot: File) {
+    val ticodeDir = File(projectRoot, "ticode")
+    val srcRoot = File(ticodeDir, "src/main/java")
+    srcRoot.mkdirs()
+
+    // 1) 从 assets 递归拷源码（保持 ticode/zh/** 结构）
+    copyAssetFolder(context, QuickDevelopTicode.ASSETS_PATH, srcRoot)
+
+    // 2) 写 ticode/build.gradle(.kts)
+    val useKts = Options.OPT_USE_GRADLE_KTS
+    val fileName = if (useKts) "build.gradle.kts" else "build.gradle"
+    File(ticodeDir, fileName)
+        .writeText(
+            QuickDevelopTicode.moduleGradle(
+                useKts = useKts,
+                compileSdk = PROJECTS_COMPILE_SDK_VERSION,
+                minSdk = Options.OPT_MIN_SDK,
+            )
+        )
+
+    // 3) 模块 README
+    File(ticodeDir, "README.md").writeText(QuickDevelopTicode.readme())
+
+    val n = srcRoot.walkTopDown().count { it.extension == "java" }
+    Log.d("QuickDevelop", "Wrote :ticode module ($n java files) at ${ticodeDir.absolutePath}")
+  }
 
   /**
    * 把中文组件写进 `<module>/src/main/java/<包路径>/ui/`。

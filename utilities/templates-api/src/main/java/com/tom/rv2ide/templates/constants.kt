@@ -64,6 +64,13 @@ const val ANDROIDX_GAMES_ACTIVITY = "4.0.0"
 const val LIBGDX_VERSION = "1.14.2"
 
 const val GOOGLE_MATERIAL_COMPONENTS_VERSION = "1.13.0"
+
+/**
+ * Flexbox。Quick Develop 模板的 `:ticode` 模块需要——结绳移植的 `弹性布局`
+ * 等 9 个类直接 `import com.google.android.flexbox.*`。
+ * 版本与仓库自身 `gradle/libs.versions.toml` 的 `google-flexbox` 一致。
+ */
+const val ANDROIDX_FLEXBOX_VERSION = "3.0.0"
 val PROJECTS_COMPILE_SDK_VERSION = Sdk.BakLava.api
 
 val TARGET_SDK_VERSION = Sdk.VanillaIceCream

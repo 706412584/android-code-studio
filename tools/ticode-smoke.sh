@@ -25,12 +25,16 @@ for j in "$ROOT"/libs/*.jar "$ROOT"/libs/androidx/*.jar; do CP="$CP;$(cygpath -w
 CP="$CP;$(cygpath -w "$OUT")"
 
 rm -rf "$SMOKE_OUT"; mkdir -p "$SMOKE_OUT"
-echo "=== 编译冒烟测试 ==="
+echo "=== 编译冒烟测试 + API 覆盖 ==="
+# 编译 smoke/ 下全部 .java（含 ApiCoverage：只编译不运行，用于校验整个 API 签名面）
+find "$ROOT/smoke" -name '*.java' | sed 's|^/d/|D:/|' > "$TMP/smoke-srcs.txt"
 "$JC" -encoding UTF-8 -nowarn -d "$(cygpath -w "$SMOKE_OUT")" -classpath "$CP" \
-  "$(cygpath -w "$ROOT/smoke/SmokeTest.java")" "$(cygpath -w "$ROOT/smoke/SmokeTest2.java")" || exit 1
+  @"$TMP/smoke-srcs.txt" || exit 1
 
 FAIL=0
-for T in SmokeTest SmokeTest2; do
+# ApiCoverage 只编译（其方法体触 Android 运行时，不可执行）
+for T in SmokeTest SmokeTest2 SmokeTest3; do
+  if [ ! -f "$ROOT/smoke/$T.java" ]; then continue; fi
   echo "=== 运行 $T ==="
   "$JAVA" -Dfile.encoding=UTF-8 -classpath "$(cygpath -w "$SMOKE_OUT");$CP" "$T" 2>&1 \
     | iconv -f UTF-8 -t UTF-8 -c

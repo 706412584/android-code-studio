@@ -1,0 +1,52 @@
+package ticode.zh.jvm;
+
+
+public class 语言环境 {
+public static final java.util.Locale 中文;
+
+public static final java.util.Locale 简体中文;
+
+public static final java.util.Locale 繁体中文;
+
+public static final java.util.Locale 英语;
+
+public static final java.util.Locale 法语;
+
+public static final java.util.Locale 日语;
+
+public static final java.util.Locale 意大利语;
+
+public static final java.util.Locale 朝鲜语;
+
+public static final java.util.Locale 德语;
+
+public static final java.util.Locale 英语_英国;
+
+public static final java.util.Locale 英语_美国;
+
+public static final java.util.Locale 英语_加拿大;
+
+public static final java.util.Locale 法语_加拿大;
+
+public java.util.Locale 赋值_op(String 语言代码, String 国家或地区代码) {return null; }
+
+public static java.util.Locale 新建语言环境(String 语言代码, String 国家或地区代码) {
+return new java.util.Locale(语言代码, 国家或地区代码);
+}
+
+static {
+中文 = java.util.Locale.CHINESE;
+简体中文 = java.util.Locale.SIMPLIFIED_CHINESE;
+繁体中文 = java.util.Locale.TRADITIONAL_CHINESE;
+英语 = java.util.Locale.ENGLISH;
+法语 = java.util.Locale.FRENCH;
+日语 = java.util.Locale.JAPANESE;
+意大利语 = java.util.Locale.ITALIAN;
+朝鲜语 = java.util.Locale.KOREAN;
+德语 = java.util.Locale.GERMAN;
+英语_英国 = java.util.Locale.UK;
+英语_美国 = java.util.Locale.US;
+英语_加拿大 = java.util.Locale.CANADA;
+法语_加拿大 = java.util.Locale.CANADA_FRENCH;
+}
+}

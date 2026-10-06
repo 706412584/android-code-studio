@@ -1,0 +1,359 @@
+package ticode.zh.android;
+
+import java.io.*;
+import java.util.*;
+import java.lang.reflect.*;
+import android.view.*;
+import android.util.*;
+import android.net.*;
+import android.database.*;
+import android.provider.*;
+import android.content.*;
+import android.content.res.*;
+import android.os.*;
+import android.system.*;
+import android.graphics.*;
+import android.app.*;
+import java.util.regex.*;
+import java.net.*;
+import java.math.*;
+
+public class 颜色操作 {
+
+public static final int 透明色 = 0X00000000;
+
+public static final int 白色 = 0XFFFFFFFF;
+
+public static final int 半透明白色 = 0X80FFFFFF;
+
+public static final int 黑色 = 0XFF000000;
+
+public static final int 半透明黑色 = 0X80000000;
+
+public static final int 红色 = 0XFFFF0000;
+
+public static final int 半透明红色 = 0X80FF0000;
+
+public static final int 绿色 = 0XFF00FF00;
+
+public static final int 半透明绿色 = 0X8000FF00;
+
+public static final int 蓝色 = 0XFF0000FF;
+
+public static final int 半透明蓝色 = 0X800000FF;
+
+public static final int 灰色 = 0XFF969696;
+
+public static final int 半透明灰色 = 0X80969696;
+
+public static final int 天蓝色 = 0XFF87CEEB;
+
+public static final int 橙色 = 0XFFFFA500;
+
+public static final int 金色 = 0XFFFFD700;
+
+public static final int 粉色 = 0XFFFFC0CB;
+
+public static final int 紫红色 = 0XFFFF00FF;
+
+public static final int 灰白色 = 0XFFF2F2F2;
+
+public static final int 紫色 = 0XFF800080;
+
+public static final int 青色 = 0XFF00FFFF;
+
+public static final int 黄色 = 0XFFFFFF00;
+
+public static final int 巧克力色 = 0XFFD2691E;
+
+public static final int 番茄色 = 0XFFFF6347;
+
+public static final int 橙红色 = 0XFFFF4500;
+
+public static final int 银白色 = 0XFFC0C0C0;
+
+public static final int 深灰色 = 0XFF444444;
+
+public static final int 亮灰色 = 0XFFCCCCCC;
+
+public static final int 高光色 = 0X33FFFFFF;
+
+public static final int 低光色 = 0X33000000;
+
+public static final int ARGB = 41524742;
+
+public static final int RGBA = 52474241;
+
+public static final int RGB = 524742;
+
+// 取颜色中的红色值
+public static int 取颜色红色值(int 颜色) {
+return android.graphics.Color.red(颜色);
+}
+
+// 取颜色中的绿色值
+public static int 取颜色绿色值(int 颜色) {
+return android.graphics.Color.green(颜色);
+}
+
+// 取颜色中的蓝色值
+public static int 取颜色蓝色值(int 颜色) {
+return android.graphics.Color.blue(颜色);
+}
+
+// 取颜色的透明度
+public static int 取颜色透明度(int 颜色) {
+return android.graphics.Color.alpha(颜色);
+}
+
+public static float[] RGBtoHSV(int[] RGB) {
+int[] rgb = RGB;
+//切割rgb数组
+int R = rgb[0];
+int G = rgb[1];
+int B = rgb[2];
+//公式运算 /255
+float R_1 = R / 255f;
+float G_1 = G / 255f;
+float B_1 = B / 255f;
+//重新拼接运算用数组
+float[] all = new float[]{R_1, G_1, B_1};
+float max = all[0];
+float min = all[0];
+//循环查找最大值和最小值
+for (int i = 0; i < all.length; i++) {
+if (max <= all[i]) {
+max = all[i];
+}
+if (min >= all[i]) {
+min = all[i];
+}
+}
+float C_max = max;
+float C_min = min;
+//计算差值
+float diff = C_max - C_min;
+float hue = 0f;
+//判断情况计算色调H
+if (diff == 0f) {
+hue = 0f;
+} else {
+if (C_max == R_1) {
+hue = (((G_1 - B_1) / diff) % 6) * 60f;
+}
+if (C_max == G_1) {
+hue = (((B_1 - R_1) / diff) + 2f) * 60f;
+}
+if (C_max == B_1) {
+hue = (((R_1 - G_1) / diff) + 4f) * 60f;
+}
+}
+//计算饱和度S
+float saturation;
+if (C_max == 0f) {
+saturation = 0f;
+} else {
+saturation = diff / C_max;
+}
+//计算明度V
+float value = C_max;
+float[] result = new float[]{hue, saturation, value};
+return result;
+
+}
+//获取颜色色相，即HSV颜色格式中的Hue
+public static float 取颜色色相(int 颜色) {
+float[] hsv;
+int[] rgb = new int[]{取颜色红色值(颜色),取颜色绿色值(颜色),取颜色蓝色值(颜色)};
+hsv = RGBtoHSV(rgb);
+return (int)hsv[0];
+}
+
+//获取颜色饱和度，即HSV颜色格式中的Saturation
+public static int 取颜色饱和度(int 颜色) {
+float[] hsv;
+int[] rgb = new int[]{取颜色红色值(颜色),取颜色绿色值(颜色),取颜色蓝色值(颜色)};
+hsv = RGBtoHSV(rgb);
+return (int)hsv[1];
+}
+
+//获取颜色亮度，即HSV颜色格式中的Value
+public static int 取颜色亮度(int 颜色) {
+float[] hsv;
+int[] rgb = new int[]{取颜色红色值(颜色),取颜色绿色值(颜色),取颜色蓝色值(颜色)};
+hsv = RGBtoHSV(rgb);
+return (int)hsv[2];
+}
+
+// 根据 透明度、红色值、绿色值、蓝色值 合成一个颜色
+public static int 合成颜色值(int 透明度, int 红色值, int 绿色值, int 蓝色值) {
+return android.graphics.Color.argb(透明度,红色值,绿色值,蓝色值);
+}
+
+// 设置颜色中的红色值
+public static int 修改颜色红色值(int 颜色, int 红色值) {
+return (颜色 & 0xff00ffff) | (红色值 << 16);
+}
+
+// 设置颜色中的绿色值
+public static int 修改颜色绿色值(int 颜色, int 绿色值) {
+return (颜色 & 0xffff00ff) | (绿色值 << 8);
+}
+
+// 设置颜色中的蓝色值
+public static int 修改颜色蓝色值(int 颜色, int 蓝色值) {
+return (颜色 & 0xffffff00) | 蓝色值;
+}
+
+// 设置颜色的透明度
+public static int 修改颜色透明度(int 颜色, int 透明度) {
+return (颜色 & 0x00ffffff) | (透明度 << 24);
+}
+
+// 获取随机颜色
+public static int 取随机颜色(boolean 支持透明度) {
+int high = 支持透明度 ? (int) (Math.random() * 0x100) << 24 : 0xFF000000;
+return high | (int) (Math.random() * 0x1000000);
+}
+
+// 增加颜色的深度
+public static int 颜色加深(int 颜色, int 加深值) {
+int r = 取颜色红色值(颜色) - 加深值;
+int g = 取颜色绿色值(颜色) - 加深值;
+int b = 取颜色蓝色值(颜色) - 加深值;
+r = r > 255 ? 255 : Math.max(r,0);
+g = g > 255 ? 255 : Math.max(g,0);
+b = b > 255 ? 255 : Math.max(b,0);
+颜色 = 修改颜色红色值(颜色,r);
+颜色 = 修改颜色绿色值(颜色,g);
+颜色 = 修改颜色蓝色值(颜色,b);
+return 颜色;
+}
+
+// 降低颜色的深度，使变浅
+public static int 颜色变浅(int 颜色, int 变浅值) {
+int r = 取颜色红色值(颜色) + 变浅值;
+int g = 取颜色绿色值(颜色) + 变浅值;
+int b = 取颜色蓝色值(颜色) + 变浅值;
+r = r > 255 ? 255 : Math.max(r,0);
+g = g > 255 ? 255 : Math.max(g,0);
+b = b > 255 ? 255 : Math.max(b,0);
+颜色 = 修改颜色红色值(颜色,r);
+颜色 = 修改颜色绿色值(颜色,g);
+颜色 = 修改颜色蓝色值(颜色,b);
+return 颜色;
+}
+
+// 取颜色的灰度值
+public static int 取灰度值(int 颜色) {
+int r = 取颜色红色值(颜色);
+int g = 取颜色绿色值(颜色);
+int b = 取颜色蓝色值(颜色);
+return (int) (r * 0.299F + g * 0.587F + b * 0.114F);
+}
+
+// 判断颜色是否为浅色，否则为深色
+public static boolean 是否为浅色(int 颜色) {
+return 取灰度值(颜色) >= 192;
+}
+
+// 将文本类型颜色值转换为整数类型颜色
+public static int 文本到颜色值(String 颜色) {
+return android.graphics.Color.parseColor(颜色);
+}
+
+public static int 文本到颜色值_自定义格式(String 颜色, int 内置格式) {
+int Return = 0;
+switch (内置格式) {
+case ARGB:
+Return=文本到颜色值(颜色);
+break;
+case RGBA:
+String argb格式;
+String color = 颜色.toUpperCase();
+if (颜色.length() == 7) {
+argb格式=color;
+} else if (颜色.length() == 9) {
+argb格式="#"+ 颜色.substring(7, (8) + 1) + 颜色.substring(1, (6) + 1);
+} else {
+argb格式=null;
+}
+Return=文本到颜色值(argb格式);
+break;
+case RGB:
+Return=文本到颜色值(颜色);
+}
+return Return;
+}
+
+
+// 将整数类型颜色值转换到文本类型颜色
+public static String 颜色值到文本(int 颜色, boolean 支持透明度, boolean 大写) {
+if(!支持透明度) {
+颜色 = 颜色 & 0x00ffffff;
+}
+String colorStr = Integer.toHexString(颜色);
+if(大写) {
+colorStr = colorStr.toUpperCase();
+} else {
+colorStr = colorStr.toLowerCase();
+}
+while (colorStr.length() < 6) {
+colorStr = "0" + colorStr;
+}
+if(支持透明度) {
+while (colorStr.length() < 8) {
+colorStr = (大写 ? "F" : "f") + colorStr;
+}
+}
+return "#" + colorStr;
+}
+
+public static String 颜色值到文本_自定义格式(int 颜色, boolean 大写, int 内置格式) {
+int A值 = 取颜色透明度(颜色);
+int R值 = 取颜色红色值(颜色);
+int G值 = 取颜色绿色值(颜色);
+int B值 = 取颜色蓝色值(颜色);
+String A;
+String R;
+String G;
+String B;
+String returnColor = "";
+if (A值 < 0x10) {
+A = "0" + Integer.toHexString(A值);
+} else {
+A = Integer.toHexString(A值);
+}
+if (R值 < 0x10) {
+R = "0" + Integer.toHexString(R值);
+} else {
+R = Integer.toHexString(R值);
+}
+if (G值 < 0x10) {
+G = "0" + Integer.toHexString(G值);
+} else {
+G = Integer.toHexString(G值);
+}
+if (B值 < 0x10) {
+B = "0" + Integer.toHexString(B值);
+} else {
+B = Integer.toHexString(B值);
+}
+switch (内置格式) {
+case ARGB:
+returnColor = A + R + G + B;
+break;
+case RGBA:
+returnColor = R + G + B + A;
+break;
+case RGB:
+returnColor = R + G + B;
+}
+if (大写 == true) {
+return "#" + returnColor.toUpperCase();
+} else {
+return "#" + returnColor;
+}
+}
+
+}
