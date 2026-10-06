@@ -71,8 +71,9 @@ public int[] 取状态() {
 return this.getState();
 }
 
-public 可绘制对象 取自身对象() {
-return (可绘制对象)this.getCurrent();
+public android.graphics.drawable.Drawable 取自身对象() {
+// getCurrent 是框架原生实例，不是 可绘制对象 子类，强转必 ClassCastException。返回原生类型。
+return this.getCurrent();
 }
 
 public android.graphics.Rect 取绘制间距(android.graphics.Rect 间距) {

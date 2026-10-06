@@ -279,13 +279,16 @@ return this.packageName;
 public String 获取标签(安卓程序包管理器 管理器) {
 return this.loadLabel(管理器).toString();
 }
-public 可绘制对象 获取图标(安卓程序包管理器 管理器) {
-return (可绘制对象)this.loadIcon(管理器);
+public android.graphics.drawable.Drawable 获取图标(安卓程序包管理器 管理器) {
+// loadIcon 是框架原生实例，不是 可绘制对象 子类，强转必 ClassCastException。返回原生类型。
+return this.loadIcon(管理器);
 }
-public 可绘制对象 获取横幅(安卓程序包管理器 管理器) {
-return (可绘制对象)this.loadBanner(管理器);
+public android.graphics.drawable.Drawable 获取横幅(安卓程序包管理器 管理器) {
+// loadBanner 是框架原生实例，不是 可绘制对象 子类，强转必 ClassCastException。返回原生类型。
+return this.loadBanner(管理器);
 }
-public 可绘制对象 获取徽标(安卓程序包管理器 管理器) {
-return (可绘制对象)this.loadLogo(管理器);
+public android.graphics.drawable.Drawable 获取徽标(安卓程序包管理器 管理器) {
+// loadLogo 是框架原生实例，不是 可绘制对象 子类，强转必 ClassCastException。返回原生类型。
+return this.loadLogo(管理器);
 }
 }

@@ -47,8 +47,9 @@ return (android.content.Context)this.getApplicationContext();
 }
 
 //获取安卓资源管理器
-public 安卓资源管理器 取安卓资源管理器() {
-return (安卓资源管理器)this.getResources();
+public android.content.res.Resources 取安卓资源管理器() {
+// getResources 是框架原生实例，不是 安卓资源管理器 子类，强转必 ClassCastException。返回原生类型。
+return this.getResources();
 }
 
 //获取安卓附加资源管理器
@@ -87,8 +88,9 @@ return 0;
 }
 }
 
-public 安卓程序包管理器 取程序包管理器() {
-return (安卓程序包管理器)this.getPackageManager();
+public android.content.pm.PackageManager 取程序包管理器() {
+// getPackageManager 是框架原生实例，不是 安卓程序包管理器 子类，强转必 ClassCastException。返回原生类型。
+return this.getPackageManager();
 }
 
 public String 取自身版本名称() {

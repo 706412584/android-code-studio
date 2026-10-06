@@ -33,8 +33,9 @@ throw new RuntimeException("找不到类：" + 完整类名);
 public java.io.InputStream 取资源输入流(String 资源名) {
 return this.getResourceAsStream(资源名);
 }
-public Java类加载器 取父加载器() {
-return (Java类加载器)this.getParent();
+public java.lang.ClassLoader 取父加载器() {
+// getParent 是框架原生实例，不是 Java类加载器 子类，强转必 ClassCastException。返回原生类型。
+return this.getParent();
 }
 public static Java类加载器 取系统类加载器() {
 // 系统类加载器是框架的 PathClassLoader，不是 Java类加载器 子类，强转必 ClassCastException。

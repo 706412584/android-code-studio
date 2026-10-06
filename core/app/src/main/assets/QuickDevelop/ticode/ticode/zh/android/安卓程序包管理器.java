@@ -45,16 +45,18 @@ return 另一个 != null;
 return !this.equals(另一个);
 }
 
-public 安卓程序包信息 取程序包信息(String 应用包名, int 获取标志) {
+public android.content.pm.PackageInfo 取程序包信息(String 应用包名, int 获取标志) {
 try {
-return (安卓程序包信息)this.getPackageInfo(应用包名,获取标志);
+// getPackageInfo 返回框架原生 PackageInfo，不是 安卓程序包信息 子类，强转必崩。
+return this.getPackageInfo(应用包名,获取标志);
 } catch(android.content.pm.PackageManager.NameNotFoundException e) {
 throw new RuntimeException("应用不存在：" + 应用包名);
 }
 }
 
-public 安卓程序包信息 取APK包信息(String APK路径, int 获取标志) {
-return (安卓程序包信息)this.getPackageArchiveInfo(APK路径,获取标志);
+public android.content.pm.PackageInfo 取APK包信息(String APK路径, int 获取标志) {
+// getPackageArchiveInfo 是框架原生实例，不是 安卓程序包信息 子类，强转必 ClassCastException。返回原生类型。
+return this.getPackageArchiveInfo(APK路径,获取标志);
 }
 
 public 安卓程序包信息[] 取所有已安装程序包信息(int 获取标志) {
@@ -69,25 +71,28 @@ public int 检查权限(String 权限名, String 应用包名) {
 return this.checkPermission(权限名,应用包名);
 }
 
-public 可绘制对象 取默认窗口图标() {
-return (可绘制对象)this.getDefaultActivityIcon();
+public android.graphics.drawable.Drawable 取默认窗口图标() {
+// getDefaultActivityIcon 是框架原生实例，不是 可绘制对象 子类，强转必 ClassCastException。返回原生类型。
+return this.getDefaultActivityIcon();
 }
 
 public android.content.Intent 取程序启动信息(String 程序包名) {
 return (android.content.Intent)this.getLaunchIntentForPackage(程序包名);
 }
 
-public 安卓资源管理器 取资源管理器(安卓应用信息 应用信息) {
+public android.content.res.Resources 取资源管理器(安卓应用信息 应用信息) {
 try {
-return (安卓资源管理器)this.getResourcesForApplication(应用信息);
+// getResourcesForApplication 返回框架原生 Resources，不是 安卓资源管理器 子类，强转必崩。
+return this.getResourcesForApplication(应用信息);
 } catch(android.content.pm.PackageManager.NameNotFoundException e) {
 throw new RuntimeException(e.getMessage());
 }
 }
 
-public 安卓资源管理器 取资源管理器2(String 应用包名) {
+public android.content.res.Resources 取资源管理器2(String 应用包名) {
 try {
-return (安卓资源管理器)this.getResourcesForApplication(应用包名);
+// 同上。
+return this.getResourcesForApplication(应用包名);
 } catch(android.content.pm.PackageManager.NameNotFoundException e) {
 throw new RuntimeException(e.getMessage());
 }

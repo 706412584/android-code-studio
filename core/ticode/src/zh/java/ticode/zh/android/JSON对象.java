@@ -60,9 +60,10 @@ return this.has(键名);
 
 
 
-public JSON对象 取JSON对象(String 键名) {
+public org.json.JSONObject 取JSON对象(String 键名) {
 try {
-return (JSON对象)this.getJSONObject(键名);
+// getJSONObject 返回框架原生 JSONObject，不是 JSON对象 子类，强转必崩。
+return this.getJSONObject(键名);
 } catch (Exception e) {
 e.printStackTrace();
 }
@@ -76,9 +77,10 @@ return null;
 
 
 
-public JSON数组 取JSON数组(String 键名) {
+public org.json.JSONArray 取JSON数组(String 键名) {
 try {
-return (JSON数组)this.getJSONArray(键名);
+// getJSONArray 返回框架原生 JSONArray，不是 JSON数组 子类，强转必崩。
+return this.getJSONArray(键名);
 } catch (JSONException e) {
 return null;
 }

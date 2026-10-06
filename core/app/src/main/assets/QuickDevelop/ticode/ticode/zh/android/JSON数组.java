@@ -46,8 +46,9 @@ e.printStackTrace();
 
 
 
-public JSON对象 取JSON对象(int 索引) {
-return (JSON对象)this.optJSONObject(索引);
+public org.json.JSONObject 取JSON对象(int 索引) {
+// optJSONObject 是框架原生实例，不是 JSON对象 子类，强转必 ClassCastException。返回原生类型。
+return this.optJSONObject(索引);
 }
 
 
@@ -55,8 +56,9 @@ return (JSON对象)this.optJSONObject(索引);
 
 
 
-public JSON数组 取JSON数组(int 索引) {
-return (JSON数组)this.optJSONArray(索引);
+public org.json.JSONArray 取JSON数组(int 索引) {
+// optJSONArray 是框架原生实例，不是 JSON数组 子类，强转必 ClassCastException。返回原生类型。
+return this.optJSONArray(索引);
 }
 
 
