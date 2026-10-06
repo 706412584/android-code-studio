@@ -89,10 +89,18 @@ android {
           
           val signing_storePassword = System.getenv("SIGNING_STORE_PASSWORD") ?: ""
           val signing_keyPassword = System.getenv("SIGNING_KEY_PASSWORD") ?: ""
+          // storeFile 与 keyAlias 支持环境变量覆盖：仓库内 signing-key.jks 的密码只在
+          // CI Secrets 里，本机无法还原；本机发布/调试用
+          // D:/android/keys/acs-debug-signing.jks（密码 android，别名 androidcs，
+          // 证书 SHA-1 83AB...C1DA，即已发布 r4/r5/r6 用的那把）。
+          // 未设置这两个变量时行为与之前完全一致（CI 仍走仓库内密钥）。
+          val signing_storeFileEnv = System.getenv("SIGNING_STORE_FILE")
+          val signing_keyAliasEnv = System.getenv("SIGNING_KEY_ALIAS")
           
-          storeFile = keyStoreFile
+          storeFile =
+              if (signing_storeFileEnv.isNullOrBlank()) keyStoreFile else file(signing_storeFileEnv)
           storePassword = signing_storePassword
-          keyAlias = "androidcs"
+          keyAlias = if (signing_keyAliasEnv.isNullOrBlank()) "androidcs" else signing_keyAliasEnv
           keyPassword = signing_keyPassword
       }
   }
