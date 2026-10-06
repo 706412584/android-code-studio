@@ -182,7 +182,7 @@ public void 发送字节集(int 标识, byte[] 字节集) {
 }
 
 public boolean 发送文本_同步(int 标识, String 文本) {
-return 发送字节集_同步(标识, 文本.到字节集());
+return 发送字节集_同步(标识, 文本.getBytes());
 }
 
 public boolean 发送字节集_同步(int 标识, byte[] 字节集) {
@@ -203,7 +203,7 @@ public void 广播字节集(byte[] 字节集) {
 }
 
 public boolean 广播文本_同步(String 文本) {
-return 广播字节集_同步(文本.到字节集());
+return 广播字节集_同步(文本.getBytes());
 }
 
 public boolean 广播字节集_同步(byte[] 字节集) {
@@ -254,7 +254,7 @@ return false;
 
 public void 监听成功() { } // 事件
 
-public void 监听异常(异常 异常) { } // 事件
+public void 监听异常(java.lang.Exception 异常) { } // 事件
 
 public void 有新连接(int 标识) { } // 事件
 

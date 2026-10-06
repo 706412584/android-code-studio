@@ -8,8 +8,8 @@ public class 启动信息 extends android.content.Intent {
 
 
 
-public Object 置入(String 键名, Object 数据) {
-this.putExtra(键名, 数据);
+public void 置入(String 键名, Object 数据) {
+this.putExtra(键名, String.valueOf(数据));
 }
 
 
@@ -120,7 +120,7 @@ public static final String 编辑数据动作 = "android.intent.action.EDIT";
 
 //单独设置数据的uri部分
 public void 设置URI(安卓资源标识符 URI) {
-this.setData(URI);
+this.setData(URI.取内部对象());
 }
 
 //单独设置数据的uri部分，参数会自动解析为uri
@@ -135,7 +135,7 @@ this.setType(MIME文本);
 
 //同时设置URI与MIME
 public void 设置URI与MIME(安卓资源标识符 URI, String MIME文本) {
-this.setDataAndType(URI,MIME文本);
+this.setDataAndType(URI.取内部对象(),MIME文本);
 }
 
 //同时设置URI与MIME，第一个参数会自动解析为uri
@@ -145,7 +145,7 @@ this.setDataAndType(android.net.Uri.parse(URI文本),MIME文本);
 
 //获取已设置的URI，如果想获取URI本身的文本可以使用 到文本()
 public 安卓资源标识符 获取URI() {
-return (安卓资源标识符)this.getData();
+return new 安卓资源标识符(this.getData());
 }
 
 //获取已设置的MIME

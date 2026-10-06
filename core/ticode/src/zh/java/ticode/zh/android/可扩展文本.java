@@ -15,9 +15,7 @@ public void 设置扩展(Object 样式, int 开始位置, int 结束位置, int 
 this.setSpan(样式, 开始位置, 结束位置, 扩展类型);
 }
 
-public 可扩展文本 赋值_op(CharSequence 内容) {
-return (可扩展文本)new android.text.SpannableString(内容);
-}
+public 可扩展文本(CharSequence 内容) { super(内容); }
 
 public void 设置到文本框(文本框 文本框组件) {
 文本框组件.getView().setText(this);

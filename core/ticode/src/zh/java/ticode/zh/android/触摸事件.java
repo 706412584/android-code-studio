@@ -5,12 +5,12 @@ public class 触摸事件 {
 
 
 
-public 触摸动作 动作() {return null; }
+public int 动作() {return 0; }
 
 
 
 
-public 触摸动作 当前动作() {return null; }
+public int 当前动作() {return 0; }
 
 
 

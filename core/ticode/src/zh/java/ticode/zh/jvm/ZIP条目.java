@@ -4,6 +4,7 @@ import java.util.zip.*;
 import java.io.*;
 
 public abstract class ZIP条目 extends java.util.zip.ZipEntry {
+public ZIP条目() { super(""); }
 
 public static final int 压缩方法_存储 = 0;
 public static final int 压缩方法_压缩 = 8;

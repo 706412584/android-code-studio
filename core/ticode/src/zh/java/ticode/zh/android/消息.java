@@ -4,7 +4,7 @@ package ticode.zh.android;
 public class 消息 {
 
 public static android.os.Message 获取消息(消息处理器 处理器, int 标记值) {
-return 消息.obtain(处理器,标记值);
+return android.os.Message.obtain(处理器,标记值);
 }
 
 public void 置数据(android.os.Bundle 数据) {}

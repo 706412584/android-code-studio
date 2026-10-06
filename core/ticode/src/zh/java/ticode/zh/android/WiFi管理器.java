@@ -17,7 +17,7 @@ return glq.getScanResults().toArray(new android.net.wifi.ScanResult[0]);
 }
 
 public WiFi信息 取当前连接信息() {
-return glq.getConnectionInfo();
+return new WiFi信息(glq.getConnectionInfo());
 }
 
 public WiFi管理器 重新获取系统服务() {

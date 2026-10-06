@@ -34,9 +34,6 @@ public void 从矩形拷贝区域(android.graphics.Rect 被绘制区域) {
 this.copyBounds(被绘制区域);
 }
 
-public void 从矩形拷贝区域(android.graphics.Rect 被绘制区域) {
-this.copyBounds(被绘制区域);
-}
 
 public android.graphics.Rect 拷贝绘制区域到矩形() {
 return (android.graphics.Rect)this.copyBounds();

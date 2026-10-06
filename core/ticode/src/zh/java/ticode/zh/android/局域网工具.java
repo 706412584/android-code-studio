@@ -21,8 +21,8 @@ import static ticode.zh.android.流程处理.等待新线程执行完毕;
 import static ticode.zh.android.流程处理.结束提交到新线程;
 
 public class 局域网工具 {
-static boolean 是否连通;
-static boolean 是否开放;
+public static boolean 是否连通;
+public static boolean 是否开放;
 
 public static boolean 是否开启网络代理() {
 String proxyHost = System.getProperty("http.proxyHost");

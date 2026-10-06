@@ -22,13 +22,17 @@ public void 填充模式(int 模式) {
 switch (模式) {
 case 0:
 this.setFillType(Path.FillType.WINDING);
+break;
 case 1:
 this.setFillType(Path.FillType.EVEN_ODD);
+break;
 case 2:
 this.setFillType(Path.FillType.INVERSE_EVEN_ODD);
+break;
 case 3:
 this.setFillType(Path.FillType.INVERSE_WINDING);
-return;
+break;
+default:
 this.setFillType(Path.FillType.WINDING);
 }
 }
@@ -64,7 +68,19 @@ this.addRoundRect(起点x,起点y,终点x,终点y,上圆角,下圆角, 顺时针
 
 // 重点，坐标组例: 坐标组 = {x1,y1, x2,y2}，需要对应
 public void 添加多边形(float[] 坐标组, int 起点偏移量, int 顶点数量, boolean 是否闭合) {
-this.addPolygon(坐标组,起点偏移量,顶点数量,是否闭合);
+// android.graphics.Path 无 addPolygon（结绳调的是原生 Path 私有 API）。
+// 按语义等价实现：把坐标组按 (x,y) 逐点连成多边形，可选闭合。
+int 顶点数 = (顶点数量 > 0) ? 顶点数量 : ((坐标组.length - 起点偏移量) / 2);
+if (顶点数 <= 0) {
+return;
+}
+this.moveTo(坐标组[起点偏移量], 坐标组[起点偏移量 + 1]);
+for (int i = 1; i < 顶点数; i++) {
+this.lineTo(坐标组[起点偏移量 + i * 2], 坐标组[起点偏移量 + i * 2 + 1]);
+}
+if (是否闭合) {
+this.close();
+}
 }
 
 // 不依赖当前路径，独立添加弧形
@@ -104,34 +120,37 @@ this.offset(x,y);
 }
 
 public boolean 是否包含坐标(float x, float y) {
-return this.contains(x,y);
+// Path 无 contains；用 Region 做等价判定。
+android.graphics.Region 区域 = new android.graphics.Region();
+区域.setPath(this, 区域);
+return 区域.contains((int) x, (int) y);
 }
 
 // 取两个区域共同包含的区域
 public 构建路径 交集(构建路径 区域1, 构建路径 区域2) {
-Path resultPath = new Path();
-Path.op(path1, path2, Path.Op.INTERSECT, resultPath);
+Path resultPath = new Path(区域1);
+resultPath.op(区域2, Path.Op.INTERSECT);
 return (构建路径)resultPath;
 }
 
 // 保留未被参数区域覆盖的区域
 public boolean 差集(构建路径 区域) {
-this.op(区域, Path.Op.DIFFERENCE);
+return this.op(区域, Path.Op.DIFFERENCE);
 }
 
 // 保留被参数区域覆盖的区域
 public boolean 反向差集(构建路径 区域) {
-this.op(区域, Path.Op.REVERSE_DIFFERENCE);
+return this.op(区域, Path.Op.REVERSE_DIFFERENCE);
 }
 
 // 保留非重叠，删除已重叠区域
 public boolean 异或(构建路径 区域) {
-this.op(区域, Path.Op.XOR);
+return this.op(区域, Path.Op.XOR);
 }
 
 // 将第二个区域，合并进第一个区域
 public boolean 合并(构建路径 原区域, 构建路径 新区域) {
-return Path.op(原区域, 新区域, Path.Op.UNION);
+return 原区域.op(新区域, Path.Op.UNION);
 }
 
 }

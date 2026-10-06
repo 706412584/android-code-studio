@@ -67,4 +67,22 @@ public int 获取前台服务类型() {
 return this.getForegroundServiceType();
 }
 
+public 安卓应用信息 应用信息() {
+return (安卓应用信息)this.applicationInfo;
+}
+public int 描述资源id() {
+return this.descriptionRes;
+}
+public boolean 可实例化() {
+return this.enabled;
+}
+public boolean 可被外部调用() {
+return this.exported;
+}
+public String 进程名称() {
+return this.processName;
+}
+public String 拆分名称() {
+return this.splitName;
+}
 }

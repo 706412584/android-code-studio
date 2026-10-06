@@ -15,7 +15,7 @@ import ticode.zh.jvm.集合;
 
 public class 高级适配器 extends androidx.recyclerview.widget.RecyclerView.Adapter {
 
-高级列表框 列表;
+public 高级列表框 列表;
 
 public int itemCount = -1;
 public java.util.ArrayList dataList;
@@ -91,7 +91,7 @@ return 取项目数量();
 
 //使用集合时返回数据，可能为空
 public 集合 取数据() {
-return dataList;
+return (集合)dataList;
 }
 
 public void 置数据(Object 数据集合) {
@@ -224,12 +224,12 @@ public void 项目被长按(组件容器 容器, int 索引) { } // 事件
 public int 项目ID(int 索引) { return 0; } // 事件
 
 public static 高级适配器 高级适配器(集合 集合) {
-高级适配器 适配器 = 集合;
+高级适配器 适配器 = new 高级适配器(集合);
 return 适配器;
 }
 
 public static 高级适配器 创建高级适配器(集合 集合) {
-高级适配器 适配器 = 集合;
+高级适配器 适配器 = new 高级适配器(集合);
 return 适配器;
 }
 

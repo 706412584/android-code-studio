@@ -358,11 +358,11 @@ public boolean 可视() {
 return view.getVisibility() == View.VISIBLE ? true : false;
 }
 
-public void 可视状态(组件可视状态 状态) {
+public void 可视状态(int 状态) {
 view.setVisibility(状态);
 }
 
-public 组件可视状态 可视状态() {
+public int 可视状态() {
 return view.getVisibility();
 }
 
@@ -469,7 +469,7 @@ public void onAnimationRepeat(Animator p1) {
 动画重复播放();
 }
 });
-return animator;
+return new 组件属性动画播放器(animator);
 }
 
 public void 播放动画(组件动画 欲播放动画) {
@@ -628,7 +628,7 @@ if (是否支持) {
 view.setOnDragListener(new View.OnDragListener() {
 @Override
 public boolean onDrag(View view, android.view.DragEvent event) {
-return 被拖放(event);
+return 被拖放(new 拖放事件(event));
 }
 });
 } else {
@@ -660,7 +660,7 @@ if (是否支持) {
 view.setOnKeyListener(new View.OnKeyListener() {
 @Override
 public boolean onKey(View view, int keyCode, android.view.KeyEvent event) {
-return 按键输入(keyCode, event);
+return 按键输入(keyCode, (按键事件)event);
 }
 });
 } else {
@@ -686,7 +686,7 @@ public boolean 被触摸(android.view.MotionEvent 来源事件) { return false; 
 
 
 
-public void 触摸手势(触摸手势 手势) { } // 事件
+public void 触摸手势(int 手势) { } // 事件
 
 
 

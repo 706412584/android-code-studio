@@ -12,17 +12,20 @@ public LinearLayoutManager getLM(){
 return (LinearLayoutManager)布局管理器;
 }
 
-public void 排列方向(布局管理器_排列方向 排列方向) {
+public void 排列方向(int 排列方向) {
 int 方向;
 方向 = 排列方向;
 switch (方向) {
 case 0:
 getLM().setOrientation(0);
+break;
 case 1:
 getLM().setOrientation(0);
 倒序(true);
+break;
 case 2:
 getLM().setOrientation(1);
+break;
 case 3:
 getLM().setOrientation(1);
 倒序(true);

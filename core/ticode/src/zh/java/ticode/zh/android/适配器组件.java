@@ -7,7 +7,7 @@ import android.graphics.*;
 import android.graphics.drawable.*;
 import android.view.*;
 
-public class 适配器组件 extends 可视化组件 {
+public abstract class 适配器组件 extends 可视化组件 {
 public 适配器组件(Context context) {
 super(context);
 }

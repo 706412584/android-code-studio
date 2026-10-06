@@ -209,26 +209,26 @@ return (应用)this.getApplication();
 }
 
 //启动服务
-public Object 启动服务(安卓服务 欲启动服务) {
-Intent intent = new Intent(this, 欲启动服务.class);
+public void 启动服务(安卓服务 欲启动服务) {
+Intent intent = new Intent(this, 安卓服务.class);
 this.startService(intent);
 }
 
 //启动服务
-public Object 启动服务(安卓服务 欲启动服务, android.content.Intent 欲传递参数) {
-欲传递参数.setComponent(new ComponentName(this, 欲启动服务.class));
+public void 启动服务(安卓服务 欲启动服务, android.content.Intent 欲传递参数) {
+欲传递参数.setComponent(new ComponentName(this, 安卓服务.class));
 this.startService(欲传递参数);
 }
 
 //绑定服务
-public Object 绑定服务(安卓服务 欲绑定服务, 服务连接 连接, int 标志) {
-Intent intent = new Intent(this, 欲绑定服务.class);
+public void 绑定服务(安卓服务 欲绑定服务, 服务连接 连接, int 标志) {
+Intent intent = new Intent(this, 安卓服务.class);
 this.bindService(intent,连接,标志);
 }
 
 //关闭指定服务类
-public Object 关闭服务(安卓服务 欲关闭服务) {
-Intent intent = new Intent(this, 欲关闭服务.class);
+public void 关闭服务(安卓服务 欲关闭服务) {
+Intent intent = new Intent(this, 安卓服务.class);
 this.stopService(intent);
 }
 
@@ -248,8 +248,8 @@ this.moveTaskToBack(true);
 
 
 
-public Object 关闭窗口() {
-return this.finish();
+public void 关闭窗口() {
+this.finish();
 }
 
 
@@ -257,11 +257,11 @@ return this.finish();
 
 
 
-public Object 切换窗口(安卓窗口 欲切换窗口, android.content.Intent 欲传递参数) {
+public void 切换窗口(安卓窗口 欲切换窗口, android.content.Intent 欲传递参数) {
 if (欲传递参数 == null) {
-安卓窗口.newActivity(this, 欲切换窗口.class);
+安卓窗口.newActivity(this, 安卓窗口.class);
 } else {
-安卓窗口.newActivity2(this, 欲切换窗口.class, 欲传递参数);
+安卓窗口.newActivity2(this, 安卓窗口.class, 欲传递参数);
 }
 }
 
@@ -272,11 +272,11 @@ if (欲传递参数 == null) {
 
 
 
-public Object 切换窗口2(安卓窗口 欲切换窗口, int 请求码, android.content.Intent 欲传递参数) {
+public void 切换窗口2(安卓窗口 欲切换窗口, int 请求码, android.content.Intent 欲传递参数) {
 if (欲传递参数 == null) {
-安卓窗口.newActivityForResult(this, 欲切换窗口.class, 请求码);
+安卓窗口.newActivityForResult(this, 安卓窗口.class, 请求码);
 } else {
-安卓窗口.newActivityForResult2(this, 欲切换窗口.class, 请求码, 欲传递参数);
+安卓窗口.newActivityForResult2(this, 安卓窗口.class, 请求码, 欲传递参数);
 }
 }
 
@@ -355,7 +355,7 @@ if (设备信息.安卓版本号 < 30) {
 return;
 }
 android.content.Intent it = new android.content.Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION);
-it.setData(android.net.Uri.parse("package:" + 安卓环境.取自身包名(this)));
+it.setData(android.net.Uri.parse("package:" + this.getPackageName()));
 this.startActivity(it);
 }
 public void 选择图片(int 请求码) {

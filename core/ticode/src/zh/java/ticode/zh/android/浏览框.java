@@ -291,7 +291,7 @@ htcs.cancel();
 }
 
 public void 执行JS(String JS) {
-if (JS.为空()) {
+if (JS == null || JS.isEmpty()) {
 return;
 }
 getView().evaluateJavascript("javascript:" + JS, new ValueCallback<String>() {

@@ -10,17 +10,7 @@ public abstract class JSON数组 extends org.json.JSONArray {
 
 
 
-public JSON数组 赋值_op(String JSON文本) {
-if(JSON文本 == null || JSON文本.isEmpty()) {
-throw new IllegalArgumentException("JSON文本不能为空");
-}
-
-try {
-return new JSONArray(JSON文本);
-} catch (Exception e) {
-throw new IllegalArgumentException(JSON_INIT_ERROR, e);
-}
-}
+public JSON数组(String JSON文本) throws Exception { super("JSON文本不能为空"); }
 
 
 

@@ -17,12 +17,12 @@ return Thread.currentThread().getName();
 
 
 
-public static Object 转交其它线程执行() {
-return Thread.yield();
+public static void 转交其它线程执行() {
+Thread.yield();
 }
 
 //使线程休眠一段时间
-public static Object 延时(long 时长) {
+public static void 延时(long 时长) {
 try { Thread.sleep(时长); } catch (Exception e) { e.printStackTrace(); }
 }
 
@@ -57,8 +57,8 @@ return this.isAlive();
 }
 
 //启动线程
-public Object 启动() {
-return this.start();
+public void 启动() {
+this.start();
 }
 
 public void 中断() {

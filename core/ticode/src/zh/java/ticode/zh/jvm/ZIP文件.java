@@ -6,13 +6,7 @@ import java.io.*;
 
 public abstract class ZIP文件 extends java.util.zip.ZipFile {
 
-public ZIP文件 赋值_op(String 路径) {
-try {
-return (ZIP文件)new ZipFile(new File(路径));
-} catch (java.io.IOException e) {
-throw new RuntimeException("文件读取错误：" + e.getMessage());
-}
-}
+public ZIP文件(String 路径) throws Exception { super(new File(路径)); }
 
 public static ZIP文件 指定编码创建(String 路径, String 编码) {
 try {
@@ -61,9 +55,9 @@ java.util.stream.Stream<? extends java.util.zip.ZipEntry> stream = this.stream()
 if(stream == null) {
 return (ZIP条目[])new ZipEntry[0];
 }
-return stream.toArray(new java.util.function.IntFunction<ZipEntry[]>() {
-public ZipEntry[] apply(int size) {
-return new ZipEntry[size];
+return stream.toArray(new java.util.function.IntFunction<ZIP条目[]>() {
+public ZIP条目[] apply(int size) {
+return new ZIP条目[size];
 }
 });
 } catch(IllegalStateException e) {

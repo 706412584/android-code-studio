@@ -73,7 +73,7 @@ canvas = surfaceHolder.lockHardwareCanvas();
 if (canvas != null) {
 lastLockTime = SystemClock.uptimeMillis();
 try {
-绘制操作(canvas);
+绘制操作((画布对象)canvas);
 drawCount.decrementAndGet();
 if (SystemClock.uptimeMillis() - lastFpsTime >= 1000) {
 fps = tempFps;

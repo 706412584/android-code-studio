@@ -2,14 +2,7 @@ package ticode.zh.jvm;
 
 
 public abstract class 对象输出流 extends java.io.ObjectOutputStream {
-public 对象输出流 赋值_op(输出流 目标输出流) {
-try {
-return (对象输出流)new java.io.ObjectOutputStream(目标输出流);
-} catch (java.io.IOException e) {
-e.printStackTrace();
-return null;
-}
-}
+public 对象输出流(输出流 目标输出流) throws Exception { super(目标输出流); }
 
 public static 对象输出流 从路径创建(String 文件路径) {
 try {
@@ -24,6 +17,41 @@ public void 写出对象(序列化类 欲写出对象) {
 try {
 this.writeObject(欲写出对象);
 } catch (Exception e){
+e.printStackTrace();
+}
+}
+public void 写出(int 数据) {
+try {
+this.write(数据);
+} catch (Exception e) {
+e.printStackTrace();
+}
+}
+public void 写出字节集(byte[] 字节集) {
+try {
+this.write(字节集);
+} catch (Exception e) {
+e.printStackTrace();
+}
+}
+public void 写出字节集2(byte[] 字节集, int 起始索引, int 长度) {
+try {
+this.write(字节集,起始索引,长度);
+} catch (Exception e) {
+e.printStackTrace();
+}
+}
+public void 刷新() {
+try {
+this.flush();
+} catch (Exception e) {
+e.printStackTrace();
+}
+}
+public void 关闭() {
+try {
+this.close();
+} catch (Exception e) {
 e.printStackTrace();
 }
 }

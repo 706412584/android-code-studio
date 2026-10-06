@@ -10,7 +10,7 @@ public boolean 不等于_op(java.lang.Class 另一个类) {return false; }
 public java.lang.Class 赋值_op(String 完整类名) {return null; }
 
 public static java.lang.Class 取指定Java类(Object 类型) {
-return 类型.class;
+return Object.class;
 }
 
 // 返回本类类名

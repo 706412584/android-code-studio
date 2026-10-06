@@ -130,8 +130,8 @@ public static android.graphics.Bitmap 放大图片(android.graphics.Bitmap 图�
 if ((图片 == null || 倍率 <= 0)) {
 return null;
 }
-int 宽度 = 图片.宽度;
-int 高度 = 图片.高度;
+int 宽度 = 图片.getWidth();
+int 高度 = 图片.getHeight();
 int 新宽度 = 宽度 * 倍率;
 int 新高度 = 高度 * 倍率;
 int[] 像素数据组 = new int[宽度*高度];
@@ -149,7 +149,7 @@ int 位置x = x*倍率+x2;
 }
 }
 }
-android.graphics.Bitmap 新图片 = 位图对象.创建位图2(新高度,新宽度,图片.配置);
+android.graphics.Bitmap 新图片 = 位图对象.创建位图2(新高度,新宽度,图片.getConfig());
 新图片.setPixels(新像素数据组, 0, 新宽度, 0, 0, 新宽度, 新高度);
 return 新图片;
 }

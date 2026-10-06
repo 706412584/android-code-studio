@@ -1,7 +1,7 @@
 package ticode.zh.jvm;
 
 
-public abstract class Java泛型变量 extends Java类型 {
+public abstract class Java泛型变量 extends Java类型 implements java.lang.reflect.TypeVariable {
 
 public boolean 等于_op(java.lang.reflect.TypeVariable 另一个) {
 if (this == null) {
@@ -29,4 +29,7 @@ public java.lang.reflect.Type[] 限制类型() {
 return this.getBounds();
 }
 
+public String 类型名称() {
+return this.getTypeName();
+}
 }

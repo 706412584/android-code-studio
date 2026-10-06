@@ -3,9 +3,7 @@ package ticode.zh.jvm;
 
 public abstract class 大整数 extends java.math.BigInteger {
 
-public Object 赋值_op(String 值, int 基数) {
-return new java.math.BigInteger(值,基数);
-}
+public 大整数(String 值, int 基数) { super(值,基数); }
 
 public 大整数 加_op(大整数 另一个大整数) {
 return (大整数)加(另一个大整数);

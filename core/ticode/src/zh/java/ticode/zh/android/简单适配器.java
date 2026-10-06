@@ -6,7 +6,7 @@ import android.graphics.drawable.*;
 import android.view.*;
 
 public class 简单适配器 extends 通用适配器 {
-Integer 项目数;
+public Integer 项目数;
 
 public void 更新项目(int 项目总数) {
 this.项目数 = 项目总数;

@@ -5,16 +5,16 @@ import java.util.concurrent.*;
 
 public abstract class 长整数 extends 基本类型模板类<长整数类> {
 
-public String 到十六进制() {
-return Long.toHexString(this);
+public static String 到十六进制(long 值) {
+return Long.toHexString(值);
 }
 
-public String 到八进制() {
-return Long.toOctalString(this);
+public static String 到八进制(long 值) {
+return Long.toOctalString(值);
 }
 
-public String 到二进制() {
-return Long.toBinaryString(this);
+public static String 到二进制(long 值) {
+return Long.toBinaryString(值);
 }
 
 }

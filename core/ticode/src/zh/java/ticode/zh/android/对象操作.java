@@ -28,19 +28,28 @@ return 结果;
 }
 
 public static 哈希表 哈希表(键值对[] 值) {
-哈希表 结果;
+哈希表 结果 = new 哈希表();
 for (var v : 值) {
-结果[v.键] = v.值;
+结果.put(v.键, v.值);
 }
 return 结果;
 }
 
-public static Object 新建对象(Object 类型) {
-return new 类型();
+// 结绳 `变体型` 传类型名、用 `new #类型()` 动态实例化；Java 用反射等价实现。
+public static Object 新建对象(String 类型) {
+try {
+return Class.forName(类型).getDeclaredConstructor().newInstance();
+} catch (Exception e) {
+return null;
+}
 }
 
-public static 窗口组件 新建窗口组件(Object 类型, android.content.Context 环境) {
-return new 类型(环境);
+public static 窗口组件 新建窗口组件(String 类型, android.content.Context 环境) {
+try {
+return (窗口组件) Class.forName(类型).getDeclaredConstructor(android.content.Context.class).newInstance(环境);
+} catch (Exception e) {
+return null;
+}
 }
 
 

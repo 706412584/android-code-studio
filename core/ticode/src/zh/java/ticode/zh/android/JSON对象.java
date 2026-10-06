@@ -10,17 +10,7 @@ public abstract class JSON对象 extends org.json.JSONObject {
 
 
 
-public JSON对象 赋值_op(String JSON文本) {
-if(JSON文本 == null || JSON文本.isEmpty()) {
-throw new IllegalArgumentException("JSON文本不能为空");
-}
-
-try {
-return new JSONObject(JSON文本);
-} catch (Exception e) {
-throw new IllegalArgumentException(JSON_INIT_ERROR, e);
-}
-}
+public JSON对象(String JSON文本) throws Exception { super("JSON文本不能为空"); }
 
 
 

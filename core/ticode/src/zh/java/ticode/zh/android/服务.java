@@ -10,7 +10,7 @@ import android.graphics.drawable.*;
 
 public class 服务 extends 安卓服务 {
 
-static android.os.IBinder 中间件;
+public static android.os.IBinder 中间件;
 
 @Override
 public void onCreate() {
@@ -39,7 +39,7 @@ super.onDestroy();
 
 
 public void 置通信中间件(消息处理器 处理器) {
-中间件 = 信使.新建对象(处理器).取通信中间件();
+中间件 = 信使.新建对象(处理器).getBinder();
 }
 
 

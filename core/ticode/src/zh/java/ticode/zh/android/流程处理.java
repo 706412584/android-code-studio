@@ -22,6 +22,9 @@ import ticode.zh.base.异常;
 
 public class 流程处理 {
 public final static android.os.Handler mainHandler = new android.os.Handler(android.os.Looper.getMainLooper());
+// 结绳 `提交到新线程运行/结束提交到新线程` 是跨方法块宏（@嵌入式代码），转译后丢了壳。
+// 这里补上宏内部引用的 thread 字段，使 `等待新线程执行完毕()` 可编译。
+private static Thread thread;
 
 
 
@@ -72,8 +75,8 @@ return (true);
 
 
 
-public static Object 赋值(Object 变量名, Object 值) {
-return 变量名 = 值;
+public static void 赋值(Object 变量名, Object 值) {
+变量名 = 值;
 }
 
 
@@ -81,8 +84,8 @@ return 变量名 = 值;
 
 
 
-public static Object 自增(Object 自身变量, Object 自增值) {
-return 自身变量 += 自增值;
+public static void 自增(int 自身变量, int 自增值) {
+自身变量 += 自增值;
 }
 
 
@@ -90,8 +93,8 @@ return 自身变量 += 自增值;
 
 
 
-public static Object 自减(Object 自身变量, Object 自减值) {
-return 自身变量 -= 自减值;
+public static void 自减(int 自身变量, int 自减值) {
+自身变量 -= 自减值;
 }
 
 
@@ -99,8 +102,8 @@ return 自身变量 -= 自减值;
 
 
 
-public static Object 自乘(Object 自身变量, Object 自乘值) {
-return 自身变量 *= 自乘值;
+public static void 自乘(int 自身变量, int 自乘值) {
+自身变量 *= 自乘值;
 }
 
 
@@ -108,8 +111,8 @@ return 自身变量 *= 自乘值;
 
 
 
-public static Object 自除(Object 自身变量, Object 自除值) {
-return 自身变量 /= 自除值;
+public static void 自除(int 自身变量, int 自除值) {
+自身变量 /= 自除值;
 }
 
 public static void 容错运行(Object 代码) { }
@@ -130,7 +133,7 @@ public static void 提交到新线程运行() { }
 
 public static void 结束提交到新线程() { }
 
-public static Object 等待新线程执行完毕() {
+public static void 等待新线程执行完毕() {
 try {
 thread.join();
 } catch (Exception e) {

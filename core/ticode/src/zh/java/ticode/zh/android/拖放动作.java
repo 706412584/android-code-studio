@@ -2,11 +2,11 @@ package ticode.zh.android;
 
 
 public class 拖放动作 {
-public static final 拖放动作 开始拖放;
+public static final int 开始拖放;
 
-public static final 拖放动作 结束拖放;
+public static final int 结束拖放;
 
-public static final 拖放动作 放下;
+public static final int 放下;
 
 static {
 开始拖放 = android.view.DragEvent.ACTION_DRAG_STARTED;

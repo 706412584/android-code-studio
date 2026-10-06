@@ -2,7 +2,7 @@ package ticode.zh.android;
 
 import android.view.ViewGroup;
 
-public class 自定义组件 extends 布局组件 {
+public abstract class 自定义组件 extends 布局组件 {
 public 自定义组件(android.content.Context context) {
 super(context);
 }

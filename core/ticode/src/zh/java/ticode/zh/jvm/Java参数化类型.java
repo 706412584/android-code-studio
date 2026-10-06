@@ -1,7 +1,7 @@
 package ticode.zh.jvm;
 
 
-public abstract class Java参数化类型 extends Java类型 {
+public abstract class Java参数化类型 extends Java类型 implements java.lang.reflect.ParameterizedType {
 
 public boolean 等于_op(java.lang.reflect.ParameterizedType 另一个) {
 if (this == null) {
@@ -27,4 +27,7 @@ public java.lang.reflect.Type 类型() {
 return this.getRawType();
 }
 
+public String 类型名称() {
+return this.getTypeName();
+}
 }

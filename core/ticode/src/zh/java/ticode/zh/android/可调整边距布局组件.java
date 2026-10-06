@@ -6,7 +6,7 @@ import android.graphics.*;
 import android.view.*;
 import java.util.*;
 
-public class 可调整边距布局组件 extends 布局组件 {
+public abstract class 可调整边距布局组件 extends 布局组件 {
 public 可调整边距布局组件(android.content.Context context) {
 super(context);
 }

@@ -156,7 +156,7 @@ params.matchConstraintPercentHeight = computePercentage(比例);
 组件.getView().setLayoutParams(params);
 }
 
-public void 横向链式排列(可视化组件 组件, 链式排列规则 排列规则) {
+public void 横向链式排列(可视化组件 组件, int 排列规则) {
 ConstraintLayout.LayoutParams params = (ConstraintLayout.LayoutParams)组件.getView().getLayoutParams();
 if (params == null) {
 params = new ConstraintLayout.LayoutParams(-2, -2);
@@ -165,7 +165,7 @@ params.horizontalChainStyle = 排列规则;
 组件.getView().setLayoutParams(params);
 }
 
-public void 纵向链式排列(可视化组件 组件, 链式排列规则 排列规则) {
+public void 纵向链式排列(可视化组件 组件, int 排列规则) {
 ConstraintLayout.LayoutParams params = (ConstraintLayout.LayoutParams)组件.getView().getLayoutParams();
 if (params == null) {
 params = new ConstraintLayout.LayoutParams(-2, -2);

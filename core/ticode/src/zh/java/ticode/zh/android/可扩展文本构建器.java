@@ -1,6 +1,5 @@
 package ticode.zh.android;
 
-import android.text.SpannableStringBuilder;
 
 import ticode.zh.base.字符串;
 import ticode.zh.base.文本;
@@ -8,9 +7,7 @@ import ticode.zh.base.文本;
 public abstract class 可扩展文本构建器 extends android.text.SpannableStringBuilder {
 
 //字符串 包括 文本(String)
-public 可扩展文本构建器 赋值_op(CharSequence 初始字符串) {
-return (可扩展文本构建器)new SpannableStringBuilder(初始字符串);
-}
+public 可扩展文本构建器(CharSequence 初始字符串) { super(初始字符串); }
 
 public 可扩展文本构建器 加_op(Object 追加对象) {
 return (可扩展文本构建器)追加对象(追加对象);
@@ -24,7 +21,7 @@ return this.equals(另一个构建器);
 }
 
 public char 取索引_op(int 索引) {
-return 取字符(索引);
+return this.charAt(索引);
 }
 
 public 可扩展文本构建器 追加字符串(CharSequence 追加内容) {

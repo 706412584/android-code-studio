@@ -44,7 +44,7 @@ return isClose;
 }
 
 public void 开始监听(int 端口) {
-开始监听_内部(端口);
+开始监听_内部(端口,1024);
 }
 
 public void 开始监听_内部(int 端口, int 缓冲区大小) {
@@ -106,7 +106,7 @@ public void 发送字节集(String 地址, int 端口, byte[] 字节集) {
 }
 
 public void 发送文本_同步(String 地址, int 端口, String 内容) {
-发送字节集_同步(地址, 端口, 内容.到字节集());
+发送字节集_同步(地址, 端口, 内容.getBytes());
 }
 
 public void 发送字节集_同步(String 地址, int 端口, byte[] 字节集) {
@@ -135,5 +135,5 @@ public void 收到字节集(String 地址, int 端口, byte[] 字节集) { } // 
 
 public void 监听关闭() { } // 事件
 
-public void 发生异常(异常 异常原因) { } // 事件
+public void 发生异常(java.lang.Exception 异常原因) { } // 事件
 }

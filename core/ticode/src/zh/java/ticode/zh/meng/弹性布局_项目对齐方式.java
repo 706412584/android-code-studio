@@ -4,7 +4,7 @@ import com.google.android.flexbox.*;
 
 public class 弹性布局_项目对齐方式 {
 
-public static final Object 自动 = -1;
+public static final int 自动 = -1;
 public static final int 顶或左 = 0;
 public static final int 底或右 = 1;
 public static final int 居中 = 2;

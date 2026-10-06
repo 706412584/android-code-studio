@@ -11,7 +11,7 @@ import android.graphics.*;
 import android.graphics.drawable.*;
 import android.webkit.*;
 
-public class 复合按钮 extends 按钮 {
+public abstract class 复合按钮 extends 按钮 {
 public 复合按钮(android.content.Context context) {
 super(context);
 getView().setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener(){

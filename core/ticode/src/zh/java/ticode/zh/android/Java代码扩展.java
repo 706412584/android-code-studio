@@ -17,6 +17,7 @@ return 条件 ? 为真输出 : 为假输出;
 //等价于 赋值变量 = 条件 ? 为真赋值 : 为假赋值
 public static Object 三元判断赋值(Object 目标变量, boolean 条件, Object 为真赋值, Object 为假赋值) {
 目标变量 = 条件 ? 为真赋值 : 为假赋值;
+return 目标变量;
 }
 
 }

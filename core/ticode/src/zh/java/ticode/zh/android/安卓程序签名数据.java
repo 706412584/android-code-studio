@@ -17,9 +17,7 @@ return 另一个 != null;
 return !this.equals(另一个);
 }
 
-public 安卓程序签名数据 赋值_op(byte[] 签名数据) {
-return (安卓程序签名数据)new android.content.pm.Signature(签名数据);
-}
+public 安卓程序签名数据(byte[] 签名数据) { super(签名数据); }
 
 public static 安卓程序签名数据 从文本创建(String 签名数据) {
 return (安卓程序签名数据)new android.content.pm.Signature(签名数据);

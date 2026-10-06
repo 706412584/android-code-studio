@@ -13,7 +13,7 @@ import ticode.zh.jvm.集合;
 
 public class 高级列表项目触摸辅助器 extends ItemTouchHelper.Callback {
 
-高级列表框 列表;
+public 高级列表框 列表;
 
 ItemTouchHelper touchHelper;
 
@@ -93,7 +93,7 @@ touchHelper.startSwipe(列表.getView().findViewHolderForAdapterPosition(索引)
 
 //取消正在进行的 拖动或滑动 操作
 public void 取消项目操作() {
-touchHelper.cancel();
+touchHelper.attachToRecyclerView(null);
 }
 
 //交换项目视图(适配器)
@@ -107,7 +107,7 @@ java.util.Collections.swap((java.util.List)集合, 索引, 目标索引);
 
 //移除项目视图
 public void 移除项目(int 索引) {
-列表.取适配器().更新移除项目(索引);
+列表.取适配器().更新移除项目(索引,1);
 }
 
 public void 移除集合数据(Object 集合, int 索引) {
@@ -118,8 +118,8 @@ public void 移除集合数据(Object 集合, int 索引) {
 public boolean 项目被拖拽(组件容器 容器, int 索引, 组件容器 目标容器, int 目标索引) { return false; } // 事件
 //滑动结束后触发
 public void 项目被滑动(组件容器 容器, int 索引, int 方向) { } // 事件
-public void 项目状态改变(组件容器 容器, int 索引, 高级列表项目触摸状态 状态) { } // 事件
-public void 项目操作中(组件容器 容器, int 索引, double dX, double dY, 高级列表项目触摸状态 状态, boolean 手动操作) { } // 事件
+public void 项目状态改变(组件容器 容器, int 索引, int 状态) { } // 事件
+public void 项目操作中(组件容器 容器, int 索引, double dX, double dY, int 状态, boolean 手动操作) { } // 事件
 public void 项目操作结束(组件容器 容器, int 索引) { } // 事件
 
 }

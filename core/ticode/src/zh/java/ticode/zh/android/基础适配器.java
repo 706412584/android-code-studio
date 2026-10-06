@@ -12,4 +12,7 @@ public abstract class 基础适配器 extends android.widget.BaseAdapter {
 public void 通知_更新数据() {
 this.notifyDataSetChanged();
 }
+public int 项目数量() {
+return this.getCount();
+}
 }

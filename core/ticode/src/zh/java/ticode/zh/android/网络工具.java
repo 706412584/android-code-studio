@@ -31,28 +31,28 @@ import ticode.zh.base.文本;
 import ticode.zh.jvm.UUID;
 
 public class 网络工具 {
-java.util.Map<String,String> 请求头;
-boolean 是否支持重定向;
+public java.util.Map<String,String> 请求头;
+public boolean 是否支持重定向;
 
 
 
 
 public void 添加请求头(String 名称, String 值) {
-请求头[名称] = 值;
+请求头.put(名称, 值);
 }
 
 
 
 
 public void 移除请求头(String 名称) {
-请求头.删除项目(名称);
+请求头.remove(名称);
 }
 
 
 
 
 public void 清除请求头() {
-请求头.清空();
+请求头.clear();
 }
 
 
@@ -75,8 +75,8 @@ if (结果 == null) {
 取网页源码失败();
 } else {
 byte[] content = (byte[]) 结果[0];
-String cookie = (String) 结果[1];
-取网页源码结束(文本.从字节集创建(content, 编码), content, cookie);
+String cookie1 = (String) 结果[1];
+取网页源码结束(文本.从字节集创建(content, 编码), content, cookie1);
 }
 }
 
@@ -129,8 +129,8 @@ if (结果 == null) {
 发送数据失败();
 } else {
 byte[] content = (byte[]) 结果[0];
-String cookie = (String) 结果[1];
-发送数据结束(文本.从字节集创建(content, 编码), content, cookie);
+String cookie1 = (String) 结果[1];
+发送数据结束(文本.从字节集创建(content, 编码), content, cookie1);
 }
 }
 
@@ -223,8 +223,8 @@ if (结果 == null) {
 上传失败();
 } else {
 byte[] content = (byte[]) 结果[0];
-String cookie = (String) 结果[1];
-上传结束(文本.从字节集创建(content, 编码), content, cookie);
+String cookie1 = (String) 结果[1];
+上传结束(文本.从字节集创建(content, 编码), content, cookie1);
 }
 }
 
@@ -267,8 +267,8 @@ if (结果 == null) {
 上传失败();
 } else {
 byte[] content = (byte[]) 结果[0];
-String cookie = (String) 结果[1];
-上传结束(文本.从字节集创建(content, 编码), content, cookie);
+String cookie1 = (String) 结果[1];
+上传结束(文本.从字节集创建(content, 编码), content, cookie1);
 }
 }
 
@@ -392,8 +392,8 @@ boas.write(tmp, 0, len);
 byte[] result = boas.toByteArray();
 boas.close();
 is.close();
-String cookie = cok.toString();
-return new Object[]{result, cookie};
+String cookie1 = cok.toString();
+return new Object[]{result, cookie1};
 }
 } catch (Exception e) {
 e.printStackTrace();
@@ -402,7 +402,7 @@ return null;
 }
 
 public Object[] 上传_内部(String 网址, String 文件路径, String 键名, String 参数表文本, String cookie, int 超时, String 编码) {
-String BOUNDARY = UUID.randomUUID().toString(); //边界标识 随机生成;
+String BOUNDARY = java.util.UUID.randomUUID().toString(); //边界标识 随机生成;
 String PREFIX = "--", LINE_END = "\r\n";
 String CONTENT_TYPE = "multipart/form-data"; //内容类型;
 try {

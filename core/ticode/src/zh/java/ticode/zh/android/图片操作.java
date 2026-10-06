@@ -148,7 +148,7 @@ Bitmap bitmap2 = Bitmap.createBitmap(bitmap, xValue, yValue, pieceWidth, pieceHe
 pieces.add(Bitmap2Bytes(bitmap2));
 }
 }
-return pieces;
+return (集合)pieces;
 }
 
 //把图片倾斜处理，返回处理后的图片字节数组

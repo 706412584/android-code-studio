@@ -12,21 +12,21 @@ import android.graphics.drawable.*;
 import ticode.zh.jvm.Java类;
 
 public class 通知栏 {
-static int 通知栏_重要程度_最低 = 1;
-static int 通知栏_重要程度_低 = 2;
-static int 通知栏_重要程度_默认 = 3;
-static int 通知栏_重要程度_高 = 4;
-static int 通知栏_重要程度_最高 = 5;
+public static int 通知栏_重要程度_最低 = 1;
+public static int 通知栏_重要程度_低 = 2;
+public static int 通知栏_重要程度_默认 = 3;
+public static int 通知栏_重要程度_高 = 4;
+public static int 通知栏_重要程度_最高 = 5;
 
-int ID = 1;
-int 图标;
-String 标题 = "这是通知的标题";
-String 内容 = "这是通知的内容";
-String 提示 = "你有一条通知";
-int 重要程度 = 通知栏_重要程度_默认;
-boolean 自动取消 = true;
-String 渠道ID;
-String 渠道名称;
+public int ID = 1;
+public int 图标;
+public String 标题 = "这是通知的标题";
+public String 内容 = "这是通知的内容";
+public String 提示 = "你有一条通知";
+public int 重要程度 = 通知栏_重要程度_默认;
+public boolean 自动取消 = true;
+public String 渠道ID;
+public String 渠道名称;
 
 private Context mContext;
 private static NotificationManager notificationManager;

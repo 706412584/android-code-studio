@@ -2,9 +2,7 @@ package ticode.zh.jvm;
 
 
 public class 文件 extends java.io.File {
-public Object 赋值_op(String 文件路径) {
-return new java.io.File(文件路径);
-}
+public 文件(String 文件路径) { super(文件路径); }
 
 public static java.io.File 从路径创建(String 路径) {
 return (java.io.File)new java.io.File(路径);

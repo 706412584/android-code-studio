@@ -73,8 +73,8 @@ return 文件名;
 }
 
 public static String 取文件名(String 路径) {
-java.io.File 目标文件 = 路径;
-return (目标文件.取文件名());
+java.io.File 目标文件 = new java.io.File(路径);
+return (目标文件.getName());
 }
 
 public static String 取文件MD5(String 路径) {
@@ -440,15 +440,15 @@ return paths;
 
 public static void 取所有文件路径(String 目标路径, java.util.List<String> 输出结果) {
 java.io.File 目标 = 文件.从路径创建(目标路径);
-if (目标.为文件夹()) {
-Object 子文件数组 = 目标.取子文件数组();
+if (目标.isDirectory()) {
+java.io.File[] 子文件数组 = 目标.listFiles();
 if (子文件数组 != null) {
 for (var 子文件 : 子文件数组) {
-取所有文件路径(子文件.取绝对路径(),输出结果);
+取所有文件路径(子文件.getAbsolutePath(),输出结果);
 }
 }
 } else {
-输出结果.添加成员(目标.取绝对路径());
+输出结果.add(目标.getAbsolutePath());
 }
 }
 
@@ -521,7 +521,7 @@ return list.toArray(new String[list.size()]);
 }
 
 public static String[] 取子文件列表2(String 路径, int 排序方式, boolean 是否正序) {
-return 取子文件集合2(路径,排序方式,是否正序).到数组();
+return 取子文件集合2(路径,排序方式,是否正序).toArray(new String[0]);
 }
 
 public static String 取文件修改时间(String 路径) {

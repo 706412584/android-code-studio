@@ -13,8 +13,8 @@ import ticode.zh.android.适配器;
 
 public class 高级列表框 extends 可视化组件 {
 
-高级适配器 适配器;
-布局管理器 布局器;
+public 高级适配器 适配器;
+public 布局管理器 布局器;
 
 public 高级列表框(android.content.Context context) {
 super(context);
@@ -205,12 +205,13 @@ public 布局管理器 取布局管理器() {
 return 布局器;
 }
 
-public void 置分割线(分割线 分割线) {
-getView().addItemDecoration(分割线.getIDN());
+// 结绳的 `分割线` 类被 dedup_set 判定为无引用而丢弃；这里直接用框架类型。
+public void 置分割线(androidx.recyclerview.widget.RecyclerView.ItemDecoration 分割线) {
+getView().addItemDecoration(分割线);
 }
 
-public void 添分割线(分割线 分割线, int 索引) {
-getView().addItemDecoration(分割线.getIDN(), 索引);
+public void 添分割线(androidx.recyclerview.widget.RecyclerView.ItemDecoration 分割线, int 索引) {
+getView().addItemDecoration(分割线, 索引);
 }
 
 public void 取分割线(int 索引) {

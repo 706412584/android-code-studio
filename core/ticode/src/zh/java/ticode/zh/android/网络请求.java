@@ -61,10 +61,11 @@ HttpsURLConnection.setDefaultSSLSocketFactory(context.getSocketFactory());
 }
 }
 
-static int 全局网络请求超时 = 6000;
-static boolean 全局网络请求GZIP压缩 = false;
-static java.util.Map<String,String> 全局网络请求头;
-static Object 全局POST提交数据 = null;
+public static int 全局网络请求超时 = 6000;
+public static boolean 全局网络请求GZIP压缩 = false;
+public static java.util.Map<String,String> 全局网络请求头;
+public static 网络请求结果 httpGetResult;
+public static Object 全局POST提交数据 = null;
 
 public static int 取网络请求超时() {
 return 全局网络请求超时;
@@ -83,19 +84,19 @@ public static void 置网络请求GZIP压缩(boolean GZIP压缩) {
 }
 
 public static void 添加网络请求头(String 名称, String 值) {
-全局网络请求头.添加项目(名称, 值);
+全局网络请求头.put(名称, 值);
 }
 
 public static void 移除网络请求头(String 名称) {
-全局网络请求头.删除项目(名称);
+全局网络请求头.remove(名称);
 }
 
 public static void 清除网络请求头() {
-全局网络请求头.清空();
+全局网络请求头.clear();
 }
 
 public static 网络请求结果 GET同步请求(String 网址, String Cookie, String 编码) {
-网络请求结果 结果;
+网络请求结果 结果 = new 网络请求结果();
 Runnable runnable = new Runnable() {
 @Override
 public void run() {
@@ -127,7 +128,7 @@ public static void POST提交数据(Object 提交数据) {
 }
 
 public static 网络请求结果 POST同步请求(String 网址, String Cookie, String 编码) {
-网络请求结果 结果;
+网络请求结果 结果 = new 网络请求结果();
 Runnable runnable = new Runnable() {
 @Override
 public void run() {

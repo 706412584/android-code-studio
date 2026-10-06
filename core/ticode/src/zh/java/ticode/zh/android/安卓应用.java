@@ -40,7 +40,7 @@ application = (Application) currentApplicationMethod.invoke(null);
 } catch (Exception e) {
 }
 }
-return application;
+return (应用)application;
 }
 
 public void 即将创建() {

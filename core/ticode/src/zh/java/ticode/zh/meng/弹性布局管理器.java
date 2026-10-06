@@ -31,43 +31,43 @@ public int 子视图数量() {
 return getLM().getFlexItemCount();
 }
 
-public 弹性布局_主轴方向 主轴方向() {
+public int 主轴方向() {
 return getLM().getFlexDirection();
 }
 
-public void 主轴方向(弹性布局_主轴方向 方向) {
+public void 主轴方向(int 方向) {
 getLM().setFlexDirection(方向);
 }
 
-public 弹性布局_换行策略 换行策略() {
+public int 换行策略() {
 return getLM().getFlexWrap();
 }
 
-public void 换行策略(弹性布局_换行策略 策略) {
+public void 换行策略(int 策略) {
 getLM().setFlexWrap(策略);
 }
 
-public 弹性布局_主轴对齐方式 主轴对齐方式() {
+public int 主轴对齐方式() {
 return getLM().getJustifyContent();
 }
 
-public void 主轴对齐方式(弹性布局_主轴对齐方式 对齐) {
+public void 主轴对齐方式(int 对齐) {
 getLM().setJustifyContent(对齐);
 }
 
-public 弹性布局_侧轴对齐方式_多行 测轴对齐方式_多行() {
+public int 测轴对齐方式_多行() {
 return getLM().getAlignContent();
 }
 
-public void 侧轴对齐方式_多行(弹性布局_侧轴对齐方式_多行 对齐) {
+public void 侧轴对齐方式_多行(int 对齐) {
 getLM().setAlignContent(对齐);
 }
 
-public 弹性布局_侧轴对齐方式_单行 测轴对齐方式_单行() {
+public int 测轴对齐方式_单行() {
 return getLM().getAlignItems();
 }
 
-public void 侧轴对齐方式_单行(弹性布局_侧轴对齐方式_单行 对齐) {
+public void 侧轴对齐方式_单行(int 对齐) {
 getLM().setAlignItems(对齐);
 }
 

@@ -5,12 +5,12 @@ import java.io.*;
 
 public abstract class GZIP输入流 extends java.util.zip.GZIPInputStream {
 
-public GZIP输入流 赋值_op(输入流 输入流1) {
-try {
-return (GZIP输入流)new GZIPInputStream(输入流1);
-} catch(java.io.IOException e) {
-throw new RuntimeException(e.getMessage());
-}
-}
+public GZIP输入流(输入流 输入流1) throws Exception { super(输入流1); }
 
+public static 解压输入流 创建实例(输入流 输入流1, 解压器 解压器1) {
+return (解压输入流)new InflaterInputStream(输入流1, 解压器1);
+}
+public static 解压输入流 创建实例2(输入流 输入流1, 解压器 解压器1, int 大小) {
+return (解压输入流)new InflaterInputStream(输入流1, 解压器1, 大小);
+}
 }

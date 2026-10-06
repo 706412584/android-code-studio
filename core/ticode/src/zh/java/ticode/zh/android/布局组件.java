@@ -5,7 +5,7 @@ import android.graphics.*;
 import android.view.*;
 import java.util.*;
 
-public class 布局组件 extends 可视化组件 {
+public abstract class 布局组件 extends 可视化组件 {
 public 布局组件(android.content.Context context) {
 super(context);
 }

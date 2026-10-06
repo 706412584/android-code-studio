@@ -17,7 +17,7 @@ public static final String CPU指令集2;
 
 public static final String 设备参数;
 
-static String 显示屏参数;
+public static String 显示屏参数;
 
 public static final String 唯一识别码;
 

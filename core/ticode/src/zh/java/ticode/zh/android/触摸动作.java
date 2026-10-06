@@ -2,17 +2,17 @@ package ticode.zh.android;
 
 
 public class 触摸动作 {
-public static final 触摸动作 按下;
+public static final int 按下;
 
-public static final 触摸动作 移动;
+public static final int 移动;
 
-public static final 触摸动作 抬起;
+public static final int 抬起;
 
-public static final 触摸动作 多点按下;
+public static final int 多点按下;
 
-public static final 触摸动作 多点抬起;
+public static final int 多点抬起;
 
-public static final 触摸动作 取消;
+public static final int 取消;
 
 static {
 按下 = android.view.MotionEvent.ACTION_DOWN;

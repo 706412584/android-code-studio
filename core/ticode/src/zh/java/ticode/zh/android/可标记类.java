@@ -11,7 +11,7 @@ import android.graphics.drawable.*;
 import android.webkit.*;
 
 public class 可标记类 {
-Object 标记值;
+public Object 标记值;
 
 public void 标记(Object 标记值) {
 this.标记值 = 标记值;

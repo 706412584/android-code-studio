@@ -286,7 +286,7 @@ return getFWindow(标记);
 }
 
 public static 集合 取所有悬浮窗() {
-集合 集合;
+集合 集合 = new 集合();
 for (悬浮窗 fw : FMap.values())
 集合.add(fw);
 return 集合;

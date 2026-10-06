@@ -10,7 +10,7 @@ public class 应用操作 {
 
 public static boolean 应用是否已安装(android.content.Context 环境, String 应用包名) {
 try {
-安卓程序包信息 信息 = 环境.取程序包管理器().取程序包信息(应用包名);
+android.content.pm.PackageInfo 信息 = 环境.getPackageManager().getPackageInfo(应用包名,0);
 return 信息 != null;
 } catch (Exception e) { }
 return false;
@@ -39,7 +39,7 @@ intent.setData(Uri.parse("package:" + 应用包名));
 
 public static boolean 打开应用(android.content.Context 环境, String 应用包名) {
 try {
-android.content.Intent 启动信息1 = 环境.取程序包管理器().取程序启动信息(应用包名);
+android.content.Intent 启动信息1 = 环境.getPackageManager().getLaunchIntentForPackage(应用包名);
 启动信息1.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
 环境.startActivity(启动信息1);
 return true;

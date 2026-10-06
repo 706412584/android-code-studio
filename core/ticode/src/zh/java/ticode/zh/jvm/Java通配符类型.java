@@ -1,7 +1,7 @@
 package ticode.zh.jvm;
 
 
-public abstract class Java通配符类型 extends Java类型 {
+public abstract class Java通配符类型 extends Java类型 implements java.lang.reflect.WildcardType {
 
 public boolean 等于_op(java.lang.reflect.WildcardType 另一个) {
 if (this == null) {
@@ -27,4 +27,7 @@ public java.lang.reflect.Type[] 下边界限制类型() {
 return this.getLowerBounds();
 }
 
+public String 类型名称() {
+return this.getTypeName();
+}
 }

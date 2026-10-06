@@ -57,12 +57,20 @@ return bytes;
 }
 
 public JSON对象 到JSON对象() {
-JSON对象 json = 到文本();
-return json;
+try {
+return new JSON对象(到文本()) {};
+} catch (Exception e) {
+e.printStackTrace();
+return null;
+}
 }
 
 public JSON数组 到JSON数组() {
-JSON数组 json = 到文本();
-return json;
+try {
+return new JSON数组(到文本()) {};
+} catch (Exception e) {
+e.printStackTrace();
+return null;
+}
 }
 }

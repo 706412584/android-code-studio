@@ -65,4 +65,37 @@ public void 拆分名称(String 拆分名称) {
 this.splitName = 拆分名称;
 }
 
+public int 横幅资源id() {
+return this.banner;
+}
+public int 图标资源id() {
+return this.icon;
+}
+public int 标签资源id() {
+return this.labelRes;
+}
+public int 徽标资源id() {
+return this.logo;
+}
+public android.os.Bundle 元数据() {
+return (android.os.Bundle)this.metaData;
+}
+public String 名称() {
+return this.name;
+}
+public String 应用包名() {
+return this.packageName;
+}
+public String 获取标签(安卓程序包管理器 管理器) {
+return this.loadLabel(管理器).toString();
+}
+public 可绘制对象 获取图标(安卓程序包管理器 管理器) {
+return (可绘制对象)this.loadIcon(管理器);
+}
+public 可绘制对象 获取横幅(安卓程序包管理器 管理器) {
+return (可绘制对象)this.loadBanner(管理器);
+}
+public 可绘制对象 获取徽标(安卓程序包管理器 管理器) {
+return (可绘制对象)this.loadLogo(管理器);
+}
 }

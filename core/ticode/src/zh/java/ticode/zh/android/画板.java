@@ -33,7 +33,7 @@ super.onSizeChanged(w, h, oldw, oldh);
 @Override
 protected void onDraw(Canvas canvas) {
 super.onDraw(canvas);
-绘制操作(canvas);
+绘制操作((画布对象)canvas);
 }
 };
 return view;

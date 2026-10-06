@@ -121,7 +121,7 @@ public void 发送字节集(byte[] 字节集) {
 }
 
 public boolean 发送文本_同步(String 文本) {
-return 发送字节集_同步(文本.到字节集());
+return 发送字节集_同步(文本.getBytes());
 }
 
 public boolean 发送字节集_同步(byte[] 字节集) {
@@ -135,7 +135,7 @@ return false;
 
 public void 连接成功() { } // 事件
 
-public void 连接异常(异常 异常) { } // 事件
+public void 连接异常(java.lang.Exception 异常) { } // 事件
 
 public void 收到数据(String 文本, byte[] 字节集) { } // 事件
 

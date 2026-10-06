@@ -5,9 +5,7 @@ import java.io.*;
 
 public abstract class ZIP输入流 extends java.util.zip.ZipInputStream {
 
-public ZIP输入流 赋值_op(输入流 输入流1) {
-return (ZIP输入流)new ZipInputStream(输入流1);
-}
+public ZIP输入流(输入流 输入流1) { super(输入流1); }
 
 public static ZIP输入流 指定编码创建(输入流 输入流1, String 编码) {
 return (ZIP输入流)new ZipInputStream(输入流1,java.nio.charset.Charset.forName(编码));
@@ -31,4 +29,10 @@ throw new RuntimeException(e.getMessage());
 }
 }
 
+public static 解压输入流 创建实例(输入流 输入流1, 解压器 解压器1) {
+return (解压输入流)new InflaterInputStream(输入流1, 解压器1);
+}
+public static 解压输入流 创建实例2(输入流 输入流1, 解压器 解压器1, int 大小) {
+return (解压输入流)new InflaterInputStream(输入流1, 解压器1, 大小);
+}
 }

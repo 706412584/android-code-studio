@@ -2,14 +2,14 @@ package ticode.zh.jvm;
 
 import java.util.concurrent.*;
 
-public abstract class 并发集合模板类<T1> extends java.util.Vector {
+public abstract class 并发集合模板类<T1> extends java.util.Vector<T1> {
 
 public 并发集合模板类 赋值_op(T1[] 成员) {
 java.util.Vector<T1> list = new java.util.Vector<>(成员.length);
 for(T1 el : 成员) {
 list.add(el);
 }
-return list;
+return (并发集合模板类)list;
 }
 
 public T1 取索引_op(int 索引) {
@@ -71,7 +71,7 @@ this.remove(成员);
 
 
 public T1[] 到数组() {
-return this.toArray(new T1[0]);
+return this.toArray((T1[]) new Object[0]);
 }
 
 public void 打乱集合() {

@@ -2,13 +2,13 @@ package ticode.zh.jvm;
 
 
 public class 坐标 {
-Integer 横坐标;
-Integer 纵坐标;
+public Integer 横坐标;
+public Integer 纵坐标;
 
-public 坐标 赋值_op(int 横坐标, int 纵坐标) {
+public 坐标(int 横坐标, int 纵坐标) {
 this.横坐标 = 横坐标;
 this.纵坐标 = 纵坐标;
-return this;
+
 }
 
 

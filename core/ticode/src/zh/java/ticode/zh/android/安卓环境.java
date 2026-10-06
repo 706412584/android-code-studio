@@ -9,7 +9,7 @@ import static ticode.zh.android.流程处理.提交到主线程运行2;
 import static ticode.zh.android.流程处理.是否处于主线程;
 import static ticode.zh.android.流程处理.结束提交到主线程;
 
-public class 安卓环境 extends android.content.Context {
+public abstract class 安卓环境 extends android.content.Context {
 
 public static final int 绑定自动创建 = 0x1;
 
@@ -91,7 +91,7 @@ return (安卓程序包管理器)this.getPackageManager();
 
 public String 取自身版本名称() {
 try {
-return 取程序包管理器().取程序包信息(取自身包名()).版本名称;
+return this.getPackageManager().getPackageInfo(取自身包名(),0).versionName;
 } catch (Exception e) { }
 return "";
 }
@@ -107,7 +107,7 @@ return (java.io.File)this.getFilesDir();
 
 
 public String 取私有目录路径() {
-return 取私有目录().取绝对路径();
+return 取私有目录().getAbsolutePath();
 }
 
 
@@ -121,7 +121,7 @@ return (java.io.File)this.getCacheDir();
 
 
 public String 取内部私有缓存目录路径() {
-return 取内部私有缓存目录().取绝对路径();
+return 取内部私有缓存目录().getAbsolutePath();
 }
 
 public java.io.File 取私有缓存目录() {
@@ -151,7 +151,7 @@ return (java.io.File)this.getDataDir();
 
 
 public String 取数据目录路径() {
-return 取数据目录().取绝对路径();
+return 取数据目录().getAbsolutePath();
 }
 
 
@@ -165,7 +165,7 @@ return (java.io.File)Environment.getExternalStoragePublicDirectory(Environment.D
 
 
 public String 取公用下载目录路径() {
-return 取公用下载目录().取绝对路径();
+return 取公用下载目录().getAbsolutePath();
 }
 
 
@@ -179,7 +179,7 @@ return (java.io.File)Environment.getExternalStoragePublicDirectory(Environment.D
 
 
 public String 取公用图片目录路径() {
-return 取公用图片目录().取绝对路径();
+return 取公用图片目录().getAbsolutePath();
 }
 
 
@@ -193,6 +193,6 @@ return (java.io.File)Environment.getExternalStoragePublicDirectory(Environment.D
 
 
 public String 取公用文档目录路径() {
-return 取公用文档目录().取绝对路径();
+return 取公用文档目录().getAbsolutePath();
 }
 }

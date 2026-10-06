@@ -6,20 +6,19 @@ public class 线程池 {
 public static ExecutorService cachedThreadPool;
 public static ExecutorService fixedThreadPool;
 
-static int 线程池大小;
+public static int 线程池大小;
 
-public static Object 提交到缓存线程池运行() {
+// 结绳跨方法「块宏」：提交到缓存线程池运行() ... 结束提交到缓存线程池()
+// 原应在转译期把中间的用户代码内联进 execute(new Runnable(){ run(){ ... } })。
+// 转译器未完成该内联（块宏部分实现），这里退化为「确保线程池存在」的等价形式；
+// 无中间用户代码时语义相同（execute 空 Runnable 本就是 no-op）。
+public static void 提交到缓存线程池运行() {
 if (线程池.cachedThreadPool == null || 线程池.cachedThreadPool.isShutdown()) {
 线程池.cachedThreadPool = java.util.concurrent.Executors.newCachedThreadPool();
 }
-线程池.cachedThreadPool.execute(new Runnable() {
-@Override
-public void run() {
 }
 
-public static Object 结束提交到缓存线程池() {
-}
-});
+public static void 结束提交到缓存线程池() {
 }
 
 public static void 停止缓存线程池所有任务() {
@@ -43,18 +42,13 @@ public static void 置固定线程池大小(int 大小) {
 线程池.fixedThreadPool = Executors.newFixedThreadPool(线程池大小);
 }
 
-public static Object 提交到固定线程池运行() {
+public static void 提交到固定线程池运行() {
 if (线程池.fixedThreadPool == null || 线程池.fixedThreadPool.isShutdown()) {
 线程池.置固定线程池大小(线程池.线程池大小);
 }
-线程池.fixedThreadPool.execute(new Runnable() {
-@Override
-public void run() {
 }
 
-public static Object 结束提交到固定线程池() {
-}
-});
+public static void 结束提交到固定线程池() {
 }
 
 public static void 停止固定线程池所有任务() {

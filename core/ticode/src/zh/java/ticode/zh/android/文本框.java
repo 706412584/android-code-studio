@@ -311,14 +311,14 @@ getView().setText(ss);
 
 
 
-public void 高亮2(String[] 欲高亮文本数组, Object 高亮样式, Object 渲染类型) {
-String 文本框内容 = this.内容;
-可扩展文本 欲高亮内容 = 文本框内容;
-for (int i = 0; i < 取数组长度(欲高亮文本数组); i++) {
+public void 高亮2(String[] 欲高亮文本数组, Object 高亮样式, int 渲染类型) {
+String 文本框内容 = this.内容();
+可扩展文本 欲高亮内容 = new 可扩展文本(文本框内容) {};
+for (int i = 0; i < (欲高亮文本数组).length; i++) {
 java.util.regex.Pattern 表达式 = 正则表达式.编译("\\Q" + 欲高亮文本数组[i] + "\\E");
-java.util.regex.Matcher 匹配器 = 表达式.匹配(文本框内容);
-while (匹配器.匹配下一个()) {
-欲高亮内容.设置扩展(高亮样式,匹配器.取匹配开始位置(),匹配器.取匹配结束位置(),渲染类型);
+java.util.regex.Matcher 匹配器 = 表达式.matcher(文本框内容);
+while (匹配器.find()) {
+欲高亮内容.设置扩展(高亮样式,匹配器.start(),匹配器.end(),渲染类型);
 }
 }
 getView().setText(欲高亮内容);
