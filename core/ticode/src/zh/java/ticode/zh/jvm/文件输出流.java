@@ -1,12 +1,13 @@
 package ticode.zh.jvm;
 
 
-public abstract class 文件输出流 extends java.io.FileOutputStream {
+public class 文件输出流 extends java.io.FileOutputStream {
+public 文件输出流(String 文件路径) throws Exception { super(文件路径); }
 public 文件输出流(java.io.File 目标文件) throws Exception { super(目标文件); }
 
 public static 文件输出流 从路径创建(String 文件路径) {
 try {
-return (文件输出流)new java.io.FileOutputStream(文件路径);
+return new 文件输出流(文件路径);
 } catch (Exception e) {
 e.printStackTrace();
 }

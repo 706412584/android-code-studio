@@ -7,7 +7,8 @@ import android.graphics.Path;
 import android.graphics.RectF;
 import android.graphics.Bitmap;
 
-public abstract class 画布对象 extends android.graphics.Canvas {
+public class 画布对象 extends android.graphics.Canvas {
+public 画布对象(android.graphics.Bitmap 位图) { super(位图); }
 public static 画笔对象 默认画笔 = 画笔对象.创建画笔();
 
 private static Path path;
@@ -75,7 +76,7 @@ return bitmapCacheHandler;
 }
 
 public static 画布对象 创建画布(android.graphics.Bitmap 位图) {
-return (画布对象)new Canvas(位图);
+return new 画布对象(位图);
 }
 
 public int 保存() {

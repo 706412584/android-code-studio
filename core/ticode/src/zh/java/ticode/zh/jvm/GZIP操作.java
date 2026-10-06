@@ -7,7 +7,7 @@ public class GZIP操作 {
 
 public static byte[] 压缩字节集(byte[] 欲压缩数据) {
 try {
-字节集输出流 字节集输出流1 = (字节集输出流)new java.io.ByteArrayOutputStream();
+字节集输出流 字节集输出流1 = new 字节集输出流();
 GZIP输出流 GZIP输出流1 = 创建GZIP输出流(字节集输出流1);
 GZIP输出流1.write(欲压缩数据);
 字节集输出流1.flush();
@@ -20,8 +20,8 @@ throw new RuntimeException(e);
 
 public static byte[] 解压字节集(byte[] 欲解压数据) {
 try {
-字节集输入流 字节集输入流1 = (字节集输入流)new java.io.ByteArrayInputStream(欲解压数据);
-字节集输出流 字节集输出流1 = (字节集输出流)new java.io.ByteArrayOutputStream();
+字节集输入流 字节集输入流1 = new 字节集输入流(欲解压数据);
+字节集输出流 字节集输出流1 = new 字节集输出流();
 GZIP输入流 GZIP输入流1 = 创建GZIP输入流(字节集输入流1);
 byte[] 缓冲 = new byte[1024];
 int 长度 = GZIP输入流1.read(缓冲);
@@ -83,7 +83,7 @@ throw new RuntimeException(e);
 
 public static 文件输出流 创建文件输出流(java.io.File 文件1) {
 try {
-return (文件输出流)new java.io.FileOutputStream(文件1);
+return new 文件输出流(文件1);
 } catch (Exception e) {
 throw new RuntimeException("创建文件输出流失败：" + e.getMessage());
 }
@@ -91,7 +91,7 @@ throw new RuntimeException("创建文件输出流失败：" + e.getMessage());
 
 public static GZIP输出流 创建GZIP输出流(java.io.OutputStream 输出流1) {
 try {
-return (GZIP输出流)new java.util.zip.GZIPOutputStream(输出流1);
+return new GZIP输出流(输出流1);
 } catch (Exception e) {
 throw new RuntimeException("创建GZIP输出流失败：" + e.getMessage());
 }
@@ -99,7 +99,7 @@ throw new RuntimeException("创建GZIP输出流失败：" + e.getMessage());
 
 public static GZIP输入流 创建GZIP输入流(java.io.InputStream 输入流1) {
 try {
-return (GZIP输入流)new java.util.zip.GZIPInputStream(输入流1);
+return new GZIP输入流(输入流1);
 } catch (Exception e) {
 throw new RuntimeException("创建GZIP输入流失败：" + e.getMessage());
 }

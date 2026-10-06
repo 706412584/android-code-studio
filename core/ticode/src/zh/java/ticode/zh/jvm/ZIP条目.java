@@ -3,7 +3,10 @@ package ticode.zh.jvm;
 import java.util.zip.*;
 import java.io.*;
 
-public abstract class ZIP条目 extends java.util.zip.ZipEntry {
+public class ZIP条目 extends java.util.zip.ZipEntry {
+public ZIP条目(String 条目路径) { super(条目路径); }
+// 包装原生条目（ZipFile.getEntry/stream 返回的是原生 ZipEntry）
+public ZIP条目(java.util.zip.ZipEntry 条目) { super(条目); }
 public ZIP条目() { super(""); }
 
 public static final int 压缩方法_存储 = 0;
@@ -11,7 +14,7 @@ public static final int 压缩方法_压缩 = 8;
 
 public static ZIP条目 创建新条目(String 条目路径) {
 try {
-return (ZIP条目)new ZipEntry(条目路径);
+return new ZIP条目(条目路径);
 } catch(NullPointerException e) {
 throw new RuntimeException("路径不能为空");
 } catch(IllegalArgumentException e) {

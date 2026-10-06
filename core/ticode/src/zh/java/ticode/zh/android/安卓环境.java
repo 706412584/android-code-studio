@@ -21,9 +21,11 @@ public void 弹出提示(Object 内容, boolean 长时显示) {
 if (是否处于主线程()) {
 android.widget.Toast.makeText(this, String.valueOf(内容), 长时显示 ? 1 : 0).show();
 } else {
-提交到主线程运行2();
-android.widget.Toast.makeText(this, String.valueOf(内容), 长时显示 ? 1 : 0).show();
-结束提交到主线程();
+// 结绳跨方法块宏内联：提交到主线程运行2() ... 结束提交到主线程()
+// 注意：进入 Runnable 后 this 指向 Runnable，须用 安卓环境.this 指回环境。
+流程处理.mainHandler.post(new Runnable() { public void run() {
+android.widget.Toast.makeText(安卓环境.this, String.valueOf(内容), 长时显示 ? 1 : 0).show();
+}});
 }
 }
 

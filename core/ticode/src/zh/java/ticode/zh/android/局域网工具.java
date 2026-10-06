@@ -61,10 +61,11 @@ return "127.0.0.1";
 
 
 public static boolean IP地址是否连通(String IP地址, int 超时) {
-提交到新线程运行();
+// 结绳跨方法块宏内联（提交到新线程运行/结束提交到新线程/等待新线程执行完毕）
+Thread thread = new Thread(new Runnable() { public void run() {
 是否连通 = IP地址是否连通_同步(IP地址, 超时);
-结束提交到新线程();
-等待新线程执行完毕();
+}}); thread.start();
+try { thread.join(); } catch (Exception e) { }
 return 是否连通;
 }
 
@@ -83,10 +84,11 @@ return false;
 
 
 public static boolean 端口是否开放(int 端口, String IP地址, int 超时) {
-提交到新线程运行();
+// 结绳跨方法块宏内联（提交到新线程运行/结束提交到新线程/等待新线程执行完毕）
+Thread thread = new Thread(new Runnable() { public void run() {
 是否开放 = 端口是否开放_同步(端口, IP地址, 超时);
-结束提交到新线程();
-等待新线程执行完毕();
+}}); thread.start();
+try { thread.join(); } catch (Exception e) { }
 return 是否开放;
 }
 

@@ -1,12 +1,12 @@
 package ticode.zh.jvm;
 
 
-public abstract class 对象输入流 extends java.io.ObjectInputStream {
-public 对象输入流(输入流 目标输入流) throws Exception { super(目标输入流); }
+public class 对象输入流 extends java.io.ObjectInputStream {
+public 对象输入流(java.io.InputStream 目标输入流) throws Exception { super(目标输入流); }
 
 public static 对象输入流 从路径创建(String 文件路径) {
 try {
-return (对象输入流)new java.io.ObjectInputStream(new java.io.FileInputStream(文件路径));
+return new 对象输入流(new java.io.FileInputStream(文件路径));
 } catch (Exception e) {
 e.printStackTrace();
 }

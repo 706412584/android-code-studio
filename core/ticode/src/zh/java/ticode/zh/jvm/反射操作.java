@@ -185,7 +185,7 @@ return null;
 
 
 public static Dex类加载器 加载Dex文件(android.content.Context 环境, String Dex文件路径, String so库搜寻目录) {
-return (Dex类加载器)new dalvik.system.DexClassLoader(Dex文件路径, 环境.getCodeCacheDir().getAbsolutePath(), so库搜寻目录, 环境.getClassLoader());
+return new Dex类加载器(Dex文件路径, 环境.getCodeCacheDir().getAbsolutePath(), so库搜寻目录, 环境.getClassLoader());
 }
 
 }

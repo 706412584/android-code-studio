@@ -80,7 +80,7 @@ if (索引 != -1) {
 java.io.File 目录2 = 文件.新建对象(输出文件夹路径, 条目路径.substring(0, (索引 - 1) + 1));
 目录2.mkdirs();
 }
-输入流 输入流1 = zip.取输入流(条目);
+java.io.InputStream 输入流1 = zip.取输入流(条目);
 java.io.File 文件1 = 文件.新建对象(输出文件夹路径, 条目路径);
 文件输出流 文件输出流1 = 创建文件输出流(文件1);
 byte[] 字节数组 = new byte[1024];
@@ -104,7 +104,7 @@ try {
 ZIP文件 zip = ZIP文件.指定编码创建(ZIP路径, "UTF-8");
 ZIP条目 条目 = zip.取条目(欲解压文件条目路径);
 if (条目 != null) {
-输入流 输入流1 = zip.取输入流(条目);
+java.io.InputStream 输入流1 = zip.取输入流(条目);
 java.io.File 文件1 = new java.io.File(输出路径);
 文件输出流 文件输出流1 = 创建文件输出流(文件1);
 byte[] 字节数组 = new byte[1024];
@@ -124,7 +124,7 @@ throw new RuntimeException(e);
 
 public static 文件输出流 创建文件输出流(java.io.File 文件1) {
 try {
-return (文件输出流)new java.io.FileOutputStream(文件1);
+return new 文件输出流(文件1);
 } catch (Exception e) {
 throw new RuntimeException("创建文件输出流失败：" + e.getMessage());
 }
@@ -132,7 +132,7 @@ throw new RuntimeException("创建文件输出流失败：" + e.getMessage());
 
 public static ZIP输出流 创建ZIP输出流(java.io.OutputStream 输出流1) {
 try {
-return (ZIP输出流)new java.util.zip.ZipOutputStream(输出流1);
+return new ZIP输出流(输出流1);
 } catch (Exception e) {
 throw new RuntimeException("创建ZIP输出流失败：" + e.getMessage());
 }

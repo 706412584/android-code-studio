@@ -1,7 +1,7 @@
 package ticode.zh.jvm;
 
 
-public abstract class 字节集输入流 extends java.io.ByteArrayInputStream {
+public class 字节集输入流 extends java.io.ByteArrayInputStream {
 public 字节集输入流(byte[] 字节集) { super(字节集); }
 public int 读取() {
 try {

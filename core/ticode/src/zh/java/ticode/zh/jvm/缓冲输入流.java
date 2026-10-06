@@ -1,12 +1,12 @@
 package ticode.zh.jvm;
 
 
-public abstract class 缓冲输入流 extends java.io.BufferedInputStream {
-public 缓冲输入流(输入流 目标输入流) { super(目标输入流); }
+public class 缓冲输入流 extends java.io.BufferedInputStream {
+public 缓冲输入流(java.io.InputStream 目标输入流) { super(目标输入流); }
 
 public static 缓冲输入流 从路径创建(String 文件路径) {
 try {
-return (缓冲输入流)new java.io.BufferedInputStream(new java.io.FileInputStream(文件路径));
+return new 缓冲输入流(new java.io.FileInputStream(文件路径));
 } catch (Exception e) {
 e.printStackTrace();
 }

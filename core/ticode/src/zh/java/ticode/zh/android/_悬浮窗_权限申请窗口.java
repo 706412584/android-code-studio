@@ -31,9 +31,11 @@ toSetting(this);
 }
 
 public void 获得返回数据(int 请求码, int 结果码, android.content.Intent 数据) {
-提交到新线程运行();
+// 结绳跨方法块宏内联：新线程(提交到新线程运行...结束提交到新线程)
+// + 主线程(提交到主线程运行(this)...结束提交到主线程)，两层嵌套。
+Thread thread = new Thread(new Runnable() { public void run() {
 延时(100);
-提交到主线程运行(this);
+_悬浮窗_权限申请窗口.this.runOnUiThread(new Runnable() { public void run() {
 if(请求码 == 1010) {
 if (isPermission(_悬浮窗_权限申请窗口.this)) {
 if(mListener != null) mListener.onSuccess();
@@ -48,8 +50,8 @@ if(mListener != null) mListener.onSuccess();
 }
 mListener = null;
 关闭窗口();
-结束提交到主线程();
-结束提交到新线程();
+}});
+}}); thread.start();
 }
 
 public static FPListener mListener;

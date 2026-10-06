@@ -205,7 +205,12 @@ public 布局管理器 取布局管理器() {
 return 布局器;
 }
 
-// 结绳的 `分割线` 类被 dedup_set 判定为无引用而丢弃；这里直接用框架类型。
+// 结绳的 `分割线` 家族（分割线/线性分割线/宫格分割线/瀑布流分割线）依赖
+// com.Meng.decoration.SpacesItemDecoration —— 那些 @外部Java文件 从未随库发布，
+// 本机无源码，无法编译；dedup_set 据此整体丢弃（其「被引用 0 次」的判定是错的，
+// 高级列表框 确实引用了 分割线）。
+// 这里改用框架类型承接：用户可传 androidx 自带的 DividerItemDecoration 或自定义实现，
+// 比原来的固定分割线类更灵活。若日后拿到 SpacesItemDecoration 源码，可从 dedup 放回。
 public void 置分割线(androidx.recyclerview.widget.RecyclerView.ItemDecoration 分割线) {
 getView().addItemDecoration(分割线);
 }

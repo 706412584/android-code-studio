@@ -111,10 +111,11 @@ byte[] bytes = httpRequest(结果, 网址, Cookie, 编码, "GET");
 }
 };
 if (是否处于主线程()) {
-提交到新线程运行();
+// 结绳跨方法块宏内联：提交到新线程运行() ... 结束提交到新线程() + 等待新线程执行完毕()
+Thread thread = new Thread(new Runnable() { public void run() {
 runnable.run();
-结束提交到新线程();
-等待新线程执行完毕();
+}}); thread.start();
+try { thread.join(); } catch (Exception e) { }
 } else {
 runnable.run();
 }
@@ -143,10 +144,11 @@ byte[] bytes = httpRequest(结果, 网址, Cookie, 编码, "POST");
 }
 };
 if (是否处于主线程()) {
-提交到新线程运行();
+// 结绳跨方法块宏内联：提交到新线程运行() ... 结束提交到新线程() + 等待新线程执行完毕()
+Thread thread = new Thread(new Runnable() { public void run() {
 runnable.run();
-结束提交到新线程();
-等待新线程执行完毕();
+}}); thread.start();
+try { thread.join(); } catch (Exception e) { }
 } else {
 runnable.run();
 }

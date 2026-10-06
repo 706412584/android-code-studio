@@ -12,8 +12,8 @@ throw new RuntimeException("找不到类：" + 完整类名);
 }
 }
 
-public 输入流 取资源输入流(String 资源名) {
-return (输入流)this.getResourceAsStream(资源名);
+public java.io.InputStream 取资源输入流(String 资源名) {
+return this.getResourceAsStream(资源名);
 }
 
 public Java类加载器 取父加载器() {

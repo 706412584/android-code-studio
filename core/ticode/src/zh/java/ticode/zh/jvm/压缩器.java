@@ -5,7 +5,8 @@ import java.io.*;
 
 import static ticode.zh.android.数组操作.取数组长度;
 
-public abstract class 压缩器 extends java.util.zip.Deflater {
+public class 压缩器 extends java.util.zip.Deflater {
+public 压缩器(int 压缩等级, boolean GZIP兼容) { super(压缩等级, GZIP兼容); }
 
 public static final int 压缩等级_默认 = -1;
 public static final int 压缩等级_无压缩 = 0;
@@ -21,7 +22,7 @@ public 压缩器(int 压缩等级) { super(压缩等级); }
 
 // 创建使用GZIP兼容压缩的压缩器
 public static 压缩器 创建GZIP兼容压缩器(int 压缩等级) {
-return (压缩器)new Deflater(压缩等级,true);
+return new 压缩器(压缩等级,true);
 }
 
 // 设置压缩级别 0-9

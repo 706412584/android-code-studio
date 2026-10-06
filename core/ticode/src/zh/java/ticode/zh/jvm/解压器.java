@@ -5,11 +5,12 @@ import java.io.*;
 
 import static ticode.zh.android.数组操作.取数组长度;
 
-public abstract class 解压器 extends java.util.zip.Inflater {
+public class 解压器 extends java.util.zip.Inflater {
+public 解压器(boolean GZIP兼容) { super(GZIP兼容); }
 
 // 创建使用GZIP兼容压缩的压缩器
 public static 解压器 创建GZIP兼容解压器() {
-return (解压器)new Inflater(true);
+return new 解压器(true);
 }
 
 // 获取ADLER-32值
