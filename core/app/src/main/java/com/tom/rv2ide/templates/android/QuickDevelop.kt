@@ -656,7 +656,8 @@ class QuickDevelop : Template {
       ## UI 组件
 
       $uiCount 个中文组件，覆盖容器 / 文本 / 输入 / 列表 / 系统控件等。
-      全部支持链式调用，且都有等价的英文别名。
+      全部支持链式调用；除 7 个基础控件（视图 / 线性布局 / 约束布局 / 文本 / 按钮 / 输入框 / 页面）
+      外，其余扩展控件都有等价的英文别名。
 
       详见 **[ui/README.md](app/src/main/java/$packageId/ui/README.md)**。
 

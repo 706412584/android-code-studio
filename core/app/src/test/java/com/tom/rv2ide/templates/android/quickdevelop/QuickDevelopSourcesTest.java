@@ -60,6 +60,36 @@ public class QuickDevelopSourcesTest {
     assertEquals(BASE_COUNT + EXTRA_COUNT * 2, components().size());
   }
 
+  /**
+   * 除 `页面`（Activity 基类，不是视图）外，**每个中文组件都必须有五个通用样式方法**。
+   *
+   * <p>钉住 `ui/README.md` 的承诺「所有组件都提供下面五个方法」。曾有此 bug：
+   * `文本`/`按钮`/`输入框` 继承 TextView/MaterialButton/TextInputEditText，拿不到
+   * 基类 `视图` 的实例样式方法，用户照文档抄 `new 文本(this).背景(...)` 就编译失败。
+   * `约束布局` 则是漏了协变返回类型的 override，`.背景(...)` 后链式断掉。
+   *
+   * <p>只查中文类：英文别名 {@code extends 中文类}，**继承**全部方法，源码里当然没有
+   * 这些方法名（它只有构造器）。
+   */
+  @Test
+  public void everyComponentExposesCommonStyleMethods() {
+    String[] styles = {"背景", "圆角", "内边距", "外边距", "权重"};
+    for (Pair<String, String> c : components()) {
+      String name = c.getFirst();
+      if ("页面".equals(name)) {
+        continue; // Activity 基类，无视图样式
+      }
+      if (name.matches("[A-Za-z0-9_]+")) {
+        continue; // 英文别名：extends 中文类，继承全部方法，源码里只有构造器
+      }
+      for (String m : styles) {
+        assertTrue(
+            name + " 缺少通用样式方法 " + m + "(...)——文档承诺所有组件都有，用户照抄会编译失败",
+            c.getSecond().contains(" " + m + "("));
+      }
+    }
+  }
+
   /** 重名会让生成的工程直接编译失败（同包下两个同名类）。 */
   @Test
   public void classNamesAreUnique() {

@@ -450,9 +450,73 @@ object QuickDevelopSources {
               set.applyTo(内部);
               return this;
           }
+
+          // 与 线性布局 同理：重写基类链式方法，把返回类型收窄为 约束布局，
+          // 否则 `new 约束布局(ctx).背景(c).居中(v)` 在 `.背景(c)` 后静态类型退化为
+          // 视图，`.居中` 找不到。协变返回类型解决，代价是每个方法一行样板。
+
+          @Override
+          public 约束布局 背景(int color) {
+              super.背景(color);
+              return this;
+          }
+
+          @Override
+          public 约束布局 圆角(float radiusDp) {
+              super.圆角(radiusDp);
+              return this;
+          }
+
+          @Override
+          public 约束布局 内边距(float paddingDp) {
+              super.内边距(paddingDp);
+              return this;
+          }
+
+          @Override
+          public 约束布局 外边距(float marginDp) {
+              super.外边距(marginDp);
+              return this;
+          }
+
+          @Override
+          public 约束布局 权重(float weight) {
+              super.权重(weight);
+              return this;
+          }
       }
   """
           .trimIndent()
+
+  /**
+   * 生成「通用样式方法」的源码片段（供**不继承 [视图]** 的基础控件复用）。
+   *
+   * <p>为什么需要它：`文本`/`按钮`/`输入框` 分别继承 `TextView`/`MaterialButton`/
+   * `TextInputEditText`，拿不到 [视图] 的实例样式方法；但 `ui/README.md` 承诺
+   * 「所有组件都提供这五个方法」。缺了就是「用户照文档抄 → 编译失败」。
+   *
+   * <p>一律走 [视图] 的静态辅助（`视图.设背景(this, …)`），返回本类以便链式不断。
+   * 输出每行缩进 4 空格，与 `trimIndent()` 后的类体对齐。
+   *
+   * @param skip 该类已手写的方法名（如 `文本` 已有 `外边距`）——**必须跳过**，
+   *   否则生成重复方法、javac 报「已在 类 中定义了方法」。
+   */
+  private fun styleMethods(className: String, vararg skip: String): String =
+      listOf(
+              "背景" to "int color",
+              "圆角" to "float radiusDp",
+              "内边距" to "float paddingDp",
+              "外边距" to "float marginDp",
+              "权重" to "float weight",
+          )
+          .filter { it.first !in skip }
+          .joinToString("\n\n") { (name, params) ->
+            val arg = params.substringAfterLast(' ')
+            "    public $className $name($params) {\n" +
+                "        视图.设$name(this, $arg);\n" +
+                "        return this;\n" +
+                "    }"
+          }
 
   /** 生成 `文本`。 */
   fun textJava(packageId: String): String =
@@ -503,9 +567,12 @@ object QuickDevelopSources {
               }
               return this;
           }
+
+      @STYLE_METHODS_TEXT@
       }
   """
           .trimIndent()
+          .replace("@STYLE_METHODS_TEXT@", styleMethods("文本", "外边距"))
 
   /** 生成 `按钮`。 */
   fun buttonJava(packageId: String): String =
@@ -561,9 +628,12 @@ object QuickDevelopSources {
               setLayoutParams(params);
               return this;
           }
+
+      @STYLE_METHODS_BUTTON@
       }
   """
           .trimIndent()
+          .replace("@STYLE_METHODS_BUTTON@", styleMethods("按钮"))
 
   /**
    * 生成 `输入框`。
@@ -602,9 +672,12 @@ object QuickDevelopSources {
               CharSequence text = getText();
               return text == null ? "" : text.toString();
           }
+
+      @STYLE_METHODS_INPUT@
       }
   """
           .trimIndent()
+          .replace("@STYLE_METHODS_INPUT@", styleMethods("输入框"))
 
   /**
    * 生成 `页面`（AppCompatActivity 基类）。
@@ -1526,7 +1599,7 @@ object QuickDevelopSources {
 
     // ---- 通用样式 ----
     builder.append("## 通用样式方法\n\n")
-    builder.append("所有组件都提供下面五个方法，返回自身以便链式继续：\n\n")
+    builder.append("除 `页面`（它是 Activity 基类，不是视图）外，所有组件都提供下面五个方法，返回自身以便链式继续：\n\n")
     builder.append("| 方法 | 参数 | 说明 |\n|---|---|---|\n")
     builder.append("| `背景(int color)` | ARGB 颜色 | 纯色背景 |\n")
     builder.append("| `圆角(float dp)` | 半径 dp | 圆角（`卡片` 走 CardView 自身的 radius） |\n")
