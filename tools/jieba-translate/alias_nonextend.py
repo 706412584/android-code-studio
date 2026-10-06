@@ -38,6 +38,8 @@ NON_EXTEND = {
     '记录集': 'android.database.Cursor',
     '适配器': 'android.widget.Adapter',
     '通信中间件': 'android.os.IBinder',
+    '可枚举类': 'java.util.Iterable',
+    '可枚举条目类': 'java.util.Map',
 }
 
 NON_EXTEND_KIND = {
@@ -59,4 +61,6 @@ NON_EXTEND_KIND = {
     '记录集': 'interface',
     '适配器': 'interface',
     '通信中间件': 'interface',
+    '可枚举类': 'interface',
+    '可枚举条目类': 'interface',
 }

@@ -1,0 +1,174 @@
+# 结绳 (.t) → Java 移植进度锚点
+
+> 最后更新：2026-10-06（从会话 `e5e3dfa8` 恢复后实测校准）
+> 失败项明细见同目录 **`INVENTORY.md`**。
+
+---
+
+## 0. 一句话现状
+
+**中文版（`src/zh/java`）编译 0 错误**（2026-10-06 手工批量修复，334 文件全通过）。
+**英文版（`src/main/java`）是 657 处** —— 比中文版差 5 倍，**不是同构**（早期误判已证伪，见 §1 注）。
+
+### 已知语义残留（编译通过但功能未完整，需后续处理）
+
+1. **跨方法块宏未内联**：`流程处理` / `线程池` 里的
+   `提交到新线程运行() ... 结束提交到新线程()`、`提交到缓存/固定线程池运行() ...`
+   是结绳的**跨方法块宏**（`@嵌入式代码` 开一个 `new Runnable(){ run(){`，另一个方法闭合）。
+   转译器只做了部分内联，我按「退化为确保线程池/线程存在」处理。
+   **若用户代码在宏中间写了内容，那段内容不会被执行**。需按实际用例补内联。
+2. **`分割线` 家族被 dedup 丢弃**：`高级列表框` 的分割线方法改用框架类型
+   `RecyclerView.ItemDecoration` 承接。若模板需要 `分割线` 类，要从 `dedup_set.py` 放回。
+3. **`简易无障碍.java` 生成到输出根目录**（源码 `包名` 是注释掉的，设计如此），
+   不在 `ticode/zh/*` 包内，需单独处理或忽略。
+
+### ⚠️ 关键教训：绝不重新生成
+
+手工修复直接改在 `src/zh/java`。**任何 `translate.py` 重新生成都会覆盖这些修复**。
+要改转译器规则时，必须把改动**回灌**到已生成的树上，或先备份。
+
+---
+
+## 1. 产物地址（重要：仓库那份是旧的！）
+
+| 产物 | 路径 | 错误数 | 说明 |
+|---|---|---|---|
+| **中文版（目标）** | `core/ticode/src/zh/java` | **0** | 手工修复后，**以此为准** |
+| 英文版 | `core/ticode/src/main/java` | **657** | 另需一个 5 倍大的工程；暂缓 |
+| 旧快照 | `D:\android\tmp\jbb-zh-java` | 135 | 修复前的中文版，仅作对照 |
+
+> ⚠️ **英文版比中文版差 5 倍**：`src/main/java` 与 `D:\android\tmp\gen-en-new` 内容完全相同（332/334 文件 md5 一致），
+> 差异只在 2 个文件。早期把「12 错」当成英文版基线是**错的** —— 那 12 处是级联假象，
+> 打掉后英文版真实是 **657** 处（zh 树因 dedup 丢弃了 `ExtraResourceManager` 等更多问题类，所以干净得多）。
+> `gen-en-new` 那 12 处是**同一棵树**（英文），与 zh 无关。
+> **中文版始终是正确路线**，英文版是后续独立工程。
+
+### 源码（结绳 .t）
+```
+D:\android\tmp\jbb\源代码\            42 个顶层 .t
+D:\android\tmp\jbb\源代码\AndroidX\    8 个 .t
+D:\android\tmp\jbb\依赖库\
+```
+**50 个 .t → 333 个类**（文件少但单个大：`安卓_可视化组件.t` 80KB、`结绳_工具类.t` 62KB）。
+
+---
+
+## 2. 编译方法（别再跑 Gradle，2 秒的事）
+
+```bash
+cd core/ticode
+export JAVA_HOME="C:/Users/70641/.gradle/jdks/eclipse_adoptium-21-amd64-windows.2"
+CP="libs/android.jar"; for j in libs/*.jar libs/androidx/*.jar; do CP="$CP;$(cygpath -w "$j")"; done
+find <产物目录> -name '*.java' | sed 's|^/d/|D:/|' > srcs.txt   # 路径必须 Windows 式
+"$JAVA_HOME/bin/javac" -encoding UTF-8 -nowarn -Xmaxerrs 2000 \
+  -d <out> -classpath "$CP" @srcs.txt 2> err.txt
+iconv -f GBK -t UTF-8 -c err.txt > err_utf8.txt
+```
+
+**单次全量 javac 约 2 秒**（不是会话里说的 3–9 分钟——那是 Gradle 转译+编译+转码全流程）。
+**别再「改一处编译一次」**：拿一次全量清单，批量改完再编。
+
+---
+
+## 3. 错误轨迹（实测校准）
+
+| 阶段 | 错误数 | 状态 |
+|---|---|---|
+| 初始 | 1002 | — |
+| 别名表精简 | 992 | 已提交 `306775e` |
+| 三线并行 | 439 | 已提交 `dc90b7b` |
+| 完整补丁序列 | 415 | 已提交 `a07c173` |
+| 会话后期修复 | 135 | 手工修复前的中文版基线 |
+| **手工批量修复（2026-10-06）** | **0** | **未提交**（4 路并行：D 27 / C 26 / B 38 / 小簇 31，共改 144 文件） |
+
+> 会话里报的「12 处」是**假象**：`属性写` 内的 `变量` 被生成成方法体内 `public int 方向;`（非法），
+> 触发 parse 失败 → 整个文件级联报错，把后续 123 处真实错误全掩盖了。打掉这 1 处后暴露 135 处。
+
+---
+
+## 4. 失败项分组（详见 INVENTORY.md）
+
+**全部完成（2026-10-06，4 路并行手工修复 + 主 agent 收尾级联）：**
+
+| 组 | 处数 | 状态 | 修法摘要 |
+|---|---|---|---|
+| D java.lang.reflect / 泛型壳 | 27 | ✅ | 壳类补 `implements ParameterizedType/TypeVariable/...`；反射调用桥接 |
+| C 流链包装类 ↔ 原生流 | 26 | ✅ | ZIP/GZIP/File 流构造与赋值 + try/catch IOException |
+| 小簇 J1/J3/J4/J5/J6/I/K | 31 | ✅ | 属性读写转方法、`PendingIntent.*` 静态、Path 桥接、反射新建对象… |
+| B 框架原生对象 ↔ 中文壳 | 38 | ✅ | 壳类改「持有内部对象」、类型转换、`Message.obtain`… |
+| 收尾级联（主 agent） | ~30 | ✅ | 解开类型错误掩盖的「缺返回语句 / 未初始化变量 / IOException / 块宏」 |
+
+> **级联效应**：修好类型错误后，原本被掩盖的**真实缺陷**才暴露（如 `安卓线程`/`流程处理`/`常用操作`
+> 的「缺返回语句」、`网络请求`/`悬浮窗`/`颜色操作` 的「未初始化变量」、GZIP/ZIP 的 `IOException`）。
+> 这些不是回归，是一直存在、被前序错误挡住的问题。
+
+**另有 1 处机械性 bug（已修）**：`parse_switch` 生成 `case X:` **不补 `break;`** →
+全库 **13 处 switch 真穿透**（编译能过，语义错，会覆盖返回值）。已手工插入 `break;`。
+转译器 `parse_switch` **尚未修**，重新生成会复现。
+
+---
+
+## 5. 打法（用户已定）
+
+- **不要「修一个跑一次编译」** —— 一次全量 2 秒，但改一处编一次仍浪费时间；批量改。
+- **不要再用转译器去逐个修错误** —— 手动改更快；**只有机械性错误才回退到转译器**（如 switch 补 break、属性读写全局转换）。
+- **并行代理/团队**：D / C / B 三组互相独立，各派一个 agent；小簇 J1/J3/… 是单点全局改造，留给主 agent。
+- **手工优先于转译器**：只有**机械性**错误才回灌转译器（见 §4 的 switch break），其余一律手改。
+
+### 编译工具
+
+`tools/ticode-compile.sh [zh|en]` —— 单次全量 javac（约 2 秒，不跑 Gradle），输出错误总数 + 按文件聚合 + 明细。
+已配好 `JAVA_HOME` / classpath / GBK→UTF-8 转码。**改完一批再编，不要改一处编一次。**
+
+---
+
+## 6. 需要用户拍板的结构性决策（阻塞 B/A/C/D 的一部分）
+
+结绳语义与 Java 类型系统**根本冲突**：
+- `文本 : 字符串` + `@指代类("String")` —— 结绳要求 `文本` 可被继承，Java `String` 是 `final`。
+- `整数` + `@指代类("int")` —— 结绳 `整数` 是类、有方法；Java `int` 是原始类型。
+- `集合` + `@指代类("java.util.List")` —— `List` 是接口，不能 `extends`。
+- `WifiInfo`/`DragEvent`/`InputEvent` —— 构造器包私有，包装类只能当类型别名。
+
+**候选**：① 彻底双形态（原生值 + 壳实例并存）；② 允许降级（放弃部分可继承性换编译通过）。
+
+---
+
+## 7. 失败的实验（勿重试）
+
+- **跨文件基类注入** → 421（比 309 差）。搬进来的方法体缺 import（`安卓X窗口` 注入后缺 `Build` → 8 处暴增到 87）。已回滚。
+- **别名壳层移除 extends + this 重定向（持有者模式）** → 449 > 415，符号缺失归零但总数更差。已否定。
+- **68 个类的单继承抉择**：别名优先 = 415（丢 `刷新`/`关闭`），基类优先 = 697（丢 `到字节集`）。两难，未解。
+
+---
+
+## 8. 关键陷阱
+
+- **中文 Windows 是 GBK**：javac 默认按 GBK 读源文件会读坏中文标识符；必须 `-encoding UTF-8`。命令行输出过 `iconv -f GBK -t UTF-8 -c`。
+- **javac 的 `@argfile` 必须用 Windows 路径**（`D:/...`），Linux 式 `/d/...` 会报「找不到文件」。
+- **`public int 方向;` 类错误会级联**：方法体内非法声明 → parse 失败 → 整个文件后续真实错误被掩盖。看到「未命名类/需要 class」这类怪错误，先查文件里有没有方法体内的 `public` 字段。
+- **KSP daemon 争用**：多 agent 同时编译会撞 `...kspCaches\debug\symbolLookups\file-to-id.tab is already registered`。并行时约定单一编译权。
+- **`translate.py` 补丁锚点冲突**：`fix_misc2.py` 锚定 base415，在别的基线应用会失败（锚点落在已改动的 `subst` 区域）。合并补丁前先 rebase。
+- **`parse_switch` 已补 `break;`**（2026-10-06）：结绳 `假如/是` 是匹配单支语义，Java switch 默认穿透。
+  修复在 `parse_switch` 内用**局部** `_flush/_mark`（不能用实例属性，嵌套 switch 会互相覆盖）。
+  `返回`/`容错处理` 等已跳出的块不补（避免不可达语句）。
+  ⚠️ 该修复**尚未重新生成产物** —— `src/zh/java` 里的 13 处 break 是手工插的，二者一致。
+
+---
+
+## 9. 相关文件
+
+```
+tools/jieba-translate/
+  translate.py          # 主转译器（TICODE_LANG=en|zh）；parse_switch 已补 break
+  class_map.py          # 结绳类名/包名 → 英文映射
+  alias_nonextend.py    # @指代类 里不可继承的目标
+  dedup_set.py          # 与模板重叠需剔除的类
+  fix_wrapper.py / fix_symbols.py / fix_misc.py   # 三份补丁
+core/ticode/
+  build.gradle.kts      # 中文版 sourceSet（-Pticode.lang=zh）
+  libs/androidx/        # 48 个编译期依赖 jar（见 libs/README.md 重建）
+docs/ticode-port/
+  PROGRESS.md           # 本文件
+  INVENTORY.md          # 135 处失败项逐条明细（按根因分组）
+```

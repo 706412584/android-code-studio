@@ -47,6 +47,13 @@
  *   recyclerview.jar   ← androidx.recyclerview:recyclerview:1.3.2 的 classes.jar
  *   constraintlayout.jar ← androidx.constraintlayout:constraintlayout:2.1.4 的 classes.jar
  *   flexbox.jar        ← com.google.android.flexbox:flexbox:3.0.0 的 classes.jar
+ *   appcompat.jar      ← androidx.appcompat:appcompat:1.3.1 的 classes.jar
+ *   androidx/*.jar     ← 结绳源码 `@外部依赖库(...)` 声明的整套 androidx aar 的
+ *                        classes.jar（activity/fragment/lifecycle/core/… 43 个）。
+ *                        缺了它们继承链会断：`AppCompatActivity extends FragmentActivity`，
+ *                        而 FragmentActivity 不在 appcompat.jar 里 → `X窗口` 的
+ *                        onCreate/onPause/onResume… 全部「找不到符号」（实测 8 处
+ *                        @Override 失败 + 22 处符号缺失）。
  * 版本与 gradle/libs.versions.toml 中声明的版本一致。
  */
 
@@ -73,6 +80,8 @@ dependencies {
     compileOnly(files("libs/constraintlayout.jar"))
     compileOnly(files("libs/flexbox.jar"))
     compileOnly(files("libs/appcompat.jar"))
+    // 结绳 `@外部依赖库(...)` 声明的整套 androidx（继承链所需，见文件头注释）。
+    compileOnly(fileTree("libs/androidx") { include("*.jar") })
 }
 
 // 源码含中文标识符与中文字符串字面量，必须显式钉 UTF-8：

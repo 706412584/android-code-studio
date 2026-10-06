@@ -96,9 +96,9 @@ include(
   ":core:ai-protocol",
   ":core:ai-tool",
   ":core:ai-tool-api",
-  // ":core:ticode",   // 结绳基本库移植：中文版语义错误已从 992 降到 415，但尚未归零
-  //                     （且别名壳档有实例方法行为退化），暂不接入构建；
-  //                     编译用 core/ticode/build.gradle.kts + 直接 javac（见 libs/README.md）。
+  // ":core:ticode",   // 结绳基本库移植：中文版(src/zh/java)已 0 错误；英文版(src/main/java)仍 657 处，
+  //                     故暂不接入构建（接入前需先决定以哪版为准，见 docs/ticode-port/PROGRESS.md）；
+  //                     编译用 tools/ticode-compile.sh 或 core/ticode/build.gradle.kts（见 libs/README.md）。
   ":core:app",
   ":ideconfigurations",
   ":core:common",
