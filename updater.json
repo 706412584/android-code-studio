@@ -1,18 +1,18 @@
-{
-  "baseVersionCode": 1027,
-  "baseVersionName": "1.0.0+gh.r06",
-  "baseUrl": "https://github.com/706412584/android-code-studio/releases/download/v{versionName}",
-  "variants": {
-    "armeabi-v7a": {
-      "versionCode": 1027,
-      "versionName": "1.0.0+gh.r06",
-      "apkUrl": "{baseUrl}/android-code-studio-armeabi-v7a-{versionName}.apk"
-    },
-    "arm64-v8a": {
-      "versionCode": 1027,
-      "versionName": "1.0.0+gh.r06",
-      "apkUrl": "{baseUrl}/android-code-studio-arm64-v8a-{versionName}.apk"
-    }
-  },
-  "changelog": "https://raw.githubusercontent.com/706412584/android-code-studio/refs/heads/dev/whatsnew/v1.0.0+gh.r06.md"
+﻿{
+    "baseVersionCode":  1028,
+    "baseVersionName":  "1.0.0+gh.r07",
+    "baseUrl":  "https://github.com/706412584/android-code-studio/releases/download/v{versionName}",
+    "variants":  {
+                     "armeabi-v7a":  {
+                                         "versionCode":  1028,
+                                         "versionName":  "1.0.0+gh.r07",
+                                         "apkUrl":  "{baseUrl}/android-code-studio-armeabi-v7a-{versionName}.apk"
+                                     },
+                     "arm64-v8a":  {
+                                       "versionCode":  1028,
+                                       "versionName":  "1.0.0+gh.r07",
+                                       "apkUrl":  "{baseUrl}/android-code-studio-arm64-v8a-{versionName}.apk"
+                                   }
+                 },
+    "changelog":  "https://raw.githubusercontent.com/706412584/android-code-studio/refs/heads/dev/whatsnew/1.0.0+gh.r07.md"
 }
