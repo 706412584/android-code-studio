@@ -132,6 +132,9 @@ class CodeGraphManager(private val context: Context) {
           archive.delete()
 
           listener?.onStage("写入启动脚本…")
+          // 补丁必须先于 wrapper 存在：wrapper 用 --require 加载它，缺文件时
+          // node 会直接报错退出（比索引为空更糟）。
+          CodeGraphInstaller.writeRealpathFix()
           CodeGraphInstaller.writeWrapper()
 
           listener?.onStage("安装完成")

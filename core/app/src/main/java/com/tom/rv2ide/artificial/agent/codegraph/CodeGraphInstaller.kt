@@ -91,10 +91,18 @@ object CodeGraphInstaller {
   /**
    * 是否已安装**且**可用。
    *
-   * <p>三个条件缺一不可：入口 JS 存在、Termux 的 node 存在、wrapper 存在。
-   * 只看入口 JS 会把「装了一半」（解包完成但 node 没装上）判成就绪，然后 AI 调用时失败。
+   * <p>四个条件缺一不可：入口 JS 存在、Termux 的 node 存在、wrapper 存在、
+   * realpath 补丁存在。只看入口 JS 会把「装了一半」（解包完成但 node 没装上）判成就绪，
+   * 然后 AI 调用时失败。
+   *
+   * <p>补丁文件也纳入判定：wrapper 用 `--require` 加载它，文件缺失时 node 会直接
+   * 报错退出——比「索引为空」更糟，因为用户看到的是「codegraph 完全用不了」。
    */
-  fun isInstalled(): Boolean = entryScript().isFile && nodeBinary().isFile && wrapperFile().isFile
+  fun isInstalled(): Boolean =
+      entryScript().isFile &&
+          nodeBinary().isFile &&
+          wrapperFile().isFile &&
+          realpathFixFile().isFile
 
   /** 缺失的依赖包（已装的会被排除）。用于安装前给用户看「还要装什么」。 */
   fun missingPackages(): List<String> = REQUIRED_PACKAGES.filterNot { isPackageInstalled(it) }
@@ -108,6 +116,64 @@ object CodeGraphInstaller {
   fun isPackageInstalled(pkg: String): Boolean =
       File(prefixDir(), "var/lib/dpkg/info/$pkg.list").isFile
 
+  /** realpath 兜底补丁的文件名（放在 Termux home 下）。 */
+  const val REALPATH_FIX_NAME = ".codegraph-realpath-fix.cjs"
+
+  /** 补丁文件。 */
+  fun realpathFixFile(): File = File(homeDir(), REALPATH_FIX_NAME)
+
+  /**
+   * realpath 兜底补丁的 JS 内容。
+   *
+   * <p><b>为什么需要它</b>：项目位于 `/storage/emulated/0/...`（外部存储，所有 ACS 项目
+   * 的默认位置）时，Node 的 JS 版 `fs.realpathSync` 会失败——它逐级 lstat 路径分量，
+   * 而 `/storage/emulated` 这一级在该进程的挂载命名空间里 lstat 返回 ENOENT
+   * （Android 的 scoped storage 怪癖：`/storage/emulated/0` 本身可 stat，但中间层不行）。
+   * realpath 失败 → codegraph 的目录遍历认为整个树不可达 → **索引扫到 0 个文件**，
+   * 而 `status` 仍显示 "Index is up to date"（DB 是空的，与磁盘一致）。
+   *
+   * <p><b>为什么用 `.native` 兜底</b>：内核的 realpath(3) 走 VFS 路径解析，不经 JS 的
+   * 逐级 lstat，因此能正常解析同一路径。实测（黑鲨 SKW-A0 / Android 10）打上补丁后
+   * 索引从 0 文件变为 425 文件 / 7800 节点。
+   *
+   * <p>补丁同时覆盖同步与 Promise 两个 API：codegraph 的扫描路径用同步版，
+   * 部分 MCP 入口用异步版。
+   *
+   * <p>只包一层 try/catch 兜底，不改变成功路径的行为——非外部存储的路径
+   * （例如 `$HOME` 下的临时索引）行为与打补丁前完全一致。
+   */
+  fun realpathFixScript(): String {
+    return buildString {
+      append("'use strict';\n")
+      append("// Android: Node 的 JS 版 fs.realpathSync 在 /storage/emulated 上 ENOENT,\n")
+      append("// 内核 realpath(3)(realpathSync.native)正常。给 realpath 系列加 native 兜底。\n")
+      append("// 由 AndroidCodeStudio 生成，请勿手改——重装或更新会覆盖它。\n")
+      append("const fs = require('fs');\n")
+      append("const nativeSync = fs.realpathSync.native.bind(fs);\n")
+      append("const origSync = fs.realpathSync;\n")
+      append("fs.realpathSync = function (p, options) {\n")
+      append("  try { return origSync.call(fs, p, options); }\n")
+      append("  catch (err) { return nativeSync(p, options); }\n")
+      append("};\n")
+      append("fs.realpathSync.native = nativeSync;\n")
+      append("if (fs.promises && typeof fs.promises.realpath === 'function') {\n")
+      append("  const origP = fs.promises.realpath;\n")
+      append("  fs.promises.realpath = async function (p, options) {\n")
+      append("    try { return await origP.call(fs.promises, p, options); }\n")
+      append("    catch { return nativeSync(p, options); }\n")
+      append("  };\n")
+      append("}\n")
+    }
+  }
+
+  /** 写入 realpath 补丁。 */
+  fun writeRealpathFix(): File {
+    val file = realpathFixFile()
+    file.parentFile?.mkdirs()
+    FileOutputStream(file).use { it.write(realpathFixScript().toByteArray(Charsets.UTF_8)) }
+    return file
+  }
+
   /**
    * wrapper 脚本内容。
    *
@@ -120,6 +186,8 @@ object CodeGraphInstaller {
    *   <li>`CODEGRAPH_KERNEL=0`：跳过 glibc 链接的 Rust kernel，走 WASM 解析
    *   <li>`CODEGRAPH_TELEMETRY=0`：关遥测。无网设备上遥测会阻塞到超时——
    *       实测 init 从 14s 降到 4s、sync 从 12s 降到 2s
+   *   <li>`--require` realpath 补丁：否则外部存储上的项目索引恒为 0 文件
+   *       （见 {@link #realpathFixScript}）
    * </ul>
    *
    * <p>用 `exec` 而不是直接调用：省掉一层 shell 进程，且信号能正确传递。
@@ -140,7 +208,14 @@ object CodeGraphInstaller {
       append("export CODEGRAPH_KERNEL=0\n")
       append("# 遥测在无网设备上会阻塞到超时（实测拖慢 10 秒）。\n")
       append("export CODEGRAPH_TELEMETRY=0\n")
-      append("exec \"\$PREFIX/bin/node\" \"")
+      // --require 而非 NODE_OPTIONS：NODE_OPTIONS 会影响 node 启动的所有子进程，
+      // 且部分 node 版本对它的解析更严格（含空格/路径需转义）。--require 只作用于
+      // 本次调用，语义精确。
+      append("exec \"\$PREFIX/bin/node\" --require \"")
+          .append(home)
+          .append('/')
+          .append(REALPATH_FIX_NAME)
+          .append("\" \"")
           .append(home)
           .append('/')
           .append(INSTALL_DIR_NAME)

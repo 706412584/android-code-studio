@@ -989,6 +989,25 @@ public final class AgentOrchestrator {
         new CodeGraphTool.AvailabilityProbe() {
           @Override
           public boolean isReady() {
+            // 自愈：旧版安装（无 realpath 补丁）在外部存储上索引恒为 0 文件。
+            //
+            // **两个文件都要重写**：补丁本身不会被旧 wrapper 加载——旧版 wrapper 没有
+            // `--require` 参数。只补文件等于什么都没做（实测过）。wrapper 的注释本就写着
+            // 「由 AndroidCodeStudio 生成，请勿手改——重装或更新会覆盖它」，
+            // 因此覆盖是既定契约，不是破坏用户数据。
+            //
+            // 判据用「补丁文件是否存在」：它是本次版本才引入的，缺失即代表旧版安装。
+            // 两个写入都是幂等的（同样的内容重写），失败只吞掉——真不可用的话
+            // 下面的 isInstalled() 会返回 false，用户仍能看到「未安装」并重装。
+            if (CodeGraphInstaller.INSTANCE.entryScript().isFile()
+                && !CodeGraphInstaller.INSTANCE.realpathFixFile().isFile()) {
+              try {
+                CodeGraphInstaller.INSTANCE.writeRealpathFix();
+                CodeGraphInstaller.INSTANCE.writeWrapper();
+              } catch (RuntimeException e) {
+                // 见上：交给 isInstalled() 判定。
+              }
+            }
             return CodeGraphInstaller.INSTANCE.isInstalled();
           }
 
