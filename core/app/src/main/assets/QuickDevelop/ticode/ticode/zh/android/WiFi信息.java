@@ -27,6 +27,16 @@ return this.内部对象.getRssi();
 //勿用会崩溃
 // 以下 4 个方法是 API 30+ 才加入 WifiInfo 的；低版本（如 Android 10）直接调用
 // 会 NoSuchMethodError。用反射调用，缺失时返回 -1。
+private String 反射取文本(String 方法名) {
+try {
+java.lang.reflect.Method m = android.net.wifi.WifiInfo.class.getMethod(方法名);
+Object r = m.invoke(this.内部对象);
+return r instanceof String ? (String) r : null;
+} catch (Throwable t) {
+return null;
+}
+}
+
 private int 反射取速率(String 方法名) {
 try {
 java.lang.reflect.Method m = android.net.wifi.WifiInfo.class.getMethod(方法名);
@@ -46,7 +56,7 @@ return this.内部对象.getLinkSpeed();
 }
 
 public int 发送速率() {
-return this.内部对象.getTxLinkSpeedMbps();
+return 反射取速率("getTxLinkSpeedMbps");
 }
 
 public int 最大发速率() {
@@ -54,7 +64,7 @@ return 反射取速率("getMaxSupportedTxLinkSpeedMbps");
 }
 
 public int 接收速率() {
-return this.内部对象.getRxLinkSpeedMbps();
+return 反射取速率("getRxLinkSpeedMbps");
 }
 
 public int 最大接收速率() {
@@ -70,11 +80,11 @@ return this.内部对象.getMacAddress();
 }
 
 public String 完全限定域名() {
-return this.内部对象.getPasspointFqdn();
+return 反射取文本("getPasspointFqdn");
 }
 
 public String 程序友好名称() {
-return this.内部对象.getPasspointProviderFriendlyName();
+return 反射取文本("getPasspointProviderFriendlyName");
 }
 
 public int 网络标识() {

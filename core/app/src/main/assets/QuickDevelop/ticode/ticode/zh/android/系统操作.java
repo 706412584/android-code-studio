@@ -136,11 +136,15 @@ return "";
 }
 
 public static int 取屏幕刷新率(android.content.Context 上下文环境) {
-return (int) 上下文环境.getDisplay().getRefreshRate();
+// Context.getDisplay() 是 API 30 方法；WindowManager.getDefaultDisplay() 全版本可用。
+return (int) ((android.view.WindowManager) 上下文环境
+.getSystemService(android.content.Context.WINDOW_SERVICE))
+.getDefaultDisplay().getRefreshRate();
 }
 
 public static int 取屏幕最大刷新率(安卓窗口 窗口环境) {
-Display display = 窗口环境.getDisplay();
+// Activity.getDisplay() 是 API 30 方法；getWindowManager().getDefaultDisplay() 全版本可用。
+Display display = 窗口环境.getWindowManager().getDefaultDisplay();
 int maxRefreshRate = (int) display.getRefreshRate();
 if (android.os.Build.VERSION.SDK_INT >= 23) {
 for (Display.Mode mode : display.getSupportedModes()) {
@@ -157,7 +161,8 @@ public static void 置屏幕刷新率(安卓窗口 窗口环境, int 刷新率) 
 if (android.os.Build.VERSION.SDK_INT >= 23) {
 Window window = 窗口环境.getWindow();
 WindowManager.LayoutParams attributes = window.getAttributes();
-Display display = 窗口环境.getDisplay();
+// Activity.getDisplay() 是 API 30 方法；getWindowManager().getDefaultDisplay() 全版本可用。
+Display display = 窗口环境.getWindowManager().getDefaultDisplay();
 Display.Mode maxMode = null;
 for (Display.Mode mode : display.getSupportedModes()) {
 int refreshRate = (int) mode.getRefreshRate();

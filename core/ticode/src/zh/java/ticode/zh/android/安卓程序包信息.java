@@ -146,12 +146,21 @@ public void 安装位置(int 安装位置) {
 this.installLocation = 安装位置;
 }
 
+// isApex 是 API 29 字段，低版本无此字段 → NoSuchFieldError。反射读写。
 public boolean 是apex包() {
-return this.isApex;
+try {
+return (Boolean) android.content.pm.PackageInfo.class.getField("isApex").get(this);
+} catch (Throwable t) {
+return false;
+}
 }
 
 public void 是apex包(boolean 是apex包) {
-this.isApex = 是apex包;
+try {
+android.content.pm.PackageInfo.class.getField("isApex").set(this, 是apex包);
+} catch (Throwable t) {
+// 低版本无此字段，忽略
+}
 }
 
 public long 上次更新时间() {

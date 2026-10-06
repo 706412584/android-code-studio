@@ -64,7 +64,13 @@ this.permission = 权限;
 }
 
 public int 获取前台服务类型() {
-return this.getForegroundServiceType();
+// getForegroundServiceType 是 API 29 方法，低版本 NoSuchMethodError。反射调用。
+try {
+return (Integer) android.content.pm.ServiceInfo.class
+.getMethod("getForegroundServiceType").invoke(this);
+} catch (Throwable t) {
+return 0;
+}
 }
 
 // 返回原生类型：applicationInfo 字段是原生 ApplicationInfo，不是 ticode 壳。

@@ -384,7 +384,8 @@ mWebSettings.setCacheMode(WebSettings.LOAD_DEFAULT);//缓存模式
 mWebSettings.setPluginState(WebSettings.PluginState.ON);
 
 mWebSettings.setUseWideViewPort(true);
-mWebSettings.setAllowFileAccess(Build.VERSION.SDK_INT >= Build.VERSION_CODES.R); //文件访问
+// VERSION_CODES.R 是 API 30 常量，低版本无此字段。用字面量 30。
+mWebSettings.setAllowFileAccess(Build.VERSION.SDK_INT >= 30); //文件访问
 mWebSettings.setSupportZoom(true);
 mWebSettings.setLoadWithOverviewMode(true);
 mWebSettings.setBuiltInZoomControls(true);

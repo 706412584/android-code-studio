@@ -355,7 +355,10 @@ public void 申请文件管理权限() {
 if (设备信息.安卓版本号 < 30) {
 return;
 }
-android.content.Intent it = new android.content.Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION);
+// ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION 是 API 30 常量，低版本无此字段。
+// 该值就是其字符串字面量，直接用；上面已有 <30 的运行时守卫。
+android.content.Intent it = new android.content.Intent(
+"android.settings.MANAGE_APP_ALL_FILES_ACCESS_PERMISSION");
 it.setData(android.net.Uri.parse("package:" + this.getPackageName()));
 this.startActivity(it);
 }
