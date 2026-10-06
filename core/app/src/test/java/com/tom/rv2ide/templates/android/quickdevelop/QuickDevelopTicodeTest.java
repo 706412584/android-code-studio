@@ -97,6 +97,23 @@ public class QuickDevelopTicodeTest {
     assertTrue("README 未给用法示例", r.contains("加解密操作"));
   }
 
+  /**
+   * 工程 README 必须给出「三套 API 用哪一套」的选型指引。
+   *
+   * <p>工程里同时有 ui/ tool/ ticode 三套中文 API，没有指引用户必然困惑。
+   * 这条断言钉住指引存在且覆盖三个关键决策点（界面用 ui/、工具用 tool/、
+   * 结绳兼容用 ticode），防止以后被删。
+   */
+  @Test
+  public void 选型指引覆盖三套API() {
+    String g = QuickDevelopTicode.INSTANCE.选型指引();
+    assertTrue("未指引界面用 ui/", g.contains("ui/"));
+    assertTrue("未指引工具用 tool/", g.contains("tool/"));
+    assertTrue("未指引 ticode 的用途", g.contains("ticode"));
+    assertTrue("未说明 ticode 与 ui 的取舍", g.contains("getView()"));
+    assertTrue("未给出移除 ticode 的方法", g.contains("include(\":ticode\")"));
+  }
+
   // ---------------------------------------------------------------------------------------
   // assets 里的源码：这是模板能产出 :ticode 的前提
   // ---------------------------------------------------------------------------------------

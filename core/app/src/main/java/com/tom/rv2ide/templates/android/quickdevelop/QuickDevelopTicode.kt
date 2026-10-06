@@ -172,4 +172,38 @@ object QuickDevelopTicode {
         本模块由 Android Code Studio 的 Quick Develop 模板生成，源码随工程走，可直接改。
       """
           .trimIndent()
+
+  /**
+   * 工程根 `README.md` 里「该用哪一套」那一节。
+   *
+   * <p>为什么单独抽成函数：工程里同时有 `ui/`（45 控件）、`tool/`（5 工具类）、
+   * `ticode`（333 类）**三套**中文 API，用户第一次打开会不知道用哪个。这段是
+   * **唯一的选型指引**，必须跟着生成走，且要有测试锁住（`QuickDevelopTicodeTest`）。
+   */
+  fun 选型指引(): String =
+      """
+        ## 该用哪一套？（三套并存，各司其职）
+
+        工程里有三套中文 API，**按用途选，不要混着用**：
+
+        | 要做什么 | 用哪个 | 例子 |
+        |---|---|---|
+        | **写界面**（推荐） | `ui/` | `new 按钮(this).文字("确定")` |
+        | **常见工具**（推荐） | `tool/` | `字符.转换大写("abc")` |
+        | **加解密 / ZIP / 反射 / 集合族 / 大数** | `ticode` | `加解密操作.MD5加密(s, "UTF-8")` |
+        | **跑结绳老代码**（兼容） | `ticode` | `ticode.zh.android.文本框` |
+
+        **为什么界面推荐 `ui/` 而不是 ticode 的控件**：两者实测都能用
+        （`ui/` 44/44、ticode 21/21），但设计不同——`ui/` 基于 androidx、
+        链式 API、控件更全（44 vs 21），是为本模板写的现代封装；ticode 的控件
+        是结绳移植的原始包装（`getView()` 模式），价值在兼容结绳老代码。
+
+        **ticode 不可替代的是它的工具类**（`ticode.zh.jvm` + `ticode.zh.base`，
+        114 个类：ZIP/GZIP、反射、集合族、大整数、UUID…），这些 `tool/` 没有。
+
+        不想要 ticode？删掉 `app/build.gradle` 里的
+        `implementation(project(":ticode"))` 与 `settings.gradle` 里的
+        `include(":ticode")` 即可。
+      """
+          .trimIndent()
 }

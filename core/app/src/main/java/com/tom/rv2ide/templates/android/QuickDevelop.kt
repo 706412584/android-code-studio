@@ -626,7 +626,11 @@ class QuickDevelop : Template {
       │   └── README.md            组件 API 文档（带目录）
       └── tool/                    5 个工具类
           └── README.md            工具 API 文档（带目录）
+      ticode/                      结绳语言基本库（Java 移植），独立 Android 库模块
+      └── src/main/java/ticode/zh/ 333 个中文 API 类（base / jvm / android / meng）
       ```
+
+      ${QuickDevelopTicode.选型指引()}
 
       ## 快速上手
 

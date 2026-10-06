@@ -43,3 +43,28 @@ adb -s 9c18cb30 shell am start -W -n com.example.qdtest/.MainActivity
 
 - 2026-10-06，黑鲨 SKW-A0（Android 10 / SDK 29）：**PASS 83 / FAIL 0，控件 44/44**。
   首轮曾 4 个 FAIL，全是上表时序坑（测试代码问题，非库 bug），修正后全绿。
+
+## ticode 控件 vs ui/ 控件（决定「UI 层留不留」的依据）
+
+同一 harness 换成对比模式（`TICODE_控件` + `UI_控件` 两组）跑出的结果：
+
+| | 数量 | 结果 | 模式 |
+|---|---|---|---|
+| **ticode 控件** | 21 | **21/21** | **包装**：对象本身不是 View，`getView()` 暴露原生 View |
+| **ui/ 控件** | 44 | **44/44** | **继承**：直接 `extends FrameLayout` |
+
+ticode 的 21 个控件实测都能拿到原生 View：
+`CheckBox / GridView / GridLayout / Toolbar / Switch / SeekBar / Button / TextView /
+WebView / RelativeLayout / FrameLayout / ConstraintLayout / LinearLayout / AbsoluteLayout /
+SurfaceView / VideoView / ProgressBar / FlexboxLayout / RecyclerView`（`画板` 返回匿名 View）。
+
+**结论：ticode 的 UI 层不是半成品，真能用。** 但两套的**设计哲学不同**：
+
+- `ui/` 是**为模板写的现代封装**（androidx、链式 API、中英双名、控件更全 44 个）——
+  **新代码推荐用它**。
+- ticode 的控件是**结绳移植的原始包装**（`getView()` 模式、API 偏旧、21 个）——
+  价值在**跑结绳老代码时保持兼容**。
+
+故：**两套并存，不删**；生成的 README 里写清「界面用 `ui/`，结绳兼容用 `ticode.zh.*`」。
+`ticode` 真正不可替代的是 `jvm/` + `base/` 的 **114 个纯工具类**（加解密/ZIP/反射/集合族/大数），
+那才是它相对 `tool/`（97 方法）的增量。
