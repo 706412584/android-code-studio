@@ -1,0 +1,840 @@
+覆盖率 2881/3204 = 89.9%  未覆盖 316  抛异常 517
+
+=== UNCOVERED ===
+ticode.zh.android.X窗口#onInit  (无实例:native父类)
+ticode.zh.android.X窗口#onCreateOptionsMenu  (无实例:native父类)
+ticode.zh.android.X窗口#onOptionsItemSelected  (无实例:native父类)
+ticode.zh.android.X窗口#onRequestPermissionsResult  (无实例:native父类)
+ticode.zh.android.X窗口#即将创建  (无实例:native父类)
+ticode.zh.android.X窗口#创建完毕  (无实例:native父类)
+ticode.zh.android.X窗口#被启动  (无实例:native父类)
+ticode.zh.android.X窗口#被重新启动  (无实例:native父类)
+ticode.zh.android.X窗口#被暂停  (无实例:native父类)
+ticode.zh.android.X窗口#被停止  (无实例:native父类)
+ticode.zh.android.X窗口#被恢复  (无实例:native父类)
+ticode.zh.android.X窗口#被销毁  (无实例:native父类)
+ticode.zh.android.X窗口#菜单被创建  (无实例:native父类)
+ticode.zh.android.X窗口#菜单项被选中  (无实例:native父类)
+ticode.zh.android.X窗口#标题栏返回键被单击  (无实例:native父类)
+ticode.zh.android.X窗口#获得返回数据  (无实例:native父类)
+ticode.zh.android.X窗口#申请权限完毕  (无实例:native父类)
+ticode.zh.android.X窗口#返回键被按下  (无实例:native父类)
+ticode.zh.android.X窗口#置窗口布局  (无实例:native父类)
+ticode.zh.android.X窗口#置窗口布局2  (无实例:native父类)
+ticode.zh.android.X窗口#取窗口布局  (无实例:native父类)
+ticode.zh.android._屏幕方向监听服务#onCreate  (无实例:native父类)
+ticode.zh.android._屏幕方向监听服务#onDestroy  (无实例:native父类)
+ticode.zh.android._屏幕方向监听服务#ShowNotification  (无实例:native父类)
+ticode.zh.android.位图对象#从输入流创建位图  (参数无法合成:输入流)
+ticode.zh.android.位图对象#创建位图5  (参数无法合成:可绘制对象)
+ticode.zh.android.位图对象#压缩输出_输出流  (参数无法合成:输出流)
+ticode.zh.android.信使#新建对象  (参数无法合成:消息处理器)
+ticode.zh.android.光线传感器#onSensorChanged  (参数无法合成:SensorEvent)
+ticode.zh.android.加速度传感器#onSensorChanged  (参数无法合成:SensorEvent)
+ticode.zh.android.可绘制对象#赋值_op  (无实例:abstract+native父类)
+ticode.zh.android.可绘制对象#绘制区域  (无实例:abstract+native父类)
+ticode.zh.android.可绘制对象#绘制区域2  (无实例:abstract+native父类)
+ticode.zh.android.可绘制对象#从矩形拷贝区域  (无实例:abstract+native父类)
+ticode.zh.android.可绘制对象#拷贝绘制区域到矩形  (无实例:abstract+native父类)
+ticode.zh.android.可绘制对象#取绘制区域  (无实例:abstract+native父类)
+ticode.zh.android.可绘制对象#取抖动区域  (无实例:abstract+native父类)
+ticode.zh.android.可绘制对象#开启抖动  (无实例:abstract+native父类)
+ticode.zh.android.可绘制对象#过滤位图  (无实例:abstract+native父类)
+ticode.zh.android.可绘制对象#是否过滤位图  (无实例:abstract+native父类)
+ticode.zh.android.可绘制对象#色调  (无实例:abstract+native父类)
+ticode.zh.android.可绘制对象#状态  (无实例:abstract+native父类)
+ticode.zh.android.可绘制对象#取状态  (无实例:abstract+native父类)
+ticode.zh.android.可绘制对象#取自身对象  (无实例:abstract+native父类)
+ticode.zh.android.可绘制对象#取绘制间距  (无实例:abstract+native父类)
+ticode.zh.android.可绘制对象#透明度  (无实例:abstract+native父类)
+ticode.zh.android.可绘制对象#透明度  (无实例:abstract+native父类)
+ticode.zh.android.可绘制对象#等级  (无实例:abstract+native父类)
+ticode.zh.android.可绘制对象#等级  (无实例:abstract+native父类)
+ticode.zh.android.可绘制对象#可见  (无实例:abstract+native父类)
+ticode.zh.android.可绘制对象#可见  (无实例:abstract+native父类)
+ticode.zh.android.可绘制对象#自动镜像  (无实例:abstract+native父类)
+ticode.zh.android.可绘制对象#自动镜像  (无实例:abstract+native父类)
+ticode.zh.android.可绘制对象#重新绘制  (无实例:abstract+native父类)
+ticode.zh.android.可视化组件#被拖放  (参数无法合成:拖放事件)
+ticode.zh.android.可调整边距布局组件#外边距  (无实例:abstract)
+ticode.zh.android.可调整边距布局组件#左外边距  (无实例:abstract)
+ticode.zh.android.可调整边距布局组件#上外边距  (无实例:abstract)
+ticode.zh.android.可调整边距布局组件#右外边距  (无实例:abstract)
+ticode.zh.android.可调整边距布局组件#下外边距  (无实例:abstract)
+ticode.zh.android.可调整边距布局组件#外边距DP  (无实例:abstract)
+ticode.zh.android.可调整边距布局组件#左外边距DP  (无实例:abstract)
+ticode.zh.android.可调整边距布局组件#上外边距DP  (无实例:abstract)
+ticode.zh.android.可调整边距布局组件#右外边距DP  (无实例:abstract)
+ticode.zh.android.可调整边距布局组件#下外边距DP  (无实例:abstract)
+ticode.zh.android.基础适配器#通知_更新数据  (无实例:abstract)
+ticode.zh.android.基础适配器#项目数量  (无实例:abstract)
+ticode.zh.android.复合按钮#选中  (无实例:abstract)
+ticode.zh.android.复合按钮#选中  (无实例:abstract)
+ticode.zh.android.复合按钮#切换状态  (无实例:abstract)
+ticode.zh.android.复合按钮#选中状态改变  (无实例:abstract)
+ticode.zh.android.安卓广播接收器#结果码  (无实例:abstract)
+ticode.zh.android.安卓广播接收器#结果码  (无实例:abstract)
+ticode.zh.android.安卓广播接收器#结果内容  (无实例:abstract)
+ticode.zh.android.安卓广播接收器#结果内容  (无实例:abstract)
+ticode.zh.android.安卓应用#onCreate  (无实例:native父类)
+ticode.zh.android.安卓应用#onPreInit  (无实例:native父类)
+ticode.zh.android.安卓应用#onInit  (无实例:native父类)
+ticode.zh.android.安卓应用#即将创建  (无实例:native父类)
+ticode.zh.android.安卓应用#创建完毕  (无实例:native父类)
+ticode.zh.android.安卓应用信息#获取描述  (参数无法合成:安卓程序包管理器)
+ticode.zh.android.安卓应用信息#获取标签  (参数无法合成:安卓程序包管理器)
+ticode.zh.android.安卓应用信息#获取图标  (参数无法合成:安卓程序包管理器)
+ticode.zh.android.安卓应用信息#获取横幅  (参数无法合成:安卓程序包管理器)
+ticode.zh.android.安卓应用信息#获取徽标  (参数无法合成:安卓程序包管理器)
+ticode.zh.android.安卓提示框#显示时长  (无实例:native父类)
+ticode.zh.android.安卓提示框#显示时长  (无实例:native父类)
+ticode.zh.android.安卓提示框#布局  (无实例:native父类)
+ticode.zh.android.安卓提示框#布局  (无实例:native父类)
+ticode.zh.android.安卓提示框#内容  (无实例:native父类)
+ticode.zh.android.安卓提示框#横向边距  (无实例:native父类)
+ticode.zh.android.安卓提示框#纵向边距  (无实例:native父类)
+ticode.zh.android.安卓提示框#横向偏移  (无实例:native父类)
+ticode.zh.android.安卓提示框#纵向偏移  (无实例:native父类)
+ticode.zh.android.安卓提示框#对齐方式  (无实例:native父类)
+ticode.zh.android.安卓提示框#显示  (无实例:native父类)
+ticode.zh.android.安卓提示框#取消  (无实例:native父类)
+ticode.zh.android.安卓提示框#置边距  (无实例:native父类)
+ticode.zh.android.安卓提示框#置对齐方式  (无实例:native父类)
+ticode.zh.android.安卓测试器信息#获取标签  (参数无法合成:安卓程序包管理器)
+ticode.zh.android.安卓测试器信息#获取图标  (参数无法合成:安卓程序包管理器)
+ticode.zh.android.安卓测试器信息#获取横幅  (参数无法合成:安卓程序包管理器)
+ticode.zh.android.安卓测试器信息#获取徽标  (参数无法合成:安卓程序包管理器)
+ticode.zh.android.安卓环境#弹出提示  (无实例:abstract+native父类)
+ticode.zh.android.安卓环境#快速提示  (无实例:abstract+native父类)
+ticode.zh.android.安卓环境#取全局环境  (无实例:abstract+native父类)
+ticode.zh.android.安卓环境#取安卓资源管理器  (无实例:abstract+native父类)
+ticode.zh.android.安卓环境#取附加资源管理器  (无实例:abstract+native父类)
+ticode.zh.android.安卓环境#发送广播  (无实例:abstract+native父类)
+ticode.zh.android.安卓环境#注册广播接收器  (无实例:abstract+native父类)
+ticode.zh.android.安卓环境#注销广播接收器  (无实例:abstract+native父类)
+ticode.zh.android.安卓环境#取自身包名  (无实例:abstract+native父类)
+ticode.zh.android.安卓环境#取自身版本号  (无实例:abstract+native父类)
+ticode.zh.android.安卓环境#取程序包管理器  (无实例:abstract+native父类)
+ticode.zh.android.安卓环境#取自身版本名称  (无实例:abstract+native父类)
+ticode.zh.android.安卓环境#取私有目录  (无实例:abstract+native父类)
+ticode.zh.android.安卓环境#取私有目录路径  (无实例:abstract+native父类)
+ticode.zh.android.安卓环境#取内部私有缓存目录  (无实例:abstract+native父类)
+ticode.zh.android.安卓环境#取内部私有缓存目录路径  (无实例:abstract+native父类)
+ticode.zh.android.安卓环境#取私有缓存目录  (无实例:abstract+native父类)
+ticode.zh.android.安卓环境#取私有缓存目录路径  (无实例:abstract+native父类)
+ticode.zh.android.安卓环境#取私有数据目录  (无实例:abstract+native父类)
+ticode.zh.android.安卓环境#取私有数据目录路径  (无实例:abstract+native父类)
+ticode.zh.android.安卓环境#取数据目录  (无实例:abstract+native父类)
+ticode.zh.android.安卓环境#取数据目录路径  (无实例:abstract+native父类)
+ticode.zh.android.安卓环境#取公用下载目录  (无实例:abstract+native父类)
+ticode.zh.android.安卓环境#取公用下载目录路径  (无实例:abstract+native父类)
+ticode.zh.android.安卓环境#取公用图片目录  (无实例:abstract+native父类)
+ticode.zh.android.安卓环境#取公用图片目录路径  (无实例:abstract+native父类)
+ticode.zh.android.安卓环境#取公用文档目录  (无实例:abstract+native父类)
+ticode.zh.android.安卓环境#取公用文档目录路径  (无实例:abstract+native父类)
+ticode.zh.android.安卓程序包管理器#等于_op  (无实例:abstract)
+ticode.zh.android.安卓程序包管理器#不等于_op  (无实例:abstract)
+ticode.zh.android.安卓程序包管理器#取程序包信息  (无实例:abstract)
+ticode.zh.android.安卓程序包管理器#取APK包信息  (无实例:abstract)
+ticode.zh.android.安卓程序包管理器#取所有已安装程序包信息  (无实例:abstract)
+ticode.zh.android.安卓程序包管理器#允许请求安装程序包  (无实例:abstract)
+ticode.zh.android.安卓程序包管理器#检查权限  (无实例:abstract)
+ticode.zh.android.安卓程序包管理器#取默认窗口图标  (无实例:abstract)
+ticode.zh.android.安卓程序包管理器#取程序启动信息  (无实例:abstract)
+ticode.zh.android.安卓程序包管理器#取资源管理器  (无实例:abstract)
+ticode.zh.android.安卓程序包管理器#取资源管理器2  (无实例:abstract)
+ticode.zh.android.安卓程序包项目信息基础类#获取标签  (参数无法合成:安卓程序包管理器)
+ticode.zh.android.安卓程序包项目信息基础类#获取图标  (参数无法合成:安卓程序包管理器)
+ticode.zh.android.安卓程序包项目信息基础类#获取横幅  (参数无法合成:安卓程序包管理器)
+ticode.zh.android.安卓程序包项目信息基础类#获取徽标  (参数无法合成:安卓程序包管理器)
+ticode.zh.android.安卓程序权限信息#获取描述  (参数无法合成:安卓程序包管理器)
+ticode.zh.android.安卓程序权限信息#获取标签  (参数无法合成:安卓程序包管理器)
+ticode.zh.android.安卓程序权限信息#获取图标  (参数无法合成:安卓程序包管理器)
+ticode.zh.android.安卓程序权限信息#获取横幅  (参数无法合成:安卓程序包管理器)
+ticode.zh.android.安卓程序权限信息#获取徽标  (参数无法合成:安卓程序包管理器)
+ticode.zh.android.安卓窗口信息#获取标签  (参数无法合成:安卓程序包管理器)
+ticode.zh.android.安卓窗口信息#获取图标  (参数无法合成:安卓程序包管理器)
+ticode.zh.android.安卓窗口信息#获取横幅  (参数无法合成:安卓程序包管理器)
+ticode.zh.android.安卓窗口信息#获取徽标  (参数无法合成:安卓程序包管理器)
+ticode.zh.android.安卓组件信息#获取标签  (参数无法合成:安卓程序包管理器)
+ticode.zh.android.安卓组件信息#获取图标  (参数无法合成:安卓程序包管理器)
+ticode.zh.android.安卓组件信息#获取横幅  (参数无法合成:安卓程序包管理器)
+ticode.zh.android.安卓组件信息#获取徽标  (参数无法合成:安卓程序包管理器)
+ticode.zh.android.安卓资源管理器#取附加资源管理器  (无实例:native父类)
+ticode.zh.android.安卓资源管理器#取可绘制对象  (无实例:native父类)
+ticode.zh.android.安卓资源管理器#取位图对象  (无实例:native父类)
+ticode.zh.android.工具栏#图标  (参数无法合成:可绘制对象)
+ticode.zh.android.工具栏#导航图标  (参数无法合成:可绘制对象)
+ticode.zh.android.工具栏#折叠图标  (参数无法合成:可绘制对象)
+ticode.zh.android.工具栏#溢出图标  (参数无法合成:可绘制对象)
+ticode.zh.android.布局组件#addComponent  (无实例:abstract)
+ticode.zh.android.布局组件#addComponent  (无实例:abstract)
+ticode.zh.android.布局组件#添加组件  (无实例:abstract)
+ticode.zh.android.布局组件#取子组件  (无实例:abstract)
+ticode.zh.android.布局组件#取子组件数量  (无实例:abstract)
+ticode.zh.android.布局组件#查找子组件  (无实例:abstract)
+ticode.zh.android.布局组件#移除组件  (无实例:abstract)
+ticode.zh.android.布局组件#移除组件2  (无实例:abstract)
+ticode.zh.android.布局组件#移除所有组件  (无实例:abstract)
+ticode.zh.android.方向传感器#onSensorChanged  (参数无法合成:SensorEvent)
+ticode.zh.android.服务#onCreate  (无实例:native父类)
+ticode.zh.android.服务#onStartCommand  (无实例:native父类)
+ticode.zh.android.服务#onBind  (无实例:native父类)
+ticode.zh.android.服务#onDestroy  (无实例:native父类)
+ticode.zh.android.服务#置通信中间件  (无实例:native父类)
+ticode.zh.android.服务#取通信中间件  (无实例:native父类)
+ticode.zh.android.服务#创建完毕  (无实例:native父类)
+ticode.zh.android.服务#被启动  (无实例:native父类)
+ticode.zh.android.服务#被绑定  (无实例:native父类)
+ticode.zh.android.服务#被销毁  (无实例:native父类)
+ticode.zh.android.消息#获取消息  (参数无法合成:消息处理器)
+ticode.zh.android.窗口#onInit  (无实例:native父类)
+ticode.zh.android.窗口#onCreateOptionsMenu  (无实例:native父类)
+ticode.zh.android.窗口#onOptionsItemSelected  (无实例:native父类)
+ticode.zh.android.窗口#onRequestPermissionsResult  (无实例:native父类)
+ticode.zh.android.窗口#onKeyDown  (无实例:native父类)
+ticode.zh.android.窗口#onConfigurationChanged  (无实例:native父类)
+ticode.zh.android.窗口#屏幕方向被改变  (无实例:native父类)
+ticode.zh.android.窗口#即将创建  (无实例:native父类)
+ticode.zh.android.窗口#创建完毕  (无实例:native父类)
+ticode.zh.android.窗口#被启动  (无实例:native父类)
+ticode.zh.android.窗口#被重新启动  (无实例:native父类)
+ticode.zh.android.窗口#被暂停  (无实例:native父类)
+ticode.zh.android.窗口#被停止  (无实例:native父类)
+ticode.zh.android.窗口#被恢复  (无实例:native父类)
+ticode.zh.android.窗口#被销毁  (无实例:native父类)
+ticode.zh.android.窗口#菜单被创建  (无实例:native父类)
+ticode.zh.android.窗口#菜单项被选中  (无实例:native父类)
+ticode.zh.android.窗口#标题栏返回键被单击  (无实例:native父类)
+ticode.zh.android.窗口#获得返回数据  (无实例:native父类)
+ticode.zh.android.窗口#申请权限完毕  (无实例:native父类)
+ticode.zh.android.窗口#返回键被按下  (无实例:native父类)
+ticode.zh.android.窗口#按下某键  (无实例:native父类)
+ticode.zh.android.窗口#置窗口布局  (无实例:native父类)
+ticode.zh.android.窗口#置窗口布局2  (无实例:native父类)
+ticode.zh.android.窗口#取窗口布局  (无实例:native父类)
+ticode.zh.android.缩放处理器#进行缩放  (参数无法合成:缩放处理器)
+ticode.zh.android.缩放处理器#缩放开始  (参数无法合成:缩放处理器)
+ticode.zh.android.缩放处理器#缩放结束  (参数无法合成:缩放处理器)
+ticode.zh.android.菜单#添加菜单项  (无实例:abstract)
+ticode.zh.android.菜单#添加菜单项2  (无实例:abstract)
+ticode.zh.android.菜单#添加子菜单  (无实例:abstract)
+ticode.zh.android.菜单项#ID  (无实例:abstract)
+ticode.zh.android.菜单项#组ID  (无实例:abstract)
+ticode.zh.android.菜单项#序号  (无实例:abstract)
+ticode.zh.android.菜单项#标题  (无实例:abstract)
+ticode.zh.android.菜单项#标题  (无实例:abstract)
+ticode.zh.android.菜单项#图标资源  (无实例:abstract)
+ticode.zh.android.菜单项#标题栏显示方式  (无实例:abstract)
+ticode.zh.android.记录集#总数  (无实例:abstract)
+ticode.zh.android.记录集#下一个  (无实例:abstract)
+ticode.zh.android.记录集#取文本  (无实例:abstract)
+ticode.zh.android.记录集#取整数  (无实例:abstract)
+ticode.zh.android.记录集#取长整数  (无实例:abstract)
+ticode.zh.android.记录集#取小数  (无实例:abstract)
+ticode.zh.android.记录集#取单精度小数  (无实例:abstract)
+ticode.zh.android.记录集#到开头  (无实例:abstract)
+ticode.zh.android.记录集#到最后  (无实例:abstract)
+ticode.zh.android.记录集#当前位置  (无实例:abstract)
+ticode.zh.android.记录集#移动位置  (无实例:abstract)
+ticode.zh.android.适配器#项目数量  (无实例:abstract)
+ticode.zh.android.适配器组件#适配器  (无实例:abstract)
+ticode.zh.android.适配器组件#适配器  (无实例:abstract)
+ticode.zh.android.适配器组件#项目被单击  (无实例:abstract)
+ticode.zh.android.适配器组件#项目被长按  (无实例:abstract)
+ticode.zh.android.适配器组件#项目被选中  (无实例:abstract)
+ticode.zh.base.字符串#长度  (无实例:abstract)
+ticode.zh.base.字符串#取字符  (无实例:abstract)
+ticode.zh.base.数字#整数值  (无实例:abstract)
+ticode.zh.base.数字#长整数值  (无实例:abstract)
+ticode.zh.base.数字#小数值  (无实例:abstract)
+ticode.zh.base.数字#单精度小数值  (无实例:abstract)
+ticode.zh.base.数字#字节值  (无实例:abstract)
+ticode.zh.jvm.GZIP输入流#创建实例  (参数无法合成:输入流)
+ticode.zh.jvm.GZIP输入流#创建实例2  (参数无法合成:输入流)
+ticode.zh.jvm.GZIP输出流#创建实例  (参数无法合成:输出流)
+ticode.zh.jvm.GZIP输出流#创建实例2  (参数无法合成:输出流)
+ticode.zh.jvm.Java参数化类型#等于_op  (无实例:abstract)
+ticode.zh.jvm.Java参数化类型#不等于_op  (无实例:abstract)
+ticode.zh.jvm.Java参数化类型#实际类型参数  (无实例:abstract)
+ticode.zh.jvm.Java参数化类型#类型  (无实例:abstract)
+ticode.zh.jvm.Java参数化类型#类型名称  (无实例:abstract)
+ticode.zh.jvm.Java泛型变量#等于_op  (无实例:abstract)
+ticode.zh.jvm.Java泛型变量#不等于_op  (无实例:abstract)
+ticode.zh.jvm.Java泛型变量#名称  (无实例:abstract)
+ticode.zh.jvm.Java泛型变量#限制类型  (无实例:abstract)
+ticode.zh.jvm.Java泛型变量#类型名称  (无实例:abstract)
+ticode.zh.jvm.Java泛型数组类型#等于_op  (无实例:abstract)
+ticode.zh.jvm.Java泛型数组类型#不等于_op  (无实例:abstract)
+ticode.zh.jvm.Java泛型数组类型#数组节点  (无实例:abstract)
+ticode.zh.jvm.Java泛型数组类型#类型名称  (无实例:abstract)
+ticode.zh.jvm.Java注解#取类型  (无实例:abstract)
+ticode.zh.jvm.Java通配符类型#等于_op  (无实例:abstract)
+ticode.zh.jvm.Java通配符类型#不等于_op  (无实例:abstract)
+ticode.zh.jvm.Java通配符类型#上边界限制类型  (无实例:abstract)
+ticode.zh.jvm.Java通配符类型#下边界限制类型  (无实例:abstract)
+ticode.zh.jvm.Java通配符类型#类型名称  (无实例:abstract)
+ticode.zh.jvm.ZIP输入流#指定编码创建  (参数无法合成:输入流)
+ticode.zh.jvm.ZIP输入流#创建实例  (参数无法合成:输入流)
+ticode.zh.jvm.ZIP输入流#创建实例2  (参数无法合成:输入流)
+ticode.zh.jvm.ZIP输出流#指定编码创建  (参数无法合成:输出流)
+ticode.zh.jvm.ZIP输出流#创建实例  (参数无法合成:输出流)
+ticode.zh.jvm.ZIP输出流#创建实例2  (参数无法合成:输出流)
+ticode.zh.jvm.压缩输入流#创建实例  (参数无法合成:输入流)
+ticode.zh.jvm.压缩输入流#创建实例2  (参数无法合成:输入流)
+ticode.zh.jvm.压缩输出流#创建实例  (参数无法合成:输出流)
+ticode.zh.jvm.压缩输出流#创建实例2  (参数无法合成:输出流)
+ticode.zh.jvm.字节集输出流#写出到输出流  (参数无法合成:输出流)
+ticode.zh.jvm.枚举器#还有下一个  (无实例:abstract)
+ticode.zh.jvm.枚举器#下一个  (无实例:abstract)
+ticode.zh.jvm.类名枚举器#还有下一个  (无实例:abstract)
+ticode.zh.jvm.类名枚举器#取下一个对象  (无实例:abstract)
+ticode.zh.jvm.解压输入流#创建实例  (参数无法合成:输入流)
+ticode.zh.jvm.解压输入流#创建实例2  (参数无法合成:输入流)
+ticode.zh.jvm.解压输出流#创建实例  (参数无法合成:输出流)
+ticode.zh.jvm.解压输出流#创建实例2  (参数无法合成:输出流)
+ticode.zh.jvm.输入流#读取  (无实例:abstract)
+ticode.zh.jvm.输入流#读到字节集  (无实例:abstract)
+ticode.zh.jvm.输入流#读到字节集2  (无实例:abstract)
+ticode.zh.jvm.输入流#可读取字节数量  (无实例:abstract)
+ticode.zh.jvm.输入流#关闭  (无实例:abstract)
+ticode.zh.jvm.输出流#写出  (无实例:abstract)
+ticode.zh.jvm.输出流#写出字节集  (无实例:abstract)
+ticode.zh.jvm.输出流#写出字节集2  (无实例:abstract)
+ticode.zh.jvm.输出流#刷新  (无实例:abstract)
+ticode.zh.jvm.输出流#关闭  (无实例:abstract)
+ticode.zh.meng.布局管理器#setRv  (参数无法合成:高级列表框)
+ticode.zh.meng.高级列表框#置分割线  (参数无法合成:ItemDecoration)
+ticode.zh.meng.高级列表框#添分割线  (参数无法合成:ItemDecoration)
+ticode.zh.meng.高级列表项目触摸辅助器#getMovementFlags  (参数无法合成:ViewHolder)
+ticode.zh.meng.高级列表项目触摸辅助器#onMove  (参数无法合成:ViewHolder)
+ticode.zh.meng.高级列表项目触摸辅助器#onSwiped  (参数无法合成:ViewHolder)
+ticode.zh.meng.高级列表项目触摸辅助器#onSelectedChanged  (参数无法合成:ViewHolder)
+ticode.zh.meng.高级列表项目触摸辅助器#clearView  (参数无法合成:ViewHolder)
+ticode.zh.meng.高级列表项目触摸辅助器#onChildDraw  (参数无法合成:ViewHolder)
+ticode.zh.meng.高级列表项目触摸辅助器#attachToRecyclerView  (参数无法合成:高级列表框)
+ticode.zh.meng.高级列表项目触摸辅助器#getAdapterPosition  (参数无法合成:ViewHolder)
+ticode.zh.meng.高级适配器#setRv  (参数无法合成:高级列表框)
+ticode.zh.meng.高级适配器#onBindViewHolder  (参数无法合成:ViewHolder)
+ticode.zh.meng.高级适配器#onViewRecycled  (参数无法合成:ViewHolder)
+
+
+=== THROWN ===
+ticode.zh.android.JSON对象#取索引_op  → NullPointerException: Attempt to invoke virtual method 'java.lang.Object java.util.LinkedHashMap.get(java.lang.Object)' on a null object reference
+ticode.zh.android.JSON对象#设索引_op  → NullPointerException: Attempt to invoke virtual method 'java.lang.Object java.util.LinkedHashMap.put(java.lang.Object, java.lang.Object)' on a null object reference
+ticode.zh.android.JSON对象#是_op  → NullPointerException: Attempt to invoke virtual method 'boolean java.util.LinkedHashMap.containsKey(java.lang.Object)' on a null object reference
+ticode.zh.android.JSON对象#取JSON数组  → NullPointerException: Attempt to invoke virtual method 'java.lang.Object java.util.LinkedHashMap.get(java.lang.Object)' on a null object reference
+ticode.zh.android.JSON对象#取对象  → NullPointerException: Attempt to invoke virtual method 'java.lang.Object java.util.LinkedHashMap.get(java.lang.Object)' on a null object reference
+ticode.zh.android.JSON对象#置入  → NullPointerException: Attempt to invoke virtual method 'java.lang.Object java.util.LinkedHashMap.put(java.lang.Object, java.lang.Object)' on a null object reference
+ticode.zh.android.JSON对象#移除  → NullPointerException: Attempt to invoke virtual method 'java.lang.Object java.util.LinkedHashMap.remove(java.lang.Object)' on a null object reference
+ticode.zh.android.JSON对象#是否存在  → NullPointerException: Attempt to invoke virtual method 'boolean java.util.LinkedHashMap.containsKey(java.lang.Object)' on a null object reference
+ticode.zh.android.JSON对象#到文本  → NullPointerException: Attempt to invoke virtual method 'java.util.Set java.util.LinkedHashMap.entrySet()' on a null object reference
+ticode.zh.android.JSON对象#写出到文件  → NullPointerException: Attempt to invoke virtual method 'java.util.Set java.util.LinkedHashMap.entrySet()' on a null object reference
+ticode.zh.android.JSON对象#长度  → NullPointerException: Attempt to invoke virtual method 'int java.util.LinkedHashMap.size()' on a null object reference
+ticode.zh.android.JSON对象#键名  → NullPointerException: Attempt to invoke virtual method 'java.util.Set java.util.LinkedHashMap.keySet()' on a null object reference
+ticode.zh.android.JSON数组#取索引_op  → NullPointerException: Attempt to invoke interface method 'java.lang.Object java.util.List.get(int)' on a null object reference
+ticode.zh.android.JSON数组#设索引_op  → NullPointerException: Attempt to invoke interface method 'int java.util.List.size()' on a null object reference
+ticode.zh.android.JSON数组#取JSON对象  → NullPointerException: Attempt to invoke interface method 'int java.util.List.size()' on a null object reference
+ticode.zh.android.JSON数组#取JSON数组  → NullPointerException: Attempt to invoke interface method 'int java.util.List.size()' on a null object reference
+ticode.zh.android.JSON数组#取对象  → NullPointerException: Attempt to invoke interface method 'java.lang.Object java.util.List.get(int)' on a null object reference
+ticode.zh.android.JSON数组#取文本  → NullPointerException: Attempt to invoke interface method 'int java.util.List.size()' on a null object reference
+ticode.zh.android.JSON数组#取整数  → NullPointerException: Attempt to invoke interface method 'int java.util.List.size()' on a null object reference
+ticode.zh.android.JSON数组#取小数  → NullPointerException: Attempt to invoke interface method 'int java.util.List.size()' on a null object reference
+ticode.zh.android.JSON数组#取逻辑值  → NullPointerException: Attempt to invoke interface method 'int java.util.List.size()' on a null object reference
+ticode.zh.android.JSON数组#置入  → NullPointerException: Attempt to invoke interface method 'boolean java.util.List.add(java.lang.Object)' on a null object reference
+ticode.zh.android.JSON数组#移除  → NullPointerException: Attempt to invoke interface method 'int java.util.List.size()' on a null object reference
+ticode.zh.android.JSON数组#长度  → NullPointerException: Attempt to invoke interface method 'int java.util.List.size()' on a null object reference
+ticode.zh.android.JSON数组#到文本  → NullPointerException: Attempt to invoke interface method 'java.util.Iterator java.util.List.iterator()' on a null object reference
+ticode.zh.android.JSON数组#写出到文件  → NullPointerException: Attempt to invoke interface method 'java.util.Iterator java.util.List.iterator()' on a null object reference
+ticode.zh.android.WiFi管理器#取WiFi扫描结果  → SecurityException: WifiService: Neither user 10313 nor current process has android.permission.ACCESS_WIFI_STATE.
+ticode.zh.android.WiFi管理器#取当前连接信息  → SecurityException: WifiService: Neither user 10313 nor current process has android.permission.ACCESS_WIFI_STATE.
+ticode.zh.android.XML解析器#取属性名  → IndexOutOfBoundsException: null
+ticode.zh.android.XML解析器#取属性内容  → IndexOutOfBoundsException: null
+ticode.zh.android.位图对象#从字节集创建位图  → ArrayIndexOutOfBoundsException: null
+ticode.zh.android.位图配置#到配置  → IllegalArgumentException: No enum constant android.graphics.Bitmap.Config.test
+ticode.zh.android.位置传感器#开始监测  → RuntimeException: Can't create handler inside thread Thread[Thread-154,5,main] that has not called Looper.prepare()
+ticode.zh.android.共享数据#取文本  → NullPointerException: Attempt to invoke interface method 'java.lang.String android.content.SharedPreferences.getString(java.lang.String, java.lang.String)' on a null object reference
+ticode.zh.android.共享数据#置文本  → NullPointerException: Attempt to invoke interface method 'android.content.SharedPreferences$Editor android.content.SharedPreferences$Editor.putString(java.lang.String, java.lang.String)' on a null object reference
+ticode.zh.android.共享数据#置整数  → NullPointerException: Attempt to invoke interface method 'android.content.SharedPreferences$Editor android.content.SharedPreferences$Editor.putInt(java.lang.String, int)' on a null object reference
+ticode.zh.android.共享数据#取整数  → NullPointerException: Attempt to invoke interface method 'int android.content.SharedPreferences.getInt(java.lang.String, int)' on a null object reference
+ticode.zh.android.共享数据#置逻辑值  → NullPointerException: Attempt to invoke interface method 'android.content.SharedPreferences$Editor android.content.SharedPreferences$Editor.putBoolean(java.lang.String, boolean)' on a null object reference
+ticode.zh.android.共享数据#取逻辑值  → NullPointerException: Attempt to invoke interface method 'boolean android.content.SharedPreferences.getBoolean(java.lang.String, boolean)' on a null object reference
+ticode.zh.android.共享数据#包含数据  → NullPointerException: Attempt to invoke interface method 'boolean android.content.SharedPreferences.contains(java.lang.String)' on a null object reference
+ticode.zh.android.共享数据#清空  → NullPointerException: Attempt to invoke interface method 'android.content.SharedPreferences$Editor android.content.SharedPreferences$Editor.clear()' on a null object reference
+ticode.zh.android.加解密操作#Base64编码  → RuntimeException: java.io.UnsupportedEncodingException: test
+ticode.zh.android.加解密操作#uniteBytes  → NumberFormatException: For input string: ""
+ticode.zh.android.加解密操作#RC4Base  → NullPointerException: Attempt to read from null array
+ticode.zh.android.可视化组件#宽度  → NumberFormatException: For input string: "x"
+ticode.zh.android.可视化组件#高度  → NumberFormatException: For input string: "x"
+ticode.zh.android.可视化组件#横坐标  → NumberFormatException: For input string: "x"
+ticode.zh.android.可视化组件#纵坐标  → NumberFormatException: For input string: "x"
+ticode.zh.android.可视化组件#竖坐标  → NumberFormatException: For input string: "x"
+ticode.zh.android.可视化组件#横向偏移  → NumberFormatException: For input string: "x"
+ticode.zh.android.可视化组件#纵向偏移  → NumberFormatException: For input string: "x"
+ticode.zh.android.可视化组件#内边距  → NumberFormatException: For input string: "x"
+ticode.zh.android.可视化组件#左内边距  → NumberFormatException: For input string: "x"
+ticode.zh.android.可视化组件#上内边距  → NumberFormatException: For input string: "x"
+ticode.zh.android.可视化组件#右内边距  → NumberFormatException: For input string: "x"
+ticode.zh.android.可视化组件#下内边距  → NumberFormatException: For input string: "x"
+ticode.zh.android.可视化组件#阴影  → NumberFormatException: For input string: "x"
+ticode.zh.android.可视化组件#背景图片  → NotFoundException: Resource ID #0x1
+ticode.zh.android.可视化组件#模拟长按  → NullPointerException: Attempt to invoke interface method 'boolean android.view.ViewParent.showContextMenuForChild(android.view.View)' on a null object reference
+ticode.zh.android.可视化组件#支持触摸  → RuntimeException: Can't create handler inside thread Thread[Thread-346,5,main] that has not called Looper.prepare()
+ticode.zh.android.启动信息#获取种类  → NullPointerException: Attempt to invoke interface method 'java.lang.Object[] java.util.Set.toArray(java.lang.Object[])' on a null object reference
+ticode.zh.android.启动信息过滤器#取动作  → NullPointerException: Attempt to invoke virtual method 'java.lang.Object java.util.ArrayList.get(int)' on a null object reference
+ticode.zh.android.启动信息过滤器#取种类  → NullPointerException: Attempt to invoke virtual method 'java.lang.Object java.util.ArrayList.get(int)' on a null object reference
+ticode.zh.android.启动信息过滤器#取数据方案  → NullPointerException: Attempt to invoke virtual method 'java.lang.Object java.util.ArrayList.get(int)' on a null object reference
+ticode.zh.android.启动信息过滤器#取数据类型  → NullPointerException: Attempt to invoke virtual method 'java.lang.Object java.util.ArrayList.get(int)' on a null object reference
+ticode.zh.android.启动信息过滤器#添加动作  → NullPointerException: Attempt to invoke virtual method 'boolean java.util.ArrayList.contains(java.lang.Object)' on a null object reference
+ticode.zh.android.启动信息过滤器#添加数据权限  → NumberFormatException: For input string: "test"
+ticode.zh.android.图片操作#旋转图片  → NullPointerException: Attempt to invoke virtual method 'int android.graphics.Bitmap.getWidth()' on a null object reference
+ticode.zh.android.图片操作#缩放图片  → NullPointerException: Attempt to invoke virtual method 'int android.graphics.Bitmap.getWidth()' on a null object reference
+ticode.zh.android.图片操作#反转图片  → NullPointerException: Attempt to invoke virtual method 'int android.graphics.Bitmap.getWidth()' on a null object reference
+ticode.zh.android.图片操作#压缩图片  → NullPointerException: Attempt to invoke virtual method 'boolean android.graphics.Bitmap.compress(android.graphics.Bitmap$CompressFormat, int, java.io.OutputStream)' on a null object reference
+ticode.zh.android.图片操作#压缩图片2  → NullPointerException: Attempt to invoke virtual method 'int android.graphics.Bitmap.getWidth()' on a null object reference
+ticode.zh.android.图片操作#切割图片  → NullPointerException: Attempt to invoke virtual method 'int android.graphics.Bitmap.getWidth()' on a null object reference
+ticode.zh.android.图片操作#倾斜图片  → NullPointerException: Attempt to invoke virtual method 'int android.graphics.Bitmap.getWidth()' on a null object reference
+ticode.zh.android.图片操作#设置图片圆角  → NullPointerException: Attempt to invoke virtual method 'int android.graphics.Bitmap.getWidth()' on a null object reference
+ticode.zh.android.图片操作#设置图片倒影  → NullPointerException: Attempt to invoke virtual method 'int android.graphics.Bitmap.getWidth()' on a null object reference
+ticode.zh.android.图片操作#取图片宽度2  → NullPointerException: Attempt to invoke virtual method 'int android.graphics.Bitmap.getWidth()' on a null object reference
+ticode.zh.android.图片操作#取图片高度2  → NullPointerException: Attempt to invoke virtual method 'int android.graphics.Bitmap.getHeight()' on a null object reference
+ticode.zh.android.图片操作#取图片部分  → NullPointerException: Attempt to invoke virtual method 'int android.graphics.Bitmap.getWidth()' on a null object reference
+ticode.zh.android.图片操作#更新系统相册  → IllegalArgumentException: MIME type application/octet-stream cannot be inserted into content://media/external/images/media; expected MIME type under image/*
+ticode.zh.android.套接字#连接  → NullPointerException: Attempt to invoke virtual method 'boolean android.os.Handler.post(java.lang.Runnable)' on a null object reference
+ticode.zh.android.套接字#连接_内部  → NullPointerException: Attempt to invoke virtual method 'boolean android.os.Handler.post(java.lang.Runnable)' on a null object reference
+ticode.zh.android.套接字服务端#监听  → NullPointerException: Attempt to invoke virtual method 'boolean android.os.Handler.post(java.lang.Runnable)' on a null object reference
+ticode.zh.android.套接字服务端#监听_内部  → NullPointerException: Attempt to invoke virtual method 'boolean android.os.Handler.post(java.lang.Runnable)' on a null object reference
+ticode.zh.android.字体对象#从资源文件创建字体  → RuntimeException: Font asset not found test
+ticode.zh.android.字体对象#从文件路径创建字体  → RuntimeException: Font asset not found /test
+ticode.zh.android.安卓提示框#新建提示框  → RuntimeException: Can't toast on a thread that has not called Looper.prepare()
+ticode.zh.android.安卓提示框#弹出提示  → RuntimeException: Can't toast on a thread that has not called Looper.prepare()
+ticode.zh.android.安卓程序签名数据#从文本创建  → IllegalArgumentException: Invalid character 116 in hex string
+ticode.zh.android.安卓窗口#newActivity  → ActivityNotFoundException: Unable to find explicit activity class {com.example.qdtest/java.lang.String}; have you declared this activity in your AndroidManifest.xml?
+ticode.zh.android.安卓窗口#newActivity2  → ActivityNotFoundException: Unable to find explicit activity class {com.example.qdtest/java.lang.String}; have you declared this activity in your AndroidManifest.xml?
+ticode.zh.android.安卓窗口#newActivityForResult  → ActivityNotFoundException: Unable to find explicit activity class {com.example.qdtest/java.lang.String}; have you declared this activity in your AndroidManifest.xml?
+ticode.zh.android.安卓窗口#newActivityForResult2  → ActivityNotFoundException: Unable to find explicit activity class {com.example.qdtest/java.lang.String}; have you declared this activity in your AndroidManifest.xml?
+ticode.zh.android.安卓窗口#标题  → CalledFromWrongThreadException: Only the original thread that created a view hierarchy can touch its views.
+ticode.zh.android.安卓窗口#状态栏颜色  → CalledFromWrongThreadException: Only the original thread that created a view hierarchy can touch its views.
+ticode.zh.android.安卓窗口#导航栏颜色  → CalledFromWrongThreadException: Only the original thread that created a view hierarchy can touch its views.
+ticode.zh.android.安卓窗口#状态栏字体黑色  → CalledFromWrongThreadException: Only the original thread that created a view hierarchy can touch its views.
+ticode.zh.android.安卓窗口#沉浸模式  → CalledFromWrongThreadException: Only the original thread that created a view hierarchy can touch its views.
+ticode.zh.android.安卓窗口#沉浸模式2  → CalledFromWrongThreadException: Only the original thread that created a view hierarchy can touch its views.
+ticode.zh.android.安卓窗口#全屏模式  → CalledFromWrongThreadException: Only the original thread that created a view hierarchy can touch its views.
+ticode.zh.android.安卓窗口#常亮模式  → CalledFromWrongThreadException: Only the original thread that created a view hierarchy can touch its views.
+ticode.zh.android.安卓窗口#亮度  → CalledFromWrongThreadException: Only the original thread that created a view hierarchy can touch its views.
+ticode.zh.android.安卓窗口#启动服务  → IllegalArgumentException: method ticode.zh.android.安卓窗口.启动服务 argument 1 has type ticode.zh.android.安卓服务, got com.example.qdtest.CoverageDriver$阻断Context
+ticode.zh.android.安卓窗口#启动服务  → IllegalArgumentException: method ticode.zh.android.安卓窗口.启动服务 argument 1 has type ticode.zh.android.安卓服务, got com.example.qdtest.CoverageDriver$阻断Context
+ticode.zh.android.安卓窗口#绑定服务  → IllegalArgumentException: method ticode.zh.android.安卓窗口.绑定服务 argument 1 has type ticode.zh.android.安卓服务, got com.example.qdtest.CoverageDriver$阻断Context
+ticode.zh.android.安卓窗口#关闭服务  → IllegalArgumentException: method ticode.zh.android.安卓窗口.关闭服务 argument 1 has type ticode.zh.android.安卓服务, got com.example.qdtest.CoverageDriver$阻断Context
+ticode.zh.android.安卓窗口#切换窗口  → ActivityNotFoundException: Unable to find explicit activity class {com.example.qdtest/ticode.zh.android.安卓窗口}; have you declared this activity in your AndroidManifest.xml?
+ticode.zh.android.安卓窗口#切换窗口2  → ActivityNotFoundException: Unable to find explicit activity class {com.example.qdtest/ticode.zh.android.安卓窗口}; have you declared this activity in your AndroidManifest.xml?
+ticode.zh.android.安卓窗口#解析图片地址  → NullPointerException: uri
+ticode.zh.android.安卓窗口#解析文件地址  → NullPointerException: Attempt to invoke virtual method 'java.lang.String android.net.Uri.getScheme()' on a null object reference
+ticode.zh.android.安卓窗口#一键分享  → FileUriExposedException: file:///test exposed beyond app through ClipData.Item.getUri()
+ticode.zh.android.安卓窗口#启用全屏模式  → CalledFromWrongThreadException: Only the original thread that created a view hierarchy can touch its views.
+ticode.zh.android.安卓窗口#显示到异形屏区域  → CalledFromWrongThreadException: Only the original thread that created a view hierarchy can touch its views.
+ticode.zh.android.安卓线程#启动  → NullPointerException: Attempt to invoke virtual method 'void java.lang.ThreadGroup.add(java.lang.Thread)' on a null object reference
+ticode.zh.android.安卓线程#中断  → NullPointerException: Null reference used for synchronization (monitor-enter)
+ticode.zh.android.对话框#透明度  → RuntimeException: Can't create handler inside thread Thread[Thread-867,5,main] that has not called Looper.prepare()
+ticode.zh.android.对话框#动画主题  → RuntimeException: Can't create handler inside thread Thread[Thread-868,5,main] that has not called Looper.prepare()
+ticode.zh.android.对话框#垂直边距  → RuntimeException: Can't create handler inside thread Thread[Thread-869,5,main] that has not called Looper.prepare()
+ticode.zh.android.对话框#水平边距  → RuntimeException: Can't create handler inside thread Thread[Thread-870,5,main] that has not called Looper.prepare()
+ticode.zh.android.对话框#对齐方式  → RuntimeException: Can't create handler inside thread Thread[Thread-871,5,main] that has not called Looper.prepare()
+ticode.zh.android.对话框#高度  → RuntimeException: Can't create handler inside thread Thread[Thread-872,5,main] that has not called Looper.prepare()
+ticode.zh.android.对话框#宽度  → RuntimeException: Can't create handler inside thread Thread[Thread-873,5,main] that has not called Looper.prepare()
+ticode.zh.android.对话框#可取消  → RuntimeException: Can't create handler inside thread Thread[Thread-874,5,main] that has not called Looper.prepare()
+ticode.zh.android.对话框#背景颜色  → RuntimeException: Can't create handler inside thread Thread[Thread-875,5,main] that has not called Looper.prepare()
+ticode.zh.android.对话框#背景图片  → RuntimeException: Can't create handler inside thread Thread[Thread-876,5,main] that has not called Looper.prepare()
+ticode.zh.android.对话框#正在显示  → NullPointerException: Attempt to invoke virtual method 'boolean android.app.AlertDialog.isShowing()' on a null object reference
+ticode.zh.android.对话框#置对话框边距  → RuntimeException: Can't create handler inside thread Thread[Thread-881,5,main] that has not called Looper.prepare()
+ticode.zh.android.对话框#置对话框布局  → RuntimeException: Can't create handler inside thread Thread[Thread-882,5,main] that has not called Looper.prepare()
+ticode.zh.android.对话框#显示  → RuntimeException: Can't create handler inside thread Thread[Thread-883,5,main] that has not called Looper.prepare()
+ticode.zh.android.对话框#隐藏  → NullPointerException: Attempt to invoke virtual method 'void android.app.AlertDialog.hide()' on a null object reference
+ticode.zh.android.对话框#关闭  → NullPointerException: Attempt to invoke virtual method 'void android.app.AlertDialog.dismiss()' on a null object reference
+ticode.zh.android.对象操作#哈希表  → NullPointerException: Attempt to read from field 'java.lang.Object ticode.zh.jvm.键值对.键' on a null object reference
+ticode.zh.android.工具栏#标题颜色  → IllegalArgumentException: Unknown color
+ticode.zh.android.工具栏#副标题颜色  → IllegalArgumentException: Unknown color
+ticode.zh.android.工具栏#添加菜单  → TIMEOUT(>300ms)
+ticode.zh.android.工具栏#添加菜单项2  → NullPointerException: Attempt to invoke virtual method 'void android.view.View.requestLayout()' on a null object reference
+ticode.zh.android.常用操作#运行报错  → RuntimeException: test
+ticode.zh.android.弹出式菜单#显示  → RuntimeException: Can't create handler inside thread Thread[Thread-956,5,main] that has not called Looper.prepare()
+ticode.zh.android.弹窗#背景图片  → NotFoundException: Resource ID #0x1
+ticode.zh.android.弹窗#点九图  → NullPointerException: Attempt to invoke virtual method 'byte[] android.graphics.Bitmap.getNinePatchChunk()' on a null object reference
+ticode.zh.android.弹窗#显示  → RuntimeException: Can't create handler inside thread Thread[Thread-971,5,main] that has not called Looper.prepare()
+ticode.zh.android.悬浮窗#firstShow  → RuntimeException: Can't create handler inside thread Thread[Thread-1072,5,main] that has not called Looper.prepare()
+ticode.zh.android.悬浮窗#edgeSnapping  → AndroidRuntimeException: Animators may only be run on Looper threads
+ticode.zh.android.悬浮窗#animSlide  → AndroidRuntimeException: Animators may only be run on Looper threads
+ticode.zh.android.悬浮窗#smoothMove  → AndroidRuntimeException: Animators may only be run on Looper threads
+ticode.zh.android.悬浮窗#registerActivityLifecycle  → IllegalArgumentException: method ticode.zh.android.悬浮窗.registerActivityLifecycle argument 1 has type android.app.Application, got com.example.qdtest.CoverageDriver$阻断Context
+ticode.zh.android.拖放事件#动作  → NullPointerException: Attempt to invoke virtual method 'int android.view.DragEvent.getAction()' on a null object reference
+ticode.zh.android.拖放事件#横坐标  → NullPointerException: Attempt to invoke virtual method 'float android.view.DragEvent.getX()' on a null object reference
+ticode.zh.android.拖放事件#纵坐标  → NullPointerException: Attempt to invoke virtual method 'float android.view.DragEvent.getY()' on a null object reference
+ticode.zh.android.提示框#显示时长  → NullPointerException: Attempt to invoke virtual method 'int ticode.zh.android.安卓提示框.显示时长()' on a null object reference
+ticode.zh.android.提示框#显示时长  → NullPointerException: Attempt to invoke virtual method 'void ticode.zh.android.安卓提示框.显示时长(int)' on a null object reference
+ticode.zh.android.提示框#布局  → NullPointerException: Attempt to invoke virtual method 'ticode.zh.android.可视化组件 ticode.zh.android.安卓提示框.布局()' on a null object reference
+ticode.zh.android.提示框#布局  → NullPointerException: Attempt to invoke virtual method 'void ticode.zh.android.安卓提示框.布局(ticode.zh.android.可视化组件)' on a null object reference
+ticode.zh.android.提示框#内容  → NullPointerException: Attempt to invoke virtual method 'void ticode.zh.android.安卓提示框.内容(java.lang.String)' on a null object reference
+ticode.zh.android.提示框#横向边距  → NullPointerException: Attempt to invoke virtual method 'int ticode.zh.android.安卓提示框.横向边距()' on a null object reference
+ticode.zh.android.提示框#纵向边距  → NullPointerException: Attempt to invoke virtual method 'int ticode.zh.android.安卓提示框.纵向边距()' on a null object reference
+ticode.zh.android.提示框#横向偏移  → NullPointerException: Attempt to invoke virtual method 'int ticode.zh.android.安卓提示框.横向偏移()' on a null object reference
+ticode.zh.android.提示框#纵向偏移  → NullPointerException: Attempt to invoke virtual method 'int ticode.zh.android.安卓提示框.纵向偏移()' on a null object reference
+ticode.zh.android.提示框#对齐方式  → NullPointerException: Attempt to invoke virtual method 'int ticode.zh.android.安卓提示框.对齐方式()' on a null object reference
+ticode.zh.android.提示框#显示  → NullPointerException: Attempt to invoke virtual method 'void ticode.zh.android.安卓提示框.显示()' on a null object reference
+ticode.zh.android.提示框#取消  → NullPointerException: Attempt to invoke virtual method 'void ticode.zh.android.安卓提示框.取消()' on a null object reference
+ticode.zh.android.提示框#置边距  → NullPointerException: Attempt to invoke virtual method 'void ticode.zh.android.安卓提示框.置边距(int, int)' on a null object reference
+ticode.zh.android.提示框#置对齐方式  → NullPointerException: Attempt to invoke virtual method 'void ticode.zh.android.安卓提示框.置对齐方式(int, int, int)' on a null object reference
+ticode.zh.android.提示框#弹出提示  → RuntimeException: Can't toast on a thread that has not called Looper.prepare()
+ticode.zh.android.数学运算#计算表达式  → NumberFormatException: For input string: "test"
+ticode.zh.android.数据库#打开数据库  → NullPointerException: Attempt to invoke virtual method 'boolean java.io.File.exists()' on a null object reference
+ticode.zh.android.数组操作#截取数组  → RuntimeException: 截取数组 起始索引错误
+ticode.zh.android.文件操作#追加文件内容  → NullPointerException: Attempt to invoke virtual method 'boolean java.io.File.exists()' on a null object reference
+ticode.zh.android.文件操作#创建文件  → NullPointerException: Attempt to invoke virtual method 'boolean java.io.File.exists()' on a null object reference
+ticode.zh.android.文件操作#取文件编码  → RuntimeException: 取文件编码( 未找到文件:test
+ticode.zh.android.文件操作#写出文本文件  → NullPointerException: Attempt to invoke virtual method 'boolean java.io.File.exists()' on a null object reference
+ticode.zh.android.文件操作#写出字节文件  → RuntimeException: 写出字节文件( 错误
+ticode.zh.android.文件操作#写出资源文件  → RuntimeException: 写出资源文件( test或test
+ticode.zh.android.文件操作#读入资源文件  → RuntimeException: 读入资源文件( 未找到文件: test
+ticode.zh.android.文件操作#寻找文件关键词  → NullPointerException: Attempt to get length of null array
+ticode.zh.android.文件操作#寻找文件后缀名  → NullPointerException: Attempt to get length of null array
+ticode.zh.android.文件操作#取子目录  → NullPointerException: Attempt to get length of null array
+ticode.zh.android.文件操作#取子文件集合  → NullPointerException: Attempt to get length of null array
+ticode.zh.android.文件操作#取子文件列表  → NullPointerException: Attempt to get length of null array
+ticode.zh.android.文件操作#write  → ArrayIndexOutOfBoundsException: length=1; regionStart=1; regionLength=1
+ticode.zh.android.文件操作#append  → ArrayIndexOutOfBoundsException: length=1; regionStart=1; regionLength=1
+ticode.zh.android.文件操作#searchByName  → IllegalArgumentException: not a directory
+ticode.zh.android.文本框#文本资源  → NotFoundException: String resource ID #0x1
+ticode.zh.android.文本框#字体  → RuntimeException: Font asset not found test
+ticode.zh.android.日期选择框#标题  → NullPointerException: Attempt to invoke virtual method 'void android.app.DatePickerDialog.setTitle(java.lang.CharSequence)' on a null object reference
+ticode.zh.android.日期选择框#信息  → NullPointerException: Attempt to invoke virtual method 'void android.app.DatePickerDialog.setMessage(java.lang.CharSequence)' on a null object reference
+ticode.zh.android.日期选择框#图标文件  → NullPointerException: Attempt to invoke virtual method 'android.content.res.AssetManager android.content.Context.getAssets()' on a null object reference
+ticode.zh.android.日期选择框#图标  → NullPointerException: Attempt to invoke virtual method 'void android.app.DatePickerDialog.setIcon(int)' on a null object reference
+ticode.zh.android.日期选择框#按钮1  → NullPointerException: Attempt to invoke virtual method 'void android.app.DatePickerDialog.setButton(java.lang.CharSequence, android.content.DialogInterface$OnClickListener)' on a null object reference
+ticode.zh.android.日期选择框#按钮2  → NullPointerException: Attempt to invoke virtual method 'void android.app.DatePickerDialog.setButton2(java.lang.CharSequence, android.content.DialogInterface$OnClickListener)' on a null object reference
+ticode.zh.android.日期选择框#按钮3  → NullPointerException: Attempt to invoke virtual method 'void android.app.DatePickerDialog.setButton3(java.lang.CharSequence, android.content.DialogInterface$OnClickListener)' on a null object reference
+ticode.zh.android.日期选择框#可取消  → NullPointerException: Attempt to invoke virtual method 'void android.app.DatePickerDialog.setCancelable(boolean)' on a null object reference
+ticode.zh.android.日期选择框#显示  → NullPointerException: Attempt to invoke virtual method 'void android.app.DatePickerDialog.show()' on a null object reference
+ticode.zh.android.日期选择框#隐藏  → NullPointerException: Attempt to invoke virtual method 'void android.app.DatePickerDialog.hide()' on a null object reference
+ticode.zh.android.日期选择框#关闭  → NullPointerException: Attempt to invoke virtual method 'void android.app.DatePickerDialog.dismiss()' on a null object reference
+ticode.zh.android.时钟#时钟周期  → NullPointerException: Attempt to invoke virtual method 'void android.os.Handler.removeCallbacks(java.lang.Runnable)' on a null object reference
+ticode.zh.android.时钟#可用  → NullPointerException: Attempt to invoke virtual method 'void android.os.Handler.removeCallbacks(java.lang.Runnable)' on a null object reference
+ticode.zh.android.时间操作#取格式时间  → IllegalArgumentException: Illegal pattern character 't'
+ticode.zh.android.时间操作#时间戳到文本  → IllegalArgumentException: Illegal pattern character 't'
+ticode.zh.android.时间操作#时间文本到时间戳  → IllegalArgumentException: Illegal pattern character 't'
+ticode.zh.android.时间选择框#标题  → NullPointerException: Attempt to invoke virtual method 'void android.app.TimePickerDialog.setTitle(java.lang.CharSequence)' on a null object reference
+ticode.zh.android.时间选择框#信息  → NullPointerException: Attempt to invoke virtual method 'void android.app.TimePickerDialog.setMessage(java.lang.CharSequence)' on a null object reference
+ticode.zh.android.时间选择框#图标文件  → NullPointerException: Attempt to invoke virtual method 'android.content.res.AssetManager android.content.Context.getAssets()' on a null object reference
+ticode.zh.android.时间选择框#图标  → NullPointerException: Attempt to invoke virtual method 'void android.app.TimePickerDialog.setIcon(int)' on a null object reference
+ticode.zh.android.时间选择框#按钮1  → NullPointerException: Attempt to invoke virtual method 'void android.app.TimePickerDialog.setButton(java.lang.CharSequence, android.content.DialogInterface$OnClickListener)' on a null object reference
+ticode.zh.android.时间选择框#按钮2  → NullPointerException: Attempt to invoke virtual method 'void android.app.TimePickerDialog.setButton2(java.lang.CharSequence, android.content.DialogInterface$OnClickListener)' on a null object reference
+ticode.zh.android.时间选择框#按钮3  → NullPointerException: Attempt to invoke virtual method 'void android.app.TimePickerDialog.setButton3(java.lang.CharSequence, android.content.DialogInterface$OnClickListener)' on a null object reference
+ticode.zh.android.时间选择框#可取消  → NullPointerException: Attempt to invoke virtual method 'void android.app.TimePickerDialog.setCancelable(boolean)' on a null object reference
+ticode.zh.android.时间选择框#显示  → NullPointerException: Attempt to invoke virtual method 'void android.app.TimePickerDialog.show()' on a null object reference
+ticode.zh.android.时间选择框#隐藏  → NullPointerException: Attempt to invoke virtual method 'void android.app.TimePickerDialog.hide()' on a null object reference
+ticode.zh.android.时间选择框#关闭  → NullPointerException: Attempt to invoke virtual method 'void android.app.TimePickerDialog.dismiss()' on a null object reference
+ticode.zh.android.构建路径#添加多边形  → ArrayIndexOutOfBoundsException: length=1; index=1
+ticode.zh.android.浏览框#显示进度条  → NullPointerException: Attempt to invoke virtual method 'void android.widget.ProgressBar.setVisibility(int)' on a null object reference
+ticode.zh.android.浏览框#UA  → NullPointerException: Attempt to invoke virtual method 'android.webkit.WebSettings android.webkit.WebView.getSettings()' on a null object reference
+ticode.zh.android.浏览框#UA  → NullPointerException: Attempt to invoke virtual method 'android.webkit.WebSettings android.webkit.WebView.getSettings()' on a null object reference
+ticode.zh.android.浏览框#缓存模式  → NullPointerException: Attempt to invoke virtual method 'android.webkit.WebSettings android.webkit.WebView.getSettings()' on a null object reference
+ticode.zh.android.浏览框#可后退  → NullPointerException: Attempt to invoke virtual method 'boolean android.webkit.WebView.canGoBack()' on a null object reference
+ticode.zh.android.浏览框#可前进  → NullPointerException: Attempt to invoke virtual method 'boolean android.webkit.WebView.canGoForward()' on a null object reference
+ticode.zh.android.浏览框#网址  → NullPointerException: Attempt to invoke virtual method 'java.lang.String android.webkit.WebView.getUrl()' on a null object reference
+ticode.zh.android.浏览框#网址  → NullPointerException: Attempt to invoke virtual method 'void android.webkit.WebView.loadUrl(java.lang.String)' on a null object reference
+ticode.zh.android.浏览框#标题  → NullPointerException: Attempt to invoke virtual method 'java.lang.String android.webkit.WebView.getTitle()' on a null object reference
+ticode.zh.android.浏览框#进度  → NullPointerException: Attempt to invoke virtual method 'int android.webkit.WebView.getProgress()' on a null object reference
+ticode.zh.android.浏览框#页面高度  → NullPointerException: Attempt to invoke virtual method 'int android.webkit.WebView.getContentHeight()' on a null object reference
+ticode.zh.android.浏览框#网页图标  → NullPointerException: Attempt to invoke virtual method 'android.graphics.Bitmap android.webkit.WebView.getFavicon()' on a null object reference
+ticode.zh.android.浏览框#原始链接  → NullPointerException: Attempt to invoke virtual method 'java.lang.String android.webkit.WebView.getOriginalUrl()' on a null object reference
+ticode.zh.android.浏览框#加载网址  → NullPointerException: Attempt to invoke virtual method 'void android.webkit.WebView.loadUrl(java.lang.String)' on a null object reference
+ticode.zh.android.浏览框#禁止加载网络图片  → NullPointerException: Attempt to invoke virtual method 'android.webkit.WebSettings android.webkit.WebView.getSettings()' on a null object reference
+ticode.zh.android.浏览框#可自动播放  → NullPointerException: Attempt to invoke virtual method 'android.webkit.WebSettings android.webkit.WebView.getSettings()' on a null object reference
+ticode.zh.android.浏览框#可访问本地文件  → NullPointerException: Attempt to invoke virtual method 'android.webkit.WebSettings android.webkit.WebView.getSettings()' on a null object reference
+ticode.zh.android.浏览框#停止加载  → NullPointerException: Attempt to invoke virtual method 'void android.webkit.WebView.stopLoading()' on a null object reference
+ticode.zh.android.浏览框#重载  → NullPointerException: Attempt to invoke virtual method 'void android.webkit.WebView.reload()' on a null object reference
+ticode.zh.android.浏览框#刷新网页  → NullPointerException: Attempt to invoke virtual method 'void android.webkit.WebView.reload()' on a null object reference
+ticode.zh.android.浏览框#后退  → NullPointerException: Attempt to invoke virtual method 'void android.webkit.WebView.goBack()' on a null object reference
+ticode.zh.android.浏览框#前进  → NullPointerException: Attempt to invoke virtual method 'void android.webkit.WebView.goForward()' on a null object reference
+ticode.zh.android.浏览框#清除历史  → NullPointerException: Attempt to invoke virtual method 'void android.webkit.WebView.clearHistory()' on a null object reference
+ticode.zh.android.浏览框#清除表单  → NullPointerException: Attempt to invoke virtual method 'void android.webkit.WebView.clearFormData()' on a null object reference
+ticode.zh.android.浏览框#清除缓存  → NullPointerException: Attempt to invoke virtual method 'void android.webkit.WebView.clearCache(boolean)' on a null object reference
+ticode.zh.android.浏览框#下载  → NullPointerException: Attempt to invoke virtual method 'java.lang.Object android.content.Context.getSystemService(java.lang.String)' on a null object reference
+ticode.zh.android.浏览框#添加JS接口  → NullPointerException: Attempt to invoke virtual method 'void android.webkit.WebView.evaluateJavascript(java.lang.String, android.webkit.ValueCallback)' on a null object reference
+ticode.zh.android.浏览框#取消JS交互事件回调  → NullPointerException: Attempt to invoke virtual method 'void android.webkit.JsPromptResult.cancel()' on a null object reference
+ticode.zh.android.浏览框#执行JS  → NullPointerException: Attempt to invoke virtual method 'void android.webkit.WebView.evaluateJavascript(java.lang.String, android.webkit.ValueCallback)' on a null object reference
+ticode.zh.android.浏览框#释放浏览框  → NullPointerException: Attempt to invoke virtual method 'void android.webkit.WebView.removeAllViews()' on a null object reference
+ticode.zh.android.浏览框#注入JS接口类  → NullPointerException: Attempt to invoke virtual method 'void android.webkit.WebView.addJavascriptInterface(java.lang.Object, java.lang.String)' on a null object reference
+ticode.zh.android.浏览框#JsI  → NullPointerException: Attempt to invoke virtual method 'java.util.Iterator java.util.ArrayList.iterator()' on a null object reference
+ticode.zh.android.浏览框#onCreateView  → RuntimeException: WebView cannot be initialized on a thread that has no Looper.
+ticode.zh.android.相对布局#位于布局中间  → NullPointerException: Attempt to invoke virtual method 'void android.widget.RelativeLayout$LayoutParams.addRule(int)' on a null object reference
+ticode.zh.android.相对布局#位于布局顶部  → NullPointerException: Attempt to invoke virtual method 'void android.widget.RelativeLayout$LayoutParams.addRule(int)' on a null object reference
+ticode.zh.android.相对布局#位于布局底部  → NullPointerException: Attempt to invoke virtual method 'void android.widget.RelativeLayout$LayoutParams.addRule(int)' on a null object reference
+ticode.zh.android.相对布局#位于布局左边  → NullPointerException: Attempt to invoke virtual method 'void android.widget.RelativeLayout$LayoutParams.addRule(int)' on a null object reference
+ticode.zh.android.相对布局#位于布局右边  → NullPointerException: Attempt to invoke virtual method 'void android.widget.RelativeLayout$LayoutParams.addRule(int)' on a null object reference
+ticode.zh.android.相对布局#位于某组件左边  → NullPointerException: Attempt to invoke virtual method 'void android.widget.RelativeLayout$LayoutParams.addRule(int, int)' on a null object reference
+ticode.zh.android.相对布局#位于某组件右边  → NullPointerException: Attempt to invoke virtual method 'void android.widget.RelativeLayout$LayoutParams.addRule(int, int)' on a null object reference
+ticode.zh.android.相对布局#位于某组件之上  → NullPointerException: Attempt to invoke virtual method 'void android.widget.RelativeLayout$LayoutParams.addRule(int, int)' on a null object reference
+ticode.zh.android.相对布局#位于某组件之下  → NullPointerException: Attempt to invoke virtual method 'void android.widget.RelativeLayout$LayoutParams.addRule(int, int)' on a null object reference
+ticode.zh.android.相对布局#与某组件左边平齐  → NullPointerException: Attempt to invoke virtual method 'void android.widget.RelativeLayout$LayoutParams.addRule(int, int)' on a null object reference
+ticode.zh.android.相对布局#与某组件右边平齐  → NullPointerException: Attempt to invoke virtual method 'void android.widget.RelativeLayout$LayoutParams.addRule(int, int)' on a null object reference
+ticode.zh.android.相对布局#与某组件顶部平齐  → NullPointerException: Attempt to invoke virtual method 'void android.widget.RelativeLayout$LayoutParams.addRule(int, int)' on a null object reference
+ticode.zh.android.相对布局#与某组件底部平齐  → NullPointerException: Attempt to invoke virtual method 'void android.widget.RelativeLayout$LayoutParams.addRule(int, int)' on a null object reference
+ticode.zh.android.窗口组件#取安卓窗口  → ClassCastException: com.example.qdtest.CoverageDriver$阻断Context cannot be cast to ticode.zh.android.安卓窗口
+ticode.zh.android.简单适配器#更新项目  → NullPointerException: Attempt to invoke virtual method 'void android.database.DataSetObservable.notifyChanged()' on a null object reference
+ticode.zh.android.系统操作#禁止截屏  → IllegalArgumentException: method ticode.zh.android.系统操作.禁止截屏 argument 1 has type ticode.zh.android.窗口, got com.example.qdtest.MainActivity
+ticode.zh.android.系统操作#加载SO库  → UnsatisfiedLinkError: dalvik.system.PathClassLoader[DexPathList[[zip file "/data/app/com.example.qdtest-9h2ZVn1_fqZnzH99yqmE4A==/base.apk"],nativeLibraryDirectories=[/data/app/com.example.qdtest-9h2ZVn1_fqZnzH99yqmE4A==/lib/arm64, /system/lib64, /system/product/lib64]]] couldn't find "libtest.so"
+ticode.zh.android.约束布局#自身宽高比例  → NumberFormatException: For input string: "x"
+ticode.zh.android.约束布局#宽度比例  → NumberFormatException: For input string: "x"
+ticode.zh.android.约束布局#高度比例  → NumberFormatException: For input string: "x"
+ticode.zh.android.约束布局#横向权重  → NumberFormatException: For input string: "x"
+ticode.zh.android.约束布局#纵向权重  → NumberFormatException: For input string: "x"
+ticode.zh.android.约束布局#横向偏移比例  → NumberFormatException: For input string: "x"
+ticode.zh.android.约束布局#纵向偏移比例  → NumberFormatException: For input string: "x"
+ticode.zh.android.线性布局#权重  → NullPointerException: Attempt to write to field 'float android.widget.LinearLayout$LayoutParams.weight' on a null object reference
+ticode.zh.android.线性布局#布局对齐方式  → NullPointerException: Attempt to write to field 'int android.widget.LinearLayout$LayoutParams.gravity' on a null object reference
+ticode.zh.android.线程#通知_更新主线程  → NullPointerException: Attempt to invoke virtual method 'boolean android.os.Handler.sendMessage(android.os.Message)' on a null object reference
+ticode.zh.android.组件动画#重置  → NullPointerException: Attempt to invoke virtual method 'void android.graphics.RectF.setEmpty()' on a null object reference
+ticode.zh.android.组件属性动画播放器#播放时间  → NullPointerException: Attempt to invoke virtual method 'long android.view.ViewPropertyAnimator.getDuration()' on a null object reference
+ticode.zh.android.组件属性动画播放器#播放时间  → NullPointerException: Attempt to invoke virtual method 'android.view.ViewPropertyAnimator android.view.ViewPropertyAnimator.setDuration(long)' on a null object reference
+ticode.zh.android.组件属性动画播放器#延迟时间  → NullPointerException: Attempt to invoke virtual method 'long android.view.ViewPropertyAnimator.getStartDelay()' on a null object reference
+ticode.zh.android.组件属性动画播放器#延迟时间  → NullPointerException: Attempt to invoke virtual method 'android.view.ViewPropertyAnimator android.view.ViewPropertyAnimator.setStartDelay(long)' on a null object reference
+ticode.zh.android.组件属性动画播放器#横坐标  → NullPointerException: Attempt to invoke virtual method 'android.view.ViewPropertyAnimator android.view.ViewPropertyAnimator.x(float)' on a null object reference
+ticode.zh.android.组件属性动画播放器#横坐标平移  → NullPointerException: Attempt to invoke virtual method 'android.view.ViewPropertyAnimator android.view.ViewPropertyAnimator.xBy(float)' on a null object reference
+ticode.zh.android.组件属性动画播放器#纵坐标  → NullPointerException: Attempt to invoke virtual method 'android.view.ViewPropertyAnimator android.view.ViewPropertyAnimator.y(float)' on a null object reference
+ticode.zh.android.组件属性动画播放器#纵坐标平移  → NullPointerException: Attempt to invoke virtual method 'android.view.ViewPropertyAnimator android.view.ViewPropertyAnimator.yBy(float)' on a null object reference
+ticode.zh.android.组件属性动画播放器#竖坐标  → NullPointerException: Attempt to invoke virtual method 'android.view.ViewPropertyAnimator android.view.ViewPropertyAnimator.z(float)' on a null object reference
+ticode.zh.android.组件属性动画播放器#竖坐标平移  → NullPointerException: Attempt to invoke virtual method 'android.view.ViewPropertyAnimator android.view.ViewPropertyAnimator.zBy(float)' on a null object reference
+ticode.zh.android.组件属性动画播放器#旋转角  → NullPointerException: Attempt to invoke virtual method 'android.view.ViewPropertyAnimator android.view.ViewPropertyAnimator.rotation(float)' on a null object reference
+ticode.zh.android.组件属性动画播放器#增加旋转角  → NullPointerException: Attempt to invoke virtual method 'android.view.ViewPropertyAnimator android.view.ViewPropertyAnimator.rotationBy(float)' on a null object reference
+ticode.zh.android.组件属性动画播放器#X轴旋转角  → NullPointerException: Attempt to invoke virtual method 'android.view.ViewPropertyAnimator android.view.ViewPropertyAnimator.rotationX(float)' on a null object reference
+ticode.zh.android.组件属性动画播放器#增加X轴旋转角  → NullPointerException: Attempt to invoke virtual method 'android.view.ViewPropertyAnimator android.view.ViewPropertyAnimator.rotationXBy(float)' on a null object reference
+ticode.zh.android.组件属性动画播放器#Y轴旋转角  → NullPointerException: Attempt to invoke virtual method 'android.view.ViewPropertyAnimator android.view.ViewPropertyAnimator.rotationY(float)' on a null object reference
+ticode.zh.android.组件属性动画播放器#增加Y轴旋转角  → NullPointerException: Attempt to invoke virtual method 'android.view.ViewPropertyAnimator android.view.ViewPropertyAnimator.rotationYBy(float)' on a null object reference
+ticode.zh.android.组件属性动画播放器#横向偏移  → NullPointerException: Attempt to invoke virtual method 'android.view.ViewPropertyAnimator android.view.ViewPropertyAnimator.translationX(float)' on a null object reference
+ticode.zh.android.组件属性动画播放器#增加横向偏移  → NullPointerException: Attempt to invoke virtual method 'android.view.ViewPropertyAnimator android.view.ViewPropertyAnimator.translationXBy(float)' on a null object reference
+ticode.zh.android.组件属性动画播放器#纵向偏移  → NullPointerException: Attempt to invoke virtual method 'android.view.ViewPropertyAnimator android.view.ViewPropertyAnimator.translationY(float)' on a null object reference
+ticode.zh.android.组件属性动画播放器#增加纵向偏移  → NullPointerException: Attempt to invoke virtual method 'android.view.ViewPropertyAnimator android.view.ViewPropertyAnimator.translationYBy(float)' on a null object reference
+ticode.zh.android.组件属性动画播放器#竖向偏移  → NullPointerException: Attempt to invoke virtual method 'android.view.ViewPropertyAnimator android.view.ViewPropertyAnimator.translationZ(float)' on a null object reference
+ticode.zh.android.组件属性动画播放器#增加竖向偏移  → NullPointerException: Attempt to invoke virtual method 'android.view.ViewPropertyAnimator android.view.ViewPropertyAnimator.translationZBy(float)' on a null object reference
+ticode.zh.android.组件属性动画播放器#横向缩放度  → NullPointerException: Attempt to invoke virtual method 'android.view.ViewPropertyAnimator android.view.ViewPropertyAnimator.scaleX(float)' on a null object reference
+ticode.zh.android.组件属性动画播放器#增加横向缩放度  → NullPointerException: Attempt to invoke virtual method 'android.view.ViewPropertyAnimator android.view.ViewPropertyAnimator.scaleXBy(float)' on a null object reference
+ticode.zh.android.组件属性动画播放器#纵向缩放度  → NullPointerException: Attempt to invoke virtual method 'android.view.ViewPropertyAnimator android.view.ViewPropertyAnimator.scaleY(float)' on a null object reference
+ticode.zh.android.组件属性动画播放器#增加纵向缩放度  → NullPointerException: Attempt to invoke virtual method 'android.view.ViewPropertyAnimator android.view.ViewPropertyAnimator.scaleYBy(float)' on a null object reference
+ticode.zh.android.组件属性动画播放器#透明度  → NullPointerException: Attempt to invoke virtual method 'android.view.ViewPropertyAnimator android.view.ViewPropertyAnimator.alpha(float)' on a null object reference
+ticode.zh.android.组件属性动画播放器#增加透明度  → NullPointerException: Attempt to invoke virtual method 'android.view.ViewPropertyAnimator android.view.ViewPropertyAnimator.alphaBy(float)' on a null object reference
+ticode.zh.android.组件属性动画播放器#开始播放  → NullPointerException: Attempt to invoke virtual method 'void android.view.ViewPropertyAnimator.start()' on a null object reference
+ticode.zh.android.组件属性动画播放器#取消播放  → NullPointerException: Attempt to invoke virtual method 'void android.view.ViewPropertyAnimator.start()' on a null object reference
+ticode.zh.android.缩放处理器#处理触摸事件  → NullPointerException: Attempt to invoke virtual method 'boolean android.view.ScaleGestureDetector.onTouchEvent(android.view.MotionEvent)' on a null object reference
+ticode.zh.android.缩放处理器#取缩放百分比  → NullPointerException: Attempt to invoke virtual method 'float android.view.ScaleGestureDetector.getScaleFactor()' on a null object reference
+ticode.zh.android.缩放处理器#取触摸点距离  → NullPointerException: Attempt to invoke virtual method 'float android.view.ScaleGestureDetector.getCurrentSpan()' on a null object reference
+ticode.zh.android.缩放处理器#取触摸点X距离  → NullPointerException: Attempt to invoke virtual method 'float android.view.ScaleGestureDetector.getCurrentSpanX()' on a null object reference
+ticode.zh.android.缩放处理器#取触摸点Y距离  → NullPointerException: Attempt to invoke virtual method 'float android.view.ScaleGestureDetector.getCurrentSpanY()' on a null object reference
+ticode.zh.android.缩放处理器#取事件时间  → NullPointerException: Attempt to invoke virtual method 'long android.view.ScaleGestureDetector.getEventTime()' on a null object reference
+ticode.zh.android.缩放处理器#取焦点X坐标  → NullPointerException: Attempt to invoke virtual method 'float android.view.ScaleGestureDetector.getFocusX()' on a null object reference
+ticode.zh.android.缩放处理器#取焦点Y坐标  → NullPointerException: Attempt to invoke virtual method 'float android.view.ScaleGestureDetector.getFocusY()' on a null object reference
+ticode.zh.android.缩放处理器#取上次触摸点距离  → NullPointerException: Attempt to invoke virtual method 'float android.view.ScaleGestureDetector.getPreviousSpan()' on a null object reference
+ticode.zh.android.缩放处理器#取上次触摸点X距离  → NullPointerException: Attempt to invoke virtual method 'float android.view.ScaleGestureDetector.getPreviousSpanX()' on a null object reference
+ticode.zh.android.缩放处理器#取上次触摸点Y距离  → NullPointerException: Attempt to invoke virtual method 'float android.view.ScaleGestureDetector.getPreviousSpanY()' on a null object reference
+ticode.zh.android.缩放处理器#取时间差  → NullPointerException: Attempt to invoke virtual method 'long android.view.ScaleGestureDetector.getTimeDelta()' on a null object reference
+ticode.zh.android.缩放处理器#是否在缩放  → NullPointerException: Attempt to invoke virtual method 'boolean android.view.ScaleGestureDetector.isInProgress()' on a null object reference
+ticode.zh.android.缩放处理器#快速缩放  → NullPointerException: Attempt to invoke virtual method 'boolean android.view.ScaleGestureDetector.isQuickScaleEnabled()' on a null object reference
+ticode.zh.android.缩放处理器#手写笔缩放  → NullPointerException: Attempt to invoke virtual method 'boolean android.view.ScaleGestureDetector.isStylusScaleEnabled()' on a null object reference
+ticode.zh.android.缩放处理器#快速缩放  → NullPointerException: Attempt to invoke virtual method 'void android.view.ScaleGestureDetector.setQuickScaleEnabled(boolean)' on a null object reference
+ticode.zh.android.缩放处理器#手写笔缩放  → NullPointerException: Attempt to invoke virtual method 'void android.view.ScaleGestureDetector.setStylusScaleEnabled(boolean)' on a null object reference
+ticode.zh.android.网络工具#添加请求头  → NullPointerException: Attempt to invoke interface method 'java.lang.Object java.util.Map.put(java.lang.Object, java.lang.Object)' on a null object reference
+ticode.zh.android.网络工具#移除请求头  → NullPointerException: Attempt to invoke interface method 'java.lang.Object java.util.Map.remove(java.lang.Object)' on a null object reference
+ticode.zh.android.网络工具#清除请求头  → NullPointerException: Attempt to invoke interface method 'void java.util.Map.clear()' on a null object reference
+ticode.zh.android.网络请求#添加网络请求头  → NullPointerException: Attempt to invoke interface method 'java.lang.Object java.util.Map.put(java.lang.Object, java.lang.Object)' on a null object reference
+ticode.zh.android.网络请求#移除网络请求头  → NullPointerException: Attempt to invoke interface method 'java.lang.Object java.util.Map.remove(java.lang.Object)' on a null object reference
+ticode.zh.android.网络请求#清除网络请求头  → NullPointerException: Attempt to invoke interface method 'void java.util.Map.clear()' on a null object reference
+ticode.zh.android.网络请求#httpRequest  → ProtocolException: Expected one of [OPTIONS, GET, HEAD, POST, PUT, DELETE, TRACE, PATCH] but was test
+ticode.zh.android.网络请求结果#取响应头  → NullPointerException: Attempt to invoke virtual method 'java.lang.String java.net.HttpURLConnection.getHeaderField(java.lang.String)' on a null object reference
+ticode.zh.android.网络请求结果#取Cookie  → NullPointerException: Attempt to invoke virtual method 'java.lang.String java.net.HttpURLConnection.getHeaderField(java.lang.String)' on a null object reference
+ticode.zh.android.自定义宫格列表框#更新项目  → NullPointerException: Attempt to invoke virtual method 'void ticode.zh.android.简单适配器.更新项目(int)' on a null object reference
+ticode.zh.android.自适应布局#宽度比例  → NullPointerException: Attempt to write to field 'int android.view.ViewGroup$LayoutParams.width' on a null object reference
+ticode.zh.android.自适应布局#高度比例  → NullPointerException: Attempt to write to field 'int android.view.ViewGroup$LayoutParams.height' on a null object reference
+ticode.zh.android.自适应布局#横坐标比例  → NullPointerException: Attempt to write to field 'int android.widget.AbsoluteLayout$LayoutParams.x' on a null object reference
+ticode.zh.android.自适应布局#纵坐标比例  → NullPointerException: Attempt to write to field 'int android.widget.AbsoluteLayout$LayoutParams.y' on a null object reference
+ticode.zh.android.转换操作#文本到字节  → RuntimeException: 文本到字节( 解码错误
+ticode.zh.android.转换操作#字节到整数  → ArrayIndexOutOfBoundsException: length=1; index=1
+ticode.zh.android.转换操作#字节到长整数  → ArrayIndexOutOfBoundsException: length=1; index=1
+ticode.zh.android.转换操作#文本到字节集  → RuntimeException: 文本到字节( 解码错误
+ticode.zh.android.转换操作#字节集到整数  → ArrayIndexOutOfBoundsException: length=1; index=1
+ticode.zh.android.转换操作#字节集到长整数  → ArrayIndexOutOfBoundsException: length=1; index=1
+ticode.zh.android.输入对话框#显示  → RuntimeException: Can't create handler inside thread Thread[Thread-1981,5,main] that has not called Looper.prepare()
+ticode.zh.android.输入对话框#隐藏  → NullPointerException: Attempt to invoke virtual method 'void android.app.AlertDialog.hide()' on a null object reference
+ticode.zh.android.输入对话框#关闭  → NullPointerException: Attempt to invoke virtual method 'void android.app.AlertDialog.dismiss()' on a null object reference
+ticode.zh.android.进度对话框#风格  → NullPointerException: Attempt to invoke virtual method 'void android.app.ProgressDialog.setProgressStyle(int)' on a null object reference
+ticode.zh.android.进度对话框#标题  → NullPointerException: Attempt to invoke virtual method 'void android.app.ProgressDialog.setTitle(java.lang.CharSequence)' on a null object reference
+ticode.zh.android.进度对话框#信息  → NullPointerException: Attempt to invoke virtual method 'void android.app.ProgressDialog.setMessage(java.lang.CharSequence)' on a null object reference
+ticode.zh.android.进度对话框#进度  → NullPointerException: Attempt to invoke virtual method 'void android.app.ProgressDialog.setProgress(int)' on a null object reference
+ticode.zh.android.进度对话框#进度  → NullPointerException: Attempt to invoke virtual method 'int android.app.ProgressDialog.getProgress()' on a null object reference
+ticode.zh.android.进度对话框#最大进度  → NullPointerException: Attempt to invoke virtual method 'void android.app.ProgressDialog.setMax(int)' on a null object reference
+ticode.zh.android.进度对话框#最大进度  → NullPointerException: Attempt to invoke virtual method 'int android.app.ProgressDialog.getMax()' on a null object reference
+ticode.zh.android.进度对话框#缓冲进度  → NullPointerException: Attempt to invoke virtual method 'void android.app.ProgressDialog.setSecondaryProgress(int)' on a null object reference
+ticode.zh.android.进度对话框#缓冲进度  → NullPointerException: Attempt to invoke virtual method 'int android.app.ProgressDialog.getSecondaryProgress()' on a null object reference
+ticode.zh.android.进度对话框#模糊进度  → NullPointerException: Attempt to invoke virtual method 'void android.app.ProgressDialog.setIndeterminate(boolean)' on a null object reference
+ticode.zh.android.进度对话框#模糊进度  → NullPointerException: Attempt to invoke virtual method 'boolean android.app.ProgressDialog.isIndeterminate()' on a null object reference
+ticode.zh.android.进度对话框#图标  → NullPointerException: Attempt to invoke virtual method 'void android.app.ProgressDialog.setIcon(int)' on a null object reference
+ticode.zh.android.进度对话框#按钮1  → NullPointerException: Attempt to invoke virtual method 'void android.app.ProgressDialog.setButton(java.lang.CharSequence, android.content.DialogInterface$OnClickListener)' on a null object reference
+ticode.zh.android.进度对话框#按钮2  → NullPointerException: Attempt to invoke virtual method 'void android.app.ProgressDialog.setButton2(java.lang.CharSequence, android.content.DialogInterface$OnClickListener)' on a null object reference
+ticode.zh.android.进度对话框#按钮3  → NullPointerException: Attempt to invoke virtual method 'void android.app.ProgressDialog.setButton3(java.lang.CharSequence, android.content.DialogInterface$OnClickListener)' on a null object reference
+ticode.zh.android.进度对话框#可取消  → NullPointerException: Attempt to invoke virtual method 'void android.app.ProgressDialog.setCancelable(boolean)' on a null object reference
+ticode.zh.android.进度对话框#正在显示  → NullPointerException: Attempt to invoke virtual method 'boolean android.app.ProgressDialog.isShowing()' on a null object reference
+ticode.zh.android.进度对话框#显示  → NullPointerException: Attempt to invoke virtual method 'void android.app.ProgressDialog.show()' on a null object reference
+ticode.zh.android.进度对话框#隐藏  → NullPointerException: Attempt to invoke virtual method 'void android.app.ProgressDialog.hide()' on a null object reference
+ticode.zh.android.进度对话框#关闭  → NullPointerException: Attempt to invoke virtual method 'void android.app.ProgressDialog.dismiss()' on a null object reference
+ticode.zh.android.音乐播放器#循环播放  → NullPointerException: Attempt to invoke virtual method 'void android.media.MediaPlayer.setLooping(boolean)' on a null object reference
+ticode.zh.android.音乐播放器#循环播放  → NullPointerException: Attempt to invoke virtual method 'boolean android.media.MediaPlayer.isLooping()' on a null object reference
+ticode.zh.android.音乐播放器#置播放路径  → NullPointerException: Attempt to invoke virtual method 'void android.media.MediaPlayer.reset()' on a null object reference
+ticode.zh.android.音乐播放器#开始播放  → NullPointerException: Attempt to invoke virtual method 'void android.media.MediaPlayer.start()' on a null object reference
+ticode.zh.android.音乐播放器#暂停播放  → NullPointerException: Attempt to invoke virtual method 'void android.media.MediaPlayer.pause()' on a null object reference
+ticode.zh.android.音乐播放器#停止播放  → NullPointerException: Attempt to invoke virtual method 'void android.media.MediaPlayer.stop()' on a null object reference
+ticode.zh.android.音乐播放器#取音乐总时长  → NullPointerException: Attempt to invoke virtual method 'int android.media.MediaPlayer.getDuration()' on a null object reference
+ticode.zh.android.音乐播放器#取当前播放位置  → NullPointerException: Attempt to invoke virtual method 'int android.media.MediaPlayer.getCurrentPosition()' on a null object reference
+ticode.zh.android.音乐播放器#快进至  → NullPointerException: Attempt to invoke virtual method 'void android.media.MediaPlayer.seekTo(int)' on a null object reference
+ticode.zh.android.音乐播放器#置音量  → NullPointerException: Attempt to invoke virtual method 'void android.media.MediaPlayer.setVolume(float, float)' on a null object reference
+ticode.zh.android.音乐播放器#重置  → NullPointerException: Attempt to invoke virtual method 'void android.media.MediaPlayer.reset()' on a null object reference
+ticode.zh.android.音乐播放器#释放资源  → NullPointerException: Attempt to invoke virtual method 'void android.media.MediaPlayer.release()' on a null object reference
+ticode.zh.android.音乐播放器#是否在播放  → NullPointerException: Attempt to invoke virtual method 'boolean android.media.MediaPlayer.isPlaying()' on a null object reference
+ticode.zh.android.颜色操作#RGBtoHSV  → ArrayIndexOutOfBoundsException: length=1; index=1
+ticode.zh.android.颜色操作#文本到颜色值  → IllegalArgumentException: Unknown color
+ticode.zh.jvm.Dex类加载器#加载类  → RuntimeException: 找不到类：test
+ticode.zh.jvm.GZIP操作#解压字节集  → RuntimeException: 创建GZIP输入流失败：null
+ticode.zh.jvm.GZIP操作#压缩文件  → RuntimeException: 创建文件输出流失败：test: open failed: EROFS (Read-only file system)
+ticode.zh.jvm.GZIP操作#解压文件  → RuntimeException: 创建文件输出流失败：test: open failed: EROFS (Read-only file system)
+ticode.zh.jvm.GZIP操作#创建GZIP输入流  → RuntimeException: 创建GZIP输入流失败：null
+ticode.zh.jvm.Java类加载器#加载类  → RuntimeException: 找不到类：test
+ticode.zh.jvm.UUID#从文本创建  → IllegalArgumentException: Invalid UUID string: test
+ticode.zh.jvm.ZIP操作#压缩文件  → RuntimeException: 创建文件输出流失败：test: open failed: EROFS (Read-only file system)
+ticode.zh.jvm.ZIP操作#解压文件  → RuntimeException: 文件读取错误：test (No such file or directory)
+ticode.zh.jvm.ZIP操作#解压单个文件  → RuntimeException: 文件读取错误：test (No such file or directory)
+ticode.zh.jvm.ZIP文件#指定编码创建  → RuntimeException: 文件读取错误：test
+ticode.zh.jvm.ZIP文件#取注释内容  → RuntimeException: ZIP文件已关闭
+ticode.zh.jvm.ZIP文件#取条目数量  → RuntimeException: ZIP文件已关闭
+ticode.zh.jvm.ZIP文件#取条目  → RuntimeException: ZIP文件已关闭
+ticode.zh.jvm.ZIP文件#取所有条目  → RuntimeException: ZIP文件已关闭
+ticode.zh.jvm.ZIP文件#取输入流  → RuntimeException: ZIP文件已关闭
+ticode.zh.jvm.ZIP条目#压缩方法  → RuntimeException: 不正确的压缩方法
+ticode.zh.jvm.ZIP输出流#压缩方法  → RuntimeException: 不正确的压缩方法
+ticode.zh.jvm.倒计时器#开始倒计时  → RuntimeException: Can't create handler inside thread Thread[Thread-2437,5,main] that has not called Looper.prepare()
+ticode.zh.jvm.倒计时器#关闭  → NullPointerException: Attempt to invoke virtual method 'void android.os.CountDownTimer.cancel()' on a null object reference
+ticode.zh.jvm.压缩器#设置欲压缩数据  → ArrayIndexOutOfBoundsException: null
+ticode.zh.jvm.压缩器#设置字典  → ArrayIndexOutOfBoundsException: null
+ticode.zh.jvm.双端队列#从集合创建  → IllegalArgumentException: method ticode.zh.jvm.双端队列.从集合创建 argument 1 has type ticode.zh.jvm.集合, got java.util.ArrayList
+ticode.zh.jvm.双端队列模板类#长度  → NullPointerException: Attempt to get length of null array
+ticode.zh.jvm.双端队列模板类#添加成员至头部  → NullPointerException: Attempt to get length of null array
+ticode.zh.jvm.双端队列模板类#添加成员至尾部  → NullPointerException: Attempt to write to null array
+ticode.zh.jvm.双端队列模板类#弹出首成员  → NullPointerException: Attempt to read from null array
+ticode.zh.jvm.双端队列模板类#弹出尾成员  → NullPointerException: Attempt to get length of null array
+ticode.zh.jvm.双端队列模板类#获取首成员  → NullPointerException: Attempt to read from null array
+ticode.zh.jvm.双端队列模板类#获取尾成员  → NullPointerException: Attempt to get length of null array
+ticode.zh.jvm.大整数#加_op  → NullPointerException: Attempt to get length of null array
+ticode.zh.jvm.大整数#减_op  → NullPointerException: Attempt to get length of null array
+ticode.zh.jvm.大整数#乘_op  → NullPointerException: Attempt to get length of null array
+ticode.zh.jvm.大整数#除_op  → NullPointerException: Attempt to get length of null array
+ticode.zh.jvm.大整数#加  → NullPointerException: Attempt to get length of null array
+ticode.zh.jvm.大整数#减  → NullPointerException: Attempt to get length of null array
+ticode.zh.jvm.大整数#乘  → NullPointerException: Attempt to get length of null array
+ticode.zh.jvm.大整数#除以  → NullPointerException: Attempt to get length of null array
+ticode.zh.jvm.大整数#到文本  → NullPointerException: Attempt to invoke virtual method 'int java.math.BigInt.sign()' on a null object reference
+ticode.zh.jvm.定时器#开始定时  → NullPointerException: Null reference used for synchronization (monitor-enter)
+ticode.zh.jvm.定时器#关闭  → NullPointerException: Null reference used for synchronization (monitor-enter)
+ticode.zh.jvm.并发集合模板类#赋值_op  → NullPointerException: Attempt to get length of null array
+ticode.zh.jvm.并发集合模板类#取索引_op  → ArrayIndexOutOfBoundsException: Array index out of range: 1
+ticode.zh.jvm.并发集合模板类#设索引_op  → ArrayIndexOutOfBoundsException: Array index out of range: 1
+ticode.zh.jvm.并发集合模板类#添加成员  → NullPointerException: Attempt to get length of null array
+ticode.zh.jvm.并发集合模板类#插入成员  → ArrayIndexOutOfBoundsException: 1 > 0
+ticode.zh.jvm.并发集合模板类#置成员  → ArrayIndexOutOfBoundsException: Array index out of range: 1
+ticode.zh.jvm.并发集合模板类#取成员  → ArrayIndexOutOfBoundsException: Array index out of range: 1
+ticode.zh.jvm.并发集合模板类#删除成员  → ArrayIndexOutOfBoundsException: Array index out of range: 1
+ticode.zh.jvm.并发集合模板类#到数组  → NullPointerException: src == null
+ticode.zh.jvm.控制台#取输入文本  → NoSuchElementException: null
+ticode.zh.jvm.控制台#取输入整数  → NoSuchElementException: null
+ticode.zh.jvm.控制台#取输入小数  → NoSuchElementException: null
+ticode.zh.jvm.控制台#取输入浮点数  → NoSuchElementException: null
+ticode.zh.jvm.控制台#取输入长整数  → NoSuchElementException: null
+ticode.zh.jvm.控制台#取输入逻辑值  → NoSuchElementException: null
+ticode.zh.jvm.栈模板类#出栈  → EmptyStackException: null
+ticode.zh.jvm.栈模板类#压栈  → NullPointerException: Attempt to get length of null array
+ticode.zh.jvm.栈模板类#取栈顶成员  → EmptyStackException: null
+ticode.zh.jvm.解压器#设置欲解压数据  → ArrayIndexOutOfBoundsException: null
+ticode.zh.jvm.解压器#设置字典  → ArrayIndexOutOfBoundsException: null
+ticode.zh.jvm.读写锁#获取读锁  → NullPointerException: Attempt to invoke virtual method 'void java.util.concurrent.locks.ReentrantReadWriteLock$ReadLock.lock()' on a null object reference
+ticode.zh.jvm.读写锁#释放读锁  → NullPointerException: Attempt to invoke virtual method 'void java.util.concurrent.locks.ReentrantReadWriteLock$ReadLock.unlock()' on a null object reference
+ticode.zh.jvm.读写锁#获取写锁  → NullPointerException: Attempt to invoke virtual method 'void java.util.concurrent.locks.ReentrantReadWriteLock$WriteLock.lock()' on a null object reference
+ticode.zh.jvm.读写锁#释放写锁  → NullPointerException: Attempt to invoke virtual method 'void java.util.concurrent.locks.ReentrantReadWriteLock$WriteLock.unlock()' on a null object reference
+ticode.zh.jvm.集合模板类#赋值_op  → NullPointerException: Attempt to get length of null array
+ticode.zh.jvm.集合模板类#取索引_op  → IndexOutOfBoundsException: Index: 1, Size: 0
+ticode.zh.jvm.集合模板类#设索引_op  → IndexOutOfBoundsException: Index: 1, Size: 0
+ticode.zh.jvm.集合模板类#添加成员  → NullPointerException: Attempt to get length of null array
+ticode.zh.jvm.集合模板类#插入成员  → IndexOutOfBoundsException: Index: 1, Size: 0
+ticode.zh.jvm.集合模板类#置成员  → IndexOutOfBoundsException: Index: 1, Size: 0
+ticode.zh.jvm.集合模板类#取成员  → IndexOutOfBoundsException: Index: 1, Size: 0
+ticode.zh.jvm.集合模板类#删除成员  → IndexOutOfBoundsException: Index: 1, Size: 0
+ticode.zh.jvm.集合模板类#到数组  → NullPointerException: src == null
+ticode.zh.meng.布局管理器#取项目类型  → NullPointerException: Attempt to invoke virtual method 'ticode.zh.meng.高级适配器 ticode.zh.meng.高级列表框.取适配器()' on a null object reference
+ticode.zh.meng.布局管理器#取适配器  → NullPointerException: Attempt to invoke virtual method 'ticode.zh.meng.高级适配器 ticode.zh.meng.高级列表框.取适配器()' on a null object reference
+ticode.zh.meng.弹性布局#移除视图  → NullPointerException: Attempt to invoke virtual method 'void android.view.View.unFocus(android.view.View)' on a null object reference
+ticode.zh.meng.弹性布局管理器#子视图数量  → NullPointerException: Attempt to invoke virtual method 'int androidx.recyclerview.widget.RecyclerView$State.getItemCount()' on a null object reference
+ticode.zh.meng.弹性布局管理器#侧轴对齐方式_多行  → UnsupportedOperationException: Setting the alignContent in the FlexboxLayoutManager is not supported. Use FlexboxLayout if you need to use this attribute.
+ticode.zh.meng.高级列表框#滚动到  → NullPointerException: Attempt to invoke virtual method 'android.content.res.Resources android.content.Context.getResources()' on a null object reference
+ticode.zh.meng.高级列表框#转跳到  → NullPointerException: Attempt to invoke virtual method 'void androidx.recyclerview.widget.RecyclerView.scrollBy(int, int)' on a null object reference
+ticode.zh.meng.高级列表框#转跳到_平滑  → NullPointerException: Attempt to invoke virtual method 'void androidx.recyclerview.widget.RecyclerView.smoothScrollBy(int, int)' on a null object reference
+ticode.zh.meng.高级列表框#模拟滚动  → NullPointerException: Attempt to invoke virtual method 'boolean androidx.recyclerview.widget.RecyclerView.fling(int, int)' on a null object reference
+ticode.zh.meng.高级列表框#停止滚动  → NullPointerException: Attempt to invoke virtual method 'void androidx.recyclerview.widget.RecyclerView.stopScroll()' on a null object reference
+ticode.zh.meng.高级列表框#最小惯性速度  → NullPointerException: Attempt to invoke virtual method 'int androidx.recyclerview.widget.RecyclerView.getMinFlingVelocity()' on a null object reference
+ticode.zh.meng.高级列表框#最大惯性速度  → NullPointerException: Attempt to invoke virtual method 'int androidx.recyclerview.widget.RecyclerView.getMaxFlingVelocity()' on a null object reference
+ticode.zh.meng.高级列表框#项目视图缓存数量  → NullPointerException: Attempt to invoke virtual method 'void androidx.recyclerview.widget.RecyclerView.setItemViewCacheSize(int)' on a null object reference
+ticode.zh.meng.高级列表框#固定项目大小  → NullPointerException: Attempt to invoke virtual method 'void androidx.recyclerview.widget.RecyclerView.setHasFixedSize(boolean)' on a null object reference
+ticode.zh.meng.高级列表框#冻结布局  → NullPointerException: Attempt to invoke virtual method 'void androidx.recyclerview.widget.RecyclerView.setLayoutFrozen(boolean)' on a null object reference
+ticode.zh.meng.高级列表框#抑制布局  → NullPointerException: Attempt to invoke virtual method 'void androidx.recyclerview.widget.RecyclerView.suppressLayout(boolean)' on a null object reference
+ticode.zh.meng.高级列表框#触摸滚动阈值  → NullPointerException: Attempt to invoke virtual method 'void androidx.recyclerview.widget.RecyclerView.setScrollingTouchSlop(int)' on a null object reference
+ticode.zh.meng.高级列表框#禁用内边距限制  → NullPointerException: Attempt to invoke virtual method 'void androidx.recyclerview.widget.RecyclerView.setClipToPadding(boolean)' on a null object reference
+ticode.zh.meng.高级列表框#置布局管理器  → NullPointerException: Attempt to invoke virtual method 'void androidx.recyclerview.widget.RecyclerView.setLayoutManager(androidx.recyclerview.widget.RecyclerView$LayoutManager)' on a null object reference
+ticode.zh.meng.高级列表框#取分页位置索引  → NullPointerException: Attempt to invoke virtual method 'android.view.View androidx.recyclerview.widget.RecyclerView.getChildAt(int)' on a null object reference
+ticode.zh.meng.高级列表框#置适配器  → NullPointerException: Attempt to invoke virtual method 'void androidx.recyclerview.widget.RecyclerView.setAdapter(androidx.recyclerview.widget.RecyclerView$Adapter)' on a null object reference
+ticode.zh.meng.高级列表框#替换适配器  → NullPointerException: Attempt to invoke virtual method 'void androidx.recyclerview.widget.RecyclerView.swapAdapter(androidx.recyclerview.widget.RecyclerView$Adapter, boolean)' on a null object reference
+ticode.zh.meng.高级列表框#取分割线  → NullPointerException: Attempt to invoke virtual method 'androidx.recyclerview.widget.RecyclerView$ItemDecoration androidx.recyclerview.widget.RecyclerView.getItemDecorationAt(int)' on a null object reference
+ticode.zh.meng.高级列表框#删分割线  → NullPointerException: Attempt to invoke virtual method 'void androidx.recyclerview.widget.RecyclerView.removeItemDecorationAt(int)' on a null object reference
+ticode.zh.meng.高级列表框#滚动事件监听  → NullPointerException: Attempt to invoke virtual method 'void androidx.recyclerview.widget.RecyclerView.addOnScrollListener(androidx.recyclerview.widget.RecyclerView$OnScrollListener)' on a null object reference
+ticode.zh.meng.高级列表框#内容高度  → NullPointerException: Attempt to invoke virtual method 'int androidx.recyclerview.widget.RecyclerView.computeVerticalScrollRange()' on a null object reference
+ticode.zh.meng.高级列表框#内容宽度  → NullPointerException: Attempt to invoke virtual method 'int androidx.recyclerview.widget.RecyclerView.computeHorizontalScrollRange()' on a null object reference
+ticode.zh.meng.高级列表框#显示区域高度  → NullPointerException: Attempt to invoke virtual method 'int androidx.recyclerview.widget.RecyclerView.computeVerticalScrollExtent()' on a null object reference
+ticode.zh.meng.高级列表框#显示区域宽度  → NullPointerException: Attempt to invoke virtual method 'int androidx.recyclerview.widget.RecyclerView.computeHorizontalScrollExtent()' on a null object reference
+ticode.zh.meng.高级列表框#已滚动高度  → NullPointerException: Attempt to invoke virtual method 'int androidx.recyclerview.widget.RecyclerView.computeVerticalScrollOffset()' on a null object reference
+ticode.zh.meng.高级列表框#已滚动宽度  → NullPointerException: Attempt to invoke virtual method 'int androidx.recyclerview.widget.RecyclerView.computeHorizontalScrollOffset()' on a null object reference
+ticode.zh.meng.高级列表框#已滚动高度百分比  → NullPointerException: Attempt to invoke virtual method 'int androidx.recyclerview.widget.RecyclerView.computeVerticalScrollOffset()' on a null object reference
+ticode.zh.meng.高级列表框#已滚动宽度百分比  → NullPointerException: Attempt to invoke virtual method 'int androidx.recyclerview.widget.RecyclerView.computeHorizontalScrollOffset()' on a null object reference
+ticode.zh.meng.高级列表框#是否到顶  → NullPointerException: Attempt to invoke virtual method 'boolean androidx.recyclerview.widget.RecyclerView.canScrollVertically(int)' on a null object reference
+ticode.zh.meng.高级列表框#是否到底  → NullPointerException: Attempt to invoke virtual method 'boolean androidx.recyclerview.widget.RecyclerView.canScrollVertically(int)' on a null object reference
+ticode.zh.meng.高级列表框#是否正在播放动画  → NullPointerException: Attempt to invoke virtual method 'boolean androidx.recyclerview.widget.RecyclerView.isAnimating()' on a null object reference
+ticode.zh.meng.高级列表框#是否正在计算布局  → NullPointerException: Attempt to invoke virtual method 'boolean androidx.recyclerview.widget.RecyclerView.isComputingLayout()' on a null object reference
+ticode.zh.meng.高级列表框#取滚动状态  → NullPointerException: Attempt to invoke virtual method 'int androidx.recyclerview.widget.RecyclerView.getScrollState()' on a null object reference
+ticode.zh.meng.高级列表框#取索引容器  → NullPointerException: Attempt to invoke virtual method 'androidx.recyclerview.widget.RecyclerView$ViewHolder androidx.recyclerview.widget.RecyclerView.findViewHolderForAdapterPosition(int)' on a null object reference
+ticode.zh.meng.高级列表框#取位置容器  → NullPointerException: Attempt to invoke virtual method 'androidx.recyclerview.widget.RecyclerView$ViewHolder androidx.recyclerview.widget.RecyclerView.findViewHolderForLayoutPosition(int)' on a null object reference
+ticode.zh.meng.高级列表框#取固定ID容器  → NullPointerException: Attempt to invoke virtual method 'androidx.recyclerview.widget.RecyclerView$ViewHolder androidx.recyclerview.widget.RecyclerView.findViewHolderForItemId(long)' on a null object reference
+ticode.zh.meng.高级列表框#取视图容器  → NullPointerException: Attempt to invoke virtual method 'androidx.recyclerview.widget.RecyclerView$ViewHolder androidx.recyclerview.widget.RecyclerView.findContainingViewHolder(android.view.View)' on a null object reference
+ticode.zh.meng.高级列表框#取容器索引  → NullPointerException: Attempt to invoke virtual method 'int androidx.recyclerview.widget.RecyclerView.getChildAdapterPosition(android.view.View)' on a null object reference
+ticode.zh.meng.高级列表框#取视图索引  → NullPointerException: Attempt to invoke virtual method 'android.view.View androidx.recyclerview.widget.RecyclerView.findContainingItemView(android.view.View)' on a null object reference
+ticode.zh.meng.高级列表框#取容器位置  → NullPointerException: Attempt to invoke virtual method 'int androidx.recyclerview.widget.RecyclerView.getChildLayoutPosition(android.view.View)' on a null object reference
+ticode.zh.meng.高级列表框#取视图位置  → NullPointerException: Attempt to invoke virtual method 'android.view.View androidx.recyclerview.widget.RecyclerView.findContainingItemView(android.view.View)' on a null object reference
+ticode.zh.meng.高级列表框#取容器固定ID  → NullPointerException: Attempt to invoke virtual method 'long androidx.recyclerview.widget.RecyclerView.getChildItemId(android.view.View)' on a null object reference
+ticode.zh.meng.高级列表框#取视图固定ID  → NullPointerException: Attempt to invoke virtual method 'android.view.View androidx.recyclerview.widget.RecyclerView.findContainingItemView(android.view.View)' on a null object reference
+ticode.zh.meng.高级列表框#取指定坐标视图容器  → NullPointerException: Attempt to invoke virtual method 'android.view.View androidx.recyclerview.widget.RecyclerView.findChildViewUnder(float, float)' on a null object reference
+ticode.zh.meng.高级列表框#取指定坐标视图索引  → NullPointerException: Attempt to invoke virtual method 'android.view.View androidx.recyclerview.widget.RecyclerView.findChildViewUnder(float, float)' on a null object reference
+ticode.zh.meng.高级列表框#纵向偏移项目  → NullPointerException: Attempt to invoke virtual method 'void androidx.recyclerview.widget.RecyclerView.offsetChildrenVertical(int)' on a null object reference
+ticode.zh.meng.高级列表框#横向偏移项目  → NullPointerException: Attempt to invoke virtual method 'void androidx.recyclerview.widget.RecyclerView.offsetChildrenHorizontal(int)' on a null object reference
+ticode.zh.meng.高级列表项目触摸辅助器#拖拽指定项目  → NullPointerException: Attempt to invoke virtual method 'androidx.recyclerview.widget.RecyclerView ticode.zh.meng.高级列表框.getView()' on a null object reference
+ticode.zh.meng.高级列表项目触摸辅助器#滑动指定项目  → NullPointerException: Attempt to invoke virtual method 'androidx.recyclerview.widget.RecyclerView ticode.zh.meng.高级列表框.getView()' on a null object reference
+ticode.zh.meng.高级列表项目触摸辅助器#交换项目  → NullPointerException: Attempt to invoke virtual method 'ticode.zh.meng.高级适配器 ticode.zh.meng.高级列表框.取适配器()' on a null object reference
+ticode.zh.meng.高级列表项目触摸辅助器#移除项目  → NullPointerException: Attempt to invoke virtual method 'ticode.zh.meng.高级适配器 ticode.zh.meng.高级列表框.取适配器()' on a null object reference
+ticode.zh.meng.高级适配器#创建适配器  → RuntimeException: 高级适配器 创建失败，传入参数不是集合
+ticode.zh.meng.高级适配器#赋值_op  → IllegalArgumentException: method ticode.zh.meng.高级适配器.赋值_op argument 1 has type ticode.zh.jvm.集合, got java.util.ArrayList
+ticode.zh.meng.高级适配器#取数据  → NullPointerException: Attempt to invoke interface method 'java.lang.Object[] java.util.Collection.toArray()' on a null object reference
+ticode.zh.meng.高级适配器#置数据  → RuntimeException: 高级适配器 创建失败，传入参数不是集合
+ticode.zh.meng.高级适配器#取布局管理器  → NullPointerException: Attempt to invoke virtual method 'ticode.zh.meng.布局管理器 ticode.zh.meng.高级列表框.取布局管理器()' on a null object reference
+ticode.zh.meng.高级适配器#取安卓环境  → NullPointerException: Attempt to invoke virtual method 'android.content.Context ticode.zh.meng.高级列表框.取安卓环境()' on a null object reference
+ticode.zh.meng.高级适配器#取安卓窗口  → NullPointerException: Attempt to invoke virtual method 'ticode.zh.android.安卓窗口 ticode.zh.meng.高级列表框.取安卓窗口()' on a null object reference
+ticode.zh.meng.高级适配器#onCreateViewHolder  → RuntimeException: 关联视图错误，请检查适配器“关联视图”事件是否正确以及容器是否不为空
+ticode.zh.meng.高级适配器#高级适配器  → IllegalArgumentException: method ticode.zh.meng.高级适配器.高级适配器 argument 1 has type ticode.zh.jvm.集合, got java.util.ArrayList
+ticode.zh.meng.高级适配器#创建高级适配器  → IllegalArgumentException: method ticode.zh.meng.高级适配器.创建高级适配器 argument 1 has type ticode.zh.jvm.集合, got java.util.ArrayList

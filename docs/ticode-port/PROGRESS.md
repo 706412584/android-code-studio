@@ -7,11 +7,27 @@
 
 ## 0. 一句话现状
 
-**中文版（`src/zh/java`）编译 0 错误 + 运行时冒烟全绿（47 项断言）**，
+**中文版（`src/zh/java`）编译 0 错误 + 运行时冒烟全绿**，
 **已接入 QuickDevelop 模板**（生成独立 `:ticode` 模块），
-**并已在真机端到端验证**（建工程 → 构建 APK → 安装 → 启动 → ticode 真实运行）。
+**并已在真机端到端验证**（建工程 → 构建 APK → 安装 → 启动 → ticode 真实运行），
+**反射覆盖度实测 89.9%（2881/3204，见 `coverage/README.md`）**。
 
 **英文版（`src/main/java`）是 657 处** —— 比中文版差 5 倍，**不是同构**（早期误判已证伪，见 §1 注）。
+
+### 反射覆盖驱动（2026-10-06 第三轮）
+
+`docs/ticode-port/coverage/`：真机遍历 334 类全部 public 方法，2881/3204 = **89.9%**。
+过程中暴露并修复了一批"编译通过、一调就崩"的真 bug（详见 §8 与 git `9e3366c`）：
+
+- **ClassCastException 16→1**（`(大数字) this.subtract()`、`(安卓线程) Thread.currentThread()`、
+  `(ArrayList) getPathSegments()`、`(String[]) Set.toArray()` 等强转子类壳/框架类型）
+- **NoSuchMethodError 4→0**（`Canvas.quickReject` 是 @hide；`WifiInfo.getWifiStandard` 是 API30+）
+- **StackOverflowError 1→0**（`自定义宫格列表框.加载布局` 调自身无限递归）
+- **误标 abstract 48 类具体化**（自身无抽象方法、只是翻译器沿用结绳标注，导致用户无法 new）
+
+剩余 316 未覆盖 = **反射可达性的真实天花板**：241 个方法所在类（Activity/Context/Drawable/
+PackageManager/Service…）**必须真实 framework 实例**，反射无法安全构造；75 个是同类参数。
+这部分只能在设备自检 harness 的真实环境下覆盖，属框架自身回调面，非库 API 缺陷。
 
 ### 端到端验证证据（2026-10-06，黑鲨 9c18cb30 / Android 10）
 
@@ -201,4 +217,9 @@ core/ticode/
 docs/ticode-port/
   PROGRESS.md           # 本文件
   INVENTORY.md          # 135 处失败项逐条明细（按根因分组）
+  coverage/             # 真机反射覆盖度测量（驱动 + 报告 + 复现脚本）
+    README.md           # 结果、跑法、安全约束、天花板分析
+    CoverageDriver.java / CoverageMainActivity.java
+    gen_manifest.py / deabstract3.py
+    coverage-report.txt / coverage-analysis.txt
 ```

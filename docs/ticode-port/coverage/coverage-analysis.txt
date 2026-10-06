@@ -1,0 +1,75 @@
+未覆盖 316  thrown 518
+=== 分组 ===
+  241  无实例
+   75  参数无法合成
+
+=== 方法未找到 (0) 明细 ===
+
+=== 参数类型未解析 (0) 明细 ===
+
+=== 参数无法合成 (75) 明细 ===
+  26  安卓程序包管理器
+  11  输出流
+  10  输入流
+   9  ViewHolder
+   5  可绘制对象
+   3  SensorEvent
+   3  缩放处理器
+   3  高级列表框
+   2  消息处理器
+   2  ItemDecoration
+   1  拖放事件
+
+=== 无实例 (241) 明细 ===
+  28  ticode.zh.android.安卓环境
+  25  ticode.zh.android.窗口
+  24  ticode.zh.android.可绘制对象
+  21  ticode.zh.android.X窗口
+  14  ticode.zh.android.安卓提示框
+  11  ticode.zh.android.安卓程序包管理器
+  11  ticode.zh.android.记录集
+  10  ticode.zh.android.可调整边距布局组件
+  10  ticode.zh.android.服务
+   9  ticode.zh.android.布局组件
+   7  ticode.zh.android.菜单项
+   5  ticode.zh.android.安卓应用
+   5  ticode.zh.android.适配器组件
+   5  ticode.zh.base.数字
+   5  ticode.zh.jvm.Java参数化类型
+   5  ticode.zh.jvm.Java泛型变量
+   5  ticode.zh.jvm.Java通配符类型
+   5  ticode.zh.jvm.输入流
+   5  ticode.zh.jvm.输出流
+   4  ticode.zh.android.复合按钮
+   4  ticode.zh.android.安卓广播接收器
+   4  ticode.zh.jvm.Java泛型数组类型
+   3  ticode.zh.android._屏幕方向监听服务
+   3  ticode.zh.android.安卓资源管理器
+   3  ticode.zh.android.菜单
+   2  ticode.zh.android.基础适配器
+   2  ticode.zh.base.字符串
+   2  ticode.zh.jvm.枚举器
+   2  ticode.zh.jvm.类名枚举器
+   1  ticode.zh.android.适配器
+   1  ticode.zh.jvm.Java注解
+
+=== THROWN 异常类型 ===
+  352  NullPointerException
+   56  RuntimeException
+   23  NumberFormatException
+   21  IllegalArgumentException
+   19  ArrayIndexOutOfBoundsException
+   11  CalledFromWrongThreadException
+    8  IndexOutOfBoundsException
+    6  ActivityNotFoundException
+    6  NoSuchElementException
+    3  NotFoundException
+    3  AndroidRuntimeException
+    2  SecurityException
+    2  EmptyStackException
+    1  FileUriExposedException
+    1  TIMEOUT(>300ms)
+    1  ClassCastException
+    1  UnsatisfiedLinkError
+    1  ProtocolException
+    1  UnsupportedOperationException
