@@ -22,7 +22,8 @@ package com.tom.rv2ide.templates.android.quickdevelop
  *
  * <h3>ticode 是什么</h3>
  *
- * 「结绳」语言基本库到 Java 的移植，334 个**中文命名**的 API 类，包名 `ticode.zh.*`。
+ * 「结绳」语言基本库到 Java 的移植，333 个**中文命名**的 API 类，包名 `ticode.zh.*`。
+ * （仓库源共 334 个：另有 1 个默认包的 `简易无障碍.java`，因无包名不随模板生成。）
  * 源码随模板生成进用户工程（`ticode/src/main/java/`），可直接改。
  *
  * <h3>为什么这个 object 只放纯字符串生成</h3>
@@ -179,9 +180,13 @@ object QuickDevelopTicode {
    * <p>为什么单独抽成函数：工程里同时有 `ui/`（45 控件）、`tool/`（5 工具类）、
    * `ticode`（333 类）**三套**中文 API，用户第一次打开会不知道用哪个。这段是
    * **唯一的选型指引**，必须跟着生成走，且要有测试锁住（`QuickDevelopTicodeTest`）。
+   *
+   * <p>控件数量从 [QuickDevelopSources.CHINESE_COMPONENT_COUNT] 取，不硬编码——
+   * 之前写死「44」而真实已是 45，加一个控件就过期。
    */
-  fun 选型指引(): String =
-      """
+  fun 选型指引(): String {
+    val uiCount = QuickDevelopSources.CHINESE_COMPONENT_COUNT
+    return """
         ## 该用哪一套？（三套并存，各司其职）
 
         工程里有三套中文 API，**按用途选，不要混着用**：
@@ -194,8 +199,8 @@ object QuickDevelopTicode {
         | **跑结绳老代码**（兼容） | `ticode` | `ticode.zh.android.文本框` |
 
         **为什么界面推荐 `ui/` 而不是 ticode 的控件**：两者实测都能用
-        （`ui/` 44/44、ticode 21/21），但设计不同——`ui/` 基于 androidx、
-        链式 API、控件更全（44 vs 21），是为本模板写的现代封装；ticode 的控件
+        （`ui/` $uiCount/$uiCount、ticode 21/21），但设计不同——`ui/` 基于 androidx、
+        链式 API、控件更全（$uiCount vs 21），是为本模板写的现代封装；ticode 的控件
         是结绳移植的原始包装（`getView()` 模式），价值在兼容结绳老代码。
 
         **ticode 不可替代的是它的工具类**（`ticode.zh.jvm` + `ticode.zh.base`，
@@ -206,4 +211,5 @@ object QuickDevelopTicode {
         `include(":ticode")` 即可。
       """
           .trimIndent()
+  }
 }

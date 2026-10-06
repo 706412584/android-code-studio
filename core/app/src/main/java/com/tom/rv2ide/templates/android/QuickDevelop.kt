@@ -362,7 +362,7 @@ class QuickDevelop : Template {
             )
             rootProjectName(options.projectName)
             include(PRIMARY_MODULE)
-            // :ticode —— 结绳语言基本库移植（334 个中文 API 类），独立 Android 库模块
+            // :ticode —— 结绳语言基本库移植（333 个中文 API 类），独立 Android 库模块
             include(QuickDevelopTicode.MODULE_PATH)
           }
           settingsGradleWriter.writeToFile(
@@ -431,7 +431,7 @@ class QuickDevelop : Template {
           // Write the Chinese-named UI components into <pkg>/ui/
           writeComponents(projectRoot, packageHelper.getPackageId())
 
-          // 结绳移植库：独立 :ticode 模块（build.gradle + 从 assets 拷 334 个 .java）
+          // 结绳移植库：独立 :ticode 模块（build.gradle + 从 assets 拷 333 个 .java）
           writeTicodeModule(context, projectRoot)
 
           // Write MainActivity (Java, uses the components)
@@ -512,7 +512,7 @@ class QuickDevelop : Template {
    *
    * <h3>源码来源</h3>
    *
-   * 334 个 .java 从 APK 的 assets（`assets/QuickDevelop/ticode/`）拷贝——而不是像
+   * 333 个 .java 从 APK 的 assets（`assets/QuickDevelop/ticode/`）拷贝——而不是像
    * `QuickDevelopSources` 那样写成 Kotlin 字符串常量：那会造出 700KB 的巨型 object，
    * 且每次改 ticode 都要重新生成字符串。assets 拷贝可递归、可脚本化同步。
    */
@@ -602,8 +602,12 @@ class QuickDevelop : Template {
    *
    * 组件与工具库的明细不在这里重复，只给入口链接——避免同一份信息两处维护。
    */
-  private fun projectReadme(packageId: String): String =
-      """
+  private fun projectReadme(packageId: String): String {
+    // 数量一律从真实来源取，不硬编码——否则加一个控件/工具就会过期。
+    val uiCount = QuickDevelopSources.CHINESE_COMPONENT_COUNT
+    val toolCount = QuickDevelopToolkits.all(packageId).size
+    val ticodeCount = QuickDevelopTicode.EXPECTED_SOURCE_COUNT
+    return """
       # $packageId
 
       由 **Android Code Studio** 的 *Quick Develop* 模板生成：一套中文命名的
@@ -622,15 +626,15 @@ class QuickDevelop : Template {
       ```
       app/src/main/java/$packageId/
       ├── MainActivity.java        入口 Activity（用中文组件搭界面）
-      ├── ui/                      45 个中文 UI 组件 + 英文别名
+      ├── ui/                      $uiCount 个中文 UI 组件 + 英文别名
       │   └── README.md            组件 API 文档（带目录）
-      └── tool/                    5 个工具类
+      └── tool/                    $toolCount 个工具类
           └── README.md            工具 API 文档（带目录）
       ticode/                      结绳语言基本库（Java 移植），独立 Android 库模块
-      └── src/main/java/ticode/zh/ 333 个中文 API 类（base / jvm / android / meng）
+      └── src/main/java/ticode/zh/ $ticodeCount 个中文 API 类（base / jvm / android / meng）
       ```
 
-      ${QuickDevelopTicode.选型指引()}
+      @SELECTION_GUIDE@
 
       ## 快速上手
 
@@ -651,14 +655,14 @@ class QuickDevelop : Template {
 
       ## UI 组件
 
-      45 个中文组件，覆盖容器 / 文本 / 输入 / 列表 / 系统控件等。
+      $uiCount 个中文组件，覆盖容器 / 文本 / 输入 / 列表 / 系统控件等。
       全部支持链式调用，且都有等价的英文别名。
 
       详见 **[ui/README.md](app/src/main/java/$packageId/ui/README.md)**。
 
       ## 工具库
 
-      5 个工具类：`字符`（字符串/正则/JSON）、`文件`、`数据`（SQLite/类型转换）、
+      $toolCount 个工具类：`字符`（字符串/正则/JSON）、`文件`、`数据`（SQLite/类型转换）、
       `工具`（动画/媒体/通知）、`系统`（设备信息/应用/截屏）。
 
       详见 **[tool/README.md](app/src/main/java/$packageId/tool/README.md)**。
@@ -675,7 +679,12 @@ class QuickDevelop : Template {
 
       产物在 `app/build/outputs/apk/debug/`。
       """
-          .trimIndent() + "\n"
+          .trimIndent()
+          // 选型指引是**多行且已去缩进**的字符串，直接内嵌会把它第 1 列的缩进计入
+          // trimIndent 的公共缩进 → 整份 README 各留 6 空格、Markdown 渲染成代码块。
+          // 故先用单行占位符，trimIndent 之后再替换。
+          .replace("@SELECTION_GUIDE@", QuickDevelopTicode.选型指引()) + "\n"
+  }
 
   /** Copy wrapper files (gradlew, gradlew.bat, gradle/wrapper folder) from assets to project root */
   private fun copyWrapperFiles(context: Context, projectRoot: File) {

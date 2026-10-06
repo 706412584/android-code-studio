@@ -749,6 +749,19 @@ object QuickDevelopSources {
    * 模板按顺序写文件；MainActivity 由 `ActivityWriter` 单独写（它需要
    * 目录推导逻辑）。
    */
+  /**
+   * 中文组件数量（不含英文别名）。
+   *
+   * <p>为什么暴露成公开计数：工程 README / 选型指引里要写「共 N 个中文组件」，
+   * 之前是硬编码字符串，加一个控件就过期（曾写成 44，真实已是 45）。改为从这里取，
+   * 由测试锁住（`QuickDevelopTicodeTest` / `QuickDevelopDocsGenTest`）。
+   *
+   * <p>用 `get()` 而非初始化 `val`：`BASE_CN_NAMES` / `EXTRA_WIDGETS` 声明在本文件
+   * 靠后的位置，object 的 `val` 按声明顺序初始化，放这里会读到未初始化值。
+   */
+  val CHINESE_COMPONENT_COUNT: Int
+    get() = BASE_CN_NAMES.size + EXTRA_WIDGETS.size
+
   fun components(packageId: String): List<Pair<String, String>> {
     val base =
         listOf(
