@@ -147,12 +147,22 @@ public class QuickDevelopProjectGenTest {
   }
 
   private void writeTopLevel(File root) throws IOException {
-    String content =
-        "plugins {\n"
-            + "    alias(libs.plugins.android.application) apply false\n"
-            + "    alias(libs.plugins.android.library) apply false\n"
-            + "}\n";
-    Files.write(new File(root, "build.gradle.kts").toPath(), content.getBytes(StandardCharsets.UTF_8));
+    // 用**真实生成器**（TopLevelGradleWriter）产出顶层 build.gradle.kts，而不是手写。
+    // 手写版曾比生成器"更正确"（多写了 android.library），掩盖了真实 bug：
+    // 生成器只声明 android.application，导致 :ticode 模块解析 com.android.library 时
+    // 报「plugin is already on the classpath with an unknown version」。
+    var plugins =
+        java.util.List.of(
+            new com.tom.androidcodestudio.project.manager.builder.toplevel.GradlePlugin(
+                "android.application", null, false, true),
+            new com.tom.androidcodestudio.project.manager.builder.toplevel.GradlePlugin(
+                "android.library", null, false, true));
+    new com.tom.androidcodestudio.project.manager.builder.toplevel.TopLevelGradleWriter()
+        .writeToFile(
+            root,
+            com.tom.androidcodestudio.project.manager.builder.toplevel.GradleFileType.KTS,
+            plugins,
+            false);
   }
 
   private void writeAppModule(File root) throws IOException {

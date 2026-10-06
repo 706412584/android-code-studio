@@ -335,6 +335,19 @@ class QuickDevelop : Template {
                     useAlias = true,
                 )
             )
+            // :ticode 是 Android 库模块。顶层必须一并声明 android.library（apply false）——
+            // 否则子模块 plugins { alias(libs.plugins.android.library) } 会报
+            // 「plugin is already on the classpath with an unknown version」：
+            // 顶层已把 AGP 放上 classpath 却没声明版本，子模块无法再解析版本。
+            // 单模块工程（其它模板）不触发，因为只有 app 一个模块。
+            add(
+                com.tom.androidcodestudio.project.manager.builder.toplevel.GradlePlugin(
+                    id = "android.library",
+                    version = null,
+                    apply = false,
+                    useAlias = true,
+                )
+            )
           }
           topLevelGradleWriter.writeToFile(
               projectRoot,
