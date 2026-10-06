@@ -10,16 +10,18 @@ import ticode.zh.jvm.文件输入流;
 
 public abstract class 可绘制对象 extends android.graphics.drawable.Drawable {
 
-public 可绘制对象 赋值_op(String 文件路径) {
-return (可绘制对象)可绘制对象.createFromPath(文件路径);
+// 框架工厂返回的是原生 Drawable，不是 可绘制对象 子类（本壳是 abstract，也无法实例化）。
+// 强转会 ClassCastException，故返回原生类型。
+public Drawable 赋值_op(String 文件路径) {
+return Drawable.createFromPath(文件路径);
 }
 
-public static 可绘制对象 从路径创建(String 文件路径) {
-return (可绘制对象)Drawable.createFromPath(文件路径);
+public static Drawable 从路径创建(String 文件路径) {
+return Drawable.createFromPath(文件路径);
 }
 
-public static 可绘制对象 从文件流创建(文件输入流 文件输入流, String 源名称) {
-return (可绘制对象)Drawable.createFromStream(文件输入流,源名称);
+public static Drawable 从文件流创建(文件输入流 文件输入流, String 源名称) {
+return Drawable.createFromStream(文件输入流,源名称);
 }
 
 public void 绘制区域(int 左边, int 上边, int 右边, int 下边) {

@@ -1,0 +1,35 @@
+壳类强转全量分类：
+  UNKNOWN        25
+
+=== DANGER-newN (0) ===
+
+=== DANGER-thisM (0) ===
+
+=== DANGER-var (0) ===
+
+=== UNKNOWN (25) ===
+  ticode\zh\android\可扩展文本构建器.java  28  可扩展文本构建器  this.append(追加内容)  thisM:append
+  ticode\zh\android\可扩展文本构建器.java  32  可扩展文本构建器  this.append(追加内容)  thisM:append
+  ticode\zh\android\可扩展文本构建器.java  36  可扩展文本构建器  this.append(String.valueOf(追加内容))  thisM:append
+  ticode\zh\android\可扩展文本构建器.java  40  可扩展文本构建器  this.append(追加内容)  thisM:append
+  ticode\zh\android\可扩展文本构建器.java  44  可扩展文本构建器  this.append(String.valueOf(追加内容))  thisM:append
+  ticode\zh\android\可扩展文本构建器.java  48  可扩展文本构建器  this.append(String.valueOf(追加内容))  thisM:append
+  ticode\zh\android\可扩展文本构建器.java  52  可扩展文本构建器  this.append(String.valueOf(追加内容))  thisM:append
+  ticode\zh\android\可扩展文本构建器.java  55  可扩展文本构建器  this.append(String.valueOf(追加内容))  thisM:append
+  ticode\zh\android\可扩展文本构建器.java  59  可扩展文本构建器  this.append(String.valueOf(追加内容))  thisM:append
+  ticode\zh\android\可扩展文本构建器.java  63  可扩展文本构建器  this.delete(起始位置  thisM:delete
+  ticode\zh\android\可扩展文本构建器.java  67  可扩展文本构建器  this.replace(被替换起始位置  thisM:replace
+  ticode\zh\android\可扩展文本构建器.java  71  可扩展文本构建器  this.insert(插入索引位置  thisM:insert
+  ticode\zh\android\可扩展文本构建器.java  75  可扩展文本构建器  this.insert(插入索引位置  thisM:insert
+  ticode\zh\android\可扩展文本构建器.java  79  可扩展文本构建器  this.insert(插入索引位置  thisM:insert
+  ticode\zh\android\可扩展文本构建器.java  83  可扩展文本构建器  this.insert(插入索引位置  thisM:insert
+  ticode\zh\android\可扩展文本构建器.java  87  可扩展文本构建器  this.insert(插入索引位置  thisM:insert
+  ticode\zh\android\可扩展文本构建器.java  91  可扩展文本构建器  this.insert(插入索引位置  thisM:insert
+  ticode\zh\android\可扩展文本构建器.java  95  可扩展文本构建器  this.insert(插入索引位置  thisM:insert
+  ticode\zh\android\可扩展文本构建器.java  99  可扩展文本构建器  this.insert(插入索引位置  thisM:insert
+  ticode\zh\android\可扩展文本构建器.java  103  可扩展文本构建器  this.insert(插入索引位置  thisM:insert
+  ticode\zh\android\悬浮窗.java  281  悬浮窗  值).关闭()  值).关闭()
+  ticode\zh\android\窗口组件.java  40  安卓窗口  context  var:Context
+  ticode\zh\jvm\Dex类加载器.java  43  Java类加载器  原 : null  原 : null
+  ticode\zh\jvm\Java类加载器.java  22  Java类加载器  原 : null  原 : null
+  ticode\zh\jvm\Java类加载器.java  28  Java类加载器  原 : null  原 : null

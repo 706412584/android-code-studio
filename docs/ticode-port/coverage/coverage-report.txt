@@ -459,6 +459,7 @@ ticode.zh.android.弹出式菜单#显示  → RuntimeException: Can't create han
 ticode.zh.android.弹窗#背景图片  → NotFoundException: Resource ID #0x1
 ticode.zh.android.弹窗#点九图  → NullPointerException: Attempt to invoke virtual method 'byte[] android.graphics.Bitmap.getNinePatchChunk()' on a null object reference
 ticode.zh.android.弹窗#显示  → RuntimeException: Can't create handler inside thread Thread[Thread-971,5,main] that has not called Looper.prepare()
+ticode.zh.android.悬浮窗#取焦点视图  → TIMEOUT(>300ms)
 ticode.zh.android.悬浮窗#firstShow  → RuntimeException: Can't create handler inside thread Thread[Thread-1072,5,main] that has not called Looper.prepare()
 ticode.zh.android.悬浮窗#edgeSnapping  → AndroidRuntimeException: Animators may only be run on Looper threads
 ticode.zh.android.悬浮窗#animSlide  → AndroidRuntimeException: Animators may only be run on Looper threads
@@ -579,7 +580,7 @@ ticode.zh.android.相对布局#与某组件底部平齐  → NullPointerExceptio
 ticode.zh.android.窗口组件#取安卓窗口  → ClassCastException: com.example.qdtest.CoverageDriver$阻断Context cannot be cast to ticode.zh.android.安卓窗口
 ticode.zh.android.简单适配器#更新项目  → NullPointerException: Attempt to invoke virtual method 'void android.database.DataSetObservable.notifyChanged()' on a null object reference
 ticode.zh.android.系统操作#禁止截屏  → IllegalArgumentException: method ticode.zh.android.系统操作.禁止截屏 argument 1 has type ticode.zh.android.窗口, got com.example.qdtest.MainActivity
-ticode.zh.android.系统操作#加载SO库  → UnsatisfiedLinkError: dalvik.system.PathClassLoader[DexPathList[[zip file "/data/app/com.example.qdtest-9jxJ7VL6jFPp-HcykEIppg==/base.apk"],nativeLibraryDirectories=[/data/app/com.example.qdtest-9jxJ7VL6jFPp-HcykEIppg==/lib/arm64, /system/lib64, /system/product/lib64]]] couldn't find "libtest.so"
+ticode.zh.android.系统操作#加载SO库  → UnsatisfiedLinkError: dalvik.system.PathClassLoader[DexPathList[[zip file "/data/app/com.example.qdtest-4Y_FFU5AOqLSlQuNUZ-Rng==/base.apk"],nativeLibraryDirectories=[/data/app/com.example.qdtest-4Y_FFU5AOqLSlQuNUZ-Rng==/lib/arm64, /system/lib64, /system/product/lib64]]] couldn't find "libtest.so"
 ticode.zh.android.约束布局#自身宽高比例  → NumberFormatException: For input string: "x"
 ticode.zh.android.约束布局#宽度比例  → NumberFormatException: For input string: "x"
 ticode.zh.android.约束布局#高度比例  → NumberFormatException: For input string: "x"

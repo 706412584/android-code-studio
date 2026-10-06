@@ -10,7 +10,7 @@ public class 可扩展文本构建器 extends android.text.SpannableStringBuilde
 public 可扩展文本构建器(CharSequence 初始字符串) { super(初始字符串); }
 
 public 可扩展文本构建器 加_op(Object 追加对象) {
-return (可扩展文本构建器)追加对象(追加对象);
+return 追加对象(追加对象);
 }
 
 public boolean 等于_op(可扩展文本构建器 另一个构建器) {

@@ -277,7 +277,8 @@ public static void 关闭指定悬浮窗(String 标记) {
 public static void 关闭所有悬浮窗() {
 集合 集合 = 取所有悬浮窗();
 for (var 值 : 集合) {
-((悬浮窗)值).关闭();
+// 集合元素静态类型是 Object，非 悬浮窗 时直接强转会崩。
+if (值 instanceof 悬浮窗) ((悬浮窗) 值).关闭();
 }
 }
 

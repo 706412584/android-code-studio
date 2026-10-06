@@ -8,11 +8,12 @@ public class 提示框 extends 窗口组件 {
 public static final int 长时 = 1;
 public static final int 短时 = 0;
 
+// 用 安卓提示框 包装类（内部持有原生 Toast），不再强转 makeText 的返回值。
 public 安卓提示框 提示框对象;
 
 public 提示框(android.content.Context context) {
 super(context);
-提示框对象 = (安卓提示框)android.widget.Toast.makeText(context, "", 0);
+提示框对象 = 安卓提示框.新建提示框(context);
 }
 
 
