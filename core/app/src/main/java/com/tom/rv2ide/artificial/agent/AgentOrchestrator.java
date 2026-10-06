@@ -338,29 +338,22 @@ public final class AgentOrchestrator {
     }
     Thread worker =
         new Thread(
-            () -> {
-              // 获取所有订阅者（不包括发起者 null），广播所有事件
-              java.util.List<AgentEvent.Listener> subscribers =
-                  conversationListeners.computeIfAbsent(
-                      conversationId, k -> new java.util.concurrent.CopyOnWriteArrayList<>());
-              // 创建一个包装器，在广播前转发事件给所有订阅者
-              AgentEvent.Listener fanOut =
-                  event -> {
-                    // 将事件广播给所有订阅者（包括原先的 listener），确保队列中的请求也能收到流式事件
-                    broadcastExcept(conversationId, event, null);
-                  };
-
-              // 运行队列中的请求
-              runInConversation(
-                  conversationId,
-                  next.providerId,
-                  next.modelId,
-                  next.userRequest,
-                  next.customBaseUrl,
-                  fanOut,  // 使用包装器作为 listener
-                  next.rawInputJson,
-                  next.reasoningEffort);
-            },
+            () ->
+                runInConversation(
+                    conversationId,
+                    next.providerId,
+                    next.modelId,
+                    next.userRequest,
+                    next.customBaseUrl,
+                    // 必须传 null，**不能**传「转发到广播」的包装 listener：
+                    // executeRun 的 fanOut 本身已经做了两件事——投递给传入的 listener、
+                    // 再广播给该会话的全部订阅者（broadcastExcept(..., listener)）。
+                    // 若这里传一个「广播」包装器，事件就会被投递两遍：包装器里广播一次
+                    // （它不在订阅表里，broadcastExcept 的排除逻辑对它无效），
+                    // fanOut 里再广播一次。订阅方看到的文字会翻倍、工具卡片会出现两张。
+                    null,
+                    next.rawInputJson,
+                    next.reasoningEffort),
             "agent-queued");
     worker.setDaemon(true);
     worker.start();
