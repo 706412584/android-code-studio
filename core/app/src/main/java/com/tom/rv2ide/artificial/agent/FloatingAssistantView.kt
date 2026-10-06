@@ -440,6 +440,11 @@ class FloatingAssistantView(
       fabBinding.root.isVisible = saved.first
     }
     binding.assistantOverlay.isVisible = saved.second
+    // 隐藏期间运行可能已结束（或新起）——恢复可见时把运行态拉回当前真相，
+    // 否则停止键与状态条会停在隐藏前的状态。
+    if (saved.second) {
+      syncRunningUiForDisplayed()
+    }
   }
 
   /** 把两个视图挂到父容器上。父容器应是 `FrameLayout`（FAB 靠 gravity 定位）。 */
@@ -807,6 +812,13 @@ class FloatingAssistantView(
     // attach 发生在 Activity onCreate 期间，此时读磁盘会拖慢启动；
     // 而用户看到面板时再加载，感知上反而更快。
     restoreConversationIfNeeded()
+    // **每次打开都要同步运行态**，不能只依赖 restoreConversationIfNeeded：
+    // 那个只在首次执行（restoredOnce 守卫），第二次打开时直接返回，于是
+    // 「另一个入口正在跑」这件事本视图完全不知道——停止键不出现、状态条不启动，
+    // 用户看到的是一个「空闲」的面板，实际后台有任务在跑。
+    // syncRunningUiForDisplayed 读 orchestrator 的全局运行态（不依赖本视图的 job 表），
+    // 因此对「别的入口发起的运行」同样有效。
+    syncRunningUiForDisplayed()
     refreshTodos()
     updateEmptyState()
   }
@@ -816,6 +828,12 @@ class FloatingAssistantView(
    *
    * <p>只在首次做：后续 open/close 不该重复回放——那会把用户当前正在进行的
    * 对话重置回历史状态，看起来像消息凭空消失。
+   *
+   * <p><b>但订阅与「显示会话」标记不能省</b>：早先的实现把「有内容就整体跳过」
+   * 当作优化，后果是这种视图**从未订阅过事件流**——它显示着会话，却收不到任何
+   * 实时增量，也认不出「这个会话正在跑」（停止键不出现、状态条不启动），
+   * 必须点一下会话列表（走 doOpenConversation 重订阅）才能同步。
+   * 现在拆开：回放可以跳过，**订阅与 displayedConversationId 必须建立**。
    */
   private fun restoreConversationIfNeeded() {
     if (restoredOnce) {
@@ -823,11 +841,22 @@ class FloatingAssistantView(
     }
     restoredOnce = true
     val id = orchestrator.activeConversationId
-    if (id.isNullOrEmpty() || adapter.itemCount > 0) {
+    if (id.isNullOrEmpty()) {
       return
     }
     // 记录正在显示的会话：后台会话事件据此被过滤掉。
+    // 早先这里在 adapter.itemCount > 0 时整体 return，把「订阅」也一并跳过了——
+    // 那种视图显示着会话却收不到任何事件（见上方 KDoc）。回放可以跳过，
+    // 订阅不能：loadAndSubscribe 内部会重放历史（此时列表已有内容会被覆盖），
+    // 因此有内容时只订阅、不回放。
     displayedConversationId = id
+    if (adapter.itemCount > 0) {
+      lifecycleScope.launch(Dispatchers.IO) {
+        subscribeToConversation(id)
+        withContext(Dispatchers.Main) { syncRunningUiForDisplayed() }
+      }
+      return
+    }
     loadAndSubscribe(id) {}
   }
 

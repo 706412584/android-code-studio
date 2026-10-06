@@ -91,18 +91,21 @@ object CodeGraphInstaller {
   /**
    * 是否已安装**且**可用。
    *
-   * <p>四个条件缺一不可：入口 JS 存在、Termux 的 node 存在、wrapper 存在、
-   * realpath 补丁存在。只看入口 JS 会把「装了一半」（解包完成但 node 没装上）判成就绪，
-   * 然后 AI 调用时失败。
+   * <p>三个条件缺一不可：入口 JS 存在、Termux 的 node 存在、wrapper 存在。
+   * 只看入口 JS 会把「装了一半」（解包完成但 node 没装上）判成就绪，然后 AI 调用时失败。
    *
-   * <p>补丁文件也纳入判定：wrapper 用 `--require` 加载它，文件缺失时 node 会直接
-   * 报错退出——比「索引为空」更糟，因为用户看到的是「codegraph 完全用不了」。
+   * <p><b>为什么不检查补丁文件名</b>：补丁文件名不是契约。旧版本（以及 AI 在现场
+   * 诊断时）可能生成过不同名字的补丁（实测设备上存在 `.cg-realpath-fix.cjs`），
+   * 而 wrapper 引用的才是真正生效的那个。按固定文件名判定会让这些设备被判成
+   * 「未安装」——比原问题更糟：工具被禁用，用户还看不出原因。
+   *
+   * <p>真正要保证的是「wrapper 能跑起来」。wrapper 缺失或不可执行时，
+   * {@code --require} 指向什么文件都无所谓——调用会失败并报错，用户能看见。
+   * 补丁的**安装**由 {@link #writeRealpathFix} 与自愈逻辑保证（见 AgentOrchestrator
+   * 的 isReady）。
    */
   fun isInstalled(): Boolean =
-      entryScript().isFile &&
-          nodeBinary().isFile &&
-          wrapperFile().isFile &&
-          realpathFixFile().isFile
+      entryScript().isFile && nodeBinary().isFile && wrapperFile().isFile
 
   /** 缺失的依赖包（已装的会被排除）。用于安装前给用户看「还要装什么」。 */
   fun missingPackages(): List<String> = REQUIRED_PACKAGES.filterNot { isPackageInstalled(it) }
@@ -163,6 +166,28 @@ object CodeGraphInstaller {
       append("    catch { return nativeSync(p, options); }\n")
       append("  };\n")
       append("}\n")
+    }
+  }
+
+  /**
+   * wrapper 是否已引用 realpath 补丁（用于「旧版安装」的自愈判定）。
+   *
+   * <p>判据是「wrapper 里有没有 `--require`」而不是「某个文件名是否存在」：
+   * 补丁文件名不是契约，不同版本/手工修复可能用不同名字（实测设备上存在
+   * `.cg-realpath-fix.cjs`）。只要 wrapper 引用了**任一** `--require`，
+   * 就说明它已是打过补丁的版本，不必重写。
+   *
+   * <p>读不到 wrapper（不存在/无权限）时返回 false——那本来就会走重写路径。
+   */
+  fun wrapperReferencesRealpathFix(): Boolean {
+    val wrapper = wrapperFile()
+    if (!wrapper.isFile) {
+      return false
+    }
+    return try {
+      wrapper.readText(Charsets.UTF_8).contains("--require")
+    } catch (e: java.io.IOException) {
+      false
     }
   }
 
