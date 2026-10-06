@@ -111,10 +111,13 @@ object QuickDevelopTicode {
         }
 
         dependencies {
-        $deps
+        @DEPS@
         }
       """
           .trimIndent()
+          // 依赖是多行字符串，直接内嵌会把它的缩进计入 trimIndent 的公共缩进
+          // （只有 `$deps` 首行对齐、其余顶格）。改用占位符，去缩进后再替换。
+          .replace("@DEPS@", deps)
     } else {
       """
         plugins {
@@ -136,10 +139,11 @@ object QuickDevelopTicode {
         }
 
         dependencies {
-        $deps
+        @DEPS@
         }
       """
           .trimIndent()
+          .replace("@DEPS@", deps)
     }
   }
 

@@ -64,6 +64,13 @@ public class QuickDevelopTicodeTest {
     assertTrue("缺 flexbox 依赖", g.contains("implementation(libs.androidx.flexbox)"));
     assertTrue("KTS 的依赖应是调用式", g.contains("implementation(libs.androidx.appcompat)"));
     assertFalse("库模块不应有 applicationId", g.contains("applicationId"));
+    // 依赖块缩进：`dependencies {` 顶格，每个 implementation 缩进 4 空格，`}` 顶格。
+    // 曾有此 bug：多行 $deps 内嵌进模板后参与 trimIndent 的公共缩进计算，
+    // 导致只有首行对齐、其余顶格。
+    assertTrue(
+        "dependencies 块缩进错位:\n" + g,
+        g.contains("\ndependencies {\n    implementation(libs.androidx.core)\n")
+            && g.contains("\n    implementation(libs.androidx.flexbox)\n}"));
   }
 
   /** Groovy：依赖是空格式（无外层括号），namespace 用单引号。 */
