@@ -1,3 +1,4 @@
+# [fix_type v1]
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
@@ -33,6 +34,12 @@ def map_pkg(p):
 
 def map_cls(n):
     return n if LANG == 'zh' else CLASS_MAP.get(n, n)
+
+
+# 结绳「@常量类型(整数) + @需求值类型(整数)」类：整型常量集合（伪枚举）。
+# 值就是 int 字面量；类型位置应映射成 int，否则 setFlexDirection(枚举) 报
+# 「枚举无法转换为int」（实测约 40 处）。由 _prescan_wrappers 填充。
+_INT_ENUM = set()
 
 
 def map_type_cls(n):
@@ -74,6 +81,8 @@ def map_type(t, tparams):
     t = t.strip()
     if not t:
         return 'Object'
+    if t in _INT_ENUM:                    # @常量类型(整数) 伪枚举 → int
+        return 'int'
     if t in VALUE_RESOURCE:               # 资源引用 → Android 整型资源 ID
         return VALUE_RESOURCE[t]
     if t.endswith('?'):                      # 可空 → 装箱类型
@@ -161,6 +170,13 @@ def subst(body, params, tparams, in_code=False):
     body = re.sub(r'#\[([a-zA-Z_]+)\]',
                   lambda m: _PLACEHOLDER.get(m.group(1), 'null'), body)
     body = re.sub(r'@模板类型(\d*)', lambda m: 'T' + (m.group(1) or '1'), body)
+    # `#参数.class`：结绳里 `.class` 前的标识符可以是**参数名**，其类型即声明类型；
+    # Java 里 `变量.class` **非法**（`.class` 只能作用于类型名）。
+    # 实测 `#欲启动服务.class` → `欲启动服务.class` 报「找不到符号: 类 欲启动服务」
+    # （安卓窗口 ×2）。这里先于 rep_hash 把它换成声明类型（`安卓服务.class`）。
+    if params:
+        body = re.sub(r'#([A-Za-z_一-鿿][A-Za-z0-9_一-鿿]*)\.class\b',
+                      lambda m: (params.get(m.group(1)) or m.group(1)) + '.class', body)
     body = re.sub(r'#(<[^>]+>|[A-Za-z_一-鿿][A-Za-z0-9_一-鿿]*)', rep_hash, body)
     # 结绳字面量与逻辑词。用词边界，避免把 `空布局`(类名) 里的 `空` 换成 null。
     B = r'(?<![A-Za-z0-9_一-鿿])%s(?![A-Za-z0-9_一-鿿])'
@@ -221,6 +237,82 @@ def subst(body, params, tparams, in_code=False):
                   r'(byte)(\1)', body)
     body = re.sub(r'(?<![\w一-鿿.])([A-Za-z_一-鿿][\w一-鿿]*)\(([^()]*)\)\.到整数\(\)',
                   r'(int)(\1(\2))', body)
+    # 结绳 `文本` 是 `@指代类("String")` 别名壳 → 类型位置被抹成 `String`，
+    # 于是 `字符串值.结绳方法()` 在 Java 里找不到。Java 无扩展方法，按
+    # `文本` 类方法体的等价实现内联（对照 JVM_基础类型.t 的 `@code`）：
+    #   到大写/到小写 → toUpperCase/toLowerCase
+    #   取文本中间(a,b) → substring(a, b+1)   （b 是**含**的结束下标）
+    #   长度（属性） → length()               （仅 String；数组/集合的 `长度`
+    #                                          在结绳里另有定义，实测输出中
+    #                                          `.长度` 仅出现于 String 接收者）
+    body = re.sub(r'(?<![\w一-鿿.])([A-Za-z_一-鿿][\w一-鿿]*)\.到大写\(\)',
+                  r'\1.toUpperCase()', body)
+    body = re.sub(r'(?<![\w一-鿿.])([A-Za-z_一-鿿][\w一-鿿]*)\.到小写\(\)',
+                  r'\1.toLowerCase()', body)
+    body = re.sub(r'(?<![\w一-鿿.])([A-Za-z_一-鿿][\w一-鿿]*)\.取文本中间\(([^,()]+),([^()]+)\)',
+                  lambda m: '%s.substring(%s, (%s) + 1)' % (m.group(1), m.group(2).strip(), m.group(3).strip()),
+                  body)
+    body = re.sub(r'(?<![\w一-鿿.])([A-Za-z_一-鿿][\w一-鿿]*)\.长度\b',
+                  r'\1.length()', body)
+    # `文本.到字节集()`：仅当接收者是**声明为 String 的参数**时才内联成 getBytes()。
+    # 不能盲替换 `.到字节集()` —— `字节集输出流1.到字节集()` 是它自己的方法
+    # （应映射成 toByteArray），盲替换会弄坏它。这里靠参数类型表定向。
+    for _pn, _pt in (params or {}).items():
+        if _pt == 'String':
+            body = re.sub(r'(?<![\w一-鿿.])' + re.escape(_pn) + r'\.到字节集\(\)',
+                          _pn + '.getBytes()', body)
+    # 结绳 `输入流`/`输出流` 家族方法：接收者是**声明类型含「流」的变量**时内联成
+    # 对应的 Java 流方法（对照 JVM_输入输出流.t 的 @code）。
+    # 定向判断是必需的：`.关闭()` 在 `悬浮窗`（自定义类，有自己的 关闭()）上合法，
+    # 盲替换会弄坏它；而 GZIP/ZIP/文件/字节集流变量（名字多带数字后缀，难穷举）
+    # 的类型都含「流」。
+    _STREAM_M = (('关闭', 'close'), ('刷新', 'flush'),
+                 ('写出字节集2', 'write'), ('写出字节集', 'write'),
+                 ('读到字节集2', 'read'), ('读到字节集', 'read'))
+    for _pn, _pt in (params or {}).items():
+        if not _pt or '流' not in _pt:
+            continue
+        for _zh, _en in _STREAM_M:
+            # 匹配「变量.方法(」——带不带参数都覆盖（写出字节集(缓冲) 有参数）
+            body = re.sub(r'(?<![\w一-鿿.])' + re.escape(_pn) + r'\.' + _zh + r'\s*\(',
+                          _pn + '.' + _en + '(', body)
+    # JDK 容器 / Context / Class 上的结绳方法（对照 JVM_基本数据结构.t、
+    # 安卓_基本类型.t、JVM_反射相关.t 的 @code）。同样按参数类型定向：
+    # 这些中文方法名（清空/添加成员…）在自定义类上也可能存在，不能盲替换。
+    #
+    # 注意：`cur_params` 存的是**结绳壳名**（`安卓环境`/`集合`/`哈希表`/`Java类`），
+    # 原生名（`android.content.Context`/`java.util.List`…）是 `postprocess_all`
+    # 之后才出现的。故谓词必须**同时**认壳名与原生名，否则一处都命中不了。
+    _BY_TYPE = (
+        (lambda t: 'List' in t or 'Collection' in t or 'Set' in t or t in ('集合', '文本集合', '对象集合'),
+         (('添加成员', 'add'), ('到数组', 'toArray'))),
+        (lambda t: 'Map' in t or '哈希表' in t or '键值对' in t,
+         (('删除项目', 'remove'), ('清空', 'clear'))),
+        (lambda t: 'Context' in t or t == '安卓环境',
+         (('取程序包管理器', 'getPackageManager'),
+          ('取内部私有缓存目录路径', 'getCacheDir'))),
+        (lambda t: 'Class' in t or t == 'Java类',
+         (('取字段', 'getDeclaredField'),)),
+    )
+    for _pn, _pt in (params or {}).items():
+        if not _pt:
+            continue
+        for _pred, _pairs in _BY_TYPE:
+            if not _pred(_pt):
+                continue
+            for _zh, _en in _pairs:
+                body = re.sub(r'(?<![\w一-鿿.])' + re.escape(_pn) + r'\.' + _zh + r'\s*\(',
+                              _pn + '.' + _en + '(', body)
+    # 结绳 `文件` 是 `@指代类("java.io.File")` 桥接类：类型位置被抹成
+    # `java.io.File`，于是 `文件值.结绳方法()` 在原生 File 上找不到。
+    # 按 `文件` 类方法体的等价实现内联（对照 JVM_输入输出流.t）。
+    # 只内联**实测报错**的 5 个；其余（取路径/取父目录…）暂不动，避免扩大面。
+    # 接收者可能是链式调用（`取私有目录().取绝对路径()`），故只匹配 `.方法()`，
+    # 不要求前面是标识符。方法定义（无 `.` 前缀）不受影响。
+    for _zh, _en in (('取绝对路径', 'getAbsolutePath'), ('取文件名', 'getName'),
+                     ('为文件夹', 'isDirectory'), ('新建文件夹', 'mkdirs'),
+                     ('取子文件数组', 'listFiles')):
+        body = re.sub(r'\.' + _zh + r'\(\)', '.' + _en + '()', body)
     for k, v in (('本对象', 'this'), ('且', '&&'), ('或', '||'), ('非', '!'), ('空', 'null'),
                  ('真', 'true'), ('假', 'false')):
         body = re.sub(B % k, v, body)
@@ -264,6 +356,22 @@ def split_top(s, sep=','):
     if cur.strip():
         out.append(cur)
     return [x.strip() for x in out if x.strip()]
+
+
+def split_top_keep(s, sep=','):
+    """按顶层分隔符切分，**保留空元素**（`i,,N` 的中间空参不能丢）。"""
+    out, depth, cur = [], 0, ''
+    for ch in s:
+        if ch in '(<[':
+            depth += 1
+        elif ch in ')>]':
+            depth -= 1
+        if ch == sep and depth == 0:
+            out.append(cur); cur = ''
+        else:
+            cur += ch
+    out.append(cur)
+    return [x.strip() for x in out]
 
 
 def _cross_refs_text(text, own_pkg):
@@ -320,6 +428,11 @@ def _prescan_wrappers(src):
             if am:
                 aliases[m.group(2)] = am.group(1)
     _WRAPPER_TARGETS.update(aliases)
+    # 收集「@常量类型(整数)」伪枚举类名。
+    for txt in texts:
+        for m in re.finditer(r'((?:^[ \t]*@[^\n]*\n)+)[ \t]*(?:类|公开类|抽象类)\s+([^\s:<]+)', txt, re.M):
+            if '@常量类型(整数)' in m.group(1):
+                _INT_ENUM.add(m.group(2))
     for txt in texts:
         for m in re.finditer(r'\bnew\s+(?:#<@)?([\u4e00-\u9fff][\u4e00-\u9fffA-Za-z0-9_]*)', txt):
             if m.group(1) in aliases:
@@ -327,6 +440,20 @@ def _prescan_wrappers(src):
 
 
 _LIB_CLASSES = {}
+
+# jname -> 需注入其方法的基类集合（本库基类 + @指代类 并存时用）
+_PENDING_INJECT = {}
+
+# 包装类 extends 的目标类「无可用无参构造器」时的合成 super(...) 实参。
+# 这些类从不被 new（框架回调传入），实参不会被使用；只求合法、无副作用。
+_NO_CTOR_SUPER = {
+    '按键事件': '0, 0',                     # KeyEvent(int action, int code)
+    '组件动画集合': 'true',                  # AnimationSet(boolean)
+    'ZIP条目': '""',                        # ZipEntry(String name)
+    'Dex类加载器': 'null, null, null, null',  # DexClassLoader(String,String,String,ClassLoader)
+    '安卓资源管理器': 'null, null, null',      # Resources(AssetManager,DisplayMetrics,Configuration)
+    '安卓提示框': 'null',                    # Toast(Context)
+}
 
 # 全局已知的 @指代类 目标（预扫描收集，供 postprocess_all 判定）。
 _WRAPPER_TARGETS = set()
@@ -382,6 +509,9 @@ _ALIAS_TARGETS = {
     '附加资源管理器': 'android.content.res.AssetManager', 'dex文件': 'dalvik.system.DexFile',
     '字体对象': 'android.graphics.Typeface',
 }
+# [_misc2_rebase_v2] 桥接目标为**抽象**平台类的包装类：本类不被 new 时需标 abstract。
+_ABSTRACT_WRAPPER_TARGETS = {'android.content.Context'}
+
 _BRIDGE = {
     '启动信息': 'android.content.Intent', '文件': 'java.io.File',
     '安卓环境': 'android.content.Context',
@@ -391,6 +521,14 @@ _BRIDGE = {
     '透明动画': 'android.view.animation.AlphaAnimation',
     '组件动画集合': 'android.view.animation.AnimationSet',
 }
+# 泛型模板类：`@指代类("java.util.ArrayList")` + `<模板类型1>` → 应 extends 带类型实参，
+# 否则 raw type 让 this.get()/toArray()/pollFirst() 返回 Object（实测 ~14 处类型不匹配）。
+_ALIAS_GENERIC = {
+    'java.util.ArrayList': 1, 'java.util.Vector': 1, 'java.util.ArrayDeque': 1,
+    'java.util.Stack': 1, 'java.util.HashMap': 2,
+    'java.util.concurrent.ConcurrentHashMap': 2,
+}
+
 _METH_RE = re.compile(r'^[ \t]*public\s+(static\s+)?([^\s(]+)\s+([^\s(]+)\s*\(([^)]*)\)\s*\{', re.M)
 _DEFAULT_RET = {'void': '', 'boolean': 'return false; ', 'int': 'return 0; ', 'long': 'return 0L; ',
                 'double': 'return 0; ', 'float': 'return 0; ', 'char': 'return 0; ',
@@ -428,6 +566,73 @@ def _ret_type_all(txt, clsname, target):
 def _fix_assign_op(txt, clsname):
     """`方法 =(...)`（无返回类型）→ 应返回本类实例（`=` 运算符重载）。"""
     return re.sub(r'public\s+void\s+(赋值_op\s*\()', 'public ' + clsname + r' \1', txt)
+
+
+def _brace_body(txt, open_idx):
+    """返回与 open_idx 处 `{` 配对的 `}` 的下标，失败返回 -1。"""
+    depth = 0; i = open_idx
+    while i < len(txt):
+        if txt[i] == '{': depth += 1
+        elif txt[i] == '}':
+            depth -= 1
+            if depth == 0:
+                return i
+        i += 1
+    return -1
+
+
+_ASSIGNOP_RE = re.compile(r'public\s+(?:static\s+)?(?:[\w\u4e00-\u9fff.]+)\s+赋值_op\s*\(([^)]*)\)\s*\{', re.M)
+_NEWCALL_RE = re.compile(r'new\s+[\w\u4e00-\u9fff.$]+\s*\(')
+
+
+def _args_of_new(body):
+    """第一个 `new X(...)` 的实参串 + body 是否含 catch（catch 需补 throws）。"""
+    m = _NEWCALL_RE.search(body)
+    if not m:
+        return None
+    i = m.end() - 1
+    depth = 0; j = i
+    while j < len(body):
+        if body[j] == '(': depth += 1
+        elif body[j] == ')':
+            depth -= 1
+            if depth == 0:
+                return body[i + 1:j].strip(), ('catch' in body)
+        j += 1
+    return None
+
+
+def _ctor_from_assignop(txt, clsname, allow_delegate=True):
+    """结绳 `方法 =(...)`（运算符重载 `=`）在语义上就是构造器。  # [fix_ctor]
+
+    T1 值语义 `public W 赋值_op(p){ this.x=x; return this; }` -> 真构造器（去 return this）
+    T2 委托   `public R 赋值_op(p){ return new X(a); }`       -> `public W(p){ super(a); }`
+    """
+    m = _ASSIGNOP_RE.search(txt)
+    if not m:
+        return txt
+    params = m.group(1).strip()
+    b0 = m.end() - 1
+    b1 = _brace_body(txt, b0)
+    if b1 < 0:
+        return txt
+    body = txt[b0 + 1:b1]
+    if 'return this;' in body and 'new ' not in body:
+        nb = body.replace('return this;', '')
+        repl = 'public %s(%s) {%s}' % (clsname, params, nb)
+    elif allow_delegate:
+        # 只看类头（不越过类头开括号），无 extends 的类不会被误判
+        if not re.search(r'class\s+' + re.escape(clsname) + r'(?=[\s<{])(?:[^{]*?)extends', txt):
+            return txt
+        got = _args_of_new(body)
+        if got is None:
+            return txt
+        args, had_catch = got
+        thr = ' throws Exception' if had_catch else ''
+        repl = 'public %s(%s)%s { super(%s); }' % (clsname, params, thr, args)
+    else:
+        return txt
+    return txt[:m.start()] + repl + txt[b1 + 1:]
 
 
 def _cast_returns(txt, clsname):
@@ -479,6 +684,92 @@ def replace_type_positions(txt, clsname, target):
     return txt
 
 
+# [_misc2_rebase_v2] 零散错误簇辅助：方法去重 + 局部变量去遮蔽。
+_SIG_RE = re.compile(
+    r'^\s*public\s+(?:static\s+)?[^=;{}()]*?\b([\w\u4e00-\u9fff]+)\s*\(([^)]*)\)\s*\{')
+_LOCAL_DECL_RE = re.compile(
+    r'^(\s*(?:final\s+)?[\w\u4e00-\u9fff<>\[\].]+\s+)([\w\u4e00-\u9fff]+)(\s*=)')
+
+
+def _sig_of(line):
+    """一行方法声明 → (方法名, 规范化参数类型串)；非方法声明返回 None。"""
+    if ' class ' in line or ' interface ' in line or ' enum ' in line:
+        return None
+    m = _SIG_RE.match(line)
+    if not m:
+        return None
+    types = []
+    for a in split_top(m.group(2)):
+        a = re.sub(r'\s*=.*$', '', a.strip()).strip()
+        if not a:
+            continue
+        toks = a.rsplit(' ', 1)
+        types.append(toks[0] if len(toks) == 2 else a)
+    return (m.group(1), ', '.join(types))
+
+
+def _brace_delta(line):
+    """一行净花括号增量，跳过字符串/字符字面量与注释。"""
+    d = 0; i = 0; n = len(line)
+    while i < n:
+        c = line[i]
+        if c == '/' and i + 1 < n and line[i + 1] == '/':
+            break
+        if c == '/' and i + 1 < n and line[i + 1] == '*':
+            j = line.find('*/', i + 2)
+            i = n if j < 0 else j + 2
+            continue
+        if c == '"' or c == "'":
+            q = c; i += 1
+            while i < n and line[i] != q:
+                if line[i] == chr(92):
+                    i += 1
+                i += 1
+            i += 1
+            continue
+        if c == '{':
+            d += 1
+        elif c == '}':
+            d -= 1
+        i += 1
+    return d
+
+
+def _dedup_methods(cls_src):
+    """删掉同一类里签名重复的方法块（保留最先出现的）。
+
+    只在类体顶层（花括号深度 1）判定；Java 里同名同参即重复定义，后出现者必错。
+    """
+    lines = cls_src.split('\n')
+    deltas = [_brace_delta(l) for l in lines]
+    out = []; seen = set(); depth = 0; i = 0
+    while i < len(lines):
+        ln = lines[i]
+        if depth == 1:
+            sig = _sig_of(ln)
+            if sig is not None:
+                j = i; d = depth + deltas[i]
+                while j + 1 < len(lines) and d > 1:
+                    j += 1; d += deltas[j]
+                if sig in seen:
+                    i = j + 1; depth = d; continue
+                seen.add(sig)
+                out.extend(lines[i:j + 1]); i = j + 1; depth = d; continue
+        out.append(ln); depth += deltas[i]; i += 1
+    return '\n'.join(out)
+
+
+def _shadow_renames(buf, params):
+    """扫 @code 块，返回 [(起始行号, 原变量名, 新变量名)]。"""
+    ren = []
+    for k, b in enumerate(buf):
+        m = _LOCAL_DECL_RE.match(b)
+        if m and m.group(2) in params:
+            ren.append((k, m.group(2), m.group(2) + '1'))
+    return ren
+
+
+# [/_misc2_rebase_v2]
 def apply_wrapper_policy(parts):
     """对切分好的类源码逐条应用三档策略。返回新 parts 列表。"""
     out = []
@@ -487,6 +778,12 @@ def apply_wrapper_policy(parts):
         if not nm:
             out.append(p); continue
         name = nm.group(1)
+        # 目标类无可访问无参构造器：注入合成构造器（见 _fix_no_ctor）。
+        p = _fix_no_ctor(p, name)
+        # # [fix_ctor] 结绳 `方法 =(...)` 即构造器：普通类（坐标/键值对）与桥接/抽象包装类
+        # 都靠它取得可用构造器；别名壳的 extends 稍后会被移除，故跳过。
+        if name not in _ALIAS_TARGETS:
+            p = _ctor_from_assignop(p, name, allow_delegate=False)
         if name not in _WRAPPER_TARGETS:
             out.append(p); continue          # 非 @指代类：不动
         if name in _ALIAS_TARGETS:
@@ -507,14 +804,22 @@ def apply_wrapper_policy(parts):
         elif name in _BRIDGE:
             tgt = _BRIDGE[name]
             p = _fix_assign_op(p, name)
+            p = _ctor_from_assignop(p, name, allow_delegate=True)   # # [fix_ctor]
             p = _cast_returns(p, name)
             p = replace_type_positions(p, name, tgt)
             p = re.sub(r'(?<![\w.])new\s+' + re.escape(name) + r'(?=\s*\()', 'new ' + tgt, p)
             p = _ret_type_all(p, name, tgt)
+            # [_misc2_rebase_v2] 桥接目标是抽象平台类（Context）且本类从不被 new → 标 abstract，
+            # 否则「安卓环境不是抽象的, 并且未覆盖 Context 中的抽象方法」。
+            if tgt in _ABSTRACT_WRAPPER_TARGETS and name not in _NEEDED_NEW:
+                p = re.sub(r'^(public\s+)class\s+' + re.escape(name) + r'\b',
+                           lambda m: m.group(1) + 'abstract class ' + name,
+                           p, count=1, flags=re.M)
         else:
             # C) 其余包装类：`方法 =(...)` 返回本类；本类内 `return 原生值` 加 (W) 强转；
             #    目标非 final 但缺抽象方法实现 → 加 abstract（收敛为 1 条报错）。
             p = _fix_assign_op(p, name)
+            p = _ctor_from_assignop(p, name, allow_delegate=True)   # # [fix_ctor]
             p = _cast_returns(p, name)
             if name not in _NEEDED_NEW and name not in _NO_ABSTRACT:
                 p = re.sub(r'^(public\s+)class\s+' + re.escape(name) + r'\b',
@@ -523,10 +828,156 @@ def apply_wrapper_policy(parts):
     return out
 
 
+def _inject_base_methods(parts):
+    """把 _PENDING_INJECT 记录的基类方法（含方法体）注入子类。
+
+    只注入「子类没有的同名方法」，避免覆盖子类自己的实现。
+    用于「本库显式基类 + @指代类 并存」：Java 单继承只能 extends 别名目标，
+    本库基类的方法（如 输出流.刷新/关闭）会丢，注入后恢复。
+    """
+    if not _PENDING_INJECT:
+        return parts
+
+    def methods_of(text):
+        """抽取 public ... name(...) { ... } 方法段（含方法体）。"""
+        res = []
+        for m in re.finditer(r'^[ \t]*public\s+[^;{]*?\b([\w\u4e00-\u9fff]+)\s*\(([^)]*)\)\s*\{',
+                             text, re.M):
+            depth, i = 1, m.end()
+            while i < len(text) and depth:
+                if text[i] == '{':
+                    depth += 1
+                elif text[i] == '}':
+                    depth -= 1
+                i += 1
+            res.append((m.group(1), text[m.start():i]))
+        return res
+
+    byname = {}
+    for p in parts:
+        m = re.search(r'public\s+(?:abstract\s+)?class\s+([^\s<{]+)', p)
+        if m:
+            byname[m.group(1)] = p
+
+    out = []
+    for p in parts:
+        m = re.search(r'public\s+(?:abstract\s+)?class\s+([^\s<{]+)(.*)', p)
+        if not m or m.group(1) not in _PENDING_INJECT:
+            out.append(p)
+            continue
+        # 只对**真正 extends 了别名目标**的类注入：此时本库基类的方法体
+        # （如 输出流.刷新() = this.flush()）能落到 Java 基类同名方法上。
+        # 别名壳档不生成 extends（退化成静态壳），注入 this.intValue() 之类
+        # 反而凭空造出「找不到符号」（实测 整数类/小数类/单精度小数类）。
+        if 'extends' not in m.group(2):
+            out.append(p)
+            continue
+        cls = m.group(1)
+        own = {n for n, _ in methods_of(p)}
+        add = []
+        for b in sorted(_PENDING_INJECT[cls]):
+            bp = byname.get(b)
+            if not bp:
+                continue
+            for mn, body in methods_of(bp):
+                if mn in own or mn == b:
+                    continue
+                own.add(mn)
+                add.append(body)
+        if add:
+            idx = p.rfind('}')
+            p = p[:idx] + chr(10).join(add) + chr(10) + p[idx:]
+        out.append(p)
+    return out
+
+
+
+def _fix_no_ctor(txt, clsname):
+    """给「包装类 extends 目标类、但目标类无可访问无参构造器」的类注入合成构造器。
+
+    结绳里这些类是**框架回调传入**的（如 `按键事件` 是 onKeyDown 的参数），
+    从不被 `new`；源码也没有 `方法 =(...)`。Java 子类必须显式调用父类构造器，
+    而 `KeyEvent`/`AnimationSet`/`ZipEntry`/`DexClassLoader`/`Resources`/`Toast`
+    都没有无参构造器 → 隐式 `super()` 落空。注入 `super(<占位实参>)` 即可编译，
+    占位值不会被使用（类从不实例化）。
+
+    `_NO_CTOR_SUPER` 只为这 6 个类手工挑选的**合法且无副作用**的实参。
+    """
+    args = _NO_CTOR_SUPER.get(clsname)
+    if args is None:
+        return txt
+    m = re.search(r'public\s+(?:abstract\s+)?class\s+' + re.escape(clsname) + r'[^{]*\{', txt)
+    if not m:
+        return txt
+    # 已有显式构造器就不注入
+    if re.search(r'' + re.escape(clsname) + r'\s*\(', txt[m.end():]):
+        return txt
+    ctor = chr(10) + 'public %s() { super(%s); }' % (clsname, args)
+    return txt[:m.end()] + ctor + txt[m.end():]
+
+
 def _drop_self_import(head, clsname):
     """过滤 import 简单名与本类名相同者（UUID）→ Java 禁止 self-import。"""
     return [h for h in head if not (h.startswith('import ') and not h.startswith('import static ')
                                     and h.endswith(';') and h[7:-1].rsplit('.', 1)[-1] == clsname)]
+
+
+def fix_generated(text):
+    """生成文本的收尾修补（在包装类 postprocess 之后调用）。"""
+    # A) 数组字面量：`T[] x = new Object[]{...}` → `new T[]{...}`。
+    text = re.sub(r'(?<![\w一-鿿.\]])([A-Za-z_一-鿿][\w一-鿿.\[\]]*)\[\]\s+([A-Za-z_一-鿿][\w一-鿿]*)\s*=\s*new Object\[\]\{',
+                  lambda m: '%s[] %s = new %s[]{' % (m.group(1), m.group(2), m.group(1)), text)
+    # D) `取数组长度`（@嵌入式代码 `#数组.length`）在调用点内联。
+    text = re.sub(r'(?<![\w一-鿿])取数组长度\(\s*([A-Za-z_一-鿿][\w一-鿿]*)\s*\)',
+                  r'(\1).length', text)
+    # B) 泛型数组创建：`new T1[0]` → `(T1[]) new Object[0]`。
+    text = re.sub(r'new\s+(T\d+)\[0\]', r'(\1[]) new Object[0]', text)
+    # C) `=` 重载体返回原生容器但声明返回本类 → raw 强转。
+    m = re.search(r'public\s+([\w一-鿿]+)\s+赋值_op\s*\(', text)
+    if m:
+        text = text.replace('return list;', 'return (%s)list;' % m.group(1))
+    # E) `取数组长度` 仍按方法调用处，补 byte[] 重载。
+    text = text.replace('public static int 取数组长度(Object[] 数组) {',
+                        'public static int 取数组长度(Object[] 数组) {\nreturn 数组.length;\n}\n\n'
+                        'public static int 取数组长度(byte[] 数组) {')
+    # G) `方法 =(...)` 值构造：类内 `new 本类(...)` 但无构造器 → 补委托构造器。
+    def _add_ctor(mcls):
+        pos = mcls.start()
+        cm = None
+        for m in re.finditer(r'public\s+(abstract\s+)?class\s+([\w一-鿿]+)', text[:pos]):
+            cm = m
+        if not cm or cm.group(1):
+            return mcls.group(0)
+        cls = cm.group(2)
+        if not re.search(r'new\s+' + re.escape(cls) + r'\s*\(', text):
+            return mcls.group(0)
+        if re.search(r'public\s+' + re.escape(cls) + r'\s*\(', text[cm.end():pos]):
+            return mcls.group(0)
+        mo = re.search(r'public\s+[\w一-鿿.]+\s+赋值_op\s*\(([^)]*)\)\s*\{',
+                       text[pos:pos + 400])
+        if not mo or not mo.group(1).strip():
+            return mcls.group(0)
+        ps = mo.group(1).strip()
+        names = [part.replace('  ', ' ').split(' ')[-1].strip() for part in split_top(ps)]
+        return 'public %s(%s) { 赋值_op(%s); }\n' % (cls, ps, ', '.join(names)) + mcls.group(0)
+    text = re.sub(r'public\s+[\w一-鿿.]+\s+赋值_op\s*\(', _add_ctor, text, count=1)
+    # H) `Arrays.deepToString(Object)` / `Arrays.toString(Object)` 需 Object[] → 加宽强转。
+    text = re.sub(r'(java\.util\.Arrays\.deepToString\()\s*([A-Za-z_一-鿿][\w一-鿿]*)\s*\)',
+                  r'\1(Object[])\2)', text)
+    text = re.sub(r'(java\.util\.Arrays\.toString\()\s*([A-Za-z_一-鿿][\w一-鿿]*)\s*\)',
+                  r'\1(Object[])\2)', text)
+    # I) Map 字段下标写法 `m[k] = v;` → `m.put(k, v);`。
+    for mn in set(re.findall(r'(?:java\.util\.)?Map<[^>]*>\s+([A-Za-z_一-鿿][\w一-鿿]*)\s*;', text)):
+        text = re.sub(r'(?<![\w.])' + re.escape(mn) + r'\[([^\]]+)\]\s*=\s*([^;]+);',
+                      lambda mm: '%s.put(%s, %s);' % (mn, mm.group(1).strip(), mm.group(2).strip()), text)
+    # J) `float[] f;` 却 `return f[i];` 而方法返回 int → 补窄化强转。
+    for fn in set(re.findall(r'float\[\]\s+([A-Za-z_一-鿿][\w一-鿿]*)\s*;', text)):
+        text = re.sub(r'return\s+' + re.escape(fn) + r'\[', 'return (int)' + fn + '[', text)
+    # F) `数组到集合` 返回本类但体返回 ArrayList<Object> → raw 强转。
+    m2 = re.search(r'public\s+(?:static\s+)?([\w一-鿿]+)\s+数组到集合\s*\(', text)
+    if m2:
+        text = re.sub(r'return list;', 'return (%s)list;' % m2.group(1), text)
+    return text
 
 
 def postprocess_all(text, all_wrappers):
@@ -624,17 +1075,20 @@ class Translator:
         self.pkg = ''
         self.embedded = False
         self.pending_embedded = False
+        self.embedded_promoted = False   # 嵌入式无返回类型方法被提升为 Object
         self.pending_static = False
         self.cur_ret = 'void'   # 当前方法返回类型（决定 `code expr` 是否补 return）
         self.try_open = False   # 容错处理() 开了 try，等 结束容错() 收
         self.alias = None
         self.pending_suffix = ''    # @后缀代码("implements X") 暂存，供类声明拼接
+        self.pending_prefix = ''    # [_misc2_rebase_v2] @前缀代码("abstract") 暂存，供类声明拼接
         self.used_names = set()
         self.used_class_names = set()
         self.cur_class_zh = ''
         self.cur_class_out = ''
         self.imports = []
         self.tparams = []
+        self.cur_params = {}
         # 全库方法返回类型索引：`方法名 → {返回类型 Java 串}`。供变量类型推断用
         # （如 `变量 结果 = 取网页源码_同步_内部(...)` 需要知道它是 `Object[]`，
         # 否则推断成 Object，`结果[0]` 报「需要数组, 但找到Object」）。
@@ -776,6 +1230,13 @@ class Translator:
             # 只设 self.embedded 会被立刻冲掉，@嵌入式代码 形同不存在。
             self.pending_embedded = True
             return
+        m_pre = re.match(r'^@前缀代码\("([^"]*)"\)', s)
+        if m_pre:
+            # [_misc2_rebase_v2] `@前缀代码("abstract")` 声明抽象类（5 个类），原被当普通注解丢弃 →
+            # 类退化为具体类却含 abstract 方法 → 「X 不是抽象的, 并且未覆盖抽象方法」
+            # （实测 4 处）。
+            self.pending_prefix = m_pre.group(1).strip()
+            return
         if s.startswith('@静态'):
             self.pending_static = True
             return
@@ -811,6 +1272,12 @@ class Translator:
         kw, name, tp, base = m.group(1), m.group(2), m.group(3), m.group(4)
         jname = map_cls(name)          # 输出用的类名（英文版会变）
         self.tparams = []
+        self.cur_params = {}
+        # 类级字段名 → Java 类型（供 subst 定向内联识别 `字段.结绳方法()`）。
+        # 必须与 cur_params 分开：cur_params 是**方法级**（每次 parse_method 重置），
+        # 字段是**类级**。两者合并在 parse_var 里，见下。
+        self.cur_fields = {}
+        self._at_class_level = True
         if tp:
             for p in re.findall(r'模板类型(\d*)', tp):
                 self.tparams.append('T' + (p or '1'))
@@ -852,6 +1319,11 @@ class Translator:
             al = self.alias.strip()
             if al not in ('int', 'long', 'short', 'byte', 'char', 'float',
                           'double', 'boolean', 'void'):
+                # 泛型模板类补类型实参（raw type 会丢泛型 → Object 返回）。
+                if self.tparams and al in _ALIAS_GENERIC:
+                    n = _ALIAS_GENERIC[al]
+                    if len(self.tparams) >= n:
+                        al = al + '<' + ', '.join(self.tparams[:n]) + '>'
                 extends = ' extends ' + al
         # @后缀代码("extends X") / ("implements Y")：结绳把基类/接口写在注解里，
         # 类声明行不带 `:`。此前该注解被丢弃 → 类丢基类，父类方法/字段全
@@ -868,6 +1340,14 @@ class Translator:
         # name in NON_EXTEND：目标是 final/接口/枚举/私有构造器，不能 extends。
         # 不生成 extends —— 本类退化成「同名静态壳」（只承载静态工厂方法）；
         # 类型位置由 map_type_cls 映射成目标原生类型。
+        # 同时有「本库显式基类」+ `@指代类` 时：Java 单继承只能选别名，
+        # 本库基类的方法会丢 -> 记下来，转译后把基类方法注入本类。
+        # 必须在下面的 `self.alias = None` 之前记录，否则 alias 已被清空。
+        _all_lib = set()
+        for _s in _LIB_CLASSES.values():
+            _all_lib |= _s
+        if base and self.alias and base.strip() in _all_lib:
+            _PENDING_INJECT.setdefault(jname, set()).add(map_cls(base.strip()))
         # @指代类 是**逐类**的，用完必须清空：否则同一文件里后续所有类都会
         # 继承上一个类的 @指代类 目标（实测 进度条/拖动条/视频播放器/浏览框
         # 全被误挂上 图像缩放类型 的 ScaleType）。
@@ -913,8 +1393,11 @@ class Translator:
         # 记录「中文类名 → 输出类名」，供 subst 替换构造器名。
         self.cur_class_zh = name
         self.cur_class_out = jname
+        # [_misc2_rebase_v2] `@前缀代码("abstract")` 与 `抽象类` 关键字等价，都声明抽象类。
+        _abs = (kw == '抽象类') or (self.pending_prefix == 'abstract')
+        self.pending_prefix = ''
         self.emit('public %sclass %s%s%s {' % (
-            'abstract ' if kw == '抽象类' else '', jname, tdecl, extends))
+            'abstract ' if _abs else '', jname, tdecl, extends))
         # 类体
         in_code = False
         while self.i < len(self.lines):
@@ -927,7 +1410,7 @@ class Translator:
             if in_code:
                 # @code 块内是原生 Java，必须原样输出（只做 #x/字面量替换），
                 # 否则 `@Override protected void f(){` 这类行会被 `@` 分支吞掉。
-                self.emit(subst(s, [], self.tparams, in_code=True)); continue
+                self.emit(subst(s, getattr(self, 'cur_params', {}), self.tparams, in_code=True)); continue
             if idx in self.comment_lines:
                 # 块注释已被清空（见 __init__）；这里必须 emit 清空后的内容，
                 # 否则会把 `/* ... 结束 方法*/` 这类含终止关键字的注释原样吐出来。
@@ -982,24 +1465,27 @@ class Translator:
                 self.parse_while(s); continue
             if s.startswith('返回'):
                 r = s[2:].strip()
-                self.emit('return;' if r in ('', '()') else 'return ' + subst(r, [], self.tparams) + ';'); continue
+                self.emit('return;' if r in ('', '()') else 'return ' + subst(r, getattr(self, 'cur_params', {}), self.tparams) + ';'); continue
             if s.startswith('是 '):
-                self.emit('return ' + subst(s[2:].strip(), [], self.tparams) + ';'); continue
+                self.emit('return ' + subst(s[2:].strip(), getattr(self, 'cur_params', {}), self.tparams) + ';'); continue
             if s.startswith('code '):
                 body = s[5:].strip()
                 if not re.match(r'^(if|for|while|try|return|throw|\{)', body) and not body.endswith(';'):
-                    self.emit('return ' + subst(body, [], self.tparams) + ';')
+                    self.emit('return ' + subst(body, getattr(self, 'cur_params', {}), self.tparams) + ';')
                 else:
-                    self.emit(subst(body, [], self.tparams))
+                    self.emit(subst(body, getattr(self, 'cur_params', {}), self.tparams))
                 continue
             # 其它（表达式、赋值）
-            self.emit(subst(s, [], self.tparams))
+            self.emit(subst(s, getattr(self, 'cur_params', {}), self.tparams))
         self.emit('}')
 
     @staticmethod
     def infer_type(val):
         v = (val or '').strip()
         if re.match(r'^(0x[0-9a-fA-F]+|\d+)$', v): return 'int'
+        # `1 << 1` / `a | b` 等整型表达式（@常量类型(整数) 类里常见）。
+        if re.match(r'^[0-9a-fA-FxX\s<>&|^~()+\-*/]+$', v) and re.search(r'[0-9]', v):
+            return 'int'
         if re.match(r'^\d+[lL]$', v): return 'long'
         if re.match(r'^\d+\.\d*[fF]?$', v): return 'double'
         if v.startswith('"'): return 'String'
@@ -1016,36 +1502,51 @@ class Translator:
         # 若按声明类型生成 `public static final 弹性布局_主轴对齐方式 左或上 = 0;`
         # 会报「int 无法转换为 弹性布局_主轴对齐方式」（该模式约 70 处）。
         # 这类常量值就是字面量，取**值的类型**（int 等）。
-        if typ and typ.strip() == self.cur_class_zh and val:
+        if self.cur_class_zh in _INT_ENUM:
+            jt = 'int'                       # 伪枚举：常量值就是 int
+        elif typ and typ.strip() == self.cur_class_zh and val:
             jt = self.infer_type(val)
         else:
             jt = map_type(typ, self.tparams) if typ else self.infer_type(val)
         mod = 'public static final'
-        self.emit('%s %s %s%s;' % (mod, jt, name, (' = ' + subst(val, [], self.tparams)) if val else ''))
+        self.emit('%s %s %s%s;' % (mod, jt, name, (' = ' + subst(val, getattr(self, 'cur_params', {}), self.tparams)) if val else ''))
 
     BARE_ARRAY = re.compile(r'^([一-鿿A-Za-z_][一-鿿A-Za-z0-9_.]*)\[([^\]]+)\]\s+([一-鿿A-Za-z_][一-鿿A-Za-z0-9_]*)\s*(?:=\s*(.+?))?;?$')
 
     def parse_var(self, s):
         st = self.pending_static          # @静态 变量 → 静态字段，否则静态方法引用不到
         self.pending_static = False
-        pre = 'static ' if st else ''
+        # 类级字段必须 public：结绳 `变量 键 : 对象?` 是**公开字段**（跨类/跨包直接
+        # `v.键` 访问）。此前只写 `Object 键;` → 包私有，`对象操作`（另一包）访问
+        # 「键在键值对中不是公共的」。局部变量不加 public。
+        pre = ('public ' if getattr(self, '_at_class_level', False) else '') + ('static ' if st else '')
         s = self._join(s)   # 结绳允许 `变量 x : 类型 = 表达式` 跨行续写
         m = re.match(r'^变量\s+([^\s:]+)\s*(?:(?::|为)\s*([^=]+))?\s*(?:=\s*(.+))?$', s)
         name, typ, val = m.group(1), (m.group(2) or '').strip(), (m.group(3) or '').strip()
+        _tbl = self.cur_fields if getattr(self, '_at_class_level', False) else self.cur_params
         am = re.match(r'^(.+?)\[(.+)\]$', typ)   # 字节[1024] / 整数[宽度*高度]
         if am:
             jt = map_type(am.group(1).strip(), self.tparams)
+            _tbl[name] = jt + '[]'
             self.emit('%s%s[] %s = new %s[%s];' % (
-                pre, jt, name, jt, subst(am.group(2), [], self.tparams))); return
+                pre, jt, name, jt, subst(am.group(2), getattr(self, 'cur_params', {}), self.tparams))); return
         jt = map_type(typ, self.tparams) if typ else (self._call_ret(val) or self.infer_type(val))
+        # 记录局部变量类型：供 subst 定向内联「原生类型上调结绳方法」用
+        # （如 `GZIP输出流1.关闭()` → `.close()`）。与参数表共用一个 dict。
+        _tbl[name] = jt
         if val and re.match(r'^\(.*\)$', val) and jt not in ('int','long','short','byte','float','double','boolean','char','String','Object'):
             # 结绳构造语法：变量 x : 类型 = (a,b)  →  类型 x = new 类型(a,b)
             self.emit('%s%s %s = new %s%s;' % (pre, jt, name, jt, val)); return
-        self.emit('%s%s %s%s;' % (pre, jt, name, (' = ' + subst(val, [], self.tparams)) if val else ''))
+        self.emit('%s%s %s%s;' % (pre, jt, name, (' = ' + subst(val, getattr(self, 'cur_params', {}), self.tparams)) if val else ''))
 
     def parse_params(self, ps):
-        """结绳参数表 → (java参数列表, 参数名列表)"""
-        out, names = [], []
+        """结绳参数表 → (java参数列表, 参数名列表, {参数名: Java类型})。
+
+        第三个返回值供 `subst` 展开 `#参数.class`：结绳里 `#X.class` 中的 X
+        可以是参数名（类型即其声明类型），Java 里 `变量.class` **非法**——
+        必须换成类型名。见 `#欲启动服务.class` → `安卓服务.class`。
+        """
+        out, names, types = [], [], {}
         for p in split_top(ps):
             p = p.strip()
             if not p: continue
@@ -1060,15 +1561,19 @@ class Translator:
                 rest = p[sep[0] + sep[1]:].strip()
                 vm = re.match(r'^(.+?)\s*=\s*(.+)$', rest)
                 t = vm.group(1).strip() if vm else rest
-                out.append('%s %s' % (map_type(t, self.tparams), n)); names.append(n)  # 默认值丢弃
+                jt = map_type(t, self.tparams)
+                out.append('%s %s' % (jt, n)); names.append(n)  # 默认值丢弃
+                types[n] = jt
             else:
                 # 只有默认值、没写类型：`渲染类型=0` → Object 渲染类型 = 0
                 dm = re.match(r'^([一-鿿A-Za-z_][\w一-鿿]*)\s*=\s*(.+)$', p)
                 if dm:
                     out.append('Object ' + dm.group(1)); names.append(dm.group(1))
+                    types[dm.group(1)] = 'Object'
                 else:
                     out.append('Object ' + p); names.append(p)
-        return ', '.join(out), names
+                    types[p] = 'Object'
+        return ', '.join(out), names, types
 
     def _skip_method_body(self):
         """跳过当前方法的整个方法体（直到 `结束 方法`），不产出任何代码。"""
@@ -1084,7 +1589,11 @@ class Translator:
             self.emit('// TODO 无法解析: ' + s); return
         name, ps, ret = m.group(1), m.group(2), (m.group(3) or '').strip()
         jret = map_type(ret, self.tparams) if ret else 'void'
-        params, names = self.parse_params(ps)
+        params, names, ptypes = self.parse_params(ps)
+        # 方法体里既能用参数、也能用类字段 → 合并（参数优先，名字冲突时参数遮蔽字段）。
+        self.cur_params = dict(getattr(self, 'cur_fields', {}))
+        self.cur_params.update(ptypes)
+        self._at_class_level = False
         if stub:
             # 跨方法块宏的**定义**：只保留签名 + 空体，丢弃无法表达的方法体。
             # 调用点不受影响（parse_body 里另有处理），类花括号得以配平。
@@ -1108,8 +1617,11 @@ class Translator:
             name = name + '_op'   # Java 无运算符重载；与具名方法并存会重名，统一加后缀
         # `@嵌入式代码 方法 f(...)`（无返回类型）等价于「表达式即返回值」：
         # 方法体只有一条 `code expr`，若按 void 生成会得到 `return expr;` → 类型错误。
+        _emb_was_void = self.embedded and jret == 'void'
         if self.embedded and jret == 'void':
             jret = 'Object'
+        # 嵌入式「无返回类型」被提升为 Object 时，体内单表达式其实是**语句**。
+        self.embedded_promoted = _emb_was_void
         # 结绳 `方法 =(…)` 无返回类型时仍代表「构造一个本类实例」（如 `文件 =("路径")`
         # 体内是 `new java.io.File(...)`）。按 void 生成会把 `code expr` 变成
         # 丢弃值的语句（javac「意外的返回值」）。返回类型取本类名。
@@ -1131,6 +1643,7 @@ class Translator:
                     self.out.insert(k, 'return this;')
                     break
         self.cur_ret = 'void'
+        self.embedded_promoted = False
 
     def parse_prop_read(self, s):
         self.pending_static = False
@@ -1148,7 +1661,8 @@ class Translator:
         self.pending_static = False
         m = re.match(r'^属性写\s+([^\s(]+)\s*\(([^)]*)\)$', s)
         name, ps = m.group(1), m.group(2)
-        params, names = self.parse_params(ps)
+        params, names, ptypes = self.parse_params(ps)
+        self.cur_params = ptypes
         name = self.op_name(name)
         self.embedded = self.pending_embedded; self.pending_embedded = False
         self.emit('public void %s(%s) {' % (name, params))
@@ -1166,7 +1680,8 @@ class Translator:
         m = re.match(r'^定义事件\s+([^\s(]+)\s*\(([^)]*)\)\s*(?:(?::|为)\s*(.+))?$', s)
         name, ps, ret = m.group(1), m.group(2), (m.group(3) or '').strip()
         jret = map_type(ret, self.tparams) if ret else 'void'
-        params, names = self.parse_params(ps)
+        params, names, ptypes = self.parse_params(ps)
+        self.cur_params = ptypes
         if jret == 'void':
             self.emit('public void %s(%s) { } // 事件' % (name, params))
         else:
@@ -1216,11 +1731,20 @@ class Translator:
             buf.append(s2)
         if len(buf) == 1 and not re.match(r'^(if|for|while|try|return|throw|\{)', buf[0]) and not buf[0].endswith(';'):
             # 单表达式 @code：非 void 方法补 `return`；void 方法只作语句。
-            pre = 'return ' if self.cur_ret != 'void' else ''
-            self.emit(pre + subst(buf[0], [], self.tparams, in_code=True) + ';')
+            # 嵌入式「无返回类型」提升为 Object，但体内是语句 → 不补 return。
+            pre = '' if (self.cur_ret == 'void' or self.embedded_promoted) else 'return '
+            self.emit(pre + subst(buf[0], getattr(self, 'cur_params', {}), self.tparams, in_code=True) + ';')
         else:
+            # [_misc2_rebase_v2] 形参遮蔽：@code 里 `类型 名 = …` 若与结绳形参同名，Java 报
+            # 「已在方法 X 中定义了变量 Y」（实测 网络工具 5 处 cookie）。局部变量
+            # 加后缀 `1`，从声明行起块内同步改名。cur_params 是 {名:类型} 字典。
+            _ren = _shadow_renames(buf, set(getattr(self, 'cur_params', {}) or {}))
             for k, b in enumerate(buf):
-                body = subst(b, [], self.tparams, in_code=True)
+                body = subst(b, getattr(self, 'cur_params', {}), self.tparams, in_code=True)
+                for (rk, old, new) in _ren:
+                    if k >= rk:
+                        body = re.sub(r'(?<![\w\u4e00-\u9fff])' + re.escape(old) +
+                                      r'(?![\w\u4e00-\u9fff])', new, body)
                 # 下一条有效行（跳过注释与空行）
                 nxt = ''
                 for m2 in range(k + 1, len(buf)):
@@ -1265,7 +1789,7 @@ class Translator:
                 self.parse_while(s); continue
             if s.startswith('返回'):
                 r = s[2:].strip()
-                self.emit('return;' if r in ('', '()') else 'return ' + subst(r, [], self.tparams) + ';'); continue
+                self.emit('return;' if r in ('', '()') else 'return ' + subst(r, getattr(self, 'cur_params', {}), self.tparams) + ';'); continue
             if s.startswith('变量'):
                 self.parse_var(s); continue
             self.emit_stmt(s)
@@ -1280,7 +1804,7 @@ class Translator:
         cond = s[2:].strip()
         if cond.endswith('则'):
             cond = cond[:-1].strip()          # `如果 cond 则` → cond
-        self.emit('if (%s) {' % subst(cond, [], self.tparams))
+        self.emit('if (%s) {' % subst(cond, getattr(self, 'cur_params', {}), self.tparams))
         while self.i < len(self.lines):
             raw = self.next(); s2 = raw.strip()
             if s2 == '结束 如果' or s2 == '结束如果':
@@ -1292,7 +1816,7 @@ class Translator:
                 if rest.endswith('则'):
                     rest = rest[:-1].strip()
                 if rest:
-                    self.emit('} else if (%s) {' % subst(rest, [], self.tparams)); continue
+                    self.emit('} else if (%s) {' % subst(rest, getattr(self, 'cur_params', {}), self.tparams)); continue
                 self.emit('} else {'); continue
             if s2.startswith('如果'):
                 self.parse_if(s2); continue
@@ -1308,7 +1832,7 @@ class Translator:
                 self.parse_while(s2); continue
             if s2.startswith('返回'):
                 r = s2[2:].strip()
-                self.emit('return;' if r in ('', '()') else 'return ' + subst(r, [], self.tparams) + ';'); continue
+                self.emit('return;' if r in ('', '()') else 'return ' + subst(r, getattr(self, 'cur_params', {}), self.tparams) + ';'); continue
             if s2.startswith('变量'):
                 self.parse_var(s2); continue
             if s2 == '':
@@ -1317,60 +1841,104 @@ class Translator:
         self.emit('}')
 
     def parse_switch(self, s):
-        """`假如 表达式` ... `是 值` ... `结束 假如` → Java switch。"""
+        """`假如 表达式` ... `是 值` ... `结束 假如` → Java switch。
+
+        结绳 `假如/是` 是**匹配单支**语义：命中一支后不再落到后续分支。
+        Java 的 switch 默认**穿透**（fall-through），因此每个非空 case 块末尾
+        必须补 `break;`，否则后一分支会覆盖前一分支的结果（静默语义错）。
+        `返回`/`容错处理` 等已自带跳出的块不需要补（见 _switch_close_block）。
+        """
         expr = s[2:].strip()
-        self.emit('switch (%s) {' % subst(expr, [], self.tparams))
+        self.emit('switch (%s) {' % subst(expr, getattr(self, 'cur_params', {}), self.tparams))
+        # 用局部状态而非实例属性：嵌套 switch 会互相覆盖实例属性。
+        # _pending：上一个 case 块「非空且无显式跳出」→ 需要补 break;
+        # _blk_start：当前 case 块在 self.out 中的起始下标（用于判断块是否为空）。
+        _pending = False
+        _blk_start = len(self.out)
+
+        def _flush():
+            # 在「新 case / default / 结束 假如」前调用：给上一个块补 break;。
+            nonlocal _pending, _blk_start
+            if _pending:
+                self.emit('break;')
+            _pending = False
+            _blk_start = len(self.out)
+
+        def _mark():
+            # 每产生一条语句后调用：据「块内是否非空 + 末句是否已跳出」决定是否补 break。
+            nonlocal _pending
+            if len(self.out) <= _blk_start + 1:
+                return  # 块内无语句（只有 case 标签）→ 保持合并语义，不补 break
+            last = next((x.strip() for x in reversed(self.out) if x.strip()), '')
+            # 末句已 return/throw/break/continue → 不能再补 break（会成不可达语句）。
+            _pending = not re.search(r'\b(return|throw|break|continue)\b', last)
+
         while self.i < len(self.lines):
             raw = self.next(); s2 = raw.strip()
             if s2 in ('结束 假如', '结束假如'):
+                _flush()
                 break
             if s2 == '':
                 self.emit(''); continue
             if s2.startswith('//') or s2.startswith('/*') or s2.startswith('*'):
                 self.emit(s2); continue
+            if s2 in ('是', '是;'):
+                # 裸 `是`（无值）= 结绳 `假如` 的 default 分支。
+                # 必须在这里拦下：否则会落到 emit_stmt，被误译成 `return;`
+                # （旧行为），导致其后语句变成「不可达」。
+                _flush()
+                self.emit('default:'); continue
             if s2.startswith('是 '):
-                self.emit('case %s:' % subst(s2[2:].strip(), [], self.tparams)); continue
+                _flush()
+                self.emit('case %s:' % subst(s2[2:].strip(), getattr(self, 'cur_params', {}), self.tparams)); continue
             if s2.startswith('否则'):
+                _flush()
                 self.emit('default:'); continue
             if s2 == '@code':
-                self.consume_code_block(); continue
+                self.consume_code_block(); _mark(); continue
             if s2.startswith('如果'):
-                self.parse_if(s2); continue
+                self.parse_if(s2); _mark(); continue
             if s2.startswith('假如'):
-                self.parse_switch(s2); continue
+                self.parse_switch(s2); _mark(); continue
             if s2.startswith('循环'):
-                self.parse_while(s2); continue
+                self.parse_while(s2); _mark(); continue
             if s2.startswith('返回'):
                 r = s2[2:].strip()
-                self.emit('return;' if r in ('', '()') else 'return ' + subst(r, [], self.tparams) + ';'); continue
+                self.emit('return;' if r in ('', '()') else 'return ' + subst(r, getattr(self, 'cur_params', {}), self.tparams) + ';'); _mark(); continue
             if s2.startswith('变量'):
-                self.parse_var(s2); continue
+                self.parse_var(s2); _mark(); continue
             if s2.startswith('容错处理'):
                 self.emit('try {'); self.try_open = True; continue
             if s2.startswith('结束容错'):
                 if self.try_open:
                     self.emit('} catch (Exception e) { }'); self.try_open = False
-                continue
-            self.emit_stmt(s2)
+                _mark(); continue
+            self.emit_stmt(s2); _mark()
         self.emit('}')
 
     def parse_while(self, s):
         m = re.match(r'^循环\s*\(', s)
-        args = split_top(extract_paren(s, m.end() - 1)) if m else []
+        # 保留空元素切分：`循环(i,,N)` 丢空元素会退化成 `while(i)`。
+        args = split_top_keep(extract_paren(s, m.end() - 1)) if m else []
         if len(args) == 3:
             # 循环(i,0,N) → for (int i = 0; i < N; i++)
             v, a, b = args
-            self.emit('for (int %s = %s; %s < %s; %s++) {' % (
-                v, subst(a, [], self.tparams), v, subst(b, [], self.tparams), v))
+            a = a or '0'
+            # 变量已 `变量 i : 整数` 声明过则不再写 `int`（重复定义）。
+            _decl = any(re.match(r'^\s*int\s+' + re.escape(v) + r'\s*[;=]', ln)
+                        for ln in self.out)
+            _pre = '' if _decl else 'int '
+            self.emit('for (%s%s = %s; %s < %s; %s++) {' % (
+                _pre, v, subst(a, getattr(self, 'cur_params', {}), self.tparams), v, subst(b, getattr(self, 'cur_params', {}), self.tparams), v))
         elif len(args) == 1 and '->' in args[0]:
             # 结绳的 `循环(集合 -> 元素)`：Java 里是 for-each。用 `var` 让
             # javac 推断元素类型（否则元素是 Object，`v.键` 之类会「找不到符号」）。
             coll, var = args[0].split('->', 1)
             self.emit('for (var %s : %s) {' % (
-                subst(var.strip(), [], self.tparams), subst(coll.strip(), [], self.tparams)))
+                subst(var.strip(), getattr(self, 'cur_params', {}), self.tparams), subst(coll.strip(), getattr(self, 'cur_params', {}), self.tparams)))
         else:
             cond = args[0] if args else ''
-            self.emit('while (%s) {' % subst(cond, [], self.tparams))
+            self.emit('while (%s) {' % subst(cond, getattr(self, 'cur_params', {}), self.tparams))
         while self.i < len(self.lines):
             raw = self.next(); s2 = raw.strip()
             if s2 == '结束 循环' or s2 == '结束循环':
@@ -1383,7 +1951,7 @@ class Translator:
                 self.parse_while(s2); continue
             if s2.startswith('返回'):
                 r = s2[2:].strip()
-                self.emit('return;' if r in ('', '()') else 'return ' + subst(r, [], self.tparams) + ';'); continue
+                self.emit('return;' if r in ('', '()') else 'return ' + subst(r, getattr(self, 'cur_params', {}), self.tparams) + ';'); continue
             if s2.startswith('变量'):
                 self.parse_var(s2); continue
             if s2 == '':
@@ -1396,23 +1964,24 @@ class Translator:
         s = self._join(s)      # 结绳允许语句跨行；括号未闭合时续读
         if s.startswith('code '):
             s = s[5:].strip()
-            body = subst(s, [], self.tparams)
+            body = subst(s, getattr(self, 'cur_params', {}), self.tparams)
             if not re.match(r'^(if|for|while|try|synchronized|return|throw|\{|\})', s) and not body.endswith(';'):
-                pre = 'return ' if self.cur_ret != 'void' else ''
+                # 嵌入式「无返回类型」提升为 Object，体内是语句 → 不补 return。
+                pre = '' if (self.cur_ret == 'void' or self.embedded_promoted) else 'return '
                 self.emit(pre + body + ';')
             else:
                 self.emit(body)
             return
-        body = subst(s, [], self.tparams)
+        body = subst(s, getattr(self, 'cur_params', {}), self.tparams)
         if s in ('是', '是;'):
             self.emit('return;'); return
         m = re.match(r'^是\s+(.+?);?$', s)
         if m:
-            self.emit('return ' + subst(m.group(1), [], self.tparams) + ';'); return
+            self.emit('return ' + subst(m.group(1), getattr(self, 'cur_params', {}), self.tparams) + ';'); return
         bm = self.BARE_ARRAY.match(s)
         if bm:
             jt = map_type(bm.group(1), self.tparams)
-            size = subst(bm.group(2), [], self.tparams)
+            size = subst(bm.group(2), getattr(self, 'cur_params', {}), self.tparams)
             nm, init = bm.group(3), bm.group(4)
             self.emit('%s[] %s = new %s[%s];' % (jt, nm, jt, size)); return
         if re.match(r'^(//|/\*|\*|\})', s) or body.endswith((';', '{', '}', ':')):
@@ -1556,6 +2125,11 @@ def translate(path, outdir):
     parts = _split(body.split(NL))
     # @指代类 包装类三档策略（别名壳 / 桥接 / 抽象）。仅当类确实是 @指代类 目标时生效。
     parts = apply_wrapper_policy(parts)
+    # [_misc2_rebase_v2] 同签名方法去重：`事件 子对象:名(...)` 覆写 + 同类 `定义事件 名(...)` 占位
+    # 会生成两个同名同参方法（实测 3 处）；`可绘制对象.从矩形拷贝区域` 源码里本就有
+    # 两个逐字相同的方法。统一按签名去重，保留先出现者。
+    parts = [_dedup_methods(p) for p in parts]
+    parts = _inject_base_methods(parts)
     rel = t.pkg.replace('.', '/') if t.pkg else ''
     d = os.path.join(outdir, rel)
     os.makedirs(d, exist_ok=True)
@@ -1571,6 +2145,7 @@ def translate(path, outdir):
         head = _class_head(t.pkg, t.imports, p)
         head = _drop_self_import(head, nm.group(1))
         p = postprocess_all(p, _WRAPPER_TARGETS)
+        p = fix_generated(p)
         io.open(os.path.join(d, fn), 'w', encoding='utf-8').write('\n'.join(head) + '\n' + p)
         n += 1
     return map_cls(_first_class_name(t) or ''), n
