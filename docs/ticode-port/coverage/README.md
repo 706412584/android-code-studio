@@ -64,6 +64,43 @@ adb -s 9c18cb30 logcat -d -s TICODE_COV | grep COVERAGE
    ⚠️ 副作用：`安卓窗口.newActivity` 会真的 startActivity（设备上会弹 MIUI 确认框/文件选择器）。
    目前靠"先清后台再冷启动"规避，未在 Activity 里覆写 `startActivity`（覆写反而引入不稳定）。
 
+## 静态扫描：壳类强转（不止跑覆盖，还要静态查"跑到了也会崩"）
+
+覆盖率停在 89.9% 后，对这 316 个未覆盖方法做静态分析发现：它们集中在
+Activity/Context/Drawable/PackageManager 等类，**恰好与已抓到的 CCE 是同一模式** ——
+调框架方法后把返回值强转成壳子类。即"数字低反而掩盖了 bug"。
+
+两个扫描脚本（均入库）：
+
+| 脚本 | 覆盖的表达式形式 |
+|---|---|
+| `scan_shellcast.py` | `(壳) this.X()` —— 用 manifest 的声明返回类型判定 |
+| `scan_all_casts.py` | 全量 `(壳) EXPR`：new 原生 / this.X() / 变量 / 静态工厂，按形式分类 |
+
+**判定原则**：不只看模式。`(可扩展文本构建器) this.append()` 与
+`(可绘制对象) this.getCurrent()` 形式相同，但前者返回 `this`（真实实例是子类）安全、
+后者返回框架 `Drawable` 必崩 —— 故查**被强转方法的声明返回类型**（必要时 `javap` 核对）。
+
+三轮共修 **28 处**运行时 CCE：
+
+1. `(壳) new 原生类()` 系列（早期）
+2. `(壳) this.框架方法()` 22 处：`getResources`/`getPackageManager`/`getPackageInfo`/
+   `loadIcon`/`loadBanner`/`loadLogo`/`getCurrent`/`getJSONObject`/`getParent` …
+3. 静态工厂 + 集合元素 6 处：`Drawable.createFromPath/createFromStream`、
+   `Toast.makeText`、`(悬浮窗)集合元素`、冗余 `(可扩展文本构建器)追加对象()`
+
+修法统一为**返回原生类型、去掉强转**（多数壳类 abstract，无法包装）；`安卓提示框`
+因继承 Toast 且只能 `super(null)`，改为**持有原生 Toast + 全部委托**。
+
+**全量扫描 DANGER：22 → 0**（剩余 UNKNOWN 均为安全形式：`return this`、已加 instanceof
+防护的三元、以及 `窗口组件.取安卓窗口` 的假阳性——真实场景 context 即 Activity）。
+
+### 修复验证（THROWN 差集）
+
+对覆盖报告做"曾崩方法是否还在 THROWN"差集：**24/26 已消失**。剩 2 个是 harness 产物：
+- `大整数#减_op` NPE —— Unsafe 造的 BigInteger 内部 `mag` 数组为 null（真实 `new 大整数("1",10)` 正常）
+- `安卓提示框#新建提示框` —— 覆盖驱动在后台线程跑，Toast 要求 Looper（真实用法在主线程）
+
 ## 剩余 316 未覆盖 = 反射可达性的真实天花板
 
 | 原因 | 数量 | 说明 |
