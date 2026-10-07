@@ -88,6 +88,14 @@ public final class LogcatReadTool extends BaseTool {
   private final ShellBackendRegistry shellBackends;
 
   /**
+   * 最近一次执行失败的原因（后端不可用/异常）。
+   *
+   * <p>做成字段而不是返回值的一部分：{@link #runLogcat} 已有「行列表 or null」的契约，
+   * 再塞一个失败原因会污染所有调用点。工具实例每次运行新建，不存在跨运行的脏数据。
+   */
+  private volatile String lastFailureNote = "";
+
+  /**
    * 便捷构造（**不推荐**）。
    *
    * <p>它会自建一个 shell 后端注册表，而那个注册表**不知道用户在设置里选的后端**——
@@ -241,8 +249,12 @@ public final class LogcatReadTool extends BaseTool {
 
     List<String> output = runLogcat(command);
     if (output == null) {
+      // 把后端给出的具体原因带上（如「Shizuku 未授权」「没有可用的 shell 后端」）。
+      // 只说「没有可用后端」会让模型与用户都不知道该修哪里。
+      String note = lastFailureNote;
       return error(
-          "读取日志失败：没有可用的 shell 后端（命令未执行）。"
+          "读取日志失败：命令未执行。"
+              + (note.isEmpty() ? "" : note + " ")
               + "可在「设置 → AI 助手 → Shell 后端」里检查后端状态，"
               + "或改用 shell_execute 直接执行 logcat。");
     }
@@ -257,6 +269,22 @@ public final class LogcatReadTool extends BaseTool {
     if (text.toString().trim().isEmpty()) {
       StringBuilder sb = new StringBuilder();
       sb.append("(没有匹配的日志)\n");
+      // 区分「真的没日志」与「有输出但被过滤掉了」：后者是最常见的误判来源
+      // ——模型给了 filter 却没命中任何行，会误以为应用没输出。
+      if (!output.isEmpty()) {
+        sb.append("说明：logcat 有 ").append(output.size()).append(" 行输出，但没有行匹配当前过滤条件");
+        if (!filter.isEmpty()) {
+          sb.append("（filter=\"").append(filter).append("\"）");
+        }
+        if (!level.isEmpty() && !"V".equals(level)) {
+          sb.append("（level=").append(level).append("，低于该级别的日志已被排除）");
+        }
+        sb.append("。可放宽过滤条件后重试。\n");
+      } else if (!lastFailureNote.isEmpty()) {
+        // 执行本身失败了（非零退出码 / 后端异常）——原因必须可见，
+        // 否则会被当成「应用没有日志输出」。
+        sb.append("说明：logcat 执行失败：").append(lastFailureNote).append('\n');
+      }
       if (!packageName.isEmpty()) {
         sb.append("提示：权限不足时 logcat 不会输出其它应用的日志；");
         sb.append("若当前 shell 后端是 Termux，普通应用只能读取自身进程的日志。\n");
@@ -317,14 +345,19 @@ public final class LogcatReadTool extends BaseTool {
     }
 
     if (all.isEmpty() && pid == null) {
-      // 没有进程、也没有任何相关日志
+      // 没有进程、也没有任何相关日志。
+      //
+      // **不能说死「未运行」**：pid 为 null 有两种可能——应用真没跑，或当前 shell
+      // 后端查不到别人的进程（Termux 的 pidof 权限较窄）。早先只报前者，模型会据此
+      // 断定「应用没在运行」，而它可能只是查不到，诊断方向被完全带偏。
       return ok(
-          "崩溃判定: 未运行\n"
+          "崩溃判定: 未运行（或无法确认）\n"
               + "Package: "
               + packageName
-              + "\n说明: 未找到正在运行的进程（pidof 为空），也没有崩溃日志。\n"
-              + "提示: 若期望它在运行，请先用 launch_app 启动；若刚启动就查不到进程，"
-              + "可能是启动即崩溃——请检查启动结果与 main buffer 日志。");
+              + "\n说明: 查不到该应用的进程（pidof 无结果），也没有读到崩溃日志。\n"
+              + "提示: 两种可能——(1) 应用确实没在运行，先用 launch_app 启动；"
+              + "(2) 当前 shell 后端权限不足，查不到其它应用的进程（无 Shizuku 时常见）。"
+              + "若刚启动就查不到进程，还可能是启动即崩溃，请检查启动结果与 main buffer 日志。");
     }
 
     FatalReport fatal = extractFatal(all, packageName, pid);
@@ -557,7 +590,7 @@ public final class LogcatReadTool extends BaseTool {
   /**
    * 执行 logcat 命令并收集输出行。
    *
-   * @return 输出行；执行失败或超时返回 null
+   * @return 输出行；无可用后端或超时返回 null（调用方报「未执行」）
    */
   private List<String> runLogcat(List<String> command) {
     // 用**任意可用后端**而不是严格要求 Shizuku 的那条路径。
@@ -573,8 +606,12 @@ public final class LogcatReadTool extends BaseTool {
     PhoneShellRunner.Output output =
         PhoneShellRunner.execWithAnyBackend(shellBackends, cmd, TIMEOUT_MS);
     if ("none".equals(output.channel) || output.timedOut) {
+      lastFailureNote = output.note == null ? "" : output.note;
       return null;
     }
+    // 执行本身失败（后端抛异常等）：记下原因供上层展示。
+    // 不返回 null——非零退出码也可能伴随有用的输出（logcat 的权限错误就打在 stderr）。
+    lastFailureNote = output.ok ? "" : (output.note == null ? "" : output.note);
     List<String> lines = new ArrayList<>();
     String text = output.combined();
     if (text.isEmpty()) {

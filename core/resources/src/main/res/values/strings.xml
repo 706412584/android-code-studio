@@ -323,7 +323,11 @@
   <string name="ai_agent_ui_avatar_fox">Fox</string>
   <string name="ai_agent_ui_avatar_spark">Spark</string>
   <string name="ai_agent_ui_color_follow_theme">Follow theme</string>
-  <string name="ai_agent_ui_size_value">%1$s</string>
+  <string name="ai_agent_ui_color_dark_gray">Dark gray (light theme)</string>
+  <string name="ai_agent_ui_color_light_gray">Light gray (dark theme)</string>
+  <string name="ai_agent_ui_color_eye_care">Eye-care green</string>
+  <string name="ai_agent_ui_color_calm_blue">Calm blue</string>
+  <string name="ai_agent_ui_color_elegant_purple">Elegant purple</string>
 
   <!-- Chat mode and prompt templates -->
   <string name="ai_agent_chat_mode_title">Chat mode</string>

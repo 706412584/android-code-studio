@@ -318,7 +318,11 @@
   <string name="ai_agent_ui_avatar_fox">狐狸</string>
   <string name="ai_agent_ui_avatar_spark">星火</string>
   <string name="ai_agent_ui_color_follow_theme">跟随主题</string>
-  <string name="ai_agent_ui_size_value">%1$s</string>
+  <string name="ai_agent_ui_color_dark_gray">深灰（浅色主题）</string>
+  <string name="ai_agent_ui_color_light_gray">浅灰（深色主题）</string>
+  <string name="ai_agent_ui_color_eye_care">护眼绿</string>
+  <string name="ai_agent_ui_color_calm_blue">沉稳蓝</string>
+  <string name="ai_agent_ui_color_elegant_purple">雅致紫</string>
 
   <!-- 对话模式与提示词模板 -->
   <string name="ai_agent_chat_mode_title">对话模式</string>

@@ -28,6 +28,10 @@ import com.tom.rv2ide.artificial.agents.Agents
 import com.tom.rv2ide.databinding.LayoutAiAssistantBinding
 import com.tom.rv2ide.resources.R.string
 import java.io.File
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * 悬浮助手输入区的三项附加功能：模型槽位切换、上下文附件、推理强度。
@@ -53,6 +57,16 @@ class AssistantInputFeatures(
 
   /** 视图与选择器共用的 Context。从 host 取，保证与宿主一致。 */
   private val context: Context = host.context
+
+  /**
+   * 读图片内容用的作用域。
+   *
+   * <p>绑在宿主的 lifecycleScope 上：视图销毁时协程随之取消，不会往已 detach 的
+   * 控件里写数据。用 IO 调度器——读图是磁盘 + ContentProvider 往返，几 MB 的图
+   * 放主线程会卡住输入框。
+   */
+  private val ioScope: kotlinx.coroutines.CoroutineScope =
+      kotlinx.coroutines.CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
   // ---- 附件 ----
 
@@ -194,14 +208,42 @@ class AssistantInputFeatures(
     if (uri == null) {
       return
     }
+    // 非图片（任意类型文件）不需要预读：它们本就以路径形式交给模型用 file 工具读，
+    // 走同步路径（名称解析本身也要查 provider，代价小）。
+    if (!isImage) {
+      val name = displayName(uri)
+      if (attachments.any { it.uri == uri }) {
+        return
+      }
+      attachments.add(Attachment(uri, name, isImage = false, bytes = null))
+      renderAttachments()
+      return
+    }
+
+    // 图片：先落一个「无字节」的占位条目让用户立刻看到反馈，再在 IO 线程读内容。
+    // 读大图（几 MB）是磁盘 + ContentProvider 往返，放主线程会卡住输入框；
+    // 而权限窗口很窄，必须尽早开始读——这里紧接着启动协程，仍在回调期间。
     val name = displayName(uri)
     if (attachments.any { it.uri == uri }) {
       return
     }
-    // 非图片（任意类型文件）不需要预读：它们本就以路径形式交给模型用 file 工具读。
-    val bytes = if (isImage) readImageBytes(uri) else null
-    attachments.add(Attachment(uri, name, isImage, bytes))
+    val placeholder = Attachment(uri, name, isImage = true, bytes = null)
+    attachments.add(placeholder)
     renderAttachments()
+
+    ioScope.launch {
+      val bytes = readImageBytes(uri)
+      if (bytes != null) {
+        // 替换占位条目。用索引定位而不是 remove(placeholder)：
+        // Attachment 是 data class 且带 ByteArray 字段，其生成的 equals 对数组
+        // 退化为引用比较——依赖它做集合操作会踩坑（见 m9 的审查意见）。
+        val index = attachments.indexOfFirst { it.uri == uri }
+        if (index >= 0) {
+          attachments[index] = attachments[index].copy(bytes = bytes)
+        }
+      }
+      withContext(Dispatchers.Main) { renderAttachments() }
+    }
   }
 
   /**
@@ -209,14 +251,58 @@ class AssistantInputFeatures(
    *
    * <p>在这里判体积而不是留到发送时：超限的图当场就知道不该进 payload，
    * 缓存它只会白占内存（一张 20MB 的图在附件栏里挂几分钟）。
+   *
+   * <p><b>先查大小再读内容</b>：`readBytes()` 会把整个文件读进内存后才轮到体积判断
+   * ——选一张 50MB 的图会先分配 50MB 再丢弃。这里先问 ContentResolver 要 SIZE，
+   * 超限直接返回；SIZE 拿不到（部分 provider 不提供）时才退化为「读后判断」，
+   * 并用限量流读，最多只读 MAX+1 字节。
+   *
+   * <p>调用方（[addAttachment]）在选图回调里同步调用，即主线程——因此这里的
+   * 读取量必须有界，不能依赖「用户不会选大图」。
    */
   private fun readImageBytes(uri: Uri): ByteArray? {
     return try {
-      val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+      // 第一道闸：provider 报告的体积。绝大多数相册/文件 provider 都提供。
+      val declaredSize = querySize(uri)
+      if (declaredSize > MAX_IMAGE_BYTES) {
+        return null
+      }
+      // 第二道闸：限量读取。SIZE 不可信或缺失时，这里保证最多只分配 MAX+1 字节。
+      val limit = MAX_IMAGE_BYTES + 1
+      val bytes =
+          context.contentResolver.openInputStream(uri)?.use { input ->
+            val buffer = java.io.ByteArrayOutputStream()
+            val chunk = ByteArray(16 * 1024)
+            var total = 0
+            while (true) {
+              val read = input.read(chunk)
+              if (read <= 0) break
+              total += read
+              if (total > limit) return null // 实际比声明的还大，放弃
+              buffer.write(chunk, 0, read)
+            }
+            buffer.toByteArray()
+          }
       if (bytes == null || bytes.isEmpty() || bytes.size > MAX_IMAGE_BYTES) null else bytes
     } catch (e: Exception) {
       // 权限失效、文件被删、流读取异常：都退回「无 bytes」，走文本降级。
       null
+    }
+  }
+
+  /** 向 provider 查文件体积；查不到返回 -1。 */
+  private fun querySize(uri: Uri): Long {
+    return try {
+      context.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+        val index = cursor.getColumnIndex(OpenableColumns.SIZE)
+        if (index >= 0 && cursor.moveToFirst() && !cursor.isNull(index)) {
+          cursor.getLong(index)
+        } else {
+          -1L
+        }
+      } ?: -1L
+    } catch (e: Exception) {
+      -1L
     }
   }
 

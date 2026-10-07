@@ -49,6 +49,15 @@ class AvatarPickerActivity : Activity() {
     private const val REQUEST_PICK_IMAGE = 1002
 
     /**
+     * 头像文件体积上限（8MB）。
+     *
+     * <p>显示尺寸只有 28dp，正常头像图几百 KB 足够。设上限是为了拦住用户误选
+     * 的全景图/RAW 转出的超大 JPEG——它们既不必要地占私有目录，也拖慢每次
+     * 打开助手面板时的解码。
+     */
+    private const val MAX_AVATAR_BYTES = 8L * 1024 * 1024
+
+    /**
      * 结果回调：参数是拷贝后的**本地文件绝对路径**；失败为 null。
      *
      * <p>`@Volatile`：写在主线程（onActivityResult），但为将来可能的后台读取留出安全边界。
@@ -64,7 +73,15 @@ class AvatarPickerActivity : Activity() {
           addCategory(Intent.CATEGORY_OPENABLE)
           type = "image/*"
         }
-    startActivityForResult(intent, REQUEST_PICK_IMAGE)
+    try {
+      startActivityForResult(intent, REQUEST_PICK_IMAGE)
+    } catch (e: android.content.ActivityNotFoundException) {
+      // 设备上没有能处理 image/* 的选择器（精简 ROM / 权限被策略限制）。
+      // 不兜住会抛到系统层，用户看到「应用已停止」而不是「选图失败」。
+      onAvatarPicked?.invoke(null)
+      onAvatarPicked = null
+      finish()
+    }
   }
 
   override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
@@ -82,19 +99,45 @@ class AvatarPickerActivity : Activity() {
     finish()
   }
 
+  override fun onDestroy() {
+    super.onDestroy()
+    // 兜底清理：进程被回收、或系统直接销毁本 Activity（未走 onActivityResult）时，
+    // 静态字段会一直持有设置页的闭包 → 设置页无法回收。这里保证无论如何都清掉。
+    // 注意：正常路径下 onActivityResult 已经清过，这里是幂等的二次保险。
+    onAvatarPicked = null
+  }
+
   /**
    * 把选中的图片拷到私有目录，返回文件绝对路径；失败返回 null。
    *
    * <p>用固定文件名（覆盖写）而不是按时间戳命名：用户反复换头像时不会在
    * 私有目录里堆一堆用不到的图片。写入用「临时文件 + 重命名」，避免中途失败
    * 把用户**已有的**头像也损坏掉。
+   *
+   * <p>限量拷贝：头像最终显示为 28dp，几 MB 的原图纯属浪费（还拖慢每次打开面板的
+   * 解码）。超过上限直接拒绝而不是截断——截断会得到一张损坏的图。
    */
   private fun copyToPrivateStorage(uri: Uri): String? {
     val target = File(filesDir, AVATAR_FILE_NAME)
     val temp = File(filesDir, "$AVATAR_FILE_NAME.tmp")
     return try {
+      var copied = 0L
       contentResolver.openInputStream(uri)?.use { input ->
-        FileOutputStream(temp, false).use { output -> input.copyTo(output) }
+        FileOutputStream(temp, false).use { output ->
+          val chunk = ByteArray(16 * 1024)
+          while (true) {
+            val read = input.read(chunk)
+            if (read <= 0) break
+            copied += read
+            if (copied > MAX_AVATAR_BYTES) {
+              // 见 KDoc：拒绝而非截断。
+              output.close()
+              temp.delete()
+              return null
+            }
+            output.write(chunk, 0, read)
+          }
+        }
       } ?: return null
       if (!temp.renameTo(target)) {
         // 重命名失败（目标被占用等）：退化为删除后重试一次，仍失败则清理临时文件。

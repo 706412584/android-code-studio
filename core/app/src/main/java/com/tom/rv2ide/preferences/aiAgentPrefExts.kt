@@ -485,9 +485,12 @@ private class AssistantCardScalePreference(
         com.google.android.material.slider.Slider(context).apply {
           valueFrom = AssistantUiStyleStore.MIN_CARD_SCALE
           valueTo = AssistantUiStyleStore.MAX_CARD_SCALE
-          stepSize = 0.05f
+          // 0.1 而不是 0.05：(1.3f - 0.8f) 在 float32 下是 0.49999994，
+          // 配 0.05 步长会算出 10 个刻度（应为 11），末端 1.30 不是刻度、实际最多到 1.25。
+          // 0.1 步长同样有 5 个刻度且整除关系更稳。
+          stepSize = 0.1f
           value = store.cardScale
-          setLabelFormatter { String.format(java.util.Locale.US, "%.2f×", it) }
+          setLabelFormatter { String.format(java.util.Locale.US, "%.1f×", it) }
         }
     val container =
         android.widget.FrameLayout(context).apply {
@@ -526,15 +529,15 @@ private class AssistantTextColorPreference(
     override val summary: Int? = R.string.ai_agent_ui_text_color_summary,
 ) : BasePreference() {
 
-  /** 预设色板：值 | 显示名。0 = 跟随主题（哨兵值，见 AssistantUiStyleStore）。 */
+  /** 预设色板：色值 | 显示名资源。0 = 跟随主题（哨兵值，见 AssistantUiStyleStore）。 */
   private val presets =
       arrayOf(
-          "0|跟随主题",
-          "${0xFF1F1F1F.toInt()}|深灰（浅色主题）",
-          "${0xFFE6E1E5.toInt()}|浅灰（深色主题）",
-          "${0xFF2E7D32.toInt()}|护眼绿",
-          "${0xFF1565C0.toInt()}|沉稳蓝",
-          "${0xFF6A1B9A.toInt()}|雅致紫",
+          "0|${R.string.ai_agent_ui_color_follow_theme}",
+          "${0xFF1F1F1F.toInt()}|${R.string.ai_agent_ui_color_dark_gray}",
+          "${0xFFE6E1E5.toInt()}|${R.string.ai_agent_ui_color_light_gray}",
+          "${0xFF2E7D32.toInt()}|${R.string.ai_agent_ui_color_eye_care}",
+          "${0xFF1565C0.toInt()}|${R.string.ai_agent_ui_color_calm_blue}",
+          "${0xFF6A1B9A.toInt()}|${R.string.ai_agent_ui_color_elegant_purple}",
       )
 
   override fun onCreatePreference(context: Context): Preference {
@@ -549,7 +552,8 @@ private class AssistantTextColorPreference(
     val context = preference.context
     val store = AssistantUiStyleStore(context)
     val values = presets.map { it.substringBefore('|').toInt() }.toTypedArray()
-    val shown = presets.map { it.substringAfter('|') }.toTypedArray()
+    // 预设名走字符串资源（中英各一份）——硬编码中文在英文 locale 下会显得突兀。
+    val shown = presets.map { context.getString(it.substringAfter('|').toInt()) }.toTypedArray()
     val checked = values.indexOf(store.textColor).coerceAtLeast(0)
 
     com.google.android.material.dialog.MaterialAlertDialogBuilder(context)
@@ -568,7 +572,7 @@ private class AssistantTextColorPreference(
   private fun describeColor(context: Context, color: Int): String {
     presets.forEach { entry ->
       if (entry.substringBefore('|').toInt() == color) {
-        return entry.substringAfter('|')
+        return context.getString(entry.substringAfter('|').toInt())
       }
     }
     return String.format("#%08X", color)

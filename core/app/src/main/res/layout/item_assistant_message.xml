@@ -49,6 +49,24 @@
     android:visibility="gone"
     tools:visibility="visible" />
 
+  <!--
+    卡片容器。
+
+    **为什么卡片外还要套一层**：根布局是横向 LinearLayout，而横向布局**不响应**
+    子视图的 `layout_gravity` 横向位（AOSP 的 layoutHorizontal 只取
+    VERTICAL_GRAVITY_MASK，横向位置由 childLeft 累加得出）。直接给卡片设
+    gravity=END 想让用户气泡右对齐是无效的——实测气泡会贴左边。
+
+    因此把对齐职责下沉到这一层：容器占满剩余宽度（weight=1），卡片在容器内
+    用 layout_gravity 控制左右——FrameLayout 之类的普通 ViewGroup 会正常响应。
+    适配器按 role 设容器/卡片的 width 与 gravity（见 MessageVH.bind）。
+  -->
+  <FrameLayout
+    android:id="@+id/messageCardHost"
+    android:layout_width="0dp"
+    android:layout_height="wrap_content"
+    android:layout_weight="1">
+
   <com.google.android.material.card.MaterialCardView
     android:id="@+id/messageCard"
     android:layout_width="wrap_content"
@@ -126,5 +144,7 @@
     </LinearLayout>
 
   </com.google.android.material.card.MaterialCardView>
+
+  </FrameLayout>
 
 </LinearLayout>

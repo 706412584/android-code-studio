@@ -828,6 +828,17 @@ class FloatingAssistantView(
     // syncRunningUiForDisplayed 读 orchestrator 的全局运行态（不依赖本视图的 job 表），
     // 因此对「别的入口发起的运行」同样有效。
     syncRunningUiForDisplayed()
+    // 外观设置（字号/卡片大小/颜色/头像）可能刚在设置页改过，让已渲染的消息重新绑定。
+    //
+    // **必须显式触发**：bind() 里每次读最新值，但 RecyclerView 重新布局**不会**
+    // 重新 bind 已绑定的 ViewHolder（只重新 layout）。不调这一句的话，用户改完字号
+    // 返回面板看到的还是旧字号，只有滚出屏幕再滚回来才生效——会以为设置没用。
+    //
+    // 用 notifyItemRangeChanged 而不是 notifyDataSetChanged：前者保留滚动位置，
+    // 后者会跳回顶部。
+    if (adapter.itemCount > 0) {
+      adapter.notifyItemRangeChanged(0, adapter.itemCount)
+    }
     refreshTodos()
     updateEmptyState()
   }
@@ -909,6 +920,11 @@ class FloatingAssistantView(
           handleEvent(conversationId, event)
         }
         syncRunningUiForDisplayed()
+        // 任务卡片也要跟着换会话。此前只在 open() 与工具结束时刷新，导致
+        // 「A 会话有 5 条待办 → 点开 B 会话 → 卡片仍显示 A 的清单」——
+        // 数据层已按会话隔离（见 AgentOrchestrator.todoStoreFor），但 UI 没重读。
+        // 放在这里而不是各个调用点：切会话的三条路径（点列表/新建/恢复）都走本方法。
+        refreshTodos()
         afterReplay()
       }
     }
@@ -2604,6 +2620,9 @@ class FloatingAssistantView(
           displayedConversationId = null
           lastOpenedConversationId = null
           updateEmptyState()
+          // 会话已不存在，它的待办卡片必须一起收掉——否则屏幕上留着一条
+          // 属于已删除会话的清单，用户点进新会话还会以为那是自己的任务。
+          refreshTodos()
         }
         reloadConversations()
       }

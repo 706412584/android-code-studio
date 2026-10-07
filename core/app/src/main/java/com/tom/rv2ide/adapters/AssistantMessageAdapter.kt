@@ -513,19 +513,23 @@ class AssistantMessageAdapter(
       // 需要横向空间，塞进窄气泡会被压成竖长条。
       val parent = binding.root as ViewGroup
       val isUser = message.role == Role.USER
-      val params = card.layoutParams as LinearLayout.LayoutParams
+      // 对齐设在**容器**（messageCardHost，一个 FrameLayout）里，不是根 LinearLayout：
+      // 根是横向的，而横向 LinearLayout 不响应子视图的横向 layout_gravity
+      // （AOSP 只取 VERTICAL_GRAVITY_MASK）——直接给卡片设 END 会让用户气泡贴左边。
+      // 容器占满剩余宽度（weight=1，见 XML），卡片在容器内自由对齐。
+      val hostParams = binding.messageCardHost.layoutParams as LinearLayout.LayoutParams
+      hostParams.width = 0
+      hostParams.weight = 1f
+      binding.messageCardHost.layoutParams = hostParams
+
+      // 卡片在容器内的宽度与对齐：
+      // - 助手：MATCH_PARENT 铺满（「文档」形态，代码块需要横向空间），靠左。
+      // - 用户：WRAP_CONTENT 按内容收缩 + 靠右（「气泡」形态）。
+      val params = card.layoutParams as android.widget.FrameLayout.LayoutParams
       params.gravity = if (isUser) Gravity.END else Gravity.START
-      // 根布局是**横向**（左头像 + 右卡片），因此宽度语义与纵向时不同：
-      // - 助手：weight=1 占满「头像之外」的剩余宽度。用 MATCH_PARENT 会按整行宽度
-      //   计算而不扣除头像那一列，右侧溢出屏幕（横向 LinearLayout 不做自动扣除）。
-      // - 用户：WRAP_CONTENT + 无 weight，气泡按内容收缩、靠右（头像 gone 不占位）。
-      if (isUser) {
-        params.width = ViewGroup.LayoutParams.WRAP_CONTENT
-        params.weight = 0f
-      } else {
-        params.width = 0
-        params.weight = 1f
-      }
+      params.width =
+          if (isUser) ViewGroup.LayoutParams.WRAP_CONTENT
+          else ViewGroup.LayoutParams.MATCH_PARENT
       card.layoutParams = params
 
       // 用户气泡的宽度上限。纯 WRAP_CONTENT 遇到一条长消息会顶满整个面板宽度，
@@ -604,21 +608,30 @@ class AssistantMessageAdapter(
         avatar.visibility = View.VISIBLE
         val builtin = adapter.builtinAvatarRes()
         val custom = adapter.avatarPath()
-        if (custom != null) {
-          // 自定义图片优先于内置选择：用户明确选了自己的图。
-          com.bumptech.glide.Glide.with(avatar)
-              .load(java.io.File(custom))
-              .circleCrop()
-              .placeholder(builtin)
-              .error(builtin)
-              .into(avatar)
-        } else {
-          // 无自定义头像时用内置资源。先清掉可能残留的 Glide 请求，
-          // 否则 ViewHolder 复用时会闪出上一条消息的头像。
-          com.bumptech.glide.Glide.with(avatar).clear(avatar)
-          avatar.setImageResource(builtin)
-        }
+        // **统一走 Glide 加载**，不混用 setImageResource。
+        //
+        // 早先用「Glide.clear + setImageResource」加载内置图，实测头像是空白的：
+        // clear() 会向 ImageView 投递一次「清除」请求，它与随后同步设置的
+        // resource 竞争——ViewHolder 复用时（RecyclerView 频繁重绑）清除可能后到，
+        // 把刚画上的图擦掉。统一交给 Glide 的请求队列，顺序由它保证。
+        //
+        // 自定义图片必须带 signature：头像固定写到同一路径
+        // （filesDir/assistant_avatar.png），而 Glide 的 File 模型缓存键只取路径
+        // （ObjectKey 只比 file.toString()，不含 lastModified）——不加签名时换图后
+        // 仍命中旧缓存，用户会以为选图没生效。用文件修改时间做签名即可区分。
+        val request =
+            if (custom != null) {
+              val avatarFile = java.io.File(custom)
+              com.bumptech.glide.Glide.with(avatar)
+                  .load(avatarFile)
+                  .signature(com.bumptech.glide.signature.ObjectKey(avatarFile.lastModified()))
+            } else {
+              com.bumptech.glide.Glide.with(avatar).load(builtin)
+            }
+        request.circleCrop().into(avatar)
       } else {
+        // 用户消息与过程信息不显示头像。clear 掉进行中的请求，避免 ViewHolder
+        // 复用时上一条消息的头像残留一帧。
         com.bumptech.glide.Glide.with(avatar).clear(avatar)
         avatar.visibility = View.GONE
       }
@@ -823,7 +836,7 @@ class AssistantMessageAdapter(
       adapter.applyTextScale(binding.toolSummary, AssistantUiStyleStore.BaseSp.BODY_SMALL)
       adapter.applyTextScale(binding.toolInput, AssistantUiStyleStore.BaseSp.BODY_SMALL)
       adapter.applyTextScale(binding.toolOutput, AssistantUiStyleStore.BaseSp.BODY_SMALL)
-      applyCardScale(binding.toolCard, adapter.cardScale())
+      applyCardScale(binding.toolCard, adapter.cardScale(), cornerBaseDp = 10f)
 
       binding.toolCard.setOnClickListener { adapter.toggleExpanded(call.id) }
     }
@@ -831,17 +844,29 @@ class AssistantMessageAdapter(
     /**
      * 按缩放系数重设卡片的**内边距与圆角**。
      *
-     * <p>这些值原本硬编码在 item_tool_call.xml（padding 12/8/12/8dp、圆角 12dp）。
-     * 运行时重设而不是改 XML：XML 是静态的，而缩放是用户可调的——改 XML 只能二选一，
-     * 运行时 API（setContentPadding / radius）两者都能表达。
+     * <p><b>padding 必须设在内层容器上，不是卡片上</b>：XML 里的 padding 写在卡片内的
+     * 第一层 LinearLayout 上（见 item_tool_call.xml:31-34），而 CardView 的
+     * `setContentPadding` 会与之**叠加**（CardView 把它并入自身 padding 再传给子视图）。
+     * 早先直接对卡片设 contentPadding，导致默认值下内边距翻倍（12+12=24dp）——
+     * 不装任何设置就能看出卡片变胖。
      *
      * <p>padding 用**基准值 × 系数**而不是直接乘当前 padding：ViewHolder 会被复用，
-     * 累乘会让卡片在滚动中越变越大。基准值与 XML 里的初始值保持一致。
+     * 累乘会让卡片在滚动中越变越大。基准值与 XML 里的初始值一致（12/8dp）。
+     *
+     * @param cornerBaseDp 圆角基准值——**每张卡片不同**，必须由调用方传入（工具卡 10dp、
+     *     思考卡 12dp，见各自 XML 的 cardCornerRadius）。写死一个值会让另一类卡片的
+     *     默认圆角被悄悄改掉。
      */
-    private fun applyCardScale(card: com.google.android.material.card.MaterialCardView, scale: Float) {
+    private fun applyCardScale(
+        card: com.google.android.material.card.MaterialCardView,
+        scale: Float,
+        cornerBaseDp: Float,
+    ) {
       val density = card.resources.displayMetrics.density
       fun dp(value: Float): Int = (value * density).toInt()
-      card.setContentPadding(
+      // 内层容器承载 padding（见 KDoc）。取不到时跳过而不是崩溃——布局被改坏时
+      // 卡片仍应能显示，只是内边距不随设置缩放。
+      (card.getChildAt(0) as? View)?.setPadding(
           dp(12f * scale),
           dp(8f * scale),
           dp(12f * scale),
@@ -849,7 +874,7 @@ class AssistantMessageAdapter(
       )
       // radius 是 Float（MaterialCardView 的半径以 px 为单位但类型是 Float），
       // dp() 返回 Int —— 必须显式转换，否则 Assignment type mismatch。
-      card.radius = dp(12f * scale).toFloat()
+      card.radius = dp(cornerBaseDp * scale).toFloat()
     }
   }
 
@@ -897,18 +922,26 @@ class AssistantMessageAdapter(
     /**
      * 按缩放系数重设思考卡片的**内边距与圆角**。
      *
-     * <p>基准值与 item_assistant_thinking.xml 里的初始值一致（padding 12/8、圆角 12dp）。
+     * <p><b>padding 分两处，都要设</b>：思考卡的内层是「标题行 + 分隔线 + 内容滚动区」，
+     * 标题行与内容区各自带 padding（见 item_assistant_thinking.xml:42-45、102-105），
+     * 外层容器没有 padding。因此这里遍历内层容器，对其中的每个子 View 设 padding——
+     * 只设第一个会把内容区的内边距漏掉（展开态文字贴边）。
+     *
+     * <p>基准值与 XML 初始值一致：标题行 12/10、内容区 12/8，圆角 12dp。
      * 用基准值乘系数而不是乘当前值：ViewHolder 复用下累乘会越滚越大。
      */
     private fun applyCardScale(card: com.google.android.material.card.MaterialCardView, scale: Float) {
       val density = card.resources.displayMetrics.density
       fun dp(value: Float): Int = (value * density).toInt()
-      card.setContentPadding(
-          dp(12f * scale),
-          dp(8f * scale),
-          dp(12f * scale),
-          dp(8f * scale),
-      )
+      val container = card.getChildAt(0) as? android.view.ViewGroup
+      if (container != null) {
+        // 索引 0 = 标题行（12/10dp），索引 1 = 分隔线（无 padding），索引 2 = 内容区（12/8dp）。
+        // 按索引取而不是遍历全部：分隔线是 1dp 的 View，给它设 padding 会让线变粗。
+        (container.getChildAt(0) as? View)?.setPadding(
+            dp(12f * scale), dp(10f * scale), dp(12f * scale), dp(10f * scale))
+        (container.getChildAt(2) as? View)?.setPadding(
+            dp(12f * scale), dp(8f * scale), dp(12f * scale), dp(10f * scale))
+      }
       card.radius = dp(12f * scale).toFloat()
     }
   }

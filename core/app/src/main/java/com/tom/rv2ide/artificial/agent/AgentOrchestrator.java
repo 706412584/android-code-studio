@@ -737,6 +737,9 @@ public final class AgentOrchestrator {
   /** 删除会话；若删的是当前会话则清空当前指向。 */
   public void deleteConversation(String conversationId) throws IOException {
     conversationStore.delete(conversationId);
+    // 待办随会话一起删：它的存储是按会话分的（见 todoStoreFor），
+    // 留着会在内存 Map 与磁盘上各积一份永远不会被读到的数据。
+    discardTodos(conversationId);
     if (conversationId != null && conversationId.equals(activeConversationId)) {
       activeConversationId = null;
       // 同步清掉持久化记录。不清的话下次启动会恢复到一个已删除的 id，
@@ -919,7 +922,86 @@ public final class AgentOrchestrator {
   private TodoStateStore todoStoreFor(String conversationId) {
     String key = conversationId == null || conversationId.isEmpty() ? "" : conversationId;
     return todoStores.computeIfAbsent(
-        key, k -> new com.tom.rv2ide.ai.tool.FileTodoStateStore(todoFileFor(appContext, k)));
+        key,
+        k -> {
+          File file = todoFileFor(appContext, k);
+          migrateLegacyTodosIfNeeded(k, file);
+          return new com.tom.rv2ide.ai.tool.FileTodoStateStore(file);
+        });
+  }
+
+  /**
+   * 把旧版全局待办（{@code ai/todos.json}）迁移到**当前会话**的待办文件。
+   *
+   * <p><b>为什么需要迁移</b>：待办在早先版本里是单一全局文件。改成按会话隔离后，
+   * 老用户升级时那份文件不会被任何会话读到——界面与提示词里同时消失，看起来像
+   * 「待办丢了」。它承载的是「上次做到第几步」，丢了用户要重新梳理进度。
+   *
+   * <p><b>为什么只迁给第一个访问的会话</b>：旧数据没有会话归属，无法知道它属于谁。
+   * 归给「升级后第一个打开的会话」是最接近事实的猜测（用户大概率会继续上次的会话）。
+   * 迁移后把原文件改名为 {@code todos.json.migrated} 而不是删除：万一猜错，用户
+   * 还能手工找回内容；也保证本方法只生效一次（不会每个新会话都继承同一份旧待办）。
+   *
+   * <p>只在目标文件**尚不存在**时迁移——已有自己待办的会话不该被旧数据覆盖。
+   */
+  private static void migrateLegacyTodosIfNeeded(String conversationId, File target) {
+    if (conversationId.isEmpty() || target.isFile()) {
+      return;
+    }
+    File legacy = defaultTodoFileForMigrationCheck(target);
+    if (legacy == null || !legacy.isFile()) {
+      return;
+    }
+    try {
+      // 目标目录可能还不存在（首次为某会话建待办）。
+      File parent = target.getParentFile();
+      if (parent != null && !parent.isDirectory() && !parent.mkdirs()) {
+        return;
+      }
+      java.nio.file.Files.copy(
+          legacy.toPath(), target.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+      // 改名而非删除：见 KDoc 的取舍说明。
+      File renamed = new File(legacy.getPath() + ".migrated");
+      if (!legacy.renameTo(renamed)) {
+        legacy.delete();
+      }
+    } catch (IOException | RuntimeException e) {
+      // 迁移失败不该阻断待办功能——用户至多是看不到旧清单，而不是无法使用。
+      ErrorLog.record("agent", "旧待办迁移失败", e, null);
+    }
+  }
+
+  /**
+   * 定位旧版全局待办文件。
+   *
+   * <p>从目标路径反推 {@code ai/} 目录而不是再传一次 context：本方法在
+   * {@code computeIfAbsent} 的 lambda 里被调用，签名越窄越好。目标形如
+   * {@code <filesDir>/ai/todos/<id>.json}，其祖父目录即 {@code ai/}。
+   */
+  private static File defaultTodoFileForMigrationCheck(File target) {
+    File todosDir = target.getParentFile();
+    File aiDir = todosDir == null ? null : todosDir.getParentFile();
+    if (aiDir == null) {
+      return null;
+    }
+    return new File(aiDir, "todos.json");
+  }
+
+  /**
+   * 丢弃某会话的待办：清缓存条目并删除磁盘文件。
+   *
+   * <p>会话被删除时调用。不做的话 {@link #todoStores} 会随会话数无上限增长，
+   * 磁盘上也会留下永远读不到的孤儿文件（{@code ai/todos/<id>.json}）。
+   */
+  private void discardTodos(String conversationId) {
+    if (conversationId == null || conversationId.isEmpty()) {
+      return;
+    }
+    todoStores.remove(conversationId);
+    File file = todoFileFor(appContext, conversationId);
+    if (file.isFile()) {
+      file.delete();
+    }
   }
 
   /**

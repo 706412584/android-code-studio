@@ -178,6 +178,11 @@ object CodeGraphInstaller {
    * 就说明它已是打过补丁的版本，不必重写。
    *
    * <p>读不到 wrapper（不存在/无权限）时返回 false——那本来就会走重写路径。
+   *
+   * <p><b>不只看 `--require` 这个词，还要看它引用的文件是否存在</b>：wrapper 可能引用
+   * 一个已被删除的补丁（AI 现场生成的 `.cg-realpath-fix.cjs` 被清理、或用户手工改过
+   * wrapper）。那种情况下 node 会因 `Cannot find module` 直接退出，而只检查关键字的
+   * 判定会认为「已修好」→ 不重写 → 工具被启用却永远失败，用户看不出原因。
    */
   fun wrapperReferencesRealpathFix(): Boolean {
     val wrapper = wrapperFile()
@@ -185,7 +190,19 @@ object CodeGraphInstaller {
       return false
     }
     return try {
-      wrapper.readText(Charsets.UTF_8).contains("--require")
+      val text = wrapper.readText(Charsets.UTF_8)
+      val marker = "--require \""
+      val start = text.indexOf(marker)
+      if (start < 0) {
+        return false
+      }
+      val pathStart = start + marker.length
+      val pathEnd = text.indexOf('"', pathStart)
+      if (pathEnd <= pathStart) {
+        return false
+      }
+      // 引用的补丁文件必须真实存在——否则视为「未修好」，交给自愈重写 wrapper。
+      File(text.substring(pathStart, pathEnd)).isFile
     } catch (e: java.io.IOException) {
       false
     }

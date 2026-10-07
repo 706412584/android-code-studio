@@ -263,6 +263,10 @@ public final class AssistantUiStyleStore {
    * @return 缩放后的字号（sp）
    */
   public float scaleSp(float baseSp) {
-    return baseSp * (getTextSize() / BaseSp.BODY_MEDIUM);
+    float scaled = baseSp * (getTextSize() / BaseSp.BODY_MEDIUM);
+    // 派生值也要有下限：正文设 10sp 时 LabelSmall(11) 会算成 7.9sp——
+    // 那个尺寸在手机上已无法辨认，而 MIN_TEXT_SIZE 只管正文本身。
+    // 9sp 是经验下限（Material 最小的 LabelSmall 是 11sp，再小就需要放大镜了）。
+    return Math.max(9f, scaled);
   }
 }
