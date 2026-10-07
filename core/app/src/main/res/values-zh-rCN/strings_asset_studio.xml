@@ -1,0 +1,105 @@
+<?xml version="1.0" encoding="utf-8"?><!--
+  ~  This file is part of AndroidCodeStudio.
+  ~
+  ~  AndroidCodeStudio is free software: you can redistribute it and/or modify
+  ~  it under the terms of the GNU General Public License as published by
+  ~  the Free Software Foundation, either version 3 of the License, or
+  ~  (at your option) any later version.
+  ~
+  ~  AndroidCodeStudio is distributed in the hope that it will be useful,
+  ~  but WITHOUT ANY WARRANTY; without even the implied warranty of
+  ~  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  ~  GNU General Public License for more details.
+  ~
+  ~  You should have received a copy of the GNU General Public License
+  ~   along with AndroidCodeStudio.  If not, see <https://www.gnu.org/licenses/>.
+  -->
+
+<!--
+  Asset Studio 中文字符串。英文原文在 values/strings_asset_studio.xml —
+  两个文件保持相同顺序。
+-->
+<resources>
+
+  <!-- 图标生成界面 -->
+  <string name="asset_studio_preview">预览</string>
+  <string name="asset_studio_source">来源</string>
+  <string name="asset_studio_select_image">选择图片</string>
+  <string name="asset_studio_load_xml">加载 XML</string>
+  <string name="asset_studio_source_hint">选择图片或 XML 矢量图来制作应用图标</string>
+  <string name="asset_studio_icon_settings">图标设置</string>
+  <string name="asset_studio_icon_name">图标名称</string>
+  <string name="asset_studio_shape">形状</string>
+  <string name="asset_studio_shape_circle">圆形</string>
+  <string name="asset_studio_shape_square">方形</string>
+  <string name="asset_studio_shape_rounded">圆角</string>
+  <string name="asset_studio_background_color">背景颜色</string>
+  <string name="asset_studio_choose_color">选择颜色</string>
+  <string name="asset_studio_custom">自定义</string>
+  <string name="asset_studio_foreground_scale">前景缩放</string>
+  <string name="asset_studio_rounded_corners">圆角</string>
+  <string name="asset_studio_generate_icons">生成图标</string>
+
+  <!-- 素材工作室侧边栏 -->
+  <string name="asset_studio_no_recent_assets">暂无最近素材</string>
+  <string name="asset_studio_m3_icons">M3 图标</string>
+
+  <!-- M3 图标浏览器 -->
+  <string name="asset_studio_search_icons">搜索图标…</string>
+
+  <!-- 颜色选择对话框 -->
+  <string name="asset_studio_current_color">当前颜色</string>
+  <string name="asset_studio_hex_color_hint">十六进制颜色（例如 #FF6200EE）</string>
+  <string name="asset_studio_color_presets">预设颜色</string>
+  <string name="asset_studio_select_color">选择颜色</string>
+  <string name="asset_studio_dynamic_color">动态颜色</string>
+  <string name="asset_studio_hex_color">十六进制颜色</string>
+  <string name="asset_studio_alpha">透明度</string>
+  <string name="asset_studio_red">红</string>
+  <string name="asset_studio_green">绿</string>
+  <string name="asset_studio_blue">蓝</string>
+  <string name="asset_studio_apply">应用</string>
+  <string name="asset_studio_ok">确定</string>
+
+  <!-- 图标编辑与复制对话框 -->
+  <string name="asset_studio_edit_icon">编辑图标</string>
+  <string name="asset_studio_icon_preview">图标预览</string>
+  <string name="asset_studio_file_name">文件名</string>
+  <string name="asset_studio_color">颜色</string>
+  <string name="asset_studio_change">更改</string>
+  <string name="asset_studio_save_and_copy">保存并复制</string>
+  <string name="asset_studio_copy_to">复制到</string>
+  <string name="asset_studio_destination">目标目录</string>
+  <string name="asset_studio_edit_and_copy">编辑并复制</string>
+  <string name="asset_studio_copy">复制</string>
+  <string name="asset_studio_cancel">取消</string>
+
+  <!-- Toast 与对话框消息 -->
+  <string name="asset_studio_icon_imported">已从 Material 图标导入</string>
+  <string name="asset_studio_failed_load_vector">无法从所选内容加载矢量图</string>
+  <string name="asset_studio_error_loading_image">加载图片出错：%1$s</string>
+  <string name="asset_studio_xml_content_length">XML 内容长度：%1$d</string>
+  <string name="asset_studio_xml_loaded">XML 加载成功</string>
+  <string name="asset_studio_failed_create_vector">无法从 XML 创建 VectorDrawable</string>
+  <string name="asset_studio_failed_read_xml">读取 XML 内容失败</string>
+  <string name="asset_studio_error_loading_xml">加载 XML 出错：%1$s</string>
+  <string name="asset_studio_xml_preview_updated">XML 预览已更新</string>
+  <string name="asset_studio_image_preview_updated">图片预览已更新</string>
+  <string name="asset_studio_select_source_first">请先选择图片或 XML 文件</string>
+  <string name="asset_studio_generated_count">已在 res/%1$s-* 生成 %2$d 个图标</string>
+  <string name="asset_studio_error_generating">生成图标出错：%1$s</string>
+  <string name="asset_studio_no_project">未打开任何项目</string>
+  <string name="asset_studio_material_icons">Material 图标</string>
+  <string name="asset_studio_browse_in_app">在应用内浏览</string>
+  <string name="asset_studio_paste_vector_xml">粘贴矢量 XML</string>
+  <string name="asset_studio_paste_xml_hint">在此粘贴 &lt;vector&gt; XML</string>
+  <string name="asset_studio_import_vector_xml">导入矢量 XML</string>
+  <string name="asset_studio_import">导入</string>
+  <string name="asset_studio_vector_imported">矢量图已导入</string>
+  <string name="asset_studio_failed_parse_vector">解析矢量 XML 失败</string>
+  <string name="asset_studio_save_to">保存到</string>
+  <string name="asset_studio_generate">生成</string>
+  <string name="asset_studio_copied_to">已复制到 res/drawable/%1$s.xml</string>
+  <string name="asset_studio_error_copying">复制图标出错：%1$s</string>
+
+</resources>

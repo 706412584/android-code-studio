@@ -1,0 +1,106 @@
+<?xml version="1.0" encoding="utf-8"?><!--
+  ~  This file is part of AndroidCodeStudio.
+  ~
+  ~  AndroidCodeStudio is free software: you can redistribute it and/or modify
+  ~  it under the terms of the GNU General Public License as published by
+  ~  the Free Software Foundation, either version 3 of the License, or
+  ~  (at your option) any later version.
+  ~
+  ~  AndroidCodeStudio is distributed in the hope that it will be useful,
+  ~  but WITHOUT ANY WARRANTY; without even the implied warranty of
+  ~  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  ~  GNU General Public License for more details.
+  ~
+  ~  You should have received a copy of the GNU General Public License
+  ~   along with AndroidCodeStudio.  If not, see <https://www.gnu.org/licenses/>.
+  -->
+
+<!--
+  Asset Studio (drawable & icon maker, M3 Icons browser) strings.
+  Chinese translation lives in values-zh-rCN/strings_asset_studio.xml —
+  keep both files in the same order.
+-->
+<resources>
+
+  <!-- Icon generator screen (activity_asset_studio) -->
+  <string name="asset_studio_preview">Preview</string>
+  <string name="asset_studio_source">Source</string>
+  <string name="asset_studio_select_image">Select Image</string>
+  <string name="asset_studio_load_xml">Load XML</string>
+  <string name="asset_studio_source_hint">Choose an image or XML vector to create app icons</string>
+  <string name="asset_studio_icon_settings">Icon Settings</string>
+  <string name="asset_studio_icon_name">Icon Name</string>
+  <string name="asset_studio_shape">Shape</string>
+  <string name="asset_studio_shape_circle">Circle</string>
+  <string name="asset_studio_shape_square">Square</string>
+  <string name="asset_studio_shape_rounded">Rounded</string>
+  <string name="asset_studio_background_color">Background Color</string>
+  <string name="asset_studio_choose_color">Choose Color</string>
+  <string name="asset_studio_custom">Custom</string>
+  <string name="asset_studio_foreground_scale">Foreground Scale</string>
+  <string name="asset_studio_rounded_corners">Rounded Corners</string>
+  <string name="asset_studio_generate_icons">Generate Icons</string>
+
+  <!-- Asset Studio sidebar (fragment_asset_studio) -->
+  <string name="asset_studio_no_recent_assets">No recent assets</string>
+  <string name="asset_studio_m3_icons">M3 Icons</string>
+
+  <!-- M3 Icons browser -->
+  <string name="asset_studio_search_icons">Search icons...</string>
+
+  <!-- Color picker dialogs -->
+  <string name="asset_studio_current_color">Current Color</string>
+  <string name="asset_studio_hex_color_hint">Hex Color (e.g., #FF6200EE)</string>
+  <string name="asset_studio_color_presets">Color Presets</string>
+  <string name="asset_studio_select_color">Select Color</string>
+  <string name="asset_studio_dynamic_color">Dynamic Color</string>
+  <string name="asset_studio_hex_color">Hex Color</string>
+  <string name="asset_studio_alpha">Alpha</string>
+  <string name="asset_studio_red">Red</string>
+  <string name="asset_studio_green">Green</string>
+  <string name="asset_studio_blue">Blue</string>
+  <string name="asset_studio_apply">Apply</string>
+  <string name="asset_studio_ok">OK</string>
+
+  <!-- Icon edit & copy dialogs -->
+  <string name="asset_studio_edit_icon">Edit Icon</string>
+  <string name="asset_studio_icon_preview">Icon Preview</string>
+  <string name="asset_studio_file_name">File name</string>
+  <string name="asset_studio_color">Color</string>
+  <string name="asset_studio_change">Change</string>
+  <string name="asset_studio_save_and_copy">Save &amp; Copy</string>
+  <string name="asset_studio_copy_to">Copy to</string>
+  <string name="asset_studio_destination">Destination</string>
+  <string name="asset_studio_edit_and_copy">Edit and Copy</string>
+  <string name="asset_studio_copy">Copy</string>
+  <string name="asset_studio_cancel">Cancel</string>
+
+  <!-- Toasts & dialog messages -->
+  <string name="asset_studio_icon_imported">Icon imported from Material Icons</string>
+  <string name="asset_studio_failed_load_vector">Failed to load vector from selection</string>
+  <string name="asset_studio_error_loading_image">Error loading image: %1$s</string>
+  <string name="asset_studio_xml_content_length">XML content length: %1$d</string>
+  <string name="asset_studio_xml_loaded">XML loaded successfully</string>
+  <string name="asset_studio_failed_create_vector">Failed to create VectorDrawable from XML</string>
+  <string name="asset_studio_failed_read_xml">Failed to read XML content</string>
+  <string name="asset_studio_error_loading_xml">Error loading XML: %1$s</string>
+  <string name="asset_studio_xml_preview_updated">XML Preview updated</string>
+  <string name="asset_studio_image_preview_updated">Image Preview updated</string>
+  <string name="asset_studio_select_source_first">Please select an image or XML file first</string>
+  <string name="asset_studio_generated_count">Generated %2$d icons in res/%1$s-*</string>
+  <string name="asset_studio_error_generating">Error generating icons: %1$s</string>
+  <string name="asset_studio_no_project">No project opened</string>
+  <string name="asset_studio_material_icons">Material Icons</string>
+  <string name="asset_studio_browse_in_app">Browse in app</string>
+  <string name="asset_studio_paste_vector_xml">Paste Vector XML</string>
+  <string name="asset_studio_paste_xml_hint">Paste &lt;vector&gt; XML here</string>
+  <string name="asset_studio_import_vector_xml">Import Vector XML</string>
+  <string name="asset_studio_import">Import</string>
+  <string name="asset_studio_vector_imported">Vector imported</string>
+  <string name="asset_studio_failed_parse_vector">Failed to parse vector XML</string>
+  <string name="asset_studio_save_to">Save to</string>
+  <string name="asset_studio_generate">Generate</string>
+  <string name="asset_studio_copied_to">Copied to res/drawable/%1$s.xml</string>
+  <string name="asset_studio_error_copying">Error copying icon: %1$s</string>
+
+</resources>

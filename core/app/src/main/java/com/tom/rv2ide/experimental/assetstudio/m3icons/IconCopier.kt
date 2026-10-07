@@ -43,7 +43,7 @@ object IconCopier {
             if (projectDir == null) {
                 android.widget.Toast.makeText(
                     context,
-                    "No project opened",
+                    R.string.asset_studio_no_project,
                     android.widget.Toast.LENGTH_SHORT
                 ).show()
                 return
@@ -59,13 +59,13 @@ object IconCopier {
 
             android.widget.Toast.makeText(
                 context,
-                "Copied to res/drawable/$fileName.xml",
+                context.getString(R.string.asset_studio_copied_to, fileName),
                 android.widget.Toast.LENGTH_SHORT
             ).show()
         } catch (e: Exception) {
             android.widget.Toast.makeText(
                 context,
-                "Error copying icon: ${e.message}",
+                context.getString(R.string.asset_studio_error_copying, e.message ?: ""),
                 android.widget.Toast.LENGTH_SHORT
             ).show()
         }

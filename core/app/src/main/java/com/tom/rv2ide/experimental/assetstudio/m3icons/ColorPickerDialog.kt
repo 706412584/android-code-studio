@@ -46,10 +46,12 @@ object ColorPickerDialog {
         val dynamicColorSpinner = dialogView.findViewById<android.widget.Spinner>(R.id.dynamicColorSpinner)
 
         val dynamicColors = DynamicColorHelper.getDynamicColors()
+        // "Custom" 只作显示标签（second == null 时选中它 = 用滑块自定义色），
+        // 其余条目的 first 既作标签又作写入 XML 的属性值，故仅对 Custom 做本地化替换。
         val adapter = android.widget.ArrayAdapter(
             context,
             android.R.layout.simple_spinner_dropdown_item,
-            dynamicColors.map { it.first }
+            dynamicColors.map { if (it.second == null) context.getString(R.string.asset_studio_custom) else it.first }
         )
         dynamicColorSpinner.adapter = adapter
 
@@ -179,13 +181,13 @@ object ColorPickerDialog {
         }
 
         MaterialAlertDialogBuilder(context)
-            .setTitle("Select Color")
+            .setTitle(R.string.asset_studio_select_color)
             .setView(dialogView)
-            .setPositiveButton("OK") { dialog, _ ->
+            .setPositiveButton(R.string.asset_studio_ok) { dialog, _ ->
                 onColorSelected(currentColor, selectedDynamicColor)
                 dialog.dismiss()
             }
-            .setNegativeButton("Cancel", null)
+            .setNegativeButton(R.string.asset_studio_cancel, null)
             .show()
     }
 }

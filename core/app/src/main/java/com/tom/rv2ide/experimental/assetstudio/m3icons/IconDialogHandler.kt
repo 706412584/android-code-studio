@@ -35,7 +35,10 @@ object IconDialogHandler {
         bitmap: Bitmap?,
         xmlContent: String?
     ) {
-        val options = arrayOf("Copy to", "Edit and Copy")
+        val options = arrayOf(
+            context.getString(R.string.asset_studio_copy_to),
+            context.getString(R.string.asset_studio_edit_and_copy)
+        )
         MaterialAlertDialogBuilder(context)
             .setTitle(icon.name)
             .setItems(options) { dialog, which ->
