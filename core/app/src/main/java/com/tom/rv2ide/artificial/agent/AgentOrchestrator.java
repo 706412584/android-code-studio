@@ -1054,6 +1054,9 @@ public final class AgentOrchestrator {
     registry.register(new FileEditTool());
     registry.register(new FileDeleteTool());
     registry.register(new GlobTool());
+    // 按内容搜索。设备自带的 BSD grep 2.5.1 不支持 | 交替、-r 行为也不可靠，
+    // 而 ripgrep 没有——本工具在进程内用 java.util.regex 搜索，不依赖任何后端。
+    registry.register(new com.tom.rv2ide.ai.tool.GrepTool());
     registry.register(new ListDirectoryTool());
 
     // shell 执行（后端由配置决定：Termux 或 Shizuku）。

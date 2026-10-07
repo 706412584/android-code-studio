@@ -34,6 +34,13 @@ public final class ToolNames {
     public static final String FILE_DELETE = "file_delete";
     public static final String LIST_DIR = "list_dir";
     public static final String GLOB = "glob";
+    /**
+     * 按正则搜索文件内容。
+     *
+     * <p>与 {@link #GLOB} 的分工：glob 按**文件名**找文件，grep 按**内容**找。
+     * 两者都属检索类，但一个回答「哪些文件叫这个名字」，另一个回答「哪一行写了这个」。
+     */
+    public static final String GREP = "grep";
     public static final String SHELL_EXECUTE = "shell_execute";
     public static final String AGENT = "agent";
     public static final String AGENT_PIPELINE = "agent_pipeline";
