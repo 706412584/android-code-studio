@@ -1621,6 +1621,17 @@ public final class AgentOrchestrator {
               + "\n\n与当前任务相关时，用 skill 工具加载其完整内容。";
     }
 
+    // 项目规则（项目根的 CLAUDE.md / AGENTS.md）追加在最后。
+    // 放在最后是有意的：模型对提示词末尾的内容注意力更高，而规则是「本项目必须遵守」
+    // 的硬约束，应当压过前面的通用习惯。它按项目根目录读取，因此天然随项目切换而变，
+    // 不会把 A 项目的规矩带进 B 项目——这正是它区别于全局提示词模板的地方。
+    String projectRules =
+        com.tom.rv2ide.ai.agent.ProjectRulesLoader.renderForPrompt(
+            com.tom.rv2ide.ai.agent.ProjectRulesLoader.load(runWorkspace));
+    if (!projectRules.isEmpty()) {
+      systemPrompt = systemPrompt + "\n\n" + projectRules;
+    }
+
     ToolContext toolContext =
         ToolContext.builder()
             .homePath(runWorkspace.getAbsolutePath())

@@ -229,6 +229,18 @@
   <string name="ai_agent_agents_tools_label">工具白名单（全不勾选 = 不限制）</string>
   <string name="ai_agent_agents_customized">已修改</string>
 
+  <!-- 项目规则 -->
+  <string name="ai_agent_project_rules_title">项目规则</string>
+  <string name="ai_agent_project_rules_summary">项目根目录的 CLAUDE.md，助手每次运行都会读取</string>
+  <string name="ai_agent_project_rules_choose_project">选择项目</string>
+  <string name="ai_agent_project_rules_no_projects">还没有记录任何项目，请先打开一个项目。</string>
+  <string name="ai_agent_project_rules_no_project">未打开项目</string>
+  <string name="ai_agent_project_rules_state_exists">已配置</string>
+  <string name="ai_agent_project_rules_state_empty">空文件</string>
+  <string name="ai_agent_project_rules_state_missing">未创建</string>
+  <string name="ai_agent_project_rules_saved">已保存 %1$s</string>
+  <string name="ai_agent_project_rules_save_failed">保存失败：%1$s</string>
+
   <!-- Skill -->
   <string name="ai_agent_skills_title">Skill</string>
   <string name="ai_agent_skills_summary">按需加载的参考文档</string>

@@ -24,6 +24,7 @@ import androidx.preference.Preference
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.tom.rv2ide.R
 import com.tom.rv2ide.activities.FolderPickerActivity
+import com.tom.rv2ide.ai.agent.ProjectRulesLoader
 import com.tom.rv2ide.artificial.agent.AssistantUiStyleStore
 import com.tom.rv2ide.artificial.agent.ShizukuShellBackend
 import com.tom.rv2ide.artificial.agent.codegraph.CodeGraphInstaller
@@ -146,6 +147,7 @@ private class CapabilitiesPage(
   init {
     addPreference(AssistantOverlayPreference())
     addPreference(AgentsPreference())
+    addPreference(ProjectRulesPreference())
     addPreference(SkillsPreference())
     addPreference(MemoriesPreference())
     addPreference(McpServersPreference())
@@ -1456,6 +1458,208 @@ private class MemoriesPreference(
     val count = memoryStore(context).size()
     return if (count == 0) context.getString(R.string.ai_agent_memory_none)
     else context.getString(R.string.ai_agent_memory_count, count)
+  }
+}
+
+/**
+ * 项目规则：在项目根目录创建 / 编辑 {@code CLAUDE.md}（或回退 {@code AGENTS.md}）。
+ *
+ * <p><b>为什么需要这个入口</b>：规则文件由运行时按项目根目录读取并注入系统提示词
+ * （见 {@code ProjectRulesLoader}），但「知道有这回事」和「真的去项目根新建一个 Markdown」
+ * 之间隔着一步——没有入口时用户只能自己猜文件名与位置，猜错就是静默不生效。这里把
+ * 创建动作做成一次点击：选中项目 → 选文件 → 写入模板 → 用户改正文。
+ *
+ * <p><b>为什么列出「已记录项目」而不是只给当前项目</b>：项目清单来自
+ * {@code ProjectManager}，与 CodeGraph 索引入口同源。规则是「跟着仓库走」的配置，
+ * 用户常常要为多个项目各写一份；只认当前打开的项目会逼他逐个打开一遍。
+ */
+@Parcelize
+private class ProjectRulesPreference(
+    override val key: String = "project_rules",
+    override val title: Int = R.string.ai_agent_project_rules_title,
+    override val summary: Int? = R.string.ai_agent_project_rules_summary,
+) : BasePreference() {
+
+  override fun onCreatePreference(context: Context): Preference =
+      androidx.preference.Preference(context).apply {
+        key = "project_rules"
+        title = context.getString(R.string.ai_agent_project_rules_title)
+      }
+
+  override fun onPreferenceClick(preference: Preference): Boolean {
+    val context = preference.context
+    // 读项目清单走 DataStore，须在 IO 线程；弹窗回主线程。
+    CoroutineScope(Dispatchers.IO).launch {
+      val projects =
+          try {
+            ProjectManager.getInstance(context).getTrackedProjects()
+          } catch (e: Exception) {
+            emptyList()
+          }
+      withContext(Dispatchers.Main) { showProjectPicker(context, preference, projects) }
+    }
+    return true
+  }
+
+  /** 选项目 → 选规则文件 → 动作。 */
+  private fun showProjectPicker(
+      context: Context,
+      preference: Preference,
+      projects: List<com.tom.androidcodestudio.project.manager.ProjectInfo>,
+  ) {
+    if (projects.isEmpty()) {
+      MaterialAlertDialogBuilder(context)
+          .setTitle(R.string.ai_agent_project_rules_title)
+          .setMessage(R.string.ai_agent_project_rules_no_projects)
+          .setPositiveButton(android.R.string.ok, null)
+          .show()
+      return
+    }
+
+    val labels = projects.map { describeProject(it) }.toTypedArray()
+    MaterialAlertDialogBuilder(context)
+        .setTitle(R.string.ai_agent_project_rules_choose_project)
+        .setItems(labels) { _, which ->
+          showFilePicker(context, preference, File(projects[which].projectDir))
+        }
+        .setNegativeButton(android.R.string.cancel, null)
+        .show()
+  }
+
+  /** 选中项目后，列出两个候选文件及其当前状态。 */
+  private fun showFilePicker(
+      context: Context,
+      preference: Preference,
+      projectRoot: File,
+  ) {
+    val claude = ProjectRulesLoader.claudeMd(projectRoot)
+    val agents = ProjectRulesLoader.agentsMd(projectRoot)
+    val files = listOf(claude, agents)
+    val labels =
+        files
+            .map { file ->
+              val state =
+                  when {
+                    file.isFile && file.length() > 0 ->
+                      context.getString(R.string.ai_agent_project_rules_state_exists)
+                    file.isFile -> context.getString(R.string.ai_agent_project_rules_state_empty)
+                    else -> context.getString(R.string.ai_agent_project_rules_state_missing)
+                  }
+              "${file.name} · $state"
+            }
+            .toTypedArray()
+
+    MaterialAlertDialogBuilder(context)
+        .setTitle(projectRoot.name)
+        .setItems(labels) { _, which -> editRule(context, preference, files[which]) }
+        .setNegativeButton(android.R.string.cancel, null)
+        .show()
+  }
+
+  /**
+   * 编辑（或创建）一个规则文件。
+   *
+   * <p>用「多行输入框 + 保存」而不是跳转到编辑器 Activity：规则的编写发生在设置流程里，
+   * 跳出去再回来会打断上下文；而规则通常只有几十行，对话框足够。超长时由
+   * {@link clampDialogScrollHeight} 限制高度，正文在框内滚动。
+   */
+  private fun editRule(
+      context: Context,
+      preference: Preference,
+      file: File,
+  ) {
+    val existing = if (file.isFile) runCatching { file.readText() }.getOrDefault("") else ""
+
+    val field = com.google.android.material.textfield.TextInputEditText(context).apply {
+      setText(existing.ifEmpty { ProjectRulesLoader.template() })
+      inputType =
+          android.text.InputType.TYPE_CLASS_TEXT or
+              android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE
+      gravity = android.view.Gravity.TOP or android.view.Gravity.START
+      minLines = 10
+    }
+    val container = android.widget.LinearLayout(context).apply {
+      orientation = android.widget.LinearLayout.VERTICAL
+      setPadding(48, 24, 48, 0)
+      addView(field)
+    }
+    val scroll = android.widget.ScrollView(context).apply { addView(container) }
+
+    val dialog =
+        MaterialAlertDialogBuilder(context)
+            .setTitle(file.name)
+            .setMessage(file.parentFile?.absolutePath)
+            .setView(scroll)
+            .setPositiveButton(android.R.string.ok) { _, _ ->
+              val text = field.text?.toString().orEmpty()
+              try {
+                file.writeText(text)
+                Toast.makeText(
+                        context,
+                        context.getString(R.string.ai_agent_project_rules_saved, file.name),
+                        Toast.LENGTH_SHORT)
+                    .show()
+              } catch (e: Exception) {
+                Toast.makeText(
+                        context,
+                        context.getString(
+                            R.string.ai_agent_project_rules_save_failed, e.message ?: ""),
+                        Toast.LENGTH_LONG)
+                    .show()
+              }
+              preference.summary = describe(context, file.parentFile)
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .create()
+    clampDialogScrollHeight(dialog, scroll, context)
+    dialog.show()
+  }
+
+  private fun describeProject(
+      info: com.tom.androidcodestudio.project.manager.ProjectInfo
+  ): String {
+    val root = File(info.projectDir)
+    val mark =
+        when {
+          ProjectRulesLoader.claudeMd(root).isFile -> "CLAUDE.md"
+          ProjectRulesLoader.agentsMd(root).isFile -> "AGENTS.md"
+          else -> ""
+        }
+    return if (mark.isEmpty()) info.projectName
+    else "${info.projectName}（$mark）"
+  }
+
+  /**
+   * 刷新摘要：项目清单须异步读（DataStore），因此与 [CodeGraphPreference] 同样放在
+   * [onCreateView] 之后异步写 summary——基类会用静态 summary 覆盖 onCreatePreference
+   * 里的赋值，时序见 CodeGraphPreference 的注释。
+   */
+  override fun onCreateView(context: Context): Preference {
+    val pref = super.onCreateView(context)
+    CoroutineScope(Dispatchers.IO).launch {
+      val root =
+          try {
+            ProjectManager.getInstance(context).getTrackedProjects().firstOrNull()?.let {
+              File(it.projectDir)
+            }
+          } catch (e: Exception) {
+            null
+          }
+      withContext(Dispatchers.Main) { pref.summary = describe(context, root) }
+    }
+    return pref
+  }
+
+  private fun describe(context: Context, root: File?): String {
+    if (root == null) {
+      return context.getString(R.string.ai_agent_project_rules_no_project)
+    }
+    val hasRule =
+        ProjectRulesLoader.claudeMd(root).isFile || ProjectRulesLoader.agentsMd(root).isFile
+    val state =
+        if (hasRule) context.getString(R.string.ai_agent_project_rules_state_exists)
+        else context.getString(R.string.ai_agent_project_rules_state_missing)
+    return "${root.name} · $state"
   }
 }
 

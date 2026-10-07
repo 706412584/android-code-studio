@@ -234,6 +234,18 @@
   <string name="ai_agent_agents_tools_label">Allowed tools (none checked = unrestricted)</string>
   <string name="ai_agent_agents_customized">customized</string>
 
+  <!-- Project rules -->
+  <string name="ai_agent_project_rules_title">Project rules</string>
+  <string name="ai_agent_project_rules_summary">CLAUDE.md in the project root, read by the assistant on every run</string>
+  <string name="ai_agent_project_rules_choose_project">Choose a project</string>
+  <string name="ai_agent_project_rules_no_projects">No project recorded yet. Open a project first.</string>
+  <string name="ai_agent_project_rules_no_project">No project opened</string>
+  <string name="ai_agent_project_rules_state_exists">configured</string>
+  <string name="ai_agent_project_rules_state_empty">empty</string>
+  <string name="ai_agent_project_rules_state_missing">not created</string>
+  <string name="ai_agent_project_rules_saved">Saved %1$s</string>
+  <string name="ai_agent_project_rules_save_failed">Save failed: %1$s</string>
+
   <!-- Skills -->
   <string name="ai_agent_skills_title">Skills</string>
   <string name="ai_agent_skills_summary">Reference documents loaded on demand</string>
