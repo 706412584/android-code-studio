@@ -110,7 +110,8 @@ public final class ConversationCodec {
             json.optString(ToolResultEntry.FIELD_REVIEW_STATE, ""),
             json.optString(ToolResultEntry.FIELD_REVIEW_MESSAGE, ""),
             json.optString(ToolResultEntry.FIELD_IMAGE_MIME_TYPE, ""),
-            json.optString(ToolResultEntry.FIELD_IMAGE_BASE64, ""));
+            json.optString(ToolResultEntry.FIELD_IMAGE_BASE64, ""),
+            readStringArray(json.optJSONArray(ToolResultEntry.FIELD_STEPS)));
       case CUSTOM_TITLE:
       case AI_TITLE:
         return new TitleEntry(
@@ -144,6 +145,21 @@ public final class ConversationCodec {
               item.optString(AssistantMessageEntry.FIELD_TOOL_CALL_ARGS, "{}")));
     }
     return calls;
+  }
+
+  /** 读字符串数组（步骤行）。缺字段或类型不符时返回空列表。 */
+  private static List<String> readStringArray(JSONArray array) {
+    List<String> values = new ArrayList<>();
+    if (array == null) {
+      return values;
+    }
+    for (int i = 0; i < array.length(); i++) {
+      String value = array.optString(i, "");
+      if (!value.isEmpty()) {
+        values.add(value);
+      }
+    }
+    return values;
   }
 
   /** 序列化为一行 JSON（不含换行符）。 */

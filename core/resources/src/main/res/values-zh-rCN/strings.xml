@@ -400,6 +400,8 @@
   <string name="ai_assistant_tool_cancelled">已被用户取消</string>
   <!-- 上报过步骤进度的工具卡片上的「步骤」区（如子 agent 运行） -->
   <string name="ai_assistant_tool_steps">步骤</string>
+  <!-- 折叠态进度提示：步骤数 -->
+  <string name="ai_assistant_tool_step_count">%1$d 步</string>
 
   <!-- 主界面悬浮 AI 助手 -->
   <string name="ai_assistant_open">打开 AI 助手</string>

@@ -92,6 +92,24 @@
       android:maxLines="2"
       tools:text="file_path=/sdcard/proj/app/build.gradle" />
 
+    <!--
+      折叠态可见：进度预览（参考 cc-haha 的 AgentProgressLine）。
+      子 agent 这类长任务在折叠时也显示「步骤 N · 最后一步在做什么」——
+      否则卡片折叠后和普通工具毫无区别，用户不知道它跑了多少步。
+      无步骤时整行隐藏。
+    -->
+    <TextView
+      android:id="@+id/toolStepsHint"
+      android:layout_width="match_parent"
+      android:layout_height="wrap_content"
+      android:layout_marginTop="2dp"
+      android:textAppearance="@style/TextAppearance.Material3.LabelSmall"
+      android:ellipsize="end"
+      android:maxLines="1"
+      android:visibility="gone"
+      tools:text="12 步 · 子 agent 步骤 12 · file_read: build.gradle.kts"
+      tools:visibility="visible" />
+
     <!-- 展开后可见：完整输入与输出 -->
     <LinearLayout
       android:id="@+id/toolDetails"
@@ -122,15 +140,27 @@
           android:textAppearance="@style/TextAppearance.Material3.LabelSmall"
           android:textStyle="bold" />
 
-        <TextView
-          android:id="@+id/toolSteps"
+        <!--
+          限高：子 agent 一次运行可产生几十行步骤（40 次工具调用的上限），
+          不限高会把单张卡片撑满几屏。与思维链块同一做法（BoundedScrollView）。
+        -->
+        <com.tom.rv2ide.ui.BoundedScrollView
           android:layout_width="match_parent"
           android:layout_height="wrap_content"
           android:layout_marginTop="2dp"
-          android:fontFamily="monospace"
-          android:textAppearance="@style/TextAppearance.Material3.BodySmall"
-          android:textIsSelectable="true"
-          tools:text="子 agent 思考中（第 1 轮）\n子 agent 步骤 1 · file_read: app/build.gradle.kts" />
+          android:maxHeight="200dp"
+          android:scrollbars="vertical">
+
+          <TextView
+            android:id="@+id/toolSteps"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:fontFamily="monospace"
+            android:textAppearance="@style/TextAppearance.Material3.BodySmall"
+            android:textIsSelectable="true"
+            tools:text="子 agent 思考中（第 1 轮）\n子 agent 步骤 1 · file_read: app/build.gradle.kts" />
+
+        </com.tom.rv2ide.ui.BoundedScrollView>
 
       </LinearLayout>
 
@@ -142,15 +172,24 @@
         android:textAppearance="@style/TextAppearance.Material3.LabelSmall"
         android:textStyle="bold" />
 
-      <TextView
-        android:id="@+id/toolInput"
+      <!-- 限高：写入类工具的 input 含完整文件正文，可达数十 KB。 -->
+      <com.tom.rv2ide.ui.BoundedScrollView
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_marginTop="2dp"
-        android:fontFamily="monospace"
-        android:textAppearance="@style/TextAppearance.Material3.BodySmall"
-        android:textIsSelectable="true"
-        tools:text="{\n  &quot;file_path&quot;: &quot;app/build.gradle&quot;,\n  &quot;content&quot;: &quot;...&quot;\n}" />
+        android:maxHeight="200dp"
+        android:scrollbars="vertical">
+
+        <TextView
+          android:id="@+id/toolInput"
+          android:layout_width="match_parent"
+          android:layout_height="wrap_content"
+          android:fontFamily="monospace"
+          android:textAppearance="@style/TextAppearance.Material3.BodySmall"
+          android:textIsSelectable="true"
+          tools:text="{\n  &quot;file_path&quot;: &quot;app/build.gradle&quot;,\n  &quot;content&quot;: &quot;...&quot;\n}" />
+
+      </com.tom.rv2ide.ui.BoundedScrollView>
 
       <TextView
         android:layout_width="wrap_content"
@@ -160,15 +199,24 @@
         android:textAppearance="@style/TextAppearance.Material3.LabelSmall"
         android:textStyle="bold" />
 
-      <TextView
-        android:id="@+id/toolOutput"
+      <!-- 限高：shell 输出上限 32KB、文件读取上限 50KB，远超声屏容量。 -->
+      <com.tom.rv2ide.ui.BoundedScrollView
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_marginTop="2dp"
-        android:fontFamily="monospace"
-        android:textAppearance="@style/TextAppearance.Material3.BodySmall"
-        android:textIsSelectable="true"
-        tools:text="已写入 app/build.gradle（42 行）" />
+        android:maxHeight="240dp"
+        android:scrollbars="vertical">
+
+        <TextView
+          android:id="@+id/toolOutput"
+          android:layout_width="match_parent"
+          android:layout_height="wrap_content"
+          android:fontFamily="monospace"
+          android:textAppearance="@style/TextAppearance.Material3.BodySmall"
+          android:textIsSelectable="true"
+          tools:text="已写入 app/build.gradle（42 行）" />
+
+      </com.tom.rv2ide.ui.BoundedScrollView>
 
     </LinearLayout>
 

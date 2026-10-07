@@ -18,6 +18,10 @@
 package com.tom.rv2ide.ai.agent.conversation;
 
 import com.tom.rv2ide.ai.tool.api.ToolResult;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
@@ -39,6 +43,7 @@ public final class ToolResultEntry extends ConversationEntry {
   static final String FIELD_REVIEW_MESSAGE = "reviewMessage";
   static final String FIELD_IMAGE_MIME_TYPE = "imageMimeType";
   static final String FIELD_IMAGE_BASE64 = "imageBase64";
+  static final String FIELD_STEPS = "steps";
 
   private final String toolCallId;
   private final String toolName;
@@ -52,7 +57,26 @@ public final class ToolResultEntry extends ConversationEntry {
   /** 工具结果图片的 base64 数据；无图片时为空串。 */
   private final String imageBase64;
 
+  /**
+   * 工具执行期间的步骤进度记录（子 agent 这类长任务才会产生）。
+   *
+   * <p><b>为什么必须落盘</b>：子代理的中间过程不进主对话，这些步骤行是用户回看时
+   * 唯一的凭据。仅存在内存里的话，重启应用后步骤区就是空的——用户实测反馈过
+   * 「步骤确实不见了」。cc-haha 的进度消息随 transcript 持久化，同一考量。
+   */
+  private final List<String> steps;
+
   public ToolResultEntry(String uuid, String parentUuid, long timestamp, ToolResult result) {
+    this(uuid, parentUuid, timestamp, result, Collections.emptyList());
+  }
+
+  /**
+   * 带步骤记录的构造。
+   *
+   * @param steps 该次调用期间累积的步骤行；null 视作空
+   */
+  public ToolResultEntry(
+      String uuid, String parentUuid, long timestamp, ToolResult result, List<String> steps) {
     super(uuid, parentUuid, timestamp);
     this.toolCallId = result == null ? "" : result.getToolCallId();
     this.toolName = result == null ? "" : result.getToolName();
@@ -63,6 +87,7 @@ public final class ToolResultEntry extends ConversationEntry {
     this.reviewMessage = result == null ? "" : result.getReviewMessage();
     this.imageMimeType = result == null ? "" : result.getImageMimeType();
     this.imageBase64 = result == null ? "" : result.getImageBase64();
+    this.steps = steps == null ? Collections.emptyList() : new ArrayList<>(steps);
   }
 
   private ToolResultEntry(
@@ -77,7 +102,8 @@ public final class ToolResultEntry extends ConversationEntry {
       String reviewState,
       String reviewMessage,
       String imageMimeType,
-      String imageBase64) {
+      String imageBase64,
+      List<String> steps) {
     super(uuid, parentUuid, timestamp);
     this.toolCallId = toolCallId;
     this.toolName = toolName;
@@ -88,6 +114,7 @@ public final class ToolResultEntry extends ConversationEntry {
     this.reviewMessage = reviewMessage;
     this.imageMimeType = imageMimeType == null ? "" : imageMimeType;
     this.imageBase64 = imageBase64 == null ? "" : imageBase64;
+    this.steps = steps == null ? Collections.emptyList() : steps;
   }
 
   static ToolResultEntry fromFields(
@@ -102,14 +129,25 @@ public final class ToolResultEntry extends ConversationEntry {
       String reviewState,
       String reviewMessage,
       String imageMimeType,
-      String imageBase64) {
+      String imageBase64,
+      List<String> steps) {
     return new ToolResultEntry(
         uuid, parentUuid, timestamp, toolCallId, toolName, content, error, diffId, reviewState,
-        reviewMessage, imageMimeType, imageBase64);
+        reviewMessage, imageMimeType, imageBase64, steps);
   }
 
   public static ToolResultEntry create(String parentUuid, long timestamp, ToolResult result) {
     return new ToolResultEntry(null, parentUuid, timestamp, result);
+  }
+
+  /**
+   * 带步骤记录的构造（落盘用）。
+   *
+   * @param steps 该次调用期间累积的步骤行；null 视作空
+   */
+  public static ToolResultEntry create(
+      String parentUuid, long timestamp, ToolResult result, List<String> steps) {
+    return new ToolResultEntry(null, parentUuid, timestamp, result, steps);
   }
 
   @Override
@@ -155,6 +193,11 @@ public final class ToolResultEntry extends ConversationEntry {
     return imageBase64;
   }
 
+  /** 该次调用期间的步骤进度记录；无步骤时为空列表。 */
+  public List<String> getSteps() {
+    return steps;
+  }
+
   @Override
   protected void writeFields(JSONObject json) throws JSONException {
     json.put(FIELD_TOOL_CALL_ID, toolCallId);
@@ -174,6 +217,14 @@ public final class ToolResultEntry extends ConversationEntry {
     if (!imageBase64.isEmpty()) {
       json.put(FIELD_IMAGE_MIME_TYPE, imageMimeType);
       json.put(FIELD_IMAGE_BASE64, imageBase64);
+    }
+    // 步骤同理：普通工具没有步骤，不写空数组（JSONL 每行都会出现）。
+    if (!steps.isEmpty()) {
+      JSONArray array = new JSONArray();
+      for (String step : steps) {
+        array.put(step);
+      }
+      json.put(FIELD_STEPS, array);
     }
   }
 }

@@ -361,6 +361,22 @@ class AssistantMessageAdapter(
     notifyItemChanged(index)
   }
 
+  /**
+   * 覆盖指定卡片的步骤列表（回放历史时使用）。
+   *
+   * <p>与 [appendToolStep] 的分工：那个走实时增量（运行中累积），这个走历史恢复
+   * （一次性给出完整列表）。id 不存在时静默忽略，与其它回填方法同约定。
+   */
+  fun setToolSteps(id: Long, steps: List<String>) {
+    val index = indexOf(id)
+    val old = items.getOrNull(index) as? ToolCall ?: return
+    if (old.steps == steps) {
+      return
+    }
+    items[index] = old.copy(steps = steps)
+    notifyItemChanged(index)
+  }
+
   /** 最近一张仍在运行的工具卡片 id；没有则 null。 */
   fun lastRunningToolCallId(): Long? =
       items.lastOrNull { it is ToolCall && it.status == ToolStatus.RUNNING }?.id
@@ -863,6 +879,19 @@ class AssistantMessageAdapter(
               else string.ai_assistant_tool_expand
           )
 
+      // 折叠态进度预览（参考 cc-haha 的 AgentProgressLine）：有步骤时显示
+      // 「N 步 · 最后一步」——子 agent 折叠后与普通工具的区别必须可见，
+      // 否则用户不知道它跑了多少步、最后在做什么。
+      if (call.steps.isNotEmpty()) {
+        binding.toolStepsHint.visibility = View.VISIBLE
+        binding.toolStepsHint.text =
+            context.getString(string.ai_assistant_tool_step_count, call.steps.size) +
+                " · " +
+                call.steps.last()
+      } else {
+        binding.toolStepsHint.visibility = View.GONE
+      }
+
       if (call.expanded) {
         // 步骤区：只有累积过步骤的调用才显示（子 agent 这类长任务）。
         // 普通工具没有步骤，整块隐藏——空标题只是噪音。
@@ -888,6 +917,7 @@ class AssistantMessageAdapter(
       adapter.applyTextScale(binding.toolStatus, AssistantUiStyleStore.BaseSp.LABEL_SMALL)
       adapter.applyTextScale(binding.toolChevron, AssistantUiStyleStore.BaseSp.LABEL_SMALL)
       adapter.applyTextScale(binding.toolSummary, AssistantUiStyleStore.BaseSp.BODY_SMALL)
+      adapter.applyTextScale(binding.toolStepsHint, AssistantUiStyleStore.BaseSp.LABEL_SMALL)
       adapter.applyTextScale(binding.toolSteps, AssistantUiStyleStore.BaseSp.BODY_SMALL)
       adapter.applyTextScale(binding.toolInput, AssistantUiStyleStore.BaseSp.BODY_SMALL)
       adapter.applyTextScale(binding.toolOutput, AssistantUiStyleStore.BaseSp.BODY_SMALL)

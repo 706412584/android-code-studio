@@ -135,7 +135,10 @@ public final class ConversationHistory {
           result.getToolCallId(),
           result.getToolName(),
           result.isError(),
-          imageJson);
+          imageJson,
+          // 步骤随 fold 带给 UI：回放时工具卡片要恢复步骤区（子代理过程不进主对话，
+          // 这些行是唯一凭据）。协议序列化不读它，见 ToolModelMessage#getSteps。
+          result.getSteps());
     }
     // SessionMetaEntry / TitleEntry / CompactionEntry 不参与模型对话
     return null;

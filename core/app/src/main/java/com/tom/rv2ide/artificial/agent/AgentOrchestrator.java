@@ -2006,6 +2006,16 @@ public final class AgentOrchestrator {
      */
     private final StringBuilder reasoningBuffer = new StringBuilder();
 
+    /**
+     * 当前工具调用累积的步骤行（PROGRESS 事件）。
+     *
+     * <p>工具执行是严格串行的（TOOL_STARTED → 若干 PROGRESS → TOOL_FINISHED），
+     * 因此一个缓冲区就够：TOOL_FINISHED 时把它写进 {@code ToolResultEntry} 后清空。
+     * 不落盘的话重启后步骤区就空了——用户实测反馈过「步骤确实不见了」，
+     * 而子代理的中间过程不进主对话，这些行是回看时唯一的凭据。
+     */
+    private final java.util.List<String> stepBuffer = new java.util.ArrayList<>();
+
     PersistingListener(String conversationId, String userRequest, AgentEvent.Listener downstream) {
       this.conversationId = conversationId;
       this.downstream = downstream;
@@ -2036,6 +2046,12 @@ public final class AgentOrchestrator {
             reasoningBuffer.append(event.getMessage());
           }
           break;
+        case PROGRESS:
+          // 累积当前工具的步骤行；由 TOOL_FINISHED 一并写入（见 stepBuffer 注释）。
+          if (event.getMessage() != null && !event.getMessage().isEmpty()) {
+            stepBuffer.add(event.getMessage());
+          }
+          break;
         case TURN_FINISHED:
           appendEntry(
               AssistantMessageEntry.create(
@@ -2049,8 +2065,13 @@ public final class AgentOrchestrator {
         case TOOL_FINISHED:
           if (event.getToolResult() != null) {
             appendEntry(
-                ToolResultEntry.create(null, System.currentTimeMillis(), event.getToolResult()));
+                ToolResultEntry.create(
+                    null,
+                    System.currentTimeMillis(),
+                    event.getToolResult(),
+                    new java.util.ArrayList<>(stepBuffer)));
           }
+          stepBuffer.clear();
           break;
         default:
           break;

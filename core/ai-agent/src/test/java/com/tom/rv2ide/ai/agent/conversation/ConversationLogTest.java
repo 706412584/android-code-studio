@@ -111,6 +111,37 @@ final class ConversationLogTest {
   }
 
   @Test
+  void roundTripsStepsExactly(@TempDir Path dir) throws IOException {
+    // 步骤必须随结果落盘：子代理过程不进主对话，重启后这些行是回看的唯一凭据
+    // （用户实测反馈过「步骤确实不见了」）。
+    ConversationLog log = logAt(dir, "c1.jsonl");
+    List<String> steps =
+        Arrays.asList("子 agent 思考中（第 1 轮）", "子 agent 步骤 1 · file_read: a.kt");
+    log.append(
+        new ToolResultEntry(
+            null,
+            null,
+            T0,
+            ToolResult.of("call_1", "agent", "结论", false),
+            steps));
+
+    ToolResultEntry read =
+        assertInstanceOf(ToolResultEntry.class, log.readAll().get(0).getEntry());
+    assertEquals(steps, read.getSteps());
+  }
+
+  @Test
+  void entriesWithoutStepsReadBackAsEmptyList(@TempDir Path dir) throws IOException {
+    // 旧日志没有 steps 字段（向后兼容）：读回应为空列表而不是 null，UI 据此隐藏步骤区。
+    ConversationLog log = logAt(dir, "c1.jsonl");
+    log.append(ToolResultEntry.create(null, T0, ToolResult.of("c1", "file_read", "内容", false)));
+
+    ToolResultEntry read =
+        assertInstanceOf(ToolResultEntry.class, log.readAll().get(0).getEntry());
+    assertTrue(read.getSteps().isEmpty());
+  }
+
+  @Test
   void truncatesIncompleteTrailingLine(@TempDir Path dir) throws IOException {
     ConversationLog log = logAt(dir, "c1.jsonl");
     log.append(UserMessageEntry.create(null, T0, "第一条"));

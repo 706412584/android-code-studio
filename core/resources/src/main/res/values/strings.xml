@@ -405,6 +405,8 @@
   <string name="ai_assistant_tool_cancelled">Cancelled by user</string>
   <!-- Steps section on a tool card that reported step progress (e.g. a sub-agent's run) -->
   <string name="ai_assistant_tool_steps">Steps</string>
+  <!-- Collapsed-card progress hint: step count, e.g. "12 steps" -->
+  <string name="ai_assistant_tool_step_count">%1$d steps</string>
 
   <!-- Floating AI assistant on the main screen -->
   <string name="ai_assistant_open">Open AI assistant</string>

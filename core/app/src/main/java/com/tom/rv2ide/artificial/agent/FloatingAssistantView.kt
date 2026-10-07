@@ -2616,6 +2616,11 @@ class FloatingAssistantView(
           if (cardId != null) {
             adapter.completeToolCall(
                 cardId, message.getContent(), message.isToolError())
+            // 步骤随结果恢复（子代理过程不进主对话，展开卡片看步骤是回看的唯一凭据）。
+            // 旧日志没有 steps 字段，此时列表为空、步骤区隐藏，与从前行为一致。
+            if (message.steps.isNotEmpty()) {
+              adapter.setToolSteps(cardId, message.steps)
+            }
           } else {
             // 找不到对应卡片（历史被压缩截断，或旧日志里结果条目缺少前导调用）：
             // 单独渲染一张已完成的卡片。宁可多一条，也不静默丢弃——用户需要知道
@@ -2627,6 +2632,9 @@ class FloatingAssistantView(
                     input = "",
                 )
             adapter.completeToolCall(id, message.getContent(), message.isToolError())
+            if (message.steps.isNotEmpty()) {
+              adapter.setToolSteps(id, message.steps)
+            }
           }
         }
         else -> {}

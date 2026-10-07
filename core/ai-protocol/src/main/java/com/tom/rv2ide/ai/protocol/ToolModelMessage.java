@@ -21,10 +21,21 @@
 
 package com.tom.rv2ide.ai.protocol;
 
+import java.util.Collections;
+import java.util.List;
+
 public final class ToolModelMessage extends ModelMessage {
     private final String toolCallId;
     private final String toolName;
     private final boolean toolError;
+
+    /**
+     * 该次调用期间的步骤进度记录；无步骤时为空列表。
+     *
+     * <p>仅供 UI 回放工具卡片使用（会话历史里的步骤区）。协议序列化路径**不读它**——
+     * 步骤是给用户看的旁路信息，不该进入发给模型的报文（浪费 token 且无意义）。
+     */
+    private final List<String> steps;
 
     public ToolModelMessage(String content) {
         this(content, "", "", false);
@@ -47,10 +58,22 @@ public final class ToolModelMessage extends ModelMessage {
      */
     public ToolModelMessage(
             String content, String toolCallId, String toolName, boolean toolError, String rawInputJson) {
+        this(content, toolCallId, toolName, toolError, rawInputJson, Collections.emptyList());
+    }
+
+    /** 带步骤记录的构造（会话历史 fold 使用，见 {@code ConversationHistory}）。 */
+    public ToolModelMessage(
+            String content,
+            String toolCallId,
+            String toolName,
+            boolean toolError,
+            String rawInputJson,
+            List<String> steps) {
         super(content, "", rawInputJson);
         this.toolCallId = toolCallId == null ? "" : toolCallId;
         this.toolName = toolName == null ? "" : toolName;
         this.toolError = toolError;
+        this.steps = steps == null ? Collections.emptyList() : steps;
     }
 
     @Override
@@ -66,6 +89,11 @@ public final class ToolModelMessage extends ModelMessage {
     @Override
     public boolean isToolError() {
         return toolError;
+    }
+
+    /** 步骤进度记录；无步骤时为空列表。仅供 UI 回放，不参与协议序列化。 */
+    public List<String> getSteps() {
+        return steps;
     }
 
     @Override
