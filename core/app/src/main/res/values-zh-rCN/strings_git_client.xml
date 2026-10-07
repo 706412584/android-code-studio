@@ -1,0 +1,186 @@
+<?xml version="1.0" encoding="utf-8"?><!--
+  ~  This file is part of AndroidCodeStudio.
+  ~
+  ~  AndroidCodeStudio is free software: you can redistribute it and/or modify
+  ~  it under the terms of the GNU General Public License as published by
+  ~  the Free Software Foundation, either version 3 of the License, or
+  ~  (at your option) any later version.
+  ~
+  ~  AndroidCodeStudio is distributed in the hope that it will be useful,
+  ~  but WITHOUT ANY WARRANTY; without even the implied warranty of
+  ~  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  ~  GNU General Public License for more details.
+  ~
+  ~  You should have received a copy of the GNU General Public License
+  ~   along with AndroidCodeStudio.  If not, see <https://www.gnu.org/licenses/>.
+  -->
+
+<!--
+  Git 客户端（IDE 侧边栏）中文翻译。
+  英文原文在 values/strings_git_client.xml —— 两个文件的条目顺序保持一致。
+-->
+<resources>
+
+  <!-- Changes -->
+  <string name="git_client_stage_all">全部暂存</string>
+  <string name="git_client_commit">提交</string>
+  <string name="git_client_commit_changes">提交更改</string>
+  <string name="git_client_commit_message_empty">提交信息不能为空</string>
+  <string name="git_client_no_changes">未检测到更改</string>
+  <string name="git_client_discard_changes">放弃更改</string>
+  <string name="git_client_discard_confirm">确定放弃 %1$s 的更改吗？此操作不可撤销。</string>
+  <string name="git_client_discard">放弃</string>
+
+  <!-- History -->
+  <string name="git_client_commit_history">提交历史</string>
+  <string name="git_client_no_commits">暂无提交</string>
+
+  <!-- Branches -->
+  <string name="git_client_current_branch">当前分支：%1$s</string>
+  <string name="git_client_current_branch_placeholder">当前分支：main</string>
+  <string name="git_client_new_branch">新建分支</string>
+  <string name="git_client_create_new_branch">创建新分支</string>
+  <string name="git_client_branch_name_empty">分支名称不能为空</string>
+  <string name="git_client_cannot_delete_current_branch">无法删除当前分支</string>
+  <string name="git_client_delete_branch">删除分支</string>
+  <string name="git_client_delete_branch_confirm">确定要删除分支「%1$s」吗？</string>
+
+  <!-- Remotes -->
+  <string name="git_client_remote_operations">远程操作</string>
+  <string name="git_client_push">推送</string>
+  <string name="git_client_pull">拉取</string>
+  <string name="git_client_fetch">获取</string>
+  <string name="git_client_no_remotes_hint">未配置远程仓库\n添加远程仓库以推送/拉取更改</string>
+  <string name="git_client_add_remote">添加远程仓库</string>
+  <string name="git_client_no_remotes">无远程仓库</string>
+  <string name="git_client_no_remotes_message">尚未配置远程仓库，请先添加远程仓库。</string>
+  <string name="git_client_add">添加</string>
+  <string name="git_client_invalid_input">输入无效</string>
+  <string name="git_client_name_url_empty">名称和 URL 不能为空</string>
+  <string name="git_client_push_to_remote">推送到远程</string>
+  <string name="git_client_push_message">将提交推送到 %1$s</string>
+  <string name="git_client_pull_from_remote">从远程拉取</string>
+  <string name="git_client_pull_message">从 %1$s 拉取更改</string>
+  <string name="git_client_fetch_from_remote">从远程获取</string>
+  <string name="git_client_fetch_message">从 %1$s 获取更改</string>
+  <string name="git_client_without_credentials">不使用凭据</string>
+  <string name="git_client_remove_remote">移除远程仓库</string>
+  <string name="git_client_remove_remote_confirm">确定要移除远程仓库「%1$s」吗？</string>
+  <string name="git_client_remove">移除</string>
+  <string name="git_client_operation_failed">操作失败</string>
+  <string name="git_client_push_failed">推送失败</string>
+  <string name="git_client_pull_failed">拉取失败</string>
+  <string name="git_client_fetch_failed">获取失败</string>
+  <string name="git_client_ok">确定</string>
+
+  <!-- Settings -->
+  <string name="git_client_git_user_configuration">Git 用户配置</string>
+  <string name="git_client_git_user_config">Git 用户配置</string>
+  <string name="git_client_name_label">姓名：</string>
+  <string name="git_client_user_placeholder">用户</string>
+  <string name="git_client_email_label">邮箱：</string>
+  <string name="git_client_email_placeholder">user@example.com</string>
+  <string name="git_client_edit_user_config">编辑用户配置</string>
+  <string name="git_client_user_config_updated">用户配置已更新</string>
+  <string name="git_client_name_email_empty">姓名和邮箱不能为空</string>
+  <string name="git_client_credentials">凭据</string>
+  <string name="git_client_remember_credentials">记住凭据</string>
+  <string name="git_client_remember_credentials_desc">保存用户名和密码，用于推送/拉取</string>
+  <string name="git_client_status_label">状态：</string>
+  <string name="git_client_saved">已保存</string>
+  <string name="git_client_not_saved">未保存</string>
+  <string name="git_client_clear_credentials">清除凭据</string>
+  <string name="git_client_clear_credentials_confirm">确定要清除已保存的凭据吗？</string>
+  <string name="git_client_credentials_cleared">凭据已清除</string>
+  <string name="git_client_clear_saved_credentials">清除已保存的凭据</string>
+
+  <!-- Repository setup (init screen) -->
+  <string name="git_client_no_repository">未找到仓库</string>
+  <string name="git_client_init_subtitle">初始化新仓库、克隆已有仓库，或打开已有仓库</string>
+  <string name="git_client_initialize_repository">初始化仓库</string>
+  <string name="git_client_clone_repository">克隆仓库</string>
+  <string name="git_client_open_existing_repository">打开已有仓库</string>
+  <string name="git_client_init_failed">初始化仓库失败</string>
+  <string name="git_client_initialize_message">在以下位置初始化新的 Git 仓库：\n%1$s\n\n请选择初始分支名称：</string>
+  <string name="git_client_initialize">初始化</string>
+  <string name="git_client_clone_to">克隆到：%1$s</string>
+  <string name="git_client_clone">克隆</string>
+  <string name="git_client_url_empty">URL 不能为空</string>
+
+  <!-- Shared across tabs -->
+  <string name="git_client_refresh">刷新</string>
+
+  <!-- Progress messages (GitViewModel) -->
+  <string name="git_client_progress_staging_file">正在暂存文件…</string>
+  <string name="git_client_progress_staging_all">正在暂存所有文件…</string>
+  <string name="git_client_progress_unstaging_file">正在取消暂存文件…</string>
+  <string name="git_client_progress_fetching">正在从远程获取…</string>
+  <string name="git_client_progress_discarding">正在放弃更改…</string>
+  <string name="git_client_progress_creating_branch">正在创建分支…</string>
+  <string name="git_client_progress_switching_branch">正在切换分支…</string>
+  <string name="git_client_progress_deleting_branch">正在删除分支…</string>
+  <string name="git_client_progress_committing">正在提交更改…</string>
+  <string name="git_client_progress_pushing">正在推送到远程…</string>
+  <string name="git_client_progress_pulling">正在从远程拉取…</string>
+  <string name="git_client_progress_cloning">正在克隆仓库…</string>
+  <string name="git_client_progress_initializing">正在初始化仓库…</string>
+  <string name="git_client_progress_opening">正在打开仓库…</string>
+
+  <!-- Operation results (GitViewModel) -->
+  <string name="git_client_user_config_update_failed">更新用户配置失败</string>
+  <string name="git_client_remote_added">远程仓库添加成功</string>
+  <string name="git_client_remote_add_failed">添加远程仓库失败</string>
+  <string name="git_client_remote_removed">远程仓库已移除</string>
+  <string name="git_client_remote_remove_failed">移除远程仓库失败</string>
+  <string name="git_client_file_staged">文件已暂存</string>
+  <string name="git_client_stage_file_failed">暂存文件失败</string>
+  <string name="git_client_all_files_staged">所有文件已暂存</string>
+  <string name="git_client_stage_files_failed">暂存所有文件失败</string>
+  <string name="git_client_file_unstaged">文件已取消暂存</string>
+  <string name="git_client_unstage_file_failed">取消暂存文件失败</string>
+  <string name="git_client_changes_discarded">更改已放弃</string>
+  <string name="git_client_discard_failed">放弃更改失败</string>
+  <string name="git_client_branch_created">分支已创建</string>
+  <string name="git_client_branch_create_failed">创建分支失败</string>
+  <string name="git_client_switched_to">已切换到 %1$s</string>
+  <string name="git_client_checkout_failed">切换分支失败</string>
+  <string name="git_client_branch_deleted">分支已删除</string>
+  <string name="git_client_branch_delete_failed">删除分支失败</string>
+  <string name="git_client_changes_committed">更改已提交</string>
+  <string name="git_client_commit_failed">提交失败</string>
+  <string name="git_client_clone_failed">克隆仓库失败</string>
+  <string name="git_client_git_manager_unavailable">Git 管理器未初始化</string>
+
+  <!-- Dialog inputs -->
+  <string name="git_client_commit_message_hint">提交信息</string>
+  <string name="git_client_branch_name_hint">分支名称</string>
+  <string name="git_client_remote_name_hint">远程名称（例如 origin）</string>
+  <string name="git_client_remote_url_hint">远程 URL</string>
+  <string name="git_client_credentials_optional">凭据（可选）</string>
+  <string name="git_client_username_hint">用户名</string>
+  <string name="git_client_password_hint">密码/令牌</string>
+  <string name="git_client_user_name_hint">姓名</string>
+  <string name="git_client_user_email_hint">邮箱</string>
+  <string name="git_client_repository_url_hint">仓库 URL</string>
+
+  <!-- List item actions -->
+  <string name="git_client_stage">暂存</string>
+  <string name="git_client_unstage">取消暂存</string>
+  <string name="git_client_checkout">检出</string>
+
+  <!-- Navigation rail header (dead layout, kept for completeness) -->
+  <string name="git_client_nav_header_title">Git</string>
+
+  <!-- Build variants -->
+  <string name="build_variant_build_variant">构建变体</string>
+  <string name="build_variant_edit_version_sdk">编辑版本与 SDK</string>
+  <string name="build_variant_version_name">版本名称</string>
+  <string name="build_variant_version_code">版本代码</string>
+  <string name="build_variant_min_sdk">最低 SDK</string>
+  <string name="build_variant_target_sdk">目标 SDK</string>
+  <string name="build_variant_compile_sdk">编译 SDK</string>
+  <string name="build_variant_min_sdk_info">最低 %1$d</string>
+  <string name="build_variant_target_sdk_info">目标 %1$d</string>
+  <string name="build_variant_edit_title">编辑 %1$s</string>
+
+</resources>

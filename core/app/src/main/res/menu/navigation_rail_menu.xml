@@ -3,7 +3,7 @@
     <item
         android:id="@+id/nav_changes"
         android:icon="@drawable/ic_track_changes"
-        android:title="Changes"/>
+        android:title="@string/sidebar_git_changes_msg"/>
     <item
         android:id="@+id/nav_history"
         android:icon="@drawable/ic_history"

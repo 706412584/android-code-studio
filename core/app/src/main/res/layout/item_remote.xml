@@ -34,7 +34,7 @@
                 android:id="@+id/buttonRemove"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="Remove"
+                android:text="@string/git_client_remove"
                 android:textSize="12sp"
                 style="@style/Widget.Material3.Button.OutlinedButton"/>
         </LinearLayout>

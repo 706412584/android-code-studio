@@ -119,9 +119,9 @@ class BuildVariantsAdapter(
       
       if (variantInfo.minSdk != null || variantInfo.targetSdk != null) {
         if (isNotEmpty()) append(" • ")
-        variantInfo.minSdk?.let { append("Min $it") }
+        variantInfo.minSdk?.let { append(binding.root.context.getString(R.string.build_variant_min_sdk_info, it)) }
         if (variantInfo.minSdk != null && variantInfo.targetSdk != null) append(" • ")
-        variantInfo.targetSdk?.let { append("Target $it") }
+        variantInfo.targetSdk?.let { append(binding.root.context.getString(R.string.build_variant_target_sdk_info, it)) }
       }
     }.takeIf { it.isNotEmpty() }
   }
@@ -137,9 +137,9 @@ class BuildVariantsAdapter(
     dialogBinding.compileSdk.setText(variantInfo.compileSdk?.toString() ?: "")
 
     MaterialAlertDialogBuilder(context)
-        .setTitle("Edit ${variantInfo.projectPath}")
+        .setTitle(context.getString(R.string.build_variant_edit_title, variantInfo.projectPath))
         .setView(dialogBinding.root)
-        .setPositiveButton("Save") { _, _ ->
+        .setPositiveButton(R.string.save) { _, _ ->
           val updatedInfo = variantInfo.copy(
               versionName = dialogBinding.versionName.text?.toString()?.takeIf { it.isNotEmpty() },
               versionCode = dialogBinding.versionCode.text?.toString()?.toIntOrNull(),
@@ -153,7 +153,7 @@ class BuildVariantsAdapter(
           
           viewModel.updateModuleConfig(variantInfo.projectPath, updatedInfo)
         }
-        .setNegativeButton("Cancel", null)
+        .setNegativeButton(R.string.cancel, null)
         .show()
   }
 }

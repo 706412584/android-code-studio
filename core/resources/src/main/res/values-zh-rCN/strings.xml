@@ -875,8 +875,8 @@
   <string name="sidebar_git_title">Git客户端</string>
   <string name="sidebar_git_settings_msg">设置</string>
   <string name="sidebar_git_history_msg">历史</string>
-  <string name="sidebar_git_branches_msg">分支机构</string>
-  <string name="sidebar_git_remotes_msg">遥控器</string>
+  <string name="sidebar_git_branches_msg">分支</string>
+  <string name="sidebar_git_remotes_msg">远程</string>
   <string name="sidebar_git_changes_msg">变化</string>
 
 

@@ -89,7 +89,7 @@ class RemotesFragment : Fragment() {
         
         viewModel.operationResult.observe(viewLifecycleOwner) { result ->
             if (!result.success) {
-                showErrorDialog("Operation Failed", result.message)
+                showErrorDialog(getString(R.string.git_client_operation_failed), result.message)
             } else {
                 Snackbar.make(binding.root, result.message, Snackbar.LENGTH_SHORT).show()
             }
@@ -97,7 +97,7 @@ class RemotesFragment : Fragment() {
         
         viewModel.pushPullResult.observe(viewLifecycleOwner) { result ->
             if (!result.success) {
-                showErrorDialog("${result.operation.capitalize()} Failed", result.message)
+                showErrorDialog(getString(failedTitleRes(result.operation)), result.message)
             } else {
                 Snackbar.make(binding.root, result.message, Snackbar.LENGTH_LONG).show()
             }
@@ -138,7 +138,7 @@ class RemotesFragment : Fragment() {
         MaterialAlertDialogBuilder(requireContext())
             .setTitle(title)
             .setMessage(message)
-            .setPositiveButton("OK", null)
+            .setPositiveButton(R.string.git_client_ok, null)
             .show()
     }
     
@@ -152,26 +152,32 @@ class RemotesFragment : Fragment() {
         }
         
         MaterialAlertDialogBuilder(requireContext())
-            .setTitle("Add Remote")
+            .setTitle(R.string.git_client_add_remote)
             .setView(dialogView)
-            .setPositiveButton("Add") { _, _ ->
+            .setPositiveButton(R.string.git_client_add) { _, _ ->
                 val name = editTextName.text.toString().trim()
                 val url = editTextUrl.text.toString().trim()
-                
+
                 if (name.isNotBlank() && url.isNotBlank()) {
                     viewModel.addRemote(name, url)
                 } else {
-                    showErrorDialog("Invalid Input", "Name and URL cannot be empty")
+                    showErrorDialog(
+                        getString(R.string.git_client_invalid_input),
+                        getString(R.string.git_client_name_url_empty)
+                    )
                 }
             }
-            .setNegativeButton("Cancel", null)
+            .setNegativeButton(R.string.cancel, null)
             .show()
     }
     
     private fun showPushDialog() {
         val remotesList = adapter.currentList
         if (remotesList.isEmpty()) {
-            showErrorDialog("No Remotes", "No remotes configured. Add a remote first.")
+            showErrorDialog(
+                getString(R.string.git_client_no_remotes),
+                getString(R.string.git_client_no_remotes_message)
+            )
             return
         }
         
@@ -184,10 +190,10 @@ class RemotesFragment : Fragment() {
         prefsManager.getPassword()?.let { editTextPassword.setText(it) }
         
         MaterialAlertDialogBuilder(requireContext())
-            .setTitle("Push to Remote")
-            .setMessage("Push your commits to ${remotesList[0].name}")
+            .setTitle(R.string.git_client_push_to_remote)
+            .setMessage(getString(R.string.git_client_push_message, remotesList[0].name))
             .setView(dialogView)
-            .setPositiveButton("Push") { _, _ ->
+            .setPositiveButton(R.string.git_client_push) { _, _ ->
                 val username = editTextUsername.text.toString().takeIf { it.isNotBlank() }
                 val password = editTextPassword.text.toString().takeIf { it.isNotBlank() }
                 
@@ -202,8 +208,8 @@ class RemotesFragment : Fragment() {
                     password = password
                 )
             }
-            .setNegativeButton("Cancel", null)
-            .setNeutralButton("Without credentials") { _, _ ->
+            .setNegativeButton(R.string.cancel, null)
+            .setNeutralButton(R.string.git_client_without_credentials) { _, _ ->
                 viewModel.push(remoteName = remotesList[0].name)
             }
             .show()
@@ -212,7 +218,10 @@ class RemotesFragment : Fragment() {
     private fun showPullDialog() {
         val remotesList = adapter.currentList
         if (remotesList.isEmpty()) {
-            showErrorDialog("No Remotes", "No remotes configured. Add a remote first.")
+            showErrorDialog(
+                getString(R.string.git_client_no_remotes),
+                getString(R.string.git_client_no_remotes_message)
+            )
             return
         }
         
@@ -224,10 +233,10 @@ class RemotesFragment : Fragment() {
         prefsManager.getPassword()?.let { editTextPassword.setText(it) }
         
         MaterialAlertDialogBuilder(requireContext())
-            .setTitle("Pull from Remote")
-            .setMessage("Pull changes from ${remotesList[0].name}")
+            .setTitle(R.string.git_client_pull_from_remote)
+            .setMessage(getString(R.string.git_client_pull_message, remotesList[0].name))
             .setView(dialogView)
-            .setPositiveButton("Pull") { _, _ ->
+            .setPositiveButton(R.string.git_client_pull) { _, _ ->
                 val username = editTextUsername.text.toString().takeIf { it.isNotBlank() }
                 val password = editTextPassword.text.toString().takeIf { it.isNotBlank() }
                 
@@ -242,8 +251,8 @@ class RemotesFragment : Fragment() {
                     password = password
                 )
             }
-            .setNegativeButton("Cancel", null)
-            .setNeutralButton("Without credentials") { _, _ ->
+            .setNegativeButton(R.string.cancel, null)
+            .setNeutralButton(R.string.git_client_without_credentials) { _, _ ->
                 viewModel.pull(remoteName = remotesList[0].name)
             }
             .show()
@@ -252,7 +261,10 @@ class RemotesFragment : Fragment() {
     private fun showFetchDialog() {
         val remotesList = adapter.currentList
         if (remotesList.isEmpty()) {
-            showErrorDialog("No Remotes", "No remotes configured. Add a remote first.")
+            showErrorDialog(
+                getString(R.string.git_client_no_remotes),
+                getString(R.string.git_client_no_remotes_message)
+            )
             return
         }
         
@@ -265,10 +277,10 @@ class RemotesFragment : Fragment() {
         prefsManager.getPassword()?.let { editTextPassword.setText(it) }
         
         MaterialAlertDialogBuilder(requireContext())
-            .setTitle("Fetch from Remote")
-            .setMessage("Fetch changes from ${remotesList[0].name}")
+            .setTitle(R.string.git_client_fetch_from_remote)
+            .setMessage(getString(R.string.git_client_fetch_message, remotesList[0].name))
             .setView(dialogView)
-            .setPositiveButton("Fetch") { _, _ ->
+            .setPositiveButton(R.string.git_client_fetch) { _, _ ->
                 val username = editTextUsername.text.toString().takeIf { it.isNotBlank() }
                 val password = editTextPassword.text.toString().takeIf { it.isNotBlank() }
                 
@@ -283,8 +295,8 @@ class RemotesFragment : Fragment() {
                     password = password
                 )
             }
-            .setNegativeButton("Cancel", null)
-            .setNeutralButton("Without credentials") { _, _ ->
+            .setNegativeButton(R.string.cancel, null)
+            .setNeutralButton(R.string.git_client_without_credentials) { _, _ ->
                 viewModel.fetch(remoteName = remotesList[0].name)
             }
             .show()
@@ -292,15 +304,22 @@ class RemotesFragment : Fragment() {
 
     private fun showRemoveRemoteConfirmation(remoteName: String) {
         MaterialAlertDialogBuilder(requireContext())
-            .setTitle("Remove Remote")
-            .setMessage("Are you sure you want to remove remote '$remoteName'?")
-            .setPositiveButton("Remove") { _, _ ->
+            .setTitle(R.string.git_client_remove_remote)
+            .setMessage(getString(R.string.git_client_remove_remote_confirm, remoteName))
+            .setPositiveButton(R.string.git_client_remove) { _, _ ->
                 viewModel.removeRemote(remoteName)
             }
-            .setNegativeButton("Cancel", null)
+            .setNegativeButton(R.string.cancel, null)
             .show()
     }
     
+    private fun failedTitleRes(operation: String): Int = when (operation) {
+        "push" -> R.string.git_client_push_failed
+        "pull" -> R.string.git_client_pull_failed
+        "fetch" -> R.string.git_client_fetch_failed
+        else -> R.string.git_client_operation_failed
+    }
+
     override fun onDestroyView() {
         super.onDestroyView()
         progressDialog.dismiss()

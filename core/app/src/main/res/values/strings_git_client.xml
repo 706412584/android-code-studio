@@ -1,0 +1,186 @@
+<?xml version="1.0" encoding="utf-8"?><!--
+  ~  This file is part of AndroidCodeStudio.
+  ~
+  ~  AndroidCodeStudio is free software: you can redistribute it and/or modify
+  ~  it under the terms of the GNU General Public License as published by
+  ~  the Free Software Foundation, either version 3 of the License, or
+  ~  (at your option) any later version.
+  ~
+  ~  AndroidCodeStudio is distributed in the hope that it will be useful,
+  ~  but WITHOUT ANY WARRANTY; without even the implied warranty of
+  ~  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  ~  GNU General Public License for more details.
+  ~
+  ~  You should have received a copy of the GNU General Public License
+  ~   along with AndroidCodeStudio.  If not, see <https://www.gnu.org/licenses/>.
+  -->
+
+<!--
+  Git client (IDE sidebar) strings. Chinese translation lives in
+  values-zh-rCN/strings_git_client.xml — keep both files in the same order.
+-->
+<resources>
+
+  <!-- Changes -->
+  <string name="git_client_stage_all">Stage All</string>
+  <string name="git_client_commit">Commit</string>
+  <string name="git_client_commit_changes">Commit Changes</string>
+  <string name="git_client_commit_message_empty">Commit message cannot be empty</string>
+  <string name="git_client_no_changes">No changes detected</string>
+  <string name="git_client_discard_changes">Discard Changes</string>
+  <string name="git_client_discard_confirm">Are you sure you want to discard changes in %1$s? This cannot be undone.</string>
+  <string name="git_client_discard">Discard</string>
+
+  <!-- History -->
+  <string name="git_client_commit_history">Commit History</string>
+  <string name="git_client_no_commits">No commits yet</string>
+
+  <!-- Branches -->
+  <string name="git_client_current_branch">Current: %1$s</string>
+  <string name="git_client_current_branch_placeholder">Current: main</string>
+  <string name="git_client_new_branch">New Branch</string>
+  <string name="git_client_create_new_branch">Create New Branch</string>
+  <string name="git_client_branch_name_empty">Branch name cannot be empty</string>
+  <string name="git_client_cannot_delete_current_branch">Cannot delete current branch</string>
+  <string name="git_client_delete_branch">Delete Branch</string>
+  <string name="git_client_delete_branch_confirm">Are you sure you want to delete branch \'%1$s\'?</string>
+
+  <!-- Remotes -->
+  <string name="git_client_remote_operations">Remote Operations</string>
+  <string name="git_client_push">Push</string>
+  <string name="git_client_pull">Pull</string>
+  <string name="git_client_fetch">Fetch</string>
+  <string name="git_client_no_remotes_hint">No remotes configured\nAdd a remote to push/pull changes</string>
+  <string name="git_client_add_remote">Add Remote</string>
+  <string name="git_client_no_remotes">No Remotes</string>
+  <string name="git_client_no_remotes_message">No remotes configured. Add a remote first.</string>
+  <string name="git_client_add">Add</string>
+  <string name="git_client_invalid_input">Invalid Input</string>
+  <string name="git_client_name_url_empty">Name and URL cannot be empty</string>
+  <string name="git_client_push_to_remote">Push to Remote</string>
+  <string name="git_client_push_message">Push your commits to %1$s</string>
+  <string name="git_client_pull_from_remote">Pull from Remote</string>
+  <string name="git_client_pull_message">Pull changes from %1$s</string>
+  <string name="git_client_fetch_from_remote">Fetch from Remote</string>
+  <string name="git_client_fetch_message">Fetch changes from %1$s</string>
+  <string name="git_client_without_credentials">Without credentials</string>
+  <string name="git_client_remove_remote">Remove Remote</string>
+  <string name="git_client_remove_remote_confirm">Are you sure you want to remove remote \'%1$s\'?</string>
+  <string name="git_client_remove">Remove</string>
+  <string name="git_client_operation_failed">Operation Failed</string>
+  <string name="git_client_push_failed">Push Failed</string>
+  <string name="git_client_pull_failed">Pull Failed</string>
+  <string name="git_client_fetch_failed">Fetch Failed</string>
+  <string name="git_client_ok">OK</string>
+
+  <!-- Settings -->
+  <string name="git_client_git_user_configuration">Git User Configuration</string>
+  <string name="git_client_git_user_config">Git User Config</string>
+  <string name="git_client_name_label">Name:</string>
+  <string name="git_client_user_placeholder">User</string>
+  <string name="git_client_email_label">Email:</string>
+  <string name="git_client_email_placeholder">user@example.com</string>
+  <string name="git_client_edit_user_config">Edit User Config</string>
+  <string name="git_client_user_config_updated">User config updated</string>
+  <string name="git_client_name_email_empty">Name and email cannot be empty</string>
+  <string name="git_client_credentials">Credentials</string>
+  <string name="git_client_remember_credentials">Remember credentials</string>
+  <string name="git_client_remember_credentials_desc">Save username and password for push/pull</string>
+  <string name="git_client_status_label">Status:</string>
+  <string name="git_client_saved">Saved</string>
+  <string name="git_client_not_saved">Not saved</string>
+  <string name="git_client_clear_credentials">Clear Credentials</string>
+  <string name="git_client_clear_credentials_confirm">Are you sure you want to clear saved credentials?</string>
+  <string name="git_client_credentials_cleared">Credentials cleared</string>
+  <string name="git_client_clear_saved_credentials">Clear Saved Credentials</string>
+
+  <!-- Repository setup (init screen) -->
+  <string name="git_client_no_repository">No Repository Found</string>
+  <string name="git_client_init_subtitle">Initialize a new repository, clone an existing one, or open an existing repository</string>
+  <string name="git_client_initialize_repository">Initialize Repository</string>
+  <string name="git_client_clone_repository">Clone Repository</string>
+  <string name="git_client_open_existing_repository">Open Existing Repository</string>
+  <string name="git_client_init_failed">Failed to initialize repository</string>
+  <string name="git_client_initialize_message">Initialize a new Git repository at:\n%1$s\n\nChoose initial branch name:</string>
+  <string name="git_client_initialize">Initialize</string>
+  <string name="git_client_clone_to">Clone to: %1$s</string>
+  <string name="git_client_clone">Clone</string>
+  <string name="git_client_url_empty">URL cannot be empty</string>
+
+  <!-- Shared across tabs -->
+  <string name="git_client_refresh">Refresh</string>
+
+  <!-- Progress messages (GitViewModel) -->
+  <string name="git_client_progress_staging_file">Staging file…</string>
+  <string name="git_client_progress_staging_all">Staging all files…</string>
+  <string name="git_client_progress_unstaging_file">Unstaging file…</string>
+  <string name="git_client_progress_fetching">Fetching from remote…</string>
+  <string name="git_client_progress_discarding">Discarding changes…</string>
+  <string name="git_client_progress_creating_branch">Creating branch…</string>
+  <string name="git_client_progress_switching_branch">Switching branch…</string>
+  <string name="git_client_progress_deleting_branch">Deleting branch…</string>
+  <string name="git_client_progress_committing">Committing changes…</string>
+  <string name="git_client_progress_pushing">Pushing to remote…</string>
+  <string name="git_client_progress_pulling">Pulling from remote…</string>
+  <string name="git_client_progress_cloning">Cloning repository…</string>
+  <string name="git_client_progress_initializing">Initializing repository…</string>
+  <string name="git_client_progress_opening">Opening repository…</string>
+
+  <!-- Operation results (GitViewModel) -->
+  <string name="git_client_user_config_update_failed">Failed to update user config</string>
+  <string name="git_client_remote_added">Remote added successfully</string>
+  <string name="git_client_remote_add_failed">Failed to add remote</string>
+  <string name="git_client_remote_removed">Remote removed</string>
+  <string name="git_client_remote_remove_failed">Failed to remove remote</string>
+  <string name="git_client_file_staged">File staged</string>
+  <string name="git_client_stage_file_failed">Failed to stage file</string>
+  <string name="git_client_all_files_staged">All files staged</string>
+  <string name="git_client_stage_files_failed">Failed to stage files</string>
+  <string name="git_client_file_unstaged">File unstaged</string>
+  <string name="git_client_unstage_file_failed">Failed to unstage file</string>
+  <string name="git_client_changes_discarded">Changes discarded</string>
+  <string name="git_client_discard_failed">Failed to discard changes</string>
+  <string name="git_client_branch_created">Branch created</string>
+  <string name="git_client_branch_create_failed">Failed to create branch</string>
+  <string name="git_client_switched_to">Switched to %1$s</string>
+  <string name="git_client_checkout_failed">Failed to checkout branch</string>
+  <string name="git_client_branch_deleted">Branch deleted</string>
+  <string name="git_client_branch_delete_failed">Failed to delete branch</string>
+  <string name="git_client_changes_committed">Changes committed</string>
+  <string name="git_client_commit_failed">Failed to commit</string>
+  <string name="git_client_clone_failed">Failed to clone repository</string>
+  <string name="git_client_git_manager_unavailable">Git manager not initialized</string>
+
+  <!-- Dialog inputs -->
+  <string name="git_client_commit_message_hint">Commit message</string>
+  <string name="git_client_branch_name_hint">Branch name</string>
+  <string name="git_client_remote_name_hint">Remote name (e.g., origin)</string>
+  <string name="git_client_remote_url_hint">Remote URL</string>
+  <string name="git_client_credentials_optional">Credentials (Optional)</string>
+  <string name="git_client_username_hint">Username</string>
+  <string name="git_client_password_hint">Password/Token</string>
+  <string name="git_client_user_name_hint">User Name</string>
+  <string name="git_client_user_email_hint">User Email</string>
+  <string name="git_client_repository_url_hint">Repository URL</string>
+
+  <!-- List item actions -->
+  <string name="git_client_stage">Stage</string>
+  <string name="git_client_unstage">Unstage</string>
+  <string name="git_client_checkout">Checkout</string>
+
+  <!-- Navigation rail header (dead layout, kept for completeness) -->
+  <string name="git_client_nav_header_title">Git</string>
+
+  <!-- Build variants -->
+  <string name="build_variant_build_variant">Build Variant</string>
+  <string name="build_variant_edit_version_sdk">Edit Version &amp; SDK</string>
+  <string name="build_variant_version_name">Version Name</string>
+  <string name="build_variant_version_code">Version Code</string>
+  <string name="build_variant_min_sdk">Min SDK</string>
+  <string name="build_variant_target_sdk">Target SDK</string>
+  <string name="build_variant_compile_sdk">Compile SDK</string>
+  <string name="build_variant_min_sdk_info">Min %1$d</string>
+  <string name="build_variant_target_sdk_info">Target %1$d</string>
+  <string name="build_variant_edit_title">Edit %1$s</string>
+
+</resources>
