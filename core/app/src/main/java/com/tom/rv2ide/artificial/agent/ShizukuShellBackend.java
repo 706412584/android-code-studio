@@ -93,6 +93,20 @@ public final class ShizukuShellBackend implements ShellBackend {
     return true;
   }
 
+  @Override
+  public boolean hasCliToolchain() {
+    // 命令以 shell(2000) 身份经 /system/bin/sh 执行，PATH 只有 Android 系统目录。
+    // Termux 的 bin 在 app 私有目录（700），shell 身份既读不到、也无法执行其二进制
+    // （实测：复制出来也会因缺少 Termux 的 libpcre2 等依赖而链接失败）。
+    return false;
+  }
+
+  @Override
+  public String capabilitySummary() {
+    return "提供 adb 级权限（pm install / am start / logcat 等），"
+        + "但只有 Android 系统命令，没有 git / node / python 等命令行工具。";
+  }
+
   /** Shizuku 服务端是否已安装（无论是否授权）。 */
   public static boolean isShizukuInstalled(Context context) {
     try {

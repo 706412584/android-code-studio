@@ -71,4 +71,28 @@ public interface ShellBackend {
   default boolean hasAdbPrivileges() {
     return false;
   }
+
+  /**
+   * 该后端是否提供完整的命令行工具链（git / node / python / clang 等）。
+   *
+   * <p><b>为什么需要这个标识</b>：模型选择后端时需要的不是「后端名字」，而是
+   * 「这个后端能做什么」。它要跑 {@code git log} 时该选带工具链的后端，要跑
+   * {@code pm install} 时该选带 adb 权限的后端——两个能力由不同后端提供，
+   * 且互不包含。工具据此生成提示词与失败提示，模型才可能一次选对。
+   *
+   * <p>默认 false；Termux 后端覆写为 true。
+   */
+  default boolean hasCliToolchain() {
+    return false;
+  }
+
+  /**
+   * 一句话说明本后端能做什么、不能做什么，用于工具提示词与失败提示。
+   *
+   * <p>返回面向模型的自然语言，不是给用户看的界面文案——因此要说清能力边界
+   * 而非只是名字。默认返回 {@link #displayName()}，实现方应覆写为更具体的说明。
+   */
+  default String capabilitySummary() {
+    return displayName();
+  }
 }

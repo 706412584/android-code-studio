@@ -110,6 +110,19 @@ public final class TermuxShellBackend implements ShellBackend {
   }
 
   @Override
+  public boolean hasCliToolchain() {
+    // Termux 的 prefix（files/usr/bin）随本应用分发，git / node / python 等都在其中，
+    // 且其 shell 环境会自动把该目录放进 PATH。
+    return true;
+  }
+
+  @Override
+  public String capabilitySummary() {
+    return "提供命令行工具链（git / node / python / clang 等），"
+        + "但没有 adb 权限——pm / am / logcat 这类命令会失败。";
+  }
+
+  @Override
   public ShellRequest.ShellResult execute(
       ShellRequest request, ShellRequest.ShellOutputSink sink) {
     if (request == null || request.getCommand().trim().isEmpty()) {

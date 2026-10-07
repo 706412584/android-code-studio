@@ -140,7 +140,26 @@ public final class ShellBackendRegistry {
    * {@link Resolution#getFallbackReason()} 中说明原因。全部不可用时返回的后端为 null。
    */
   public Resolution resolveActive() {
-    ShellBackend selected = get(activeId);
+    return resolve(activeId);
+  }
+
+  /**
+   * 解析指定 id 的后端，不可用时按同一规则回退。
+   *
+   * <p><b>用途</b>：让模型为**单次调用**临时指定后端，而不改动用户设置——
+   * 「这条命令需要 adb 权限」还是「需要 git」只有模型自己知道，把选择权交给它
+   * 比让用户来回改设置更直接。
+   *
+   * <p><b>为什么指定了也要回退</b>：指定一个不可用的后端时直接失败，会让模型
+   * 卡在「我明明选对了后端却执行不了」——而它往往并不知道该后端在这台设备上
+   * 没装/没授权。回退 + 如实报告原因，模型既能拿到结果，也知道拿到的不是它要的
+   * 权限，可以据此判断结果是否可信。
+   *
+   * @param preferredId 期望的后端 id；null 或空表示用用户配置的后端
+   */
+  public Resolution resolve(String preferredId) {
+    String wanted = preferredId == null || preferredId.trim().isEmpty() ? activeId : preferredId.trim();
+    ShellBackend selected = get(wanted);
 
     if (selected != null && selected.isAvailable()) {
       return new Resolution(selected, "");
