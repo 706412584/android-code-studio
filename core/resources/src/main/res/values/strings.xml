@@ -510,6 +510,8 @@
   <string name="ai_assistant_work_todo">Updating the task list</string>
   <string name="ai_assistant_work_skill">Recording a skill</string>
   <string name="ai_assistant_work_web">Fetching %1$s</string>
+  <string name="ai_assistant_work_git_read">Checking git %1$s</string>
+  <string name="ai_assistant_work_git_write">Git %1$s</string>
   <string name="ai_assistant_work_tool">Running %1$s</string>
 
   <!-- Bottom-fixed retry card -->

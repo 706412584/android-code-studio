@@ -245,4 +245,82 @@ final class ToolPermissionRuleTest {
     // scope 内部的不可见连接符要换成逗号，否则设置页会显示成一个粘连的长串
     assertEquals("file_delete: /p/A.kt,/p/B.kt", described);
   }
+
+  // ---- git_write ----
+
+  @Test
+  void gitWriteActionsDoNotShareRules() {
+    // 同一工具下不同动作的破坏力完全不同：stage 只挪暂存区指针，discard 会丢弃
+    // 工作区未提交的修改，push 发出去本地无法撤回。若按工具名授权，用户为省一次
+    // 弹窗放行的是一次 stage，实际却连 discard/push 一起放行了——提权路径。
+    String stage = ToolPermissionRule.keyFor("git_write", "{\"action\":\"stage\",\"file_path\":\"a.kt\"}");
+    String discard = ToolPermissionRule.keyFor("git_write", "{\"action\":\"discard\",\"file_path\":\"a.kt\"}");
+    String push = ToolPermissionRule.keyFor("git_write", "{\"action\":\"push\",\"remote\":\"origin\",\"branch\":\"main\"}");
+
+    assertNotEquals(stage, discard);
+    assertNotEquals(stage, push);
+    assertNotEquals(discard, push);
+  }
+
+  @Test
+  void gitWriteStageIsScopedToPath() {
+    // 放行 stage a.kt 不等于放行 stage 任意文件（b.kt / 敏感文件）。
+    String a = ToolPermissionRule.keyFor("git_write", "{\"action\":\"stage\",\"file_path\":\"a.kt\"}");
+    String b = ToolPermissionRule.keyFor("git_write", "{\"action\":\"stage\",\"file_path\":\"b.kt\"}");
+
+    assertNotEquals(a, b);
+    assertTrue(a.contains("a.kt"), a);
+    assertNotEquals("git_write\u0000", a);
+  }
+
+  @Test
+  void gitWritePushIsScopedToRemoteAndBranch() {
+    // 放行 push origin main 不应顺带放行 push 到别的远端/分支——远端是提交的去向，
+    // 用户对「推到哪个仓库」的意图必须被单独确认。
+    String originMain =
+        ToolPermissionRule.keyFor("git_write", "{\"action\":\"push\",\"remote\":\"origin\",\"branch\":\"main\"}");
+    String forkMain =
+        ToolPermissionRule.keyFor("git_write", "{\"action\":\"push\",\"remote\":\"fork\",\"branch\":\"main\"}");
+    String originDev =
+        ToolPermissionRule.keyFor("git_write", "{\"action\":\"push\",\"remote\":\"origin\",\"branch\":\"dev\"}");
+
+    assertNotEquals(originMain, forkMain);
+    assertNotEquals(originMain, originDev);
+    assertTrue(originMain.contains("origin"), originMain);
+    assertTrue(originMain.contains("main"), originMain);
+  }
+
+  @Test
+  void gitWriteCommitIsScopedToActionOnly() {
+    // commit 的提交信息每次调用都不同（甚至带时间戳）。若按信息建键，「始终允许」
+    // 会在下一次提交时静默失效、照旧弹窗，等于该选项不可用。而单次提交的爆炸半径
+    // 固定（只影响本地仓库，可 reset 回滚），不存在按信息粒度的必要。
+    String first = ToolPermissionRule.keyFor("git_write", "{\"action\":\"commit\",\"message\":\"fix A\"}");
+    String second = ToolPermissionRule.keyFor("git_write", "{\"action\":\"commit\",\"message\":\"fix B\"}");
+
+    assertEquals(first, second);
+    assertEquals("git_write\u0000commit", first);
+  }
+
+  @Test
+  void gitWriteWithoutDiscriminatorFallsBackToDigest() {
+    // 判别字段缺失（模型漏传）时不能只取动作名——那会把「始终允许」放大成
+    // 「允许该动作的任意参数」。按参数摘要绑定到那一次具体调用。
+    String noPath = ToolPermissionRule.keyFor("git_write", "{\"action\":\"stage\"}");
+    assertNotEquals("git_write\u0000stage", noPath);
+    assertTrue(noPath.startsWith("git_write\u0000args:"), noPath);
+
+    // 未知动作（模型幻觉出的名字）同样不放大。
+    String unknown = ToolPermissionRule.keyFor("git_write", "{\"action\":\"force_reset\"}");
+    assertTrue(unknown.startsWith("git_write\u0000args:"), unknown);
+  }
+
+  @Test
+  void gitWriteDescribeRendersActionAndTarget() {
+    String described =
+        ToolPermissionRule.describe(
+            ToolPermissionRule.keyFor("git_write", "{\"action\":\"stage\",\"file_path\":\"a.kt\"}"));
+    // scope 内部的不可见连接符要换成可读分隔符，否则设置页会显示成一个粘连的长串
+    assertEquals("git_write: stage,a.kt", described);
+  }
 }

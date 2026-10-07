@@ -45,6 +45,11 @@ import org.json.JSONObject;
  *       不含参数。详见 {@link #PHONE_TOOL_SCOPED}。</li>
  *   <li>{@code phone_clear_data}——危险在**目标包名**：粒度取包名，
  *       放行一次清数据不等于放行任意应用的清数据。</li>
+ *   <li>{@code git_write}——危险在**动作及其作用对象**：粒度取「动作 + 分支/远端/路径」，
+ *       放行一次 {@code stage a.kt} 不等于放行 {@code discard a.kt}，放行 {@code commit}
+ *       也不等于放行 {@code push}（本地提交可回滚，推送不可撤回）。{@code commit} 例外地
+ *       只取动作名：提交信息每次都不同，按信息建键会让「始终允许」完全失效，
+ *       而单次提交的爆炸半径固定且可回滚。</li>
  *   <li>其余——没有可提取的判别字段时退化为**参数摘要**，
  *       即「只有参数完全相同的那一次调用」才复用规则。</li>
  * </ul>
@@ -73,6 +78,15 @@ public final class ToolPermissionRule {
 
   /** 清数据类工具的参数键：目标包名。 */
   public static final String ARG_PACKAGE_NAME = "packageName";
+
+  /** git_write 的参数键：动作名（stage / commit / push ...）。 */
+  public static final String ARG_ACTION = "action";
+
+  /** git_write 的参数键：分支名（checkout / branch_* / push / pull）。 */
+  public static final String ARG_BRANCH = "branch";
+
+  /** git_write 的参数键：远端名（fetch / push / pull / remote_*）。 */
+  public static final String ARG_REMOTE = "remote";
 
   /** 键与值之间的分隔符。见类注释说明为何选 NUL。 */
   private static final char SEPARATOR = '\u0000';
@@ -169,6 +183,9 @@ public final class ToolPermissionRule {
     if (ToolNames.SHELL_EXECUTE.equals(toolName)) {
       return normalizeCommand(json.optString(ARG_COMMAND, ""));
     }
+    if (ToolNames.GIT_WRITE.equals(toolName)) {
+      return gitWriteScope(json, arguments);
+    }
     if (ToolNames.FILE_WRITE.equals(toolName) || ToolNames.FILE_EDIT.equals(toolName)) {
       return fallbackIfEmpty(json.optString(ARG_FILE_PATH, "").trim(), arguments);
     }
@@ -214,6 +231,78 @@ public final class ToolPermissionRule {
         sb.append(PATH_JOINER);
       }
       sb.append(path);
+    }
+    return sb.toString();
+  }
+
+  /**
+   * git_write 的 scope：动作名 + 判别字段（路径 / 分支 / 远端）。
+   *
+   * <p><b>为什么按动作区分</b>：同一个工具下不同动作的破坏力完全不同。
+   * {@code stage} 只是挪动暂存区指针，{@code discard} 会**丢弃工作区未提交的修改**，
+   * {@code push} 会把提交发出去且本地无法撤回。若按工具名授权，用户为省一次弹窗
+   * 放行的是一次 {@code stage}，实际却连 {@code push --force} 一起放行了。
+   *
+   * <p><b>为什么 commit 只取动作名</b>：提交信息每次调用都不同（甚至带时间戳），
+   * 按信息建键会让「始终允许」退化成每次照旧弹窗，等于该选项不可用。
+   * 而单次提交的爆炸半径是固定的——只影响本地仓库且可用 {@code reset} 回滚——
+   * 不存在「放行一次提交却顺带交出远端」的提权路径。
+   *
+   * <p>判别字段缺失（模型漏传）时回落到参数摘要：只取动作名会把「始终允许」放大成
+   * 「允许该动作的任意参数」，而动作级放行恰恰是本方法要避免的。
+   */
+  private static String gitWriteScope(JSONObject json, String arguments) {
+    String action = json.optString(ARG_ACTION, "").trim();
+    if (action.isEmpty()) {
+      return digest(arguments);
+    }
+    String discriminator;
+    switch (action) {
+      case "stage":
+      case "unstage":
+      case "discard":
+        discriminator = json.optString(ARG_FILE_PATH, "").trim();
+        break;
+      case "checkout":
+      case "branch_create":
+      case "branch_delete":
+        discriminator = json.optString(ARG_BRANCH, "").trim();
+        break;
+      case "remote_add":
+      case "remote_remove":
+      case "fetch":
+        discriminator = json.optString(ARG_REMOTE, "").trim();
+        break;
+      case "push":
+      case "pull":
+        discriminator =
+            joinNonEmpty(
+                json.optString(ARG_REMOTE, "").trim(), json.optString(ARG_BRANCH, "").trim());
+        break;
+      case "commit":
+        return action;
+      default:
+        // 未知动作（模型幻觉出的名字）没有可靠的作用对象概念，
+        // 按参数摘要绑定到那一次具体调用，不放大。
+        return digest(arguments);
+    }
+    if (discriminator.isEmpty()) {
+      return digest(arguments);
+    }
+    return action + PATH_JOINER + discriminator;
+  }
+
+  /** 把非空片段用 {@link #PATH_JOINER} 连接；全空时返回空串。 */
+  private static String joinNonEmpty(String... parts) {
+    StringBuilder sb = new StringBuilder();
+    for (String part : parts) {
+      if (part == null || part.isEmpty()) {
+        continue;
+      }
+      if (sb.length() > 0) {
+        sb.append(PATH_JOINER);
+      }
+      sb.append(part);
     }
     return sb.toString();
   }

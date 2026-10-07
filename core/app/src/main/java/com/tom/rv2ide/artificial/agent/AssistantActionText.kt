@@ -69,6 +69,10 @@ object AssistantActionText {
       ToolNames.AGENT -> context.getString(string.ai_assistant_work_agent, target)
       ToolNames.WEB_FETCH, ToolNames.WEB_SEARCH ->
           context.getString(string.ai_assistant_work_web, target)
+      // git：只读查询与写操作各一句文案。targetOf 会取 action（见下），
+      // 例如「正在查询 git：status」「正在执行 git：commit」。
+      ToolNames.GIT -> context.getString(string.ai_assistant_work_git_read, target)
+      ToolNames.GIT_WRITE -> context.getString(string.ai_assistant_work_git_write, target)
       // 这三个是 app 层的工具，名字常量在各自类里（不在 ToolNames 中）。
       "gradle_build" -> context.getString(string.ai_assistant_work_building)
       "install_apk" -> context.getString(string.ai_assistant_work_installing)
@@ -99,19 +103,24 @@ object AssistantActionText {
           ToolNames.AGENT -> opt(arguments, "task")
           ToolNames.WEB_SEARCH -> opt(arguments, "query")
           ToolNames.WEB_FETCH -> opt(arguments, "url")
+          ToolNames.GIT, ToolNames.GIT_WRITE -> gitTarget(arguments)
           else -> opt(arguments, "file_path").ifEmpty { opt(arguments, "path") }
         }
     if (raw.isBlank()) {
       return "…"
     }
     val compact =
-        if (toolName == ToolNames.SHELL_EXECUTE) {
+        when {
+          // git 的 raw 是「action + 对象」（见 gitTarget）：不能再按 '/' 切末两段，
+          // 那会把 action 切掉（"stage a/b/c/d.kt" 变成 "c/d.kt"）。
+          toolName == ToolNames.GIT || toolName == ToolNames.GIT_WRITE ->
+              raw.trim().replace(Regex("\\s+"), " ")
           // 折掉换行与连续空白：命令常写成多行（`cd x &&\n ./gradlew`），
           // 直接放进单行状态条会把整行撑高。
-          raw.trim().replace(Regex("\\s+"), " ")
-        } else {
-          raw.trim().replace('\\', '/').split('/').filter { it.isNotEmpty() }.takeLast(2)
-              .joinToString("/")
+          toolName == ToolNames.SHELL_EXECUTE -> raw.trim().replace(Regex("\\s+"), " ")
+          else ->
+              raw.trim().replace('\\', '/').split('/').filter { it.isNotEmpty() }.takeLast(2)
+                  .joinToString("/")
         }
     if (compact.isEmpty()) {
       return "…"
@@ -140,6 +149,29 @@ object AssistantActionText {
       end--
     }
     return text.substring(0, end) + "…"
+  }
+
+  /**
+   * git 工具的状态条对象名：优先「action + 作用对象」，退化为 action 本身。
+   *
+   * <p>只显示 action（status / commit / push）太笼统——`push` 到哪个远端、
+   * `checkout` 哪个分支是用户最关心的信息。对象名按动作取对应字段，
+   * 取不到就只显示 action（`正在执行 git：commit` 仍然比工具名裸奔有用）。
+   */
+  private fun gitTarget(arguments: String): String {
+    val action = opt(arguments, "action").ifEmpty { "status" }
+    val detail =
+        when (action) {
+          "stage", "unstage", "discard" -> opt(arguments, "file_path")
+          "commit" -> opt(arguments, "message")
+          "checkout", "branch_create", "branch_delete" -> opt(arguments, "branch")
+          "remote_add", "remote_remove", "fetch" -> opt(arguments, "remote")
+          "push", "pull" ->
+              listOf(opt(arguments, "remote"), opt(arguments, "branch"))
+                  .filter { it.isNotEmpty() }.joinToString(" ")
+          else -> ""
+        }
+    return if (detail.isEmpty()) action else "$action $detail"
   }
 
   /** 安全读一个字符串字段；JSON 非法或字段缺失都返回空串。 */

@@ -70,6 +70,8 @@ import com.tom.rv2ide.ai.tool.HttpRequestTool;
 import com.tom.rv2ide.ai.tool.ShellBackendRegistry;
 import com.tom.rv2ide.ai.tool.ShellExecuteTool;
 import com.tom.rv2ide.ai.tool.ToolRegistry;
+import com.tom.rv2ide.artificial.agent.tool.GitTool;
+import com.tom.rv2ide.artificial.agent.tool.GitWriteTool;
 import com.tom.rv2ide.artificial.agent.tool.GradleBuildTool;
 import com.tom.rv2ide.artificial.secrets.ApiKey;
 import com.tom.rv2ide.artificial.agent.tool.InstallApkTool;
@@ -1100,6 +1102,37 @@ public final class AgentOrchestrator {
         });
     registry.register(new CodeGraphTool(shellBackends));
 
+    // 项目 git 仓库：只读查询（status/diff/log/branches/remotes）与写操作
+    // （stage/commit/branch/remote/push...）分成两个工具——权限层按**工具**分级，
+    // 混在一起会让查询也背上确认门。写操作的身份/凭据从 PreferencesManager 取
+    // （懒初始化：构造 EncryptedSharedPreferences 有 keystore I/O，而 buildRegistry
+    // 会在 UI 线程被调用，不该在那里做盘上操作），经 GitIdentityProvider 注入，
+    // 使工具本身保持可 JVM 单测。
+    registry.register(new GitTool());
+    registry.register(
+        new GitWriteTool(
+            new GitWriteTool.GitIdentityProvider() {
+              @Override
+              public String authorName() {
+                return gitPrefs().getGitUserName();
+              }
+
+              @Override
+              public String authorEmail() {
+                return gitPrefs().getGitUserEmail();
+              }
+
+              @Override
+              public String username() {
+                return gitPrefs().getUsername();
+              }
+
+              @Override
+              public String password() {
+                return gitPrefs().getPassword();
+              }
+            }));
+
     // 运行测试闭环：构建 → 安装 → 启动 → 读日志
     registry.register(new GradleBuildTool(this::lookupBuildService));
     registry.register(new InstallApkTool(appContext));
@@ -2104,5 +2137,34 @@ public final class AgentOrchestrator {
 
   private com.tom.rv2ide.ai.tool.DiffRecorder newDiffRecorder() {
     return new com.tom.rv2ide.ai.tool.DiffRecorder(diffStore);
+  }
+
+  /** git 凭据/身份的懒加载缓存。见 {@link #gitPrefs()}。 */
+  private volatile com.tom.rv2ide.utils.PreferencesManager gitPrefsCache;
+
+  /**
+   * git 凭据/身份的懒加载持有者（首次访问时构造并缓存）。
+   *
+   * <p><b>为什么懒加载</b>：{@code PreferencesManager} 构造时会创建
+   * {@code EncryptedSharedPreferences}（keystore I/O + 主密钥生成），而
+   * {@link #buildRegistry()} 会在 UI 线程被调用（悬浮助手挂载时查工具分类色）。
+   * 在 UI 线程做盘上操作是 ANR 风险；且大多数运行根本不碰 git 写操作，
+   * 提前构造纯属浪费。真正的读取发生在工具执行时（IO 线程），代价可忽略。
+   *
+   * <p>双重检查锁定：一次 commit 会连续读作者名/邮箱/用户名/密码四次，
+   * 不做缓存就会构造四次 EncryptedSharedPreferences（每次都有 keystore I/O）。
+   */
+  private com.tom.rv2ide.utils.PreferencesManager gitPrefs() {
+    com.tom.rv2ide.utils.PreferencesManager cached = gitPrefsCache;
+    if (cached == null) {
+      synchronized (this) {
+        cached = gitPrefsCache;
+        if (cached == null) {
+          cached = new com.tom.rv2ide.utils.PreferencesManager(appContext);
+          gitPrefsCache = cached;
+        }
+      }
+    }
+    return cached;
   }
 }

@@ -238,4 +238,51 @@ public final class AssistantActionTextTest {
     assertEquals("", AssistantActionText.INSTANCE.shortErrorCode(""));
     assertEquals("", AssistantActionText.INSTANCE.shortErrorCode("   "));
   }
+
+  // ---- git 动作 ----
+
+  @Test
+  public void gitReadTargetIsTheAction() {
+    // 只显示工具名「git」太笼统；action 是最短且信息量最大的部分。
+    String target = AssistantActionText.INSTANCE.targetOf("git", "{\"action\":\"status\"}");
+    assertEquals("status", target);
+  }
+
+  @Test
+  public void gitWriteTargetIncludesTheObject() {
+    // 「push 到哪个远端」「checkout 哪个分支」是用户最关心的信息，不能只有动作名。
+    assertEquals(
+        "checkout feature",
+        AssistantActionText.INSTANCE.targetOf(
+            "git_write", "{\"action\":\"checkout\",\"branch\":\"feature\"}"));
+    assertEquals(
+        "stage a.txt",
+        AssistantActionText.INSTANCE.targetOf(
+            "git_write", "{\"action\":\"stage\",\"file_path\":\"a.txt\"}"));
+    assertEquals(
+        "push origin main",
+        AssistantActionText.INSTANCE.targetOf(
+            "git_write", "{\"action\":\"push\",\"remote\":\"origin\",\"branch\":\"main\"}"));
+  }
+
+  @Test
+  public void gitTargetDoesNotLoseTheActionToPathCompression() {
+    // 状态条对普通路径会压成末两段（a/b/c/d.kt → c/d.kt）。git 的 target 是
+    // 「action + 对象」，若也走那条路径，"stage a/b/c/d.kt" 会被切成 "c/d.kt"，
+    // 动作名消失。这里钉住 git 不走路径压缩。
+    String target =
+        AssistantActionText.INSTANCE.targetOf(
+            "git_write", "{\"action\":\"stage\",\"file_path\":\"a/b/c/d.kt\"}");
+    assertTrue("动作名不能丢：" + target, target.startsWith("stage"));
+    assertTrue(target, target.contains("d.kt"));
+  }
+
+  @Test
+  public void gitTargetFallsBackToActionWhenDetailMissing() {
+    // 模型漏传对象字段时，显示动作名即可（「正在执行 git：commit」仍比工具名裸奔有用）。
+    assertEquals(
+        "commit", AssistantActionText.INSTANCE.targetOf("git_write", "{\"action\":\"commit\"}"));
+    // 参数完全缺失时退化为 status（读工具的默认动作）。
+    assertEquals("status", AssistantActionText.INSTANCE.targetOf("git", "{}"));
+  }
 }

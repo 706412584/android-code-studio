@@ -87,6 +87,18 @@ public final class ToolNames {
     /** 两张截图逐像素对比并生成差异图。 */
     public static final String PHONE_SCREENSHOT_COMPARE = "phone_screenshot_compare";
 
+    // ---- 项目 git 仓库（app 层工具，JGit 实现；读写分成两个工具）----
+    /**
+     * 只读查询：状态 / diff / 历史 / 分支 / 远程。
+     *
+     * <p>与 {@link #GIT_WRITE} 分开是因为权限层按**工具**决定分级：
+     * {@code needsConfirmation} 无参数、只读模式的放行也只看分类，
+     * 单个工具内部无法对部分 action 收紧，混在一起只能整包按写类处理。
+     */
+    public static final String GIT = "git";
+    /** 写操作：暂存 / 提交 / 分支 / 丢弃 / 远程同步。授权粒度按 action 细分。 */
+    public static final String GIT_WRITE = "git_write";
+
     private static final String CUSTOM_AGENT_PREFIX = "agentx_";
     private static final String CUSTOM_MCP_PREFIX = "mcpx_";
 

@@ -86,6 +86,12 @@ public final class ToolRegistry {
     aliases.put("run", ToolNames.SHELL_EXECUTE);
     aliases.put("exec", ToolNames.SHELL_EXECUTE);
     aliases.put("run_command", ToolNames.SHELL_EXECUTE);
+    // git 只登记 git_write 一个纯同义别名（工具名拼写变体）。
+    // 不登记 git_commit / git_push 这类「动作名别名」：它们解析到 git_write 后
+    // 仍缺 action 参数，只会把「未知工具」的明确错误换成「不支持的 action：」的
+    // 晦涩错误。也不登记裸 "git"——它必须指向只读查询工具，否则一次查询会被
+    // 解析成待确认的写操作。
+    aliases.put("git_write", ToolNames.GIT_WRITE);
     ALIASES = Collections.unmodifiableMap(aliases);
   }
 
