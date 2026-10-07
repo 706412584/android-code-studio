@@ -61,6 +61,17 @@
   <string name="terminal_empty_state">没有终端会话</string>
   <string name="terminal_empty_message">当前没有打开的终端会话。新建一个会话即可开始。</string>
   <string name="terminal_create_first">新建终端</string>
+  <string name="terminal_initialize">初始化终端</string>
+  <string name="terminal_create_hint">创建你的第一个终端会话</string>
+  <string name="terminal_menu">菜单</string>
+  <string name="terminal_hide_rail">隐藏</string>
+  <string name="terminal_new_session_item">新建会话</string>
+  <string name="terminal_settings">设置</string>
+  <string name="terminal_appearance">外观</string>
+  <string name="terminal_text_size">文字大小</string>
+  <string name="terminal_hide_extra_keys">隐藏额外按键工具栏</string>
+  <string name="terminal_session_named">会话 %1$d</string>
+  <string name="terminal_close_session_item">关闭会话</string>
 
   <string name="edit">编辑</string>
 

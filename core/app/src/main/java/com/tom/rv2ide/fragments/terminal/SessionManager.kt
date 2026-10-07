@@ -54,7 +54,7 @@ class SessionManager(
         if (!fragment.isAdded) return
         
         val workingDir = IProjectManager.getInstance().projectDirPath ?: Environment.HOME.absolutePath
-        val sessionName = "Session ${sessionsList.size + 1}"
+        val sessionName = fragment.getString(com.tom.rv2ide.R.string.terminal_session_named, sessionsList.size + 1)
         val shell = when {
             Environment.LOGIN_SHELL.exists() -> Environment.LOGIN_SHELL.absolutePath
             Environment.BASH_SHELL.exists() -> Environment.BASH_SHELL.absolutePath
@@ -134,7 +134,9 @@ class SessionManager(
         sessionsList.find { it.terminalSession == terminalSession }?.let { session ->
             for (i in 0 until (sessionTabs?.tabCount ?: 0)) {
                 if (sessionTabs?.getTabAt(i)?.tag == session) {
-                    sessionTabs.getTabAt(i)?.text = terminalSession.title ?: "Session ${i + 1}"
+                    sessionTabs.getTabAt(i)?.text =
+                        terminalSession.title
+                            ?: fragment.getString(com.tom.rv2ide.R.string.terminal_session_named, i + 1)
                     break
                 }
             }
@@ -145,7 +147,11 @@ class SessionManager(
         if (!fragment.isAdded) return
         sessionTabs?.newTab()?.apply {
             tag = session
-            text = session.terminalSession.title ?: "Session ${sessionsList.indexOf(session) + 1}"
+            text =
+                session.terminalSession.title
+                    ?: fragment.getString(
+                        com.tom.rv2ide.R.string.terminal_session_named,
+                        sessionsList.indexOf(session) + 1)
             sessionTabs.addTab(this)
         }
     }
@@ -164,7 +170,7 @@ class SessionManager(
         if (!fragment.isAdded) return
         val context = fragment.requireContext()
         PopupMenu(context, view).apply {
-            menu.add(0, 1, 0, "Close Session")
+            menu.add(0, 1, 0, fragment.getString(com.tom.rv2ide.R.string.terminal_close_session_item))
             setOnMenuItemClickListener { item ->
                 if (item.itemId == 1) {
                     closeSession(session, null)

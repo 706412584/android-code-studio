@@ -3,17 +3,17 @@
     <item
         android:id="@+id/nav_toggle_rail"
         android:icon="@drawable/ic_close"
-        android:title="Hide" />
+        android:title="@string/terminal_hide_rail" />
     <item
         android:id="@+id/nav_terminal"
         android:icon="@drawable/ic_terminal"
-        android:title="Terminal" />
+        android:title="@string/terminal_bstab" />
     <item
         android:id="@+id/nav_new_session"
         android:icon="@drawable/ic_add"
-        android:title="New Session" />
+        android:title="@string/terminal_new_session_item" />
     <item
         android:id="@+id/nav_settings"
         android:icon="@drawable/ic_settings"
-        android:title="Settings" />
+        android:title="@string/terminal_settings" />
 </menu>
