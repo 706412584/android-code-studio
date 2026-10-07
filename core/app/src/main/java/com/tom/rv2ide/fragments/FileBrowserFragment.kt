@@ -139,7 +139,7 @@ class FileBrowserFragment : Fragment() {
                 val searchItem = menu.findItem(R.id.action_search)
                 val searchView = searchItem.actionView as SearchView
 
-                searchView.queryHint = "Search files..."
+                searchView.queryHint = getString(R.string.file_browser_search_hint)
                 searchView.setOnQueryTextListener(object : SearchView.OnQueryTextListener {
                     override fun onQueryTextSubmit(query: String?): Boolean = false
 
@@ -302,16 +302,16 @@ class FileBrowserFragment : Fragment() {
 
     private fun showCustomExtensionDialog() {
         val input = EditText(requireContext()).apply {
-            hint = "e.g., json, kt, java"
+            hint = getString(R.string.file_browser_custom_ext_hint)
             setText(filterPrefs.customExtension ?: "")
             setPadding(48, 32, 48, 32)
         }
 
         MaterialAlertDialogBuilder(requireContext())
-            .setTitle("Enter Custom Extension")
-            .setMessage("Enter file extension without the dot")
+            .setTitle(R.string.file_browser_custom_ext_title)
+            .setMessage(R.string.file_browser_custom_ext_message)
             .setView(input)
-            .setPositiveButton("Apply") { _, _ ->
+            .setPositiveButton(R.string.action_apply) { _, _ ->
                 val extension = input.text.toString().trim()
                 if (extension.isNotEmpty()) {
                     filterPrefs.activeExtensions.add(ExtensionFilter.CUSTOM)
@@ -319,7 +319,7 @@ class FileBrowserFragment : Fragment() {
                     applyFilters()
                 }
             }
-            .setNegativeButton("Cancel", null)
+            .setNegativeButton(R.string.cancel, null)
             .show()
     }
 
@@ -370,7 +370,7 @@ class FileBrowserFragment : Fragment() {
         fileAdapter.updateData(filteredList)
 
         if (filteredList.isEmpty()) {
-            Toast.makeText(requireContext(), "No files match the filters", Toast.LENGTH_SHORT).show()
+            Toast.makeText(requireContext(), getString(R.string.file_browser_no_match), Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -381,7 +381,7 @@ class FileBrowserFragment : Fragment() {
                 if (fileItem.isDirectory) {
                     listFiles(fileItem.path)
                 } else {
-                    Toast.makeText(requireContext(), "Clicked on file: ${fileItem.name}", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(requireContext(), getString(R.string.file_browser_clicked_file, fileItem.name), Toast.LENGTH_SHORT).show()
                 }
             },
             onItemLongClick = { fileItem -> 
@@ -395,7 +395,13 @@ class FileBrowserFragment : Fragment() {
     }
 
     private fun showFileActionsDialog(fileItem: FileItem) {
-        val actions = arrayOf("Copy to", "Move to", "Rename", "Copy full path", "Delete")
+        val actions = arrayOf(
+            getString(R.string.file_browser_action_copy_to),
+            getString(R.string.file_browser_action_move_to),
+            getString(R.string.rename),
+            getString(R.string.file_browser_action_copy_path),
+            getString(R.string.delete)
+        )
         MaterialAlertDialogBuilder(requireContext())
             .setTitle(fileItem.name)
             .setItems(actions) { _, which ->
@@ -443,18 +449,18 @@ class FileBrowserFragment : Fragment() {
         }
 
         MaterialAlertDialogBuilder(requireContext())
-            .setTitle("Rename")
-            .setMessage("Enter new name for ${fileItem.name}")
+            .setTitle(R.string.rename)
+            .setMessage(getString(R.string.file_browser_rename_message, fileItem.name))
             .setView(input)
-            .setPositiveButton("Rename") { _, _ ->
+            .setPositiveButton(R.string.rename) { _, _ ->
                 val newName = input.text.toString().trim()
                 if (newName.isNotEmpty() && newName != fileItem.name) {
                     renameFile(fileItem, newName)
                 } else if (newName.isEmpty()) {
-                    Toast.makeText(requireContext(), "Name cannot be empty", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(requireContext(), getString(R.string.file_browser_name_empty), Toast.LENGTH_SHORT).show()
                 }
             }
-            .setNegativeButton("Cancel", null)
+            .setNegativeButton(R.string.cancel, null)
             .show()
         
         input.requestFocus()
@@ -465,40 +471,40 @@ class FileBrowserFragment : Fragment() {
         val newFile = File(oldFile.parent, newName)
 
         if (newFile.exists()) {
-            Toast.makeText(requireContext(), "A file with this name already exists", Toast.LENGTH_SHORT).show()
+            Toast.makeText(requireContext(), getString(R.string.file_browser_name_exists), Toast.LENGTH_SHORT).show()
             return
         }
 
         if (oldFile.renameTo(newFile)) {
-            Toast.makeText(requireContext(), "Renamed successfully", Toast.LENGTH_SHORT).show()
+            Toast.makeText(requireContext(), getString(R.string.file_browser_renamed), Toast.LENGTH_SHORT).show()
             listFiles(currentPath)
         } else {
-            Toast.makeText(requireContext(), "Failed to rename", Toast.LENGTH_SHORT).show()
+            Toast.makeText(requireContext(), getString(R.string.file_browser_rename_failed), Toast.LENGTH_SHORT).show()
         }
     }
 
     private fun copyFullPathToClipboard(fileItem: FileItem) {
         val clipboard = requireContext().getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-        val clip = ClipData.newPlainText("File Path", fileItem.path)
+        val clip = ClipData.newPlainText(getString(R.string.file_browser_clip_label), fileItem.path)
         clipboard.setPrimaryClip(clip)
-        Toast.makeText(requireContext(), "Path copied to clipboard", Toast.LENGTH_SHORT).show()
+        Toast.makeText(requireContext(), getString(R.string.file_browser_path_copied), Toast.LENGTH_SHORT).show()
     }
 
     private fun showDeleteConfirmation(fileItem: FileItem) {
-        val fileType = if (fileItem.isDirectory) "folder" else "file"
+        val titleRes = if (fileItem.isDirectory) R.string.file_browser_delete_folder_title else R.string.file_browser_delete_file_title
         val message = if (fileItem.isDirectory) {
-            "Are you sure you want to delete this folder and all its contents?\n\n${fileItem.name}"
+            getString(R.string.file_browser_delete_folder_confirm, fileItem.name)
         } else {
-            "Are you sure you want to delete this file?\n\n${fileItem.name}"
+            getString(R.string.file_browser_delete_file_confirm, fileItem.name)
         }
 
         MaterialAlertDialogBuilder(requireContext())
-            .setTitle("Delete $fileType")
+            .setTitle(titleRes)
             .setMessage(message)
-            .setPositiveButton("Delete") { _, _ ->
+            .setPositiveButton(R.string.delete) { _, _ ->
                 deleteFile(fileItem)
             }
-            .setNegativeButton("Cancel", null)
+            .setNegativeButton(R.string.cancel, null)
             .show()
     }
 
@@ -506,10 +512,10 @@ class FileBrowserFragment : Fragment() {
         val file = File(fileItem.path)
         
         if (file.deleteRecursively()) {
-            Toast.makeText(requireContext(), "Deleted successfully", Toast.LENGTH_SHORT).show()
+            Toast.makeText(requireContext(), getString(R.string.file_browser_deleted), Toast.LENGTH_SHORT).show()
             listFiles(currentPath)
         } else {
-            Toast.makeText(requireContext(), "Failed to delete", Toast.LENGTH_SHORT).show()
+            Toast.makeText(requireContext(), getString(R.string.file_browser_delete_failed), Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -562,7 +568,7 @@ class FileBrowserFragment : Fragment() {
         val filesAndFolders = file.listFiles()
 
         if (filesAndFolders == null) {
-            Toast.makeText(requireContext(), "Cannot access this folder", Toast.LENGTH_SHORT).show()
+            Toast.makeText(requireContext(), getString(R.string.file_browser_cannot_access), Toast.LENGTH_SHORT).show()
             return
         }
 

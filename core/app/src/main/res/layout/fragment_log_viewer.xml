@@ -44,7 +44,7 @@
             style="@style/Widget.Material3.Button.IconButton"
             android:layout_width="48dp"
             android:layout_height="48dp"
-            android:contentDescription="Search logs"
+            android:contentDescription="@string/title_search_logs"
             app:icon="@drawable/ic_search" />
 
     </LinearLayout>

@@ -1,0 +1,169 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  零散界面文案：文件浏览器、项目备份、依赖更新、通用进度对话框、AI 文件改动列表、
+  IDE 配置页（NDK / CMake）、日志查看器。
+  与 strings_git_client.xml / strings_asset_studio.xml / strings_terminal.xml 分开存放，
+  便于后续定位与维护。
+-->
+<resources>
+
+  <!-- 文件浏览器 -->
+  <string name="file_browser_goto_project">Goto my project</string>
+  <string name="file_browser_file_name">File Name</string>
+  <string name="file_browser_search_hint">Search files...</string>
+  <string name="file_browser_filter">Filter</string>
+  <string name="file_browser_show_all">Show All</string>
+  <string name="file_browser_folders_only">Folders Only</string>
+  <string name="file_browser_files_only">Files Only</string>
+  <string name="file_browser_filter_by_extension">Filter by Extension</string>
+  <string name="file_browser_ext_all">All Files</string>
+  <string name="file_browser_ext_xml">XML Files (.xml)</string>
+  <string name="file_browser_ext_txt">Text Files (.txt)</string>
+  <string name="file_browser_ext_pdf">PDF Files (.pdf)</string>
+  <string name="file_browser_ext_image">Images (.jpg, .png, .gif)</string>
+  <string name="file_browser_ext_video">Videos (.mp4, .mkv, .avi)</string>
+  <string name="file_browser_ext_audio">Audio (.mp3, .wav, .m4a)</string>
+  <string name="file_browser_ext_apk">APK Files (.apk)</string>
+  <string name="file_browser_ext_zip">Archives (.zip, .rar, .7z)</string>
+  <string name="file_browser_ext_custom">Custom Extension...</string>
+  <string name="file_browser_custom_ext_title">Enter Custom Extension</string>
+  <string name="file_browser_custom_ext_message">Enter file extension without the dot</string>
+  <string name="file_browser_custom_ext_hint">e.g., json, kt, java</string>
+  <string name="file_browser_no_match">No files match the filters</string>
+  <string name="file_browser_clicked_file">Clicked on file: %1$s</string>
+  <string name="file_browser_action_copy_to">Copy to</string>
+  <string name="file_browser_action_move_to">Move to</string>
+  <string name="file_browser_action_copy_path">Copy full path</string>
+  <string name="file_browser_rename_message">Enter new name for %1$s</string>
+  <string name="file_browser_name_empty">Name cannot be empty</string>
+  <string name="file_browser_name_exists">A file with this name already exists</string>
+  <string name="file_browser_renamed">Renamed successfully</string>
+  <string name="file_browser_rename_failed">Failed to rename</string>
+  <string name="file_browser_clip_label">File Path</string>
+  <string name="file_browser_path_copied">Path copied to clipboard</string>
+  <string name="file_browser_delete_folder_title">Delete folder</string>
+  <string name="file_browser_delete_file_title">Delete file</string>
+  <string name="file_browser_delete_folder_confirm">Are you sure you want to delete this folder and all its contents?\n\n%1$s</string>
+  <string name="file_browser_delete_file_confirm">Are you sure you want to delete this file?\n\n%1$s</string>
+  <string name="file_browser_deleted">Deleted successfully</string>
+  <string name="file_browser_delete_failed">Failed to delete</string>
+  <string name="file_browser_cannot_access">Cannot access this folder</string>
+  <string name="file_browser_select_destination">Select Destination</string>
+  <string name="file_browser_select_dest_copy">Select Destination (Copy)</string>
+  <string name="file_browser_select_dest_move">Select Destination (Move)</string>
+  <string name="file_browser_select_folder_hint">Please select a folder to paste into</string>
+  <string name="file_browser_paste_here">Paste Here</string>
+  <string name="file_browser_move_here">Move Here</string>
+  <string name="file_browser_source_missing">Source file doesn\'t exist</string>
+  <string name="file_browser_dest_exists">File already exists in destination</string>
+  <string name="file_browser_same_path">Source and destination are the same</string>
+  <string name="file_browser_move_into_self">Cannot move a folder into itself</string>
+  <string name="file_browser_moving">Moving %1$s to %2$s...</string>
+  <string name="file_browser_moved">File moved successfully!</string>
+  <string name="file_browser_move_failed">Failed to move: %1$s</string>
+  <string name="file_browser_copying">Copying %1$s to %2$s...</string>
+  <string name="file_browser_copied">File copied successfully!</string>
+  <string name="file_browser_copy_failed">Failed to copy: %1$s</string>
+  <string name="file_browser_dir_missing">Directory doesn\'t exist: %1$s</string>
+  <string name="file_browser_dir_unreadable">Cannot read directory: %1$s</string>
+  <string name="file_browser_cannot_access_folder">Cannot access folder</string>
+  <string name="file_browser_perm_denied_read">Permission denied to read storage</string>
+  <string name="file_browser_perm_denied_manage">Permission denied to manage storage</string>
+
+  <!-- 无障碍描述 -->
+  <string name="a11y_file_icon">File Icon</string>
+  <string name="a11y_file_status">File status</string>
+
+  <!-- 项目设置 / 备份 -->
+  <string name="project_settings_title">Project settings</string>
+  <string name="project_settings_backup">Backup my project</string>
+  <string name="project_backup_in_progress_title">Backup in Progress</string>
+  <string name="project_backup_in_progress_message">Backing up project…</string>
+  <string name="project_backup_creating">Creating backup of %1$s</string>
+  <string name="project_backup_done_title">Backup Completed</string>
+  <string name="project_backup_done_message">Project backed up successfully!\n\nLocation:\n%1$s</string>
+  <string name="project_backup_failed_title">Backup Failed</string>
+  <string name="project_backup_failed_message">Failed to backup project: %1$s</string>
+
+  <!-- 通用进度对话框 -->
+  <string name="common_please_wait">Please wait…</string>
+  <string name="common_ok">OK</string>
+
+  <!-- 依赖更新 -->
+  <string name="deps_update_title">Updating Dependencies</string>
+  <string name="deps_update_confirm_title">Update Dependency</string>
+  <string name="deps_update_warning_title">⚠️ Warning</string>
+  <string name="deps_update_single_warning">You are about to update:\n\n%1$s\n\nPlease note that newer versions may contain bugs, breaking changes, or be in alpha/beta stage. Always test thoroughly after updating.\n\nDo you want to proceed?</string>
+  <string name="deps_update_all_warning">You are about to update %1$d dependencies.\n\nPlease note that newer versions may contain bugs, breaking changes, or be in alpha/beta stage. Updating all dependencies at once can introduce compatibility issues.\n\nIt\'s recommended to update and test dependencies individually.\n\nDo you want to proceed with updating all?</string>
+  <string name="deps_update_confirm_message">%1$s\n\nProceed with update?</string>
+  <string name="deps_update_success_title">Success</string>
+  <string name="deps_update_success_message">%1$s updated to %2$s</string>
+  <string name="deps_update_error_title">Error</string>
+  <string name="deps_update_failed_message">Failed to update: %1$s</string>
+  <string name="deps_update_complete_title">Update Complete</string>
+  <string name="deps_update_complete_message">Successfully updated: %1$d\nFailed: %2$d</string>
+  <string name="deps_update_all_failed_message">Failed to update dependencies: %1$s</string>
+  <string name="deps_update_cancel">Cancel</string>
+  <string name="deps_update_update">Update</string>
+
+  <!-- AI 文件改动列表 -->
+  <string name="ai_file_change_new">🆕 New File</string>
+  <string name="ai_file_change_modified">✏️ Modified</string>
+  <string name="ai_file_modifying">Modifying…</string>
+  <string name="ai_file_modified_success">Modified successfully</string>
+  <string name="ai_file_modified_failed">Failed to modify</string>
+
+  <!-- 代码补全提示 -->
+  <string name="suggestion_hint_tab">Tab</string>
+
+  <!-- IDE 配置页（NDK / CMake） -->
+  <string name="cfg_ide_subtitle">IDE build system configurations</string>
+  <string name="cfg_card_ndk_title">Android development kit</string>
+  <string name="cfg_card_cmake_title">CMake build system</string>
+  <string name="cfg_not_installed">Not installed</string>
+  <string name="cfg_version_range">%1$s...%2$s (%3$d versions)</string>
+  <string name="cfg_loading_versions">Loading versions...</string>
+  <string name="cfg_no_versions">No versions available</string>
+  <string name="cfg_failed_to_load">Failed to load</string>
+  <string name="cfg_error_loading">Error loading</string>
+  <string name="cfg_request_timeout">Request timed out</string>
+  <string name="cfg_error_occurred">An error occurred: %1$s</string>
+  <string name="cfg_unsupported_arch">Unsupported architecture: %1$s</string>
+  <string name="cfg_no_ndk_versions">No NDK versions found in the repository</string>
+  <string name="cfg_no_cmake_versions">No CMake versions found in the repository</string>
+  <string name="cfg_fetch_versions_failed">Failed to fetch versions: %1$s</string>
+  <string name="cfg_fetch_versions_error">Error fetching versions: %1$s</string>
+  <string name="cfg_no_ndk_to_remove">No NDK versions found to remove</string>
+  <string name="cfg_no_cmake_to_remove">No CMake versions found to remove</string>
+  <string name="cfg_select_ndk_to_remove">Select NDK Version to Remove</string>
+  <string name="cfg_select_cmake_to_remove">Select CMake Version to Remove</string>
+  <string name="cfg_select_ndk_first">Please select ndk version from the dropdown first</string>
+  <string name="cfg_select_cmake_first">Please select a CMake version from the dropdown first</string>
+  <string name="cfg_remove_ndk">Remove NDK</string>
+  <string name="cfg_remove_cmake">Remove CMake</string>
+  <string name="cfg_remove_ndk_message">Are you sure you want to remove NDK version %1$s?</string>
+  <string name="cfg_remove_cmake_message">Are you sure you want to remove CMake version %1$s?</string>
+  <string name="cfg_remove">Remove</string>
+  <string name="cfg_ndk_removed">Successfully removed NDK %1$s</string>
+  <string name="cfg_cmake_removed">Successfully removed CMake %1$s</string>
+  <string name="cfg_ndk_remove_failed">Failed to remove NDK %1$s</string>
+  <string name="cfg_cmake_remove_failed">Failed to remove CMake %1$s</string>
+  <string name="cfg_getting_package_info">Getting package information...</string>
+  <string name="cfg_downloading_version">Downloading %1$s...</string>
+  <string name="cfg_download_success">Successfully downloaded</string>
+  <string name="cfg_extracting_version">Extracting %1$s...</string>
+  <string name="cfg_install_complete">Installation completed successfully!</string>
+  <string name="cfg_install_failed">Installation failed: %1$s</string>
+  <string name="cfg_download_failed">Download failed: %1$s</string>
+  <string name="cfg_download_failed_title">Download Failed</string>
+  <string name="cfg_package_verify_failed">Package verification failed:\n%1$s\n%2$s</string>
+  <string name="cfg_get_filename_failed">Failed to get package filename: %1$s</string>
+  <string name="cfg_empty_filename">Empty filename received from manifest</string>
+  <string name="cfg_get_package_info_failed">Failed to get package info: %1$s</string>
+
+  <!-- 日志查看器（LogWire 方框：\n 转义，中文需重新计算填充以保持边框对齐） -->
+  <string name="log_viewer_header">\n╔═══════════════════════════════════════════════════════════╗\n║                    Powered by LogWire                     ║\n║               Real-time Log Monitoring Tool               ║\n║                                                           ║\n║   Author: Mohammed-baqer-null                             ║\n║   GitHub: https://github.com/Mohammed-baqer-null          ║\n╚═══════════════════════════════════════════════════════════╝\n\n</string>
+  <string name="log_viewer_usb_disabled">\n    ╔═══════════════════════════════════════════════════════════╗\n    ║                                                           ║\n    ║                  USB DEBUGGING DISABLED                   ║\n    ║                                                           ║\n    ║   LogWire requires USB debugging to be enabled in order   ║\n    ║   to read your app logs.                                  ║\n    ║                                                           ║\n    ║   To enable USB debugging:                                ║\n    ║   1. Go to Settings > About Phone                         ║\n    ║   2. Tap "Build Number" 7 times to enable Developer Mode  ║\n    ║   3. Go to Settings > Developer Options                   ║\n    ║   4. Enable "USB Debugging"                               ║\n    ║   5. Close and reopen your project                        ║\n    ║                                                           ║\n    ╚═══════════════════════════════════════════════════════════╝\n    </string>
+  <string name="log_viewer_disabled">\n    ╔═══════════════════════════════════════════════════════════╗\n    ║                  LogWire DISABLED                         ║\n    ║              LogWire plugin is disabled                   ║\n    ║   To enable :                                             ║\n    ║   1. Go to Preferences > Developer options                ║\n    ║   2. Toggle the Enable LogWire switch                     ║\n    ║                                                           ║\n    ╚═══════════════════════════════════════════════════════════╝\n    </string>
+
+</resources>

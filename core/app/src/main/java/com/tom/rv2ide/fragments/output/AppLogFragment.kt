@@ -77,17 +77,6 @@ class AppLogFragment :
         const val TRIM_ON_LINE_COUNT = 5000
         const val MAX_LINE_COUNT = TRIM_ON_LINE_COUNT - 300
 
-        private const val LOGWIRE_HEADER = """
-╔═══════════════════════════════════════════════════════════╗
-║                    Powered by LogWire                     ║
-║               Real-time Log Monitoring Tool               ║
-║                                                           ║
-║   Author: Mohammed-baqer-null                             ║
-║   GitHub: https://github.com/Mohammed-baqer-null          ║
-╚═══════════════════════════════════════════════════════════╝
-
-"""
-
         fun newInstance() = AppLogFragment()
     }
 
@@ -394,7 +383,7 @@ class AppLogFragment :
         ThreadUtils.runOnUiThread {
             if (isUsbDebuggingEnabled) {
                 // Build all content first, then set it once
-                val contentBuilder = StringBuilder(LOGWIRE_HEADER)
+                val contentBuilder = StringBuilder(getString(R.string.log_viewer_header))
                 
                 for (log in allLogs) {
                     if (shouldDisplayLog(log)) {
@@ -419,44 +408,17 @@ class AppLogFragment :
     }
     
     private fun showLogWireHeader() {
-        _binding?.logEditor?.setText(LOGWIRE_HEADER)
+        _binding?.logEditor?.setText(getString(R.string.log_viewer_header))
         emptyStateViewModel.isEmpty.value = false
     }
-    
+
     private fun showUsbDebuggingDisabledMessage() {
-        val message = """
-    ╔═══════════════════════════════════════════════════════════╗
-    ║                                                           ║
-    ║                  USB DEBUGGING DISABLED                   ║
-    ║                                                           ║
-    ║   LogWire requires USB debugging to be enabled in order   ║
-    ║   to read your app logs.                                  ║
-    ║                                                           ║
-    ║   To enable USB debugging:                                ║
-    ║   1. Go to Settings > About Phone                         ║
-    ║   2. Tap "Build Number" 7 times to enable Developer Mode  ║
-    ║   3. Go to Settings > Developer Options                   ║
-    ║   4. Enable "USB Debugging"                               ║
-    ║   5. Close and reopen your project                        ║
-    ║                                                           ║
-    ╚═══════════════════════════════════════════════════════════╝
-    """
-        _binding?.logEditor?.setText(message)
+        _binding?.logEditor?.setText(getString(R.string.log_viewer_usb_disabled))
         emptyStateViewModel.isEmpty.value = false
     }
-    
+
     private fun showLogWireDisabledMessage() {
-        val message = """
-    ╔═══════════════════════════════════════════════════════════╗
-    ║                  LogWire DISABLED                         ║
-    ║              LogWire plugin is disabled                   ║
-    ║   To enable :                                             ║
-    ║   1. Go to Preferences > Developer options                ║
-    ║   2. Toggle the Enable LogWire switch                     ║
-    ║                                                           ║
-    ╚═══════════════════════════════════════════════════════════╝
-    """
-        _binding?.logEditor?.setText(message)
+        _binding?.logEditor?.setText(getString(R.string.log_viewer_disabled))
         emptyStateViewModel.isEmpty.value = false
     }
     

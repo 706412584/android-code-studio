@@ -4,77 +4,77 @@
 
     <item
         android:id="@+id/action_search"
-        android:title="Search"
+        android:title="@string/action_search"
         android:icon="@drawable/ic_search"
         app:showAsAction="always|collapseActionView"
         app:actionViewClass="androidx.appcompat.widget.SearchView" />
 
     <item
         android:id="@+id/action_filter"
-        android:title="Filter"
+        android:title="@string/file_browser_filter"
         app:showAsAction="never">
         <menu>
             <item
                 android:id="@+id/filter_all"
-                android:title="Show All"
+                android:title="@string/file_browser_show_all"
                 android:checkable="true"
                 android:checked="true" />
             <item
                 android:id="@+id/filter_folders_only"
-                android:title="Folders Only"
+                android:title="@string/file_browser_folders_only"
                 android:checkable="true" />
             <item
                 android:id="@+id/filter_files_only"
-                android:title="Files Only"
+                android:title="@string/file_browser_files_only"
                 android:checkable="true" />
         </menu>
     </item>
 
     <item
         android:id="@+id/action_filter_by_extension"
-        android:title="Filter by Extension"
+        android:title="@string/file_browser_filter_by_extension"
         app:showAsAction="never">
         <menu>
             <item
                 android:id="@+id/ext_all"
-                android:title="All Files"
+                android:title="@string/file_browser_ext_all"
                 android:checkable="true"
                 android:checked="true" />
             <item
                 android:id="@+id/ext_xml"
-                android:title="XML Files (.xml)"
+                android:title="@string/file_browser_ext_xml"
                 android:checkable="true" />
             <item
                 android:id="@+id/ext_txt"
-                android:title="Text Files (.txt)"
+                android:title="@string/file_browser_ext_txt"
                 android:checkable="true" />
             <item
                 android:id="@+id/ext_pdf"
-                android:title="PDF Files (.pdf)"
+                android:title="@string/file_browser_ext_pdf"
                 android:checkable="true" />
             <item
                 android:id="@+id/ext_image"
-                android:title="Images (.jpg, .png, .gif)"
+                android:title="@string/file_browser_ext_image"
                 android:checkable="true" />
             <item
                 android:id="@+id/ext_video"
-                android:title="Videos (.mp4, .mkv, .avi)"
+                android:title="@string/file_browser_ext_video"
                 android:checkable="true" />
             <item
                 android:id="@+id/ext_audio"
-                android:title="Audio (.mp3, .wav, .m4a)"
+                android:title="@string/file_browser_ext_audio"
                 android:checkable="true" />
             <item
                 android:id="@+id/ext_apk"
-                android:title="APK Files (.apk)"
+                android:title="@string/file_browser_ext_apk"
                 android:checkable="true" />
             <item
                 android:id="@+id/ext_zip"
-                android:title="Archives (.zip, .rar, .7z)"
+                android:title="@string/file_browser_ext_zip"
                 android:checkable="true" />
             <item
                 android:id="@+id/ext_custom"
-                android:title="Custom Extension..."
+                android:title="@string/file_browser_ext_custom"
                 android:checkable="true" />
         </menu>
     </item>

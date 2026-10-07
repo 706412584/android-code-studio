@@ -46,6 +46,7 @@
   <string name="sub_module_language">编程语言</string>
   <string name="sub_module_name_hint">输入模块名（例如 feature、utils）</string>
   <string name="sub_module_name_valid">模块名可用</string>
+  <string name="sub_module_name_normalized">可用：%1$s</string>
   <string name="sub_module_name_invalid">模块名无效</string>
   <string name="sub_module_create">创建模块</string>
   <string name="sub_module_created_success">模块「%1$s」创建成功！</string>

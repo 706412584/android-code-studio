@@ -1,0 +1,167 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  零散界面文案（中文）：文件浏览器、项目备份、依赖更新、通用进度对话框、AI 文件改动列表、
+  IDE 配置页（NDK / CMake）、日志查看器。
+-->
+<resources>
+
+  <!-- 文件浏览器 -->
+  <string name="file_browser_goto_project">回到我的项目</string>
+  <string name="file_browser_file_name">文件名</string>
+  <string name="file_browser_search_hint">搜索文件…</string>
+  <string name="file_browser_filter">筛选</string>
+  <string name="file_browser_show_all">显示全部</string>
+  <string name="file_browser_folders_only">仅文件夹</string>
+  <string name="file_browser_files_only">仅文件</string>
+  <string name="file_browser_filter_by_extension">按扩展名筛选</string>
+  <string name="file_browser_ext_all">所有文件</string>
+  <string name="file_browser_ext_xml">XML 文件（.xml）</string>
+  <string name="file_browser_ext_txt">文本文件（.txt）</string>
+  <string name="file_browser_ext_pdf">PDF 文件（.pdf）</string>
+  <string name="file_browser_ext_image">图片（.jpg、.png、.gif）</string>
+  <string name="file_browser_ext_video">视频（.mp4、.mkv、.avi）</string>
+  <string name="file_browser_ext_audio">音频（.mp3、.wav、.m4a）</string>
+  <string name="file_browser_ext_apk">APK 文件（.apk）</string>
+  <string name="file_browser_ext_zip">压缩包（.zip、.rar、.7z）</string>
+  <string name="file_browser_ext_custom">自定义扩展名…</string>
+  <string name="file_browser_custom_ext_title">输入自定义扩展名</string>
+  <string name="file_browser_custom_ext_message">输入文件扩展名（不带点）</string>
+  <string name="file_browser_custom_ext_hint">例如 json、kt、java</string>
+  <string name="file_browser_no_match">没有文件符合筛选条件</string>
+  <string name="file_browser_clicked_file">点击了文件：%1$s</string>
+  <string name="file_browser_action_copy_to">复制到</string>
+  <string name="file_browser_action_move_to">移动到</string>
+  <string name="file_browser_action_copy_path">复制完整路径</string>
+  <string name="file_browser_rename_message">输入 %1$s 的新名称</string>
+  <string name="file_browser_name_empty">名称不能为空</string>
+  <string name="file_browser_name_exists">已存在同名文件</string>
+  <string name="file_browser_renamed">重命名成功</string>
+  <string name="file_browser_rename_failed">重命名失败</string>
+  <string name="file_browser_clip_label">文件路径</string>
+  <string name="file_browser_path_copied">路径已复制到剪贴板</string>
+  <string name="file_browser_delete_folder_title">删除文件夹</string>
+  <string name="file_browser_delete_file_title">删除文件</string>
+  <string name="file_browser_delete_folder_confirm">确定要删除该文件夹及其所有内容吗？\n\n%1$s</string>
+  <string name="file_browser_delete_file_confirm">确定要删除该文件吗？\n\n%1$s</string>
+  <string name="file_browser_deleted">删除成功</string>
+  <string name="file_browser_delete_failed">删除失败</string>
+  <string name="file_browser_cannot_access">无法访问此文件夹</string>
+  <string name="file_browser_select_destination">选择目标位置</string>
+  <string name="file_browser_select_dest_copy">选择目标位置（复制）</string>
+  <string name="file_browser_select_dest_move">选择目标位置（移动）</string>
+  <string name="file_browser_select_folder_hint">请选择要粘贴到的文件夹</string>
+  <string name="file_browser_paste_here">粘贴到此处</string>
+  <string name="file_browser_move_here">移动到此处</string>
+  <string name="file_browser_source_missing">源文件不存在</string>
+  <string name="file_browser_dest_exists">目标位置已存在该文件</string>
+  <string name="file_browser_same_path">源路径与目标路径相同</string>
+  <string name="file_browser_move_into_self">不能把文件夹移动到它自己内部</string>
+  <string name="file_browser_moving">正在将 %1$s 移动到 %2$s…</string>
+  <string name="file_browser_moved">文件移动成功！</string>
+  <string name="file_browser_move_failed">移动失败：%1$s</string>
+  <string name="file_browser_copying">正在将 %1$s 复制到 %2$s…</string>
+  <string name="file_browser_copied">文件复制成功！</string>
+  <string name="file_browser_copy_failed">复制失败：%1$s</string>
+  <string name="file_browser_dir_missing">目录不存在：%1$s</string>
+  <string name="file_browser_dir_unreadable">无法读取目录：%1$s</string>
+  <string name="file_browser_cannot_access_folder">无法访问文件夹</string>
+  <string name="file_browser_perm_denied_read">读取存储的权限被拒绝</string>
+  <string name="file_browser_perm_denied_manage">管理存储的权限被拒绝</string>
+
+  <!-- 无障碍描述 -->
+  <string name="a11y_file_icon">文件图标</string>
+  <string name="a11y_file_status">文件状态</string>
+
+  <!-- 项目设置 / 备份 -->
+  <string name="project_settings_title">项目设置</string>
+  <string name="project_settings_backup">备份我的项目</string>
+  <string name="project_backup_in_progress_title">正在备份</string>
+  <string name="project_backup_in_progress_message">正在备份项目…</string>
+  <string name="project_backup_creating">正在创建 %1$s 的备份</string>
+  <string name="project_backup_done_title">备份完成</string>
+  <string name="project_backup_done_message">项目备份成功！\n\n位置：\n%1$s</string>
+  <string name="project_backup_failed_title">备份失败</string>
+  <string name="project_backup_failed_message">备份项目失败：%1$s</string>
+
+  <!-- 通用进度对话框 -->
+  <string name="common_please_wait">请稍候…</string>
+  <string name="common_ok">确定</string>
+
+  <!-- 依赖更新 -->
+  <string name="deps_update_title">正在更新依赖</string>
+  <string name="deps_update_confirm_title">更新依赖</string>
+  <string name="deps_update_warning_title">⚠️ 警告</string>
+  <string name="deps_update_single_warning">你即将更新：\n\n%1$s\n\n请注意，较新的版本可能包含缺陷、破坏性变更，或仍处于 alpha/beta 阶段。更新后请务必充分测试。\n\n是否继续？</string>
+  <string name="deps_update_all_warning">你即将更新 %1$d 个依赖。\n\n请注意，较新的版本可能包含缺陷、破坏性变更，或仍处于 alpha/beta 阶段。一次性更新全部依赖可能引入兼容性问题。\n\n建议逐个更新并测试依赖。\n\n是否继续更新全部？</string>
+  <string name="deps_update_confirm_message">%1$s\n\n是否继续更新？</string>
+  <string name="deps_update_success_title">成功</string>
+  <string name="deps_update_success_message">%1$s 已更新至 %2$s</string>
+  <string name="deps_update_error_title">错误</string>
+  <string name="deps_update_failed_message">更新失败：%1$s</string>
+  <string name="deps_update_complete_title">更新完成</string>
+  <string name="deps_update_complete_message">成功更新：%1$d 个\n失败：%2$d 个</string>
+  <string name="deps_update_all_failed_message">更新依赖失败：%1$s</string>
+  <string name="deps_update_cancel">取消</string>
+  <string name="deps_update_update">更新</string>
+
+  <!-- AI 文件改动列表 -->
+  <string name="ai_file_change_new">🆕 新建文件</string>
+  <string name="ai_file_change_modified">✏️ 已修改</string>
+  <string name="ai_file_modifying">正在修改…</string>
+  <string name="ai_file_modified_success">修改成功</string>
+  <string name="ai_file_modified_failed">修改失败</string>
+
+  <!-- 代码补全提示 -->
+  <string name="suggestion_hint_tab">Tab</string>
+
+  <!-- IDE 配置页（NDK / CMake） -->
+  <string name="cfg_ide_subtitle">IDE 构建系统配置</string>
+  <string name="cfg_card_ndk_title">Android 开发工具包</string>
+  <string name="cfg_card_cmake_title">CMake 构建系统</string>
+  <string name="cfg_not_installed">未安装</string>
+  <string name="cfg_version_range">%1$s...%2$s（共 %3$d 个版本）</string>
+  <string name="cfg_loading_versions">正在加载版本…</string>
+  <string name="cfg_no_versions">无可用版本</string>
+  <string name="cfg_failed_to_load">加载失败</string>
+  <string name="cfg_error_loading">加载出错</string>
+  <string name="cfg_request_timeout">请求超时</string>
+  <string name="cfg_error_occurred">发生错误：%1$s</string>
+  <string name="cfg_unsupported_arch">不支持的架构：%1$s</string>
+  <string name="cfg_no_ndk_versions">仓库中未找到 NDK 版本</string>
+  <string name="cfg_no_cmake_versions">仓库中未找到 CMake 版本</string>
+  <string name="cfg_fetch_versions_failed">获取版本失败：%1$s</string>
+  <string name="cfg_fetch_versions_error">获取版本出错：%1$s</string>
+  <string name="cfg_no_ndk_to_remove">没有可移除的 NDK 版本</string>
+  <string name="cfg_no_cmake_to_remove">没有可移除的 CMake 版本</string>
+  <string name="cfg_select_ndk_to_remove">选择要移除的 NDK 版本</string>
+  <string name="cfg_select_cmake_to_remove">选择要移除的 CMake 版本</string>
+  <string name="cfg_select_ndk_first">请先从下拉列表中选择 NDK 版本</string>
+  <string name="cfg_select_cmake_first">请先从下拉列表中选择 CMake 版本</string>
+  <string name="cfg_remove_ndk">移除 NDK</string>
+  <string name="cfg_remove_cmake">移除 CMake</string>
+  <string name="cfg_remove_ndk_message">确定要移除 NDK 版本 %1$s 吗？</string>
+  <string name="cfg_remove_cmake_message">确定要移除 CMake 版本 %1$s 吗？</string>
+  <string name="cfg_remove">移除</string>
+  <string name="cfg_ndk_removed">已成功移除 NDK %1$s</string>
+  <string name="cfg_cmake_removed">已成功移除 CMake %1$s</string>
+  <string name="cfg_ndk_remove_failed">移除 NDK %1$s 失败</string>
+  <string name="cfg_cmake_remove_failed">移除 CMake %1$s 失败</string>
+  <string name="cfg_getting_package_info">正在获取包信息…</string>
+  <string name="cfg_downloading_version">正在下载 %1$s…</string>
+  <string name="cfg_download_success">下载成功</string>
+  <string name="cfg_extracting_version">正在解压 %1$s…</string>
+  <string name="cfg_install_complete">安装完成！</string>
+  <string name="cfg_install_failed">安装失败：%1$s</string>
+  <string name="cfg_download_failed">下载失败：%1$s</string>
+  <string name="cfg_download_failed_title">下载失败</string>
+  <string name="cfg_package_verify_failed">包校验失败：\n%1$s\n%2$s</string>
+  <string name="cfg_get_filename_failed">获取包文件名失败：%1$s</string>
+  <string name="cfg_empty_filename">从清单中获取到的文件名为空</string>
+  <string name="cfg_get_package_info_failed">获取包信息失败：%1$s</string>
+
+  <!-- 日志查看器（LogWire 方框：\n 转义，中文需重新计算填充以保持边框对齐） -->
+  <string name="log_viewer_header">\n╔═══════════════════════════════════════════════════════════╗\n║                    Powered by LogWire                     ║\n║                     实时日志监控工具                      ║\n║                                                           ║\n║   作者：Mohammed-baqer-null                               ║\n║   GitHub：https://github.com/Mohammed-baqer-null          ║\n╚═══════════════════════════════════════════════════════════╝\n\n</string>
+  <string name="log_viewer_usb_disabled">\n    ╔═══════════════════════════════════════════════════════════╗\n    ║                                                           ║\n    ║                      USB 调试未开启                       ║\n    ║                                                           ║\n    ║   LogWire 需要开启 USB 调试才能读取应用日志。             ║\n    ║                                                           ║\n    ║   开启方法：                                              ║\n    ║   1. 进入「设置 > 关于手机」                              ║\n    ║   2. 连续点击「版本号」7 次，开启开发者模式               ║\n    ║   3. 进入「设置 > 开发者选项」                            ║\n    ║   4. 打开「USB 调试」                                     ║\n    ║   5. 关闭并重新打开你的项目                               ║\n    ║                                                           ║\n    ╚═══════════════════════════════════════════════════════════╝\n</string>
+  <string name="log_viewer_disabled">\n    ╔═══════════════════════════════════════════════════════════╗\n    ║                      LogWire 已禁用                       ║\n    ║                   LogWire 插件已被禁用                    ║\n    ║   启用方法：                                              ║\n    ║   1. 进入「首选项 > 开发者选项」                          ║\n    ║   2. 打开「启用 LogWire」开关                             ║\n    ║                                                           ║\n    ╚═══════════════════════════════════════════════════════════╝\n</string>
+
+</resources>

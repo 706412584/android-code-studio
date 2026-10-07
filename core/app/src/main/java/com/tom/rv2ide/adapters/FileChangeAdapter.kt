@@ -42,13 +42,13 @@ class FileChangeAdapter(
         holder.filePath.text = modification.filePath
 
         if (modification.isNewFile) {
-            holder.fileStatus.text = "🆕 New File"
+            holder.fileStatus.text = holder.itemView.context.getString(R.string.ai_file_change_new)
             holder.fileStatus.setTextColor(
                 ContextCompat.getColor(holder.itemView.context, android.R.color.holo_green_dark)
             )
             holder.fileIcon.setImageResource(android.R.drawable.ic_menu_add)
         } else {
-            holder.fileStatus.text = "✏️ Modified"
+            holder.fileStatus.text = holder.itemView.context.getString(R.string.ai_file_change_modified)
             holder.fileStatus.setTextColor(
                 ContextCompat.getColor(holder.itemView.context, android.R.color.holo_orange_dark)
             )

@@ -127,7 +127,7 @@ class SubModuleFragment : Fragment() {
               } else {
                 val helperText =
                     if (normalized != moduleName) {
-                      "Valid: $normalized"
+                      getString(R.string.sub_module_name_normalized, normalized)
                     } else {
                       getString(R.string.sub_module_name_valid)
                     }

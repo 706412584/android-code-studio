@@ -6,7 +6,7 @@
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     app:setCardStroke="0sp"
-    app:setCardTitle="CMake build system"
+    app:setCardTitle="@string/cfg_card_cmake_title"
     app:isCheckableCard="false"
     app:isClickableCard="true"
     app:setCardSummary="@string/cfg_installed_cmake_version"
@@ -54,7 +54,7 @@
             app:icon="@drawable/download"
             style="@style/Widget.Material3.Button.TonalButton"
             app:backgroundTint="?attr/colorSurfaceContainerHigh"
-            android:text="Download" />
+            android:text="@string/updater_download" />
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/cmake_remove_btn"

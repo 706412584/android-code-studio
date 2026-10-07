@@ -38,7 +38,7 @@
             android:id="@+id/hintText"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="Tab"
+            android:text="@string/suggestion_hint_tab"
             android:textSize="10sp"
             android:textColor="?attr/colorOnSurfaceVariant"
             android:alpha="0.6"

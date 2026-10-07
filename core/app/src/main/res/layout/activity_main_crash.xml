@@ -27,8 +27,8 @@
       android:layout_height="?attr/actionBarSize"
       app:titleTextAppearance="@style/TextAppearance.AndroidIDE.TitleLarge.Bold"
       app:subtitleTextAppearance="@style/TextAppearance.Material3.BodySmall"
-      app:title="IDE Configurations"
-      app:subtitle="IDE build system configurations"
+      app:title="@string/title_ide_configurations"
+      app:subtitle="@string/cfg_ide_subtitle"
       app:subtitleCentered="true"
       app:titleCentered="true" />
 

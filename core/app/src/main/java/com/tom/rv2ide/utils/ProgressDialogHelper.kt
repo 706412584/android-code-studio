@@ -32,12 +32,12 @@ class ProgressDialogHelper(private val context: Context) {
     
     private var dialog: Dialog? = null
     
-    fun show(message: String = "Please wait...") {
+    fun show(message: String? = null) {
         dismiss()
-        
+
         val dialogView = LayoutInflater.from(context).inflate(R.layout.dialog_progress, null)
         val textMessage = dialogView.findViewById<TextView>(R.id.textProgressMessage)
-        textMessage.text = message
+        textMessage.text = message ?: context.getString(R.string.common_please_wait)
         
         dialog = MaterialAlertDialogBuilder(context)
             .setView(dialogView)
