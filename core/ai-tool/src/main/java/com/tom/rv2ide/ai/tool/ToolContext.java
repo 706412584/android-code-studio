@@ -144,6 +144,26 @@ public final class ToolContext {
         .build();
   }
 
+  /**
+   * 返回一个仅替换 {@code progressListener} 的副本。
+   *
+   * <p>调用方（编排层）在事件流建好后用它接线进度端口——构建顺序决定进度监听器
+   * 无法在 builder 链上一次性给出（事件流依赖持久化监听器，后者又依赖本上下文之外
+   * 的会话信息）。其它字段原样保留。
+   */
+  public ToolContext withProgressListener(ProgressListener newProgressListener) {
+    return builder()
+        .homePath(this.homePath)
+        .extraWriteRoots(this.extraWriteRoots)
+        .bypassPathProtection(this.bypassPathProtection)
+        .toolCallId(this.toolCallId)
+        .conversationId(this.conversationId)
+        .progressListener(newProgressListener)
+        .settings(this.settings)
+        .imageDataProvider(this.imageDataProvider)
+        .build();
+  }
+
   /** 报告工具执行进度。无监听者时静默忽略。 */
   public void reportProgress(String message) {
     ProgressListener listener = this.progressListener;

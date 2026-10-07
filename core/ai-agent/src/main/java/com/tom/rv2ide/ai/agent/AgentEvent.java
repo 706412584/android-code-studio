@@ -90,6 +90,16 @@ public final class AgentEvent {
     CONTEXT_COMPACTED,
 
     /**
+     * 工具 / 子 agent 的步骤级进度播报（面向用户的单行文本）。
+     *
+     * <p><b>为什么需要它</b>：长任务（子 agent 调查、长命令）在两次工具调用之间可能
+     * 沉默几十秒，界面看起来和卡死一样。这条事件让「此刻在做什么」可见。
+     *
+     * <p><b>不落盘</b>：进度是瞬时状态，回放历史时没有意义；持久化只保留结论。
+     */
+    PROGRESS,
+
+    /**
      * 流中断后即将重发本次请求。
      *
      * <p>UI 收到它必须**丢弃本轮已渲染的部分输出**——重发会产生一份全新的回答，
@@ -236,6 +246,15 @@ public final class AgentEvent {
         maxAttempts,
         delayMs,
         safeReason);
+  }
+
+  /**
+   * 步骤级进度播报。见 {@link Type#PROGRESS}。
+   *
+   * @param message 面向用户的单行描述（内容在 {@link #getMessage()}）
+   */
+  public static AgentEvent progress(String message) {
+    return new AgentEvent(Type.PROGRESS, message, null, null, null);
   }
 
   /** 第几次重试（从 1 开始）；非重试事件为 0。 */

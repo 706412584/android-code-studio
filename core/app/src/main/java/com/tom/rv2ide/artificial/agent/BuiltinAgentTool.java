@@ -136,9 +136,13 @@ public final class BuiltinAgentTool extends BaseTool {
       context.reportProgress("内置 agent " + agent.getName() + ": " + abbreviate(task, 80));
     }
 
+    // 步骤进度经父级进度端口回传，见 AgentTool.execute 的同一处理。
+    SubAgentRunner.ProgressListener forward = context == null ? null : context::reportProgress;
+
     try {
       SubAgentRunner.Result result =
-          runner.run(new SubAgentRunner.Request(task, mode, depth, agent.getPrompt(), filter));
+          runner.run(
+              new SubAgentRunner.Request(task, mode, depth, agent.getPrompt(), filter, forward));
       if (result == null) {
         return error("内置 agent 没有返回结果。");
       }

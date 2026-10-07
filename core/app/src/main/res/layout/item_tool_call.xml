@@ -102,9 +102,42 @@
       android:visibility="gone"
       tools:visibility="visible">
 
+      <!--
+        步骤区：只有上报过步骤进度的调用才有内容（如子 agent 运行）。
+        没有步骤时整块隐藏——普通工具（读一个文件、跑一条命令）的输入输出
+        已经说明了它做了什么，多一个空标题只是噪音。
+      -->
+      <LinearLayout
+        android:id="@+id/toolStepsSection"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:visibility="gone"
+        tools:visibility="visible">
+
+        <TextView
+          android:layout_width="wrap_content"
+          android:layout_height="wrap_content"
+          android:text="@string/ai_assistant_tool_steps"
+          android:textAppearance="@style/TextAppearance.Material3.LabelSmall"
+          android:textStyle="bold" />
+
+        <TextView
+          android:id="@+id/toolSteps"
+          android:layout_width="match_parent"
+          android:layout_height="wrap_content"
+          android:layout_marginTop="2dp"
+          android:fontFamily="monospace"
+          android:textAppearance="@style/TextAppearance.Material3.BodySmall"
+          android:textIsSelectable="true"
+          tools:text="子 agent 思考中（第 1 轮）\n子 agent 步骤 1 · file_read: app/build.gradle.kts" />
+
+      </LinearLayout>
+
       <TextView
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
         android:text="@string/ai_assistant_tool_input"
         android:textAppearance="@style/TextAppearance.Material3.LabelSmall"
         android:textStyle="bold" />

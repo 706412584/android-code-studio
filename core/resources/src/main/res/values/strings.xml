@@ -403,6 +403,8 @@
   <string name="ai_assistant_tool_expand">▸</string>
   <string name="ai_assistant_tool_collapse">▾</string>
   <string name="ai_assistant_tool_cancelled">Cancelled by user</string>
+  <!-- Steps section on a tool card that reported step progress (e.g. a sub-agent's run) -->
+  <string name="ai_assistant_tool_steps">Steps</string>
 
   <!-- Floating AI assistant on the main screen -->
   <string name="ai_assistant_open">Open AI assistant</string>

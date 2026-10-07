@@ -17,6 +17,7 @@
 
 package com.tom.rv2ide.artificial.agent;
 
+import com.tom.rv2ide.ai.agent.AgentEvent;
 import com.tom.rv2ide.ai.agent.AgentRunResult;
 import com.tom.rv2ide.ai.agent.AgentSession;
 import com.tom.rv2ide.ai.protocol.ModelCancellationToken;
@@ -185,6 +186,13 @@ public final class SubAgentRunnerImpl implements SubAgentRunner {
       parentCancellation.onCancel(childCancellation::cancel);
     }
 
+    // 子会话事件折叠成步骤行回传父级（见 SubAgentStepReporter 的隔离原则）。
+    // 请求未携带进度回调时不建监听器——没有观察者的事件翻译纯属浪费。
+    AgentEvent.Listener childListener =
+        request.getProgress() == null
+            ? null
+            : new SubAgentStepReporter(request.getProgress());
+
     AgentSession session = new AgentSession(modelClient, registry, executor);
     AgentRunResult result =
         session.run(
@@ -193,7 +201,7 @@ public final class SubAgentRunnerImpl implements SubAgentRunner {
             request.getTask(),
             toolContext,
             childCancellation,
-            null);
+            childListener);
 
     return new Result(
         !result.isFailed(), result.getOutput(), result.getTurns(), result.getToolCallCount());

@@ -115,13 +115,23 @@ public final class CustomAgentTool extends BaseTool {
       context.reportProgress("自定义 agent " + agent.getName());
     }
 
+    // 步骤进度经父级进度端口回传，见 AgentTool.execute 的同一处理。
+    SubAgentRunner.ProgressListener forward = context == null ? null : context::reportProgress;
+
     try {
       // 把用户的提示词与具体任务拼在一起交给子 agent 循环。
       // 提示词作为「职责说明」放在前面，任务在后——模型先建立角色，再处理具体事项。
       String fullTask = agent.getPrompt() + "\n\n[ 本次任务 ]\n" + task;
 
       SubAgentRunner.Result result =
-          runner.run(new SubAgentRunner.Request(fullTask, SubAgentRunner.Mode.EXPLORE, depth));
+          runner.run(
+              new SubAgentRunner.Request(
+                  fullTask,
+                  SubAgentRunner.Mode.EXPLORE,
+                  depth,
+                  null,
+                  com.tom.rv2ide.ai.tool.ToolNameFilter.unrestricted(),
+                  forward));
 
       if (result == null) {
         return error("自定义 agent 没有返回结果。");

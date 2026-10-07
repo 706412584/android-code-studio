@@ -1698,6 +1698,18 @@ public final class AgentOrchestrator {
     PersistingListener persistingListener =
         new PersistingListener(conversationId, userRequest, fanOut);
 
+    // 工具进度（含子 agent 步骤行）经事件流上报。PROGRESS 不落盘（见
+    // PersistingListener.persist 的 default 分支），只广播给订阅者。
+    //
+    // 必须在这里接线而不是上面构造 toolContext 时：进度要经 persistingListener
+    // 转发（与其它事件同一条投递路径，订阅方无需第二套通道），而它此刻才建好。
+    //
+    // **此前这个端口从未接线**：所有工具的 reportProgress 都因「无监听者时静默忽略」
+    // 被吞掉——子 agent 运行期间界面因此毫无动静，看起来与卡死无异。
+    toolContext =
+        toolContext.withProgressListener(
+            message -> persistingListener.onEvent(AgentEvent.progress(message)));
+
     // 告知订阅者「用户发了这条」。必须在 PersistingListener 构造之后：构造函数里
     // 已把用户消息落盘，因此订阅者收到本事件时读到的历史一定包含它——否则会出现
     // 「事件已到、但快照里还没有」的窗口（订阅方会把它当新消息、回放时再出现一次）。

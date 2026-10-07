@@ -1884,6 +1884,21 @@ class FloatingAssistantView(
         }
         lifecycleScope.launch(Dispatchers.Main) { appendTrace(event.message) }
       }
+      com.tom.rv2ide.ai.agent.AgentEvent.Type.PROGRESS -> {
+        // 步骤级进度（子 agent 运行期间为主）。两条去向：
+        //  1. 底部状态条——「此刻在做什么」的实时播报（主要用途）；
+        //  2. 运行中工具卡片的步骤区——供用户回看（子 agent 的过程不进主对话，
+        //     卡片里的步骤行是唯一凭据）。
+        // 不落盘：进度是瞬时状态，回放历史时没有意义（PersistingListener 的 default 分支）。
+        val line = event.message
+        if (line.isEmpty() || displayedConversationId != conversationId) {
+          return
+        }
+        lifecycleScope.launch(Dispatchers.Main) {
+          showAction(line)
+          adapter.appendToolStep(line)
+        }
+      }
       com.tom.rv2ide.ai.agent.AgentEvent.Type.FAILED -> {
         ui.streamedThisRun = true
         ui.retryCardPinned = ui.retryCountThisRun > 0

@@ -82,8 +82,18 @@ public interface SubAgentRunner {
     /** 工具名白名单；{@link ToolNameFilter#unrestricted()} 表示不限制。 */
     private final ToolNameFilter toolFilter;
 
+    /**
+     * 步骤进度接收者；null 表示不报告。
+     *
+     * <p><b>为什么是「步骤」而不是完整事件流</b>：子 agent 的中间过程刻意不进主对话
+     * （见类注释），但「它此刻在做什么」用户有权看到——一个跑了十几步的子 agent
+     * 若界面毫无动静，看起来和卡死没有区别。步骤行只报关键节点（工具调用、轮次），
+     * 不转发文本与推理增量：那些是子 agent 的私有上下文，转发会破坏隔离带来的收益。
+     */
+    private final ProgressListener progress;
+
     public Request(String task, Mode mode, int depth) {
-      this(task, mode, depth, null, ToolNameFilter.unrestricted());
+      this(task, mode, depth, null, ToolNameFilter.unrestricted(), null);
     }
 
     /**
@@ -95,11 +105,28 @@ public interface SubAgentRunner {
      */
     public Request(
         String task, Mode mode, int depth, String systemPrompt, ToolNameFilter toolFilter) {
+      this(task, mode, depth, systemPrompt, toolFilter, null);
+    }
+
+    /**
+     * 完整构造。
+     *
+     * @param progress 步骤进度接收者；null 表示不报告。实现方**必须**容忍回调抛异常
+     *     （进度是尽力而为的旁路，不应让子 agent 运行失败），且回调可能来自任意线程
+     */
+    public Request(
+        String task,
+        Mode mode,
+        int depth,
+        String systemPrompt,
+        ToolNameFilter toolFilter,
+        ProgressListener progress) {
       this.task = task == null ? "" : task;
       this.mode = mode == null ? Mode.EXPLORE : mode;
       this.depth = depth;
       this.systemPrompt = systemPrompt == null ? "" : systemPrompt;
       this.toolFilter = toolFilter == null ? ToolNameFilter.unrestricted() : toolFilter;
+      this.progress = progress;
     }
 
     /** 交给子 agent 的任务描述。 */
@@ -124,6 +151,22 @@ public interface SubAgentRunner {
     public ToolNameFilter getToolFilter() {
       return toolFilter;
     }
+
+    /** 步骤进度接收者；可能为 null（调用方不关心进度）。 */
+    public ProgressListener getProgress() {
+      return progress;
+    }
+  }
+
+  /**
+   * 子 agent 步骤进度的接收者。
+   *
+   * <p>回调在子 agent 的运行线程上触发。实现方**不得**在此做重活或阻塞——
+   * 它是旁路通道，慢下来会拖住子 agent 本身。
+   */
+  public interface ProgressListener {
+    /** 一行面向用户的步骤描述（如「子 agent 步骤 3/40 · file_read: app/build.gradle.kts」）。 */
+    void onProgress(String message);
   }
 
   /** 子 agent 的执行结果。 */

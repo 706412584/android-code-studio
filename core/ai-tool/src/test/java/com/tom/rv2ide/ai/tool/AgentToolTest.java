@@ -279,4 +279,40 @@ final class AgentToolTest {
     assertFalse(progress.isEmpty());
     assertTrue(progress.get(0).contains("explore"));
   }
+
+  @Test
+  void forwardsStepProgressFromRunnerToTheParentPort() throws Exception {
+    // 请求里必须带上转发器：子 agent 运行期间父级循环被阻塞，这些步骤行是用户
+    // 唯一能看到的实时信息（缺了转发，界面看起来与卡死无异——用户实测反馈）。
+    List<String> progress = new ArrayList<>();
+    ToolContext context =
+        ToolContext.builder().homePath("/w").progressListener(progress::add).build();
+
+    // 假 runner 在「运行期间」报告一步，模拟 SubAgentStepReporter 的回传。
+    SubAgentRunner runner =
+        new SubAgentRunner() {
+          @Override
+          public Result run(Request request) {
+            request.getProgress().onProgress("子 agent 步骤 1 · file_read: a.kt");
+            return new Result(true, "结论", 1, 1);
+          }
+        };
+
+    new AgentTool(runner).execute(task("调查"), context);
+
+    assertTrue(
+        progress.contains("子 agent 步骤 1 · file_read: a.kt"),
+        "步骤行应到达父级进度端口：" + progress);
+  }
+
+  @Test
+  void withoutProgressListenerRequestsCarryNoForwarder() throws Exception {
+    // 无监听者时请求不带转发器——没有观察者的步骤翻译纯属浪费。
+    FakeRunner runner = new FakeRunner(new SubAgentRunner.Result(true, "x", 1, 1));
+
+    new AgentTool(runner).execute(task("调查"), null);
+
+    assertFalse(runner.requests.isEmpty());
+    assertEquals(null, runner.requests.get(0).getProgress());
+  }
 }

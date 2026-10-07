@@ -157,8 +157,17 @@ public final class AgentTool extends BaseTool {
       context.reportProgress("子 agent（" + mode.wireName() + "）: " + abbreviate(task, 80));
     }
 
+    // 子 agent 的步骤进度经父级进度端口回传（→ 父级事件流 → 界面状态条）。
+    // 子 agent 运行期间父级循环被阻塞，这些行是用户**唯一**能看到的实时信息——
+    // 没有它们，一个跑了十几步的子 agent 看起来和卡死没有区别。
+    SubAgentRunner.ProgressListener forward =
+        context == null ? null : context::reportProgress;
+
     try {
-      SubAgentRunner.Result result = runner.run(new SubAgentRunner.Request(task, mode, depth));
+      SubAgentRunner.Result result =
+          runner.run(
+              new SubAgentRunner.Request(
+                  task, mode, depth, null, ToolNameFilter.unrestricted(), forward));
       if (result == null) {
         return error("子 agent 没有返回结果。");
       }

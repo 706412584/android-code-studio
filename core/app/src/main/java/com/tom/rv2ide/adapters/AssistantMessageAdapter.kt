@@ -197,6 +197,13 @@ class AssistantMessageAdapter(
       val output: String = "",
       val status: ToolStatus = ToolStatus.RUNNING,
       val expanded: Boolean = false,
+      /**
+       * 步骤进度记录（工具执行期间经 PROGRESS 事件累积）。
+       *
+       * <p>对普通工具通常为空；对子 agent 这类长任务，它记录运行期间每步在做什么——
+       * 子 agent 的中间过程刻意不进主对话，这些行是用户回看时的唯一凭据。
+       */
+      val steps: List<String> = emptyList(),
   ) : Item()
 
   private val items = mutableListOf<Item>()
@@ -336,6 +343,27 @@ class AssistantMessageAdapter(
         )
     notifyItemChanged(index)
   }
+
+  /**
+   * 向「运行中」的工具卡片追加一行步骤记录。
+   *
+   * <p>只回填到最近一张仍在运行的卡片（与 TOOL_FINISHED 的关联方式一致）——
+   * 步骤由工具执行期间产生，此刻不可能有别的卡片在跑。没有运行中的卡片时静默丢弃：
+   * 迟到的进度行没有归属，插到任意卡片上都是错误关联。
+   */
+  fun appendToolStep(step: String) {
+    val index = items.indexOfLast { it is ToolCall && it.status == ToolStatus.RUNNING }
+    if (index < 0) {
+      return
+    }
+    val old = items[index] as ToolCall
+    items[index] = old.copy(steps = old.steps + step)
+    notifyItemChanged(index)
+  }
+
+  /** 最近一张仍在运行的工具卡片 id；没有则 null。 */
+  fun lastRunningToolCallId(): Long? =
+      items.lastOrNull { it is ToolCall && it.status == ToolStatus.RUNNING }?.id
 
   /** 切换卡片展开状态。 */
   fun toggleExpanded(id: Long) {
@@ -836,6 +864,14 @@ class AssistantMessageAdapter(
           )
 
       if (call.expanded) {
+        // 步骤区：只有累积过步骤的调用才显示（子 agent 这类长任务）。
+        // 普通工具没有步骤，整块隐藏——空标题只是噪音。
+        val hasSteps = call.steps.isNotEmpty()
+        binding.toolStepsSection.visibility = if (hasSteps) View.VISIBLE else View.GONE
+        if (hasSteps) {
+          binding.toolSteps.text = call.steps.joinToString("\n")
+        }
+
         binding.toolInput.text = call.input.ifBlank { context.getString(string.ai_assistant_tool_empty) }
         binding.toolOutput.text =
             when {
@@ -852,6 +888,7 @@ class AssistantMessageAdapter(
       adapter.applyTextScale(binding.toolStatus, AssistantUiStyleStore.BaseSp.LABEL_SMALL)
       adapter.applyTextScale(binding.toolChevron, AssistantUiStyleStore.BaseSp.LABEL_SMALL)
       adapter.applyTextScale(binding.toolSummary, AssistantUiStyleStore.BaseSp.BODY_SMALL)
+      adapter.applyTextScale(binding.toolSteps, AssistantUiStyleStore.BaseSp.BODY_SMALL)
       adapter.applyTextScale(binding.toolInput, AssistantUiStyleStore.BaseSp.BODY_SMALL)
       adapter.applyTextScale(binding.toolOutput, AssistantUiStyleStore.BaseSp.BODY_SMALL)
       applyCardScale(binding.toolCard, adapter.cardScale(), cornerBaseDp = 10f)
