@@ -538,8 +538,14 @@ class AssistantMessageAdapter(
       //
       // 上限设在文本段上：LinearLayout 没有 maxWidth，而用户消息的内容只有一个
       // 文本段（用户输入不走拆段，见上面的渲染分支）。助手消息不限宽——代码块越宽越好读。
+      // 卡片缩放参与这个估算：内边距随设置缩放，减去的 28dp（左右 padding 之和）
+      // 必须按同一系数换算，否则放大卡片时气泡会顶穿 90% 上限。
+      val messageCardScale = adapter.cardScale()
       val bubbleMaxWidth =
-          maxOf((parent.width * USER_BUBBLE_MAX_WIDTH_RATIO).toInt() - dp(card, 28), dp(card, 160))
+          maxOf(
+              (parent.width * USER_BUBBLE_MAX_WIDTH_RATIO).toInt()
+                  - dp(card, (28 * messageCardScale).toInt()),
+              dp(card, 160))
       for (i in 0 until content.childCount) {
         (content.getChildAt(i) as? TextView)?.maxWidth =
             if (isUser) bubbleMaxWidth else Int.MAX_VALUE
@@ -590,7 +596,7 @@ class AssistantMessageAdapter(
       // 角色标签只在过程信息上显示，见布局注释。
       binding.messageRole.visibility = if (message.role == Role.TRACE) View.VISIBLE else View.GONE
 
-      // ---- 外观：字号 / 头像 ----
+      // ---- 外观：字号 / 卡片 / 头像 ----
 
       // 字号按用户设定缩放。只作用于文本段与角色标签；代码块有自己的等宽字号，
       // 缩放它会让代码行宽与容器不匹配（见 renderAssistantContent）。
@@ -600,6 +606,18 @@ class AssistantMessageAdapter(
           adapter.applyTextScale(it, AssistantUiStyleStore.BaseSp.BODY_MEDIUM)
         }
       }
+
+      // 消息卡片的内边距与圆角随「卡片大小」设置缩放，与工具卡/思考卡口径一致。
+      // XML 里是 14/10dp、圆角 18dp（见 item_assistant_message.xml），这里按同一系数重设。
+      val density = card.resources.displayMetrics.density
+      fun dpF(value: Float): Int = (value * density).toInt()
+      (card.getChildAt(0) as? View)?.setPadding(
+          dpF(14f * messageCardScale),
+          dpF(10f * messageCardScale),
+          dpF(14f * messageCardScale),
+          dpF(10f * messageCardScale),
+      )
+      card.radius = dpF(18f * messageCardScale).toFloat()
 
       // 头像只给助手消息：用户知道自己说了什么，不需要头像确认；
       // 过程信息是系统输出，加头像会让人误以为「AI 在自言自语地报状态」。

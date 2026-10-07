@@ -135,6 +135,43 @@ class FloatingAssistantView(
    */
   private val uiStyleStore = AssistantUiStyleStore(context)
 
+  /**
+   * 外观设置变更监听（字号 / 卡片大小 / 颜色 / 头像）。
+   *
+   * <p><b>为什么必须监听而不是等下次 bind</b>：设置页在本视图之外（另开界面），
+   * 改完返回时本视图既不重建也不重新 bind 已渲染的消息——用户会看到「设置没生效」，
+   * 只有滚出屏幕再滚回来才变。监听偏好变更即时重绑，改动立刻可见。
+   *
+   * <p>只认这四个键：同一偏好文件里还有权限模式、MCP 等十来个键，
+   * 全部重绑会在无关设置（如切换 shell 后端）上也刷新一遍列表。
+   */
+  private val uiStyleKeys =
+      setOf(
+          AssistantUiStyleStore.KEY_TEXT_SIZE,
+          AssistantUiStyleStore.KEY_CARD_SCALE,
+          AssistantUiStyleStore.KEY_TEXT_COLOR,
+          AssistantUiStyleStore.KEY_AVATAR_PATH,
+          AssistantUiStyleStore.KEY_AVATAR_BUILTIN,
+      )
+
+  private val uiStylePrefs =
+      context.applicationContext.getSharedPreferences("ai_agent_tools", Context.MODE_PRIVATE)
+
+  private val uiStyleListener =
+      android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+        if (key == null || key !in uiStyleKeys) {
+          return@OnSharedPreferenceChangeListener
+        }
+        // 回调来自写入线程（设置页主线程），但保守起见投递到主线程再碰控件——
+        // 与 [broadcastListener] 同一纪律。
+        binding.root.post {
+          if (adapter.itemCount > 0) {
+            // 与 open() 里同一做法：保留滚动位置的整表重绑。
+            adapter.notifyItemRangeChanged(0, adapter.itemCount)
+          }
+        }
+      }
+
   private val adapter = AssistantMessageAdapter(uiStyleStore)
   private val settings = AgentToolSettings(context)
 
@@ -482,6 +519,10 @@ class FloatingAssistantView(
     // 装回调。共享 orchestrator 时这是「当前可见者拥有」的初始声明；不共享时与
     // 抽象前「构造期装一次」等价（attach 在本视图生命周期内只调一次，且在主线程）。
     installOrchestratorCallbacks()
+
+    // 外观设置变更时即时重绑消息（见 [uiStyleListener]）。注册放在 attach：
+    // 视图未挂载时不需要刷新，而 dispose 会对称注销，不会泄漏。
+    uiStylePrefs.registerOnSharedPreferenceChangeListener(uiStyleListener)
 
     binding.assistantMessages.layoutManager = LinearLayoutManager(context)
     binding.assistantMessages.adapter = adapter
@@ -988,6 +1029,9 @@ class FloatingAssistantView(
     // 于是销毁后的视图仍持有回调并往已 detach 的控件里写数据。
     detachFromLiveSet()
     releaseOrchestratorCallbacks()
+    // 注销外观监听：SharedPreferences 持有监听器的强引用，不注销会让本视图
+    // （及其 binding/adapter）随偏好文件一起存活到进程结束。
+    uiStylePrefs.unregisterOnSharedPreferenceChangeListener(uiStyleListener)
   }
 
   /**

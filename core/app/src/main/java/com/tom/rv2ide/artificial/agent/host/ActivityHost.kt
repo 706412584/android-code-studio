@@ -260,7 +260,9 @@ private class ActivityDialogs(private val context: Context) : AssistantDialogs {
 
   override fun showModelPicker(onChanged: () -> Unit) {
     // Activity 宿主下仍是 BottomSheetDialog；设置入口也交回本宿主，保证落点一致。
-    AssistantModelPicker.show(context, onChanged) { openSettings() }
+    // 必须用**命名参数**：show() 最后一个参数是 configureWindow（在 show() 前调用），
+    // 尾随 lambda 会被绑到它上面且类型恰好兼容——曾因此导致每次打开选择器都先跳设置页。
+    AssistantModelPicker.show(context, onChanged, onOpenSettings = { openSettings() })
   }
 
   override fun openSettings() {
