@@ -1600,4 +1600,54 @@
   <string name="checkpoint_restore_code_desc">恢复代码至此点之前的快照，保持对话历史</string>
   <string name="checkpoint_undo_last_restore">撤销上次恢复</string>
   <string name="checkpoint_undo_last_restore_desc">把最近一次代码恢复回滚回恢复前的状态</string>
+
+  <!-- AharouComputerSheet: 动作钮 / 占位文案（原文照抄自 Aharou strings.xml） -->
+  <string name="common_close">关闭</string>
+  <string name="common_copy">复制</string>
+  <string name="tool_action_open_terminal">在终端中运行</string>
+  <string name="tool_action_open_browser">在浏览器中查看</string>
+  <string name="vd_capturing">抓取影子屏画面…</string>
+  <string name="vd_not_running">影子屏未运行</string>
+
+  <!-- ProviderDashboardBar: 面板状态 / 剪贴板与外链提示（原文照抄自 Aharou strings.xml） -->
+  <string name="dashboard_fetching">正在加载面板…</string>
+  <string name="dashboard_fetch_failed_retry">加载失败，点击重试</string>
+  <string name="dashboard_tap_to_query">点击刷新面板</string>
+  <string name="common_open_link_failed">无法打开链接</string>
+  <string name="common_copied_with_title">已复制：%1$s</string>
+  <string name="common_collapse">折叠</string>
+  <string name="chat_attachment_prefix">附件：</string>
+  <string name="chat_attachment_directory_suffix">（目录）</string>
+  <string name="chat_attachment_directory_hint">（标注「目录」的附件只提供路径，内容请用文件工具自行查看）</string>
+  <string name="chat_attachment_max">最多可同时发送 %1$s 个附件</string>
+  <string name="chat_attachment_uploaded">已上传 %1$s 个附件</string>
+  <string name="chat_attachment_uploaded_partial">已上传 %1$s 个附件，部分附件未加入</string>
+  <string name="chat_image_too_large">图片超过 %1$s，请压缩后重试</string>
+  <string name="chat_uploaded_to">已上传到 %1$s</string>
+  <string name="chat_select_workspace_first">请先选择工作区</string>
+  <string name="chat_read_file_failed">无法读取所选文件</string>
+  <string name="chat_upload_failed">上传失败</string>
+  <string name="chat_unsupported_image_type">无法识别图片类型，仅支持 jpg/png/gif/webp</string>
+  <string name="common_preview">预览</string>
+  <string name="common_image_preview">图片预览</string>
+  <string name="chat_remove_attachment">移除附件</string>
+  <string name="chat_attachment_preview_unavailable">读不到内容，或该文件不支持预览</string>
+  <string name="chat_attachment_uploading">正在上传 %1$d 个文件…</string>
+  <string name="chat_add_attachment">添加附件</string>
+  <string name="chat_upload_file">上传文件</string>
+  <string name="chat_upload_image">上传图片</string>
+  <string name="chat_take_photo">拍照</string>
+  <string name="chat_queue_title">待发送队列（%1$d）</string>
+  <string name="chat_queue_remove">移除排队消息</string>
+  <string name="chat_queue_drag">拖拽排序</string>
+  <string name="chat_queue_edit">编辑</string>
+  <string name="chat_queue_interject">立即插入</string>
+  <string name="share_intake_title">如何处理这个文件？</string>
+  <string name="share_intake_title_multiple">如何处理这些文件？</string>
+  <string name="share_intake_preview">预览</string>
+  <string name="share_intake_insert">插入输入框</string>
+  <string name="config_confirm_title">配置变更确认</string>
+  <string name="config_confirm_fallback_caption">Android Code Studio 想修改自己的设置</string>
+  <string name="config_confirm_approve">同意</string>
+  <string name="config_confirm_reject">驳回</string>
 </resources>

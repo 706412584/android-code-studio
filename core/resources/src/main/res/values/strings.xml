@@ -1655,4 +1655,54 @@ This AI agent is designed to assist you in developing Android applications direc
   <string name="checkpoint_restore_code_desc">Revert code to snapshot before this point, keep conversation</string>
   <string name="checkpoint_undo_last_restore">Undo last restore</string>
   <string name="checkpoint_undo_last_restore_desc">Roll back the most recent code restore</string>
+
+  <!-- AharouComputerSheet: action buttons / placeholder captions -->
+  <string name="common_close">Close</string>
+  <string name="common_copy">Copy</string>
+  <string name="tool_action_open_terminal">Run in terminal</string>
+  <string name="tool_action_open_browser">View in browser</string>
+  <string name="vd_capturing">Capturing virtual screen…</string>
+  <string name="vd_not_running">Virtual screen not running</string>
+
+  <!-- ProviderDashboardBar: dashboard states / clipboard & link toasts (from Aharou strings.xml) -->
+  <string name="dashboard_fetching">Loading dashboard…</string>
+  <string name="dashboard_fetch_failed_retry">Load failed, tap to retry</string>
+  <string name="dashboard_tap_to_query">Tap to refresh</string>
+  <string name="common_open_link_failed">Cannot open link</string>
+  <string name="common_copied_with_title">Copied: %1$s</string>
+  <string name="common_collapse">Collapse</string>
+  <string name="chat_attachment_prefix">Attachments:</string>
+  <string name="chat_attachment_directory_suffix"> (directory)</string>
+  <string name="chat_attachment_directory_hint">(Attachments marked as &quot;directory&quot; only provide the path; use file tools to inspect their contents)</string>
+  <string name="chat_attachment_max">You can attach at most %1$s attachments</string>
+  <string name="chat_attachment_uploaded">Uploaded %1$s attachments</string>
+  <string name="chat_attachment_uploaded_partial">Uploaded %1$s attachments; some were not added</string>
+  <string name="chat_image_too_large">Image exceeds %1$s, please compress it and retry</string>
+  <string name="chat_uploaded_to">Uploaded to %1$s</string>
+  <string name="chat_select_workspace_first">Select a workspace first</string>
+  <string name="chat_read_file_failed">Unable to read the selected file</string>
+  <string name="chat_upload_failed">Upload failed</string>
+  <string name="chat_unsupported_image_type">Unrecognized image type; only jpg/png/gif/webp are supported</string>
+  <string name="common_preview">Preview</string>
+  <string name="common_image_preview">Image preview</string>
+  <string name="chat_remove_attachment">Remove attachment</string>
+  <string name="chat_attachment_preview_unavailable">Can\'t read this file, or preview isn\'t supported</string>
+  <string name="chat_attachment_uploading">Uploading %1$d files…</string>
+  <string name="chat_add_attachment">Add attachment</string>
+  <string name="chat_upload_file">Upload file</string>
+  <string name="chat_upload_image">Upload image</string>
+  <string name="chat_take_photo">Take photo</string>
+  <string name="chat_queue_title">Queue (%1$d)</string>
+  <string name="chat_queue_remove">Remove from queue</string>
+  <string name="chat_queue_drag">Drag to reorder</string>
+  <string name="chat_queue_edit">Edit</string>
+  <string name="chat_queue_interject">Insert now</string>
+  <string name="share_intake_title">How do you want to handle this file?</string>
+  <string name="share_intake_title_multiple">How do you want to handle these files?</string>
+  <string name="share_intake_preview">Preview</string>
+  <string name="share_intake_insert">Insert into input</string>
+  <string name="config_confirm_title">Confirm configuration change</string>
+  <string name="config_confirm_fallback_caption">Android Code Studio wants to change its own settings</string>
+  <string name="config_confirm_approve">Approve</string>
+  <string name="config_confirm_reject">Reject</string>
 </resources>

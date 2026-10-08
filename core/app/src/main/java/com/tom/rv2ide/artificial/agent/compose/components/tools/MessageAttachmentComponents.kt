@@ -60,6 +60,7 @@ import com.tom.rv2ide.artificial.agent.compose.compat.LocalImageViewer
 import com.tom.rv2ide.artificial.agent.compose.compat.THUMBNAIL_MAX_EDGE
 import com.tom.rv2ide.artificial.agent.compose.compat.decodeSampledBitmap
 import com.tom.rv2ide.artificial.agent.compose.compat.toViewerRequest
+import com.tom.rv2ide.artificial.agent.compose.components.independent.formatBytes
 import com.tom.rv2ide.artificial.agent.compose.components.style.chatMutedSurfaceColor
 import com.tom.rv2ide.artificial.agent.compose.model.AgentAttachment
 import com.tom.rv2ide.artificial.agent.compose.theme.Brand
@@ -110,16 +111,9 @@ internal object AttachmentStrings {
       context.getString(R.string.compose_attachment_open_apk_permission)
 }
 
-/** 字节数展示：与 Aharou 同档位（B / KB / MB），保留一位小数只在 MB 档。 */
-internal fun formatBytes(bytes: Long): String {
-  val kb = 1024.0
-  val mb = kb * 1024.0
-  return when {
-    bytes >= mb -> String.format(java.util.Locale.US, "%.1f MB", bytes / mb)
-    bytes >= kb -> String.format(java.util.Locale.US, "%.0f KB", bytes / kb)
-    else -> "$bytes B"
-  }
-}
+// formatBytes 的权威实现收敛到 `independent/ChatAttachmentUtils.kt`（Aharou 原文所在地）。
+// 本文件的调用点通过顶层 import 复用同包级 internal 可见性——两个包同模块，无需再导一份。
+
 
 /**
  * 已发送 / 已生成附件的列表：**一行一个文件**。

@@ -118,3 +118,19 @@ fun AgentAttachment.toViewerRequest(): ImageViewerRequest =
                 localPath.takeIf { it.isNotBlank() }?.let { ImageSource.LocalFile(it) },
                 containerPath.takeIf { it.isNotBlank() }?.let { ImageSource.ContainerPath(it) }),
         title = fileName)
+
+/**
+ * 待发送附件 → 查看请求（源自 Aharou `ChatImageLoader.kt` 的 `PendingUploadAttachment`
+ * 重载，行为留档见 `components/markdown/ChatImageLoader.kt` 的 TODO(port) 块）。
+ *
+ * <p>与 [AgentAttachment.toViewerRequest] 的差异：待发送条目**还没有** containerPath 语义上的
+ * 已落盘保证，因此 base64 只作兜底来源——decodeByteArray 要完整 byte[] 常驻，从磁盘解码
+ * 没这份开销；localPath 优先与 Aharou 原文一致。
+ */
+fun PendingUploadAttachment.toViewerRequest(): ImageViewerRequest =
+    ImageViewerRequest(
+        sources =
+            listOfNotNull(
+                localPath.takeIf { it.isNotBlank() }?.let { ImageSource.LocalFile(it) },
+                image?.base64Data?.takeIf { it.isNotBlank() }?.let { ImageSource.Base64(it) }),
+        title = fileName)
