@@ -219,11 +219,28 @@ dependencies {
   implementation("androidx.compose.material3:material3:1.3.1")
   // ComposeView 嵌入现有 View 树所需（ComposeView 本身在 ui 里，但 Activity 集成在此）
   implementation("androidx.activity:activity-compose:1.9.3")
-  // 图标：Aharou 组件引用的是第三方库 compose.icons.FeatherIcons，而它不在本地缓存、离线拉不到，
-  // 故用 Material Icons 做等价替换（映射表见 compose/icons/FeatherIcons.kt）。
-  // 版本只能是 1.7.8——缓存里 material-icons-extended 仅此一版；它只要求 ui 1.6.0，
-  // 不会把上面的 ui 顶到本地没有的 1.7.8，因此与 1.7.6 共存是安全的。
+  // 图标：Aharou 的组件引用 compose.icons.FeatherIcons，直接引入它的来源库，
+  // 使被移植组件的图标引用逐字可用（不需要任何兼容层）。
+  implementation("br.com.devsrsouza.compose.icons:feather:1.1.1")
+  // 图标：Aharou 自身也声明了 material-icons-extended，其组件里另有直接引用 Material 图标之处。
   implementation("androidx.compose.material:material-icons-extended:1.7.8")
+  // Markdown 正文渲染。Aharou 的消息气泡与代码卡都走它，属逐字移植的前提。
+  // 版本必须停在 0.35.0，这是两个硬约束的交集，不是随意挑的：
+  //   - Kotlin：0.36 起改用 Kotlin 2.2+ 编译，其 .class 元数据版本 2.2/2.3，
+  //     本项目 Kotlin 2.1.0 的编译器读不了（实测 0.41.0 报
+  //     "Module was compiled with an incompatible version of Kotlin ... 2.3.0, expected 2.1.0"）。
+  //     0.35.0 用 Kotlin 2.1.21 编译，元数据 2.1，兼容。
+  //   - compileSdk：0.39 起 AAR metadata 声明 minCompileSdk=36，而本项目统一 compileSdk=34。
+  //     0.35.0 的 minCompileSdk=1，不需要动构建配置。
+  // 0.37/0.38 满足 compileSdk 但用 Kotlin 2.2 编译，故不可用。
+  implementation("com.mikepenz:multiplatform-markdown-renderer-m3:0.35.0")
+  implementation("com.mikepenz:multiplatform-markdown-renderer-code:0.35.0")
+  // 代码块语法高亮（markdown-renderer-code 的高亮后端）
+  implementation("dev.snipme:highlights-jvm:1.1.0")
+  // 数学公式（MarkdownMathSupport）
+  implementation("ru.noties:jlatexmath-android:0.2.0")
+  // 图片加载（ChatImageLoader / 消息内图片）
+  implementation("io.coil-kt:coil-compose:2.7.0")
 
   // external deps here
   implementation("com.github.Dimezis:BlurView:version-3.2.0")
