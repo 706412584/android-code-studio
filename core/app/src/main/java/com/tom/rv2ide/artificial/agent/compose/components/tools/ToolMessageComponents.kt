@@ -102,6 +102,8 @@ import com.tom.rv2ide.artificial.agent.compose.theme.Radius
 import com.tom.rv2ide.artificial.agent.compose.theme.Spacing
 import com.tom.rv2ide.artificial.agent.compose.theme.semanticColors
 import compose.icons.FeatherIcons
+import compose.icons.feathericons.ChevronRight
+import compose.icons.feathericons.Image
 import compose.icons.feathericons.Check
 import compose.icons.feathericons.ChevronDown
 import compose.icons.feathericons.ChevronUp
@@ -127,6 +129,11 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import androidx.compose.ui.res.stringResource
 import com.tom.rv2ide.resources.R
+import com.tom.rv2ide.artificial.agent.ToolResultImageSupport
+import com.tom.rv2ide.artificial.agent.compose.compat.ImageSource
+import com.tom.rv2ide.artificial.agent.compose.compat.LocalImageViewer
+import com.tom.rv2ide.artificial.agent.compose.compat.ImageViewerRequest
+import androidx.compose.material3.Surface
 
 internal val DiffAddBg: Color
     @Composable get() = MaterialTheme.semanticColors.diffAddBg
@@ -171,6 +178,8 @@ internal object ToolCardStrings {
   val TODO_COMPLETED: String @Composable get() = stringResource(R.string.compose_tool_card_todo_completed)
   val TODO_IN_PROGRESS: String @Composable get() = stringResource(R.string.compose_tool_card_todo_in_progress)
   val WEB_SEARCH_TITLE: String @Composable get() = stringResource(R.string.compose_tool_card_web_search_title)
+  val IMAGE_PREVIEW_LABEL: String @Composable get() = stringResource(R.string.compose_tool_card_image_preview)
+  val TAP_TO_VIEW: String @Composable get() = stringResource(R.string.compose_tool_card_tap_to_view)
   @Composable
   fun expandRemaining(hiddenCount: Any): String = stringResource(R.string.compose_tool_card_expand_remaining, hiddenCount)
   @Composable
@@ -439,6 +448,14 @@ internal fun ToolMessageBody(
           } else if (webSearchData != null) {
             Spacer(Modifier.height(Spacing.xs))
             WebSearchResultCard(result = webSearchData)
+          } else if (message.imageBase64 != null) {
+            // 工具结果里的图（截图 / 生成图 / 第三方 MCP 返回的图）。
+            //
+            // **为什么单独一个分支而不是与下面并列**：图片是这条工具结果的**主要内容**，
+            // 不是附加信息。落到下面的 `else` 里会把「结果」文本区也画出来，而那种结果的
+            // content 往往就是一大段 base64 或尺寸描述——正文与图重复且难看。
+            Spacer(Modifier.height(Spacing.xs))
+            ToolResultImage(message)
           } else if (edit != null) {
             // 差异卡：头部给路径与「复制」，页脚给增删统计
             Spacer(Modifier.height(Spacing.xs))
@@ -753,6 +770,99 @@ internal fun ToolCallGroupHeader(
             tint = Brand.IconGray,
             modifier = Modifier.size(18.dp))
       }
+}
+
+/**
+ * 工具结果里的图片：预览 + 点击看大图。
+ *
+ * <p><b>为什么本层只做「能不能看」的判定，不做解码</b>：真正的解码与灯箱由宿主包在面板
+ * 外层的 `ProvideAcsImageViewer` 负责（它按需解码并转给 ACS 已有的
+ * `ToolResultImageSupport.showLightbox`）。本层若自己解一遍，就会为了画一张预览图而
+ * 在主线程或额外协程里持有几 MB 的 Bitmap，而点开大图时宿主还要再解一次——同一份数据
+ * 解两遍，且两份的生命周期互不相干。这里只调 `ToolResultImageSupport.decode` 的
+ * **轻量判定**：它校验大小与 base64 合法性，决定「显示预览入口」还是「显示不可用提示」。
+ *
+ * <p><b>畸形数据只给提示、不画破图</b>：base64 来自工具甚至第三方 MCP server，畸形是常态
+ * （与 XML 路径 `AssistantMessageAdapter.bindImage` 同款取舍）。显示破图占位比不显示更糟
+ * ——用户会以为界面坏了。
+ */
+@Composable
+private fun ToolResultImage(message: AgentUIMessage) {
+  val base64 = message.imageBase64 ?: return
+  val mimeType = message.imageMimeType
+  // 键用长度 + 前缀而不是整串：整串相等比较本身要扫几 MB，而 base64 只会整体替换。
+  val key = base64.length to base64.take(64)
+
+  val decoded by
+      produceState<ToolResultImageSupport.Decoded?>(initialValue = null, key, mimeType) {
+        value =
+            withContext(Dispatchers.Default) {
+              ToolResultImageSupport.decode(mimeType, base64)
+            }
+      }
+
+  when (val result = decoded) {
+    // 判定中：不占位，避免下方内容被顶一下
+    null -> Unit
+    is ToolResultImageSupport.Decoded.Rejected ->
+        Text(
+            text =
+                stringResource(
+                    if (result.reason == ToolResultImageSupport.Reason.TOO_LARGE)
+                        R.string.ai_assistant_image_too_large
+                    else R.string.ai_assistant_image_unavailable),
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = MaterialTheme.typography.labelMedium,
+        )
+    is ToolResultImageSupport.Decoded.Ok -> {
+      val viewer = LocalImageViewer.current
+      val title = message.toolName ?: ToolCardStrings.IMAGE_PREVIEW_LABEL
+      // 预览用卡片形态（与差异卡、待办卡同一视觉层），点整块进大图。
+      Surface(
+          shape = RoundedCornerShape(ChatStyle.panelCorner),
+          color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
+          modifier =
+              Modifier.fillMaxWidth()
+                  .clip(RoundedCornerShape(ChatStyle.panelCorner))
+                  .clickable {
+                    viewer.show(
+                        ImageViewerRequest(
+                            sources = listOf(ImageSource.Base64(base64)),
+                            title = title,
+                        ))
+                  },
+      ) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(Spacing.sm),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+          Icon(
+              imageVector = FeatherIcons.Image,
+              contentDescription = null,
+              tint = Brand.IconGray,
+              modifier = Modifier.size(ChatStyle.rowIconSize))
+          Spacer(Modifier.width(Spacing.sm))
+          Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = title,
+                color = MaterialTheme.colorScheme.onSurface,
+                style = MaterialTheme.typography.labelLarge,
+            )
+            Text(
+                text = ToolCardStrings.TAP_TO_VIEW,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.labelSmall,
+            )
+          }
+          Icon(
+              imageVector = FeatherIcons.ChevronRight,
+              contentDescription = null,
+              tint = Brand.IconGray,
+              modifier = Modifier.size(18.dp))
+        }
+      }
+    }
+  }
 }
 
 /** 展开区的一段带小标题的内容块（如「指令」「结果」）：弱底等宽小面板，超出限高后在窗口内滚动。 */

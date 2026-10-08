@@ -1630,4 +1630,7 @@ This AI agent is designed to assist you in developing Android applications direc
   <string name="compose_markdown_image_preview">Image preview</string>
   <string name="compose_style_chat_copy">Copy</string>
   <string name="compose_style_chat_copied">Copied</string>
+  <string name="compose_tool_card_image_preview">Image</string>
+  <string name="compose_tool_card_tap_to_view">Tap to view</string>
+  <string name="ai_assistant_image_close">Close</string>
 </resources>

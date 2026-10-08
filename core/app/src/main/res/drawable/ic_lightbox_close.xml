@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  灯箱专用关闭图标：固定白色。
+
+  为什么不复用 ic_close：那个带 `tint="?attr/colorOnSurfaceVariant"`，在深色主题下接近黑，
+  压在灯箱的半透明黑底上等于看不见；而灯箱的背景恒为深色，与主题无关，
+  所以这里必须用固定色。改 ic_close 会波及所有用到它的界面，故另建一个。
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+  <path
+      android:fillColor="#FFFFFFFF"
+      android:pathData="M19,6.41L17.59,5 12,10.59 6.41,5 5,6.41 10.59,12 5,17.59 6.41,19 12,13.41 17.59,19 19,17.59 13.41,12z"/>
+</vector>

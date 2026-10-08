@@ -2927,7 +2927,19 @@ class FloatingAssistantView(
                     summary = "",
                     input = "",
                 )
-            adapter.completeToolCall(id, message.getContent(), message.isToolError())
+            // 图片同样要带过来。上面那个分支的注释已经写明「用错 kind 会让历史截图
+            // 全部消失且没有任何提示」——本分支先前只传三个参数，图片就是在**这里**丢的：
+            // 卡片不是配对回填、而是新建时，走的就是这条路径，于是所有「没有配对前导调用」
+            // 的历史工具图（包括重装后回放的会话）都不显示。两者必须一致。
+            val image = com.tom.rv2ide.ai.protocol.ImageInputPayload
+                .fromImageResult(message.getRawInputJson())
+            adapter.completeToolCall(
+                id,
+                message.getContent(),
+                message.isToolError(),
+                image?.dataBase64,
+                image?.mimeType.orEmpty(),
+            )
             if (message.steps.isNotEmpty()) {
               adapter.setToolSteps(id, message.steps)
             }
