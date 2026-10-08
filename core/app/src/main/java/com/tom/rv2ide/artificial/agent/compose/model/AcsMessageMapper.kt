@@ -52,6 +52,9 @@ object AcsMessageMapper {
    */
   private const val AHAROU_EDIT_TOOL = "editFile"
 
+  /** diff 内容仍在后台计算时的说明文案。 */
+  private const val COMPUTING_DIFF_TEXT = "正在计算改动…"
+
   /** diff 记录被裁剪后的说明文案。 */
   private const val EXPIRED_DIFF_TEXT = "（diff 记录已过期，无法还原改动内容）"
 
@@ -126,16 +129,18 @@ object AcsMessageMapper {
 
   private fun fromDiff(d: AssistantMessageAdapter.Diff): AgentUIMessage {
     val result = d.result
-    // result == null 且不在计算中，表示记录已过期（FileDiffStore 会裁剪旧记录）。
-    // 此时不标 editFile：让 Aharou 的解析器去解析一段没有 diff 的文本，只会得到 null，
-    // 反而把这条降级成一行 JSON 乱码。直接说明情况更清楚。
+    // result == null 有两种成因，文案必须区分，否则会把"还没算完"说成"记录已过期"——
+    // 运行刚结束时用户最可能立刻展开汇总组，此时报错是错误信息。
     if (result == null) {
       return AgentUIMessage(
           id = d.id.toString(),
           role = MessageRole.TOOL,
           toolName = null,
           toolArgs = """{"path":${quote(d.filePath)}}""",
-          content = if (d.computing) "" else EXPIRED_DIFF_TEXT,
+          // 计算中也给可读文案，而不是留空只靠 toolStatus 表达：渲染侧的运行态判据
+          // 由移植组件决定（Aharou 原判据是 content 前缀哨兵，ACS 用 toolStatus），
+          // 文案写进 content 则两种判据下用户都能看到当前在做什么。
+          content = if (d.computing) COMPUTING_DIFF_TEXT else EXPIRED_DIFF_TEXT,
           toolStatus = if (d.computing) ToolRunStatus.RUNNING else ToolRunStatus.DONE,
           expanded = d.expanded,
           diffId = d.diffId,
