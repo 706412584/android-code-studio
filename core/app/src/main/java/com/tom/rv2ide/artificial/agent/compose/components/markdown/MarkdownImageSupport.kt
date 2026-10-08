@@ -45,6 +45,8 @@ import com.tom.rv2ide.artificial.agent.compose.compat.MARKDOWN_MAX_EDGE
 import com.tom.rv2ide.artificial.agent.compose.compat.decodeSampledBitmap
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import androidx.compose.ui.res.stringResource
+import com.tom.rv2ide.resources.R
 
 /**
  * 图片预览按钮的无障碍文案。
@@ -52,6 +54,7 @@ import kotlinx.coroutines.withContext
  * TODO(strings): Aharou 取 `R.string.common_image_preview`。本次移植不新增 ACS 字符串资源
  * （避免为一个文案动 `strings.xml`），先用常量；接线时替换为 ACS 既有或新增的资源。
  */
+// 无障碍标签（读屏用）；走资源以便随系统语言切换
 private const val IMAGE_PREVIEW_LABEL = "图片预览"
 
 /**
@@ -92,7 +95,7 @@ internal class MarkdownImageTransformer(
         }
         val p = painter ?: return null
         val viewer = LocalImageViewer.current
-        val clickLabel = IMAGE_PREVIEW_LABEL
+        val clickLabel = stringResource(R.string.compose_markdown_image_preview)
         // remember 住 modifier：ImageData 是 data class，每帧换一个新 Modifier 实例会让它的
         // equals 恒不成立，白白触发下游重组。
         val modifier = remember(link, viewer, clickLabel) {

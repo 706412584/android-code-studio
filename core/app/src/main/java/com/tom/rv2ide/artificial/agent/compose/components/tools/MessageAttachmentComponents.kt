@@ -73,6 +73,8 @@ import compose.icons.feathericons.Image
 import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import androidx.compose.ui.res.stringResource
+import com.tom.rv2ide.resources.R
 
 /** 附件缩略图边长：一行一个文件时左侧的小图，够看清是截图还是照片即可。 */
 private val AttachmentThumbSize = 44.dp
@@ -86,16 +88,26 @@ private val AttachmentThumbSize = 44.dp
  * 先用常量承载，待接入时统一换 `stringResource(...)`。
  */
 internal object AttachmentStrings {
-  const val FILE = "文件"
-  const val IMAGE_PREVIEW = "图片预览"
-  const val OPEN_FILE_MISSING = "文件不存在或已被移动"
-  const val OPEN_FILE_NO_APP = "没有可以打开该文件的应用"
-  const val OPEN_FILE_UNSHAREABLE = "无法分享该文件"
-  const val OPEN_APK_PERMISSION = "需要先允许安装未知应用"
+  val FILE: String @Composable get() = stringResource(R.string.compose_attachment_file)
+  val IMAGE_PREVIEW: String @Composable get() = stringResource(R.string.compose_attachment_image_preview)
+  @Composable
+  fun preview(name: Any): String = stringResource(R.string.compose_attachment_preview, name)
+  @Composable
+  fun open(name: Any): String = stringResource(R.string.compose_attachment_open, name)
 
-  fun preview(name: String): String = "预览 $name"
-
-  fun open(name: String): String = "打开 $name"
+  // ---- 以下四条只用于 Toast（非 Composable 上下文），故取 Context 而非 @Composable 访问器 ----
+  //
+  // 不能给它们加 @Composable：`openSentAttachment` 是普通 suspend 函数，在协程里弹 Toast，
+  // 那里没有 Compose 的 Composition。若为了统一而把它们塞进 Composable 访问器，
+  // 要么编译不过，要么得把整个打开文件的流程搬进组合——后者会把 IO 与副作用拖进渲染层。
+  fun openFileMissing(context: Context): String =
+      context.getString(R.string.compose_attachment_open_file_missing)
+  fun openFileNoApp(context: Context): String =
+      context.getString(R.string.compose_attachment_open_file_no_app)
+  fun openFileUnshareable(context: Context): String =
+      context.getString(R.string.compose_attachment_open_file_unshareable)
+  fun openApkPermission(context: Context): String =
+      context.getString(R.string.compose_attachment_open_apk_permission)
 }
 
 /** 字节数展示：与 Aharou 同档位（B / KB / MB），保留一位小数只在 MB 档。 */
@@ -292,21 +304,21 @@ internal suspend fun openSentAttachment(
 ) {
   val local = withContext(Dispatchers.IO) { resolveLocalFile(attachment, fileAccess) }
   if (local == null) {
-    Toast.makeText(context, AttachmentStrings.OPEN_FILE_MISSING, Toast.LENGTH_SHORT).show()
+    Toast.makeText(context, AttachmentStrings.openFileMissing(context), Toast.LENGTH_SHORT).show()
     return
   }
   // APK 安装包：系统安装器要求「允许安装未知应用」授权，未授权时引导用户去设置页开启，
   // 否则点击只会弹出「没有权限安装」的拒绝提示。
   if (isApk(attachment)) {
     if (!context.packageManager.canRequestPackageInstalls()) {
-      Toast.makeText(context, AttachmentStrings.OPEN_APK_PERMISSION, Toast.LENGTH_LONG).show()
+      Toast.makeText(context, AttachmentStrings.openApkPermission(context), Toast.LENGTH_LONG).show()
       try {
         context.startActivity(
             Intent(
                 Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
                 Uri.parse("package:${context.packageName}")))
       } catch (e: Exception) {
-        Toast.makeText(context, AttachmentStrings.OPEN_FILE_NO_APP, Toast.LENGTH_SHORT).show()
+        Toast.makeText(context, AttachmentStrings.openFileNoApp(context), Toast.LENGTH_SHORT).show()
       }
       return
     }
@@ -323,7 +335,7 @@ internal suspend fun openSentAttachment(
             .getOrNull()
       }
   if (uri == null) {
-    Toast.makeText(context, AttachmentStrings.OPEN_FILE_UNSHAREABLE, Toast.LENGTH_SHORT).show()
+    Toast.makeText(context, AttachmentStrings.openFileUnshareable(context), Toast.LENGTH_SHORT).show()
     return
   }
   val intent =
@@ -333,7 +345,7 @@ internal suspend fun openSentAttachment(
   try {
     context.startActivity(intent)
   } catch (e: Exception) {
-    Toast.makeText(context, AttachmentStrings.OPEN_FILE_NO_APP, Toast.LENGTH_SHORT).show()
+    Toast.makeText(context, AttachmentStrings.openFileNoApp(context), Toast.LENGTH_SHORT).show()
   }
 }
 

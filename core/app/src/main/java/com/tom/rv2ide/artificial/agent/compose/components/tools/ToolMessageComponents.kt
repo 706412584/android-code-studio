@@ -125,6 +125,8 @@ import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import androidx.compose.ui.res.stringResource
+import com.tom.rv2ide.resources.R
 
 internal val DiffAddBg: Color
     @Composable get() = MaterialTheme.semanticColors.diffAddBg
@@ -157,42 +159,50 @@ private val ToolSectionFadeHeight = 24.dp
  * 待接入时统一换成 `stringResource(...)`。
  */
 internal object ToolCardStrings {
-  const val TOOL = "工具"
-  const val INSTRUCTION = "指令"
-  const val RESULT = "结果"
-  const val BACK = "返回"
-  const val EXPAND = "展开"
-  const val COLLAPSE = "收起"
-  const val RUNNING = "执行中"
-  const val SUCCEEDED = "已完成"
-  const val FAILED = "执行失败"
-  const val TODO_COMPLETED = "已完成"
-  const val TODO_IN_PROGRESS = "进行中"
-  const val WEB_SEARCH_TITLE = "联网搜索"
+  val TOOL: String @Composable get() = stringResource(R.string.compose_tool_card_tool)
+  val INSTRUCTION: String @Composable get() = stringResource(R.string.compose_tool_card_instruction)
+  val RESULT: String @Composable get() = stringResource(R.string.compose_tool_card_result)
+  val BACK: String @Composable get() = stringResource(R.string.compose_tool_card_back)
+  val EXPAND: String @Composable get() = stringResource(R.string.compose_tool_card_expand)
+  val COLLAPSE: String @Composable get() = stringResource(R.string.compose_tool_card_collapse)
+  val RUNNING: String @Composable get() = stringResource(R.string.compose_tool_card_running)
+  val SUCCEEDED: String @Composable get() = stringResource(R.string.compose_tool_card_succeeded)
+  val FAILED: String @Composable get() = stringResource(R.string.compose_tool_card_failed)
+  val TODO_COMPLETED: String @Composable get() = stringResource(R.string.compose_tool_card_todo_completed)
+  val TODO_IN_PROGRESS: String @Composable get() = stringResource(R.string.compose_tool_card_todo_in_progress)
+  val WEB_SEARCH_TITLE: String @Composable get() = stringResource(R.string.compose_tool_card_web_search_title)
+  @Composable
+  fun expandRemaining(hiddenCount: Any): String = stringResource(R.string.compose_tool_card_expand_remaining, hiddenCount)
+  @Composable
+  fun webSearchWarning(warning: Any): String = stringResource(R.string.compose_tool_card_web_search_warning, warning)
+  @Composable
+  fun webSearchResultsCount(count: Any): String = stringResource(R.string.compose_tool_card_web_search_results_count, count)
+  @Composable
+  fun changedFilesSummary(files: Any, added: Any, removed: Any): String = stringResource(R.string.compose_tool_card_changed_files_summary, files, added, removed)
+  @Composable
+  fun toolCallsCount(count: Any): String = stringResource(R.string.compose_tool_card_tool_calls_count, count)
 
-  fun expandRemaining(hiddenCount: Int): String = "展开剩余 $hiddenCount 行"
-
-  fun webSearchWarning(warning: String): String = "搜索提示：$warning"
-
-  fun webSearchResultsCount(count: Int): String = "$count 条结果"
-
-  fun changedFilesSummary(added: Int, removed: Int, files: Int): String =
-      "已修改 $files 个文件  +$added −$removed"
-
-  fun toolCallsCount(count: Int): String = "$count 次工具调用"
-
-  /** 工具执行中的场景文案；未归类的工具回落「正在调用工具」。 */
+  /**
+   * 工具执行中的场景文案；未归类的工具回落「正在调用工具」。
+   *
+   * <p>保留 when 结构而不是做成一张「工具名 → 资源 id」的表：分支条件里有 `lowercase()`
+   * 与多个别名（`editFile`/`edit_file` 等），表的键得先归一化才等价，反而更容易漏。
+   */
+  @Composable
   fun runningLabel(toolName: String?): String =
       when (toolName?.lowercase()) {
-        "editfile", "writefile", "edit_file", "write_file" -> "正在编辑文件"
-        "readfile", "list", "sendfile", "viewimage", "read_file", "list_files" -> "正在读取文件"
-        "search", "websearch", "webfetch", "browser" -> "正在联网搜索"
-        "bash", "terminal" -> "正在执行命令"
-        "generateimage" -> "正在生成图片"
-        "todo" -> "正在更新待办"
-        "task" -> "正在启动子 agent"
-        "memory" -> "正在读取记忆"
-        else -> "正在调用工具"
+        "editfile", "writefile", "edit_file", "write_file" ->
+            stringResource(R.string.compose_tool_card_running_edit)
+        "readfile", "list", "sendfile", "viewimage", "read_file", "list_files" ->
+            stringResource(R.string.compose_tool_card_running_read)
+        "search", "websearch", "webfetch", "browser" ->
+            stringResource(R.string.compose_tool_card_running_search)
+        "bash", "terminal" -> stringResource(R.string.compose_tool_card_running_command)
+        "generateimage" -> stringResource(R.string.compose_tool_card_running_image)
+        "todo" -> stringResource(R.string.compose_tool_card_running_todo)
+        "task" -> stringResource(R.string.compose_tool_card_running_task)
+        "memory" -> stringResource(R.string.compose_tool_card_running_memory)
+        else -> stringResource(R.string.compose_tool_card_running_default)
       }
 }
 

@@ -61,6 +61,9 @@ import compose.icons.feathericons.Copy
 import compose.icons.feathericons.Edit2
 import compose.icons.feathericons.RefreshCw
 import compose.icons.feathericons.Trash2
+import androidx.compose.runtime.getValue
+import androidx.compose.ui.res.stringResource
+import com.tom.rv2ide.resources.R
 
 /** 宽屏下模态弹窗的最大宽度：再宽一行文案过长，视线来回扫描成本高。 */
 private val DialogMaxWidth = 560.dp
@@ -70,11 +73,11 @@ private const val COMPACT_WIDTH_DP = 600
 
 /** 面板菜单文案。TODO(i18n)：Aharou 用 `R.string.chat_more_options` / `chat_action_*`，ACS 侧先用常量。 */
 private object MessageActionStrings {
-  const val MORE_OPTIONS = "更多操作"
-  const val EDIT = "编辑"
-  const val COPY = "复制文本"
-  const val REGENERATE = "重新生成"
-  const val DELETE = "删除"
+  val MORE_OPTIONS: String @Composable get() = stringResource(R.string.compose_message_action_more_options)
+  val EDIT: String @Composable get() = stringResource(R.string.compose_message_action_edit)
+  val COPY: String @Composable get() = stringResource(R.string.compose_message_action_copy)
+  val REGENERATE: String @Composable get() = stringResource(R.string.compose_message_action_regenerate)
+  val DELETE: String @Composable get() = stringResource(R.string.compose_message_action_delete)
 }
 
 /**

@@ -49,6 +49,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.toArgb
@@ -97,6 +98,7 @@ import dev.snipme.highlights.model.SyntaxLanguage
 import dev.snipme.highlights.model.SyntaxThemes
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import com.tom.rv2ide.resources.R
 
 // 代码块与行内代码共用字体。
 //
@@ -110,6 +112,7 @@ import kotlinx.coroutines.withContext
 private val CodeFontFamily = FontFamily.Monospace
 
 /** 代码块头部在语言未知时显示的占位文案。TODO(strings): 接入 ACS 字符串资源。 */
+// 代码块无语言标注时的兜底标签；走资源以便随系统语言切换
 private const val MARKDOWN_CODE_LABEL_FALLBACK = "代码"
 
 internal class WeightedLruCache<K, V>(
@@ -544,7 +547,9 @@ private fun CodeBlockHeader(language: String?, code: String) {
     // LocalClipboard / ClipEntry 是 1.8 才引入的。1.7.6 的 ClipboardManager.setText 是同步方法，
     // 故不需要 rememberCoroutineScope + launch 包一层。
     val clipboard = LocalClipboardManager.current
-    val label = language?.takeIf { it.isNotBlank() } ?: MARKDOWN_CODE_LABEL_FALLBACK
+    val label =
+        language?.takeIf { it.isNotBlank() }
+            ?: stringResource(R.string.compose_markdown_code_label)
 
     Row(
         modifier = Modifier.fillMaxWidth().padding(start = 8.dp, end = 2.dp, bottom = 2.dp),

@@ -70,6 +70,8 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import androidx.compose.ui.res.stringResource
+import com.tom.rv2ide.resources.R as ResourcesR
 
 /**
  * 消息区（DSH 扁平文档流风格）的共用尺寸与色板。
@@ -310,7 +312,9 @@ private const val CHAT_COPIED_LABEL = "已复制"
 internal fun ChatCopyAction(
     copyText: String,
     modifier: Modifier = Modifier,
-    label: String = CHAT_COPY_LABEL
+    // 默认值来自资源：@Composable 默认参数允许调 stringResource，
+    // 这样调用方不传 label 时也随系统语言走
+    label: String = stringResource(ResourcesR.string.compose_style_chat_copy)
 ) {
     var copied by remember(copyText) { mutableStateOf(false) }
     // 注：Aharou 用的是 `LocalClipboard` + `ClipEntry` + `setClipEntry(...)`，
@@ -340,7 +344,7 @@ internal fun ChatCopyAction(
             modifier = Modifier.size(12.dp)
         )
         Text(
-            text = if (copied) CHAT_COPIED_LABEL else label,
+            text = if (copied) stringResource(ResourcesR.string.compose_style_chat_copied) else label,
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )

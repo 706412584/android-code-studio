@@ -21,6 +21,11 @@
 
 package com.tom.rv2ide.artificial.agent.compose.components.bubbles
 
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.ui.res.stringResource
+import com.tom.rv2ide.resources.R
+
 /**
  * 气泡区文案。
  *
@@ -39,83 +44,62 @@ package com.tom.rv2ide.artificial.agent.compose.components.bubbles
  * 对 `1/3` 这类计数反而更稳）。
  */
 internal object BubbleStrings {
-
-  // ------------------------------------------------------------ 通用动作
-
-  /** 折叠箭头的语义（收起态 →「展开」）。 */
-  const val expand = "展开"
-
-  /** `R.string.common_collapse`：与 [expand] 相对，用于可折叠行。 */
-  const val collapse = "折叠"
-
-  /** `R.string.common_collapse_action`：整轮/压缩卡上的「收起」动作标签。 */
-  const val collapseAction = "收起"
-
-  // ------------------------------------------------------------ 消息气泡
-
-  const val copied = "已复制"
-  const val copy = "复制"
-  const val moreOptions = "更多选项"
-  const val readAloud = "朗读"
-  const val stopReadAloud = "停止朗读"
-
-  /** 回退入口的无障碍名（`R.string.checkpoint_rewind_title`）。 */
-  const val rewindTitle = "检查点与撤销"
-
-  const val turnRunning = "执行中"
-  const val contextCompressed = "上下文已压缩"
-  const val compactionFailed = "上下文压缩失败"
-  const val bgCommandDone = "后台命令已完成"
-
-  const val variantPrevious = "上一个版本"
-  const val variantNext = "下一个版本"
-  const val variantDelete = "删除当前版本"
-
-  fun cacheHitRate(rate: String): String = "缓存命中率 $rate"
-
-  fun taskDuration(duration: String): String = "本轮总耗时 $duration"
-
-  fun turnCompleted(duration: String): String = "已完成 $duration"
-
-  fun variantCounter(position: Int, count: Int): String = "$position/$count"
-
-  fun bgCommandsPartialFailed(total: Int, failed: Int): String = "$total 个后台任务结束，$failed 个失败"
-
-  fun bgCommandsDone(count: Int): String = "$count 个后台任务已完成"
-
-  // ------------------------------------------------------------ 状态气泡
-
-  const val compressingContext = "正在压缩上下文"
-  const val statusThinking = "正在思考"
-  const val statusGenerating = "正在生成"
-  const val retryRecordsTitle = "本次重试记录"
-  const val thinkingDone = "思考完成"
-  const val streamingPreviewNotice = "生成中仅展示最近一段内容"
-
-  fun retryBadge(attempt: Int, maxRetries: Int): String = "$attempt/$maxRetries"
-
-  fun retryBadgeDesc(attempt: Int, maxRetries: Int): String = "自动重试第 $attempt 次，共 $maxRetries 次"
-
-  fun retryRecordLine(attempt: Int, error: String, time: String): String = "第 $attempt 次 · $error · $time"
-
-  fun keySwitched(newIndex: Int, total: Int): String = "已切换到第 $newIndex/$total 个 Key"
-
-  fun thinkingRunningTime(seconds: String): String = "正在思考（耗时 $seconds 秒）"
-
-  fun thinkingDoneTime(seconds: String): String = "思考完成（耗时 $seconds 秒）"
-
-  // ------------------------------------------------- 重试原因（RetryErrorKind → 文案）
-
-  const val retryErrorRateLimit = "速率限制"
-  const val retryErrorServerOverloaded = "服务器负载过高"
-  const val retryErrorServer = "服务端错误"
-  const val retryErrorTimeout = "连接超时"
-  const val retryErrorConnectionRefused = "连接被拒绝"
-  const val retryErrorDnsFailed = "DNS 解析失败"
-  const val retryErrorConnectionReset = "连接中断"
-  const val retryErrorSsl = "SSL 握手失败"
-  const val retryErrorNetwork = "网络连接断开"
-  const val retryErrorUnknown = "网络异常"
-
-  fun retryErrorWithCode(base: String, code: Int): String = "$base ($code)"
+  val expand: String @Composable get() = stringResource(R.string.compose_bubble_expand)
+  val collapse: String @Composable get() = stringResource(R.string.compose_bubble_collapse)
+  val collapseAction: String @Composable get() = stringResource(R.string.compose_bubble_collapse_action)
+  val copied: String @Composable get() = stringResource(R.string.compose_bubble_copied)
+  val copy: String @Composable get() = stringResource(R.string.compose_bubble_copy)
+  val moreOptions: String @Composable get() = stringResource(R.string.compose_bubble_more_options)
+  val readAloud: String @Composable get() = stringResource(R.string.compose_bubble_read_aloud)
+  val stopReadAloud: String @Composable get() = stringResource(R.string.compose_bubble_stop_read_aloud)
+  val rewindTitle: String @Composable get() = stringResource(R.string.compose_bubble_rewind_title)
+  val turnRunning: String @Composable get() = stringResource(R.string.compose_bubble_turn_running)
+  val contextCompressed: String @Composable get() = stringResource(R.string.compose_bubble_context_compressed)
+  val compactionFailed: String @Composable get() = stringResource(R.string.compose_bubble_compaction_failed)
+  val bgCommandDone: String @Composable get() = stringResource(R.string.compose_bubble_bg_command_done)
+  val variantPrevious: String @Composable get() = stringResource(R.string.compose_bubble_variant_previous)
+  val variantNext: String @Composable get() = stringResource(R.string.compose_bubble_variant_next)
+  val variantDelete: String @Composable get() = stringResource(R.string.compose_bubble_variant_delete)
+  val compressingContext: String @Composable get() = stringResource(R.string.compose_bubble_compressing_context)
+  val statusThinking: String @Composable get() = stringResource(R.string.compose_bubble_status_thinking)
+  val statusGenerating: String @Composable get() = stringResource(R.string.compose_bubble_status_generating)
+  val retryRecordsTitle: String @Composable get() = stringResource(R.string.compose_bubble_retry_records_title)
+  val thinkingDone: String @Composable get() = stringResource(R.string.compose_bubble_thinking_done)
+  val streamingPreviewNotice: String @Composable get() = stringResource(R.string.compose_bubble_streaming_preview_notice)
+  val retryErrorRateLimit: String @Composable get() = stringResource(R.string.compose_bubble_retry_error_rate_limit)
+  val retryErrorServerOverloaded: String @Composable get() = stringResource(R.string.compose_bubble_retry_error_server_overloaded)
+  val retryErrorServer: String @Composable get() = stringResource(R.string.compose_bubble_retry_error_server)
+  val retryErrorTimeout: String @Composable get() = stringResource(R.string.compose_bubble_retry_error_timeout)
+  val retryErrorConnectionRefused: String @Composable get() = stringResource(R.string.compose_bubble_retry_error_connection_refused)
+  val retryErrorDnsFailed: String @Composable get() = stringResource(R.string.compose_bubble_retry_error_dns_failed)
+  val retryErrorConnectionReset: String @Composable get() = stringResource(R.string.compose_bubble_retry_error_connection_reset)
+  val retryErrorSsl: String @Composable get() = stringResource(R.string.compose_bubble_retry_error_ssl)
+  val retryErrorNetwork: String @Composable get() = stringResource(R.string.compose_bubble_retry_error_network)
+  val retryErrorUnknown: String @Composable get() = stringResource(R.string.compose_bubble_retry_error_unknown)
+  @Composable
+  fun cacheHitRate(rate: Any): String = stringResource(R.string.compose_bubble_cache_hit_rate, rate)
+  @Composable
+  fun taskDuration(duration: Any): String = stringResource(R.string.compose_bubble_task_duration, duration)
+  @Composable
+  fun turnCompleted(duration: Any): String = stringResource(R.string.compose_bubble_turn_completed, duration)
+  @Composable
+  fun variantCounter(position: Any, count: Any): String = stringResource(R.string.compose_bubble_variant_counter, position, count)
+  @Composable
+  fun bgCommandsPartialFailed(total: Any, failed: Any): String = stringResource(R.string.compose_bubble_bg_commands_partial_failed, total, failed)
+  @Composable
+  fun bgCommandsDone(count: Any): String = stringResource(R.string.compose_bubble_bg_commands_done, count)
+  @Composable
+  fun retryBadge(attempt: Any, maxRetries: Any): String = stringResource(R.string.compose_bubble_retry_badge, attempt, maxRetries)
+  @Composable
+  fun retryBadgeDesc(attempt: Any, maxRetries: Any): String = stringResource(R.string.compose_bubble_retry_badge_desc, attempt, maxRetries)
+  @Composable
+  fun retryRecordLine(attempt: Any, error: Any, time: Any): String = stringResource(R.string.compose_bubble_retry_record_line, attempt, error, time)
+  @Composable
+  fun keySwitched(newIndex: Any, total: Any): String = stringResource(R.string.compose_bubble_key_switched, newIndex, total)
+  @Composable
+  fun thinkingRunningTime(seconds: Any): String = stringResource(R.string.compose_bubble_thinking_running_time, seconds)
+  @Composable
+  fun thinkingDoneTime(seconds: Any): String = stringResource(R.string.compose_bubble_thinking_done_time, seconds)
+  @Composable
+  fun retryErrorWithCode(base: Any, code: Any): String = stringResource(R.string.compose_bubble_retry_error_with_code, base, code)
 }

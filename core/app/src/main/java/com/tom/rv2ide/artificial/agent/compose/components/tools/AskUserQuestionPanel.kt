@@ -60,6 +60,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -73,18 +74,26 @@ import com.tom.rv2ide.artificial.agent.compose.compat.SingleAnswer
 import com.tom.rv2ide.artificial.agent.compose.compat.UserQuestionAnswer
 import com.tom.rv2ide.artificial.agent.compose.theme.Radius
 import com.tom.rv2ide.artificial.agent.compose.theme.Spacing
+import com.tom.rv2ide.resources.R
 
 /** 「其他」选项在选中集合内的内部哨兵：用 AI 不可能传出的控制字符前缀，避免与预设选项 label 撞车。 */
 private const val OTHER_SENTINEL = "\u0000__other__"
 
 /** 面板文案。TODO(i18n)：Aharou 用 `R.string.ask_*` / `common_*`，ACS 侧先用常量，待统一换资源。 */
+/**
+ * 面板文案。
+ *
+ * <p>取值走 ACS 的字符串资源（`R.string.compose_ask_*`），不再内联中文字面量——内联会让这一屏
+ * 无法随系统语言切换。用 `@Composable` 访问器而不是把 `stringResource` 散到各调用点：
+ * 属性名与原来一一对应，调用点一行都不用改，迁移 diff 只有这一个对象。
+ */
 private object AskStrings {
-  const val TITLE = "想先跟你确认"
-  const val SUPPLEMENT = "补充说明"
-  const val CONFIRM = "确认"
-  const val CUSTOM_ANSWER = "其它（自行输入）"
-  const val INPUT_HINT = "请输入你的答案"
-  const val OTHER = "其它"
+  val TITLE: String @Composable get() = stringResource(R.string.compose_ask_title)
+  val SUPPLEMENT: String @Composable get() = stringResource(R.string.compose_ask_supplement)
+  val CONFIRM: String @Composable get() = stringResource(R.string.compose_ask_confirm)
+  val CUSTOM_ANSWER: String @Composable get() = stringResource(R.string.compose_ask_custom_answer)
+  val INPUT_HINT: String @Composable get() = stringResource(R.string.compose_ask_input_hint)
+  val OTHER: String @Composable get() = stringResource(R.string.compose_ask_other)
 }
 
 /**
