@@ -1,0 +1,166 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  助手改动一个文件后的 diff 卡片。
+
+  结构照 item_assistant_code.xml（同一个视觉语言）：
+  ┌──────────────────────────────────────┐
+  │ MAINACTIVITY.KT      +12 -3   复制 撤销 │  ← 信息栏
+  ├──────────────────────────────────────┤
+  │ 12  14 │     val x = 1                │  ← 行号(旧/新) + 代码
+  │ 13     │ -   val y = oldName          │  ← 删除行
+  │ 14  15 │ +   val y = newName          │  ← 新增行
+  └──────────────────────────────────────┘
+  │            展开全部 128 行              │  ← 超阈值才出现
+
+  为什么整块用**一个 TextView** 而不是每行一个 View：
+  diff 可能有上千行，逐行 inflate 会在滚动时产生大量 ViewHolder 与测量开销；
+  而行号、增删标记、词级高亮都可以用 Spannable（底色 span + 前景色 span）表达，
+  不需要真实控件。这与代码块「单 TextView + HorizontalScrollView」是同一取舍，
+  也顺带避开了 RecyclerView 内再嵌纵向滚动的触摸仲裁问题。
+
+  为什么要横向滚动：助手面板最窄只有 260dp，代码换行后缩进层级全丢，
+  读 diff 时最依赖的「一行结构」就没了。见 item_assistant_code.xml 的同段说明。
+-->
+<com.google.android.material.card.MaterialCardView
+  xmlns:android="http://schemas.android.com/apk/res/android"
+  xmlns:app="http://schemas.android.com/apk/res-auto"
+  xmlns:tools="http://schemas.android.com/tools"
+  android:id="@+id/diffCard"
+  android:layout_width="match_parent"
+  android:layout_height="wrap_content"
+  android:layout_marginTop="6dp"
+  android:layout_marginBottom="6dp"
+  app:cardCornerRadius="12dp"
+  app:cardElevation="0dp"
+  app:strokeWidth="1dp"
+  app:strokeColor="?attr/colorOutline"
+  app:cardBackgroundColor="?attr/colorCodeBackground">
+
+  <LinearLayout
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical">
+
+    <!-- 信息栏：文件名（左）+ 增删统计 + 复制 + 撤销（右） -->
+    <LinearLayout
+      android:layout_width="match_parent"
+      android:layout_height="wrap_content"
+      android:orientation="horizontal"
+      android:gravity="center_vertical"
+      android:background="?attr/colorCodeHeaderBackground"
+      android:paddingStart="12dp"
+      android:paddingEnd="4dp"
+      android:paddingTop="2dp"
+      android:paddingBottom="2dp">
+
+      <!--
+        文件名全大写 + 加宽字距，与代码块的语言标签同一写法：
+        让它一眼不像 diff 内容本身，不会被误读成第一行代码。
+      -->
+      <TextView
+        android:id="@+id/diffFileName"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:letterSpacing="0.14"
+        android:maxWidth="160dp"
+        android:ellipsize="middle"
+        android:maxLines="1"
+        android:textAllCaps="true"
+        android:textAppearance="@style/TextAppearance.Material3.LabelSmall"
+        android:textColor="?attr/colorOnSurfaceVariant"
+        android:textStyle="bold"
+        tools:text="MAINACTIVITY.KT" />
+
+      <!--
+        增删统计用「+n -n」而不是「n 处改动」：这是 diff 的通用记法，
+        而且两个数字分开染色后，扫一眼就知道这次改动是偏增还是偏删。
+      -->
+      <TextView
+        android:id="@+id/diffStat"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:layout_marginStart="8dp"
+        android:ellipsize="end"
+        android:maxLines="1"
+        android:textAppearance="@style/TextAppearance.Material3.LabelSmall"
+        tools:text="+12 -3" />
+
+      <com.google.android.material.button.MaterialButton
+        android:id="@+id/diffCopy"
+        style="@style/Widget.Material3.Button.TextButton"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:minWidth="0dp"
+        android:minHeight="36dp"
+        android:insetTop="0dp"
+        android:insetBottom="0dp"
+        android:paddingStart="10dp"
+        android:paddingEnd="10dp"
+        android:text="@string/ai_assistant_code_copy"
+        android:textAppearance="@style/TextAppearance.Material3.LabelSmall" />
+
+      <!--
+        撤销按钮沿用消息卡片的语义与文案（ai_assistant_revert / _revert_done）。
+        默认 gone，与消息卡片一致地「按需出现」——由绑定逻辑决定，
+        因为只有携带 diffId 的卡片才可能撤销。
+      -->
+      <com.google.android.material.button.MaterialButton
+        android:id="@+id/diffRevert"
+        style="@style/Widget.Material3.Button.TextButton"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:minWidth="0dp"
+        android:minHeight="36dp"
+        android:insetTop="0dp"
+        android:insetBottom="0dp"
+        android:paddingStart="10dp"
+        android:paddingEnd="10dp"
+        android:text="@string/ai_assistant_revert"
+        android:textAppearance="@style/TextAppearance.Material3.LabelSmall"
+        android:visibility="gone"
+        tools:visibility="visible" />
+
+    </LinearLayout>
+
+    <!--
+      diff 正文。与代码块同样用横向滚动 + 不换行：diff 里一行就是一条完整信息，
+      换行会把「哪一段是新增」这个空间关系打乱。
+    -->
+    <HorizontalScrollView
+      android:layout_width="match_parent"
+      android:layout_height="wrap_content"
+      android:scrollbars="none">
+
+      <TextView
+        android:id="@+id/diffText"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:fontFamily="monospace"
+        android:lineSpacingMultiplier="1.3"
+        android:paddingStart="8dp"
+        android:paddingEnd="12dp"
+        android:paddingTop="8dp"
+        android:paddingBottom="8dp"
+        android:textColor="?attr/colorOnSurface"
+        android:textIsSelectable="true"
+        android:textSize="12sp"
+        tools:text="12  14 |     val x = 1&#10;13     | -   val y = old&#10;14  15 | +   val y = new" />
+
+    </HorizontalScrollView>
+
+    <!-- 超过阈值行数时才显示。默认 gone。 -->
+    <com.google.android.material.button.MaterialButton
+      android:id="@+id/diffToggle"
+      style="@style/Widget.Material3.Button.TextButton"
+      android:layout_width="match_parent"
+      android:layout_height="wrap_content"
+      android:minHeight="40dp"
+      android:textAppearance="@style/TextAppearance.Material3.LabelMedium"
+      android:visibility="gone"
+      tools:text="展开全部 128 行"
+      tools:visibility="visible" />
+
+  </LinearLayout>
+
+</com.google.android.material.card.MaterialCardView>

@@ -13,7 +13,15 @@
     android:layout_height="match_parent"
     android:fitsSystemWindows="true">
 
+    <!--
+      id 供「助手让位」使用：助手面板打开时，本容器收缩，把编辑器与工具栏一起让出空间，
+      使二者真正并列而不是面板盖在编辑器上。
+
+      收缩的是**这一层**（含 AppBarLayout + 编辑区）而不是只收缩 view_container：
+      只缩编辑区会让工具栏仍然横跨整屏，助手面板与工具栏错位，看起来仍像浮层。
+    -->
     <androidx.coordinatorlayout.widget.CoordinatorLayout
+      android:id="@+id/editor_content"
       android:layout_width="match_parent"
       android:layout_height="match_parent">
 

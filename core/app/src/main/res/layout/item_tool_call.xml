@@ -110,6 +110,51 @@
       tools:text="12 步 · 子 agent 步骤 12 · file_read: build.gradle.kts"
       tools:visibility="visible" />
 
+    <!--
+      工具结果里的图片（phone_screenshot / image_generation 等）。
+
+      刻意放在**折叠区**、且折叠态也显示：图片本身就是这些工具的**结果**，
+      藏进展开态等于「用户依然看不到 AI 截了什么图」，问题没解决。
+      高度固定 96dp，避免不同尺寸的截图让列表行高抖动、滚动位置跳。
+
+      点击开 lightbox（见 ToolResultImageSupport.showLightbox），
+      因为截图里的小字在 96dp 缩略图上看不清。
+    -->
+    <com.google.android.material.card.MaterialCardView
+      android:id="@+id/toolImageCard"
+      android:layout_width="wrap_content"
+      android:layout_height="96dp"
+      android:layout_marginTop="6dp"
+      android:visibility="gone"
+      app:cardCornerRadius="8dp"
+      app:cardElevation="0dp"
+      app:strokeWidth="1dp"
+      app:strokeColor="?attr/colorOutline"
+      tools:visibility="visible">
+
+      <ImageView
+        android:id="@+id/toolImage"
+        android:layout_width="wrap_content"
+        android:layout_height="match_parent"
+        android:minWidth="96dp"
+        android:scaleType="centerCrop"
+        android:contentDescription="@string/ai_assistant_image_open"
+        tools:src="@tools:sample/avatars" />
+
+    </com.google.android.material.card.MaterialCardView>
+
+    <!-- 图片无法显示时的提示（解码失败 / 过大 / 类型不支持）。默认 gone。 -->
+    <TextView
+      android:id="@+id/toolImageNotice"
+      android:layout_width="match_parent"
+      android:layout_height="wrap_content"
+      android:layout_marginTop="4dp"
+      android:textAppearance="@style/TextAppearance.Material3.LabelSmall"
+      android:textColor="?attr/colorOnSurfaceVariant"
+      android:visibility="gone"
+      tools:text="图片无法显示"
+      tools:visibility="visible" />
+
     <!-- 展开后可见：完整输入与输出 -->
     <LinearLayout
       android:id="@+id/toolDetails"

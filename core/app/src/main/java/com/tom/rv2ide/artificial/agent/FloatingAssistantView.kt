@@ -21,6 +21,7 @@ import android.content.Context
 import android.text.TextUtils
 import android.view.Gravity
 import android.view.LayoutInflater
+import android.view.View
 import android.view.ViewGroup
 import android.widget.FrameLayout
 import android.widget.TextView
@@ -220,6 +221,22 @@ class FloatingAssistantView(
     var streamedThisRun: Boolean = false
     var retryCountThisRun: Int = 0
     var retryCardPinned: Boolean = false
+
+    /**
+     * 本次运行的起始时刻（`SystemClock.elapsedRealtime()`）；0 表示未在运行。
+     *
+     * <p>为什么必须视图侧自己记：`AgentSession` 的 `startedAt` 是方法内局部变量，
+     * `turnStarted` / `turnFinished` 事件都不带时间戳，`AgentRunResult` 也只有
+     * turns / toolCallCount。要在协议层补时间戳就得改事件契约与全部构造点，
+     * 而「这一轮花了多久」只是展示信息——在入口记两个时刻成本低得多。
+     *
+     * <p>用 `elapsedRealtime` 而不是 `currentTimeMillis`：后者会被系统对时调整，
+     * 跨一次校时就会算出负耗时。
+     */
+    var runStartedAtMs: Long = 0L
+
+    /** 本轮收尾的助手消息 id；耗时最终回填到它身上。 */
+    var runEndMessageId: Long? = null
   }
 
   private val sessionUi = ConcurrentHashMap<String, SessionUiState>()
@@ -526,8 +543,14 @@ class FloatingAssistantView(
 
     binding.assistantMessages.layoutManager = LinearLayoutManager(context)
     binding.assistantMessages.adapter = adapter
+    // 工具结果图片的解码要在视图销毁时一并取消，因此用本视图的 lifecycleScope，
+    // 而不是让适配器自建一个（那样会在 detach 后仍往 ImageView 里写）。
+    adapter.imageScope = lifecycleScope
 
     adapter.setOnRevertClickListener { messageId, diffId -> revertDiff(messageId, diffId) }
+    adapter.onMessageActionRequested = { message, anchor ->
+      showMessageActionsMenu(message, anchor)
+    }
     // 工具卡片的分类色需要按工具名查注册表。注册表在 orchestrator 里，
     // 但适配器不该依赖工具执行层，因此注入一个只做名字→分类映射的窄接口。
     // 传 includeMcp=false：分类色查询不该发起 MCP 网络请求，也不该创建无人释放的连接。
@@ -566,12 +589,16 @@ class FloatingAssistantView(
     // 标题栏：左菜单开抽屉，右侧全屏/最小化/关闭。
     binding.assistantMenu.setOnClickListener { toggleConversationPanel() }
     binding.assistantTodos.todoHeader.setOnClickListener { toggleTodos() }
-    // 全屏键两档语义：
-    // - 单击 = 窗口内最大化（现状，行为零变化）；
-    // - 长按 = 拉起沉浸式全屏 Activity（真全屏，横屏/沉浸式，是独立的屏幕）。
-    //   长按而不是单击：单击已是评审通过的窗口内最大化，改成跳 Activity 会破坏现有习惯；
-    //   长按是「同一个按钮上的进阶动作」，与仓库里其它长按用法一致。
-    binding.assistantFullscreen.setOnClickListener { toggleFullscreen() }
+    // 全屏键：单击与长按**都**进真全屏（沉浸式 Activity）。
+    //
+    // 早先是两档语义（单击 = 窗口内最大化，长按 = 真全屏）。改成单一语义的原因是
+    // 编辑器改为并列分栏后，「窗口内最大化」不再有意义：面板已经占据固定的分栏区域，
+    // 再 `applyMode(FULLSCREEN)` 只会把它撑满**那块分栏**，屏幕上什么都不会变，
+    // 用户按下去会觉得按钮坏了。
+    //
+    // 长按保留为同一动作的快捷方式而不是删掉：已有用户习惯了长按，且长按是无副作用的
+    // 冗余入口，去掉它只会让老用户困惑。
+    binding.assistantFullscreen.setOnClickListener { launchTrueFullscreen() }
     binding.assistantFullscreen.setOnLongClickListener {
       launchTrueFullscreen()
       true
@@ -840,6 +867,10 @@ class FloatingAssistantView(
       fabBinding.assistantFab.isVisible = false
     }
     binding.assistantOverlay.isVisible = true
+    // 通知宿主让位：编辑器据此收缩，把空间真正让给面板（见 AssistantHost.onPanelOpened）。
+    // 放在可见性设置**之后**——让位会改变宿主的布局参数，若面板尚未可见，
+    // 用户会先看到编辑器缩了一下、面板才出现。
+    host.onPanelOpened()
     // 可见即接管 orchestrator 回调。共享 orchestrator 时，后打开的视图抢过圆环/授权回调；
     // 不共享时重装一次等价（同样的闭包、同样的对象）。
     installOrchestratorCallbacks()
@@ -998,6 +1029,9 @@ class FloatingAssistantView(
 
   fun close() {
     binding.assistantOverlay.isVisible = false
+    // 面板收起 = 宿主可以收回让出的空间。必须与 open() 的 onPanelOpened 对称，
+    // 否则收起后编辑器永远停在半屏/半宽，用户得重启 Activity 才能恢复。
+    host.onPanelClosed()
     // INLINE 没有 FAB 可恢复（见 attach）。
     if (defaultMode != Mode.INLINE) {
       fabBinding.assistantFab.isVisible = true
@@ -1040,15 +1074,15 @@ class FloatingAssistantView(
    * <p>常态是宿主的初始形态（主页 SIDEBAR、编辑器 DOCKED），不是写死的 SIDEBAR：
    * 编辑器里退出全屏必须回到贴边形态，回到浮层会让面板又变成盖在代码上的卡片。
    */
-  private fun toggleFullscreen() {
-    applyMode(if (mode == Mode.FULLSCREEN) defaultMode else Mode.FULLSCREEN)
-  }
-
   /**
    * 拉起沉浸式全屏 Activity（真全屏）。
    *
-   * <p>与 [toggleFullscreen] 的区别：那个只把面板撑满**当前窗口**；本方法开一个独立屏幕
-   * （横屏/沉浸式），是用户能真正进入的第三种宿主形态。
+   * <p>开一个独立屏幕（隐藏系统栏），助手占据整块屏，背后没有编辑器。
+   * 这是全屏键单击与长按的共同落点——编辑器改为并列分栏后，
+   * 「把面板撑满当前窗口」已无观感变化，因此那条路径被移除（见 attach 里的按钮接线）。
+   *
+   * <p>[Mode.FULLSCREEN] 仍然保留：真全屏 Activity 内部正是用它把面板铺满那个窗口
+   * （见 `AssistantFullscreenActivity.bindLayout`），只是编辑器宿主不再通过按钮进入该形态。
    *
    * <p>会话连续性不靠传 id：`AssistantFullscreenActivity` 会
    * `setWorkspace(IProjectManager.getInstance().projectDir)`，而
@@ -1076,17 +1110,15 @@ class FloatingAssistantView(
     val card = binding.assistantCard
     val params = card.layoutParams as ConstraintLayout.LayoutParams
 
-    // 全屏按钮的语义随当前形态翻转：全屏时说「退出全屏」，否则说「全屏」。
+    // 全屏按钮的语义**不再随形态翻转**：单击与长按都是「进入真全屏」这一个动作，
+    // 没有对应的「退出」状态可描述（退出由真全屏 Activity 自己的返回键负责）。
     // 写进 contentDescription 而不是按钮文字（按钮是图标），无障碍服务读它。
-    // 末尾补上长按提示：长按是进入沉浸式全屏的入口，纯图标按钮无法自述，
-    // 不写进无障碍描述的话读屏用户完全发现不了这个动作。
-    val fullscreenLabel =
-        context.getString(
-            if (newMode == Mode.FULLSCREEN) string.ai_assistant_side
-            else string.ai_assistant_fullscreen
-        )
+    //
+    // 仍补上长按提示：虽然单击已等价，但纯图标按钮无法自述，
+    // 读屏用户需要被告知这个按钮会离开当前界面、进入一个独立屏幕。
     binding.assistantFullscreen.contentDescription =
-        "$fullscreenLabel · ${context.getString(string.ai_assistant_fullscreen_hint)}"
+        "${context.getString(string.ai_assistant_fullscreen)} · " +
+            context.getString(string.ai_assistant_fullscreen_hint)
 
     when (newMode) {
       Mode.FULLSCREEN -> {
@@ -1114,29 +1146,46 @@ class FloatingAssistantView(
         card.strokeWidth = dp(1)
       }
       Mode.DOCKED -> {
-        // 贴右侧满高、无外边距、无圆角。
+        // 贴边、无外边距、无圆角——形态随屏幕宽度分化。
         //
         // 与 SIDEBAR 的区别不只是宽度：浮层形态（圆角 + 四周留白）传达的是
         // 「这是一张盖在内容上的卡片」，而编辑器需要的是「这是界面的一半」。
         // 留白和圆角会立刻把面板变回弹窗观感——这正是之前"割裂感"的来源之一。
         //
-        // 宽度：屏幕的 68%，并夹在 [260dp, min(420dp, 屏宽-100dp)] 之间。
-        // 四个约束各解决一件事：
-        // - 260dp 下限：标题栏有 1 个左按钮 + 3 个右按钮，每个都是 48dp 的可点区域
-        //   （无障碍最小触控尺寸，不能再压），共 192dp。低于 260dp 时标题会被挤成
-        //   「AI …」——实测 236dp 面板就是这样。
-        // - 420dp 上限：平板上不限宽会让面板宽到像全屏，失去"贴在一边"的意义
-        // - 屏宽-100dp：手机竖屏下要给编辑器留出可见宽度，否则用户看不见自己在改
-        //   哪个文件。这条在小屏上通常是最紧的约束。
+        // **方向必须与宿主让出的空间吻合**（见 ActivityHost.applyYield）：
+        // - 宽屏（≥600dp）：编辑器让出右侧，面板贴右侧满高，构成左右分栏。
+        // - 窄屏（<600dp）：编辑器让出下半屏，面板必须贴**底部**、占满宽度。
+        //   早先这里无条件贴右侧满高，与「让出下半屏」的空间完全不吻合——
+        //   实测 392dp 手机上，编辑器 [0,75][1080,1180] 与面板 [346,75][1080,2210]
+        //   在右上角重叠，面板仍然盖住编辑器上半屏的右侧，只是看起来像分栏。
         //
-        // 下限必须再对上限取一次 min：窄屏上「屏宽-100dp」可能小于 260dp，
-        // 直接 coerceIn(260dp, 那个值) 会抛
-        // IllegalArgumentException: Cannot coerce value to an empty range。
+        // 比例与方向都读宿主（isWideScreen / yieldFraction），不在这里另算一份：
+        // 让位量由宿主决定、面板尺寸由本类决定，两者必须严格互补，各算一份必然漂移。
         val screenWidth = screenWidthPx()
-        val upper = minOf(dp(420), screenWidth - dp(100))
-        val lower = minOf(dp(260), upper)
-        params.width = (screenWidth * 0.68f).toInt().coerceIn(lower, upper)
-        params.height = ViewGroup.LayoutParams.MATCH_PARENT
+        val available = host.heightPx()
+        val panelFraction = 1f - host.yieldFraction()
+
+        if (host.isWideScreen()) {
+          // 宽度：屏幕的 68%，并夹在 [260dp, min(420dp, 屏宽-100dp)] 之间。
+          // 四个约束各解决一件事：
+          // - 260dp 下限：标题栏有 1 个左按钮 + 3 个右按钮，每个都是 48dp 的可点区域
+          //   （无障碍最小触控尺寸，不能再压），共 192dp。低于 260dp 时标题会被挤成
+          //   「AI …」——实测 236dp 面板就是这样。
+          // - 420dp 上限：平板上不限宽会让面板宽到像全屏，失去"贴在一边"的意义
+          // - 屏宽-100dp：要给编辑器留出可见宽度，否则用户看不见自己在改哪个文件。
+          //
+          // 下限必须再对上限取一次 min：窄屏上「屏宽-100dp」可能小于 260dp，
+          // 直接 coerceIn(260dp, 那个值) 会抛
+          // IllegalArgumentException: Cannot coerce value to an empty range。
+          val upper = minOf(dp(420), screenWidth - dp(100))
+          val lower = minOf(dp(260), upper)
+          params.width = (screenWidth * 0.68f).toInt().coerceIn(lower, upper)
+          params.height = ViewGroup.LayoutParams.MATCH_PARENT
+        } else {
+          // 窄屏：贴底、全宽、占「让位后剩下的那份」，与编辑器严丝合缝。
+          params.width = ViewGroup.LayoutParams.MATCH_PARENT
+          params.height = (available * panelFraction).toInt()
+        }
         params.marginStart = 0
         params.marginEnd = 0
         params.topMargin = 0
@@ -1144,7 +1193,8 @@ class FloatingAssistantView(
         card.radius = 0f
         // 保留 1dp 描边：面板与编辑器内容用的是同一个 colorSurface，
         // 不画边界时两者连成一片，看不出面板从哪里开始。
-        // 描边在上下右三边正好压在屏幕边缘（不可见），实际只起左分界线的作用。
+        // 宽屏时它起**左**分界线作用（上下右三边压在屏幕边缘不可见）；
+        // 窄屏时起**上**分界线作用（左右下三边不可见）。同一个用意。
         card.strokeWidth = dp(1)
       }
       Mode.INLINE -> {
@@ -1170,6 +1220,10 @@ class FloatingAssistantView(
     // DOCKED 形态不设 bias 会落在屏幕中间，看起来还是浮窗而不是贴边面板。
     // 这里显式指定：DOCKED 靠右，其余两种都占满宽度、bias 无影响（设 0.5 保持一致）。
     params.horizontalBias = if (newMode == Mode.DOCKED) 1f else 0.5f
+    // 垂直对齐方向：窄屏的 DOCKED 是「贴底面板」，高度只有半屏，不设 bias 会**垂直居中**，
+    // 于是面板浮在屏幕中间、上下都露出编辑器，又变回浮窗观感。
+    // 宽屏 DOCKED 高度是 MATCH_PARENT，bias 无影响；其余形态同理。
+    params.verticalBias = if (newMode == Mode.DOCKED && !host.isWideScreen()) 1f else 0.5f
 
     card.layoutParams = params
 
@@ -1646,6 +1700,12 @@ class FloatingAssistantView(
           ui.lastThinkingId = null
           ui.lastToolCardId = null
           ui.streamedThisRun = false
+          // 工具组的自动折叠依赖「是否有运行在进行」：只有运行中且位于末尾的组默认展开。
+          // 不置位的话，末组会在运行期间就折叠起来，用户看不到正在跑的工具。
+          adapter.isRunActive = true
+          // 耗时计时起点。放在 RUN_STARTED 而不是 TURN_STARTED：「这一轮花了多久」指的是
+          // 用户发出请求到收到最终回答，包含中间的每一次工具往返。
+          ui.runStartedAtMs = android.os.SystemClock.elapsedRealtime()
           // 显示停止键：运行可能是**别的入口**发起的，本视图的 job 表看不到它，
           // 只有这个事件能告诉它「现在有运行，且停止键该出现」。
           if (displayedConversationId == conversationId) {
@@ -1669,6 +1729,23 @@ class FloatingAssistantView(
           binding.assistantWorking.stopWorking()
           if (!ui.retryCardPinned) {
             hideRetryCard()
+          }
+          // 运行结束 = 末组不再活动，应收起来（十几张工具卡片收成一行）。
+          // 放在 displayedConversationId 守卫**之后**：后台会话的结束不该改变
+          // 当前显示会话的折叠状态。
+          adapter.isRunActive = false
+
+          // 回填本轮耗时到收尾的助手消息上。耗时是展示信息，由视图侧自己记
+          // （RUN_STARTED 起点、RUN_FINISHED 终点），不走协议层——协议层要补时间戳
+          // 得改事件契约与全部构造点，而它只是展示信息。
+          val startMs = ui.runStartedAtMs
+          if (startMs > 0L) {
+            val elapsed = android.os.SystemClock.elapsedRealtime() - startMs
+            ui.runEndMessageId?.let { id ->
+              adapter.updateDuration(id, elapsed)
+            }
+            ui.runStartedAtMs = 0L
+            ui.runEndMessageId = null
           }
         }
       }
@@ -1781,6 +1858,8 @@ class FloatingAssistantView(
           // TOOL_STARTED，所以在这里收尾最准；置空后，工具之后的新推理会另起一块。
           ui.lastThinkingId?.let { adapter.finishThinking(it) }
           ui.lastThinkingId = null
+          // 记录本轮结束的助手消息 id，用于 RUN_FINISHED 时回填耗时。
+          ui.runEndMessageId = ui.streamingMessageId
           finishStreaming(ui)
           scrollToBottom()
         }
@@ -1824,7 +1903,15 @@ class FloatingAssistantView(
           // 用「最近一张仍在运行中的卡片」关联即可，无需在协议层传 id。
           val cardId = ui.lastToolCardId ?: adapter.lastToolCallId()
           if (cardId != null) {
-            adapter.completeToolCall(cardId, result.content, result.isError)
+            // 带上结果里的图片：`phone_screenshot`、`image_generation` 这类工具的产出
+            // 就是一张图，不带的话用户只能看到「工具跑完了」却看不到图。
+            adapter.completeToolCall(
+                cardId,
+                result.content,
+                result.isError,
+                if (result.hasImage()) result.imageBase64 else null,
+                result.imageMimeType,
+            )
           }
           ui.lastToolCardId = null
 
@@ -1906,6 +1993,9 @@ class FloatingAssistantView(
           return
         }
         lifecycleScope.launch(Dispatchers.Main) {
+          // 失败也是「运行结束」：末组不该继续以活动态展开。
+          // 不置位的话，失败后末组停在展开态，直到用户手动折叠。
+          adapter.isRunActive = false
           // 仍在「运行中」的卡片要收尾，否则会永久停在运行态，用户以为还在跑。
           for (id in adapter.runningToolCallIds()) {
             adapter.failToolCall(id, event.message)
@@ -2093,19 +2183,44 @@ class FloatingAssistantView(
   }
 
   /**
-   * 记录一次文件改动，并挂上撤销按钮。
+   * 记录一次文件改动，渲染成 diff 卡片并挂上撤销按钮。
    *
    * <p>路径从工具参数里取：工具结果本身不带路径（{@code ToolResult} 只有 diffId），
    * 而用户需要看到「改的是哪个文件」才能判断要不要撤销。
+   *
+   * <p><b>为什么 diff 在客户端现算</b>：{@code DiffRecord} 只存改动前后的完整内容快照
+   * （回滚需要精确原文，快照是最可靠的形式），没有存 diff 结果。因此这里取快照、
+   * 丢到后台线程算。算完必须回到主线程改适配器——RecyclerView 的通知只能在主线程发。
+   *
+   * <p><b>为什么不等会话结束再算</b>（cc-haha 是会话 idle 才加载 diff）：cc-haha 的 diff
+   * 挂在 turn 级 checkpoint 上，一轮跑完才有完整快照，运行中确实无数据可渲染。
+   * 我方的 diff 是 per-file 的，`TOOL_FINISHED` 时快照已全量落盘，不存在「数据不全」，
+   * 再等 idle 只会白白延迟用户看到改动的时机。
+   *
+   * <p>代价用三点抵消：算在 `Dispatchers.Default`；卡片默认折叠、展开才多渲染；
+   * 超大改动走降级路径（见 AssistantDiffBuilder 的规模守卫）。
    */
   private fun appendChangedFile(toolName: String, arguments: String?, diffId: String) {
     val path = parsePathArg(arguments) ?: context.getString(string.ai_assistant_unknown_file)
-    adapter.append(
-        AssistantMessageAdapter.Role.TRACE,
-        context.getString(string.ai_assistant_file_changed, path),
-        diffId,
-    )
+    val cardId = adapter.appendDiff(path, diffId, result = null)
     scrollToBottom()
+
+    lifecycleScope.launch(Dispatchers.Default) {
+      // findById 可能返回 null：FileDiffStore 会裁剪旧记录（每文件 20 条 / 总量 8MB），
+      // 历史会话里的 diffId 未必还在。此时保持 result=null，卡片显示「记录已过期」。
+      val record = diffStore.findById(diffId)
+      val built =
+          record?.let {
+            AssistantDiffBuilder.build(
+                oldContent = it.oldContent,
+                newContent = it.newContent,
+                // isOldExists() 是 Java 侧的 boolean 访问器，Kotlin 不会把它合成属性
+                // （isXxx 只对 Kotlin 声明的属性生效），必须显式调用。
+                oldExists = it.isOldExists,
+            )
+          }
+      withContext(Dispatchers.Main) { adapter.updateDiff(cardId, built) }
+    }
   }
 
   /**
@@ -2127,7 +2242,10 @@ class FloatingAssistantView(
           com.tom.rv2ide.ai.tool.DiffReverter(diffStore).revert(diffId, toolContext)
       withContext(Dispatchers.Main) {
         if (result.isSuccess) {
+          // 消息与 diff 卡片共用这一个回滚入口（两者的撤销按钮语义相同），
+          // 因此两处都要标记——按 id 找不到对应类型时各自静默跳过。
           adapter.markReverted(messageId)
+          adapter.markDiffReverted(messageId)
           appendTrace(context.getString(string.ai_assistant_revert_ok, result.message))
         } else {
           appendTrace(context.getString(string.ai_assistant_revert_failed, result.message))
@@ -2149,7 +2267,94 @@ class FloatingAssistantView(
    * 授权规则、提示词模板…），再造一份就是第三份实现。
    */
   private fun openAssistantSettings() {
-    host.dialogs.openSettings()
+    // 传「AI 设置屏的 children」而不是屏幕本身。
+    //
+    // IDEPreferencesFragment 在顶层只接受两种类型：IPreferenceScreen（渲染成可点击入口）
+    // 与 IPreferenceGroup（渲染成 PreferenceCategory）。直接传 AIAgentPreferencesScreen
+    // 会在展开其 children 时抛 ClassCastException——那层 children 是普通 Preference，
+    // 而 addChildren 对非 Screen/Group 的分支仍按 Group 处理。
+    // 把 children 展开到顶层则每一层都符合上述两种类型。
+    val screen = com.tom.rv2ide.preferences.AIAgentPreferencesScreen()
+    val intent =
+        android.content.Intent(context, com.tom.rv2ide.activities.PreferencesActivity::class.java)
+    intent.putParcelableArrayListExtra(
+        com.tom.rv2ide.activities.PreferencesActivity.EXTRA_DIRECT_CHILDREN,
+        ArrayList(screen.children),
+    )
+    intent.putExtra(
+        com.tom.rv2ide.activities.PreferencesActivity.EXTRA_DIRECT_TITLE,
+        context.getString(screen.title),
+    )
+    context.startActivity(intent)
+  }
+
+  /**
+   * 弹出消息操作菜单（复制原文、复制纯文本、引用提问）。
+   */
+  private fun showMessageActionsMenu(message: AssistantMessageAdapter.Message, anchor: View) {
+    val items = mutableListOf<Pair<String, () -> Unit>>()
+    items.add(context.getString(string.ai_assistant_action_copy_raw) to {
+      copyToClipboard("Markdown", message.text)
+    })
+
+    if (AssistantMarkdown.looksLikeMarkdown(message.text)) {
+      items.add(context.getString(string.ai_assistant_action_copy_plain) to {
+        copyToClipboard("Text", AssistantMessageActions.toPlainText(message.text))
+      })
+    }
+
+    items.add(context.getString(string.ai_assistant_action_quote) to {
+      showQuoteReplyDialog(message)
+    })
+
+    val titles = items.map { it.first }.toTypedArray()
+    com.google.android.material.dialog.MaterialAlertDialogBuilder(context)
+        .setItems(titles) { _, which ->
+          items[which].second.invoke()
+        }
+        .show()
+  }
+
+  /**
+   * 引用提问对话框：输入对当前消息的追问，确认后回填并附带引用前缀。
+   */
+  private fun showQuoteReplyDialog(message: AssistantMessageAdapter.Message) {
+    val input = android.widget.EditText(context).apply {
+      hint = context.getString(string.ai_assistant_quote_input_hint)
+      setPadding(dp(16), dp(16), dp(16), dp(16))
+    }
+
+    com.google.android.material.dialog.MaterialAlertDialogBuilder(context)
+        .setTitle(string.ai_assistant_quote_dialog_title)
+        .setView(input)
+        .setPositiveButton(android.R.string.ok) { _, _ ->
+          val question = input.text?.toString()?.trim().orEmpty()
+          val ref = ChatReference(
+              messageId = message.id,
+              role = if (message.role == AssistantMessageAdapter.Role.USER) "user" else "assistant",
+              quote = message.text.take(300),
+          )
+          val quoteBlock = AssistantMessageActions.referenceContext(listOf(ref))
+          val fullText = if (quoteBlock.isNotEmpty()) "$quoteBlock\n\n$question" else question
+
+          val current = binding.assistantInput.text?.toString().orEmpty()
+          if (current.isBlank()) {
+            binding.assistantInput.setText(fullText)
+          } else {
+            binding.assistantInput.setText("$current\n\n$fullText")
+          }
+          binding.assistantInput.setSelection(binding.assistantInput.text?.length ?: 0)
+        }
+        .setNegativeButton(android.R.string.cancel, null)
+        .show()
+  }
+
+  private fun copyToClipboard(label: String, content: String) {
+    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? android.content.ClipboardManager
+    if (clipboard != null) {
+      clipboard.setPrimaryClip(android.content.ClipData.newPlainText(label, content))
+      appendTrace(context.getString(string.ai_assistant_code_copied))
+    }
   }
 
   /**
@@ -2614,8 +2819,18 @@ class FloatingAssistantView(
           // 「运行中」——历史里一条早已结束的工具显示成还在跑，是明确的错误信息。
           val cardId = pendingToolCards.pollFirst()
           if (cardId != null) {
+            // 历史里的工具图片：必须用 fromImageResult 而不是 fromRawInputJson。
+            // 两者只差一个 kind 字符串，用错**不会报错**——fromRawInputJson 只认用户附件的
+            // kind，解析工具图片恒返回 null，于是历史截图会全部消失且没有任何提示。
+            val image = com.tom.rv2ide.ai.protocol.ImageInputPayload
+                .fromImageResult(message.getRawInputJson())
             adapter.completeToolCall(
-                cardId, message.getContent(), message.isToolError())
+                cardId,
+                message.getContent(),
+                message.isToolError(),
+                image?.dataBase64,
+                image?.mimeType.orEmpty(),
+            )
             // 步骤随结果恢复（子代理过程不进主对话，展开卡片看步骤是回看的唯一凭据）。
             // 旧日志没有 steps 字段，此时列表为空、步骤区隐藏，与从前行为一致。
             if (message.steps.isNotEmpty()) {
@@ -3006,6 +3221,41 @@ class FloatingAssistantView(
             }
           }
           sb.append('\n')
+        }
+        is AssistantMessageAdapter.ToolGroup -> {
+          // 导出时把组展开成逐个工具，而不是只写一行摘要：
+          // 导出是给人复盘用的，摘要（「读取 5 个文件」）丢掉了「读了哪几个」这个关键信息，
+          // 而屏幕上之所以折叠是为了省空间——导出没有这个约束。
+          // 用 toolCalls 而不是 children：组内还可能含推理块（见 ToolGroup 的注释），
+          // 它没有 toolName/output，直接遍历 children 会编译不过——这是好事，
+          // 类型系统在这里挡住了「把推理块当工具导出」的错误。
+          for (child in item.toolCalls) {
+            sb.append("- ")
+                .append(
+                    if (child.status == AssistantMessageAdapter.ToolStatus.FAILED) "✗ " else "✓ ")
+                .append(child.toolName)
+            if (child.output.isNotBlank()) {
+              sb.append("：").append(child.output.take(2000))
+              if (child.output.length > 2000) {
+                sb.append("…（已截断，共 ").append(child.output.length).append(" 字符）")
+              }
+            }
+            sb.append('\n')
+          }
+        }
+        is AssistantMessageAdapter.Diff -> {
+          // 改动内容要进导出：它是「AI 到底改了什么」的唯一记录。
+          // 用标准 diff 记法（+/- 前缀）而不是屏幕上的行号排版——导出目标是
+          // 编辑器或 issue，行号列与竖线在那里是噪声，而 +/- 是通用记法。
+          sb.append("**✎ ").append(item.filePath).append("**\n\n")
+          val result = item.result
+          if (result == null) {
+            sb.append(context.getString(string.ai_assistant_diff_expired)).append("\n\n")
+          } else {
+            sb.append("```diff\n")
+                .append(AssistantDiffRenderer.toPlainText(result).trimEnd('\n'))
+                .append("\n```\n\n")
+          }
         }
       }
     }

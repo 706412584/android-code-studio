@@ -376,6 +376,13 @@
   <string name="ai_assistant_code_collapse">收起</string>
   <string name="ai_assistant_code_plaintext">纯文本</string>
   <string name="ai_assistant_code_lines">%1$d 行</string>
+  <string name="ai_assistant_diff_expired">改动记录已过期</string>
+  <string name="ai_assistant_diff_truncated">%1$s %2$s · 改动过大，仅显示概要</string>
+  <string name="ai_assistant_image_open">打开图片</string>
+  <string name="ai_assistant_image_unavailable">图片无法显示</string>
+  <string name="ai_assistant_image_too_large">图片过大，无法显示</string>
+  <string name="ai_assistant_tool_group_fallback">工具调用</string>
+  <string name="ai_assistant_tool_group_failures">%1$d 项失败</string>
   <string name="ai_assistant_compact_busy">正在运行中，暂时无法压缩上下文。</string>
   <!-- 排队发送。序号从 1 开始；轮到它时会变成 1。 -->
   <string name="ai_assistant_queued">已排队（前面还有 %1$d 条）。当前这轮结束后自动发出。</string>
@@ -431,6 +438,13 @@
   <string name="ai_assistant_dangerous_allow_once">仅允许本次</string>
   <string name="ai_assistant_dangerous_allow_always">始终允许</string>
   <string name="ai_assistant_dangerous_deny">拒绝</string>
+
+  <!-- 消息操作 -->
+  <string name="ai_assistant_action_copy_raw">复制 Markdown</string>
+  <string name="ai_assistant_action_copy_plain">复制纯文本</string>
+  <string name="ai_assistant_action_quote">引用提问</string>
+  <string name="ai_assistant_quote_dialog_title">引用提问</string>
+  <string name="ai_assistant_quote_input_hint">就这段内容提问…</string>
 
   <!-- 悬浮助手的服务商 / 模型选择器 -->
   <string name="ai_assistant_model_picker_title">服务商与模型</string>

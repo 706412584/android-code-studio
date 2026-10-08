@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  工具结果图片的放大查看。
+
+  仓库里没有现成的图片查看器（无 PhotoView / SubsamplingScaleImageView 依赖），
+  而截图的用途就是「看清里面的小字」，96dp 缩略图做不到这件事，
+  所以必须有放大入口。这里用最朴素的「全屏 Dialog + ImageView + 缩放手势」
+  （见 ToolResultImageSupport.showLightbox），不引第三方库。
+
+  背景用半透明黑而不是主题色：看图时周围应该是「暗房」，
+  浅色主题下若用 colorSurface 会让图片显得发灰、对比度不足。
+-->
+<FrameLayout
+  xmlns:android="http://schemas.android.com/apk/res/android"
+  android:layout_width="match_parent"
+  android:layout_height="match_parent"
+  android:background="#E6000000"
+  android:clickable="true"
+  android:focusable="true">
+
+  <ImageView
+    android:id="@+id/lightboxImage"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:layout_margin="8dp"
+    android:contentDescription="@string/ai_assistant_image_open"
+    android:scaleType="fitCenter" />
+
+</FrameLayout>

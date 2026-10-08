@@ -22,25 +22,41 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.content.res.ColorStateList
 import android.graphics.Color
+import android.text.SpannableString
+import android.text.Spanned
+import android.text.style.BackgroundColorSpan
+import android.text.style.ForegroundColorSpan
 import android.util.TypedValue
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import android.view.Gravity
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.LinearLayout
 import android.widget.TextView
+import androidx.core.graphics.ColorUtils
 import androidx.core.view.isVisible
 import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.color.MaterialColors
 import com.tom.rv2ide.R
 import com.tom.rv2ide.ai.tool.api.ToolDisplayCategory
 import com.tom.rv2ide.artificial.agent.AssistantCodeHighlighter
+import com.tom.rv2ide.artificial.agent.AssistantDiffRenderer
 import com.tom.rv2ide.artificial.agent.AssistantMarkdown
+import com.tom.rv2ide.artificial.agent.AssistantMessageActions
+import com.tom.rv2ide.artificial.agent.AssistantToolGroupSummary
 import com.tom.rv2ide.artificial.agent.AssistantUiStyleStore
 import com.tom.rv2ide.artificial.agent.CodeFenceParser
+import com.tom.rv2ide.artificial.agent.ToolResultImageSupport
+import com.tom.rv2ide.artificial.agent.DiffLineType
+import com.tom.rv2ide.artificial.agent.DiffResult
+import com.tom.rv2ide.databinding.ItemAssistantDiffBinding
 import com.tom.rv2ide.databinding.ItemAssistantMessageBinding
 import com.tom.rv2ide.databinding.ItemAssistantThinkingBinding
 import com.tom.rv2ide.databinding.ItemToolCallBinding
+import com.tom.rv2ide.databinding.ItemToolGroupBinding
 import com.tom.rv2ide.resources.R.string
 
 /**
@@ -158,6 +174,16 @@ class AssistantMessageAdapter(
       val text: String,
       val diffId: String? = null,
       val reverted: Boolean = false,
+      /**
+       * 本轮耗时（毫秒）；0 表示无数据、不显示。
+       *
+       * <p><b>为什么由视图侧自记而不是协议层给</b>：`AgentSession` 的 `startedAt` 是方法内
+       * 局部变量，`turnStarted`/`turnFinished` 事件都不带时间戳，`AgentRunResult` 也只有
+       * turns/toolCallCount。要在协议层加时间戳需要改动事件契约与所有构造点；
+       * 而「这一轮花了多久」纯粹是展示信息，视图在 `RUN_STARTED`/`RUN_FINISHED` 时
+       * 自己记两个时刻即可，零协议层改动。
+       */
+      val durationMs: Long = 0L,
   ) : Item()
 
   /**
@@ -204,7 +230,79 @@ class AssistantMessageAdapter(
        * 子 agent 的中间过程刻意不进主对话，这些行是用户回看时的唯一凭据。
        */
       val steps: List<String> = emptyList(),
+      /**
+       * 工具结果里的图片（base64，不含 data URL 前缀）；无图为 null。
+       *
+       * <p>工具（`phone_screenshot`、`image_generation`，以及第三方 MCP server）可以返回
+       * 一张图片。协议层早就把 base64 带回来了（{@code ToolResult.getImageBase64}），
+       * 模型也一直能看到它（{@code AgentSession.toolResultImageJson} 回灌），
+       * 但界面此前**从不显示**——用户只知道「工具跑完了」，看不到截的是什么图。
+       *
+       * <p>存 base64 而不是解码后的字节：这个 data class 会进 `snapshot()` 并被比较，
+       * 持有几 MB 的 ByteArray 会让每次 copy 都复制一份大对象；解码在绑定时按需做，
+       * 且只在可见时做。
+       */
+      val imageBase64: String? = null,
+      val imageMimeType: String = "",
   ) : Item()
+
+  /**
+   * 一次文件改动的 diff 卡片。
+   *
+   * <p><b>为什么单独一种 item 而不是复用 [Message]</b>：消息是纯文本，渲染成一段
+   * markdown；diff 需要行号列、增删标记、词级底色与折叠，这些都靠 [DiffResult]
+   * 而不是文本表达。塞进 Message 就只能把 diff 预先拍成字符串，行号列宽与词级
+   * 高亮将无法按控件宽度重算。
+   *
+   * @param diffId 回滚句柄。卡片上的撤销按钮据此调用 `DiffReverter`
+   * @param result diff 结果；为 null 表示记录已过期（`FileDiffStore` 会裁剪旧记录），
+   *   此时卡片显示「记录已过期」而不是空白——静默空白会让用户以为 AI 没改文件
+   * @param expanded 展开状态。**存在数据里而不是 ViewHolder 里**——RecyclerView 会复用
+   *   ViewHolder，把展开状态放在控件上会导致滚动后「展开的是另一条」
+   * @param reverted 是否已撤销，决定按钮是否可再点
+   */
+  data class Diff(
+      override val id: Long,
+      val filePath: String,
+      val diffId: String?,
+      val result: DiffResult?,
+      val expanded: Boolean = false,
+      val reverted: Boolean = false,
+  ) : Item()
+
+  /**
+   * 一组连续的工具调用与推理块，折叠态渲染成一行活动摘要。
+   *
+   * <p><b>为什么要分组</b>：一次任务里连续十几次 `file_read` 会产生十几张卡片，
+   * 把正文挤出屏幕。分组后折叠成一句「读取 5 个文件 · 执行 2 条命令」，
+   * 需要细节时再展开。
+   *
+   * <p><b>为什么 Thinking 也进组、不打断分组</b>（实测修正）：最初的设计让 Thinking
+   * 打断分组，理由是「它是我方独立的折叠条目，不该被吸收」。但真机日志证明这个假设不成立——
+   * 每次工具调用**之前**模型都会先输出一段推理，于是「末项永远是 Thinking」，
+   * 分组条件永不满足，**分组等于没做**（实测：连续 12 个 file_read 仍产生 12 张卡片）。
+   * 因此改为把 Thinking 也收进组内：它是「这一轮在干什么」的一部分，本就属于同一段活动。
+   *
+   * <p><b>为什么是独立 item 而不是给 [ToolCall] 加 groupId</b>：加 id 并不减少条目数，
+   * 拿不到「少渲染」这个主要收益；而且组内改动只需一次 `notifyItemChanged`，
+   * 逐条通知会触发 N 次重绑。
+   *
+   * @param children 组内的条目，按出现顺序，元素是 [ToolCall] 或 [Thinking]。
+   *   **它们不在顶层 items 里**，因此所有按 id 查找的方法都必须能穿透到这里
+   *   （见 [indexOfToolCall] / [replaceToolCall]）——这是本类最容易出错的约定，
+   *   漏掉一处就是「子 agent 步骤丢失」或「图片不显示」这类静默故障。
+   * @param pinnedExpanded 用户手动展开/折叠的意图；null 表示「跟随自动策略」。
+   *   非 null 时压过自动折叠，否则用户点了展开、下一轮事件一来又被自动折回去。
+   */
+  data class ToolGroup(
+      override val id: Long,
+      val children: List<Item>,
+      val pinnedExpanded: Boolean? = null,
+  ) : Item() {
+    /** 组内的工具调用（不含推理块）。摘要与失败计数只关心这些。 */
+    val toolCalls: List<ToolCall>
+      get() = children.filterIsInstance<ToolCall>()
+  }
 
   private val items = mutableListOf<Item>()
   private var nextId = 0L
@@ -220,17 +318,95 @@ class AssistantMessageAdapter(
     this.onRevert = listener
   }
 
+  /**
+   * 消息长按菜单回调：用于弹出复制（原文/纯文）、引用提问等高级操作。
+   */
+  var onMessageActionRequested: ((Message, View) -> Unit)? = null
+
+  /**
+   * 图片解码用的协程作用域；由视图层注入（适配器本身不是 LifecycleOwner）。
+   *
+   * <p>注入而不是在适配器里自建作用域：解码必须在视图销毁时一并取消，
+   * 否则回到主线程写一个已 detach 的 ImageView。视图层用 lifecycleScope，
+   * 天然满足这一点。
+   */
+  internal var imageScope: kotlinx.coroutines.CoroutineScope? = null
+
+  /**
+   * 当前是否有运行在进行。
+   *
+   * <p>由视图层在 `RUN_STARTED` / `RUN_FINISHED` / `FAILED` 时置位。
+   * 工具组的自动折叠依赖它：只有「运行中**且**位于列表末尾」的组才默认展开，
+   * 其余（历史里的、已被后续内容顶下去的）一律折叠——一次任务跑完，
+   * 十几张工具卡片应该自动收成一行，而不是铺满屏幕。
+   */
+  internal var isRunActive: Boolean = false
+    set(value) {
+      if (field == value) {
+        return
+      }
+      field = value
+      // 活动态变化会改变末组的折叠状态，必须重绑它。
+      // 不重绑的话，运行结束时最后一组仍停在展开态（用户得滚动一下才收起来）。
+      val last = items.lastIndex
+      if (last >= 0 && items[last] is ToolGroup) {
+        notifyItemChanged(last)
+      }
+    }
+
   // ---- 文本消息 ----
 
   /** 追加一条消息并返回它的 id；流式更新用该 id 定位。 */
-  fun append(role: Role, text: String): Long = append(role, text, null)
-
-  /** 追加一条可回滚的消息。 */
-  fun append(role: Role, text: String, diffId: String?): Long {
+  fun append(role: Role, text: String): Long = append(role, text, null, 0L)
+  fun append(role: Role, text: String, diffId: String?): Long = append(role, text, diffId, 0L)
+  fun append(role: Role, text: String, diffId: String?, durationMs: Long): Long {
     val id = nextId++
-    items.add(Message(id, role, text, diffId))
+    items.add(Message(id, role, text, diffId, reverted = false, durationMs = durationMs))
     notifyItemInserted(items.size - 1)
     return id
+  }
+
+  // ---- diff 卡片 ----
+
+  /**
+   * 追加一张文件改动 diff 卡片。
+   *
+   * @param result 为 null 表示 diff 记录已过期（存储层会裁剪旧记录），卡片据此显示提示
+   */
+  fun appendDiff(filePath: String, diffId: String?, result: DiffResult?): Long {
+    val id = nextId++
+    items.add(Diff(id, filePath, diffId, result))
+    notifyItemInserted(items.size - 1)
+    return id
+  }
+
+  /**
+   * 回填 diff 计算结果。
+   *
+   * <p>diff 在后台线程算，算完才回填。回填时**必须按 id 重新定位**而不是记下标：
+   * 计算期间列表可能已经插入了新的消息或工具卡片，下标会漂移。
+   */
+  fun updateDiff(id: Long, result: DiffResult?) {
+    val index = indexOf(id)
+    val old = items.getOrNull(index) as? Diff ?: return
+    items[index] = old.copy(result = result)
+    notifyItemChanged(index)
+  }
+
+  /** 切换 diff 卡片的展开状态。 */
+  fun toggleDiffExpanded(id: Long) {
+    val index = indexOf(id)
+    val old = items.getOrNull(index) as? Diff ?: return
+    items[index] = old.copy(expanded = !old.expanded)
+    notifyItemChanged(index)
+  }
+
+  /** 把 diff 卡片标记为已撤销，使按钮进入禁用态。 */
+  fun markDiffReverted(id: Long) {
+    val index = indexOf(id)
+    val old = items.getOrNull(index) as? Diff ?: return
+    items[index] = old.copy(reverted = true)
+    notifyItemChanged(index)
   }
 
   /**
@@ -261,6 +437,19 @@ class AssistantMessageAdapter(
       return
     }
     items[index] = old.copy(text = text)
+    notifyItemChanged(index)
+  }
+
+  /**
+   * 回填本轮耗时到指定消息上。
+   *
+   * <p>耗时由视图侧在 `RUN_STARTED` / `RUN_FINISHED` 时自己记（见 SessionUiState），
+   * 不走协议层——协议层要补时间戳得改事件契约与全部构造点，而它只是展示信息。
+   */
+  fun updateDuration(id: Long, durationMs: Long) {
+    val index = indexOf(id)
+    val old = items.getOrNull(index) as? Message ?: return
+    items[index] = old.copy(durationMs = durationMs)
     notifyItemChanged(index)
   }
 
@@ -315,16 +504,52 @@ class AssistantMessageAdapter(
   /** 按 id 取文本消息；不存在或不是消息时返回 null。 */
   fun find(id: Long): Message? = items.firstOrNull { it.id == id } as? Message
 
-  /** 按 id 取工具卡片；不存在或不是卡片时返回 null。 */
-  fun findToolCall(id: Long): ToolCall? = items.firstOrNull { it.id == id } as? ToolCall
+  /** 按 id 取工具卡片（含组内）；不存在时返回 null。 */
+  fun findToolCall(id: Long): ToolCall? =
+      when (val top = items.getOrNull(indexOfToolCall(id))) {
+        is ToolCall -> top.takeIf { it.id == id }
+        is ToolGroup -> top.toolCalls.firstOrNull { it.id == id }
+        else -> null
+      }
 
   // ---- 工具卡片 ----
 
   /** 追加一张「运行中」的工具卡片并返回它的 id。 */
   fun appendToolCall(toolName: String, summary: String, input: String): Long {
     val id = nextId++
-    items.add(ToolCall(id, toolName, summary, input))
-    notifyItemInserted(items.size - 1)
+    val call = ToolCall(id, toolName, summary, input)
+    val last = items.lastOrNull()
+
+    // 决策逻辑在 ToolGrouping（纯函数、可单测）；这里只负责改列表与发通知。
+    // 抽出去的原因：notify* 依赖 RecyclerView 的观察者机制，纯 JVM 单测驱动不了，
+    // 而「什么该成组」恰恰是最容易错、最需要测试的部分。
+    val decision =
+        ToolGrouping.decide(
+            lastIsGroup = last is ToolGroup,
+            lastToolName = (last as? ToolCall)?.toolName,
+            incomingToolName = toolName,
+        )
+    when (decision) {
+      ToolGrouping.Decision.MERGE_INTO_LAST_GROUP -> {
+        val group = last as ToolGroup
+        items[items.size - 1] = group.copy(children = group.children + call)
+        // 必须同时通知「旧的末项」：它从「末项」变成「非末项」时，自动折叠策略
+        // 会把它从展开改为折叠，但仅 notifyItemInserted 不会重绑它，
+        // 于是它会永久停在展开态（直到用户滚动离开再回来）。
+        notifyItemChanged(items.size - 1)
+        notifyItemInserted(items.size)
+      }
+      ToolGrouping.Decision.MERGE_LAST_TWO -> {
+        // 首两张合并成组：把旧的单卡片替换成组，位置不变。
+        val groupId = nextId++
+        items[items.size - 1] = ToolGroup(groupId, listOf(last as ToolCall, call))
+        notifyItemChanged(items.size - 1)
+      }
+      ToolGrouping.Decision.APPEND -> {
+        items.add(call)
+        notifyItemInserted(items.size - 1)
+      }
+    }
     return id
   }
 
@@ -334,14 +559,34 @@ class AssistantMessageAdapter(
    * <p>id 不存在时静默忽略：用户可能已点了「新会话」清空列表，迟到的结果不该崩。
    */
   fun completeToolCall(id: Long, output: String, isError: Boolean) {
-    val index = indexOf(id)
-    val old = items.getOrNull(index) as? ToolCall ?: return
-    items[index] =
-        old.copy(
-            output = output,
-            status = if (isError) ToolStatus.FAILED else ToolStatus.DONE,
-        )
-    notifyItemChanged(index)
+    completeToolCall(id, output, isError, null, "")
+  }
+
+  /**
+   * 完成一次工具调用，并带上结果里的图片。
+   *
+   * <p>重载而不是改签名：旧调用点（以及测试）不需要知道图片，改动它们纯属噪声。
+   *
+   * @param imageBase64 工具结果图片的 base64；无图为 null
+   */
+  fun completeToolCall(
+      id: Long,
+      output: String,
+      isError: Boolean,
+      imageBase64: String?,
+      imageMimeType: String,
+  ) {
+    // 必须穿透分组：工具可能已被并入 ToolGroup，顶层 items 找不到它。
+    // 走 indexOf(id) + `as? ToolCall` 的旧写法在分组后会静默失败
+    // ——卡片永久停在「运行中」，且图片永远不会出现。
+    replaceToolCall(id) { old ->
+      old.copy(
+          output = output,
+          status = if (isError) ToolStatus.FAILED else ToolStatus.DONE,
+          imageBase64 = imageBase64,
+          imageMimeType = imageMimeType,
+      )
+    }
   }
 
   /**
@@ -352,13 +597,21 @@ class AssistantMessageAdapter(
    * 迟到的进度行没有归属，插到任意卡片上都是错误关联。
    */
   fun appendToolStep(step: String) {
-    val index = items.indexOfLast { it is ToolCall && it.status == ToolStatus.RUNNING }
-    if (index < 0) {
-      return
+    // 找「最近一张运行中的卡片」，但必须能看见组内的：分组后运行中的卡片
+    // 通常就在末组里，只看顶层会完全找不到目标，子 agent 的步骤会**静默丢失**
+    // ——用户看到的是「步骤区一直空着」，没有任何错误提示。
+    var target: ToolCall? = null
+    for (item in items) {
+      when (item) {
+        is ToolCall -> if (item.status == ToolStatus.RUNNING) target = item
+        is ToolGroup -> item.toolCalls.filter { it.status == ToolStatus.RUNNING }.lastOrNull()?.let {
+          target = it
+        }
+        else -> {}
+      }
     }
-    val old = items[index] as ToolCall
-    items[index] = old.copy(steps = old.steps + step)
-    notifyItemChanged(index)
+    val running = target ?: return
+    replaceToolCall(running.id) { it.copy(steps = it.steps + step) }
   }
 
   /**
@@ -368,25 +621,29 @@ class AssistantMessageAdapter(
    * （一次性给出完整列表）。id 不存在时静默忽略，与其它回填方法同约定。
    */
   fun setToolSteps(id: Long, steps: List<String>) {
-    val index = indexOf(id)
-    val old = items.getOrNull(index) as? ToolCall ?: return
-    if (old.steps == steps) {
-      return
+    // 穿透分组：回放历史时工具卡片可能已被并入组内。
+    replaceToolCall(id) { old ->
+      if (old.steps == steps) old else old.copy(steps = steps)
     }
-    items[index] = old.copy(steps = steps)
-    notifyItemChanged(index)
   }
+
+  /** 所有工具调用，含组内的（顺序保持出现顺序）。 */
+  private fun allToolCalls(): List<ToolCall> =
+      items.flatMap { item ->
+        when (item) {
+          is ToolCall -> listOf(item)
+          is ToolGroup -> item.toolCalls
+          else -> emptyList()
+        }
+      }
 
   /** 最近一张仍在运行的工具卡片 id；没有则 null。 */
   fun lastRunningToolCallId(): Long? =
-      items.lastOrNull { it is ToolCall && it.status == ToolStatus.RUNNING }?.id
+      allToolCalls().lastOrNull { it.status == ToolStatus.RUNNING }?.id
 
-  /** 切换卡片展开状态。 */
+  /** 切换卡片展开状态（含组内子卡片）。 */
   fun toggleExpanded(id: Long) {
-    val index = indexOf(id)
-    val old = items.getOrNull(index) as? ToolCall ?: return
-    items[index] = old.copy(expanded = !old.expanded)
-    notifyItemChanged(index)
+    replaceToolCall(id) { old -> old.copy(expanded = !old.expanded) }
   }
 
   // ---- 思维链 ----
@@ -419,57 +676,121 @@ class AssistantMessageAdapter(
       }
     }
     val id = nextId++
-    items.add(Thinking(id, delta, streaming = streaming, expanded = false))
+    val block = Thinking(id, delta, streaming = streaming, expanded = false)
+
+    // 末项是工具组时把推理块也收进去，**不打断分组**。
+    //
+    // 实测修正：最初让 Thinking 打断分组，理由是「它是独立的折叠条目」。但真机日志显示
+    // 每次工具调用**之前**模型都会先输出一段推理，于是末项永远是 Thinking，
+    // 分组条件永不满足——连续 12 个 file_read 仍产生 12 张卡片，分组等于没做。
+    // 推理本就是「这一轮在干什么」的一部分，收进同一组才符合用户的阅读单位。
+    val last = items.lastOrNull()
+    if (last is ToolGroup && ToolGrouping.shouldThinkingJoinGroup(true)) {
+      items[items.size - 1] = last.copy(children = last.children + block)
+      notifyItemChanged(items.size - 1)
+      return id
+    }
+
+    items.add(block)
     notifyItemInserted(items.size - 1)
     return id
   }
 
-  /** 结束流式：标题从「思考中」切到「已完成思考」，进度指示器隐藏。 */
+  /**
+   * 结束流式：标题从「思考中」切到「已完成思考」，进度指示器隐藏。
+   *
+   * <p>穿透分组：推理块现在可能被收在 [ToolGroup] 里（见 [appendThinking]），
+   * 只查顶层会让组内推理块永久停在「思考中」。
+   */
   fun finishThinking(id: Long) {
-    val index = indexOf(id)
-    val old = items.getOrNull(index) as? Thinking ?: return
-    if (!old.streaming) {
-      return
-    }
-    items[index] = old.copy(streaming = false)
-    notifyItemChanged(index)
+    replaceThinking(id) { if (it.streaming) it.copy(streaming = false) else it }
   }
 
   fun toggleThinkingExpanded(id: Long) {
-    val index = indexOf(id)
-    val old = items.getOrNull(index) as? Thinking ?: return
-    items[index] = old.copy(expanded = !old.expanded)
-    notifyItemChanged(index)
+    replaceThinking(id) { it.copy(expanded = !it.expanded) }
   }
 
-  /** 把仍在流式的思维链块全部收尾（运行结束或失败时调用）。 */
+  /** 把仍在流式的思维链块全部收尾（运行结束或失败时调用），含组内的。 */
   fun finishAllThinking() {
     for (i in items.indices) {
-      val old = items[i] as? Thinking ?: continue
-      if (old.streaming) {
-        items[i] = old.copy(streaming = false)
-        notifyItemChanged(i)
+      when (val top = items[i]) {
+        is Thinking -> {
+          if (top.streaming) {
+            items[i] = top.copy(streaming = false)
+            notifyItemChanged(i)
+          }
+        }
+        is ToolGroup -> {
+          if (top.children.none { it is Thinking && it.streaming }) {
+            continue
+          }
+          items[i] =
+              top.copy(
+                  children =
+                      top.children.map {
+                        if (it is Thinking && it.streaming) it.copy(streaming = false) else it
+                      })
+          notifyItemChanged(i)
+        }
+        else -> {}
       }
     }
   }
 
-  /** 把指定的工具卡片标记为失败（例如循环被取消时仍在运行的那张）。 */
-  fun failToolCall(id: Long, reason: String) {
-    val index = indexOf(id)
-    val old = items.getOrNull(index) as? ToolCall ?: return
-    if (old.status != ToolStatus.RUNNING) {
-      return
+  /** 在顶层或组内替换一个推理块。与 [replaceToolCall] 同构。 */
+  private fun replaceThinking(id: Long, transform: (Thinking) -> Thinking): Boolean {
+    val topIndex = items.indexOfFirst { item ->
+      when (item) {
+        is Thinking -> item.id == id
+        is ToolGroup -> item.children.any { it is Thinking && it.id == id }
+        else -> false
+      }
     }
-    items[index] = old.copy(status = ToolStatus.FAILED, output = reason)
-    notifyItemChanged(index)
+    if (topIndex < 0) {
+      return false
+    }
+    when (val top = items[topIndex]) {
+      is Thinking -> {
+        if (top.id == id) {
+          items[topIndex] = transform(top)
+          notifyItemChanged(topIndex)
+          return true
+        }
+      }
+      is ToolGroup -> {
+        val childIndex = top.children.indexOfFirst { it is Thinking && it.id == id }
+        if (childIndex >= 0) {
+          val next = top.children.toMutableList()
+          next[childIndex] = transform(next[childIndex] as Thinking)
+          items[topIndex] = top.copy(children = next)
+          notifyItemChanged(topIndex)
+          return true
+        }
+      }
+      else -> {}
+    }
+    return false
+  }
+
+  /**
+   * 把指定的工具卡片标记为失败（例如循环被取消时仍在运行的那张）。
+   *
+   * <p>必须穿透分组：漏掉会让**被分组的工具在失败后永久停在「运行中」**，
+   * 用户以为任务还在跑（而实际上整个运行已经结束）。
+   */
+  fun failToolCall(id: Long, reason: String) {
+    replaceToolCall(id) { old ->
+      if (old.status != ToolStatus.RUNNING) old
+      else old.copy(status = ToolStatus.FAILED, output = reason)
+    }
   }
 
   /** 仍在「运行中」的工具卡片 id；循环异常结束时用来收尾。 */
   fun runningToolCallIds(): List<Long> =
-      items.filterIsInstance<ToolCall>().filter { it.status == ToolStatus.RUNNING }.map { it.id }
+      allToolCalls().filter { it.status == ToolStatus.RUNNING }.map { it.id }
 
   /** 末条工具卡片的 id；用于把 TOOL_FINISHED 关联到对应的 TOOL_STARTED。 */
-  fun lastToolCallId(): Long? = items.filterIsInstance<ToolCall>().lastOrNull()?.id
+  fun lastToolCallId(): Long? = allToolCalls().lastOrNull()?.id
 
   // ---- 列表维护 ----
 
@@ -488,18 +809,84 @@ class AssistantMessageAdapter(
 
   private fun indexOf(id: Long): Int = items.indexOfFirst { it.id == id }
 
+
+  /**
+   * 工具调用在列表里的位置（可穿透分组）。
+   *
+   * <p><b>为什么需要它</b>：分组后 [ToolCall] 可能嵌套在 [ToolGroup].children 里，
+   * 顶层 `items` 找不到它。所有「按工具 id 定位」的操作都必须走这里，否则会出现
+   * 静默故障：图片不显示、子 agent 步骤丢失、卡片永久停在「运行中」——
+   * 都不报错，只是功能悄悄失效。
+   *
+   * @return 顶层下标；未找到为 -1
+   */
+  private fun indexOfToolCall(id: Long): Int =
+      items.indexOfFirst { item ->
+        when (item) {
+          is ToolCall -> item.id == id
+          is ToolGroup -> item.children.any { it.id == id }
+          else -> false
+        }
+      }
+
+  /**
+   * 在某个顶层条目的范围内替换一个工具调用。
+   *
+   * <p>落在顶层（未分组）时直接替换；落在组内时**派生一个新的 [ToolGroup]** 而不是就地改
+   * children——data class 的 children 是 `List`，就地改会让新旧状态指向同一份数据，
+   * RecyclerView 的 diff 与快照对比都会失效。
+   *
+   * @return 是否找到了目标
+   */
+  private fun replaceToolCall(id: Long, transform: (ToolCall) -> ToolCall): Boolean {
+    val topIndex = indexOfToolCall(id)
+    if (topIndex < 0) {
+      return false
+    }
+    when (val top = items[topIndex]) {
+      is ToolCall -> {
+        if (top.id == id) {
+          items[topIndex] = transform(top)
+          notifyItemChanged(topIndex)
+          return true
+        }
+      }
+      is ToolGroup -> {
+        val childIndex = top.children.indexOfFirst { it is ToolCall && it.id == id }
+        if (childIndex >= 0) {
+          val next = top.children.toMutableList()
+          // 索引已确认该位置是 ToolCall（见 indexOfFirst 的条件）。
+          next[childIndex] = transform(next[childIndex] as ToolCall)
+          items[topIndex] = top.copy(children = next)
+          notifyItemChanged(topIndex)
+          return true
+        }
+      }
+      else -> {}
+    }
+    return false
+  }
+
   override fun getItemViewType(position: Int): Int =
       when (items[position]) {
         is Message -> TYPE_MESSAGE
         is ToolCall -> TYPE_TOOL_CALL
         is Thinking -> TYPE_THINKING
+        is Diff -> TYPE_DIFF
+        // 组内只有一个子项时不渲染组头：一张卡片配一个「1 个文件」的标题
+        // 比直接显示那张卡片更啰嗦。组在只剩一项时会退回单卡片（见 shrinkGroups）。
+        is ToolGroup ->
+            if ((items[position] as ToolGroup).children.size <= 1) TYPE_TOOL_CALL
+            else TYPE_TOOL_GROUP
       }
 
   override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): RecyclerView.ViewHolder {
     val inflater = LayoutInflater.from(parent.context)
     return when (viewType) {
       TYPE_TOOL_CALL -> ToolCallVH(ItemToolCallBinding.inflate(inflater, parent, false), this)
+      TYPE_TOOL_GROUP -> ToolGroupVH(ItemToolGroupBinding.inflate(inflater, parent, false), this)
       TYPE_THINKING -> ThinkingVH(ItemAssistantThinkingBinding.inflate(inflater, parent, false), this)
+      TYPE_DIFF -> DiffVH(ItemAssistantDiffBinding.inflate(inflater, parent, false), this)
       else -> MessageVH(ItemAssistantMessageBinding.inflate(inflater, parent, false), this)
     }
   }
@@ -510,6 +897,15 @@ class AssistantMessageAdapter(
       is Message -> (holder as MessageVH).bind(item, onRevert)
       is ToolCall -> (holder as ToolCallVH).bind(item)
       is Thinking -> (holder as ThinkingVH).bind(item)
+      is Diff -> (holder as DiffVH).bind(item)
+      is ToolGroup -> {
+        if (item.children.size <= 1) {
+          // 单子项的组按普通卡片渲染（见 getItemViewType）。
+          item.toolCalls.firstOrNull()?.let { (holder as ToolCallVH).bind(it) }
+        } else {
+          (holder as ToolGroupVH).bind(item, isLive = isRunActive && position == items.size - 1)
+        }
+      }
     }
   }
 
@@ -525,14 +921,18 @@ class AssistantMessageAdapter(
       val context = binding.root.context
       val card = binding.messageCard
 
-      binding.messageRole.text =
-          context.getString(
-              when (message.role) {
-                Role.USER -> string.ai_assistant_role_user
-                Role.ASSISTANT -> string.ai_assistant_role_assistant
-                Role.TRACE -> string.ai_assistant_role_trace
-              }
-          )
+      val roleText = when (message.role) {
+          Role.USER -> context.getString(R.string.ai_assistant_role_user)
+          Role.ASSISTANT -> context.getString(R.string.ai_assistant_role_assistant)
+          Role.TRACE -> context.getString(R.string.ai_assistant_role_trace)
+      }
+
+      if (message.role == Role.ASSISTANT && message.durationMs > 0L) {
+          val durationText = AssistantMessageActions.formatDuration(message.durationMs)
+          binding.messageRole.text = "$roleText · $durationText"
+      } else {
+          binding.messageRole.text = roleText
+      }
 
       // 正文渲染。
       //
@@ -701,11 +1101,26 @@ class AssistantMessageAdapter(
       // 撤销按钮：只有携带 diffId 的消息才可能显示，且默认收起、长按才展开。
       // 已撤销时改为禁用并换文案——让按钮消失会让用户怀疑自己是否点到了，
       // 禁用态能明确传达「已经生效了」。
+      // 长按交互与操作条：
+      // 如果消息带有 diffId，优先通过原有逻辑处理或长按显示撤销；
+      // 若没有 diffId 或有外部操作监听，则触发自定义操作菜单（复制、引用提问等）。
       val diffId = message.diffId
+      card.isLongClickable = true
+      card.setOnLongClickListener {
+        if (diffId != null) {
+          binding.messageRevert.visibility =
+              if (binding.messageRevert.isVisible) View.GONE else View.VISIBLE
+          true
+        } else if (adapter.onMessageActionRequested != null) {
+          adapter.onMessageActionRequested?.invoke(message, card)
+          true
+        } else {
+          false
+        }
+      }
+
       if (diffId == null) {
         binding.messageRevert.visibility = View.GONE
-        card.setOnLongClickListener(null)
-        card.isLongClickable = false
       } else {
         binding.messageRevert.isEnabled = !message.reverted
         binding.messageRevert.setText(
@@ -713,13 +1128,6 @@ class AssistantMessageAdapter(
             else string.ai_assistant_revert
         )
         binding.messageRevert.setOnClickListener { onRevert?.invoke(message.id, diffId) }
-        // 长按切换撤销按钮。收起是默认态，避免每条改过文件的消息都多占一行。
-        card.isLongClickable = true
-        card.setOnLongClickListener {
-          binding.messageRevert.visibility =
-              if (binding.messageRevert.isVisible) View.GONE else View.VISIBLE
-          true
-        }
       }
     }
 
@@ -923,7 +1331,123 @@ class AssistantMessageAdapter(
       adapter.applyTextScale(binding.toolOutput, AssistantUiStyleStore.BaseSp.BODY_SMALL)
       applyCardScale(binding.toolCard, adapter.cardScale(), cornerBaseDp = 10f)
 
+      bindImage(call)
+
       binding.toolCard.setOnClickListener { adapter.toggleExpanded(call.id) }
+    }
+
+    /**
+     * 绑定工具结果图片。
+     *
+     * <p><b>为什么解码放后台</b>：几 MB 的 base64 解码是 CPU 密集操作，在主线程做就是 ANR。
+     * 而 `bind()` 本身在滚动中会被高频调用，更不能让它承担解码。
+     *
+     * <p><b>为什么必须清 Glide</b>：ViewHolder 会被复用，上一张卡片若不清，
+     * 它的截图会残留在这一张上——本文件早先就因同类竞态踩过坑（见头像处的注释）。
+     * 无图分支必须显式 `clear`。
+     *
+     * <p><b>为什么校验失败只给提示不显示破图</b>：base64 来自工具甚至第三方 MCP server，
+     * 畸形数据是常态。显示一个破图占位比不显示更糟——用户会以为界面坏了。
+     */
+    private fun bindImage(call: ToolCall) {
+      val base64 = call.imageBase64
+      val card = binding.toolImageCard
+      val image = binding.toolImage
+      val notice = binding.toolImageNotice
+
+      if (base64.isNullOrEmpty()) {
+        card.visibility = View.GONE
+        notice.visibility = View.GONE
+        // 复用清理：不 clear 的话上一张卡片的截图会留在这里。
+        com.bumptech.glide.Glide.with(image).clear(image)
+        image.setImageDrawable(null)
+        return
+      }
+
+      val context = binding.root.context
+      val key = ToolResultImageSupport.cacheKey(base64)
+      val viewId = call.id
+      // 没有作用域时退化为「直接解码」：适配器可能被单测或调试代码直接驱动，
+      // 那种场景下没有生命周期，而宁可在主线程解一次也不要什么都不显示。
+      val scope = adapter.imageScope
+
+      val work: suspend () -> Unit = {
+        when (val decoded = ToolResultImageSupport.decode(call.imageMimeType, base64)) {
+          is ToolResultImageSupport.Decoded.Rejected -> {
+            withContext(Dispatchers.Main) {
+              // 再次确认这张卡片还在显示同一个 item：后台解码期间列表可能已滚动，
+              // ViewHolder 被复用到别的工具调用上，此时写进去就是串图。
+              if (bindingAdapterPositionMatches(viewId)) {
+                card.visibility = View.GONE
+                com.bumptech.glide.Glide.with(image).clear(image)
+                notice.visibility = View.VISIBLE
+                notice.text =
+                    context.getString(
+                        if (decoded.reason == ToolResultImageSupport.Reason.TOO_LARGE)
+                            string.ai_assistant_image_too_large
+                        else string.ai_assistant_image_unavailable)
+              }
+            }
+          }
+          is ToolResultImageSupport.Decoded.Ok -> {
+            withContext(Dispatchers.Main) {
+              if (bindingAdapterPositionMatches(viewId)) {
+                notice.visibility = View.GONE
+                card.visibility = View.VISIBLE
+                // signature 用内容摘要：load(byte[]) 的默认缓存键按数组**引用**比较，
+                // 每次新建的数组都是新键，缓存永不命中、滚动回看反复重解码。
+                com.bumptech.glide.Glide.with(image)
+                    .load(decoded.bytes)
+                    .signature(com.bumptech.glide.signature.ObjectKey(key))
+                    .into(image)
+                card.setOnClickListener {
+                  ToolResultImageSupport.showLightbox(context, decoded.bytes, key)
+                }
+              }
+            }
+          }
+        }
+      }
+
+      if (scope == null) {
+        // 无作用域：同步解一次。失败也不抛——工具图片显示不出来不该影响对话。
+        runCatching {
+          val decoded = ToolResultImageSupport.decode(call.imageMimeType, base64)
+          if (decoded is ToolResultImageSupport.Decoded.Ok) {
+            card.visibility = View.VISIBLE
+            com.bumptech.glide.Glide.with(image)
+                .load(decoded.bytes)
+                .signature(com.bumptech.glide.signature.ObjectKey(key))
+                .into(image)
+            card.setOnClickListener {
+              ToolResultImageSupport.showLightbox(context, decoded.bytes, key)
+            }
+          }
+        }
+      } else {
+        scope.launch(Dispatchers.Default) { work() }
+      }
+    }
+
+    /**
+     * 当前 ViewHolder 是否仍绑定着 [expectedId]。
+     *
+     * <p>后台任务回到主线程时必须复查：解码期间用户可能已经滚动，
+     * 这个 ViewHolder 被复用到别的工具调用上。不复查就会把 A 的截图画到 B 的卡片里。
+     */
+    private fun bindingAdapterPositionMatches(expectedId: Long): Boolean {
+      val position = bindingAdapterPosition
+      if (position == RecyclerView.NO_POSITION) {
+        return false
+      }
+      // **必须穿透分组**：工具可能已被并入 ToolGroup，那时顶层位置上是 ToolGroup 而不是
+      // ToolCall。早先直接 `as? ToolCall` 的写法在分组后会恒为 false，
+      // 后果是**被分组的工具图片永远不显示**——静默、不报错，很难归因。
+      return when (val top = adapter.snapshot().getOrNull(position)) {
+        is ToolCall -> top.id == expectedId
+        is ToolGroup -> top.children.any { it.id == expectedId }
+        else -> false
+      }
     }
 
     /**
@@ -960,6 +1484,140 @@ class AssistantMessageAdapter(
       // radius 是 Float（MaterialCardView 的半径以 px 为单位但类型是 Float），
       // dp() 返回 Int —— 必须显式转换，否则 Assignment type mismatch。
       card.radius = dp(cornerBaseDp * scale).toFloat()
+    }
+  }
+
+  /**
+   * 组内子卡片的绑定。
+   *
+   * <p><b>为什么不复制一份绑定逻辑</b>：子卡片用的就是 `item_tool_call.xml`，
+   * 展示规则（状态色、展开、图片、步骤）必须与顶层卡片**逐字一致**。
+   * 复制一份意味着以后改一处漏一处，两处慢慢分叉。
+   * 因此这里直接复用 [ToolCallVH]——它是个普通类，可以脱离 RecyclerView 使用，
+   * 只是不要调它的 `itemView` 相关能力。
+   */
+  object ToolCallRowBinder {
+    fun bind(row: View, call: ToolCall, adapter: AssistantMessageAdapter) {
+      val binding = ItemToolCallBinding.bind(row)
+      ToolCallVH(binding, adapter).bind(call)
+    }
+  }
+
+  /**
+   * 组内推理块的绑定。
+   *
+   * <p>推理块被收进工具组后，在展开态需要与工具卡片并列显示。它用**独立布局**
+   * （`item_assistant_thinking.xml`），因为展示规则完全不同：工具卡片是「名字+状态+输入输出」，
+   * 推理块是「可折叠的长文本」。
+   */
+  object ThinkingRowBinder {
+    fun bind(row: View, thinking: Thinking, adapter: AssistantMessageAdapter) {
+      // 复用 ThinkingVH 的绑定逻辑，避免两处展示规则分叉（同 ToolCallRowBinder 的理由）。
+      val binding = ItemAssistantThinkingBinding.bind(row)
+      ThinkingVH(binding, adapter).bind(thinking)
+    }
+  }
+
+  /**
+   * 把一次工具调用转成摘要输入。
+   *
+   * <p>分类来自 [categoryResolver]（与工具卡片的配色同源），
+   * 不在这里重新做「工具名 → 分类」的映射——那会与 `ToolRegistry` 的映射漂移。
+   *
+   * <p>定义在 companion 里而不是作为成员扩展函数：嵌套类 [ToolGroupVH] 看不到
+   * 外部类的成员扩展（Kotlin 的成员扩展只对**本类实例内部**可见），
+   * 放 companion 才能被它调用。
+   */
+  internal fun toolCallToSummaryEntry(call: ToolCall, resolver: CategoryResolver?): AssistantToolGroupSummary.Entry =
+      AssistantToolGroupSummary.Entry(
+          toolName = call.toolName,
+          category = resolver?.categoryOf(call.toolName)?.name,
+          target = call.summary,
+          failed = call.status == ToolStatus.FAILED,
+      )
+
+  /** 切换工具组的展开状态；把用户意图写进 [ToolGroup.pinnedExpanded]。 */
+  fun toggleGroupExpanded(id: Long, currentlyCollapsed: Boolean) {
+    val index = indexOf(id)
+    val old = items.getOrNull(index) as? ToolGroup ?: return
+    // 记「展开与否」而不是「折叠与否」：pinnedExpanded 的语义是展开意图，
+    // 直接存 `!currentlyCollapsed` 就是用户想要的最终状态。
+    items[index] = old.copy(pinnedExpanded = currentlyCollapsed)
+    notifyItemChanged(index)
+  }
+
+  /**
+   * 工具组：折叠态一行活动摘要，展开态逐行列出组内卡片。
+   *
+   * <p>折叠策略：`pinnedExpanded`（用户手动）优先，否则「运行中且位于列表末尾」才展开。
+   * 这条规则让长任务自动收敛——跑完一轮，十几张工具卡片收成一行，
+   * 只有正在干活的那一组保持展开。
+   */
+  class ToolGroupVH(
+      private val binding: ItemToolGroupBinding,
+      private val adapter: AssistantMessageAdapter,
+  ) : RecyclerView.ViewHolder(binding.root) {
+
+    fun bind(group: ToolGroup, isLive: Boolean) {
+      val context = binding.root.context
+      val collapsed = group.pinnedExpanded?.let { !it } ?: !isLive
+
+      val summary =
+          AssistantToolGroupSummary.summarize(
+              group.toolCalls.map { adapter.toolCallToSummaryEntry(it, adapter.categoryResolver) })
+      binding.groupSummary.text =
+          if (summary.isEmpty()) context.getString(string.ai_assistant_tool_group_fallback)
+          else summary
+
+      val failures = group.toolCalls.count { it.status == ToolStatus.FAILED }
+      if (failures > 0) {
+        binding.groupFailures.visibility = View.VISIBLE
+        binding.groupFailures.text =
+            context.getString(string.ai_assistant_tool_group_failures, failures)
+        binding.groupFailures.setTextColor(
+            MaterialColors.getColor(binding.root, R.attr.colorError))
+      } else {
+        binding.groupFailures.visibility = View.GONE
+      }
+
+      binding.groupChevron.text =
+          context.getString(
+              if (collapsed) string.ai_assistant_tool_expand
+              else string.ai_assistant_tool_collapse)
+
+      binding.groupChildren.visibility = if (collapsed) View.GONE else View.VISIBLE
+      if (!collapsed) {
+        // 逐行 inflate 组内卡片。这里不用嵌套 RecyclerView：
+        // 组通常只有几项，而嵌套 RecyclerView 会带来滚动嵌套与高度测量问题
+        // （item_assistant_code.xml 里记过同类陷阱）。
+        binding.groupChildren.removeAllViews()
+        for (child in group.children) {
+          val layout =
+              when (child) {
+                is ToolCall -> R.layout.item_tool_call
+                is Thinking -> R.layout.item_assistant_thinking
+                else -> continue
+              }
+          val row = LayoutInflater.from(context).inflate(layout, binding.groupChildren, false)
+          binding.groupChildren.addView(row)
+          when (child) {
+            is ToolCall -> ToolCallRowBinder.bind(row, child, adapter)
+            is Thinking -> ThinkingRowBinder.bind(row, child, adapter)
+            else -> {}
+          }
+        }
+      }
+
+      // 整行可点：只让箭头可点会让折叠区很难命中（触控目标太小）。
+      binding.groupHeader.setOnClickListener {
+        adapter.toggleGroupExpanded(group.id, collapsed)
+      }
+
+      adapter.applyTextScale(binding.groupSummary, AssistantUiStyleStore.BaseSp.BODY_SMALL)
+      adapter.applyTextScale(binding.groupChevron, AssistantUiStyleStore.BaseSp.LABEL_SMALL)
+      adapter.applyTextScale(binding.groupFailures, AssistantUiStyleStore.BaseSp.LABEL_SMALL)
+      val density = binding.root.resources.displayMetrics.density
+      binding.groupCard.radius = (10f * adapter.cardScale() * density)
     }
   }
 
@@ -1031,10 +1689,210 @@ class AssistantMessageAdapter(
     }
   }
 
+  /**
+   * 文件改动 diff 卡片。
+   *
+   * <p>整块 diff 拼进**一个** TextView，靠 Spannable 表达行号、增删标记与词级高亮。
+   * 逐行建控件在千行级 diff 上会产生大量 View 与测量开销，而这些东西本来都是
+   * 文字属性（底色、前景色），不需要真实控件。
+   *
+   * <p>配色不新增主题 attr：增删底色由 `colorSuccess`/`colorError` 加透明度派生，
+   * 前景色沿用 `colorOnSurface`。新增 attr 要改 4 个主题文件 × 2 种模式，
+   * 而这两个语义色主题里已经有了，且天然跟随深浅色切换。
+   */
+  class DiffVH(
+      private val binding: ItemAssistantDiffBinding,
+      private val adapter: AssistantMessageAdapter,
+  ) : RecyclerView.ViewHolder(binding.root) {
+
+    fun bind(item: Diff) {
+      val context = binding.root.context
+      val result = item.result
+
+      // 文件名：只取末段路径。完整路径在小屏上会被省略成「/storage/emulated…」，
+      // 用户反而看不出改的是哪个文件；完整路径仍可从展开后的内容或工具卡片看到。
+      val name = item.filePath.substringAfterLast('/').ifEmpty { item.filePath }
+      binding.diffFileName.text = name
+
+      if (result == null) {
+        // 记录已过期：FileDiffStore 会裁剪旧记录（默认每文件 20 条、总量 8MB），
+        // 历史会话里的 diffId 可能查不到了。显示提示而不是空白——空白会让用户
+        // 以为 AI 根本没改这个文件。
+        binding.diffStat.text = context.getString(string.ai_assistant_diff_expired)
+        binding.diffText.text = ""
+        binding.diffToggle.visibility = View.GONE
+      } else {
+        bindStat(result)
+        bindBody(item.id, result, item.expanded)
+      }
+
+      bindCopy(item, result)
+      bindRevert(item)
+      applyCardScale(binding.diffCard)
+    }
+
+    /** 增删统计：`+n` 用成功色、`-n` 用错误色，两个数字分开染色。 */
+    private fun bindStat(result: DiffResult) {
+      val context = binding.root.context
+      val added = "+${result.added}"
+      val removed = "-${result.removed}"
+      val text =
+          if (result.truncated) {
+            // 降级路径：对齐是「全删 + 全增」，逐行渲染对用户已无意义，
+            // 但数字仍准确，因此保留统计并额外说明一句。
+            context.getString(string.ai_assistant_diff_truncated, added, removed)
+          } else {
+            "$added $removed"
+          }
+      val span = SpannableString(text)
+      val success = MaterialColors.getColor(binding.root, R.attr.colorSuccess)
+      val error = MaterialColors.getColor(binding.root, R.attr.colorError)
+      val addStart = text.indexOf(added)
+      if (addStart >= 0) {
+        span.setSpan(
+            ForegroundColorSpan(success), addStart, addStart + added.length,
+            Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+      }
+      val delStart = text.indexOf(removed)
+      if (delStart >= 0) {
+        span.setSpan(
+            ForegroundColorSpan(error), delStart, delStart + removed.length,
+            Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+      }
+      binding.diffStat.text = span
+    }
+
+    /**
+     * 渲染 diff 正文。
+     *
+     * <p>折叠沿用代码块的**截断字符串**策略（只把前 N 行交给 TextView），
+     * 而不是给控件设 maxHeight + 内部纵向滚动：后者会形成
+     * 「RecyclerView → 横向滚动 → 纵向滚动」三层嵌套，触摸仲裁在实机上很容易出问题。
+     */
+    private fun bindBody(itemId: Long, result: DiffResult, expanded: Boolean) {
+      val context = binding.root.context
+      val total = result.lines.size
+      val collapsed = !expanded && total > DIFF_COLLAPSE_THRESHOLD
+      val limit = if (collapsed) DIFF_COLLAPSE_THRESHOLD else total
+
+      val lines = AssistantDiffRenderer.render(result, limit)
+      val span = SpannableString(lines.joinToString("\n") { it.text })
+
+      // 行底色：整行铺一层低透明度色。透明度而不是实色，是因为 diff 里
+      // 大片实色会盖住代码本身的语法感，而且深色主题下实色底 + 深色字会糊成一片。
+      val base = MaterialColors.getColor(binding.root, R.attr.colorOnSurface)
+      val success = MaterialColors.getColor(binding.root, R.attr.colorSuccess)
+      val error = MaterialColors.getColor(binding.root, R.attr.colorError)
+      val addedBg = ColorUtils.setAlphaComponent(success, DIFF_LINE_BG_ALPHA)
+      val removedBg = ColorUtils.setAlphaComponent(error, DIFF_LINE_BG_ALPHA)
+      // 词级高亮再叠一层更重的底色，使「这一行改了哪几个词」在行底色之上仍可分辨。
+      val addedTokenBg = ColorUtils.setAlphaComponent(success, DIFF_TOKEN_BG_ALPHA)
+      val removedTokenBg = ColorUtils.setAlphaComponent(error, DIFF_TOKEN_BG_ALPHA)
+
+      var offset = 0
+      for (line in lines) {
+        val end = offset + line.text.length
+        val lineBg =
+            when (line.type) {
+              DiffLineType.INSERT -> addedBg
+              DiffLineType.DELETE -> removedBg
+              DiffLineType.EQUAL -> Color.TRANSPARENT
+            }
+        if (lineBg != Color.TRANSPARENT) {
+          span.setSpan(
+              BackgroundColorSpan(lineBg), offset, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+          // 增删行的正文用主题前景色；不加这一层的话，深色主题里
+          // 低透明度底色上的默认文字色对比度不足。
+          span.setSpan(
+              ForegroundColorSpan(base), offset, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+        }
+        val tokenBg = if (line.type == DiffLineType.INSERT) addedTokenBg else removedTokenBg
+        for (range in line.changedRanges) {
+          val s = offset + range.first
+          val e = offset + range.last + 1
+          if (s in offset..end && e <= end && s < e) {
+            span.setSpan(
+                BackgroundColorSpan(tokenBg), s, e, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+          }
+        }
+        offset = end + 1 // +1 是 joinToString 插入的换行
+      }
+
+      binding.diffText.text = span
+      binding.diffText.setHorizontallyScrolling(true)
+
+      if (collapsed) {
+        binding.diffToggle.visibility = View.VISIBLE
+        binding.diffToggle.text =
+            context.getString(string.ai_assistant_code_expand, total)
+        binding.diffToggle.setOnClickListener { adapter.toggleDiffExpanded(itemId) }
+      } else {
+        // 展开后隐藏按钮而不是换成「收起」：与代码块同一取舍——
+        // 卡片在消息流里，收起与否不影响上下文，留一个收起按钮只会多占一行。
+        binding.diffToggle.visibility = View.GONE
+      }
+    }
+
+    /** 复制：走通用 diff 记法（`+`/`-` 前缀），而不是屏幕上的行号排版。 */
+    private fun bindCopy(item: Diff, result: DiffResult?) {
+      val context = binding.root.context
+      binding.diffCopy.isEnabled = result != null
+      binding.diffCopy.setOnClickListener {
+        if (result == null) {
+          return@setOnClickListener
+        }
+        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
+        clipboard?.setPrimaryClip(
+            ClipData.newPlainText(item.filePath, AssistantDiffRenderer.toPlainText(result)))
+        binding.diffCopy.setText(string.ai_assistant_code_copied)
+        binding.diffCopy.postDelayed(
+            { binding.diffCopy.setText(string.ai_assistant_code_copy) },
+            CODE_COPIED_RESET_MS)
+      }
+    }
+
+    /** 撤销：与消息卡片共用同一个回调，语义一致（回滚一次文件改动）。 */
+    private fun bindRevert(item: Diff) {
+      val diffId = item.diffId
+      if (diffId.isNullOrEmpty()) {
+        binding.diffRevert.visibility = View.GONE
+        return
+      }
+      binding.diffRevert.visibility = View.VISIBLE
+      binding.diffRevert.isEnabled = !item.reverted
+      binding.diffRevert.setText(
+          if (item.reverted) string.ai_assistant_revert_done else string.ai_assistant_revert)
+      binding.diffRevert.setOnClickListener { adapter.onRevert?.invoke(item.id, diffId) }
+    }
+
+    private fun applyCardScale(card: com.google.android.material.card.MaterialCardView) {
+      val density = card.resources.displayMetrics.density
+      val scale = adapter.cardScale()
+      fun dp(value: Float): Int = (value * density).toInt()
+      card.radius = dp(12f * scale).toFloat()
+    }
+  }
+
   companion object {
     private const val TYPE_MESSAGE = 0
     private const val TYPE_TOOL_CALL = 1
     private const val TYPE_THINKING = 2
+    private const val TYPE_DIFF = 3
+    private const val TYPE_TOOL_GROUP = 4
+
+    /**
+     * diff 折叠阈值（行）。
+     *
+     * <p>比代码块的 20 行更小（取 14）：diff 一行只承载一条信息，
+     * 而改动往往集中在少数几行，前 14 行通常已能看清改了什么。
+     */
+    private const val DIFF_COLLAPSE_THRESHOLD = 14
+
+    /** 增删行的整行底色透明度（0-255）。低到能透出主题底色，又能看出行的归属。 */
+    private const val DIFF_LINE_BG_ALPHA = 28
+
+    /** 词级高亮底色透明度。比整行底色重，才能在行底色之上分辨出改动的词。 */
+    private const val DIFF_TOKEN_BG_ALPHA = 72
 
     /**
      * 用户气泡的宽度上限（占面板可用宽度的比例）。

@@ -65,6 +65,58 @@ interface AssistantHost {
    */
   fun widthPx(): Int
 
+  /**
+   * 面板高度预算（像素）。与 [widthPx] 对称，窄屏上下分栏时用它算面板高度。
+   *
+   * <p>默认取屏幕高度；应用外悬浮等宿主若窗口高度与屏幕不同，应覆写。
+   */
+  fun heightPx(): Int =
+      container.resources.displayMetrics.heightPixels - statusBarAllowancePx()
+
+  /**
+   * 状态栏高度补偿（像素）。
+   *
+   * <p>编辑器内容区从状态栏**下方**开始，而面板从窗口顶部开始量。若让位时按整屏高度算，
+   * 面板顶边会比编辑器底边低一截，分界线上会出现一条错位的缝。
+   */
+  fun statusBarAllowancePx(): Int {
+    val id = container.resources.getIdentifier("status_bar_height", "dimen", "android")
+    return if (id > 0) container.resources.getDimensionPixelSize(id) else 0
+  }
+
+  /**
+   * 面板打开/收起时通知宿主，让宿主决定是否「让位」。
+   *
+   * <p><b>为什么需要这条</b>：编辑器的助手面板若只是盖在编辑器上，用户看到的是
+   * 「一张贴边的板子压住了代码」——这正是「割裂感」的来源。真并列要求编辑器**主动让出**
+   * 空间，而让位是宿主的布局知识（哪个容器、缩多少），视图层不该知道。
+   *
+   * <p>默认空实现：内联页本身就是页面、真全屏窗口里没有邻居、应用外悬浮没有可让位的内容。
+   * 只有「宿主有并列内容」的形态（编辑器）才需要覆写。
+   */
+  fun onPanelOpened() {}
+
+  /** 面板收起，宿主恢复原布局。与 [onPanelOpened] 对称。 */
+  fun onPanelClosed() {}
+
+  /**
+   * 宿主让位后，留给面板的比例。
+   *
+   * <p><b>为什么放在这里而不是各处自算</b>：让位量由宿主决定（它缩编辑器），
+   * 面板尺寸由视图决定（它算卡片几何）。两者必须严格互补，否则面板与编辑器会重叠或留缝
+   * ——实测过的 bug：编辑器让出下半屏、面板却仍贴右侧满高，右上角就重叠了。
+   * 因此把「让位比例」收敛成这一个来源，宿主与视图都读它。
+   *
+   * <p>返回 (编辑器保留比例, 方向)：宽屏 `0.42` 表示编辑器保留 42% 宽度、面板占右侧 58%；
+   * 窄屏 `0.5` 表示编辑器保留 50% 高度、面板占底部 50%。
+   */
+  fun yieldFraction(): Float = 0.5f
+
+  /** 让位方向：宽屏左右分栏，窄屏上下分栏。阈值与 `layout-sw600dp` 一致。 */
+  fun isWideScreen(): Boolean =
+      container.resources.displayMetrics.widthPixels / container.resources.displayMetrics.density >=
+          600f
+
   /** 弹窗与设置跳转能力。 */
   val dialogs: AssistantDialogs
 

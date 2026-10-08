@@ -1,0 +1,104 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  一组连续工具调用的折叠卡片。
+
+  折叠态只占一行：
+  ┌──────────────────────────────────────────────┐
+  │ ⚙  读取 5 个文件 · 执行 2 条命令     1 项失败 ▾ │
+  └──────────────────────────────────────────────┘
+  展开态在下方逐行列出组内每张工具卡片（复用 item_tool_call.xml）。
+
+  为什么折叠态必须**始终**可见（而不是像消息操作条那样按需出现）：
+  它是用户判断「AI 刚才干了什么」的唯一线索。收起来就看不见的话，
+  长任务里用户只能看到一片空白，不知道进度。参考项目同样让活动摘要在折叠态可见。
+
+  为什么失败数单独显示在右侧：折叠时用户最需要立刻知道的就是「有没有出错」。
+  把失败混进左侧摘要文字里会被长文案淹没，单独一列+错误色才能一眼扫到。
+-->
+<com.google.android.material.card.MaterialCardView
+  xmlns:android="http://schemas.android.com/apk/res/android"
+  xmlns:app="http://schemas.android.com/apk/res-auto"
+  xmlns:tools="http://schemas.android.com/tools"
+  android:id="@+id/groupCard"
+  android:layout_width="match_parent"
+  android:layout_height="wrap_content"
+  android:layout_marginTop="4dp"
+  android:layout_marginBottom="4dp"
+  app:cardCornerRadius="10dp"
+  app:cardElevation="0dp"
+  app:strokeWidth="1dp"
+  app:strokeColor="?attr/colorOutline"
+  app:cardBackgroundColor="?attr/colorSurface">
+
+  <LinearLayout
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:paddingStart="12dp"
+    android:paddingEnd="12dp"
+    android:paddingTop="8dp"
+    android:paddingBottom="8dp">
+
+    <!-- 组头：整行可点，切换展开/折叠 -->
+    <LinearLayout
+      android:id="@+id/groupHeader"
+      android:layout_width="match_parent"
+      android:layout_height="wrap_content"
+      android:orientation="horizontal"
+      android:gravity="center_vertical"
+      android:minHeight="40dp">
+
+      <TextView
+        android:id="@+id/groupIcon"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginEnd="8dp"
+        android:text="⚙"
+        android:textAppearance="@style/TextAppearance.Material3.BodySmall"
+        android:textColor="?attr/colorOnSurfaceVariant" />
+
+      <TextView
+        android:id="@+id/groupSummary"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:ellipsize="end"
+        android:maxLines="1"
+        android:textAppearance="@style/TextAppearance.Material3.BodySmall"
+        android:textColor="?attr/colorOnSurface"
+        tools:text="读取 5 个文件 · 执行 2 条命令" />
+
+      <!-- 失败数：仅在有失败时可见，用错误色 -->
+      <TextView
+        android:id="@+id/groupFailures"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="8dp"
+        android:textAppearance="@style/TextAppearance.Material3.LabelSmall"
+        android:visibility="gone"
+        tools:text="1 项失败"
+        tools:visibility="visible" />
+
+      <TextView
+        android:id="@+id/groupChevron"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="6dp"
+        android:textAppearance="@style/TextAppearance.Material3.LabelSmall"
+        android:textColor="?attr/colorOnSurfaceVariant"
+        tools:text="▾" />
+
+    </LinearLayout>
+
+    <!-- 展开态：组内每张工具卡片逐行加入这里 -->
+    <LinearLayout
+      android:id="@+id/groupChildren"
+      android:layout_width="match_parent"
+      android:layout_height="wrap_content"
+      android:orientation="vertical"
+      android:visibility="gone"
+      tools:visibility="visible" />
+
+  </LinearLayout>
+
+</com.google.android.material.card.MaterialCardView>

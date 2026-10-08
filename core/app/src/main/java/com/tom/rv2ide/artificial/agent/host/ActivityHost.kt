@@ -18,6 +18,7 @@
 package com.tom.rv2ide.artificial.agent.host
 
 import android.content.Context
+import android.view.View
 import android.view.ViewGroup
 import androidx.appcompat.app.AlertDialog
 import androidx.lifecycle.LifecycleCoroutineScope
@@ -38,9 +39,52 @@ class ActivityHost(
     override val context: Context,
     override val lifecycleScope: LifecycleCoroutineScope,
     override val container: ViewGroup,
+    /**
+     * 「让位」目标：面板打开时收缩它，使编辑器与助手真正并列。
+     *
+     * <p>可空——只有编辑器宿主会传（`content_editor.xml` 的 `editor_content`）。
+     * 主页 / 内联页 / 真全屏没有需要让位的邻居，传 null 时退化为「面板盖在上面」，
+     * 与抽象前行为一致。
+     */
+    private val yieldingView: View? = null,
 ) : AssistantHost {
 
   override fun widthPx(): Int = container.resources.displayMetrics.widthPixels
+
+  override fun onPanelOpened() = applyYield(yield = true)
+
+  override fun onPanelClosed() = applyYield(yield = false)
+
+  /**
+   * 收缩/恢复让位目标。
+   *
+   * <p><b>宽屏左右、窄屏上下</b>——这不是审美偏好，是可用性底线：392dp 的竖屏手机若做
+   * 左右分栏，编辑器只剩约 126dp，扣掉行号与左侧文件树抽屉后实际代码区不足 10 个字符，
+   * 编辑器直接不可用。而代码编辑器怕丢横向空间、不怕丢纵向空间（滚动即可），
+   * 因此窄屏改为上下分栏，编辑器保留全宽。
+   *
+   * <p>比例与方向都从 [AssistantHost] 读（[isWideScreen] / [yieldFraction]），
+   * 因为面板几何要用**同一组值**算自己的尺寸。两处各算一份必然漂移——
+   * 已经踩过：编辑器让出下半屏、面板却仍贴右侧满高，右上角直接重叠。
+   */
+  private fun applyYield(yield: Boolean) {
+    val view = yieldingView ?: return
+    val params = view.layoutParams as? ViewGroup.MarginLayoutParams ?: return
+    val metrics = container.resources.displayMetrics
+
+    if (isWideScreen()) {
+      params.width =
+          if (yield) (metrics.widthPixels * yieldFraction()).toInt()
+          else ViewGroup.LayoutParams.MATCH_PARENT
+      params.height = ViewGroup.LayoutParams.MATCH_PARENT
+    } else {
+      params.width = ViewGroup.LayoutParams.MATCH_PARENT
+      params.height =
+          if (yield) (heightPx() * yieldFraction()).toInt()
+          else ViewGroup.LayoutParams.MATCH_PARENT
+    }
+    view.layoutParams = params
+  }
 
   override val dialogs: AssistantDialogs = ActivityDialogs(context)
 

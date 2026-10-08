@@ -381,6 +381,20 @@
   <string name="ai_assistant_code_collapse">Collapse</string>
   <string name="ai_assistant_code_plaintext">TEXT</string>
   <string name="ai_assistant_code_lines">%1$d lines</string>
+  <!--
+    Diff card. The stat is deliberately two separately-coloured numbers rather than
+    a sentence: it is the universal diff notation, and the colours let users see at a
+    glance whether a change added or removed more.
+  -->
+  <string name="ai_assistant_diff_expired">Change record expired</string>
+  <string name="ai_assistant_diff_truncated">%1$s %2$s · too large for line-by-line view</string>
+  <!-- Tool result image. The notice is shown in place of the thumbnail, never as a broken image. -->
+  <string name="ai_assistant_image_open">Open image</string>
+  <string name="ai_assistant_image_unavailable">Image cannot be displayed</string>
+  <string name="ai_assistant_image_too_large">Image too large to display</string>
+  <!-- Tool group. The summary is built by AssistantToolGroupSummary; these are fallbacks. -->
+  <string name="ai_assistant_tool_group_fallback">Tool calls</string>
+  <string name="ai_assistant_tool_group_failures">%1$d failed</string>
   <string name="ai_assistant_compact_busy">Cannot compact while a run is in progress.</string>
   <!-- Sent-message queue. Position starts at 1; it becomes 1 when the running turn ends. -->
   <string name="ai_assistant_queued">Queued (%1$d in queue). It will be sent when the current run finishes.</string>
@@ -436,6 +450,13 @@
   <string name="ai_assistant_dangerous_allow_once">Allow once</string>
   <string name="ai_assistant_dangerous_allow_always">Always allow</string>
   <string name="ai_assistant_dangerous_deny">Deny</string>
+
+  <!-- Message actions -->
+  <string name="ai_assistant_action_copy_raw">Copy Markdown</string>
+  <string name="ai_assistant_action_copy_plain">Copy plain text</string>
+  <string name="ai_assistant_action_quote">Quote and reply</string>
+  <string name="ai_assistant_quote_dialog_title">Quote and reply</string>
+  <string name="ai_assistant_quote_input_hint">Ask a question about this snippet…</string>
 
   <!-- Model / provider picker of the floating assistant -->
   <string name="ai_assistant_model_picker_title">Provider and model</string>

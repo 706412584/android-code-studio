@@ -1510,11 +1510,14 @@ override fun onApplySystemBarInsets(insets: Insets) {
   private fun setupFloatingAssistant() {
     val container = content.assistantContainer
     // 编辑器里用 DOCKED：贴右侧满高、无外边距无圆角。
-    // 编辑器已经有自己的左侧文件树抽屉与底部构建面板，再叠一张居中的浮层卡片
-    // 会与它们争夺空间，观感上也不像编辑器的一部分——这正是之前"割裂感"的来源。
+    //
+    // 传入 editor_content 作为「让位」目标：面板打开时它收缩（宽屏左右分栏、窄屏上下分栏），
+    // 使编辑器与助手真正并列。**只去掉圆角与边距并不够**——面板仍然盖在编辑器上，
+    // 观感只是从「一张圆角卡片压住代码」变成「一块方板压住代码」，割裂感依旧。
+    // 真并列要求编辑器主动让出空间，因此需要宿主参与。
     val assistant =
         FloatingAssistantView(
-            ActivityHost(this, lifecycleScope, container),
+            ActivityHost(this, lifecycleScope, container, yieldingView = content.editorContent),
             FloatingAssistantView.Mode.DOCKED,
         )
     // 折叠态的 bottom sheet 常驻屏幕底部，默认落点要避开它，否则一进来就被压住。
