@@ -1688,4 +1688,62 @@
   <string name="provider_brand_siliconflow">硅基流动</string>
   <string name="common_other">其他</string>
   <string name="settings_voice_tts_voice">音色</string>
+
+  <!-- Drawer file search (Aharou port) -->
+  <string name="common_clear">清除</string>
+  <string name="drawer_file_search_no_result">没有匹配的文件或内容</string>
+  <string name="drawer_file_search_summary">%1$d 个文件 · %2$d 处命中</string>
+  <string name="drawer_file_search_truncated">结果过多，仅显示前 %1$d 条</string>
+  <string name="drawer_file_search_show_more">再显示 %1$d 条</string>
+
+  <!-- ChatDrawer (Aharou port) -->
+  <string name="subagent_tab_sessions">会话</string>
+  <string name="drawer_tab_files">文件</string>
+  <string name="chat_search_hint">搜索聊天记录</string>
+  <string name="drawer_file_search_hint">搜索文件名或内容</string>
+  <string name="chat_sessions_selected_count">已选 %1$d 个会话</string>
+  <string name="provider_models_select_all">全选</string>
+  <string name="provider_models_deselect_all">取消全选</string>
+  <string name="chat_batch_delete_title">删除所选会话</string>
+  <string name="chat_batch_delete_confirm">确定删除所选 %1$d 个会话？该操作无法恢复。</string>
+  <string name="browser_title">浏览器</string>
+  <string name="chat_settings">设置</string>
+  <string name="file_browser_paste_conflict_title">同名文件已存在</string>
+  <string name="file_browser_paste_conflict_message">目标位置已存在同名项目「%1$s」，是否覆盖？</string>
+  <string name="common_overwrite">覆盖</string>
+  <string name="chat_delete_session">删除会话</string>
+  <string name="chat_delete_session_confirm">确定删除「%1$s」？该会话的所有消息都将被清除，且无法恢复。</string>
+  <string name="common_delete">删除</string>
+  <string name="chat_rename_session">重命名会话</string>
+  <string name="chat_session_name">会话名</string>
+  <string name="common_rename">重命名</string>
+  <string name="chat_no_sessions_hint">暂无会话</string>
+  <string name="chat_search_no_result">未找到匹配的聊天记录</string>
+  <string name="drawer_collapse_subagents">收起子代理</string>
+  <string name="drawer_expand_subagents">展开子代理</string>
+  <string name="file_browser_error">读取目录失败</string>
+  <string name="file_browser_refresh">刷新</string>
+  <string name="file_browser_new_file">新建文件</string>
+  <string name="file_browser_new_folder">新建文件夹</string>
+  <string name="common_create">创建</string>
+  <string name="file_browser_name_label">名称</string>
+  <string name="file_browser_clipboard_cut">已剪切</string>
+  <string name="file_browser_clipboard_copy">已复制</string>
+  <string name="file_browser_paste_here">粘贴到此处</string>
+  <string name="common_add_to_input">加入输入栏</string>
+  <string name="common_cut">剪切</string>
+  <string name="file_browser_expand">展开</string>
+  <string name="file_browser_collapse">折叠</string>
+  <string name="file_browser_delete_file_confirm">确定删除文件「%1$s」？</string>
+  <string name="file_browser_delete_folder_confirm">确定删除文件夹「%1$s」及其全部内容？</string>
+  <string name="chat_unpin_session">取消置顶</string>
+  <string name="chat_pin_session">置顶</string>
+  <string name="chat_export_session">导出会话</string>
+  <string name="chat_batch_select">批量选择</string>
+  <string name="session_group_pinned">置顶</string>
+  <string name="session_group_today">今天</string>
+  <string name="session_group_yesterday">昨天</string>
+  <string name="session_group_last_7_days">7天内</string>
+  <string name="session_group_last_30_days">30天内</string>
+  <string name="session_group_month_format">yyyy年M月</string>
 </resources>

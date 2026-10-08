@@ -82,6 +82,8 @@ internal fun appendAttachmentsToRequest(
     return request.trimEnd() + "\n\n" + attachmentText
 }
 
+// AgentAttachment.toPendingAttachment 与 Aharou 原文一致保留在本文件（接收者类型不同，
+// 与 compat 的 UploadedWorkspaceFile.toPendingAttachment 是两个重载，不构成重复定义）。
 internal fun AgentAttachment.toPendingAttachment(): PendingUploadAttachment {
     val image = if (isImage && localPath.isNotBlank()) {
         val file = File(localPath)
