@@ -32,10 +32,8 @@ import java.io.File
 /**
  * 侧栏的 AI 助手页。
  *
- * <p><b>形态</b>：[FloatingAssistantView.Mode.SIDEBAR] —— 固定宽度贴边的浮层，与
- * Git 客户端/文件树并列为侧栏标签页。不复用 [com.tom.rv2ide.fragments.AssistantPageFragment]
- * 的 `INLINE`：那个形态是「整页都是助手」（用于主页整屏），塞进侧栏抽屉会得到一个
- * 宽度受限却按整页排版的界面。
+ * <p><b>形态</b>：[FloatingAssistantView.Mode.EMBEDDED] —— 占满侧栏标签页，
+ * 不挂 FAB，保留进入真全屏的入口。
  *
  * <p><b>为什么不另写一套消息列表</b>：面板的消息流、工具卡片、会话抽屉、diff 回滚、
  * 图片灯箱是同一套逻辑（[FloatingAssistantView]），复制一份必然在后续改动里分叉。
@@ -67,12 +65,12 @@ class AssistantSidebarFragment : Fragment() {
     val assistantView =
         FloatingAssistantView(
             host,
-            FloatingAssistantView.Mode.SIDEBAR,
+            FloatingAssistantView.Mode.EMBEDDED,
             com.tom.rv2ide.artificial.agent.AssistantOrchestratorProvider.get(),
         )
     assistantView.attach()
     assistantView.setWorkspace(currentWorkspace())
-    // SIDEBAR 是面板形态，没有可收起的宿主：直接展开。
+    // 侧栏页没有 FAB，视图创建后直接展开。
     // open() 还会回放本工作区上次的会话、刷新模型/权限标签与上下文圆环。
     assistantView.open()
     assistant = assistantView

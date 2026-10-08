@@ -121,7 +121,10 @@ class FloatingAssistantView(
      * 传达的是「一张盖在内容上的卡片」；内联页要的是「它就是页面本身」，因此
      * 完全不留边距、不做圆角，与容器严丝合缝。宽度由容器决定，不按屏幕比例算。
      */
-    INLINE
+    INLINE,
+
+    /** 编辑器侧栏标签页：占满容器，不挂 FAB，但保留进入真全屏的入口。 */
+    EMBEDDED
   }
 
   private val fabBinding =
@@ -534,7 +537,7 @@ class FloatingAssistantView(
     val saved = suppressedVisibility ?: return
     suppressedVisibility = null
     // INLINE 形态没有 FAB（见 attach），恢复时不能碰它。
-    if (defaultMode != Mode.INLINE) {
+    if (defaultMode != Mode.INLINE && defaultMode != Mode.EMBEDDED) {
       fabBinding.root.isVisible = saved.first
     }
     binding.assistantOverlay.isVisible = saved.second
@@ -547,9 +550,9 @@ class FloatingAssistantView(
 
   /** 把两个视图挂到父容器上。父容器应是 `FrameLayout`（FAB 靠 gravity 定位）。 */
   fun attach() {
-    // INLINE 是「页面本身」，没有可收起的宿主：不挂 FAB，也不装拖拽。
+    // INLINE/EMBEDDED 是页面本身，没有可收起的宿主：不挂 FAB，也不装拖拽。
     // 其余形态照旧挂 FAB 并装拖拽，行为不变。
-    if (defaultMode != Mode.INLINE) {
+    if (defaultMode != Mode.INLINE && defaultMode != Mode.EMBEDDED) {
       // FAB 在 XML 里只有固定尺寸、没有 gravity；放进 FrameLayout 时必须显式给右下角，
       // 否则会落在左上角盖住标题。
       fabBinding.root.layoutParams =
@@ -562,7 +565,7 @@ class FloatingAssistantView(
     }
     parent.addView(binding.assistantOverlay)
 
-    if (defaultMode != Mode.INLINE) {
+    if (defaultMode != Mode.INLINE && defaultMode != Mode.EMBEDDED) {
       setUpDragging()
     }
 
@@ -903,7 +906,7 @@ class FloatingAssistantView(
 
   fun open() {
     // INLINE 没有 FAB 可藏（见 attach）。
-    if (defaultMode != Mode.INLINE) {
+    if (defaultMode != Mode.INLINE && defaultMode != Mode.EMBEDDED) {
       fabBinding.assistantFab.isVisible = false
     }
     binding.assistantOverlay.isVisible = true
@@ -1073,7 +1076,7 @@ class FloatingAssistantView(
     // 否则收起后编辑器永远停在半屏/半宽，用户得重启 Activity 才能恢复。
     host.onPanelClosed()
     // INLINE 没有 FAB 可恢复（见 attach）。
-    if (defaultMode != Mode.INLINE) {
+    if (defaultMode != Mode.INLINE && defaultMode != Mode.EMBEDDED) {
       fabBinding.assistantFab.isVisible = true
     }
     // 隐藏即让出回调，见 [ownsOrchestratorCallbacks]。
@@ -1252,7 +1255,7 @@ class FloatingAssistantView(
         // 窄屏时起**上**分界线作用（左右下三边不可见）。同一个用意。
         card.strokeWidth = dp(1)
       }
-      Mode.INLINE -> {
+      Mode.INLINE, Mode.EMBEDDED -> {
         // 内联页：占满宿主容器，无边距、无圆角、无描边。
         //
         // 与 FULLSCREEN 的「浮层铺开」相反，这里要的是「它就是页面本身」——
@@ -1289,10 +1292,9 @@ class FloatingAssistantView(
     //
     // 只在 INLINE 下改可见性，且每次 applyMode 都显式重设：从 INLINE 切回其他形态
     // （理论上宿主允许时）不会把按钮永久藏掉。
-    val chromeVisible = newMode != Mode.INLINE
-    binding.assistantFullscreen.isVisible = chromeVisible
-    binding.assistantMinimize.isVisible = chromeVisible
-    binding.assistantClose.isVisible = chromeVisible
+    binding.assistantFullscreen.isVisible = newMode != Mode.INLINE
+    binding.assistantMinimize.isVisible = newMode != Mode.INLINE && newMode != Mode.EMBEDDED
+    binding.assistantClose.isVisible = newMode != Mode.INLINE && newMode != Mode.EMBEDDED
 
     // 换形态就换了宽度，工具条能放下几个控件随之变化，必须重算。
     //

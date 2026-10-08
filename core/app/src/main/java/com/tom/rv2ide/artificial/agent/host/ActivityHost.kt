@@ -134,33 +134,112 @@ private class ActivityAttachments(private val context: Context) : AssistantAttac
   private val fileLauncher: androidx.activity.result.ActivityResultLauncher<android.content.Intent>?
   private val imageLauncher: androidx.activity.result.ActivityResultLauncher<android.content.Intent>?
 
+  /**
+   * 注册是否成功。
+   *
+   * <p>`registerForActivityResult` **必须在 Activity 进入 STARTED 之前**调用，否则抛
+   * IllegalStateException。这在本类诞生时不是问题——当时只有两个宿主：真全屏 Activity
+   * （`onCreate` 里装配）与内联页（页面创建时装配），都在时机内。
+   *
+   * <p>2026-10-09 新增侧栏宿主后该前提不再成立：侧栏是**懒创建**的（用户点击标签才
+   * `commitNow`，见 `EditorSidebarActions`），那时 Activity 早已 RESUMED。实测直接崩溃：
+   * `IllegalStateException: LifecycleOwner ... is attempting to register while current
+   * state is RESUMED`。
+   *
+   * <p>不能为此改侧栏的懒创建——那是框架既有行为，且所有标签页都依赖它（预创建全部
+   * Fragment 会拖慢进项目）。也不能把注册推迟到「首次选附件时」——那时同样是 RESUMED。
+   * 因此改为：**能注册就注册，不能就降级到蹦床**（[AttachmentPickerActivity] +
+   * 进程级槽位，见 [fallbackPicker]）。蹦床走 `startActivityForResult` 语义，
+   * 不依赖生命周期时机，是 Service 宿主早就在用的同一条路。
+   */
+  private val registered: Boolean
+
   init {
-    // 必须**在 Activity 进入 STARTED 之前**注册（否则 registerForActivityResult 抛
-    // IllegalStateException）。ActivityHost 在视图装配期构造（onCreate / onViewCreated），
-    // 时机与现有 AssistantInputFeatures.registerPickers() 完全一致。
     val activity = context as? androidx.fragment.app.FragmentActivity
     val contract =
         androidx.activity.result.contract.ActivityResultContracts.StartActivityForResult()
     if (activity == null) {
       fileLauncher = null
       imageLauncher = null
+      registered = false
     } else {
-      fileLauncher =
-          activity.registerForActivityResult(contract) { result ->
-            val cb = pendingFile
-            pendingFile = null
-            deliver(result, cb)
+      // 用 try/catch 探测而非查询状态：ActivityResultRegistry 没有公开 API 能问
+      // 「现在还能不能注册」，抛异常是唯一的判据。异常只可能来自时机，不会掩盖其它错误。
+      var file: androidx.activity.result.ActivityResultLauncher<android.content.Intent>? = null
+      var image: androidx.activity.result.ActivityResultLauncher<android.content.Intent>? = null
+      var ok = false
+      try {
+        file =
+            activity.registerForActivityResult(contract) { result ->
+              val cb = pendingFile
+              pendingFile = null
+              deliver(result, cb)
+            }
+        image =
+            activity.registerForActivityResult(contract) { result ->
+              val cb = pendingImage
+              pendingImage = null
+              deliver(result, cb)
+            }
+        ok = true
+      } catch (e: IllegalStateException) {
+        // 时机已过（Activity 已 RESUMED）。已注册的那个 launcher 无法撤销，
+        // 但它不会被使用（下面的 fallback 分支接管），泄漏一个未触发的 launcher 无副作用。
+        file = null
+        image = null
+      }
+      fileLauncher = file
+      imageLauncher = image
+      registered = ok
+    }
+  }
+
+  /**
+   * 降级选择器：时机已过时用蹦床。
+   *
+   * <p>复用 `AssistantOverlayService` 的槽位与 `deliverAttachmentResult` 解析——
+   * 那条路本就是为「无法用 registerForActivityResult 的宿主」准备的（Service），
+   * 解析逻辑（clipData 与 data 都看、多选逐个回调）已在彼处实现且被真机验证过，
+   * 这里不重复一份。
+   */
+  private fun fallbackPicker(imageOnly: Boolean, onResult: (android.net.Uri?) -> Unit) {
+    val pickIntent =
+        if (imageOnly) {
+          android.content.Intent(android.content.Intent.ACTION_GET_CONTENT).apply {
+            addCategory(android.content.Intent.CATEGORY_OPENABLE)
+            type = "image/*"
+            putExtra(android.content.Intent.EXTRA_ALLOW_MULTIPLE, true)
           }
-      imageLauncher =
-          activity.registerForActivityResult(contract) { result ->
-            val cb = pendingImage
-            pendingImage = null
-            deliver(result, cb)
+        } else {
+          android.content.Intent(android.content.Intent.ACTION_OPEN_DOCUMENT).apply {
+            addCategory(android.content.Intent.CATEGORY_OPENABLE)
+            type = "*/*"
+            putExtra(android.content.Intent.EXTRA_ALLOW_MULTIPLE, true)
           }
+        }
+    val requestCode =
+        com.tom.rv2ide.services.AssistantOverlayService.registerAttachmentRequest(onResult)
+    val trampoline =
+        com.tom.rv2ide.activities.AttachmentPickerActivity.newIntent(context, pickIntent)
+            .putExtra(
+                com.tom.rv2ide.activities.AttachmentPickerActivity.EXTRA_REQUEST_CODE,
+                requestCode)
+    // 从 Activity 上下文启动时不需要 NEW_TASK；这里不无条件加——加了会让选择器
+    // 脱离本任务栈，返回时可能回到桌面而不是编辑器。
+    try {
+      context.startActivity(trampoline)
+    } catch (e: android.content.ActivityNotFoundException) {
+      com.tom.rv2ide.services.AssistantOverlayService.cancelAttachmentRequest(requestCode)
+      onResult(null)
     }
   }
 
   override fun pickFile(onResult: (android.net.Uri?) -> Unit) {
+    // 注册时机已过（如侧栏懒创建的宿主）：走蹦床，见 [fallbackPicker] 的说明。
+    if (!registered) {
+      fallbackPicker(imageOnly = false, onResult)
+      return
+    }
     // ACTION_OPEN_DOCUMENT 而不是 ACTION_GET_CONTENT：前者给出的 URI 带持久读权限，
     // 且不会因为「选完即失效」导致发送时读不到文件。
     val intent =
@@ -174,6 +253,11 @@ private class ActivityAttachments(private val context: Context) : AssistantAttac
   }
 
   override fun pickImage(onResult: (android.net.Uri?) -> Unit) {
+    // 同上：时机已过时走蹦床。
+    if (!registered) {
+      fallbackPicker(imageOnly = true, onResult)
+      return
+    }
     val intent =
         android.content.Intent(android.content.Intent.ACTION_GET_CONTENT).apply {
           addCategory(android.content.Intent.CATEGORY_OPENABLE)

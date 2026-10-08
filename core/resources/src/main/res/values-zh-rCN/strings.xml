@@ -1579,4 +1579,25 @@
   <string name="compose_tool_card_tap_to_view">点击查看大图</string>
   <string name="ai_assistant_image_close">关闭</string>
   <string name="sidebar_assistant_title">AI 助手</string>
+  <string name="common_save">保存</string>
+  <string name="common_cancel">取消</string>
+  <string name="common_ok">确定</string>
+  <string name="common_expand">展开</string>
+  <string name="common_collapse_action">收起</string>
+  <string name="chat_pasted_remove">移除粘贴内容</string>
+  <string name="chat_edit_dialog_title">编辑消息</string>
+  <string name="chat_edit_dialog_hint">请输入消息内容</string>
+  <string name="todo_dashboard_title">任务待办</string>
+  <string name="todo_dashboard_progress">%1$d/%2$d 完成</string>
+  <string name="todo_dashboard_all_done">全部完成</string>
+  <string name="checkpoint_rewind_title">检查点与撤销</string>
+  <string name="checkpoint_target_prompt">目标消息：%1$s</string>
+  <string name="checkpoint_restore_code_and_conversation">恢复代码与对话</string>
+  <string name="checkpoint_restore_code_and_conversation_desc">将代码与对话均回滚至此检查点之前</string>
+  <string name="checkpoint_restore_conversation">仅恢复对话</string>
+  <string name="checkpoint_restore_conversation_desc">保持当前代码，将对话截断回滚至此点</string>
+  <string name="checkpoint_restore_code">仅恢复代码</string>
+  <string name="checkpoint_restore_code_desc">恢复代码至此点之前的快照，保持对话历史</string>
+  <string name="checkpoint_undo_last_restore">撤销上次恢复</string>
+  <string name="checkpoint_undo_last_restore_desc">把最近一次代码恢复回滚回恢复前的状态</string>
 </resources>

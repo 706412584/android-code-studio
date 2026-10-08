@@ -98,9 +98,10 @@ private fun isCompactWidth(): Boolean =
  *
  * <p>移植说明：Aharou 原版还从这里导出一个 fling 修复连接（`rememberSheetFlingFix`）以规避
  * Material3 ModalBottomSheet 的已知振荡 bug，并为通用宿主暴露了 shape / scrim / insets /
- * properties / `sheetGesturesEnabled` 等一整套参数。本处只服务 [MessageActionsBottomSheet]
- * 这一个「短列表」宿主——内容不会接近全屏高度，振荡前提不成立，故只保留实际用到的参数，
- * 不搬那套未被任何调用方使用的参数面。
+ * properties / `sheetGesturesEnabled` 等一整套参数。本处只保留实际用到的参数面——
+ * 它是 Aharou `core.ui.AdaptiveModalBottomSheet` 的 ACS 权威实现，第二批移植的
+ * 回滚面板（`RewindOptionsBottomSheet`）等短列表宿主都从这里 import；
+ * 若后续宿主要 shape/scrim 等参数，在此扩展而不是另造一份。
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable

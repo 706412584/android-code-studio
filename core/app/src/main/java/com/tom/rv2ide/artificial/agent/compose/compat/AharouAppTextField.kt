@@ -49,8 +49,7 @@ import com.tom.rv2ide.artificial.agent.compose.theme.semanticColors
  * 收进 compat 是因为它是 `core.ui` 的通用原子：本次只有 AskUserQuestionPanel 引用，
  * 但输入栏一族（后续接入任务）同样要用它 —— 各造一份就会出现两套输入框配色。
  *
- * <p>只搬 [appTextFieldColors] + [AppTextField]。同文件里 Aharou 还有 `dialogTextFieldColors`
- * （弹窗专用配色），移植范围内无人引用，等真用到再搬。
+ * <p>同时提供弹窗专用的 [dialogTextFieldColors]，让输入框透出弹窗底色。
  */
 
 /**
@@ -58,6 +57,12 @@ import com.tom.rv2ide.artificial.agent.compose.theme.semanticColors
  * - 浅色模式：主题卡片色背景 + 柔和外边框 + 聚焦主色高光；
  * - 暗色模式：深色表面底色（surface/surfaceVariant）+ 描边 + 聚焦主色微光。
  */
+@Composable
+fun dialogTextFieldColors(): TextFieldColors =
+    appTextFieldColors(
+        unfocusedContainerColor = Color.Transparent,
+        focusedContainerColor = Color.Transparent)
+
 @Composable
 fun appTextFieldColors(
     isLight: Boolean = MaterialTheme.colorScheme.background.luminance() > 0.5f,
