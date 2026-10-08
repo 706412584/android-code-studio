@@ -23,7 +23,6 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.TextView
-import androidx.activity.OnBackPressedCallback
 import androidx.annotation.StringRes
 import androidx.appcompat.app.AlertDialog
 import androidx.fragment.app.viewModels
@@ -44,15 +43,11 @@ import com.tom.rv2ide.activities.TerminalActivity
 import com.tom.rv2ide.adapters.MainActionsListAdapter
 import com.tom.rv2ide.app.BaseApplication
 import com.tom.rv2ide.app.BaseIDEActivity
-import com.tom.rv2ide.artificial.agent.FloatingAssistantView
-import com.tom.rv2ide.artificial.agent.host.ActivityHost
 import com.tom.rv2ide.common.databinding.LayoutDialogProgressBinding
 import com.tom.rv2ide.databinding.BottomsheetGitCloneBinding
 import com.tom.rv2ide.databinding.FragmentMainBinding
 import com.tom.rv2ide.models.MainScreenAction
-import com.tom.rv2ide.preferences.internal.GeneralPreferences
 import com.tom.rv2ide.resources.R.string
-import com.tom.rv2ide.services.AssistantOverlayService
 import com.tom.rv2ide.tasks.runOnUiThread
 import com.tom.rv2ide.templates.preferences.WizardPreferences
 import com.tom.rv2ide.utils.DialogUtils
@@ -84,39 +79,6 @@ class MainFragment : BaseFragment() {
 
   private val viewModel by viewModels<MainViewModel>(ownerProducer = { requireActivity() })
   private var binding: FragmentMainBinding? = null
-
-  /** 主屏悬浮 AI 助手；随视图创建/销毁。 */
-  private var assistant: FloatingAssistantView? = null
-
-  /**
-   * 返回键先收面板；**收不动时必须透传**。
-   *
-   * <p>用 dispatcher 而不是覆写 `onBackPressed`：Activity 自己注册了一个 callback
-   * （切屏幕用），dispatcher 按后进先出分发，后注册的这个先拿到事件。
-   *
-   * <p><b>为什么必须显式透传</b>：本 callback 在 [setUpAssistant] 里无条件启用，且
-   * 只要 fragment 仍 RESUMED 就一直启用——主页视图被 `isVisible=false` 隐藏到
-   * SCREEN_AI / 模板屏时，本 callback 依旧先于 Activity 拿到返回键。此前它只是调用
-   * `collapseIfOpen()` 而**不看返回值**：面板没开时事件被静默吞掉，Activity 的
-   * `SCREEN_AI -> SCREEN_MAIN` 永不触发，返回键整体失效。
-   *
-   * <p>透传做法：先把自己禁用再重新分发，避免 dispatcher 立即回调本 callback 造成
-   * 死循环；分发返回后恢复启用，供下一次返回键继续优先收面板。
-   *
-   * <p><b>行为变化</b>：主页上面板已收起时按返回，现在会透传到 Activity——主页屏
-   * Activity 的 callback 是禁用的（`screen != SCREEN_MAIN` 才启用），因此落到系统默认，
-   * 即退出应用。这符合 Android 惯例，此前是「按了没反应」。
-   */
-  private val backCallback =
-      object : OnBackPressedCallback(false) {
-        override fun handleOnBackPressed() {
-          if (assistant?.collapseIfOpen() != true) {
-            isEnabled = false
-            requireActivity().onBackPressedDispatcher.onBackPressed()
-            isEnabled = true
-          }
-        }
-      }
 
   companion object {
     private val log = LoggerFactory.getLogger(MainFragment::class.java)
@@ -167,11 +129,6 @@ class MainFragment : BaseFragment() {
                 startActivity(Intent(requireActivity(), IDEConfigurations::class.java))
               }
               MainScreenAction.ACTION_DOCS -> BaseApplication.getBaseInstance().openDocs()
-              // 进入应用内 AI 助手页。走 viewModel.setScreen 而不是 startActivity：
-              // 助手页是 MainActivity 内部的一个屏幕（第 4 个 FragmentContainerView），
-              // 与模板列表/详情同级，返回键由 MainActivity 的 callback 统一处理。
-              MainScreenAction.ACTION_AI_ASSISTANT ->
-                  viewModel.setScreen(MainViewModel.SCREEN_AI)
             }
           }
 
@@ -192,75 +149,10 @@ class MainFragment : BaseFragment() {
         }
 
     binding!!.actions.adapter = MainActionsListAdapter(actions)
-
-    setUpAssistant()
-  }
-
-  /**
-   * 装配悬浮 AI 助手。
-   *
-   * <p>工作区从"最近打开的项目"推得——主屏本身没有当前项目概念，用户在这里选项目
-   * 或直接进编辑器。prefs 里没有可用项目时传 null，助手会提示"请先打开项目"而不是
-   * 静默失败。
-   */
-  private fun setUpAssistant() {
-    val root = binding?.root ?: return
-    val container = root.findViewById<android.widget.FrameLayout>(R.id.assistantContainer) ?: return
-
-    // 必须用 viewLifecycleOwner.lifecycleScope：BaseFragment.viewLifecycleScope 只是
-    // 一个普通 CoroutineScope（Dispatchers.Default），不会随视图销毁自动取消，用它会在
-    // 视图销毁后继续往已 detach 的控件里写数据。
-    val view =
-        FloatingAssistantView(
-            ActivityHost(requireContext(), viewLifecycleOwner.lifecycleScope, container),
-            FloatingAssistantView.Mode.SIDEBAR,
-            // 与内联页（AssistantPageFragment）共享同一个 orchestrator，保证只有一个
-            // activeConversationId、不会并发两个会话。实例由 MainViewModel 持有。
-            viewModel.assistantOrchestrator,
-        )
-    view.attach()
-    view.setWorkspace(currentWorkspace())
-    assistant = view
-
-    backCallback.isEnabled = true
-    requireActivity().onBackPressedDispatcher.addCallback(viewLifecycleOwner, backCallback)
-  }
-
-  /** 当前工作区；无可用项目时返回 null。 */
-  private fun currentWorkspace(): File? {
-    val path = GeneralPreferences.lastOpenedProject
-    if (path.isEmpty() || path == GeneralPreferences.NO_OPENED_PROJECT) {
-      return null
-    }
-    val dir = File(path)
-    return if (dir.exists() && dir.isDirectory) dir else null
-  }
-
-  /**
-   * 应用外悬浮开着时，隐藏本页的内悬浮入口，避免两个入口同时出现。
-   *
-   * <p><b>为什么在 onResume 判断</b>：应用外悬浮是系统窗口，用户在别处开/关它不会通知本页；
-   * 只有回到 ACS 时才有机会对齐。onResume 正是「回到前台」的那一刻。
-   *
-   * <p><b>为什么内悬浮优先（外部让位）</b>：应用外悬浮的意义是「人不在 ACS 里」也能用助手；
-   * 一旦回到 ACS，内悬浮嵌在界面里、不遮挡内容、也不需要 SYSTEM_ALERT_WINDOW 权限，
-   * 是更自然的形态。因此回到前台就恢复内悬浮，外部窗口保持后台常驻（用户切出去时它仍在）。
-   */
-  override fun onResume() {
-    super.onResume()
-    val view = assistant ?: return
-    if (AssistantOverlayService.isShowing) {
-      view.suppressForExternalOverlay()
-    } else {
-      view.restoreAfterExternalOverlay()
-    }
   }
 
   override fun onDestroyView() {
     super.onDestroyView()
-    backCallback.isEnabled = false
-    assistant?.dispose()
-    assistant = null
     binding = null
   }
 
