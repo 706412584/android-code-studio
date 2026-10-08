@@ -383,7 +383,9 @@
   <string name="ai_assistant_code_plaintext">纯文本</string>
   <string name="ai_assistant_code_lines">%1$d 行</string>
   <string name="ai_assistant_diff_expired">改动记录已过期</string>
+  <string name="ai_assistant_diff_computing">正在计算改动…</string>
   <string name="ai_assistant_diff_truncated">%1$s %2$s · 改动过大，仅显示概要</string>
+  <string name="ai_assistant_diff_group_title">本轮改动 %1$d 个文件</string>
   <string name="ai_assistant_image_open">打开图片</string>
   <string name="ai_assistant_image_unavailable">图片无法显示</string>
   <string name="ai_assistant_image_too_large">图片过大，无法显示</string>

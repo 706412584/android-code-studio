@@ -34,6 +34,7 @@ import com.tom.rv2ide.artificial.agent.ModelCatalogFetcher
 import com.tom.rv2ide.artificial.agent.ProviderConfig
 import com.tom.rv2ide.artificial.agent.ProviderConfigStore
 import com.tom.rv2ide.artificial.agent.ProviderPresets
+import com.tom.rv2ide.artificial.agents.Agents
 import com.tom.rv2ide.resources.R
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -272,10 +273,35 @@ internal class ProviderManagementPreference(
             return@setPositiveButton
           }
           ProviderConfigStore(context).upsert(draft)
+          syncCurrentSelection(context, draft)
           onChanged()
         }
         .setNegativeButton(android.R.string.cancel, null)
         .show()
+  }
+
+  /**
+   * 把「当前正在用的模型」同步成刚保存的主模型。
+   *
+   * <p><b>为什么必须同步</b>：请求路径解析模型名时，用户在面板上的显式选择优先于记录里的
+   * 主模型（见 `AgentModelConfigs.modelIdFor`），而那份显式选择存在 `Agents` 偏好里。
+   * 本界面只写 `providers.json` 记录——不改偏好就会出现「在管理界面把主模型从 A 改成 B、
+   * 面板也显示 B、实际请求却仍发 A」的假反馈。
+   *
+   * <p>只对**当前服务商**同步：改别的服务商的模型不该影响眼下正在用的这个。
+   *
+   * <p>存去后缀的名字，与选择器里的写法一致（`AssistantModelPicker.switchProvider`）——
+   * 后缀是本地元数据，由槽位声明承载，不该混进「当前选择」这个值里。
+   */
+  private fun syncCurrentSelection(context: Context, saved: ProviderConfig) {
+    val agents = Agents(context)
+    if (agents.getProvider() != saved.getId()) {
+      return
+    }
+    val main = ContextSizeParser.stripSuffix(saved.getMainModel())
+    if (main.isNotEmpty()) {
+      agents.setAgent(main)
+    }
   }
 
   /**

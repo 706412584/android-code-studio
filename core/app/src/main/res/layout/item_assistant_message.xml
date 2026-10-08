@@ -24,7 +24,7 @@
   android:paddingStart="16dp"
   android:paddingEnd="16dp"
   android:paddingTop="4dp"
-  android:paddingBottom="4dp">
+  android:paddingBottom="2dp">
 
   <!--
     助手头像。

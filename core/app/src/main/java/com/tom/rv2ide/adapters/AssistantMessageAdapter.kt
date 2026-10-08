@@ -55,6 +55,7 @@ import com.tom.rv2ide.artificial.agent.DiffResult
 import com.tom.rv2ide.databinding.ItemAssistantDiffBinding
 import com.tom.rv2ide.databinding.ItemAssistantMessageBinding
 import com.tom.rv2ide.databinding.ItemAssistantThinkingBinding
+import com.tom.rv2ide.databinding.ItemDiffGroupBinding
 import com.tom.rv2ide.databinding.ItemToolCallBinding
 import com.tom.rv2ide.databinding.ItemToolGroupBinding
 import com.tom.rv2ide.resources.R.string
@@ -255,11 +256,14 @@ class AssistantMessageAdapter(
    * 高亮将无法按控件宽度重算。
    *
    * @param diffId 回滚句柄。卡片上的撤销按钮据此调用 `DiffReverter`
-   * @param result diff 结果；为 null 表示记录已过期（`FileDiffStore` 会裁剪旧记录），
-   *   此时卡片显示「记录已过期」而不是空白——静默空白会让用户以为 AI 没改文件
+   * @param result diff 结果；为 null 时看 [computing]——true 表示还在算，
+   *   false 表示记录已过期（`FileDiffStore` 会裁剪旧记录），两者文案不同
    * @param expanded 展开状态。**存在数据里而不是 ViewHolder 里**——RecyclerView 会复用
    *   ViewHolder，把展开状态放在控件上会导致滚动后「展开的是另一条」
    * @param reverted 是否已撤销，决定按钮是否可再点
+   * @param computing diff 内容仍在后台计算中。为 true 时 [result] 必为 null——
+   *   「还没算完」与「记录已过期」都表现为 result==null，但文案必须不同：
+   *   运行刚结束时用户最可能立刻展开汇总组，此时说「记录已过期」是错误信息。
    */
   data class Diff(
       override val id: Long,
@@ -268,7 +272,42 @@ class AssistantMessageAdapter(
       val result: DiffResult?,
       val expanded: Boolean = false,
       val reverted: Boolean = false,
+      val computing: Boolean = false,
   ) : Item()
+
+  /**
+   * 一轮运行的**全部文件改动汇总**卡片。
+   *
+   * <p><b>为什么不是一张卡片一次改动</b>：改一个文件冒一张卡，长任务里十几次编辑会在
+   * 对话流里插进十几张 diff——用户读的是回答，却被 diff 反复打断；而且每张卡的
+   * 「改了哪个文件」要一张张看才知道。改成运行结束后出一张汇总卡，折叠态一行说明
+   * 「本轮改动 N 个文件 · +X -Y」，展开才逐文件列出（每行复用 [Diff] 卡片本体）。
+   *
+   * <p>子项仍是 [Diff] 而不是新结构：单文件卡片的渲染（行号列、词级高亮、复制、撤销）
+   * 已经存在且有测试，换成平行结构只会让两处渲染逻辑分叉。
+   */
+  data class DiffGroup(
+      override val id: Long,
+      val children: List<Diff>,
+      /** 用户手动展开/折叠的意图；null 表示跟随默认（折叠）。 */
+      val pinnedExpanded: Boolean? = null,
+  ) : Item() {
+    val totalAdded: Int
+      get() = children.sumOf { it.result?.added ?: 0 }
+
+    val totalRemoved: Int
+      get() = children.sumOf { it.result?.removed ?: 0 }
+
+    /**
+     * 去重后的文件数。
+     *
+     * <p>组头说的是「改了几个文件」，而 `children` 是**改动次数**——同一个文件改两次会有
+     * 两项。直接取 size 会把「改了 1 个文件」说成 2 个。列表本身不去重：两次改动各是一份
+     * 独立记录，都值得看。
+     */
+    val fileCount: Int
+      get() = children.map { it.filePath }.distinct().size
+  }
 
   /**
    * 一组连续的工具调用与推理块，折叠态渲染成一行活动摘要。
@@ -366,46 +405,106 @@ class AssistantMessageAdapter(
     return id
   }
 
-  // ---- diff 卡片 ----
+  // ---- 改动汇总卡片 ----
 
   /**
-   * 追加一张文件改动 diff 卡片。
+   * 追加一张「本轮全部改动」汇总卡片。
    *
-   * @param result 为 null 表示 diff 记录已过期（存储层会裁剪旧记录），卡片据此显示提示
+   * <p>在**运行结束时**调用一次，而不是每次改动调用（见 [DiffGroup] 的说明）。
+   *
+   * @param entries 本轮改动的文件，按发生顺序；diffId 为空时该行只显示文件名
+   * @return 各子项的 id，与 [entries] 同序，供异步回填 diff 内容
    */
-  fun appendDiff(filePath: String, diffId: String?, result: DiffResult?): Long {
-    val id = nextId++
-    items.add(Diff(id, filePath, diffId, result))
+  fun appendDiffGroup(entries: List<Pair<String, String?>>): List<Long> {
+    if (entries.isEmpty()) {
+      return emptyList()
+    }
+    // computing=true：内容由调用方随后异步回填（见 updateDiff）。不标这一位的话，
+    // 卡片在回填到达前会显示「记录已过期」——运行刚结束时用户最可能立刻展开，
+    // 那是一条错误信息。
+    val children =
+        entries.map { (path, diffId) ->
+          Diff(nextId++, path, diffId, result = null, computing = true)
+        }
+    items.add(DiffGroup(nextId++, children))
     notifyItemInserted(items.size - 1)
-    return id
+    return children.map { it.id }
   }
+
+  /**
+   * 在顶层或汇总组内替换一张 diff 卡片。
+   *
+   * <p>与 [replaceToolCall] 同构：汇总组把子项收进 `children` 后它们不在顶层，
+   * 按 id 找子项的方法都必须能穿透，否则「展开单文件」「撤销」「回填 diff 内容」
+   * 会全部静默失效（不报错，只是点了没反应）——这与分组功能刚上线时
+   * 工具卡片踩过的坑完全相同。
+   */
+  private fun replaceDiff(id: Long, transform: (Diff) -> Diff): Boolean {
+    val topIndex = indexOfDiff(id)
+    if (topIndex < 0) {
+      return false
+    }
+    when (val top = items[topIndex]) {
+      is Diff -> {
+        if (top.id == id) {
+          items[topIndex] = transform(top)
+          notifyItemChanged(topIndex)
+          return true
+        }
+      }
+      is DiffGroup -> {
+        val childIndex = top.children.indexOfFirst { it.id == id }
+        if (childIndex >= 0) {
+          val next = top.children.toMutableList()
+          next[childIndex] = transform(next[childIndex])
+          items[topIndex] = top.copy(children = next)
+          notifyItemChanged(topIndex)
+          return true
+        }
+      }
+      else -> {}
+    }
+    return false
+  }
+
+  /** diff 卡片（含汇总组内）所在的顶层下标；未找到为 -1。 */
+  private fun indexOfDiff(id: Long): Int =
+      items.indexOfFirst { item ->
+        when (item) {
+          is Diff -> item.id == id
+          is DiffGroup -> item.children.any { it.id == id }
+          else -> false
+        }
+      }
 
   /**
    * 回填 diff 计算结果。
    *
    * <p>diff 在后台线程算，算完才回填。回填时**必须按 id 重新定位**而不是记下标：
    * 计算期间列表可能已经插入了新的消息或工具卡片，下标会漂移。
+   *
+   * <p>同时把 [Diff.computing] 置回 false：算完了才谈得上「记录已过期」
+   * （result 仍为 null 时就是查不到记录，而不是还没算）。
    */
   fun updateDiff(id: Long, result: DiffResult?) {
-    val index = indexOf(id)
-    val old = items.getOrNull(index) as? Diff ?: return
-    items[index] = old.copy(result = result)
-    notifyItemChanged(index)
+    replaceDiff(id) { it.copy(result = result, computing = false) }
   }
 
   /** 切换 diff 卡片的展开状态。 */
   fun toggleDiffExpanded(id: Long) {
-    val index = indexOf(id)
-    val old = items.getOrNull(index) as? Diff ?: return
-    items[index] = old.copy(expanded = !old.expanded)
-    notifyItemChanged(index)
+    replaceDiff(id) { it.copy(expanded = !it.expanded) }
   }
 
   /** 把 diff 卡片标记为已撤销，使按钮进入禁用态。 */
   fun markDiffReverted(id: Long) {
+    replaceDiff(id) { it.copy(reverted = true) }
+  }
+
+  /** 切换改动汇总卡片的展开状态；把用户意图写进 [DiffGroup.pinnedExpanded]。 */
+  fun toggleDiffGroupExpanded(id: Long, currentlyCollapsed: Boolean) {
     val index = indexOf(id)
-    val old = items.getOrNull(index) as? Diff ?: return
-    items[index] = old.copy(reverted = true)
+    val old = items.getOrNull(index) as? DiffGroup ?: return
+    items[index] = old.copy(pinnedExpanded = currentlyCollapsed)
     notifyItemChanged(index)
   }
 
@@ -660,20 +759,25 @@ class AssistantMessageAdapter(
    *     追加到既有块时该参数无效（块自身的状态保持不变）。
    */
   fun appendThinking(delta: String, lastThinkingId: Long?, streaming: Boolean = true): Long {
-    // 纯空白增量不建块，也不追加。模型在轮次边界会吐出 "\n" 之类的增量，
-    // 建出来的块标题是「思考过程」但内容是空的——用户看到一排空折叠条，
-    // 以为是渲染坏了。
-    if (delta.isBlank() && lastThinkingId == null) {
-      return -1L
-    }
+    // 先尝试追加到既有块（**必须穿透分组**）。
+    //
+    // <p>推理块会被 [appendThinking] 自己收进 [ToolGroup]（见下方 shouldThinkingJoinGroup），
+    // 此后它只存在于 `group.children` 里。早先这里走 `indexOf(id) + as? Thinking`——
+    // 那是**顶层**查找，组内块找不到，于是每一次推理增量都新建一块。
+    // 真机表现：一轮里十几次工具调用各带一段推理，产生十几条「思考过程」折叠条，
+    // 且空白增量同样建块（下面的空白守卫只看 lastThinkingId 是否为 null，
+    // 而它此刻非 null、只是查不到），出现一排点开什么都没有的空折叠条。
     if (lastThinkingId != null) {
-      val index = indexOf(lastThinkingId)
-      val old = items.getOrNull(index) as? Thinking
-      if (old != null) {
-        items[index] = old.copy(text = old.text + delta)
-        notifyItemChanged(index)
+      val appended = replaceThinking(lastThinkingId) { it.copy(text = it.text + delta) }
+      if (appended) {
         return lastThinkingId
       }
+    }
+    // 纯空白增量不建块。模型在轮次边界会吐出 "\n" 之类的增量，
+    // 建出来的块标题是「思考过程」但内容是空的——用户看到一排空折叠条，
+    // 以为是渲染坏了。
+    if (delta.isBlank()) {
+      return -1L
     }
     val id = nextId++
     val block = Thinking(id, delta, streaming = streaming, expanded = false)
@@ -872,12 +976,18 @@ class AssistantMessageAdapter(
         is Message -> TYPE_MESSAGE
         is ToolCall -> TYPE_TOOL_CALL
         is Thinking -> TYPE_THINKING
-        is Diff -> TYPE_DIFF
+        // 组内只有一个子项时不渲染组头：一行「本轮改动 1 个文件」配上唯一那张卡片
+        // 是纯冗余。与 ToolGroup 的单子项退化同一取舍。
+        is DiffGroup ->
+            if ((items[position] as DiffGroup).children.size <= 1) TYPE_DIFF else TYPE_DIFF_GROUP
         // 组内只有一个子项时不渲染组头：一张卡片配一个「1 个文件」的标题
         // 比直接显示那张卡片更啰嗦。组在只剩一项时会退回单卡片（见 shrinkGroups）。
         is ToolGroup ->
             if ((items[position] as ToolGroup).children.size <= 1) TYPE_TOOL_CALL
             else TYPE_TOOL_GROUP
+        // Diff 只作为 DiffGroup 的子项存在（见 DiffGroup 的说明）；顶层不产出它。
+        // 分支保留是为了 when 穷尽，真出现时按单张卡片渲染而不是崩溃。
+        is Diff -> TYPE_DIFF
       }
 
   override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): RecyclerView.ViewHolder {
@@ -887,6 +997,7 @@ class AssistantMessageAdapter(
       TYPE_TOOL_GROUP -> ToolGroupVH(ItemToolGroupBinding.inflate(inflater, parent, false), this)
       TYPE_THINKING -> ThinkingVH(ItemAssistantThinkingBinding.inflate(inflater, parent, false), this)
       TYPE_DIFF -> DiffVH(ItemAssistantDiffBinding.inflate(inflater, parent, false), this)
+      TYPE_DIFF_GROUP -> DiffGroupVH(ItemDiffGroupBinding.inflate(inflater, parent, false), this)
       else -> MessageVH(ItemAssistantMessageBinding.inflate(inflater, parent, false), this)
     }
   }
@@ -898,6 +1009,14 @@ class AssistantMessageAdapter(
       is ToolCall -> (holder as ToolCallVH).bind(item)
       is Thinking -> (holder as ThinkingVH).bind(item)
       is Diff -> (holder as DiffVH).bind(item)
+      is DiffGroup -> {
+        if (item.children.size <= 1) {
+          // 单子项的组按单张卡片渲染（见 getItemViewType）。
+          item.children.firstOrNull()?.let { (holder as DiffVH).bind(it) }
+        } else {
+          (holder as DiffGroupVH).bind(item)
+        }
+      }
       is ToolGroup -> {
         if (item.children.size <= 1) {
           // 单子项的组按普通卡片渲染（见 getItemViewType）。
@@ -994,6 +1113,21 @@ class AssistantMessageAdapter(
         (content.getChildAt(i) as? TextView)?.maxWidth =
             if (isUser) bubbleMaxWidth else Int.MAX_VALUE
       }
+
+      // 助手消息的**下**内边距收窄。
+      //
+      // <p>XML 里的 10dp 对用户气泡是必要的（那是气泡自身的留白，气泡有底色，
+      // 不留白会显得文字贴着边）。但助手消息没有气泡（见 XML 顶部注释），
+      // 它下方的 10dp 不是「留白」而是纯空隙——与紧随其后的工具卡片自己的上边距
+      // 叠加后，实测视觉间隔接近 40dp，用户反馈「消息和下一张工具卡离得太开」。
+      // 上边距保持 10dp：那是与前一条内容的**分隔**，收掉会让两条消息粘在一起。
+      val verticalBase = if (isUser) 10 else 4
+      content.setPadding(
+          content.paddingLeft,
+          content.paddingTop,
+          content.paddingRight,
+          dp(content, verticalBase),
+      )
 
       // 色值必须走 Material 库的 attr：本项目 app 模块的 R.attr 里没有这些主题属性。
       // 助手消息不给底色（透明 + 无描边），让 Markdown 直接落在面板底色上。
@@ -1564,7 +1698,11 @@ class AssistantMessageAdapter(
 
       val summary =
           AssistantToolGroupSummary.summarize(
-              group.toolCalls.map { adapter.toolCallToSummaryEntry(it, adapter.categoryResolver) })
+              group.toolCalls.map { adapter.toolCallToSummaryEntry(it, adapter.categoryResolver) },
+              // 思考块数一并计入摘要。它们被收在 children 里但不在 toolCalls 中
+              // （见 ToolGroup.toolCalls 的定义），因此必须单独数。
+              thinkingCount = group.children.count { it is Thinking },
+          )
       binding.groupSummary.text =
           if (summary.isEmpty()) context.getString(string.ai_assistant_tool_group_fallback)
           else summary
@@ -1690,7 +1828,11 @@ class AssistantMessageAdapter(
   }
 
   /**
-   * 文件改动 diff 卡片。
+   * 一张文件改动 diff 卡片的绑定逻辑。
+   *
+   * <p><b>为什么独立成一个类</b>（而不是只放在 [DiffVH] 里）：改动汇总卡片 [DiffGroupVH]
+   * 要把**同一张卡片**作为组内行复用，两者必须共用同一份渲染，否则「展开单文件」
+   * 「复制」「撤销」这些行为会在两处慢慢分叉。
    *
    * <p>整块 diff 拼进**一个** TextView，靠 Spannable 表达行号、增删标记与词级高亮。
    * 逐行建控件在千行级 diff 上会产生大量 View 与测量开销，而这些东西本来都是
@@ -1700,10 +1842,10 @@ class AssistantMessageAdapter(
    * 前景色沿用 `colorOnSurface`。新增 attr 要改 4 个主题文件 × 2 种模式，
    * 而这两个语义色主题里已经有了，且天然跟随深浅色切换。
    */
-  class DiffVH(
+  class DiffRowBinder(
       private val binding: ItemAssistantDiffBinding,
       private val adapter: AssistantMessageAdapter,
-  ) : RecyclerView.ViewHolder(binding.root) {
+  ) {
 
     fun bind(item: Diff) {
       val context = binding.root.context
@@ -1715,10 +1857,13 @@ class AssistantMessageAdapter(
       binding.diffFileName.text = name
 
       if (result == null) {
-        // 记录已过期：FileDiffStore 会裁剪旧记录（默认每文件 20 条、总量 8MB），
-        // 历史会话里的 diffId 可能查不到了。显示提示而不是空白——空白会让用户
-        // 以为 AI 根本没改这个文件。
-        binding.diffStat.text = context.getString(string.ai_assistant_diff_expired)
+        // 「还在算」与「记录已过期」都表现为 result==null，但含义与应对完全不同：
+        // 前者等一下就有，后者永远不会来了（FileDiffStore 会裁剪旧记录，
+        // 默认每文件 20 条 / 总量 8MB）。文案混用会让用户对真正过期的记录干等。
+        binding.diffStat.text =
+            context.getString(
+                if (item.computing) string.ai_assistant_diff_computing
+                else string.ai_assistant_diff_expired)
         binding.diffText.text = ""
         binding.diffToggle.visibility = View.GONE
       } else {
@@ -1873,12 +2018,93 @@ class AssistantMessageAdapter(
     }
   }
 
+  /** 单张 diff 卡片（顶层条目）。渲染逻辑全在 [DiffRowBinder]。 */
+  class DiffVH(
+      private val binding: ItemAssistantDiffBinding,
+      private val adapter: AssistantMessageAdapter,
+  ) : RecyclerView.ViewHolder(binding.root) {
+
+    private val binder = DiffRowBinder(binding, adapter)
+
+    fun bind(item: Diff) = binder.bind(item)
+  }
+
+  /**
+   * 本轮改动汇总卡片：折叠态一行「本轮改动 N 个文件 · +X -Y ▾」，
+   * 展开后逐文件列出（每个文件是一张完整的 diff 卡片）。
+   *
+   * <p>为什么组内行直接 inflate 而不是嵌一层 RecyclerView：与 [ToolGroupVH] 同一取舍
+   * ——组通常只有几个文件，嵌套 RecyclerView 会带来滚动嵌套与高度测量问题。
+   */
+  class DiffGroupVH(
+      private val binding: ItemDiffGroupBinding,
+      private val adapter: AssistantMessageAdapter,
+  ) : RecyclerView.ViewHolder(binding.root) {
+
+    fun bind(group: DiffGroup) {
+      val context = binding.root.context
+      val collapsed = group.pinnedExpanded?.let { !it } ?: true
+
+      binding.diffGroupTitle.text =
+          context.getString(string.ai_assistant_diff_group_title, group.fileCount)
+
+      // 汇总增删：结果还没算出来时（刚插入那一刻）总和是 0，
+      // 显示「+0 -0」比隐藏更稳——隐藏会让这一行在结果回填时跳一下宽度。
+      val added = "+${group.totalAdded}"
+      val removed = "-${group.totalRemoved}"
+      val text = "$added $removed"
+      val span = SpannableString(text)
+      val success = MaterialColors.getColor(binding.root, R.attr.colorSuccess)
+      val error = MaterialColors.getColor(binding.root, R.attr.colorError)
+      val addStart = text.indexOf(added)
+      if (addStart >= 0) {
+        span.setSpan(
+            ForegroundColorSpan(success), addStart, addStart + added.length,
+            Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+      }
+      val delStart = text.indexOf(removed)
+      if (delStart >= 0) {
+        span.setSpan(
+            ForegroundColorSpan(error), delStart, delStart + removed.length,
+            Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+      }
+      binding.diffGroupStat.text = span
+
+      binding.diffGroupChevron.text =
+          context.getString(
+              if (collapsed) string.ai_assistant_tool_expand
+              else string.ai_assistant_tool_collapse)
+
+      binding.diffGroupChildren.visibility = if (collapsed) View.GONE else View.VISIBLE
+      if (!collapsed) {
+        binding.diffGroupChildren.removeAllViews()
+        for (child in group.children) {
+          val row =
+              LayoutInflater.from(context)
+                  .inflate(R.layout.item_assistant_diff, binding.diffGroupChildren, false)
+          binding.diffGroupChildren.addView(row)
+          // 组内行的 id 仍指向子项本身：展开单文件、复制、撤销都按这个 id 回写，
+          // 因此它们必须能穿透组找到（见 replaceDiff）。
+          DiffRowBinder(ItemAssistantDiffBinding.bind(row), adapter).bind(child)
+        }
+      }
+
+      binding.diffGroupHeader.setOnClickListener {
+        adapter.toggleDiffGroupExpanded(group.id, collapsed)
+      }
+
+      val density = binding.root.resources.displayMetrics.density
+      binding.diffGroupCard.radius = (10f * adapter.cardScale() * density)
+    }
+  }
+
   companion object {
     private const val TYPE_MESSAGE = 0
     private const val TYPE_TOOL_CALL = 1
     private const val TYPE_THINKING = 2
     private const val TYPE_DIFF = 3
     private const val TYPE_TOOL_GROUP = 4
+    private const val TYPE_DIFF_GROUP = 5
 
     /**
      * diff 折叠阈值（行）。

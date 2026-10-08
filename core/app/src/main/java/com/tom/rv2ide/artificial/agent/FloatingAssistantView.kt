@@ -209,6 +209,15 @@ class FloatingAssistantView(
   private val executionJobs = ConcurrentHashMap<String, Job>()
 
   /**
+   * 本轮改动过的文件（按会话隔离），运行结束时汇总成一张卡片。
+   *
+   * <p>只在主线程读写：写入来自 TOOL_FINISHED（主线程分支），取走发生在 RUN_FINISHED
+   * （同样主线程），因此用普通 MutableMap 即可，不需要并发容器。
+   */
+  private val pendingDiffs =
+      HashMap<String, MutableList<Pair<String, String?>>>()
+
+  /**
    * 每个会话最近一次事件流写到哪张卡片。
    *
    * <p>多会话并行时，同一个视图的 [adapter] 只显示一个会话的消息，因此这些「最近卡片」
@@ -1071,6 +1080,10 @@ class FloatingAssistantView(
     // 注销外观监听：SharedPreferences 持有监听器的强引用，不注销会让本视图
     // （及其 binding/adapter）随偏好文件一起存活到进程结束。
     uiStylePrefs.unregisterOnSharedPreferenceChangeListener(uiStyleListener)
+    // 丢弃未汇总的改动记录：视图已销毁，它们永远不会被渲染成卡片了。
+    // 不清理虽然随本视图一起被回收（不是进程级泄漏），但留着会让「这个会话还有
+    // 待汇总改动」这个判断在别处读到陈旧数据。
+    pendingDiffs.clear()
   }
 
   /**
@@ -1127,14 +1140,19 @@ class FloatingAssistantView(
 
     when (newMode) {
       Mode.FULLSCREEN -> {
+        // 铺满且**无边框**：本形态的唯一使用者是 AssistantFullscreenActivity
+        // （真全屏宿主，见其类文档），那里窗口本身就是整块屏幕，面板即页面本身。
+        // 早先留 8/12dp 边距 + 20dp 圆角 + 1dp 描边是想让它在宿主内「像一张卡片」，
+        // 但在独立全屏窗口里，这一圈留白只会让用户看到「没铺满的浮窗 + 一道边框」。
+        // 与 INLINE 同理：任何留白或圆角都会立刻把它变回盖在内容上的卡片。
         params.width = ViewGroup.LayoutParams.MATCH_PARENT
         params.height = ViewGroup.LayoutParams.MATCH_PARENT
-        params.marginStart = dp(8)
-        params.marginEnd = dp(8)
-        params.topMargin = dp(12)
-        params.bottomMargin = dp(12)
-        card.radius = dp(20).toFloat()
-        card.strokeWidth = dp(1)
+        params.marginStart = 0
+        params.marginEnd = 0
+        params.topMargin = 0
+        params.bottomMargin = 0
+        card.radius = 0f
+        card.strokeWidth = 0
       }
       Mode.SIDEBAR -> {
         // 侧栏宽度取屏幕的 88%，至少 280dp：窄屏上纯比例会挤到不可用，
@@ -1726,6 +1744,10 @@ class FloatingAssistantView(
         // 本视图的停止键永久停在那里（点下去只会对已经不存在的运行发取消）。
         lifecycleScope.launch(Dispatchers.Main) {
           if (displayedConversationId != conversationId) {
+            // 后台会话的改动汇总无处可渲染（适配器只显示当前会话）：直接丢弃，
+            // 否则这些条目会永远留在表里。与改动前的行为一致——那时 diff 卡片
+            // 同样只在会话被显示时才插入。
+            pendingDiffs.remove(conversationId)
             return@launch
           }
           // 若该会话仍有排队请求，orchestrator 会在同一 finally 里紧接着发起下一条，
@@ -1739,6 +1761,11 @@ class FloatingAssistantView(
           // 放在 displayedConversationId 守卫**之后**：后台会话的结束不该改变
           // 当前显示会话的折叠状态。
           adapter.isRunActive = false
+
+          // 本轮全部改动在这里落成一张汇总卡片（见 flushDiffSummary）。
+          // 位置必须在运行结束：运行中插的卡片会被后续消息推到上面去，
+          // 用户下次看到它时已经不在「刚才那轮」的位置了。
+          flushDiffSummary(conversationId)
 
           // 回填本轮耗时到收尾的助手消息上。耗时是展示信息，由视图侧自己记
           // （RUN_STARTED 起点、RUN_FINISHED 终点），不走协议层——协议层要补时间戳
@@ -1920,11 +1947,13 @@ class FloatingAssistantView(
           }
           ui.lastToolCardId = null
 
-          // 有 diffId 说明这次调用改了文件。插一条**带撤销按钮**的条目——
-          // 这是用户能真正看到「AI 改了什么、怎么改回来」的唯一入口。
+          // 有 diffId 说明这次调用改了文件。**先记下来，不立刻插卡片**——
+          // 本轮全部改动在 RUN_FINISHED 时汇总成一张卡片（见 flushDiffSummary）。
+          // 早先是改一个文件就插一张 diff，长任务里十几次编辑会把用户正在读的回答
+          // 反复顶开，而且「一共改了哪些文件」要一张张翻才知道。
           val diffId = result.diffId
           if (!result.isError && diffId.isNotEmpty()) {
-            appendChangedFile(call?.name.orEmpty(), call?.arguments, diffId)
+            recordChangedFile(conversationId, call?.arguments, diffId)
           }
 
           // 每次工具结束都刷新任务卡片。看起来比必要的频繁，但 todo_update 是
@@ -2188,43 +2217,58 @@ class FloatingAssistantView(
   }
 
   /**
-   * 记录一次文件改动，渲染成 diff 卡片并挂上撤销按钮。
+   * 本轮改动过的文件，按会话暂存；运行结束时一次性汇总成一张卡片。
    *
    * <p>路径从工具参数里取：工具结果本身不带路径（{@code ToolResult} 只有 diffId），
    * 而用户需要看到「改的是哪个文件」才能判断要不要撤销。
    *
-   * <p><b>为什么 diff 在客户端现算</b>：{@code DiffRecord} 只存改动前后的完整内容快照
-   * （回滚需要精确原文，快照是最可靠的形式），没有存 diff 结果。因此这里取快照、
-   * 丢到后台线程算。算完必须回到主线程改适配器——RecyclerView 的通知只能在主线程发。
-   *
-   * <p><b>为什么不等会话结束再算</b>（cc-haha 是会话 idle 才加载 diff）：cc-haha 的 diff
-   * 挂在 turn 级 checkpoint 上，一轮跑完才有完整快照，运行中确实无数据可渲染。
-   * 我方的 diff 是 per-file 的，`TOOL_FINISHED` 时快照已全量落盘，不存在「数据不全」，
-   * 再等 idle 只会白白延迟用户看到改动的时机。
-   *
-   * <p>代价用三点抵消：算在 `Dispatchers.Default`；卡片默认折叠、展开才多渲染；
-   * 超大改动走降级路径（见 AssistantDiffBuilder 的规模守卫）。
+   * <p><b>为什么先暂存而不是立刻插卡片</b>：改一个文件冒一张卡会在长任务里把用户
+   * 正在读的回答反复顶开，而且「这一轮一共改了哪些文件」要一张张翻才知道。
+   * 汇总成一张可折叠的卡片之后，运行中对话流保持干净，运行结束给一份完整清单。
    */
-  private fun appendChangedFile(toolName: String, arguments: String?, diffId: String) {
+  private fun recordChangedFile(conversationId: String, arguments: String?, diffId: String) {
     val path = parsePathArg(arguments) ?: context.getString(string.ai_assistant_unknown_file)
-    val cardId = adapter.appendDiff(path, diffId, result = null)
+    pendingDiffs.getOrPut(conversationId) { mutableListOf() }.add(path to diffId)
+  }
+
+  /**
+   * 把本轮暂存的改动汇总成一张卡片，并逐个异步算出 diff 内容。
+   *
+   * <p>必须在**运行结束**时调用（见 RUN_FINISHED 分支）：这是「会话结束后显示全部改动汇总」
+   * 的落点。调用时机与插入位置都要在此刻，因为运行中不断有新消息插到列表末尾，
+   * 早插的卡片会被后续内容推到上面去。
+   *
+   * <p><b>为什么 diff 内容仍然现算而不是随卡片一起给</b>：{@code DiffRecord} 只存改动前后的
+   * 完整内容快照（回滚需要精确原文，快照是最可靠的形式），没有存 diff 结果，因此卡片先以
+   * 「无内容」插入，再在后台线程算完回填——这样插入本身不阻塞主线程，也不会让运行结束时
+   * 卡一下（十几个文件逐个 diff 可能上百毫秒）。
+   */
+  private fun flushDiffSummary(conversationId: String) {
+    val pending = pendingDiffs.remove(conversationId) ?: return
+    if (pending.isEmpty()) {
+      return
+    }
+    val childIds = adapter.appendDiffGroup(pending)
     scrollToBottom()
 
-    lifecycleScope.launch(Dispatchers.Default) {
-      // findById 可能返回 null：FileDiffStore 会裁剪旧记录（每文件 20 条 / 总量 8MB），
-      // 历史会话里的 diffId 未必还在。此时保持 result=null，卡片显示「记录已过期」。
-      val record = diffStore.findById(diffId)
-      val built =
-          record?.let {
-            AssistantDiffBuilder.build(
-                oldContent = it.oldContent,
-                newContent = it.newContent,
-                // isOldExists() 是 Java 侧的 boolean 访问器，Kotlin 不会把它合成属性
-                // （isXxx 只对 Kotlin 声明的属性生效），必须显式调用。
-                oldExists = it.isOldExists,
-            )
-          }
-      withContext(Dispatchers.Main) { adapter.updateDiff(cardId, built) }
+    for ((index, id) in childIds.withIndex()) {
+      val diffId = pending[index].second
+      lifecycleScope.launch(Dispatchers.Default) {
+        // findById 可能返回 null：FileDiffStore 会裁剪旧记录（每文件 20 条 / 总量 8MB），
+        // 历史会话里的 diffId 未必还在。此时保持 result=null，卡片显示「记录已过期」。
+        val record = diffStore.findById(diffId)
+        val built =
+            record?.let {
+              AssistantDiffBuilder.build(
+                  oldContent = it.oldContent,
+                  newContent = it.newContent,
+                  // isOldExists() 是 Java 侧的 boolean 访问器，Kotlin 不会把它合成属性
+                  // （isXxx 只对 Kotlin 声明的属性生效），必须显式调用。
+                  oldExists = it.isOldExists,
+              )
+            }
+        withContext(Dispatchers.Main) { adapter.updateDiff(id, built) }
+      }
     }
   }
 
@@ -3283,19 +3327,31 @@ class FloatingAssistantView(
           // 改动内容要进导出：它是「AI 到底改了什么」的唯一记录。
           // 用标准 diff 记法（+/- 前缀）而不是屏幕上的行号排版——导出目标是
           // 编辑器或 issue，行号列与竖线在那里是噪声，而 +/- 是通用记法。
-          sb.append("**✎ ").append(item.filePath).append("**\n\n")
-          val result = item.result
-          if (result == null) {
-            sb.append(context.getString(string.ai_assistant_diff_expired)).append("\n\n")
-          } else {
-            sb.append("```diff\n")
-                .append(AssistantDiffRenderer.toPlainText(result).trimEnd('\n'))
-                .append("\n```\n\n")
+          appendDiffToExport(sb, item)
+        }
+        is AssistantMessageAdapter.DiffGroup -> {
+          // 汇总卡片在导出时展开成逐个文件：导出是给人复盘用的，
+          // 「本轮改动了哪几个文件」在屏幕上折叠是为了省空间，导出没有这个约束。
+          for (child in item.children) {
+            appendDiffToExport(sb, child)
           }
         }
       }
     }
     return sb.toString().trim()
+  }
+
+  /** 把一个文件的改动写成 Markdown 段。屏幕上的单卡片与汇总组共用，避免两处格式分叉。 */
+  private fun appendDiffToExport(sb: StringBuilder, item: AssistantMessageAdapter.Diff) {
+    sb.append("**✎ ").append(item.filePath).append("**\n\n")
+    val result = item.result
+    if (result == null) {
+      sb.append(context.getString(string.ai_assistant_diff_expired)).append("\n\n")
+    } else {
+      sb.append("```diff\n")
+          .append(AssistantDiffRenderer.toPlainText(result).trimEnd('\n'))
+          .append("\n```\n\n")
+    }
   }
 
   companion object {

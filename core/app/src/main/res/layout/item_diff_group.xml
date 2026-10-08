@@ -1,36 +1,36 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  一组连续工具调用的折叠卡片。
+  一轮运行的全部文件改动汇总卡片。
 
   折叠态只占一行：
   ┌──────────────────────────────────────────────┐
-  │ ⚙  读取 5 个文件 · 执行 2 条命令     1 项失败 ▾ │
+  │ ▤  本轮改动 3 个文件          +42 -7        ▾ │
   └──────────────────────────────────────────────┘
-  展开态在下方逐行列出组内每张工具卡片（复用 item_tool_call.xml）。
+  展开态在下方逐文件列出（复用 item_assistant_diff.xml，每个文件一张卡）。
 
-  为什么折叠态必须**始终**可见（而不是像消息操作条那样按需出现）：
-  它是用户判断「AI 刚才干了什么」的唯一线索。收起来就看不见的话，
-  长任务里用户只能看到一片空白，不知道进度。参考项目同样让活动摘要在折叠态可见。
+  为什么改成一个文件一张卡 → 一张汇总卡：改一个文件冒一张卡会在长任务里把用户
+  正在读的回答反复顶开，而且「一共改了哪些文件」要一张张翻才知道。
+  汇总卡把「本轮改了什么」收成一个可折叠的单元，展开才看细节。
 
-  为什么失败数单独显示在右侧：折叠时用户最需要立刻知道的就是「有没有出错」。
-  把失败混进左侧摘要文字里会被长文案淹没，单独一列+错误色才能一眼扫到。
+  折叠态为什么必须显示 +/- 总和：那是用户判断「这轮改动大不大」的唯一线索，
+  藏进展开态等于看不见。
 -->
 <com.google.android.material.card.MaterialCardView
   xmlns:android="http://schemas.android.com/apk/res/android"
   xmlns:app="http://schemas.android.com/apk/res-auto"
   xmlns:tools="http://schemas.android.com/tools"
-  android:id="@+id/groupCard"
+  android:id="@+id/diffGroupCard"
   android:layout_width="match_parent"
   android:layout_height="wrap_content"
   android:layout_marginStart="16dp"
   android:layout_marginEnd="16dp"
-  android:layout_marginTop="4dp"
-  android:layout_marginBottom="4dp"
+  android:layout_marginTop="6dp"
+  android:layout_marginBottom="6dp"
   app:cardCornerRadius="10dp"
   app:cardElevation="0dp"
   app:strokeWidth="1dp"
   app:strokeColor="?attr/colorOutline"
-  app:cardBackgroundColor="?attr/colorSurface">
+  app:cardBackgroundColor="?attr/colorCodeHeaderBackground">
 
   <LinearLayout
     android:layout_width="match_parent"
@@ -43,7 +43,7 @@
 
     <!-- 组头：整行可点，切换展开/折叠 -->
     <LinearLayout
-      android:id="@+id/groupHeader"
+      android:id="@+id/diffGroupHeader"
       android:layout_width="match_parent"
       android:layout_height="wrap_content"
       android:orientation="horizontal"
@@ -51,16 +51,16 @@
       android:minHeight="36dp">
 
       <TextView
-        android:id="@+id/groupIcon"
+        android:id="@+id/diffGroupIcon"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_marginEnd="8dp"
-        android:text="⚙"
+        android:text="▤"
         android:textAppearance="@style/TextAppearance.Material3.BodySmall"
         android:textColor="?attr/colorOnSurfaceVariant" />
 
       <TextView
-        android:id="@+id/groupSummary"
+        android:id="@+id/diffGroupTitle"
         android:layout_width="0dp"
         android:layout_height="wrap_content"
         android:layout_weight="1"
@@ -68,21 +68,18 @@
         android:maxLines="1"
         android:textAppearance="@style/TextAppearance.Material3.BodySmall"
         android:textColor="?attr/colorOnSurface"
-        tools:text="读取 5 个文件 · 执行 2 条命令" />
+        tools:text="本轮改动 3 个文件" />
 
-      <!-- 失败数：仅在有失败时可见，用错误色 -->
       <TextView
-        android:id="@+id/groupFailures"
+        android:id="@+id/diffGroupStat"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_marginStart="8dp"
         android:textAppearance="@style/TextAppearance.Material3.LabelSmall"
-        android:visibility="gone"
-        tools:text="1 项失败"
-        tools:visibility="visible" />
+        tools:text="+42 -7" />
 
       <TextView
-        android:id="@+id/groupChevron"
+        android:id="@+id/diffGroupChevron"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_marginStart="6dp"
@@ -92,9 +89,9 @@
 
     </LinearLayout>
 
-    <!-- 展开态：组内每张工具卡片逐行加入这里 -->
+    <!-- 展开态：每个文件一张 diff 卡片，逐行加入这里 -->
     <LinearLayout
-      android:id="@+id/groupChildren"
+      android:id="@+id/diffGroupChildren"
       android:layout_width="match_parent"
       android:layout_height="wrap_content"
       android:orientation="vertical"

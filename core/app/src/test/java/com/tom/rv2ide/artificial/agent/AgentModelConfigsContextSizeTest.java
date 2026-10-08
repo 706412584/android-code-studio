@@ -106,4 +106,36 @@ public class AgentModelConfigsContextSizeTest {
     AgentModelConfigs.applyContextSize(b, config("main[1m]"), null);
     assertEquals(1000000, b.build().getContextSize());
   }
+
+  // ---- 声明与生效模型的匹配 ----
+
+  @Test
+  public void declarationMatchingStrippedModelStillApplies() {
+    // 选择器显示的是去后缀的名字，用户点它拿到的就是 "glm-5.2"。
+    // 声明属于 "glm-5.2[1m]"，去后缀后与生效模型同名 → 窗口必须生效，
+    // 否则「切回同一个模型反而丢了 1M」。
+    ModelConfig.Builder b = builder();
+    AgentModelConfigs.applyContextSize(
+        b, config("glm-5.2[1m]"), ProviderConfig.SLOT_MAIN, "glm-5.2");
+    assertEquals(1000000, b.build().getContextSize());
+  }
+
+  @Test
+  public void declarationOfAnotherModelIsNotApplied() {
+    // 主模型声明 1M，但本次要发的是别的模型 → 不能把 1M 套上去。
+    // 套上去的后果是压缩阈值按 1M 算，直到服务端报「上下文超限」才失败。
+    ModelConfig.Builder b = builder();
+    AgentModelConfigs.applyContextSize(
+        b, config("glm-5.2[1m]"), ProviderConfig.SLOT_MAIN, "deepseek-v4-flash");
+    assertEquals(ModelConfig.CONTEXT_SIZE_UNSET, b.build().getContextSize());
+  }
+
+  @Test
+  public void blankEffectiveModelSkipsMatching() {
+    // 调用方给不出生效模型（旧调用点）时不做匹配，行为与从前一致。
+    ModelConfig.Builder b = builder();
+    AgentModelConfigs.applyContextSize(
+        b, config("glm-5.2[1m]"), ProviderConfig.SLOT_MAIN, "  ");
+    assertEquals(1000000, b.build().getContextSize());
+  }
 }

@@ -201,14 +201,30 @@ class EditorBuildEventListener : GradleBuildService.EventListener {
     }
   }
 
+  /**
+   * 取可用的 Activity；不可用时返回 null 并自禁用。
+   *
+   * <p><b>为什么要同时判 isDestroyed</b>：WeakReference 仍能取到对象只说明它还没被 GC，
+   * 不代表它可用。配置变更、系统后台回收走的是「销毁但不 finish」：此时
+   * `isFinishing=false` → `isDestroying=false` → `ProjectHandlerActivity.preDestroy`
+   * 里那段 `if (isDestroying)` 整块被跳过，`release()` 不会被调用，本类 `enabled` 仍为 true；
+   * 而 Activity 的 `_binding` 已在 `BaseEditorActivity.preDestroy` 里置空。
+   * 只判引用非空的旧写法于是放行，下一行 `activity.content` 直接抛
+   * `IllegalStateException: Activity has been destroyed`——实测崩溃栈正是
+   * `prepareBuild → activity.content → getBinding`。
+   *
+   * <p>本类方法由 `GradleBuildService.wrap` 经 `runOnUiThread` 投递，与销毁同在主线程，
+   * 因此不存在「判完立刻被销毁」的间隙。
+   */
   private fun checkActivity(action: String): EditorHandlerActivity? {
     if (!enabled) return null
 
-    return _activity.also {
-      if (it == null) {
-        log.warn("[{}] Activity reference has been destroyed!", action)
-        enabled = false
-      }
+    val activity = _activity
+    if (activity == null || activity.isDestroyed) {
+      log.warn("[{}] Activity reference has been destroyed!", action)
+      enabled = false
+      return null
     }
+    return activity
   }
 }

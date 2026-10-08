@@ -393,7 +393,10 @@
     glance whether a change added or removed more.
   -->
   <string name="ai_assistant_diff_expired">Change record expired</string>
+  <string name="ai_assistant_diff_computing">Computing changes…</string>
   <string name="ai_assistant_diff_truncated">%1$s %2$s · too large for line-by-line view</string>
+  <!-- Change summary card: one card per run, listing every file the run modified. -->
+  <string name="ai_assistant_diff_group_title">Changed %1$d files this run</string>
   <!-- Tool result image. The notice is shown in place of the thumbnail, never as a broken image. -->
   <string name="ai_assistant_image_open">Open image</string>
   <string name="ai_assistant_image_unavailable">Image cannot be displayed</string>

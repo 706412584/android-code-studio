@@ -30,7 +30,7 @@
     android:orientation="vertical"
     android:paddingStart="12dp"
     android:paddingEnd="12dp"
-    android:paddingTop="8dp"
+    android:paddingTop="6dp"
     android:paddingBottom="8dp">
 
     <!-- 折叠态可见：分类图标 + 工具名 + 状态 -->

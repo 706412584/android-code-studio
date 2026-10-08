@@ -66,6 +66,12 @@ public final class AssistantToolGroupSummaryTest {
     return AssistantToolGroupSummary.INSTANCE.summarize(Arrays.asList(entries));
   }
 
+  /** 带思考块数量的摘要。思考块不在 Entry 里（它是推理不是工具调用），故单独传。 */
+  private static String summarizeWithThinking(
+      int thinkingCount, AssistantToolGroupSummary.Entry... entries) {
+    return AssistantToolGroupSummary.INSTANCE.summarize(Arrays.asList(entries), thinkingCount);
+  }
+
   // ---- 1. 单次调用 ----
 
   @Test
@@ -286,5 +292,28 @@ public final class AssistantToolGroupSummaryTest {
     String summary = summarize(read("a.kt"), write("b.kt"));
 
     assertEquals("读取 1 个文件" + AssistantToolGroupSummary.SEPARATOR + "修改 1 个文件", summary);
+  }
+
+  // ---- 9. 思考次数 ----
+
+  @Test
+  public void thinkingSegmentLeadsTheSummary() {
+    // 每轮都是先推理再调工具，按时间顺序思考段就该在最前。
+    String summary = summarizeWithThinking(3, read("a.kt"), read("b.kt"));
+
+    assertEquals("思考 3 次" + AssistantToolGroupSummary.SEPARATOR + "读取 2 个文件", summary);
+  }
+
+  @Test
+  public void zeroThinkingProducesNoSegment() {
+    // 非推理模型或旧日志里没有 reasoningContent：不该出现「思考 0 次」这种噪声段。
+    assertEquals("读取 1 个文件", summarizeWithThinking(0, read("a.kt")));
+  }
+
+  @Test
+  public void thinkingAloneIsEnoughForASummary() {
+    // 组内可能只有推理块、还没有工具调用（运行刚开始）。此时摘要不能是空串——
+    // 空串会让视图退回 fallback 文案，把「思考了 2 次」这条真实信息抹掉。
+    assertEquals("思考 2 次", summarizeWithThinking(2));
   }
 }

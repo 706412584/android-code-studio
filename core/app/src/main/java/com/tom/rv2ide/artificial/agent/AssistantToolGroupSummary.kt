@@ -99,16 +99,22 @@ object AssistantToolGroupSummary {
   )
 
   /**
-   * 生成摘要文案，例如 `读取 5 个文件 · 执行 2 条命令 · 1 项失败`。
+   * 生成摘要文案，例如 `思考 3 次 · 读取 5 个文件 · 执行 2 条命令 · 1 项失败`。
    *
    * <p>各段的顺序是**分类首次出现的顺序**，不是枚举定义顺序。理由：这一行是下方卡片列表的
    * 浓缩，用户按从上到下的顺序读卡片，摘要也该按同一顺序讲。若按枚举序排，
    * 「先执行命令再读文件」会被讲成「先读文件再执行命令」，与实际发生的事相反。
    *
-   * @return 空输入返回空串（而非 null 或异常）——由调用方决定是否隐藏这一行。
+   * @param thinkingCount 组内思考块的数量。排在所有工具段**之前**——每轮都是先推理再调工具，
+   *     按时间顺序它本就该在最前；且它是「模型花了多少轮才动手」的直接指标。
+   *     传 0 或负数时不产出该段。
+   * @return 空输入（且无思考）返回空串（而非 null 或异常）——由调用方决定是否隐藏这一行。
    */
-  fun summarize(entries: List<Entry>): String {
-    if (entries.isEmpty()) {
+  // @JvmOverloads：默认参数在 Java 里不可见，而本类有 Java 测试与调用方。
+  // 没有它，`summarize(list)` 这种单参调用在 Java 侧编译失败。
+  @JvmOverloads
+  fun summarize(entries: List<Entry>, thinkingCount: Int = 0): String {
+    if (entries.isEmpty() && thinkingCount <= 0) {
       return ""
     }
 
@@ -140,8 +146,12 @@ object AssistantToolGroupSummary {
 
     // READ 刻意**不**去重：读同一个文件三次说明模型真的重复读了三次，
     // 这既是真实工作量，也往往是「它没找到想要的东西」的信号，值得如实呈现。
-    val segments =
-        counts.entries.map { (category, count) -> segmentOf(category, count) }.toMutableList()
+    val segments = mutableListOf<String>()
+    // 思考段置于最前：每轮都是先推理再调工具，按时间顺序它就在最前。
+    if (thinkingCount > 0) {
+      segments.add(thinkingSegmentOf(thinkingCount))
+    }
+    counts.entries.mapTo(segments) { (category, count) -> segmentOf(category, count) }
     if (failures > 0) {
       // 失败数与分类正交（可能是读失败、也可能是命令失败），因此独立成段并置于末尾——
       // 用户扫这一行时最容易注意到句尾。
@@ -183,4 +193,13 @@ object AssistantToolGroupSummary {
 
   /** 失败段的文案。独立成段而非并入各分类，见 [summarize] 里的说明。 */
   private fun failureSegmentOf(count: Int): String = "$count 项失败"
+
+  /**
+   * 思考段的文案。
+   *
+   * <p>量词用「次」而不是「轮」：一次运行里模型可能推理多轮，「轮」在 agent 语境下
+   * 通常指「一问一答」，用它会把「同一轮里推理三次」说错。而「思考 N 次」只描述
+   * 块的数量，不承诺任何层级含义。
+   */
+  private fun thinkingSegmentOf(count: Int): String = "思考 $count 次"
 }

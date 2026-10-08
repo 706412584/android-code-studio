@@ -177,24 +177,54 @@ public final class AgentModelConfigs {
    * 第二个参数被完全忽略——于是界面上「切到 Opus」改了偏好、提示也显示成功，
    * 但请求里发的仍是主模型。UI 反馈与实际行为不符，且没有任何报错能让人发现。
    *
+   * <p><b>主槽位的优先级是「显式传入的模型名 &gt; 记录里的主模型」</b>：{@code modelId}
+   * 是用户在模型选择器里点选的值（`Agents.getAgent()`），而记录里的主模型是服务商管理
+   * 界面配的值。曾经记录无条件优先，于是「选择器里切了模型、工具栏也显示了新名字，
+   * 请求却仍发记录里的旧主模型」——界面在说谎且无任何报错。只在主槽位做这个调换：
+   * 非主槽位（haiku/sonnet/opus）的语义本就明确是「用该槽位配的模型」，记录仍优先。
+   *
+   * @param modelId 显式选择的模型名；调用方给不出来时传 null/空串，此时回退记录值
    * @param slot 槽位（main/haiku/sonnet/opus）；空槽位回退到主模型，
    *     这是「留空表示与主模型相同」约定的落地处
    */
   public static String modelIdFor(String providerId, String modelId, String slot) {
-    // 用户记录里的槽位模型优先。返回值已剥离上下文后缀（如 glm-5.2[1m]）——
-    // 后缀是本地元数据，不能发给 API。
+    // 返回值一律剥离上下文后缀（如 glm-5.2[1m]）——后缀是本地元数据，不能发给 API。
+    String explicit = ContextSizeParser.stripSuffix(modelId);
+    String resolvedSlot =
+        (slot == null || slot.trim().isEmpty()) ? ProviderConfig.SLOT_MAIN : slot.trim();
     ProviderConfig record = recordFor(providerId);
-    if (record != null) {
-      String fromRecord = record.apiModelId(slot == null ? ProviderConfig.SLOT_MAIN : slot);
-      if (!fromRecord.isEmpty()) {
-        return fromRecord;
+
+    if (!ProviderConfig.SLOT_MAIN.equals(resolvedSlot)) {
+      if (record != null) {
+        String fromSlot = record.apiModelId(resolvedSlot);
+        if (!fromSlot.isEmpty()) {
+          return fromSlot;
+        }
       }
+      // 该槽位为空 = 「与主模型相同」，落到下面的主槽位逻辑。
     }
+
+    // 自定义端点：模型名的权威来源是设置里那个「模型名」字段，它优先于显式值。
+    // 选择器走 promptCustomModel 时两者同值，而用户只在设置里改过时显式值仍是旧名字，
+    // 以显式值为准会把设置里填的名字丢掉。
     if ("custom".equals(providerId)) {
       String custom = ApiKey.INSTANCE.getCustomModel();
-      return custom.trim().isEmpty() ? modelId : custom.trim();
+      if (custom != null && !custom.trim().isEmpty()) {
+        return ContextSizeParser.stripSuffix(custom.trim());
+      }
     }
-    return modelId;
+
+    // 主槽位：用户显式选择的模型优先。
+    if (!explicit.isEmpty()) {
+      return explicit;
+    }
+    if (record != null) {
+      String fromMain = record.apiModelId(ProviderConfig.SLOT_MAIN);
+      if (!fromMain.isEmpty()) {
+        return fromMain;
+      }
+    }
+    return explicit;
   }
 
   /**
@@ -240,6 +270,11 @@ public final class AgentModelConfigs {
     if (endpoint == null) {
       throw new IllegalArgumentException("endpoint 不能为空");
     }
+    // 统一在这里剥后缀，调用方不必各自记得剥：
+    //  - 发给 API 的名字不能带 [1m]/[200k]（那是本地元数据，服务端会当作模型名不匹配）；
+    //  - applyContextSize 的「声明是否属于本模型」比对以已剥名为前提，传入带后缀的值
+    //    会让比对必然失败，声明的窗口静默退回默认值（勾了 1M 却不生效）。
+    String apiModelId = ContextSizeParser.stripSuffix(modelId == null ? "" : modelId);
     ModelConfig.Builder builder =
         ModelConfig.builder(
                 endpoint.id,
@@ -248,9 +283,9 @@ public final class AgentModelConfigs {
                 endpoint.label,
                 endpoint.baseUrl,
                 endpoint.apiKey,
-                modelId == null ? "" : modelId)
+                apiModelId)
             .toolCallLimit(toolCallLimit);
-    applyContextSize(builder, recordFor(endpoint.id), slot);
+    applyContextSize(builder, recordFor(endpoint.id), slot, apiModelId);
     return builder.build();
   }
 
@@ -261,10 +296,34 @@ public final class AgentModelConfigs {
    * 而「声明 {@code [1m]} → contextSize=1000000」这条链路的正确性必须被锁定。
    */
   static void applyContextSize(ModelConfig.Builder builder, ProviderConfig record, String slot) {
+    applyContextSize(builder, record, slot, null);
+  }
+
+  /**
+   * 同 {@link #applyContextSize(ModelConfig.Builder, ProviderConfig, String)}，
+   * 但校验「声明是否真的属于本次要发的模型」。
+   *
+   * <p><b>为什么需要这个校验</b>：模型名现在可以是用户在选择器里另选的那个（见
+   * {@link #modelIdFor}），而窗口声明始终从记录里读。两者不一致时会把**别的模型**的窗口
+   * 套到本次请求上——比如主模型声明了 {@code [1m]}、用户却选了另一个 128k 的模型，
+   * 于是压缩阈值按 1M 算，请求直到服务端报「上下文超限」才失败。
+   * 声明只对声明它的那个模型生效，对不上就不设，退回协议层默认值。
+   *
+   * @param effectiveModelId 本次真正要发给 API 的模型名（已去后缀）；null/空表示不校验
+   */
+  static void applyContextSize(
+      ModelConfig.Builder builder, ProviderConfig record, String slot, String effectiveModelId) {
     if (builder == null || record == null) {
       return;
     }
-    int declared = record.contextSize(slot == null ? ProviderConfig.SLOT_MAIN : slot);
+    String resolvedSlot =
+        (slot == null || slot.trim().isEmpty()) ? ProviderConfig.SLOT_MAIN : slot.trim();
+    String effective = effectiveModelId == null ? "" : effectiveModelId.trim();
+    if (!effective.isEmpty()
+        && !ContextSizeParser.stripSuffix(record.resolveSlot(resolvedSlot)).equals(effective)) {
+      return;
+    }
+    int declared = record.contextSize(resolvedSlot);
     if (declared != ContextSizeParser.UNSET) {
       builder.contextSize(declared);
     }

@@ -47,13 +47,28 @@ class ActivityHost(
      * 与抽象前行为一致。
      */
     private val yieldingView: View? = null,
+    /**
+     * 面板收起时的额外动作。
+     *
+     * <p>可空——只有真全屏宿主会传（`AssistantFullscreenActivity`）。
+     * 那种宿主里**面板就是页面的全部内容**：收起面板后窗口只剩一个空容器
+     * （surface 底色），用户看到一整片白，且没有任何返回入口。
+     * 因此它的「关闭」应当结束 Activity，而不是把面板藏起来。
+     *
+     * <p>其余宿主（主页悬浮 / 内联页 / 编辑器）都有别的内容可看，
+     * 收起面板只是回到它们本来的界面，传 null 即维持原行为。
+     */
+    private val onClosed: (() -> Unit)? = null,
 ) : AssistantHost {
 
   override fun widthPx(): Int = container.resources.displayMetrics.widthPixels
 
   override fun onPanelOpened() = applyYield(yield = true)
 
-  override fun onPanelClosed() = applyYield(yield = false)
+  override fun onPanelClosed() {
+    applyYield(yield = false)
+    onClosed?.invoke()
+  }
 
   /**
    * 收缩/恢复让位目标。
