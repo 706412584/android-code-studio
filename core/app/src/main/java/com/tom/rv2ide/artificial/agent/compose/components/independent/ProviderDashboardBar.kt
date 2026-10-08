@@ -1,0 +1,336 @@
+/*
+ * This file is part of AndroidCodeStudio.
+ *
+ * Adapted from Aharou (https://github.com/520huxiangli/Aharou),
+ * licensed under the GNU General Public License v3.0 or later.
+ * Modifications for AndroidCodeStudio are licensed under the same terms.
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
+
+package com.tom.rv2ide.artificial.agent.compose.components.independent
+
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
+import android.content.Intent
+import android.net.Uri
+import android.widget.Toast
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import com.tom.rv2ide.artificial.agent.compose.components.style.rememberBoundNestedScrollConnection
+import com.tom.rv2ide.artificial.agent.compose.compat.ExpandableChevronIcon
+import com.tom.rv2ide.artificial.agent.compose.model.AdaptiveCardAction
+import com.tom.rv2ide.artificial.agent.compose.model.AdaptiveCardRoot
+import com.tom.rv2ide.artificial.agent.compose.model.ProviderDashboardState
+import com.tom.rv2ide.artificial.agent.compose.theme.Radius
+import com.tom.rv2ide.artificial.agent.compose.theme.Spacing
+import com.tom.rv2ide.resources.R
+import compose.icons.FeatherIcons
+import compose.icons.feathericons.AlertCircle
+
+/**
+ * `com.aharou.feature.settings.domain.model.AIProviderConfig` 在本组件里实际被读取的
+ * 投影：ACS 侧对应模型是 `ProviderConfig.java`（6 字段，形状差异大），**不搬 Aharou
+ * 全模型**——接线时由宿主把 ACS 的 ProviderConfig 映射到本类型，只填展示需要的字段。
+ */
+data class ProviderDashboardTarget(
+    /** 服务商显示名（Aharou `AIProviderConfig.name`）。 */
+    val name: String,
+)
+
+/**
+ * 位于聊天输入框上方的自定义面板栏。
+ * 基于 Adaptive Cards 声明式规范，支持任意自定义排版与交互。
+ */
+@Composable
+fun ProviderDashboardBar(
+    provider: ProviderDashboardTarget,
+    state: ProviderDashboardState,
+    onRefresh: () -> Unit,
+    /** 展开正文的高度上限（由宿主按可用高度与键盘内边距算出），超出部分在面板内滚动。 */
+    maxExpandedBodyHeight: Dp,
+    modifier: Modifier = Modifier,
+    forceCollapse: Boolean = false,
+    onRefreshByButton: () -> Unit = {},
+    onExpandedChange: (Boolean) -> Unit = {},
+    /** 卡片里的外链交由此回调处理（走内置浏览器）；不传时退回系统浏览器，保证任何宿主都能用。 */
+    onOpenInBrowser: ((String) -> Unit)? = null
+) {
+    val context = LocalContext.current
+    var isExpanded by rememberSaveable { mutableStateOf(false) }
+    val keyboard = LocalSoftwareKeyboardController.current
+
+    // 弹窗/键盘叠加时同帧收起：用派生状态而不是 LaunchedEffect 异步改 isExpanded，
+    // 否则弹窗先出现顶开布局、面板后折叠，中间产生空档闪屏。
+    val effectiveExpanded = isExpanded && !forceCollapse
+    // 上报展开状态给外层，供叠加面板联动折叠
+    LaunchedEffect(effectiveExpanded) { onExpandedChange(effectiveExpanded) }
+
+    val cardBgColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.98f)
+    val borderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.8f)
+
+    Surface(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(bottom = Spacing.xs)
+            .clip(RoundedCornerShape(Radius.lg))
+            .border(1.dp, borderColor, RoundedCornerShape(Radius.lg)),
+        shape = RoundedCornerShape(Radius.lg),
+        color = cardBgColor
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = Spacing.md, vertical = 10.dp)
+        ) {
+            when (state) {
+                is ProviderDashboardState.Loading -> {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text(
+                            text = provider.name,
+                            style = MaterialTheme.typography.titleSmall.copy(fontSize = 15.sp),
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(14.dp),
+                                strokeWidth = 2.dp,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                            Spacer(Modifier.width(Spacing.xs))
+                            Text(
+                                text = stringResource(R.string.dashboard_fetching),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
+                is ProviderDashboardState.Error -> {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text(
+                            text = provider.name,
+                            style = MaterialTheme.typography.titleSmall.copy(fontSize = 15.sp),
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(Radius.xs))
+                                .clickable { onRefresh() }
+                                .padding(horizontal = Spacing.xs, vertical = 2.dp)
+                        ) {
+                            Icon(
+                                imageVector = FeatherIcons.AlertCircle,
+                                contentDescription = null,
+                                modifier = Modifier.size(14.dp),
+                                tint = MaterialTheme.colorScheme.error
+                            )
+                            Spacer(Modifier.width(4.dp))
+                            Text(
+                                text = stringResource(R.string.dashboard_fetch_failed_retry),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.error
+                            )
+                        }
+                    }
+                }
+                is ProviderDashboardState.Success -> {
+                    val card = state.result.card
+                    val onCardAction: (AdaptiveCardAction) -> Unit = { action ->
+                        when (action) {
+                            is AdaptiveCardAction.OpenUrl -> {
+                                if (onOpenInBrowser != null) {
+                                    onOpenInBrowser(action.url)
+                                } else {
+                                    runCatching {
+                                        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(action.url)).apply {
+                                            flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                                        }
+                                        context.startActivity(intent)
+                                    }.onFailure {
+                                        Toast.makeText(context, context.getString(R.string.common_open_link_failed), Toast.LENGTH_SHORT).show()
+                                    }
+                                }
+                            }
+                            is AdaptiveCardAction.CopyToClipboard -> {
+                                val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
+                                val clip = ClipData.newPlainText(action.title, action.value)
+                                clipboard?.setPrimaryClip(clip)
+                                Toast.makeText(context, context.getString(R.string.common_copied_with_title, action.title), Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                    }
+
+                    // ── 顶部单行常驻栏（点击展开/折叠） ──
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable {
+                                // 展开前先让键盘让位，避开面板被键盘挡住的情况。
+                                val willExpand = !effectiveExpanded
+                                if (willExpand) keyboard?.hide()
+                                isExpanded = willExpand
+                            },
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = provider.name,
+                            style = MaterialTheme.typography.titleSmall.copy(fontSize = 15.sp),
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier.padding(end = Spacing.md)
+                        )
+
+                        // 收起状态展示单行卡片摘要
+                        AnimatedVisibility(
+                            visible = !effectiveExpanded,
+                            modifier = Modifier.weight(1f),
+                            enter = fadeIn(tween(180)),
+                            exit = fadeOut(tween(120))
+                        ) {
+                            AdaptiveCardView(
+                                card = card,
+                                isExpanded = false,
+                                onAction = onCardAction,
+                                onRefresh = onRefreshByButton
+                            )
+                        }
+
+                        if (effectiveExpanded) {
+                            Spacer(Modifier.weight(1f))
+                        }
+
+                        Spacer(Modifier.width(Spacing.sm))
+
+                        ExpandableChevronIcon(
+                            expanded = effectiveExpanded,
+                            contentDescription = if (effectiveExpanded) {
+                                stringResource(R.string.common_collapse)
+                            } else {
+                                stringResource(R.string.common_expand)
+                            },
+                            size = 18.dp,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+
+                    // ── 展开状态内容（平滑自上而下展开、自下而上收起） ──
+                    AnimatedVisibility(
+                        visible = effectiveExpanded,
+                        enter = fadeIn(tween(180)) + expandVertically(tween(220)),
+                        exit = fadeOut(tween(140)) + shrinkVertically(tween(180))
+                    ) {
+                        val bodyScrollState = rememberScrollState()
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(max = maxExpandedBodyHeight)
+                                .nestedScroll(rememberBoundNestedScrollConnection(bodyScrollState))
+                                .verticalScroll(bodyScrollState)
+                                .padding(top = Spacing.sm),
+                            verticalArrangement = Arrangement.spacedBy(Spacing.sm)
+                        ) {
+                            // 卡片 Body 展开渲染
+                            AdaptiveCardView(
+                                card = card,
+                                isExpanded = true,
+                                onAction = onCardAction,
+                                onRefresh = onRefreshByButton
+                            )
+                        }
+                    }
+                }
+                ProviderDashboardState.Idle -> {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { onRefresh() }
+                            .padding(vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text(
+                            text = provider.name,
+                            style = MaterialTheme.typography.titleSmall.copy(fontSize = 15.sp),
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Text(
+                            text = stringResource(R.string.dashboard_tap_to_query),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                }
+            }
+        }
+    }
+}

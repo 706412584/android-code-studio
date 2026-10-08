@@ -32,6 +32,8 @@ import androidx.lifecycle.LifecycleCoroutineScope
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.tom.rv2ide.adapters.AssistantMessageAdapter
 import com.tom.rv2ide.adapters.ConversationListAdapter
+import com.tom.rv2ide.artificial.agent.compose.compat.toAnswerList
+import com.tom.rv2ide.artificial.agent.compose.compat.toPendingUserQuestion
 import com.tom.rv2ide.artificial.agent.host.AssistantHost
 import com.tom.rv2ide.artificial.agents.Agents
 import com.tom.rv2ide.databinding.LayoutAiAssistantBinding
@@ -119,7 +121,10 @@ class FloatingAssistantView(
      * 传达的是「一张盖在内容上的卡片」；内联页要的是「它就是页面本身」，因此
      * 完全不留边距、不做圆角，与容器严丝合缝。宽度由容器决定，不按屏幕比例算。
      */
-    INLINE
+    INLINE,
+
+    /** 编辑器侧栏标签页：占满容器，不挂 FAB，但保留进入真全屏的入口。 */
+    EMBEDDED
   }
 
   private val fabBinding =
@@ -160,7 +165,16 @@ class FloatingAssistantView(
 
   private val uiStyleListener =
       android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
-        if (key == null || key !in uiStyleKeys) {
+        if (key == null) {
+          return@OnSharedPreferenceChangeListener
+        }
+        // 渲染路径的开关单独处理：它要的是「装/卸 Compose 面板」，不是下面那种重绑。
+        // 混进重绑分支只会刷新一遍列表，路径依旧不变——表现为「开关点了没反应」。
+        if (key == com.tom.rv2ide.artificial.agent.compose.AssistantComposeRender.KEY_ENABLED) {
+          binding.root.post { applyComposeRenderPath() }
+          return@OnSharedPreferenceChangeListener
+        }
+        if (key !in uiStyleKeys) {
           return@OnSharedPreferenceChangeListener
         }
         // 回调来自写入线程（设置页主线程），但保守起见投递到主线程再碰控件——
@@ -175,6 +189,16 @@ class FloatingAssistantView(
 
   private val adapter = AssistantMessageAdapter(uiStyleStore)
   private val settings = AgentToolSettings(context)
+
+  /**
+   * Compose 渲染路径的面板；为 null 时消息区走 [adapter] + RecyclerView（XML 路径）。
+   *
+   * <p>两条路径**并存**而不是替换：Compose 侧组件尚未真机验证，作为回退必须能随时切回来。
+   * 是否启用由 [com.tom.rv2ide.artificial.agent.compose.AssistantComposeRender] 决定，
+   * 默认关闭。两者共用同一个 [adapter] 作为数据源——Compose 读它的快照、写它的展开态，
+   * 因此切换路径不会丢消息，也不会出现两份互不同步的对话。
+   */
+  private var composePanel: com.tom.rv2ide.artificial.agent.compose.AssistantComposePanelHost? = null
 
   /**
    * 输入区的附加功能：模型槽位 / 附件 / 推理强度。
@@ -513,7 +537,7 @@ class FloatingAssistantView(
     val saved = suppressedVisibility ?: return
     suppressedVisibility = null
     // INLINE 形态没有 FAB（见 attach），恢复时不能碰它。
-    if (defaultMode != Mode.INLINE) {
+    if (defaultMode != Mode.INLINE && defaultMode != Mode.EMBEDDED) {
       fabBinding.root.isVisible = saved.first
     }
     binding.assistantOverlay.isVisible = saved.second
@@ -526,9 +550,9 @@ class FloatingAssistantView(
 
   /** 把两个视图挂到父容器上。父容器应是 `FrameLayout`（FAB 靠 gravity 定位）。 */
   fun attach() {
-    // INLINE 是「页面本身」，没有可收起的宿主：不挂 FAB，也不装拖拽。
+    // INLINE/EMBEDDED 是页面本身，没有可收起的宿主：不挂 FAB，也不装拖拽。
     // 其余形态照旧挂 FAB 并装拖拽，行为不变。
-    if (defaultMode != Mode.INLINE) {
+    if (defaultMode != Mode.INLINE && defaultMode != Mode.EMBEDDED) {
       // FAB 在 XML 里只有固定尺寸、没有 gravity；放进 FrameLayout 时必须显式给右下角，
       // 否则会落在左上角盖住标题。
       fabBinding.root.layoutParams =
@@ -541,7 +565,7 @@ class FloatingAssistantView(
     }
     parent.addView(binding.assistantOverlay)
 
-    if (defaultMode != Mode.INLINE) {
+    if (defaultMode != Mode.INLINE && defaultMode != Mode.EMBEDDED) {
       setUpDragging()
     }
 
@@ -572,6 +596,11 @@ class FloatingAssistantView(
     adapter.setCategoryResolver { toolName ->
         registry.getCachedDisplayCategory(com.tom.rv2ide.ai.tool.ToolRegistry.canonicalName(toolName))
     }
+
+    // Compose 渲染路径（并存开关，默认关）。接在适配器配置之后：面板要读适配器快照，
+    // 且回滚/菜单回调都落在本类已有方法上，早于此处装上会拿到未配置完的适配器。
+    // 与偏好变更走同一个入口，避免「初装」与「改开关」两条路径的判定逻辑分叉。
+    applyComposeRenderPath()
 
     // 不设 OnClickListener：拖动用的 OnTouchListener 会消费全部事件，click 永远不会触发。
     // 打开面板的动作用 ACTION_UP 且未进入拖动时手动调用 open()（见 setUpDragging）。
@@ -877,7 +906,7 @@ class FloatingAssistantView(
 
   fun open() {
     // INLINE 没有 FAB 可藏（见 attach）。
-    if (defaultMode != Mode.INLINE) {
+    if (defaultMode != Mode.INLINE && defaultMode != Mode.EMBEDDED) {
       fabBinding.assistantFab.isVisible = false
     }
     binding.assistantOverlay.isVisible = true
@@ -1047,7 +1076,7 @@ class FloatingAssistantView(
     // 否则收起后编辑器永远停在半屏/半宽，用户得重启 Activity 才能恢复。
     host.onPanelClosed()
     // INLINE 没有 FAB 可恢复（见 attach）。
-    if (defaultMode != Mode.INLINE) {
+    if (defaultMode != Mode.INLINE && defaultMode != Mode.EMBEDDED) {
       fabBinding.assistantFab.isVisible = true
     }
     // 隐藏即让出回调，见 [ownsOrchestratorCallbacks]。
@@ -1084,6 +1113,12 @@ class FloatingAssistantView(
     // 不清理虽然随本视图一起被回收（不是进程级泄漏），但留着会让「这个会话还有
     // 待汇总改动」这个判断在别处读到陈旧数据。
     pendingDiffs.clear()
+    // 注销 Compose 面板对适配器的数据观察者。适配器是本类的字段、(可能)与其它视图共享
+    // orchestrator 的生命周期，不注销会让它继续持有面板的 mutableStateOf 与消息快照。
+    // 未决提问同样要收尾，否则提问方一直等到超时（见 uninstallComposePanel）。
+    composePanel?.cancelPendingQuestion()
+    composePanel?.state?.dispose()
+    composePanel = null
   }
 
   /**
@@ -1220,7 +1255,7 @@ class FloatingAssistantView(
         // 窄屏时起**上**分界线作用（左右下三边不可见）。同一个用意。
         card.strokeWidth = dp(1)
       }
-      Mode.INLINE -> {
+      Mode.INLINE, Mode.EMBEDDED -> {
         // 内联页：占满宿主容器，无边距、无圆角、无描边。
         //
         // 与 FULLSCREEN 的「浮层铺开」相反，这里要的是「它就是页面本身」——
@@ -1257,10 +1292,9 @@ class FloatingAssistantView(
     //
     // 只在 INLINE 下改可见性，且每次 applyMode 都显式重设：从 INLINE 切回其他形态
     // （理论上宿主允许时）不会把按钮永久藏掉。
-    val chromeVisible = newMode != Mode.INLINE
-    binding.assistantFullscreen.isVisible = chromeVisible
-    binding.assistantMinimize.isVisible = chromeVisible
-    binding.assistantClose.isVisible = chromeVisible
+    binding.assistantFullscreen.isVisible = newMode != Mode.INLINE
+    binding.assistantMinimize.isVisible = newMode != Mode.INLINE && newMode != Mode.EMBEDDED
+    binding.assistantClose.isVisible = newMode != Mode.INLINE && newMode != Mode.EMBEDDED
 
     // 换形态就换了宽度，工具条能放下几个控件随之变化，必须重算。
     //
@@ -2895,7 +2929,19 @@ class FloatingAssistantView(
                     summary = "",
                     input = "",
                 )
-            adapter.completeToolCall(id, message.getContent(), message.isToolError())
+            // 图片同样要带过来。上面那个分支的注释已经写明「用错 kind 会让历史截图
+            // 全部消失且没有任何提示」——本分支先前只传三个参数，图片就是在**这里**丢的：
+            // 卡片不是配对回填、而是新建时，走的就是这条路径，于是所有「没有配对前导调用」
+            // 的历史工具图（包括重装后回放的会话）都不显示。两者必须一致。
+            val image = com.tom.rv2ide.ai.protocol.ImageInputPayload
+                .fromImageResult(message.getRawInputJson())
+            adapter.completeToolCall(
+                id,
+                message.getContent(),
+                message.isToolError(),
+                image?.dataBase64,
+                image?.mimeType.orEmpty(),
+            )
             if (message.steps.isNotEmpty()) {
               adapter.setToolSteps(id, message.steps)
             }
@@ -2967,12 +3013,123 @@ class FloatingAssistantView(
 
   private fun scrollToBottom() {
     updateEmptyState()
+    val panel = composePanel
+    if (panel != null) {
+      panel.scrollToBottom(lifecycleScope)
+      return
+    }
     binding.assistantMessages.post {
       val count = adapter.itemCount
       if (count > 0) {
         binding.assistantMessages.scrollToPosition(count - 1)
       }
     }
+  }
+
+  /**
+   * 装上 Compose 渲染路径，并把 XML 路径的消息列表收起来。
+   *
+   * <p>ComposeView 由代码加进 `assistantMessages` 所在的 FrameLayout，而不是写进
+   * `layout_ai_assistant.xml`：**两条路径必须占据同一个位置**，写进布局会让「哪个可见」
+   * 这件事分散在两处（布局里的 visibility 与代码里的 visibility），关掉开关时容易漏改一处，
+   * 表现为两块消息区上下叠着。加在同一个父容器里，切换只需动一个 visibility。
+   *
+   * <p>XML 列表是隐藏而非移除：ConversationListAdapter 与滚动位置等都挂在它上面，移除后
+   * 再切回来要全部重建；隐藏则两条路径随时可切。
+   */
+  private fun installComposePanel() {
+    val container = binding.assistantMessages.parent as? android.view.ViewGroup ?: return
+    val state = com.tom.rv2ide.artificial.agent.compose.AssistantMessageState(adapter)
+    val callbacks =
+        object : com.tom.rv2ide.artificial.agent.compose.AssistantPanelCallbacks {
+          override fun onToggleExpanded(messageId: Long) {
+            // 展开态存在适配器数据里，且三种可展开条目（工具卡 / 推理块 / 差异卡）各有自己的
+            // 翻转方法。这里按 id 逐个调用，找不到对应类型的会各自静默跳过——
+            // 与 revertDiff 同时调 markReverted + markDiffReverted 是同一个套路，
+            // 好处是面板不必知道这条消息属于哪一种（那是映射层的知识）。
+            adapter.toggleExpanded(messageId)
+            adapter.toggleThinkingExpanded(messageId)
+            adapter.toggleDiffExpanded(messageId)
+          }
+
+          override fun onToggleGroup(groupId: Long, currentlyCollapsed: Boolean) {
+            // 组的展开意图存在 ToolGroup.pinnedExpanded，与单条消息的展开态是两套状态，
+            // 因此必须走 toggleGroupExpanded 而不是 onToggleExpanded 那三种翻转。
+            adapter.toggleGroupExpanded(groupId, currentlyCollapsed)
+          }
+
+          override fun onRevert(messageId: Long, diffId: String) {
+            // 完全复用 XML 路径的回滚实现：工作区校验、IO 线程执行、结果提示、
+            // 标记已撤销后禁用按钮，全部同一套行为。
+            revertDiff(messageId, diffId)
+          }
+
+          override fun onMoreClick(messageId: Long) {
+            // 复用既有的长按菜单（复制原文/纯文、引用提问）。菜单的锚点需要 View，
+            // Compose 没有对应的锚点概念，传面板自身的 ComposeView——
+            // 弹出位置锚在面板上，与 XML 路径锚在条目上的观感一致。
+            val message = adapter.find(messageId) ?: return
+            val anchor = composePanel?.view ?: return
+            showMessageActionsMenu(message, anchor)
+          }
+        }
+
+    // 图像查看器需要把「容器路径」解析成宿主文件，故把工作区根包成 FileAccessProvider。
+    // 取不到工作区时传 null：面板仍可显示带 localPath / 内联 base64 的图，
+    // 只有「只有容器路径」的那种图看不了——比整块面板不可用要好。
+    val fileAccess =
+        workspace?.let {
+          com.tom.rv2ide.artificial.agent.compose.compat.HostFileAccessProvider(it)
+        }
+    val panel =
+        com.tom.rv2ide.artificial.agent.compose.AssistantComposePanelHost(
+            context, state, callbacks, fileAccess)
+    // 插到**索引 0**，而不是 append 到末尾：该 FrameLayout 里还有「无消息时的提示文案」
+    // 与「回到底部」按钮，它们必须盖在消息区之上。append 会让消息区排在它们后面，
+    // 把提示文案整块遮住——「没有消息」的提示就永远看不见了。
+    // 插到 0 同时也在 RecyclerView（已 GONE）之下，层级与 XML 路径一致。
+    container.addView(
+        panel.view,
+        0,
+        android.widget.FrameLayout.LayoutParams(
+            android.view.ViewGroup.LayoutParams.MATCH_PARENT,
+            android.view.ViewGroup.LayoutParams.MATCH_PARENT,
+        ),
+    )
+    binding.assistantMessages.visibility = android.view.View.GONE
+    composePanel = panel
+  }
+
+  /**
+   * 按当前偏好装或卸 Compose 渲染路径。
+   *
+   * <p>设置页改完开关后**立刻**生效：否则用户点了开关、回到面板却毫无变化，只能靠重启面板
+   * 或重开 App 才看到效果——那等于让用户怀疑开关坏了。两条路径共用同一个 [adapter]，
+   * 装卸都不会丢消息（Compose 读它的快照、写它的展开态）。
+   */
+  private fun applyComposeRenderPath() {
+    val want = com.tom.rv2ide.artificial.agent.compose.AssistantComposeRender.isEnabled(context)
+    when {
+      want && composePanel == null -> installComposePanel()
+      !want && composePanel != null -> uninstallComposePanel()
+    }
+  }
+
+  /**
+   * 卸下 Compose 渲染路径，恢复 XML 列表。
+   *
+   * <p>顺序要紧：先 `dispose()` 再移除视图。反过来的话，视图已 detach 而观察者仍挂在适配器上，
+   * 期间若有消息更新会往一个已无宿主的 state 里写，白做一次映射。
+   */
+  private fun uninstallComposePanel() {
+    val panel = composePanel ?: return
+    // 先收尾未决提问：提问方在另一线程用 latch 等答案，面板一拆就再没人能回答它，
+    // 只能白等到 180 秒超时。这里主动以「取消」结束它。
+    panel.cancelPendingQuestion()
+    panel.state.dispose()
+    (panel.view.parent as? android.view.ViewGroup)?.removeView(panel.view)
+    binding.assistantMessages.visibility = android.view.View.VISIBLE
+    composePanel = null
   }
 
   private fun updateEmptyState() {
@@ -3211,17 +3368,30 @@ class FloatingAssistantView(
     android.os.Handler(android.os.Looper.getMainLooper())
         .post {
           try {
-            host.dialogs.showUserQuestions(
-                questions,
-                { answers ->
-                  result = answers
-                  latch.countDown()
-                },
-                {
-                  result = null
-                  latch.countDown()
-                },
-            )
+            // Compose 路径开着时由面板弹对话框，否则走既有的 XML 弹窗。两条路都在**已解析出
+            // 答案**后回调同一个 lambda，所以下面的等待与超时逻辑对两者一视同仁。
+            val panel = composePanel
+            if (panel != null) {
+              panel.askQuestion(
+                  questions.toPendingUserQuestion(id = "ask-" + System.nanoTime()),
+                  { answer ->
+                    result = answer?.toAnswerList()
+                    latch.countDown()
+                  },
+              )
+            } else {
+              host.dialogs.showUserQuestions(
+                  questions,
+                  { answers ->
+                    result = answers
+                    latch.countDown()
+                  },
+                  {
+                    result = null
+                    latch.countDown()
+                  },
+              )
+            }
           } catch (e: Exception) {
             latch.countDown()
           }

@@ -22,8 +22,27 @@
     android:id="@+id/lightboxImage"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:layout_margin="8dp"
+    android:layout_margin="16dp"
     android:contentDescription="@string/ai_assistant_image_open"
     android:scaleType="fitCenter" />
+
+  <!--
+    关闭按钮：必须有**看得见**的退出入口。
+
+    先前只提供「点任意处关闭」——对作者显然，对用户不显然：全屏黑底上没有任何可点的提示，
+    用户会以为卡住了（真机反馈正是「没有关闭按钮」）。按钮固定右上角、加半透明底，
+    保证在浅色与深色截图上都看得清；点击区用 minWidth/minHeight 撑到 48dp 的可达标准。
+  -->
+  <ImageButton
+    android:id="@+id/lightboxClose"
+    android:layout_width="48dp"
+    android:layout_height="48dp"
+    android:layout_gravity="top|end"
+    android:layout_margin="12dp"
+    android:background="@drawable/bg_lightbox_close"
+    android:contentDescription="@string/ai_assistant_image_close"
+    android:padding="12dp"
+    android:scaleType="fitCenter"
+    android:src="@drawable/ic_lightbox_close" />
 
 </FrameLayout>

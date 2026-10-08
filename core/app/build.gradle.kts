@@ -31,6 +31,9 @@ plugins {
   id("kotlin-parcelize")
   id("androidx.navigation.safeargs.kotlin")
   id("com.tom.rv2ide.desugaring")
+  // Compose 编译器插件。Kotlin 2.x 起它由官方插件提供，版本必须与 Kotlin 一致
+  // （由根项目的 kotlin 版本目录统一约束），不再需要 composeOptions.kotlinCompilerExtensionVersion。
+  id("org.jetbrains.kotlin.plugin.compose")
 }
 
 apply { plugin(AndroidIDEAssetsPlugin::class.java) }
@@ -110,6 +113,9 @@ android {
   buildFeatures {
     aidl = true
     dataBinding = true
+    // Compose 只用于 AI 助手的消息渲染层（ComposeView 嵌进现有 View 树），
+    // 不替换现有 XML/View 体系——两者并存，避免一次性重写整个界面。
+    compose = true
   }
 
   buildTypes {
@@ -203,6 +209,48 @@ dependencies {
   implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.0")
   implementation("org.tukaani:xz:1.9")
   implementation("org.apache.commons:commons-compress:1.21")
+
+  // ---- Jetpack Compose（仅 AI 助手消息渲染层用，见 buildFeatures.compose 的说明）----
+  // 不引 BOM：BOM 只做版本对齐，而这里依赖面窄（6 个 artifact），
+  // 显式写版本更可控，也避免多一个需要联网解析的平台约束。
+  implementation("androidx.compose.runtime:runtime:1.7.6")
+  implementation("androidx.compose.foundation:foundation:1.7.6")
+  implementation("androidx.compose.ui:ui:1.7.6")
+  implementation("androidx.compose.material3:material3:1.3.1")
+  // ComposeView 嵌入现有 View 树所需（ComposeView 本身在 ui 里，但 Activity 集成在此）
+  implementation("androidx.activity:activity-compose:1.9.3")
+  // 图标：Aharou 的组件引用 compose.icons.FeatherIcons，直接引入它的来源库，
+  // 使被移植组件的图标引用逐字可用（不需要任何兼容层）。
+  implementation("br.com.devsrsouza.compose.icons:feather:1.1.1")
+  // 图标：Aharou 自身也声明了 material-icons-extended，其组件里另有直接引用 Material 图标之处。
+  implementation("androidx.compose.material:material-icons-extended:1.7.8")
+  // Markdown 正文渲染。Aharou 的消息气泡与代码卡都走它，属逐字移植的前提。
+  //
+  // 版本必须停在 0.33.0。这是**三条**独立天花板取交集的结果，不是随意挑的：
+  //
+  // 1) Kotlin 元数据：0.36 起改用 Kotlin 2.2+ 编译，其 .class 元数据版本 2.2/2.3，
+  //    本项目 Kotlin 2.1.0 的编译器读不了（实测 0.41.0 报
+  //    "Module was compiled with an incompatible version of Kotlin ... 2.3.0, expected 2.1.0"）。
+  // 2) compileSdk：0.39 起 AAR metadata 声明 minCompileSdk=36，而本项目统一 compileSdk=34。
+  // 3) **Compose ABI**（最容易漏的一条，且只有运行时才暴露）：0.34 起该库改为针对更新的
+  //    Compose 编译，会调用 `BasicText(…, TextAutoSize, …)`，而 TextAutoSize 是
+  //    Compose foundation **1.8** 才加入的参数。本项目钉 foundation 1.7.6，编译期完全不报错
+  //    （Kotlin 只校验我们自己的代码对库 AAR 的引用，不校验库内部调用的目标是否存在），
+  //    到**运行时渲染 Markdown 段落**才抛
+  //    `NoSuchMethodError: No static method BasicText-CL7eQgs(…, TextAutoSize, …)`，
+  //    并被应用自带崩溃处理器捕获。实测 0.34/0.35 各引用 TextAutoSize 2 处，0.33 及更早为 0 处。
+  //    已在 foundation 1.7.6 上逐个核验：0.33.0 需要的 BasicText-RWo7tUw 与 BasicText-VhcvRP8
+  //    两个重载均存在；0.35.0 需要的 BasicText-CL7eQgs 不存在。
+  //
+  // 三条同时满足的只有 ≤0.33.0。取最新的 0.33.0（kotlin-stdlib 2.1.20、minCompileSdk=1）。
+  implementation("com.mikepenz:multiplatform-markdown-renderer-m3:0.33.0")
+  implementation("com.mikepenz:multiplatform-markdown-renderer-code:0.33.0")
+  // 代码块语法高亮（markdown-renderer-code 的高亮后端）
+  implementation("dev.snipme:highlights-jvm:1.1.0")
+  // 数学公式（MarkdownMathSupport）
+  implementation("ru.noties:jlatexmath-android:0.2.0")
+  // 图片加载（ChatImageLoader / 消息内图片）
+  implementation("io.coil-kt:coil-compose:2.7.0")
 
   // external deps here
   implementation("com.github.Dimezis:BlurView:version-3.2.0")

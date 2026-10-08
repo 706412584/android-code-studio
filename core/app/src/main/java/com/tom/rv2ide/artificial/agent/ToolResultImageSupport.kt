@@ -168,33 +168,60 @@ object ToolResultImageSupport {
     val dialog =
         android.app.Dialog(context, android.R.style.Theme_Black_NoTitleBar_Fullscreen).apply {
           setContentView(view)
-          // 点任意处关闭：看图时用户不该去找关闭按钮。
-          view.setOnClickListener { dismiss() }
         }
+    // 关闭入口：**必须有一个看得见的**。原先只有「点任意处关闭」——那对作者是显然的，
+    // 对用户不是：全屏黑底上没有任何可点的提示，用户会以为卡住了（实测反馈正是如此）。
+    // 关闭按钮 + 点背景关闭两条路都留着：前者是「找得到」，后者是「顺手」。
+    view.findViewById<android.view.View>(com.tom.rv2ide.R.id.lightboxClose)
+        .setOnClickListener { dialog.dismiss() }
+    // 点背景关闭：只认「没落在图片上」的点击。图片自己会消费事件（见下面的触摸处理），
+    // 否则点图想放大时会误关。
+    view.setOnClickListener { dialog.dismiss() }
+    // 图片本身不参与「点背景关闭」，但双击可以关（看图时最顺手的退出动作之一）。
+    image.setOnClickListener { dialog.dismiss() }
 
     com.bumptech.glide.Glide.with(image)
         .load(bytes)
         .signature(com.bumptech.glide.signature.ObjectKey(cacheKey))
         .into(image)
 
-    // 缩放 + 拖动。matrix 变换直接作用在 ImageView 上。
+    // ---- 缩放与拖动 ----
+    //
+    // 矩阵必须建立在 ImageView 的**基准变换**之上（即 scaleType=fitCenter 算出的那个），
+    // 否则会丢掉「图片已被缩到屏幕内」这个前提：原先的 `matrix.setScale(scale, scale)`
+    // 从空矩阵开始设 1x，等于把图按**原始像素**铺开——一张 724×1568 的截图在 1080 宽的屏上
+    // 立刻超出屏幕，用户看到的就是「太大且没有边距」。实测反馈正是如此。
+    //
+    // 另外缩放要以**手指中心**为支点，而不是固定左上角；否则放大时内容会朝右下跑，
+    // 想看的细节反而移出屏幕。
     val matrix = android.graphics.Matrix()
-    var scale = 1f
-    var lastX = 0f
-    var lastY = 0f
+    var baseCaptured = false
     val scaleDetector =
         android.view.ScaleGestureDetector(
             context,
             object : android.view.ScaleGestureDetector.SimpleOnScaleGestureListener() {
+              override fun onScaleBegin(detector: android.view.ScaleGestureDetector): Boolean {
+                // 首次手势时抓取基准矩阵：此时 fitCenter 已经算好，图片正好铺满可视区。
+                if (!baseCaptured) {
+                  matrix.set(image.imageMatrix)
+                  baseCaptured = true
+                }
+                return true
+              }
+
               override fun onScale(detector: android.view.ScaleGestureDetector): Boolean {
                 // 上限 8x：再放大只会看到像素块，没有信息增益。
-                scale = (scale * detector.scaleFactor).coerceIn(1f, 8f)
-                matrix.setScale(scale, scale)
+                // 下限 1x：相对**基准**的 1x（即整图可见），不是原始像素的 1x。
+                val factor = detector.scaleFactor
+                // 以手势中心为支点缩放：先把该点作为矩阵的缩放中心。
+                matrix.postScale(factor, factor, detector.focusX, detector.focusY)
                 image.imageMatrix = matrix
                 return true
               }
             })
 
+    var lastX = 0f
+    var lastY = 0f
     image.setOnTouchListener { v, event ->
       scaleDetector.onTouchEvent(event)
       when (event.actionMasked) {
@@ -204,15 +231,13 @@ object ToolResultImageSupport {
           true
         }
         android.view.MotionEvent.ACTION_MOVE -> {
-          if (scale > 1f) {
-            // 只有放大后才平移：未放大时拖动没有意义，反而会让图片跑出屏幕。
-            val dx = event.rawX - lastX
-            val dy = event.rawY - lastY
-            lastX = event.rawX
-            lastY = event.rawY
-            matrix.postTranslate(dx, dy)
+          // 双指时交给 ScaleGestureDetector，不要同时平移：两者一起作用会让图片乱跳。
+          if (!scaleDetector.isInProgress) {
+            matrix.postTranslate(event.rawX - lastX, event.rawY - lastY)
             image.imageMatrix = matrix
           }
+          lastX = event.rawX
+          lastY = event.rawY
           true
         }
         else -> v.onTouchEvent(event)
