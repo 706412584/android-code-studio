@@ -32,7 +32,10 @@ plugins {
   alias(libs.plugins.protobuf) apply false
   alias(libs.plugins.benchmark) apply false
   id("org.jetbrains.kotlin.plugin.serialization") version "1.9.10" apply false
-  
+  // Compose 编译器插件。版本必须与 Kotlin 一致（libs.versions.toml 的 kotlin = 2.1.0），
+  // 否则编译器会报版本不匹配。子模块用不带版本的 `id(...)` 引用此处声明的插件。
+  // 版本号写字面量：plugins {} 块里访问不到版本目录的 libs。
+  id("org.jetbrains.kotlin.plugin.compose") version "2.1.0" apply false
 }
 
 buildscript {

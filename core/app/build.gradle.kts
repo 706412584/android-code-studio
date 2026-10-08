@@ -31,6 +31,9 @@ plugins {
   id("kotlin-parcelize")
   id("androidx.navigation.safeargs.kotlin")
   id("com.tom.rv2ide.desugaring")
+  // Compose 编译器插件。Kotlin 2.x 起它由官方插件提供，版本必须与 Kotlin 一致
+  // （由根项目的 kotlin 版本目录统一约束），不再需要 composeOptions.kotlinCompilerExtensionVersion。
+  id("org.jetbrains.kotlin.plugin.compose")
 }
 
 apply { plugin(AndroidIDEAssetsPlugin::class.java) }
@@ -110,6 +113,9 @@ android {
   buildFeatures {
     aidl = true
     dataBinding = true
+    // Compose 只用于 AI 助手的消息渲染层（ComposeView 嵌进现有 View 树），
+    // 不替换现有 XML/View 体系——两者并存，避免一次性重写整个界面。
+    compose = true
   }
 
   buildTypes {
@@ -203,6 +209,21 @@ dependencies {
   implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.0")
   implementation("org.tukaani:xz:1.9")
   implementation("org.apache.commons:commons-compress:1.21")
+
+  // ---- Jetpack Compose（仅 AI 助手消息渲染层用，见 buildFeatures.compose 的说明）----
+  // 不引 BOM：BOM 只做版本对齐，而这里依赖面窄（6 个 artifact），
+  // 显式写版本更可控，也避免多一个需要联网解析的平台约束。
+  implementation("androidx.compose.runtime:runtime:1.7.6")
+  implementation("androidx.compose.foundation:foundation:1.7.6")
+  implementation("androidx.compose.ui:ui:1.7.6")
+  implementation("androidx.compose.material3:material3:1.3.1")
+  // ComposeView 嵌入现有 View 树所需（ComposeView 本身在 ui 里，但 Activity 集成在此）
+  implementation("androidx.activity:activity-compose:1.9.3")
+  // 图标：Aharou 组件引用的是第三方库 compose.icons.FeatherIcons，而它不在本地缓存、离线拉不到，
+  // 故用 Material Icons 做等价替换（映射表见 compose/icons/FeatherIcons.kt）。
+  // 版本只能是 1.7.8——缓存里 material-icons-extended 仅此一版；它只要求 ui 1.6.0，
+  // 不会把上面的 ui 顶到本地没有的 1.7.8，因此与 1.7.6 共存是安全的。
+  implementation("androidx.compose.material:material-icons-extended:1.7.8")
 
   // external deps here
   implementation("com.github.Dimezis:BlurView:version-3.2.0")
