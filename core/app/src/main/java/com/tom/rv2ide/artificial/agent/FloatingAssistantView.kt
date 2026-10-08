@@ -383,6 +383,11 @@ class FloatingAssistantView(
           askDangerousToolOnMain(toolName, args)
         }
     )
+    orchestrator.settings.setQuestionAsker(
+        AgentToolSettings.QuestionAsker { questions ->
+          askUserQuestionsOnMain(questions)
+        }
+    )
     // 上下文用量回主线程画圆环。回调来自 agent 循环线程，且每轮都会触发，
     // 因此这里只做一次「写两个字段 + invalidate」。
     orchestrator.setContextUsageListener { used, total ->
@@ -2934,6 +2939,37 @@ class FloatingAssistantView(
         }
     latch.await(120, java.util.concurrent.TimeUnit.SECONDS)
     return accepted
+  }
+
+  private fun askUserQuestionsOnMain(
+      questions: List<com.tom.rv2ide.ai.tool.ToolSettingsPort.Question>
+  ): List<String>? {
+    if (android.os.Looper.myLooper() == android.os.Looper.getMainLooper()) {
+      return null
+    }
+    val latch = java.util.concurrent.CountDownLatch(1)
+    var result: List<String>? = null
+    android.os.Handler(android.os.Looper.getMainLooper())
+        .post {
+          try {
+            host.dialogs.showUserQuestions(
+                questions,
+                { answers ->
+                  result = answers
+                  latch.countDown()
+                },
+                {
+                  result = null
+                  latch.countDown()
+                },
+            )
+          } catch (e: Exception) {
+            latch.countDown()
+          }
+        }
+    // 用户看题并作答可能需要较长时间，给 180 秒超时。
+    latch.await(180, java.util.concurrent.TimeUnit.SECONDS)
+    return result
   }
 
   /**

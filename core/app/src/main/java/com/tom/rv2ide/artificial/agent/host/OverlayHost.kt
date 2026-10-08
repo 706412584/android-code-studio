@@ -183,6 +183,88 @@ private class OverlayDialogs(
     dialog.show()
   }
 
+  override fun showUserQuestions(
+      questions: List<com.tom.rv2ide.ai.tool.ToolSettingsPort.Question>,
+      onAnswer: (List<String>) -> Unit,
+      onCancel: () -> Unit,
+  ) {
+    if (questions.isEmpty()) {
+      onCancel()
+      return
+    }
+    val answers = mutableListOf<String>()
+    fun askNext(index: Int) {
+      if (index >= questions.size) {
+        onAnswer(answers)
+        return
+      }
+      val q = questions[index]
+      val optionsWithOther = q.options.toMutableList().apply {
+        add(themed.getString(string.ai_assistant_question_other))
+      }
+      val optionsArray = optionsWithOther.toTypedArray()
+
+      if (q.multiSelect) {
+        val checked = BooleanArray(optionsArray.size)
+        val dialog =
+            AlertDialog.Builder(themed)
+                .setTitle(q.header.ifBlank { themed.getString(string.ai_assistant_question_title) })
+                .setMessage(q.question)
+                .setMultiChoiceItems(optionsArray, checked) { _, which, isChecked ->
+                  checked[which] = isChecked
+                }
+                .setPositiveButton(string.ai_assistant_question_submit) { _, _ ->
+                  val selected = optionsArray.filterIndexed { i, _ -> checked[i] }
+                  answers.add(selected.joinToString(","))
+                  askNext(index + 1)
+                }
+                .setNegativeButton(android.R.string.cancel) { _, _ -> onCancel() }
+                .setOnCancelListener { onCancel() }
+                .create()
+        applyOverlayType(dialog)
+        dialog.show()
+      } else {
+        var selectedIndex = 0
+        val dialog =
+            AlertDialog.Builder(themed)
+                .setTitle(q.header.ifBlank { themed.getString(string.ai_assistant_question_title) })
+                .setMessage(q.question)
+                .setSingleChoiceItems(optionsArray, selectedIndex) { _, which ->
+                  selectedIndex = which
+                }
+                .setPositiveButton(string.ai_assistant_question_submit) { _, _ ->
+                  if (selectedIndex == optionsArray.size - 1) {
+                    val input = android.widget.EditText(themed).apply {
+                      hint = themed.getString(string.ai_assistant_question_other_hint)
+                    }
+                    val inputDialog =
+                        AlertDialog.Builder(themed)
+                            .setTitle(q.question)
+                            .setView(input)
+                            .setPositiveButton(string.ai_assistant_question_submit) { _, _ ->
+                              answers.add(input.text.toString().trim())
+                              askNext(index + 1)
+                            }
+                            .setNegativeButton(android.R.string.cancel) { _, _ -> onCancel() }
+                            .setOnCancelListener { onCancel() }
+                            .create()
+                    applyOverlayType(inputDialog)
+                    inputDialog.show()
+                  } else {
+                    answers.add(optionsArray[selectedIndex])
+                    askNext(index + 1)
+                  }
+                }
+                .setNegativeButton(android.R.string.cancel) { _, _ -> onCancel() }
+                .setOnCancelListener { onCancel() }
+                .create()
+        applyOverlayType(dialog)
+        dialog.show()
+      }
+    }
+    askNext(0)
+  }
+
   override fun showModelPicker(onChanged: () -> Unit) {
     // overlay 下 BottomSheetDialog 不可用，降级为普通 Dialog；window type 由
     // configureWindow 钩子在 show() 前设置。设置入口仍交回本宿主，保证落点一致。

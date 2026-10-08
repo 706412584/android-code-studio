@@ -86,8 +86,23 @@ public final class AgentToolSettings implements ToolSettingsPort {
     boolean confirm(String toolName, String args);
   }
 
+  /** 提问回调，由 UI 层注入（如 FloatingAssistantView 弹窗）。 */
+  public interface QuestionAsker {
+    /**
+     * 就若干道选择题询问用户。可在任意线程调用；实现方负责切到主线程，
+     * 并在用户答复（或取消）后返回。
+     *
+     * @param questions 待问的题目（1-4 道）
+     * @return 答案列表；null 表示取消
+     */
+    java.util.List<String> ask(java.util.List<Question> questions);
+  }
+
   /** 确认闸门；null 表示无法询问用户（后台运行），危险工具将被拒绝。 */
   private volatile DangerousToolConfirmer confirmer;
+
+  /** 提问闸门；null 表示无法询问用户，提问将返回 null。 */
+  private volatile QuestionAsker asker;
 
   /**
    * 各会话「本次运行」已放行的规则键（含该会话内确认过的），按会话 id 分桶。
@@ -117,6 +132,19 @@ public final class AgentToolSettings implements ToolSettingsPort {
 
   public void setDangerousToolConfirmer(DangerousToolConfirmer confirmer) {
     this.confirmer = confirmer;
+  }
+
+  public void setQuestionAsker(QuestionAsker asker) {
+    this.asker = asker;
+  }
+
+  @Override
+  public java.util.List<String> askUserQuestion(java.util.List<Question> questions) {
+    QuestionAsker a = asker;
+    if (a == null) {
+      return null;
+    }
+    return a.ask(questions);
   }
 
   /** 一次新的 agent 运行开始时调用，重置跨会话的确认记忆。 */
