@@ -3060,8 +3060,16 @@ class FloatingAssistantView(
           }
         }
 
+    // 图像查看器需要把「容器路径」解析成宿主文件，故把工作区根包成 FileAccessProvider。
+    // 取不到工作区时传 null：面板仍可显示带 localPath / 内联 base64 的图，
+    // 只有「只有容器路径」的那种图看不了——比整块面板不可用要好。
+    val fileAccess =
+        workspace?.let {
+          com.tom.rv2ide.artificial.agent.compose.compat.HostFileAccessProvider(it)
+        }
     val panel =
-        com.tom.rv2ide.artificial.agent.compose.AssistantComposePanelHost(context, state, callbacks)
+        com.tom.rv2ide.artificial.agent.compose.AssistantComposePanelHost(
+            context, state, callbacks, fileAccess)
     // 插到**索引 0**，而不是 append 到末尾：该 FrameLayout 里还有「无消息时的提示文案」
     // 与「回到底部」按钮，它们必须盖在消息区之上。append 会让消息区排在它们后面，
     // 把提示文案整块遮住——「没有消息」的提示就永远看不见了。

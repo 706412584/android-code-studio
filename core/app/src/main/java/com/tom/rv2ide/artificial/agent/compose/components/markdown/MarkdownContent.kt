@@ -59,6 +59,7 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -99,17 +100,18 @@ import dev.snipme.highlights.model.SyntaxThemes
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import com.tom.rv2ide.resources.R
+import com.tom.rv2ide.R as AppR
 
 // 代码块与行内代码共用字体。
 //
-// Aharou 内置 JetBrains Mono NL（`R.font.jetbrains_mono_nl`）并注明：系统等宽（FontFamily.Monospace）
-// 缺下标字形且不回落，故需内置字体让 ₀-₉ 等下标/上标字符走系统 fallback 正常显示。
+// 为什么必须内置而不是用系统等宽：Aharou 的注释记了原因——系统等宽**缺下标字形且不回落**，
+// 数学公式与代码里的 ₀-₉ 等下标/上标字符会显示成豆腐块。
 //
-// **降级**：ACS 的 `core/app/src/main/res` 下目前**没有任何 font 资源目录**，无法引用该字体，
-// 只能退回系统等宽。代价是正文/代码里的下标字符可能显示为豆腐块。
-// TODO(font): 把 jetbrains_mono_nl.ttf 放入 core/app/src/main/res/font/ 后改回
-//   FontFamily(Font(R.font.jetbrains_mono_nl))  并补 import androidx.compose.ui.text.font.Font
-private val CodeFontFamily = FontFamily.Monospace
+// ACS 本来就有 JetBrains Mono（`core/app/src/main/assets/fonts/jetbrains-mono.ttf`，
+// 供编辑器用），此处把它同时放进 `res/font/` 以便 Compose 按 `R.font` 引用——**同一份字体
+// 文件两处存放**是资源系统的要求：assets 走 `Typeface.createFromAsset`，
+// Compose 的 `Font(R.font.x)` 只认 res/font 下的资源。字节完全相同，不存在版本漂移。
+private val CodeFontFamily = FontFamily(Font(AppR.font.jetbrains_mono))
 
 /** 代码块头部在语言未知时显示的占位文案。TODO(strings): 接入 ACS 字符串资源。 */
 // 代码块无语言标注时的兜底标签；走资源以便随系统语言切换

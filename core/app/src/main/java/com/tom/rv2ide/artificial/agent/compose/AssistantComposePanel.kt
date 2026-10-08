@@ -41,6 +41,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.window.Dialog
+import com.tom.rv2ide.artificial.agent.compose.compat.FileAccessProvider
+import com.tom.rv2ide.artificial.agent.compose.compat.ProvideAcsImageViewer
+import com.tom.rv2ide.artificial.agent.compose.compat.ProvideAcsToolOpeners
 import com.tom.rv2ide.artificial.agent.compose.compat.PendingUserQuestion
 import com.tom.rv2ide.artificial.agent.compose.compat.UserQuestionAnswer
 import com.tom.rv2ide.artificial.agent.compose.components.bubbles.AgentMessageItem
@@ -156,6 +159,8 @@ internal fun AssistantComposePanel(
     callbacks: AssistantPanelCallbacks,
     darkTheme: Boolean,
     modifier: Modifier = Modifier,
+    /** 容器路径解析用；透传给图像查看器（容器路径→本地文件需要它）。 */
+    fileAccess: FileAccessProvider? = null,
     /** 待答的询问；非 null 时弹出对话框。由宿主驱动（见 [AssistantComposePanelHost.askQuestion]）。 */
     question: PendingUserQuestion? = null,
     /**
@@ -168,6 +173,27 @@ internal fun AssistantComposePanel(
      *   把取消也塞成空列表会让模型把「用户没答」当成「用户选了空」继续往下做。
      */
     onQuestionDone: (UserQuestionAnswer?) -> Unit = {},
+) {
+  // 把两个 compat 提供的「宿主能力」包在面板外层。**必须在组件树内、消息渲染之外**：
+  //   - ProvideAcsImageViewer：消息里的图片点击走它 → ACS 已有的 ToolResultImageSupport
+  //     灯箱。不包的话 LocalImageViewer 保持空实现，点图片**静默无反应**（不报错、
+  //     也不崩），是最难发现的一类故障。
+  //   - ProvideAcsToolOpeners：浏览器链接交给系统浏览器。不包则入口隐藏。
+  // 两者都由 compat 写好，本层只决定「包不包」——这正是它们设计成可选接线的原因。
+  ProvideAcsImageViewer(fileAccess = fileAccess) {
+    ProvideAcsToolOpeners { PanelContent(state, listState, callbacks, darkTheme, modifier, question, onQuestionDone) }
+  }
+}
+
+@Composable
+private fun PanelContent(
+    state: AssistantMessageState,
+    listState: LazyListState,
+    callbacks: AssistantPanelCallbacks,
+    darkTheme: Boolean,
+    modifier: Modifier,
+    question: PendingUserQuestion?,
+    onQuestionDone: (UserQuestionAnswer?) -> Unit,
 ) {
   AIEditorTheme(darkTheme = darkTheme) {
     // 读一次快照：列表变化时本函数重组，而 LazyColumn 按 key 只重组变化的条目
@@ -185,8 +211,19 @@ internal fun AssistantComposePanel(
       LazyColumn(
           state = listState,
           modifier = Modifier.fillMaxSize(),
-          // 横向留白由宿主布局负责（与 XML 路径一致），这里只补上下边距
-          contentPadding = PaddingValues(vertical = Spacing.sm),
+          // 横向 16dp = XML 路径的留白（`item_assistant_message` 的 paddingStart/End、
+          // `item_tool_call` / `item_tool_group` 的 layout_marginStart/End 都是 16dp）。
+          //
+          // **早先这里写着「横向留白由宿主布局负责」——那是错的**：宿主布局里
+          // `assistantMessages` 所在的 RecyclerView 只有 paddingTop/Bottom=8dp，外层
+          // FrameLayout 也没有横向 padding；XML 路径的留白来自**每个 item 自己**。
+          // 于是 Compose 侧落到默认的 0dp，实测内容左边缘只有 22px（≈8dp 的可见余量），
+          // 而 16dp 在 440dpi 上应是 44px——比 XML 路径少了一半，长文本几乎贴着边框。
+          //
+          // 用 contentPadding 而不是逐条加 margin：内边距属于滚动容器，滚动条与内容一起内缩、
+          // 滚动时不会突然出现空白；逐条 margin 则会让「末条贴底」等行为在条目间不一致。
+          contentPadding =
+              PaddingValues(horizontal = Spacing.lg, vertical = Spacing.sm),
       ) {
         items(items = renderItems, key = { it.key }) { item ->
           when (item) {
@@ -383,6 +420,8 @@ internal class AssistantComposePanelHost(
     context: Context,
     val state: AssistantMessageState,
     callbacks: AssistantPanelCallbacks,
+    /** 容器路径解析用；透传给面板里的图像查看器。null 时容器路径的图看不了（其余仍可看）。 */
+    fileAccess: FileAccessProvider? = null,
 ) {
 
   /**
@@ -443,6 +482,7 @@ internal class AssistantComposePanelHost(
               listState = listState,
               callbacks = callbacks,
               darkTheme = darkTheme,
+              fileAccess = fileAccess,
               question = pendingQuestion.value,
               onQuestionDone = { finishQuestion(it) },
           )
