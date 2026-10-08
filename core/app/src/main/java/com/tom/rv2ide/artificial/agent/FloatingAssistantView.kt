@@ -32,6 +32,8 @@ import androidx.lifecycle.LifecycleCoroutineScope
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.tom.rv2ide.adapters.AssistantMessageAdapter
 import com.tom.rv2ide.adapters.ConversationListAdapter
+import com.tom.rv2ide.artificial.agent.compose.compat.toAnswerList
+import com.tom.rv2ide.artificial.agent.compose.compat.toPendingUserQuestion
 import com.tom.rv2ide.artificial.agent.host.AssistantHost
 import com.tom.rv2ide.artificial.agents.Agents
 import com.tom.rv2ide.databinding.LayoutAiAssistantBinding
@@ -1110,6 +1112,8 @@ class FloatingAssistantView(
     pendingDiffs.clear()
     // 注销 Compose 面板对适配器的数据观察者。适配器是本类的字段、(可能)与其它视图共享
     // orchestrator 的生命周期，不注销会让它继续持有面板的 mutableStateOf 与消息快照。
+    // 未决提问同样要收尾，否则提问方一直等到超时（见 uninstallComposePanel）。
+    composePanel?.cancelPendingQuestion()
     composePanel?.state?.dispose()
     composePanel = null
   }
@@ -3097,6 +3101,9 @@ class FloatingAssistantView(
    */
   private fun uninstallComposePanel() {
     val panel = composePanel ?: return
+    // 先收尾未决提问：提问方在另一线程用 latch 等答案，面板一拆就再没人能回答它，
+    // 只能白等到 180 秒超时。这里主动以「取消」结束它。
+    panel.cancelPendingQuestion()
     panel.state.dispose()
     (panel.view.parent as? android.view.ViewGroup)?.removeView(panel.view)
     binding.assistantMessages.visibility = android.view.View.VISIBLE
@@ -3339,17 +3346,30 @@ class FloatingAssistantView(
     android.os.Handler(android.os.Looper.getMainLooper())
         .post {
           try {
-            host.dialogs.showUserQuestions(
-                questions,
-                { answers ->
-                  result = answers
-                  latch.countDown()
-                },
-                {
-                  result = null
-                  latch.countDown()
-                },
-            )
+            // Compose 路径开着时由面板弹对话框，否则走既有的 XML 弹窗。两条路都在**已解析出
+            // 答案**后回调同一个 lambda，所以下面的等待与超时逻辑对两者一视同仁。
+            val panel = composePanel
+            if (panel != null) {
+              panel.askQuestion(
+                  questions.toPendingUserQuestion(id = "ask-" + System.nanoTime()),
+                  { answer ->
+                    result = answer?.toAnswerList()
+                    latch.countDown()
+                  },
+              )
+            } else {
+              host.dialogs.showUserQuestions(
+                  questions,
+                  { answers ->
+                    result = answers
+                    latch.countDown()
+                  },
+                  {
+                    result = null
+                    latch.countDown()
+                  },
+              )
+            }
           } catch (e: Exception) {
             latch.countDown()
           }

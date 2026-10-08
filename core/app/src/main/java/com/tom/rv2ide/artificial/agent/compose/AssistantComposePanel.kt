@@ -28,21 +28,29 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.window.Dialog
+import com.tom.rv2ide.artificial.agent.compose.compat.PendingUserQuestion
+import com.tom.rv2ide.artificial.agent.compose.compat.UserQuestionAnswer
 import com.tom.rv2ide.artificial.agent.compose.components.bubbles.AgentMessageItem
+import com.tom.rv2ide.artificial.agent.compose.components.tools.AskUserQuestionPanel
 import com.tom.rv2ide.artificial.agent.compose.components.tools.ToolCallGroupHeader
 import com.tom.rv2ide.artificial.agent.compose.model.AgentUIMessage
 import com.tom.rv2ide.artificial.agent.compose.model.MessageRole
 import com.tom.rv2ide.artificial.agent.compose.model.ToolRunStatus
 import com.tom.rv2ide.artificial.agent.compose.theme.AIEditorTheme
+import com.tom.rv2ide.artificial.agent.compose.theme.Radius
 import com.tom.rv2ide.artificial.agent.compose.theme.Spacing
 import com.tom.rv2ide.resources.R
 import kotlinx.coroutines.CoroutineScope
@@ -148,6 +156,18 @@ internal fun AssistantComposePanel(
     callbacks: AssistantPanelCallbacks,
     darkTheme: Boolean,
     modifier: Modifier = Modifier,
+    /** 待答的询问；非 null 时弹出对话框。由宿主驱动（见 [AssistantComposePanelHost.askQuestion]）。 */
+    question: PendingUserQuestion? = null,
+    /**
+     * 询问的结局。
+     *
+     * <p>三种取值对应 ACS 工具侧的三条不同分支，不能合并：
+     * - 有答案 → 工具报告用户的选择
+     * - 空列表（用户点「补充」）→ 工具对每题报「（未作答）」
+     * - **null（用户取消）→ 工具报「用户没有回答」，并明确要求模型不要擅自假定答案**。
+     *   把取消也塞成空列表会让模型把「用户没答」当成「用户选了空」继续往下做。
+     */
+    onQuestionDone: (UserQuestionAnswer?) -> Unit = {},
 ) {
   AIEditorTheme(darkTheme = darkTheme) {
     // 读一次快照：列表变化时本函数重组，而 LazyColumn 按 key 只重组变化的条目
@@ -177,6 +197,29 @@ internal fun AssistantComposePanel(
                     callbacks = callbacks,
                 )
             is RenderItem.Group -> ToolGroupRow(item, callbacks)
+          }
+        }
+      }
+
+      // 询问对话框。用 Compose 的 Dialog 而不是把它当成列表里的一项：提问是**模态**的
+      // ——工具调用在等服务端答案（`askUserQuestion` 是阻塞式端口），答案必须先于后续内容
+      // 出现。作为列表项会被滚走，用户就再也看不到问题了。
+      if (question != null) {
+        Dialog(onDismissRequest = { onQuestionDone(null) }) {
+          Surface(
+              shape = RoundedCornerShape(Radius.lg),
+              color = MaterialTheme.colorScheme.surface,
+          ) {
+            AskUserQuestionPanel(
+                question = question,
+                // 答案的转换（多选逗号连接、自定义文本优先）由 compat 的 toAnswerList 负责，
+                // 这里只做「谁触发」的分发，不重新发明格式。
+                onConfirm = { onQuestionDone(it) },
+                // 「补充」= 用户不在预设里选，要对每题报「未作答」（空列表）。
+                // **不能用 null**：那是「取消」，工具会据此要求模型不要假定答案，
+                // 而用户点「补充」表达的恰恰是「我要自己说」。
+                onSkip = { onQuestionDone(UserQuestionAnswer(emptyList())) },
+            )
           }
         }
       }
@@ -353,6 +396,45 @@ internal class AssistantComposePanelHost(
 
   val listState = LazyListState()
 
+  /**
+   * 当前待答的询问；null 表示没有。作为 [mutableStateOf] 而非普通字段：它是 Compose 的输入，
+   * 赋值要触发重组才会弹出对话框。
+   */
+  private val pendingQuestion = mutableStateOf<PendingUserQuestion?>(null)
+
+  /** 作答回传口。同一时刻只可能有一个提问在等（`askUserQuestion` 是阻塞式端口）。 */
+  private var questionSink: ((UserQuestionAnswer?) -> Unit)? = null
+
+  /**
+   * 弹出询问并等待作答。
+   *
+   * <p><b>为什么由面板承接</b>：`askUserQuestion` 是阻塞式端口（调用方用 latch 等答案），
+   * 而 Compose 的组合是异步的——只能先记下「有提问在等」，等用户在对话框上点完再回调。
+   * 调用方（[com.tom.rv2ide.artificial.agent.FloatingAssistantView]）负责这一等的超时。
+   *
+   * <p><b>必须回主线程调用</b>：内部改的是 Compose 状态。
+   *
+   * @param onDone 答案；null 表示用户取消
+   */
+  fun askQuestion(question: PendingUserQuestion, onDone: (UserQuestionAnswer?) -> Unit) {
+    questionSink = onDone
+    pendingQuestion.value = question
+  }
+
+  /** 面板销毁时把未决提问收尾，避免调用方一直等到超时。 */
+  fun cancelPendingQuestion() {
+    finishQuestion(null)
+  }
+
+  private fun finishQuestion(answer: UserQuestionAnswer?) {
+    val sink = questionSink ?: return
+    // 先清状态再回调：回调方可能立刻发起下一个提问（模型连续问两轮），
+    // 顺序反了会被本函数末尾的清理抹掉。
+    questionSink = null
+    pendingQuestion.value = null
+    sink(answer)
+  }
+
   val view: ComposeView =
       ComposeView(context).apply {
         setContent {
@@ -361,6 +443,8 @@ internal class AssistantComposePanelHost(
               listState = listState,
               callbacks = callbacks,
               darkTheme = darkTheme,
+              question = pendingQuestion.value,
+              onQuestionDone = { finishQuestion(it) },
           )
         }
       }
