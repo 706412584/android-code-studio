@@ -74,6 +74,18 @@ interface FileAccessProvider {
    * 需要喂 `BitmapFactory` 的能力（缩略图、Markdown 内嵌图）都走这个方法拿本地路径。
    */
   fun copyToLocal(path: String): File
+
+  /**
+   * 递归列出目录下的相对路径（波次 3 的 WorkspaceSearchEngine 需要的三件套之一）。
+   * 返回相对于 [path] 的路径列表，跳过 `.git` 由调用方负责（与 Aharou 语义一致）。
+   */
+  fun listFilesRecursive(path: String, maxDepth: Int): List<String>
+
+  /** 文件体积（字节）；不存在或不可读返回 0。 */
+  fun fileSize(path: String): Long
+
+  /** 逐行读取文本文件；失败返回 null（调用方按"读不到"处理，与 Aharou 的回退路径一致）。 */
+  fun readLines(path: String): List<String>?
 }
 
 /**
@@ -116,6 +128,33 @@ class HostFileAccessProvider(private val root: File) : FileAccessProvider {
   }
 
   override fun copyToLocal(path: String): File = resolve(path)
+
+  override fun listFilesRecursive(path: String, maxDepth: Int): List<String> {
+    val root = resolve(path)
+    if (!root.isDirectory) return emptyList()
+    val out = mutableListOf<String>()
+    fun walk(dir: File, prefix: String, depth: Int) {
+      if (depth > maxDepth) return
+      val children = dir.listFiles() ?: return
+      for (child in children.sortedBy { it.name }) {
+        val rel = if (prefix.isEmpty()) child.name else "$prefix/${child.name}"
+        if (child.isDirectory) {
+          if (child.name == ".git") continue
+          out += rel
+          walk(child, rel, depth + 1)
+        } else {
+          out += rel
+        }
+      }
+    }
+    walk(root, "", 1)
+    return out
+  }
+
+  override fun fileSize(path: String): Long = resolve(path).takeIf { it.isFile }?.length() ?: 0L
+
+  override fun readLines(path: String): List<String>? =
+      runCatching { resolve(path).takeIf { it.isFile }?.readLines() }.getOrNull()
 
   /**
    * 容器路径 → 宿主 [File]。
