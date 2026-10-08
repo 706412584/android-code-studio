@@ -177,6 +177,16 @@ class FloatingAssistantView(
   private val settings = AgentToolSettings(context)
 
   /**
+   * Compose 渲染路径的面板；为 null 时消息区走 [adapter] + RecyclerView（XML 路径）。
+   *
+   * <p>两条路径**并存**而不是替换：Compose 侧组件尚未真机验证，作为回退必须能随时切回来。
+   * 是否启用由 [com.tom.rv2ide.artificial.agent.compose.AssistantComposeRender] 决定，
+   * 默认关闭。两者共用同一个 [adapter] 作为数据源——Compose 读它的快照、写它的展开态，
+   * 因此切换路径不会丢消息，也不会出现两份互不同步的对话。
+   */
+  private var composePanel: com.tom.rv2ide.artificial.agent.compose.AssistantComposePanelHost? = null
+
+  /**
    * 输入区的附加功能：模型槽位 / 附件 / 推理强度。
    *
    * <p>拆成独立对象而不是继续堆在本类里：本类已 1400 余行，主体职责是消息列表与运行循环；
@@ -571,6 +581,12 @@ class FloatingAssistantView(
     val registry = orchestrator.buildRegistry(false, null)
     adapter.setCategoryResolver { toolName ->
         registry.getCachedDisplayCategory(com.tom.rv2ide.ai.tool.ToolRegistry.canonicalName(toolName))
+    }
+
+    // Compose 渲染路径（并存开关，默认关）。接在适配器配置之后：面板要读适配器快照，
+    // 且回滚/菜单回调都落在本类已有方法上，早于此处装上会拿到未配置完的适配器。
+    if (com.tom.rv2ide.artificial.agent.compose.AssistantComposeRender.isEnabled(context)) {
+      installComposePanel()
     }
 
     // 不设 OnClickListener：拖动用的 OnTouchListener 会消费全部事件，click 永远不会触发。
@@ -1084,6 +1100,10 @@ class FloatingAssistantView(
     // 不清理虽然随本视图一起被回收（不是进程级泄漏），但留着会让「这个会话还有
     // 待汇总改动」这个判断在别处读到陈旧数据。
     pendingDiffs.clear()
+    // 注销 Compose 面板对适配器的数据观察者。适配器是本类的字段、(可能)与其它视图共享
+    // orchestrator 的生命周期，不注销会让它继续持有面板的 mutableStateOf 与消息快照。
+    composePanel?.state?.dispose()
+    composePanel = null
   }
 
   /**
@@ -2967,12 +2987,77 @@ class FloatingAssistantView(
 
   private fun scrollToBottom() {
     updateEmptyState()
+    val panel = composePanel
+    if (panel != null) {
+      panel.scrollToBottom(lifecycleScope)
+      return
+    }
     binding.assistantMessages.post {
       val count = adapter.itemCount
       if (count > 0) {
         binding.assistantMessages.scrollToPosition(count - 1)
       }
     }
+  }
+
+  /**
+   * 装上 Compose 渲染路径，并把 XML 路径的消息列表收起来。
+   *
+   * <p>ComposeView 由代码加进 `assistantMessages` 所在的 FrameLayout，而不是写进
+   * `layout_ai_assistant.xml`：**两条路径必须占据同一个位置**，写进布局会让「哪个可见」
+   * 这件事分散在两处（布局里的 visibility 与代码里的 visibility），关掉开关时容易漏改一处，
+   * 表现为两块消息区上下叠着。加在同一个父容器里，切换只需动一个 visibility。
+   *
+   * <p>XML 列表是隐藏而非移除：ConversationListAdapter 与滚动位置等都挂在它上面，移除后
+   * 再切回来要全部重建；隐藏则两条路径随时可切。
+   */
+  private fun installComposePanel() {
+    val container = binding.assistantMessages.parent as? android.view.ViewGroup ?: return
+    val state = com.tom.rv2ide.artificial.agent.compose.AssistantMessageState(adapter)
+    val callbacks =
+        object : com.tom.rv2ide.artificial.agent.compose.AssistantPanelCallbacks {
+          override fun onToggleExpanded(messageId: Long) {
+            // 展开态存在适配器数据里，且三种可展开条目（工具卡 / 推理块 / 差异卡）各有自己的
+            // 翻转方法。这里按 id 逐个调用，找不到对应类型的会各自静默跳过——
+            // 与 revertDiff 同时调 markReverted + markDiffReverted 是同一个套路，
+            // 好处是面板不必知道这条消息属于哪一种（那是映射层的知识）。
+            adapter.toggleExpanded(messageId)
+            adapter.toggleThinkingExpanded(messageId)
+            adapter.toggleDiffExpanded(messageId)
+          }
+
+          override fun onRevert(messageId: Long, diffId: String) {
+            // 完全复用 XML 路径的回滚实现：工作区校验、IO 线程执行、结果提示、
+            // 标记已撤销后禁用按钮，全部同一套行为。
+            revertDiff(messageId, diffId)
+          }
+
+          override fun onMoreClick(messageId: Long) {
+            // 复用既有的长按菜单（复制原文/纯文、引用提问）。菜单的锚点需要 View，
+            // Compose 没有对应的锚点概念，传面板自身的 ComposeView——
+            // 弹出位置锚在面板上，与 XML 路径锚在条目上的观感一致。
+            val message = adapter.find(messageId) ?: return
+            val anchor = composePanel?.view ?: return
+            showMessageActionsMenu(message, anchor)
+          }
+        }
+
+    val panel =
+        com.tom.rv2ide.artificial.agent.compose.AssistantComposePanelHost(context, state, callbacks)
+    // 插到**索引 0**，而不是 append 到末尾：该 FrameLayout 里还有「无消息时的提示文案」
+    // 与「回到底部」按钮，它们必须盖在消息区之上。append 会让消息区排在它们后面，
+    // 把提示文案整块遮住——「没有消息」的提示就永远看不见了。
+    // 插到 0 同时也在 RecyclerView（已 GONE）之下，层级与 XML 路径一致。
+    container.addView(
+        panel.view,
+        0,
+        android.widget.FrameLayout.LayoutParams(
+            android.view.ViewGroup.LayoutParams.MATCH_PARENT,
+            android.view.ViewGroup.LayoutParams.MATCH_PARENT,
+        ),
+    )
+    binding.assistantMessages.visibility = android.view.View.GONE
+    composePanel = panel
   }
 
   private fun updateEmptyState() {
