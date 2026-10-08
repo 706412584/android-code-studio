@@ -65,6 +65,8 @@
   <string name="ai_agent_auto_switch_summary">Automatically switch provider on errors</string>
   <string name="ai_agent_code_completion">Code Completion</string>
   <string name="ai_agent_code_completion_summary">Enable AI-powered code suggestions</string>
+  <string name="ai_agent_compose_render">Compose Message Rendering</string>
+  <string name="ai_agent_compose_render_summary">Render assistant messages with the new Compose UI. Turn off to use the classic list.</string>
   <string name="ai_agent_description">Get AI-powered code generation using AI Agent</string>
   <string name="ai_agent_prompt_hint">Describe what code you want to generate...</string>
   <string name="ai_agent_send">Send</string>

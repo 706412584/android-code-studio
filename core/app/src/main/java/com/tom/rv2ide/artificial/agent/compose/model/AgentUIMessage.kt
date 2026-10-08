@@ -122,6 +122,26 @@ data class AgentUIMessage(
      * 进一步弱化样式用。
      */
     val isTrace: Boolean = false,
+    /**
+     * 所属分组（ACS 的 `ToolGroup`）的稳定标识；null 表示不属于任何组，独立成行。
+     *
+     * <p><b>为什么要把组信息带到模型里，而不是让渲染层按"连续性"自行分组</b>：ACS 的成组规则
+     * 不是单纯的"相邻即合并"——它由 `ToolGrouping.decide` 决定，且**子 agent 类工具
+     * （`agent` / `agent_pipeline` / `agent_output`）必须独立**（它们带 `steps`，折进组里那串
+     * 步骤就没有展示位了），而推理块能否并入又取决于"前一项是否已经是组"。让渲染层重新推断
+     * 这套规则等于把同一个判定实现两遍，两边一旦不一致就会出现"XML 里是一组、Compose 里是两行"
+     * 这类只有肉眼能发现的差异。因此映射层直接把适配器已经算好的分组结果带过来。
+     *
+     * <p>同一组的条目在列表里必然连续（适配器的组装顺序保证），渲染层按本字段聚合即可。
+     */
+    val groupId: String? = null,
+    /**
+     * 所属分组是否展开。仅 [groupId] 非空时有意义。
+     *
+     * <p>取自 `ToolGroup.pinnedExpanded`——即**用户手动开关过的意图**；用户没动过时该值为 null，
+     * 映射层按"默认收起"处理（与组头组件的文档一致：默认收起，运行中也不自动弹开）。
+     */
+    val groupExpanded: Boolean = false,
 )
 
 /** 消息角色。取值与 Aharou 的 `MessageRole` 一致。 */

@@ -160,7 +160,16 @@ class FloatingAssistantView(
 
   private val uiStyleListener =
       android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
-        if (key == null || key !in uiStyleKeys) {
+        if (key == null) {
+          return@OnSharedPreferenceChangeListener
+        }
+        // 渲染路径的开关单独处理：它要的是「装/卸 Compose 面板」，不是下面那种重绑。
+        // 混进重绑分支只会刷新一遍列表，路径依旧不变——表现为「开关点了没反应」。
+        if (key == com.tom.rv2ide.artificial.agent.compose.AssistantComposeRender.KEY_ENABLED) {
+          binding.root.post { applyComposeRenderPath() }
+          return@OnSharedPreferenceChangeListener
+        }
+        if (key !in uiStyleKeys) {
           return@OnSharedPreferenceChangeListener
         }
         // 回调来自写入线程（设置页主线程），但保守起见投递到主线程再碰控件——
@@ -585,9 +594,8 @@ class FloatingAssistantView(
 
     // Compose 渲染路径（并存开关，默认关）。接在适配器配置之后：面板要读适配器快照，
     // 且回滚/菜单回调都落在本类已有方法上，早于此处装上会拿到未配置完的适配器。
-    if (com.tom.rv2ide.artificial.agent.compose.AssistantComposeRender.isEnabled(context)) {
-      installComposePanel()
-    }
+    // 与偏好变更走同一个入口，避免「初装」与「改开关」两条路径的判定逻辑分叉。
+    applyComposeRenderPath()
 
     // 不设 OnClickListener：拖动用的 OnTouchListener 会消费全部事件，click 永远不会触发。
     // 打开面板的动作用 ACTION_UP 且未进入拖动时手动调用 open()（见 setUpDragging）。
@@ -3026,6 +3034,12 @@ class FloatingAssistantView(
             adapter.toggleDiffExpanded(messageId)
           }
 
+          override fun onToggleGroup(groupId: Long, currentlyCollapsed: Boolean) {
+            // 组的展开意图存在 ToolGroup.pinnedExpanded，与单条消息的展开态是两套状态，
+            // 因此必须走 toggleGroupExpanded 而不是 onToggleExpanded 那三种翻转。
+            adapter.toggleGroupExpanded(groupId, currentlyCollapsed)
+          }
+
           override fun onRevert(messageId: Long, diffId: String) {
             // 完全复用 XML 路径的回滚实现：工作区校验、IO 线程执行、结果提示、
             // 标记已撤销后禁用按钮，全部同一套行为。
@@ -3058,6 +3072,35 @@ class FloatingAssistantView(
     )
     binding.assistantMessages.visibility = android.view.View.GONE
     composePanel = panel
+  }
+
+  /**
+   * 按当前偏好装或卸 Compose 渲染路径。
+   *
+   * <p>设置页改完开关后**立刻**生效：否则用户点了开关、回到面板却毫无变化，只能靠重启面板
+   * 或重开 App 才看到效果——那等于让用户怀疑开关坏了。两条路径共用同一个 [adapter]，
+   * 装卸都不会丢消息（Compose 读它的快照、写它的展开态）。
+   */
+  private fun applyComposeRenderPath() {
+    val want = com.tom.rv2ide.artificial.agent.compose.AssistantComposeRender.isEnabled(context)
+    when {
+      want && composePanel == null -> installComposePanel()
+      !want && composePanel != null -> uninstallComposePanel()
+    }
+  }
+
+  /**
+   * 卸下 Compose 渲染路径，恢复 XML 列表。
+   *
+   * <p>顺序要紧：先 `dispose()` 再移除视图。反过来的话，视图已 detach 而观察者仍挂在适配器上，
+   * 期间若有消息更新会往一个已无宿主的 state 里写，白做一次映射。
+   */
+  private fun uninstallComposePanel() {
+    val panel = composePanel ?: return
+    panel.state.dispose()
+    (panel.view.parent as? android.view.ViewGroup)?.removeView(panel.view)
+    binding.assistantMessages.visibility = android.view.View.VISIBLE
+    composePanel = null
   }
 
   private fun updateEmptyState() {

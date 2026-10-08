@@ -33,10 +33,15 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.res.stringResource
 import com.tom.rv2ide.artificial.agent.compose.components.bubbles.AgentMessageItem
+import com.tom.rv2ide.artificial.agent.compose.components.tools.ToolCallGroupHeader
+import com.tom.rv2ide.artificial.agent.compose.model.AgentUIMessage
+import com.tom.rv2ide.artificial.agent.compose.model.MessageRole
+import com.tom.rv2ide.artificial.agent.compose.model.ToolRunStatus
 import com.tom.rv2ide.artificial.agent.compose.theme.AIEditorTheme
 import com.tom.rv2ide.artificial.agent.compose.theme.Spacing
 import com.tom.rv2ide.resources.R
@@ -50,25 +55,33 @@ import kotlinx.coroutines.launch
  * 验证（见任务「真机验证 Compose 渲染层」）。默认打开等于让所有用户替我们做验证；默认关闭则
  * 两条路径并存，随时可以切回来，出问题也不影响任何人。
  *
- * <p>开关放在与 [com.tom.rv2ide.artificial.agent.AgentToolSettings] 同一份偏好
- * （`ai_agent_tools`）里，便于将来在 AI 设置屏加一个可见的开关，而不用再挪一次位置。
- * 目前只能通过 adb 切换：
- *
- * ```
- * adb shell run-as com.tom.rv2ide sh -c \
- *   'echo "assistant_compose_render=true" >> \
- *    /data/data/com.tom.rv2ide/shared_prefs/ai_agent_tools.xml'
- * ```
- *
- * <p>换用正式的设置项时，**只改这里**，渲染路径的其它代码不需要感知开关的存在。
+ * <p><b>开关的读写只经过本对象</b>：偏好键与存储位置都收敛在这里，设置界面（见
+ * `preferences/aiAgentPrefExts.kt` 的 Compose 渲染开关）与渲染路径两侧都调 [isEnabled] /
+ * [setEnabled]，不各自持有字符串键。散落两处必然会在改名时漏掉一处，而那个漏掉的一侧
+ * 不会报错——表现只是「开关点了没反应」。
  */
 internal object AssistantComposeRender {
 
   private const val PREFS_NAME = "ai_agent_tools"
-  private const val KEY_ENABLED = "assistant_compose_render"
+
+  /**
+   * 偏好键。
+   *
+   * <p>[FloatingAssistantView] 监听偏好变更以即时装/卸渲染路径，需要按键名过滤——
+   * 同一份偏好文件里还有权限模式、shell 后端等十来个键，不筛会误触发。
+   */
+  const val KEY_ENABLED = "assistant_compose_render"
 
   fun isEnabled(context: Context): Boolean =
       context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).getBoolean(KEY_ENABLED, false)
+
+  fun setEnabled(context: Context, enabled: Boolean) {
+    context
+        .getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        .edit()
+        .putBoolean(KEY_ENABLED, enabled)
+        .apply()
+  }
 }
 
 /**
@@ -95,6 +108,19 @@ internal interface AssistantPanelCallbacks {
 
   /** 长按/更多菜单（复制原文、复制纯文、引用提问等），复用 XML 路径已有的菜单。 */
   fun onMoreClick(messageId: Long)
+
+  /**
+   * 切换一个**工具分组**的展开/折叠。
+   *
+   * <p>组与单条消息是两套不同的状态：单条走 [onToggleExpanded]，组的展开意图存在
+   * `ToolGroup.pinnedExpanded` 上。混用会导致「点组头时把某一条工具卡展开了」——
+   * 组 id 与消息 id 数值上不会撞（都由同一个计数器分配），但语义完全不同。
+   *
+   * @param groupId 组标识，即 `ToolGroup` 条目的 id
+   * @param currentlyCollapsed 该组**当前**是否折叠。宿主据此翻转意图——适配器只提供翻转、
+   *   不提供置位，传目标状态会被当成当前状态，结果正好相反。
+   */
+  fun onToggleGroup(groupId: Long, currentlyCollapsed: Boolean)
 }
 
 /**
@@ -128,6 +154,9 @@ internal fun AssistantComposePanel(
     val messages by state.messages
     // 「挂操作行」只给最新一条助手消息，因此这里算一次，避免在 item 作用域里逐条求末项
     val lastId = messages.lastOrNull()?.id
+    // 按组标识把连续的工具组条目折成一项。映射层已把适配器算好的分组带了过来
+    // （见 AcsMessageMapper 约定 1），这里只做聚合，不重新推断成组规则。
+    val renderItems = remember(messages) { toRenderItems(messages) }
 
     // 刻意不铺背景色：面板底色由宿主的 MaterialCardView（?attr/colorSurface）提供，
     // XML 路径的 RecyclerView 同样没有背景。这里若铺 [MaterialTheme.colorScheme.background]，
@@ -139,42 +168,143 @@ internal fun AssistantComposePanel(
           // 横向留白由宿主布局负责（与 XML 路径一致），这里只补上下边距
           contentPadding = PaddingValues(vertical = Spacing.sm),
       ) {
-        items(items = messages, key = { it.id }) { message ->
-          val id = message.id.toLongOrNull()
-          AgentMessageItem(
-              message = message,
-              showActions = message.id == lastId,
-              // 展开态来自数据（见 AssistantPanelCallbacks.onToggleExpanded）；组件按
-              // 「override == true 才展开」解释，false 与 null 在视觉上同为收起
-              toolExpandedOverride = message.expanded,
-              onToolExpandedChange = { wanted ->
-                // 组件回传的是「目标状态」，适配器提供的是「翻转」，因此仅在真的不同时才翻转：
-                // 无条件翻转会在重复回调（重组导致的重复调用）时把状态翻回去。
-                if (id != null && wanted != message.expanded) {
-                  callbacks.onToggleExpanded(id)
-                }
-              },
-              onMoreClick = { if (id != null) callbacks.onMoreClick(id) },
-              // 推理（思考）块的展开态走同一条通道。映射层为 Thinking 条目填的就是
-              // AgentUIMessage.expanded，所以这里与工具行共用同一个字段与同一个回调——
-              // 宿主的 onToggleExpanded 会依次尝试三种翻转，只有类型匹配的那个生效。
-              reasoningExpandedOverride = message.expanded,
-              onReasoningExpandedChange = { wanted ->
-                if (id != null && wanted != message.expanded) {
-                  callbacks.onToggleExpanded(id)
-                }
-              },
-          )
-          // 回滚入口：移植组件目前没有 diff 撤销的回调（见交付报告），而这是本次必须保住的
-          // 三项交互之一，因此由本层按数据里的 diffId 补一行。数据齐备（diffId / reverted
-          // 都由映射层带到），行为与 XML 路径一致：已撤销则按钮禁用，不再可点。
-          val diffId = message.diffId
-          if (diffId != null && id != null) {
-            RevertRow(reverted = message.reverted) { callbacks.onRevert(id, diffId) }
+        items(items = renderItems, key = { it.key }) { item ->
+          when (item) {
+            is RenderItem.Single ->
+                MessageRow(
+                    message = item.message,
+                    showActions = item.message.id == lastId,
+                    callbacks = callbacks,
+                )
+            is RenderItem.Group -> ToolGroupRow(item, callbacks)
           }
         }
       }
     }
+  }
+}
+
+/**
+ * 一个渲染项：要么是单条消息，要么是一个折叠工具组。
+ *
+ * <p>之所以先聚合成这项再交给 `LazyColumn`，是因为组必须作为一个整体参与列表（一个 key、
+ * 一次可见性判断）；把组头和子项都当独立 item 塞进列表，折叠时就得靠"子项自己知道该隐藏"
+ * 来表达，那会把折叠状态复制到每个子项上，两边必然会不同步。
+ */
+private sealed interface RenderItem {
+  /** 列表 key。组用 `g` 前缀，与消息 id 区分开——两者数值来自同一个计数器，不加前缀会撞 key。 */
+  val key: String
+
+  data class Single(val message: AgentUIMessage) : RenderItem {
+    override val key: String get() = message.id
+  }
+
+  data class Group(
+      val id: String,
+      val expanded: Boolean,
+      val children: List<AgentUIMessage>,
+  ) : RenderItem {
+    override val key: String get() = "g$id"
+  }
+}
+
+/**
+ * 把消息快照聚合成渲染项：`groupId` 相同的连续条目折成一个 [RenderItem.Group]。
+ *
+ * <p>只按标识聚合、不判断"该不该成组"——那是适配器 `ToolGrouping` 的职责，它的规则
+ * （子 agent 工具必须独立、推理块依赖前一项是否已成组）重复实现一遍必然与 XML 路径分叉。
+ */
+private fun toRenderItems(messages: List<AgentUIMessage>): List<RenderItem> {
+  val out = ArrayList<RenderItem>(messages.size)
+  var i = 0
+  while (i < messages.size) {
+    val gid = messages[i].groupId
+    if (gid == null) {
+      out += RenderItem.Single(messages[i])
+      i++
+      continue
+    }
+    var j = i
+    while (j < messages.size && messages[j].groupId == gid) j++
+    out += RenderItem.Group(gid, messages[i].groupExpanded, messages.subList(i, j).toList())
+    i = j
+  }
+  return out
+}
+
+/**
+ * 工具组：折叠态一行「N 次工具调用」，展开态逐个渲染组内条目。
+ *
+ * <p>`count` 只数组内的**工具调用**（推理块不计）：组头说的是"调了几次工具"，
+ * 把推理块算进去会让计数比用户实际感知的调用次数多。与适配器的组摘要是同一口径。
+ */
+@Composable
+private fun ToolGroupRow(item: RenderItem.Group, callbacks: AssistantPanelCallbacks) {
+  val id = item.id.toLongOrNull()
+  androidx.compose.foundation.layout.Column(modifier = Modifier.fillMaxWidth()) {
+    ToolCallGroupHeader(
+        count = item.children.count { it.role == MessageRole.TOOL },
+        // 任一子项还在跑，组头就走高亮：表达「这批调用尚未结束」
+        running = item.children.any { it.toolStatus == ToolRunStatus.RUNNING },
+        expanded = item.expanded,
+        onToggle = {
+          // 传**当前**折叠状态：适配器只提供翻转，传目标状态会翻反。
+          if (id != null) callbacks.onToggleGroup(id, currentlyCollapsed = !item.expanded)
+        },
+    )
+    if (item.expanded) {
+      item.children.forEach { child ->
+        // 组内条目一律不挂操作行：与 XML 一致（组内的行是纯工具行/推理行，
+        // 「复制/更多」只属于整条消息）。
+        MessageRow(message = child, showActions = false, callbacks = callbacks)
+      }
+    }
+  }
+}
+
+/**
+ * 渲染一条消息，并把三处展开态与回滚入口接回宿主。
+ *
+ * <p>抽成一个函数而不是内联在 `when` 分支里：组内条目与独立条目用的是**同一套**接线，
+ * 抄两份必然在后续改动里只改一处。
+ */
+@Composable
+private fun MessageRow(
+    message: AgentUIMessage,
+    showActions: Boolean,
+    callbacks: AssistantPanelCallbacks,
+) {
+  val id = message.id.toLongOrNull()
+  AgentMessageItem(
+      message = message,
+      showActions = showActions,
+      // 展开态来自数据（见 AssistantPanelCallbacks.onToggleExpanded）；组件按
+      // 「override == true 才展开」解释，false 与 null 在视觉上同为收起
+      toolExpandedOverride = message.expanded,
+      onToolExpandedChange = { wanted ->
+        // 组件回传的是「目标状态」，适配器提供的是「翻转」，因此仅在真的不同时才翻转：
+        // 无条件翻转会在重复回调（重组导致的重复调用）时把状态翻回去。
+        if (id != null && wanted != message.expanded) {
+          callbacks.onToggleExpanded(id)
+        }
+      },
+      onMoreClick = { if (id != null) callbacks.onMoreClick(id) },
+      // 推理（思考）块的展开态走同一条通道。映射层为 Thinking 条目填的就是
+      // AgentUIMessage.expanded，所以这里与工具行共用同一个字段与同一个回调——
+      // 宿主的 onToggleExpanded 会依次尝试三种翻转，只有类型匹配的那个生效。
+      reasoningExpandedOverride = message.expanded,
+      onReasoningExpandedChange = { wanted ->
+        if (id != null && wanted != message.expanded) {
+          callbacks.onToggleExpanded(id)
+        }
+      },
+  )
+  // 回滚入口：移植组件没有 diff 撤销的回调，而这是本次必须保住的
+  // 三项交互之一，因此由本层按数据里的 diffId 补一行。数据齐备（diffId / reverted
+  // 都由映射层带到），行为与 XML 路径一致：已撤销则按钮禁用，不再可点。
+  val diffId = message.diffId
+  if (diffId != null && id != null) {
+    RevertRow(reverted = message.reverted) { callbacks.onRevert(id, diffId) }
   }
 }
 

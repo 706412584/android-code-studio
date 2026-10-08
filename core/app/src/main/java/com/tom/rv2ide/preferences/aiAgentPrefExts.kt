@@ -26,6 +26,7 @@ import com.tom.rv2ide.R
 import com.tom.rv2ide.activities.FolderPickerActivity
 import com.tom.rv2ide.ai.agent.ProjectRulesLoader
 import com.tom.rv2ide.artificial.agent.AssistantUiStyleStore
+import com.tom.rv2ide.artificial.agent.compose.AssistantComposeRender
 import com.tom.rv2ide.artificial.agent.ShizukuShellBackend
 import com.tom.rv2ide.artificial.agent.codegraph.CodeGraphInstaller
 import com.tom.rv2ide.artificial.agent.codegraph.CodeGraphManager
@@ -719,6 +720,9 @@ private class AdvancedPage(
     addPreference(AssistantCardScalePreference())
     addPreference(AssistantTextColorPreference())
     addPreference(AssistantAvatarPreference())
+    // 渲染路径紧随外观：两者都是「助手长什么样」的范畴，且它决定外观定制的**作用对象**
+    // （Compose 面板 vs XML 列表），放一起用户才好理解它们的从属关系。
+    addPreference(ComposeRenderSwitch())
     addPreference(PromptTemplatePreference())
     addPreference(AutoSwitchProviderSwitch())
   }
@@ -1964,6 +1968,45 @@ private class AutoSwitchProviderSwitch(
       title = context.getString(R.string.ai_agent_auto_switch)
       summary = context.getString(R.string.ai_agent_auto_switch_summary)
     }
+  }
+}
+
+/**
+ * 助手消息的渲染路径开关（Compose 面板 / XML 列表）。
+ *
+ * <p><b>为什么自绘而不是用本文件的 [SwitchPreference]</b>：那个基类的读写 lambda 不接收
+ * Context（`getValue: () -> Boolean`），只能读全局 `prefManager`；而本开关与权限模式、shell
+ * 后端等一样存在 `ai_agent_tools` 里（[agentPrefs]），拿不到 Context 就写不到正确的位置。
+ * 故直接继承 [BasePreference]：`onCreatePreference` 与 `onPreferenceChanged` 都能拿到
+ * `preference.context`。
+ *
+ * <p><b>读写的键与存储都委托给开关对象本身</b>，不在本文件里写字符串字面量——键散落两处
+ * 时改名必漏一处，而漏掉的那侧不报错，只表现为「开关点了没反应」。
+ *
+ * <p><b>为什么需要它（原本是内测开关）</b>：Compose 渲染路径此前默认关且**只能靠 adb 改偏好**，
+ * 等于普通用户够不到这个功能。补上界面入口后，默认仍为关（两条路径并存、出问题可随时切回），
+ * 但用户可以自己打开。
+ *
+ * <p><b>开关立即生效</b>：宿主 [com.tom.rv2ide.artificial.agent.FloatingAssistantView] 监听该键，
+ * 变更后即时装卸面板，不需要重启 App 或重开面板。
+ */
+@Parcelize
+private class ComposeRenderSwitch(
+    override val key: String = AssistantComposeRender.KEY_ENABLED,
+    override val title: Int = string.ai_agent_compose_render,
+    override val summary: Int? = string.ai_agent_compose_render_summary,
+) : BasePreference() {
+
+  override fun onCreatePreference(context: Context): Preference =
+      androidx.preference.SwitchPreference(context).apply {
+        key = AssistantComposeRender.KEY_ENABLED
+        isChecked = AssistantComposeRender.isEnabled(context)
+      }
+
+  /** 返回 true 才会让开关控件反映新状态；返回 false 会把它弹回原位。 */
+  override fun onPreferenceChanged(preference: Preference, newValue: Any?): Boolean {
+    AssistantComposeRender.setEnabled(preference.context, newValue as? Boolean ?: false)
+    return true
   }
 }
 

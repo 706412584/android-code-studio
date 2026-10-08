@@ -28,10 +28,20 @@ import com.tom.rv2ide.artificial.agent.DiffResult
  * 因此可以在 JVM 上直接测，不需要 Compose 运行环境或 Android 设备。
  *
  * <p><b>三条需要知道的映射约定</b>：
- * 1. **分组被摊平**。`ToolGroup` / `DiffGroup` 是 ACS 为 RecyclerView 减少重绑而做的分组，
- *    组内元素逐一还原为独立消息。Compose 侧的分组由渲染组件自己按连续性判断
- *    （Aharou 的 `ToolCallGroupHeader` 就是这么做的），模型层不再携带分组——
- *    否则同一次分组会在两侧各表达一遍，两边策略一旦不一致就会出现"分组里有分组"的怪状。
+ * 1. **工具组带着标识一起过来，不摊平**（2026-10-09 修正）。`ToolGroup` 的组内元素仍是独立消息，
+ *    但每条都带上 [AgentUIMessage.groupId] 与 [AgentUIMessage.groupExpanded]，渲染层按标识聚合，
+ *    就能还原适配器已经算好的分组。
+ *
+ *    <p>先前这里把组信息整个丢掉，理由是"渲染层按连续性自行分组"。**那个理由是错的**：
+ *    ACS 的成组规则并不只是相邻即合并——它由 `ToolGrouping.decide` 决定，子 agent 类工具必须
+ *    独立（它们带 `steps`，折进组里步骤就没展示位了），推理块能否并入又取决于"前一项是否已经是组"。
+ *    让渲染层重新推断这套规则等于把同一个判定实现两遍，两边不一致时只会表现为
+ *    "XML 里是一组、Compose 里是两行"这种只有肉眼能发现的差异。而且当时 Compose 侧**根本没人调用**
+ *    `ToolCallGroupHeader`——分组等于没有实现：连续十几个工具调用会各占一行，把正文挤出屏幕，
+ *    正是适配器当初引入分组要解决的问题。
+ *
+ *    <p>`DiffGroup`（本轮改动汇总卡）仍摊平：它在 Aharou 里**没有对应组件**（Aharou 的差异卡是
+ *    逐工具消息的），照搬需要新写一个汇总卡组件，不属于"移植"范畴，故留待后续。
  * 2. **推理独立成条**。`Item.Thinking` 转成 `content` 为空、`reasoning` 非空的 ASSISTANT 消息，
  *    而不是合并进相邻回答。理由见 [AgentUIMessage.reasoning] 的注释。
  * 3. **diff 序列化后复用 Aharou 的差异卡**。Aharou 的卡是**解析工具输出文本**（`parseEditDiff`）
@@ -64,25 +74,49 @@ object AcsMessageMapper {
   /**
    * 把条目列表整体转换。
    *
-   * 输入顺序即输出顺序；分组被摊平后，组内元素仍保持原有先后。
+   * 输入顺序即输出顺序；组内元素保持原有先后，并各自带上所属组的标识（见类注释约定 1）。
    */
   fun toUiMessages(items: List<AssistantMessageAdapter.Item>): List<AgentUIMessage> {
     val out = ArrayList<AgentUIMessage>(items.size)
-    for (item in items) append(item, out)
+    for (item in items) append(item, out, group = null)
     return out
   }
 
-  private fun append(item: AssistantMessageAdapter.Item, out: MutableList<AgentUIMessage>) {
+  /**
+   * 一条消息所属的分组上下文。
+   *
+   * @param id 组标识（取自适配器条目的 id，同一组内各条一致）
+   * @param expanded 用户手动开关过的展开意图；未开关过时为 false（默认收起）
+   */
+  private class GroupCtx(val id: String, val expanded: Boolean)
+
+  private fun append(
+      item: AssistantMessageAdapter.Item,
+      out: MutableList<AgentUIMessage>,
+      group: GroupCtx?,
+  ) {
     when (item) {
-      is AssistantMessageAdapter.Message -> out += fromMessage(item)
-      is AssistantMessageAdapter.Thinking -> out += fromThinking(item)
-      is AssistantMessageAdapter.ToolCall -> out += fromToolCall(item)
-      is AssistantMessageAdapter.Diff -> out += fromDiff(item)
-      // 分组只为 RecyclerView 的局部刷新服务，渲染层按连续性自行分组（见类注释约定 1）
-      is AssistantMessageAdapter.ToolGroup -> item.children.forEach { append(it, out) }
-      is AssistantMessageAdapter.DiffGroup -> item.children.forEach { append(it, out) }
+      is AssistantMessageAdapter.Message -> out += fromMessage(item).inGroup(group)
+      is AssistantMessageAdapter.Thinking -> out += fromThinking(item).inGroup(group)
+      is AssistantMessageAdapter.ToolCall -> out += fromToolCall(item).inGroup(group)
+      is AssistantMessageAdapter.Diff -> out += fromDiff(item).inGroup(group)
+      // 工具组：把组标识传给每个子项，渲染层据此把它们折成一行组头 + 展开区。
+      // `pinnedExpanded` 为 null 表示用户没手动开关过，按默认收起处理——与组头组件的
+      // 文档一致（默认收起，运行中也不自动弹开）。
+      is AssistantMessageAdapter.ToolGroup -> {
+        val ctx = GroupCtx(item.id.toString(), item.pinnedExpanded ?: false)
+        item.children.forEach { append(it, out, ctx) }
+      }
+      // DiffGroup（本轮改动汇总卡）仍摊平：Aharou 没有对应组件，照搬要新写汇总卡，
+      // 不属移植范畴。组内各条独立渲染为差异卡，信息不丢、只是不够紧凑。
+      is AssistantMessageAdapter.DiffGroup -> item.children.forEach { append(it, out, null) }
     }
   }
+
+  /** 把分组标识盖到消息上；[group] 为 null 时原样返回（不造无谓的 copy）。 */
+  private fun AgentUIMessage.inGroup(group: GroupCtx?): AgentUIMessage =
+      if (group == null) this
+      else copy(groupId = group.id, groupExpanded = group.expanded)
 
   private fun fromMessage(m: AssistantMessageAdapter.Message) =
       AgentUIMessage(
