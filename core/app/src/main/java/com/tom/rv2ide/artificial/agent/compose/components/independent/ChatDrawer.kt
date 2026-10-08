@@ -204,7 +204,7 @@ fun ChatDrawerContent(
     // ACS 去 Hilt：真实 engine 由接线层传入；null 时搜索根不可用，
     // HostFileAccessProvider.listFilesRecursive 对不存在目录返回 emptyList，文件搜索恒空（行为安全）。
     val fileSearchViewModel = remember {
-        FileSearchViewModel(engine = fileSearchEngine ?: WorkspaceSearchEngine(HostFileAccessProvider(java.io.File("/"))))
+        FileSearchViewModel(engine = fileSearchEngine ?: WorkspaceSearchEngine(HostFileAccessProvider(java.io.File("/nonexistent-ws-root"))))
     }
     DisposableEffect(Unit) {
         onDispose { fileSearchViewModel.dispose() }
