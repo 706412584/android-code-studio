@@ -130,6 +130,65 @@ public interface ToolSettingsPort {
   }
 
   /**
+   * 就若干道选择题询问用户，返回用户的选择。
+   *
+   * <p><b>为什么是阻塞式</b>：与 {@link #confirmDangerousTool} 同理——agent 循环需要的
+   * 是一个能据以继续的答案，而不是「已弹出，稍后告诉你」。异步化会把「等用户」这件事
+   * 扩散到整个循环（每轮都要判「上一条问题答了没」），而阻塞只需在这一处等。
+   * 实现方负责切到主线程弹窗、并在用户作答后唤醒调用线程。
+   *
+   * <p><b>为什么返回可空列表而不是单个字符串</b>：一次可问多道题（对齐 cc-haha 的
+   * 1-4 道语义），且存在「用户取消」这一真实结果。返回 null 表示未作答，工具据此如实
+   * 告诉模型「用户没回答」——伪造一个空答案会让模型以为用户默认同意。
+   *
+   * @param questions 待问的题目，已由工具校验（1-4 道，每道 2-4 个选项）
+   * @return 与 questions 等长的答案（多选以逗号连接）；null 表示用户取消或没有 UI 可问
+   */
+  default java.util.List<String> askUserQuestion(java.util.List<Question> questions) {
+    // 默认没有 UI 可问。返回 null 而非空列表：空列表会被误读成「用户全选了空」。
+    return null;
+  }
+
+  /**
+   * 一道选择题。
+   *
+   * <p>放在端口层而非工具层：实现方（app 的弹窗）要用它渲染，工具层只负责解析 JSON。
+   * 两边共用同一类型，避免「工具传 JSON、UI 再解析一遍」的重复与不一致。
+   */
+  final class Question {
+    /** 完整问题文本。 */
+    public final String question;
+
+    /** 极短标签（如「认证方式」「实现方案」），用作弹窗上的分组标题。 */
+    public final String header;
+
+    /** 选项标签，2-4 个。 */
+    public final java.util.List<String> options;
+
+    /** 每个选项的说明，与 {@link #options} 等长。 */
+    public final java.util.List<String> optionDescriptions;
+
+    /** 是否允许多选。 */
+    public final boolean multiSelect;
+
+    public Question(
+        String question,
+        String header,
+        java.util.List<String> options,
+        java.util.List<String> optionDescriptions,
+        boolean multiSelect) {
+      this.question = question == null ? "" : question;
+      this.header = header == null ? "" : header;
+      this.options = options == null ? java.util.Collections.<String>emptyList() : options;
+      this.optionDescriptions =
+          optionDescriptions == null
+              ? java.util.Collections.<String>emptyList()
+              : optionDescriptions;
+      this.multiSelect = multiSelect;
+    }
+  }
+
+  /**
    * 默认实现：自动模式、全部工具启用、shell 走 termux。
    *
    * <p>供单元测试与尚未接入配置的调用方使用，避免到处判空。
