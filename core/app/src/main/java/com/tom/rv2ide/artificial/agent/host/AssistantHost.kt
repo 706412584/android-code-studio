@@ -210,6 +210,22 @@ interface AssistantDialogs {
       onDeny: () -> Unit,
   )
 
+  /**
+   * 向用户展示多选/单选题弹窗，收集答案后回调。
+   *
+   * <p>阻塞语义由调用方保留：调用方在 agent 循环线程上建 latch、post 到主线程调用本方法、
+   * 再 await——本方法只负责「把弹窗摆出来并在用户选择后回调答案」。
+   *
+   * @param questions 待回答的问题列表
+   * @param onAnswer 用户完成作答的回调，参数为与 questions 等长的答案列表
+   * @param onCancel 用户取消作答的回调
+   */
+  fun showUserQuestions(
+      questions: List<com.tom.rv2ide.ai.tool.ToolSettingsPort.Question>,
+      onAnswer: (List<String>) -> Unit,
+      onCancel: () -> Unit,
+  )
+
   /** 服务商 / 模型选择面板。Activity 宿主下仍是 BottomSheetDialog。 */
   fun showModelPicker(onChanged: () -> Unit)
 

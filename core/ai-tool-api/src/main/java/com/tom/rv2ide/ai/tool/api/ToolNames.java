@@ -34,12 +34,27 @@ public final class ToolNames {
     public static final String FILE_DELETE = "file_delete";
     public static final String LIST_DIR = "list_dir";
     public static final String GLOB = "glob";
+    /**
+     * 按正则搜索文件内容。
+     *
+     * <p>与 {@link #GLOB} 的分工：glob 按**文件名**找文件，grep 按**内容**找。
+     * 两者都属检索类，但一个回答「哪些文件叫这个名字」，另一个回答「哪一行写了这个」。
+     */
+    public static final String GREP = "grep";
     public static final String SHELL_EXECUTE = "shell_execute";
     public static final String AGENT = "agent";
     public static final String AGENT_PIPELINE = "agent_pipeline";
     public static final String AGENT_OUTPUT = "agent_output";
     public static final String TODO_UPDATE = "todo_update";
     public static final String MEMORY_UPDATE = "memory_update";
+    /**
+     * 向用户提选择题。
+     *
+     * <p>与其它工具的根本差异：它的执行结果是**用户给的**，不是程序算的。因此它必须
+     * 阻塞 agent 循环直到用户作答——异步返回一个「稍后再说」对模型毫无意义，它要的是
+     * 一个能据以继续的决定。
+     */
+    public static final String ASK_USER_QUESTION = "ask_user_question";
     /** 读取 skill 全文（渐进披露的按需加载端）。 */
     public static final String SKILL = "skill";
     /** 写入 / 删除 skill，让模型能自己沉淀踩过的坑。 */

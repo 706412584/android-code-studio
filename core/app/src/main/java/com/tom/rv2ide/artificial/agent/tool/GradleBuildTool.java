@@ -201,7 +201,7 @@ public final class GradleBuildTool extends BaseTool {
       StringBuilder sb = new StringBuilder();
       sb.append("构建失败");
       if (result.getFailure() != null) {
-        sb.append(": ").append(result.getFailure());
+        sb.append(": ").append(describeFailure(result.getFailure()));
       }
       sb.append('\n');
       // TaskExecutionResult 只带 Failure 枚举，不含任何错误文本。没有下面这段，
@@ -226,6 +226,64 @@ public final class GradleBuildTool extends BaseTool {
       sb.append("applicationId: ").append(applicationId).append('\n');
     }
     return ok(sb.toString());
+  }
+
+  /**
+   * 把 {@link TaskExecutionResult.Failure} 翻译成「原因 + 下一步该做什么」。
+   *
+   * <p><b>为什么要翻译而不是直接打印枚举名</b>：实测设备会话里 {@code gradle_build}
+   * 4 次调用全部失败，返回的都是光秃秃的 {@code PROJECT_NOT_INITIALIZED}——模型只知道
+   * 「失败了」，不知道是「项目还没同步完」还是「这不是 Gradle 项目」，于是反复重试同
+   * 一条构建。这与 {@code GitRepoSupport} 的教训一致：错误文案必须指向可执行的下一步，
+   * 否则模型只能靠试错去猜。
+   *
+   * <p>文案里的「下一步」都指向**用户或模型能真正执行的动作**（等待初始化、同步项目、
+   * 检查 settings.gradle），而不是笼统的「请检查配置」。
+   *
+   * <p>包内可见而非 private：本方法纯字符串映射、不碰 Android 类型，因此可在 JVM 上
+   * 直接单测——而「文案是否真的指向下一步」正是容易写成空话、又难以在设备上回归的地方。
+   */
+  static String describeFailure(TaskExecutionResult.Failure failure) {
+    if (failure == null) {
+      // 调用点虽然已经判过 null，但这里仍要兜底：switch 对 null 会抛 NPE，
+      // 而「失败信息本身把 agent 循环炸掉」是最不该发生的一种失败。
+      return "未知原因。请查看下方构建输出定位问题。";
+    }
+    switch (failure) {
+      case PROJECT_NOT_INITIALIZED:
+        return "项目尚未初始化完成（Gradle 工具服务还没就绪）"
+            + "。刚打开项目时需要等待同步完成；若已等待较久，可在 IDE 里点「同步项目」后重试。"
+            + "在此之前任何构建任务都会以同一原因失败，重试没有意义。";
+      case PROJECT_NOT_FOUND:
+        return "找不到项目。请确认工作区路径正确、且项目已在本 IDE 中打开。";
+      case PROJECT_NOT_DIRECTORY:
+        return "项目路径不是目录。请确认工作区指向的是一个项目根目录，而不是单个文件。";
+      case PROJECT_DIRECTORY_INACCESSIBLE:
+        return "项目目录不可访问（权限不足或已被移动/删除）。"
+            + "请确认目录存在且有读写权限。";
+      case UNSUPPORTED_GRADLE_VERSION:
+        return "Gradle 版本不受支持。请检查 gradle/wrapper/gradle-wrapper.properties 里的"
+            + " distributionUrl，必要时换成受支持的版本。";
+      case UNSUPPORTED_CONFIGURATION:
+        return "不支持的构建配置。请检查 build.gradle / settings.gradle 是否有语法错误"
+            + "或不兼容的插件版本。";
+      case UNSUPPORTED_BUILD_ARGUMENT:
+        return "构建参数不受支持。请检查 tasks 里填的任务名是否存在"
+            + "（任务名拼错、或该模块没有这个任务都会走到这里）。";
+      case BUILD_FAILED:
+        return "构建过程失败（编译错误或任务执行失败）。"
+            + "请查看下方输出的错误详情定位并修正代码，再重新构建。";
+      case BUILD_CANCELLED:
+        return "构建被取消（用户中止或超时）。确认是否需要重新发起。";
+      case CONNECTION_ERROR:
+        return "与 Gradle 工具服务的连接出错。可在 IDE 里重新同步项目后重试。";
+      case CONNECTION_CLOSED:
+        return "与 Gradle 工具服务的连接已关闭（服务可能已停止）。"
+            + "请重新同步项目后再试。";
+      case UNKNOWN:
+      default:
+        return "未知原因。请查看下方构建输出定位问题。";
+    }
   }
 
   /**

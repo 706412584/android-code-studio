@@ -302,6 +302,81 @@ private class ActivityDialogs(private val context: Context) : AssistantDialogs {
         .show()
   }
 
+  override fun showUserQuestions(
+      questions: List<com.tom.rv2ide.ai.tool.ToolSettingsPort.Question>,
+      onAnswer: (List<String>) -> Unit,
+      onCancel: () -> Unit,
+  ) {
+    if (questions.isEmpty()) {
+      onCancel()
+      return
+    }
+    // 多道题时逐道询问，收集全部答案后一次性回调。
+    val answers = mutableListOf<String>()
+    fun askNext(index: Int) {
+      if (index >= questions.size) {
+        onAnswer(answers)
+        return
+      }
+      val q = questions[index]
+      val optionsWithOther = q.options.toMutableList().apply {
+        add(context.getString(string.ai_assistant_question_other))
+      }
+      val optionsArray = optionsWithOther.toTypedArray()
+
+      if (q.multiSelect) {
+        val checked = BooleanArray(optionsArray.size)
+        MaterialAlertDialogBuilder(context)
+            .setTitle(q.header.ifBlank { context.getString(string.ai_assistant_question_title) })
+            .setMessage(q.question)
+            .setMultiChoiceItems(optionsArray, checked) { _, which, isChecked ->
+              checked[which] = isChecked
+            }
+            .setPositiveButton(string.ai_assistant_question_submit) { _, _ ->
+              val selected = optionsArray.filterIndexed { i, _ -> checked[i] }
+              answers.add(selected.joinToString(","))
+              askNext(index + 1)
+            }
+            .setNegativeButton(android.R.string.cancel) { _, _ -> onCancel() }
+            .setOnCancelListener { onCancel() }
+            .show()
+      } else {
+        var selectedIndex = 0
+        MaterialAlertDialogBuilder(context)
+            .setTitle(q.header.ifBlank { context.getString(string.ai_assistant_question_title) })
+            .setMessage(q.question)
+            .setSingleChoiceItems(optionsArray, selectedIndex) { _, which ->
+              selectedIndex = which
+            }
+            .setPositiveButton(string.ai_assistant_question_submit) { _, _ ->
+              if (selectedIndex == optionsArray.size - 1) {
+                // 选了「其它」：弹简单输入框
+                val input = android.widget.EditText(context).apply {
+                  hint = context.getString(string.ai_assistant_question_other_hint)
+                }
+                MaterialAlertDialogBuilder(context)
+                    .setTitle(q.question)
+                    .setView(input)
+                    .setPositiveButton(string.ai_assistant_question_submit) { _, _ ->
+                      answers.add(input.text.toString().trim())
+                      askNext(index + 1)
+                    }
+                    .setNegativeButton(android.R.string.cancel) { _, _ -> onCancel() }
+                    .setOnCancelListener { onCancel() }
+                    .show()
+              } else {
+                answers.add(optionsArray[selectedIndex])
+                askNext(index + 1)
+              }
+            }
+            .setNegativeButton(android.R.string.cancel) { _, _ -> onCancel() }
+            .setOnCancelListener { onCancel() }
+            .show()
+      }
+    }
+    askNext(0)
+  }
+
   override fun showModelPicker(onChanged: () -> Unit) {
     // Activity 宿主下仍是 BottomSheetDialog；设置入口也交回本宿主，保证落点一致。
     // 必须用**命名参数**：show() 最后一个参数是 configureWindow（在 show() 前调用），

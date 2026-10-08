@@ -241,6 +241,12 @@
   <string name="ai_agent_project_rules_saved">已保存 %1$s</string>
   <string name="ai_agent_project_rules_save_failed">保存失败：%1$s</string>
 
+  <!-- AskUserQuestion -->
+  <string name="ai_assistant_question_title">助手提问</string>
+  <string name="ai_assistant_question_other">其它（自定义输入）</string>
+  <string name="ai_assistant_question_other_hint">输入你的答案…</string>
+  <string name="ai_assistant_question_submit">确定</string>
+
   <!-- Skill -->
   <string name="ai_agent_skills_title">Skill</string>
   <string name="ai_agent_skills_summary">按需加载的参考文档</string>

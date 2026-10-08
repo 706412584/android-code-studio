@@ -246,6 +246,12 @@
   <string name="ai_agent_project_rules_saved">Saved %1$s</string>
   <string name="ai_agent_project_rules_save_failed">Save failed: %1$s</string>
 
+  <!-- AskUserQuestion -->
+  <string name="ai_assistant_question_title">Question from Assistant</string>
+  <string name="ai_assistant_question_other">Other (custom text)</string>
+  <string name="ai_assistant_question_other_hint">Enter your answer…</string>
+  <string name="ai_assistant_question_submit">Submit</string>
+
   <!-- Skills -->
   <string name="ai_agent_skills_title">Skills</string>
   <string name="ai_agent_skills_summary">Reference documents loaded on demand</string>
