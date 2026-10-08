@@ -186,8 +186,11 @@ abstract class BaseEditorActivity :
   val binding: ActivityEditorBinding
     get() = checkNotNull(_binding) { "Activity has been destroyed" }
 
-  /** 编辑界面的悬浮 AI 助手。 */
-  private var floatingAssistant: FloatingAssistantView? = null
+  // 编辑界面的悬浮 AI 助手（可拖拽 FAB + 贴边面板）已于 2026-10-09 移除：
+  // 入口改为侧栏标签页（AssistantSidebarAction / AssistantSidebarFragment），
+  // 与 Git 客户端、文件树并列。悬浮形态的问题是它飘在代码上、且与编辑器争空间，
+  // 而侧栏本就是 ACS 放「与编辑器并列的工具面板」的地方。
+  // 全屏形态仍保留：AssistantFullscreenActivity 是独立窗口，从侧栏可再进全屏。
 
   /**
    * 编辑器内联 AI 补全的托管。
@@ -207,11 +210,8 @@ abstract class BaseEditorActivity :
   private val onBackPressedCallback: OnBackPressedCallback =
       object : OnBackPressedCallback(true) {
         override fun handleOnBackPressed() {
-          // 悬浮助手展开时优先收起它：它盖在最上层，用户按返回的意图是「关掉眼前这个面板」，
-          // 而不是退出项目。
-          if (floatingAssistant?.collapseIfOpen() == true) {
-            return
-          }
+          // 悬浮助手已移除，返回键不再需要为它让路（原先这里先尝试收起面板）。
+          // 侧栏助手由 EditorSidebarFragment 自己处理返回：抽屉开着时先关抽屉。
           if (binding.root.isDrawerOpen(GravityCompat.START)) {
             binding.root.closeDrawer(GravityCompat.START)
           } else if (editorBottomSheet?.state != BottomSheetBehavior.STATE_COLLAPSED) {
@@ -633,9 +633,8 @@ abstract class BaseEditorActivity :
       editorActivityScope.cancelIfActive("Activity is being destroyed")
     }
 
-    // 取消进行中的 agent 运行：它的回调会往已销毁的控件里写数据。
-    floatingAssistant?.dispose()
-    floatingAssistant = null
+    // 侧栏助手是 Fragment，随侧栏视图销毁自行 dispose（见 AssistantSidebarFragment.onDestroyView），
+    // 此处不再需要为悬浮助手做清理。
 
     // 补全：编辑器视图即将销毁，彻底释放，避免监听器泄漏。
     codeCompletion?.dispose()
@@ -732,7 +731,6 @@ override fun onApplySystemBarInsets(insets: Insets) {
 
     setupContainers()
     setupDiagnosticInfo()
-    setupFloatingAssistant()
 
     ViewCompat.setOnApplyWindowInsetsListener(binding.root) { view, windowInsets ->
         val systemBars = windowInsets.getInsets(WindowInsetsCompat.Type.systemBars())
@@ -1495,37 +1493,6 @@ override fun onApplySystemBarInsets(insets: Insets) {
       viewContainer.viewTreeObserver.addOnGlobalLayoutListener(observer)
       bottomSheet.setOffsetAnchor(editorAppBarLayout)
     }
-  }
-
-  /**
-   * 在编辑界面挂上悬浮 AI 助手。
-   *
-   * <p>工作区取当前打开的项目目录——编辑界面里这个值是确定的，不像主屏要靠「最近打开」
-   * 去猜。
-   *
-   * <p>用 lifecycleScope 而不是 editorActivityScope：后者是普通的
-   * `CoroutineScope(Dispatchers.Default)`，不随 Activity 销毁取消，用它会在界面已销毁后
-   * 继续往控件里写数据。
-   */
-  private fun setupFloatingAssistant() {
-    val container = content.assistantContainer
-    // 编辑器里用 DOCKED：贴右侧满高、无外边距无圆角。
-    //
-    // 传入 editor_content 作为「让位」目标：面板打开时它收缩（宽屏左右分栏、窄屏上下分栏），
-    // 使编辑器与助手真正并列。**只去掉圆角与边距并不够**——面板仍然盖在编辑器上，
-    // 观感只是从「一张圆角卡片压住代码」变成「一块方板压住代码」，割裂感依旧。
-    // 真并列要求编辑器主动让出空间，因此需要宿主参与。
-    val assistant =
-        FloatingAssistantView(
-            ActivityHost(this, lifecycleScope, container, yieldingView = content.editorContent),
-            FloatingAssistantView.Mode.DOCKED,
-        )
-    // 折叠态的 bottom sheet 常驻屏幕底部，默认落点要避开它，否则一进来就被压住。
-    assistant.defaultBottomOffsetPx =
-        resources.getDimensionPixelSize(R.dimen.editor_sheet_collapsed_height)
-    assistant.attach()
-    assistant.setWorkspace(IProjectManager.getInstance().projectDir)
-    floatingAssistant = assistant
   }
 
   private fun setupDiagnosticInfo() {
