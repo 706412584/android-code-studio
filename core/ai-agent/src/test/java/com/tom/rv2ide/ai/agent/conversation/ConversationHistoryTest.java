@@ -107,13 +107,23 @@ final class ConversationHistoryTest {
   @Test
   void preservesToolResultImageAcrossPersistence(@TempDir Path dir) throws IOException {
     ConversationLog log = logAt(dir);
+    // 带图结果必须有配对调用：孤儿结果会被清洗掉（见 dropsOrphanResultWithoutCall），
+    // 本测试验证的是图片负载的往返，不是孤儿语义。
+    log.append(
+        AssistantMessageEntry.create(
+            null, T0 - 1, "", "", List.of(new ToolCall("c1", "file_read", "{}"))));
+    // withCall 是执行器在真实路径上的动作（ToolExecutor 返回前统一附加 callId），
+    // 少了它结果条目没有配对身份，会被清洗规则当成孤儿。
     log.append(
         ToolResultEntry.create(
-            null, T0, ToolResult.withImage("file_read", "图片已附加", "image/png", "QUJD")));
+            null,
+            T0,
+            ToolResult.withImage("file_read", "图片已附加", "image/png", "QUJD")
+                .withCall("c1", "file_read")));
 
     // 先验证 JSONL 往返（写盘再读回）——图片负载是 base64，容易被截断或转义出错。
     ConversationEntry reloaded =
-        ConversationCodec.parse(ConversationCodec.toLine(log.readAll().get(0).getEntry()));
+        ConversationCodec.parse(ConversationCodec.toLine(log.readAll().get(1).getEntry()));
     ToolResultEntry entry = assertInstanceOf(ToolResultEntry.class, reloaded);
     assertEquals("QUJD", entry.getImageBase64());
     assertEquals("image/png", entry.getImageMimeType());
@@ -121,7 +131,7 @@ final class ConversationHistoryTest {
     // 再验证折叠成模型消息时图片被重新编码成工具结果图片 payload，
     // 否则续接会话时历史里的图会退化成纯文字，模型看不到像素。
     ToolModelMessage tool =
-        assertInstanceOf(ToolModelMessage.class, ConversationHistory.fold(log.readAll()).get(0));
+        assertInstanceOf(ToolModelMessage.class, ConversationHistory.fold(log.readAll()).get(1));
     assertEquals("图片已附加", tool.getContent());
     assertEquals(
         "QUJD",
@@ -132,11 +142,15 @@ final class ConversationHistoryTest {
   @Test
   void marksToolErrorOnFoldedMessage(@TempDir Path dir) throws IOException {
     ConversationLog log = logAt(dir);
+    // 同 preservesToolResultImageAcrossPersistence：错误标记的验证需要配对调用。
+    log.append(
+        AssistantMessageEntry.create(
+            null, T0 - 1, "", "", List.of(new ToolCall("c1", "shell_execute", "{}"))));
     log.append(
         ToolResultEntry.create(null, T0, ToolResult.of("c1", "shell_execute", "命令失败", true)));
 
     ToolModelMessage tool =
-        assertInstanceOf(ToolModelMessage.class, ConversationHistory.fold(log.readAll()).get(0));
+        assertInstanceOf(ToolModelMessage.class, ConversationHistory.fold(log.readAll()).get(1));
     assertTrue(tool.isToolError(), "错误标记必须保留，否则模型会以为工具成功");
   }
 
@@ -246,6 +260,147 @@ final class ConversationHistoryTest {
   private static final class AssistantModelEntryHelper {
     static AssistantMessageEntry reply(long timestamp, String content) {
       return AssistantMessageEntry.create(null, timestamp, content, "", List.of());
+    }
+  }
+
+  // ── 工具调用与结果的成对清洗（真实会话的 400 事故回归）──
+
+  @Test
+  void dropsCallWithUnrecoverableArguments(@TempDir Path dir) throws IOException {
+    // 事故原型：流在参数中途断开，调用以残缺 JSON 落盘。原样重发时服务端
+    // 报 400 "Assistant tool call arguments must be valid JSON"，此后该会话
+    // 每一次请求都失败（与切换服务商无关）。折叠时必须把它清洗掉。
+    ConversationLog log = logAt(dir);
+    log.append(UserMessageEntry.create(null, T0, "改文件"));
+    log.append(
+        AssistantMessageEntry.create(
+            null,
+            T0 + 1,
+            "好的",
+            "",
+            List.of(
+                new ToolCall("c1", "file_write", "{\"file_path\": \"a.cpp\""),
+                new ToolCall("c2", "file_write", "{\"file_path\": \"b.cpp\", }"))));
+    log.append(ToolResultEntry.create(null, T0 + 2, ToolResult.of("c1", "file_write", "ok", false)));
+    log.append(ToolResultEntry.create(null, T0 + 3, ToolResult.of("c2", "file_write", "ok", false)));
+
+    List<ModelMessage> messages = ConversationHistory.fold(log.readAll());
+    AssistantModelMessage assistant =
+        assertInstanceOf(AssistantModelMessage.class, messages.get(1));
+    // 两条都可由 ToolArgsCleaner 修复（补闭合括号 / 去尾逗号，与执行时同一套算法）——
+    // 关键是**发出的参数必须是合法 JSON**，否则整条会话被 400 拒绝。
+    assertEquals(2, assistant.getToolCalls().size());
+    for (ToolCall call : assistant.getToolCalls()) {
+      assertTrue(
+          parsesAsJson(call.getArguments()),
+          "发往服务端的参数必须是合法 JSON: " + call.getArguments());
+    }
+  }
+
+  @Test
+  void dropsCallWhoseArgumentsCannotBeRepaired(@TempDir Path dir) throws IOException {
+    ConversationLog log = logAt(dir);
+    log.append(
+        AssistantMessageEntry.create(
+            null, T0, "", "", List.of(new ToolCall("c1", "file_write", "not json at all {{{"))));
+    log.append(ToolResultEntry.create(null, T0 + 1, ToolResult.of("c1", "file_write", "ok", false)));
+
+    List<ModelMessage> messages = ConversationHistory.fold(log.readAll());
+    // 调用被丢弃 + 消息本身无正文无推理 → 整条跳过；它的结果随之消失（否则又变成
+    // 孤儿结果，换一种 400）。
+    assertTrue(messages.isEmpty(), "坏调用及其结果不得留在历史里: " + messages);
+  }
+
+  @Test
+  void dropsOrphanResultWithoutCall(@TempDir Path dir) throws IOException {
+    // 事故原型：结果条目落盘而前导调用不存在（历史被裁剪 / 旧日志不完整）。
+    // 以工具结果开头发请求时多数服务商报 400（找不到对应 tool_call）。
+    ConversationLog log = logAt(dir);
+    log.append(UserMessageEntry.create(null, T0, "问题"));
+    log.append(
+        ToolResultEntry.create(null, T0 + 1, ToolResult.of("gone", "file_read", "内容", false)));
+
+    List<ModelMessage> messages = ConversationHistory.fold(log.readAll());
+    assertEquals(1, messages.size());
+    assertInstanceOf(UserModelMessage.class, messages.get(0));
+  }
+
+  @Test
+  void dropsResultWhoseCallWasSanitizedAway(@TempDir Path dir) throws IOException {
+    // 调用因参数不可修复被丢弃时，它的结果不能以「孤儿」形态留下。
+    ConversationLog log = logAt(dir);
+    log.append(
+        AssistantMessageEntry.create(
+            null, T0, "", "", List.of(new ToolCall("bad", "shell_execute", "%%% not json"))));
+    log.append(
+        ToolResultEntry.create(null, T0 + 1, ToolResult.of("bad", "shell_execute", "out", false)));
+    log.append(
+        AssistantMessageEntry.create(
+            null, T0 + 2, "", "", List.of(new ToolCall("good", "file_read", "{}"))));
+    log.append(ToolResultEntry.create(null, T0 + 3, ToolResult.of("good", "file_read", "ok", false)));
+
+    List<ModelMessage> messages = ConversationHistory.fold(log.readAll());
+    // 坏块整块消失（调用被清空且无正文 → 整条跳过），只留下 good 的调用与结果。
+    assertEquals(2, messages.size());
+    AssistantModelMessage second = assertInstanceOf(AssistantModelMessage.class, messages.get(0));
+    assertEquals("good", second.getToolCalls().get(0).getId());
+    assertEquals("good", ((ToolModelMessage) messages.get(1)).getToolCallId());
+  }
+
+  @Test
+  void keepsEveryCallInMultiCallMessage(@TempDir Path dir) throws IOException {
+    // 一条助手消息带多个调用时，配对是按「消息」而不是「最近一条」——少保留一个
+    // 就会让它对应的结果变成孤儿。
+    ConversationLog log = logAt(dir);
+    log.append(
+        AssistantMessageEntry.create(
+            null,
+            T0,
+            "",
+            "",
+            List.of(
+                new ToolCall("c1", "file_read", "{}"),
+                new ToolCall("c2", "file_read", "{}"),
+                new ToolCall("c3", "file_read", "{}"))));
+    log.append(ToolResultEntry.create(null, T0 + 1, ToolResult.of("c1", "file_read", "a", false)));
+    log.append(ToolResultEntry.create(null, T0 + 2, ToolResult.of("c2", "file_read", "b", false)));
+    log.append(ToolResultEntry.create(null, T0 + 3, ToolResult.of("c3", "file_read", "c", false)));
+
+    List<ModelMessage> messages = ConversationHistory.fold(log.readAll());
+    assertEquals(4, messages.size());
+    AssistantModelMessage assistant =
+        assertInstanceOf(AssistantModelMessage.class, messages.get(0));
+    assertEquals(3, assistant.getToolCalls().size());
+    for (int i = 1; i <= 3; i++) {
+      assertInstanceOf(ToolModelMessage.class, messages.get(i));
+    }
+  }
+
+  @Test
+  void normalHistoryIsUnchangedBySanitization(@TempDir Path dir) throws IOException {
+    // 清洗必须是「无坏数据时零副作用」：合法调用 + 配对结果原样通过。
+    ConversationLog log = logAt(dir);
+    log.append(UserMessageEntry.create(null, T0, "读文件"));
+    log.append(
+        AssistantMessageEntry.create(
+            null, T0 + 1, "好的", "思考", List.of(new ToolCall("c1", "file_read", "{\"path\":\"a\"}"))));
+    log.append(ToolResultEntry.create(null, T0 + 2, ToolResult.of("c1", "file_read", "内容", false)));
+
+    List<ModelMessage> messages = ConversationHistory.fold(log.readAll());
+    assertEquals(3, messages.size());
+    AssistantModelMessage assistant =
+        assertInstanceOf(AssistantModelMessage.class, messages.get(1));
+    assertEquals("{\"path\":\"a\"}", assistant.getToolCalls().get(0).getArguments());
+    assertEquals("c1", ((ToolModelMessage) messages.get(2)).getToolCallId());
+  }
+
+  /** 参数能否被解析为 JSON 对象——测试侧与服务端同一判据。 */
+  private static boolean parsesAsJson(String value) {
+    try {
+      new org.json.JSONObject(value);
+      return true;
+    } catch (org.json.JSONException e) {
+      return false;
     }
   }
 }

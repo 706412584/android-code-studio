@@ -22,8 +22,13 @@ import com.tom.rv2ide.ai.protocol.ModelMessage;
 import com.tom.rv2ide.ai.protocol.ImageInputPayload;
 import com.tom.rv2ide.ai.protocol.ToolModelMessage;
 import com.tom.rv2ide.ai.protocol.UserModelMessage;
+import com.tom.rv2ide.ai.tool.api.ToolArgsCleaner;
+import com.tom.rv2ide.ai.tool.api.ToolCall;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
+import org.json.JSONObject;
 
 /**
  * 把会话条目还原为可续接的模型消息列表。
@@ -73,7 +78,19 @@ public final class ConversationHistory {
       }
     }
 
-    // 第二趟：只追加未被压缩覆盖的对话条目。
+    // 第二趟：只追加未被压缩覆盖的对话条目，并保证**工具调用与结果成对**。
+    //
+    // <p><b>为什么必须在这里清洗</b>：真实会话里出现过「流在参数中途断开，调用以残缺
+    // JSON 落盘」的历史（Renderer.cpp 那次）。坏调用原样重发时服务端报
+    // {@code 400 Assistant tool call arguments must be valid JSON}，且**之后每一次请求
+    // 都失败**、与所切换的服务商无关——坏数据在历史里，用户换服务商、换模型都无效。
+    // 另一半是孤儿结果：以工具结果开头发请求时多数服务商会报 400（找不到对应 tool_call）。
+    // 折叠是发请求前的最后一道，两者都在这里收口。
+    Set<String> resultIds = collectResultIds(entries, compactedUpTo);
+    // 上一条助手消息中「参数合法且存在配对结果」的调用 id；结果只与它配对。
+    Set<String> lastKeptCallIds = new HashSet<>();
+    // 已写出的结果 id：同一 id 的重复结果只保留第一条。
+    Set<String> emittedResultIds = new HashSet<>();
     for (ConversationLog.EntryLocation location : entries) {
       ConversationEntry entry = location.getEntry();
       if (entry instanceof CompactionEntry) {
@@ -81,6 +98,22 @@ public final class ConversationHistory {
       }
       if (location.getOrdinal() <= compactedUpTo) {
         continue;
+      }
+      if (entry instanceof AssistantMessageEntry) {
+        lastKeptCallIds =
+            appendAssistantWithSanitizedCalls(
+                (AssistantMessageEntry) entry, resultIds, messages);
+        continue;
+      }
+      if (entry instanceof ToolResultEntry) {
+        String callId = ((ToolResultEntry) entry).getToolCallId();
+        if (!lastKeptCallIds.contains(callId) || !emittedResultIds.add(callId)) {
+          continue;
+        }
+      } else if (entry instanceof UserMessageEntry) {
+        // 结果必须紧跟其配对调用；用户消息开启新一轮，之前残留的配对集合作废
+        // （正常日志不会出现这种排列，纯防御——宁可丢弃也不发出无配对的 tool 消息）。
+        lastKeptCallIds = new HashSet<>();
       }
       append(entry, messages);
     }
@@ -96,6 +129,91 @@ public final class ConversationHistory {
     ModelMessage message = toMessage(entry);
     if (message != null) {
       messages.add(message);
+    }
+  }
+
+  /** 收集（未被压缩覆盖的）结果条目引用的调用 id。 */
+  private static Set<String> collectResultIds(
+      List<ConversationLog.EntryLocation> entries, int compactedUpTo) {
+    Set<String> ids = new HashSet<>();
+    for (ConversationLog.EntryLocation location : entries) {
+      if (location.getOrdinal() <= compactedUpTo) {
+        continue;
+      }
+      if (location.getEntry() instanceof ToolResultEntry) {
+        ids.add(((ToolResultEntry) location.getEntry()).getToolCallId());
+      }
+    }
+    return ids;
+  }
+
+  /**
+   * 追加一条助手消息，并清洗其中的工具调用。
+   *
+   * <p>清洗两条规则（见 {@link #fold} 的注释）：
+   * <ol>
+   *   <li><b>参数必须是合法 JSON</b>。残缺参数（流中断）原样重发会被服务端
+   *       400 拒绝（"arguments must be valid JSON"）。修复不了就丢弃该调用——
+   *       宁可少一条历史，也不能让整个会话此后每次都失败。</li>
+   *   <li><b>必须有配对结果</b>。严格的服务商要求每个 tool_call 都有对应的
+   *       tool 消息应答（"must be followed by tool messages"），没有的丢弃。</li>
+   * </ol>
+   *
+   * @return 保留下来的调用 id，供后续结果条目配对
+   */
+  private static Set<String> appendAssistantWithSanitizedCalls(
+      AssistantMessageEntry assistant, Set<String> resultIds, List<ModelMessage> messages) {
+    List<ToolCall> kept = new ArrayList<>();
+    Set<String> keptIds = new HashSet<>();
+    for (ToolCall call : assistant.getToolCalls()) {
+      String repaired = repairArguments(call.getArguments());
+      if (repaired == null || !resultIds.contains(call.getId())) {
+        continue;
+      }
+      kept.add(new ToolCall(call.getId(), call.getName(), repaired));
+      keptIds.add(call.getId());
+    }
+    // 清洗后什么都不剩（无正文、无推理、无调用）的消息整条跳过：它本来就只为工具调用
+    // 而存在（纯调用轮的 content 常为空），留下一条空 assistant 只会污染上下文。
+    if (kept.isEmpty()
+        && assistant.getContent().trim().isEmpty()
+        && assistant.getReasoningContent().trim().isEmpty()) {
+      return keptIds;
+    }
+    messages.add(
+        new AssistantModelMessage(assistant.getContent(), assistant.getReasoningContent(), kept));
+    return keptIds;
+  }
+
+  /**
+   * 把参数修成合法 JSON；修不了返回 null（该调用应被丢弃）。
+   *
+   * <p>先按原样解析（绝大多数调用一次通过，零开销）。失败时用 {@code ToolArgsCleaner}
+   * 修一遍再试——**这与工具执行时的修复是同一套算法**，因此修复后的形态就是当时
+   * 实际执行的形态（执行器同样先 clean 再 parse），历史与真实发生的事保持一致。
+   * 仍解析失败才判死。空参数归一成 {@code "{}"}（与 {@link ToolCall} 的构造语义一致）。
+   */
+  private static String repairArguments(String arguments) {
+    String raw = arguments == null ? "" : arguments.trim();
+    if (raw.isEmpty()) {
+      return "{}";
+    }
+    if (parsesAsJsonObject(raw)) {
+      return raw;
+    }
+    String cleaned = ToolArgsCleaner.clean(raw).trim();
+    if (!cleaned.isEmpty() && parsesAsJsonObject(cleaned)) {
+      return cleaned;
+    }
+    return null;
+  }
+
+  private static boolean parsesAsJsonObject(String value) {
+    try {
+      new JSONObject(value);
+      return true;
+    } catch (org.json.JSONException e) {
+      return false;
     }
   }
 
