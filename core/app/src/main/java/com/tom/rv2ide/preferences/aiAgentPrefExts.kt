@@ -27,6 +27,7 @@ import com.tom.rv2ide.activities.FolderPickerActivity
 import com.tom.rv2ide.ai.agent.ProjectRulesLoader
 import com.tom.rv2ide.artificial.agent.AssistantUiStyleStore
 import com.tom.rv2ide.artificial.agent.compose.AssistantComposeRender
+import com.tom.rv2ide.artificial.agent.compose.AssistantToolStatusBarPref
 import com.tom.rv2ide.artificial.agent.ShizukuShellBackend
 import com.tom.rv2ide.artificial.agent.codegraph.CodeGraphInstaller
 import com.tom.rv2ide.artificial.agent.codegraph.CodeGraphManager
@@ -723,6 +724,7 @@ private class AdvancedPage(
     // 渲染路径紧随外观：两者都是「助手长什么样」的范畴，且它决定外观定制的**作用对象**
     // （Compose 面板 vs XML 列表），放一起用户才好理解它们的从属关系。
     addPreference(ComposeRenderSwitch())
+    addPreference(ToolStatusBarSwitch())
     addPreference(PromptTemplatePreference())
     addPreference(AutoSwitchProviderSwitch())
   }
@@ -2006,6 +2008,31 @@ private class ComposeRenderSwitch(
   /** 返回 true 才会让开关控件反映新状态；返回 false 会把它弹回原位。 */
   override fun onPreferenceChanged(preference: Preference, newValue: Any?): Boolean {
     AssistantComposeRender.setEnabled(preference.context, newValue as? Boolean ?: false)
+    return true
+  }
+}
+
+/**
+ * 工具运行状态条（迷你终端缩略图 + 状态条）的显隐开关。
+ *
+ * <p>默认关闭——见 [AssistantToolStatusBarPref] 的类文档（与底部一句话播报重复、
+ * 且常驻占据输入区上方空间）。
+ */
+@Parcelize
+private class ToolStatusBarSwitch(
+    override val key: String = AssistantToolStatusBarPref.KEY_ENABLED,
+    override val title: Int = string.ai_agent_tool_status_bar,
+    override val summary: Int? = string.ai_agent_tool_status_bar_summary,
+) : BasePreference() {
+
+  override fun onCreatePreference(context: Context): Preference =
+      androidx.preference.SwitchPreference(context).apply {
+        key = AssistantToolStatusBarPref.KEY_ENABLED
+        isChecked = AssistantToolStatusBarPref.isEnabled(context)
+      }
+
+  override fun onPreferenceChanged(preference: Preference, newValue: Any?): Boolean {
+    AssistantToolStatusBarPref.setEnabled(preference.context, newValue as? Boolean ?: false)
     return true
   }
 }

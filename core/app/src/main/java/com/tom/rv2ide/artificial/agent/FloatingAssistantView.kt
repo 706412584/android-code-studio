@@ -177,6 +177,12 @@ class FloatingAssistantView(
           binding.root.post { applyComposeRenderPath() }
           return@OnSharedPreferenceChangeListener
         }
+        // 工具状态条开关：同样单独处理——它改的是**可见性**，不是样式重绑。
+        // 混进重绑分支只会刷新一遍列表，状态条照旧显示/隐藏——表现为「开关点了没反应」。
+        if (key == com.tom.rv2ide.artificial.agent.compose.AssistantToolStatusBarPref.KEY_ENABLED) {
+          binding.root.post { applyToolStatusBarVisibility() }
+          return@OnSharedPreferenceChangeListener
+        }
         if (key !in uiStyleKeys) {
           return@OnSharedPreferenceChangeListener
         }
@@ -2777,6 +2783,9 @@ class FloatingAssistantView(
    * <p>可见性由组件自己管（toolMessages 为空时 `return`，不渲染任何东西），
    * 因此宿主无需在运行态切换时增删视图。
    *
+   * <p><b>整条默认隐藏</b>：由 [AssistantToolStatusBarPref] 控制（默认 false）——
+   * 见该对象的类文档。开关变更时由 [applyToolStatusBarVisibility] 即时显隐。
+   *
    * <p>onOpenDetail 传空实现：详情面板（AharouComputerSheet）尚未接线，
    * 点缩略图暂无下钻；先保证状态条本身的运行/翻页/停止可用。
    */
@@ -2788,6 +2797,7 @@ class FloatingAssistantView(
           val bg = if (resolved) tv.data else 0xFF07111F.toInt()
           androidx.core.graphics.ColorUtils.calculateLuminance(bg) <= 0.5
         }
+    applyToolStatusBarVisibility()
     binding.assistantToolStatusBarCompose.setContent {
       com.tom.rv2ide.artificial.agent.compose.theme.AIEditorTheme(darkTheme = darkTheme) {
         val bridge = inputBar
@@ -2808,6 +2818,21 @@ class FloatingAssistantView(
         )
       }
     }
+  }
+
+  /**
+   * 按偏好显隐工具状态条。
+   *
+   * <p>用 GONE/VISIBLE 而不是装卸 ComposeView：状态条的内容由 [inputBar] 桥与
+   * [composePanel] 状态驱动，视图本身无需销毁——隐藏期间不占布局空间，
+   * 开销只是一次测量跳过（GONE 不参与测量）。
+   *
+   * <p>开关变更与装配时都会调用；重复调用幂等。
+   */
+  private fun applyToolStatusBarVisibility() {
+    val enabled =
+        com.tom.rv2ide.artificial.agent.compose.AssistantToolStatusBarPref.isEnabled(context)
+    binding.assistantToolStatusBarCompose.isVisible = enabled
   }
 
   /**
