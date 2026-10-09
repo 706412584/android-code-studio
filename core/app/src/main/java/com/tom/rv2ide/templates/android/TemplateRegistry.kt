@@ -37,6 +37,7 @@ object TemplateRegistry {
     register(NativeCpp())
     register(LibGdx())
     register(QuickDevelop())
+    register(ComposeMultiplatform())
     // register(FullscreenActivity())
     // register(TabbedActivity())
     // register(ScrollingActivity())
