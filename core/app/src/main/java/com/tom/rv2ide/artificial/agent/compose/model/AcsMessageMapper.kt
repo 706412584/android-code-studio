@@ -107,9 +107,16 @@ object AcsMessageMapper {
         val ctx = GroupCtx(item.id.toString(), item.pinnedExpanded ?: false)
         item.children.forEach { append(it, out, ctx) }
       }
-      // DiffGroup（本轮改动汇总卡）仍摊平：Aharou 没有对应组件，照搬要新写汇总卡，
-      // 不属移植范畴。组内各条独立渲染为差异卡，信息不丢、只是不够紧凑。
-      is AssistantMessageAdapter.DiffGroup -> item.children.forEach { append(it, out, null) }
+      // 本轮改动汇总：用 `d` 前缀的组标识把它们折成一张卡。前缀与工具组的 `g` 区分开
+      // ——两者渲染成完全不同的组件（工具组是折叠条，改动组是带「全部撤销」的卡片），
+      // 光靠 id 数值分不出该走哪个分支。
+      //
+      // Aharou 没有对应组件（它把汇总卡摊平），这里由 ACS 侧补：用户要求「撤销改动
+      // 在消息尾部追加卡片、限高、每行撤销 + 全部撤销」，逐条平铺做不到「全部撤销」。
+      is AssistantMessageAdapter.DiffGroup -> {
+        val ctx = GroupCtx("d${item.id}", item.pinnedExpanded ?: false)
+        item.children.forEach { append(it, out, ctx) }
+      }
     }
   }
 

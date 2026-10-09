@@ -372,6 +372,11 @@
   <string name="ai_assistant_unknown_file">某个文件</string>
   <string name="ai_assistant_revert">撤销这次改动</string>
   <string name="ai_assistant_revert_done">已撤销</string>
+  <string name="chat_diff_group_title">本轮改动 · %1$d 个文件</string>
+  <string name="chat_diff_revert_all">全部撤销</string>
+  <string name="chat_diff_all_reverted">已全部撤销</string>
+  <string name="chat_diff_revert">撤销</string>
+  <string name="chat_diff_reverted">已撤销</string>
   <string name="ai_assistant_revert_ok">撤销成功 — %1$s</string>
   <string name="ai_assistant_revert_failed">撤销失败 — %1$s</string>
 

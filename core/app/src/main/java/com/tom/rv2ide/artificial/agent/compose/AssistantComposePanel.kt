@@ -20,10 +20,12 @@ package com.tom.rv2ide.artificial.agent.compose
 import android.content.Context
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
@@ -48,6 +50,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import com.tom.rv2ide.artificial.agent.compose.compat.FileAccessProvider
@@ -286,6 +289,7 @@ private fun PanelContent(
                     callbacks = callbacks,
                 )
             is RenderItem.Group -> ToolGroupRow(item, callbacks)
+            is RenderItem.DiffGroup -> DiffGroupRow(item, callbacks)
           }
         }
       }
@@ -371,6 +375,21 @@ private sealed interface RenderItem {
   ) : RenderItem {
     override val key: String get() = "g$id"
   }
+
+  /**
+   * 本轮改动汇总卡：一个限高的卡片，内含每个改动文件一行 + 「全部撤销」。
+   *
+   * <p>与 [Group] 分开成不同类型而不是复用：两者的组头、展开语义、子项渲染
+   * 完全不同（工具组是可折叠的列表，改动卡是固定高度的滚动区），
+   * 复用会让渲染分支里塞满 `if (是改动组)` 的补丁。
+   */
+  data class DiffGroup(
+      val id: String,
+      val expanded: Boolean,
+      val children: List<AgentUIMessage>,
+  ) : RenderItem {
+    override val key: String get() = "dg$id"
+  }
 }
 
 /**
@@ -435,11 +454,152 @@ private fun toRenderItems(messages: List<AgentUIMessage>): List<RenderItem> {
     }
     var j = i
     while (j < messages.size && messages[j].groupId == gid) j++
-    out += RenderItem.Group(gid, messages[i].groupExpanded, messages.subList(i, j).toList())
+    val children = messages.subList(i, j).toList()
+    // 前缀决定渲染成哪种组：`d` 是改动汇总卡（带「全部撤销」），其余是工具组。
+    // 用前缀而不是「组内条目类型」判断：靠内容判断会在空组/混合组上分叉，
+    // 而映射层已保证同组条目类型一致。
+    out +=
+        if (gid.startsWith("d")) {
+          RenderItem.DiffGroup(gid, messages[i].groupExpanded, children)
+        } else {
+          RenderItem.Group(gid, messages[i].groupExpanded, children)
+        }
     i = j
   }
   return out
 }
+
+/**
+ * 本轮改动汇总卡。
+ *
+ * <p>用户要求的形态：在消息尾部追加一张**限高**的卡片，把 diff 文件列表都放进去；
+ * 每行最右侧一个撤销按钮；卡片内**顶部右上角**一个「全部撤销」。
+ *
+ * <p>为什么限高 + 内部滚动：一轮运行可能改十几个文件，不限高会把对话流整屏占满，
+ * 用户要滚很久才能看到下一条消息。限高后卡片是「一眼看完全貌」的大小，
+ * 细节靠内部滚动获取。
+ *
+ * <p>「全部撤销」逐个调用 [AssistantPanelCallbacks.onRevert] 而不是新增一个批量接口：
+ * 撤销是「一次一个文件」的既有语义（宿主那边有工作区校验、IO、结果提示），
+ * 批量接口要重复那一整套。逐个调用对用户是「点一下，文件们依次恢复」——
+ * 反正是本地 IO，十几个文件是毫秒级。
+ */
+@Composable
+private fun DiffGroupRow(item: RenderItem.DiffGroup, callbacks: AssistantPanelCallbacks) {
+  val totalAdded = item.children.sumOf { it.diff?.added ?: 0 }
+  val totalRemoved = item.children.sumOf { it.diff?.removed ?: 0 }
+  val allReverted = item.children.all { it.reverted }
+  val revertible = item.children.filter { !it.reverted }
+
+  Surface(
+      shape = RoundedCornerShape(Radius.md),
+      color = MaterialTheme.colorScheme.surfaceContainerLow,
+      modifier = Modifier.fillMaxWidth().padding(horizontal = Spacing.md, vertical = Spacing.sm),
+  ) {
+    Column(modifier = Modifier.padding(Spacing.sm)) {
+      // 标题行：左「本轮改动 N 个文件 · +X -Y」，右「全部撤销」。
+      Row(
+          modifier = Modifier.fillMaxWidth(),
+          verticalAlignment = Alignment.CenterVertically,
+      ) {
+        Column(modifier = Modifier.weight(1f)) {
+          Text(
+              text = stringResource(R.string.chat_diff_group_title, item.children.size),
+              style = MaterialTheme.typography.labelLarge,
+              color = MaterialTheme.colorScheme.onSurface,
+          )
+          Text(
+              text = "+$totalAdded −$totalRemoved",
+              style = MaterialTheme.typography.labelSmall,
+              color = MaterialTheme.colorScheme.onSurfaceVariant,
+          )
+        }
+        TextButton(
+            onClick = { revertible.forEach { child -> revertOne(child, callbacks) } },
+            enabled = revertible.isNotEmpty(),
+        ) {
+          Text(
+              text =
+                  stringResource(
+                      if (allReverted) R.string.chat_diff_all_reverted
+                      else R.string.chat_diff_revert_all),
+              style = MaterialTheme.typography.labelMedium,
+          )
+        }
+      }
+
+      // 文件列表：限高 + 内部滚动。
+      //
+      // 嵌套 LazyColumn 在这里是安全的：外层主列表用的是 heightIn(max=240dp)，
+      // 给内层的是**有界**约束（无限高度约束才是嵌套懒列表的禁忌）。
+      // 用 heightIn 而不是固定 height：只改 1 个文件时不该撑出 240dp 的空白。
+      LazyColumn(modifier = Modifier.fillMaxWidth().heightIn(max = 240.dp)) {
+        items(items = item.children, key = { it.id }) { child ->
+          DiffGroupRowLine(child, callbacks)
+        }
+      }
+    }
+  }
+}
+
+/** 改动卡内的一行：文件路径 + 增删行数 + 行尾撤销按钮。 */
+@Composable
+private fun DiffGroupRowLine(child: AgentUIMessage, callbacks: AssistantPanelCallbacks) {
+  val id = child.id.toLongOrNull()
+  val diffId = child.diffId
+  Row(
+      modifier = Modifier.fillMaxWidth().padding(vertical = Spacing.xs),
+      verticalAlignment = Alignment.CenterVertically,
+  ) {
+    Column(modifier = Modifier.weight(1f)) {
+      Text(
+          // toolSummary 在映射层已填成 +X -Y；路径取自 toolArgs 的 path 字段。
+          text = child.toolArgs?.let { extractPathFromArgs(it) } ?: child.toolSummary.orEmpty(),
+          style = MaterialTheme.typography.bodySmall,
+          color = MaterialTheme.colorScheme.onSurface,
+          maxLines = 1,
+          overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+      )
+      child.toolSummary?.takeIf { it.startsWith("+") }?.let {
+        Text(
+            text = it,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+      }
+    }
+    // 行尾撤销：已撤销则禁用（与逐条 RevertRow 同一行为——避免重复点击后
+    // 收到「已经回滚过了」）。
+    if (diffId != null && id != null) {
+      TextButton(
+          onClick = { callbacks.onRevert(id, diffId) },
+          enabled = !child.reverted,
+      ) {
+        Text(
+            text =
+                stringResource(
+                    if (child.reverted) R.string.chat_diff_reverted else R.string.chat_diff_revert),
+            style = MaterialTheme.typography.labelSmall,
+        )
+      }
+    }
+  }
+}
+
+/** 撤销一条改动；[child] 缺 diffId/id 时静默跳过（历史条目可能没有）。 */
+private fun revertOne(child: AgentUIMessage, callbacks: AssistantPanelCallbacks) {
+  val id = child.id.toLongOrNull() ?: return
+  val diffId = child.diffId ?: return
+  callbacks.onRevert(id, diffId)
+}
+
+/** 从工具参数 JSON 里取 path；取不到返回 null（渲染侧退化为不显示路径）。 */
+private fun extractPathFromArgs(args: String): String? =
+    runCatching {
+          org.json.JSONObject(args).optString("path", "")
+        }
+        .getOrNull()
+        ?.takeIf { it.isNotEmpty() }
 
 /**
  * 工具组：折叠态一行「N 次工具调用」，展开态逐个渲染组内条目。
