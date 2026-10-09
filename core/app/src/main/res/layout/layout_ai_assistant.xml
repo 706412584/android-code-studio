@@ -226,6 +226,19 @@
         layout="@layout/layout_assistant_todos" />
 
       <!--
+        浮动工具状态条（2026-10-09 接线）：Aharou 的 FloatingToolStatusBar——
+        最近工具的迷你终端缩略图 + 运行状态 + ‹ n/m › 翻页 + 停止键。
+        数据源：adapter 的 TOOL 消息（经 composePanel.state）+ inputBar.liveToolOutput
+        （PROGRESS 实时累积）。放输入栏正上方——Aharou 也叠在输入区附近，
+        且与「此刻在做什么」的状态条（assistantWorking）语义互补：那条说一句话，
+        这条带完整缩略输出。
+      -->
+      <androidx.compose.ui.platform.ComposeView
+        android:id="@+id/assistantToolStatusBarCompose"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content" />
+
+      <!--
         Compose 输入栏（2026-10-09 接线）：整个输入区（附件预览行 + 输入框 + 模式胶囊 +
         模型/推理强度 + 发送停止环 + 待办/排队/斜杠菜单浮层）由移植的 ChatInputBar 承载。
         原 XML 的附件 chips、TextInputEditText、停止/发送键、单行工具条退役——

@@ -245,6 +245,19 @@ class FloatingAssistantView(
       HashMap<String, MutableList<Pair<String, String?>>>()
 
   /**
+   * 正在运行的工具的实时输出累积（键 = 工具卡片 id）。
+   *
+   * <p>PROGRESS 事件按 [runningToolCardId] 找到目标卡片后把步骤行追加进来，
+   * TOOL_FINISHED 时移除——键消失即「该工具不再运行」，浮动状态条据此切换运行态。
+   * 写入只在主线程（与 pendingDiffs 同一纪律）。
+   */
+  private val runningToolOutput = HashMap<Long, StringBuilder>()
+
+  /** 当前正在运行的工具卡片 id；无运行中工具时为 null。与 ui.lastToolCardId 的区别：
+   * 它跨会话全局唯一——PROGRESS 不带会话校验也能安全找到目标。 */
+  private var runningToolCardId: Long? = null
+
+  /**
    * 每个会话最近一次事件流写到哪张卡片。
    *
    * <p>多会话并行时，同一个视图的 [adapter] 只显示一个会话的消息，因此这些「最近卡片」
@@ -659,6 +672,8 @@ class FloatingAssistantView(
     installHeaderCompose()
     // Compose 输入栏装配（XML 输入区退役）。
     installInputBar()
+    // 浮动工具状态条装配（数据源依赖 Compose 面板状态；XML 渲染路径下为空白，见方法文档）。
+    installToolStatusBar()
     // 会话抽屉的 Compose 装配。XML RecyclerView 已退役；动作回调仍落回本类既有方法，
     // 会话数据继续走 orchestrator.listConversations()（reloadConversations 投影后提交）。
     installDrawerCompose()
@@ -1924,6 +1939,10 @@ class FloatingAssistantView(
                   input = call.arguments.orEmpty(),
               )
           ui.lastToolCardId = id
+          // 浮动状态条的实时输出从这张卡片开始累积；键存在即「运行中」。
+          runningToolCardId = id
+          runningToolOutput[id] = StringBuilder()
+          publishLiveToolOutput()
           // 发生工具调用意味着「这一段推理结束了」：把思维链块收尾并断开，
           // 让工具之后的新推理另起一块。否则整轮的推理会堆在同一块里，
           // 看不出哪段推理导致了哪次调用。
@@ -1957,6 +1976,10 @@ class FloatingAssistantView(
             )
           }
           ui.lastToolCardId = null
+          // 该工具的实时输出收尾：从映射里移除（键消失 = 不再运行），状态条随之切到完成态。
+          runningToolCardId?.let { runningToolOutput.remove(it) }
+          runningToolCardId = null
+          publishLiveToolOutput()
 
           // 有 diffId 说明这次调用改了文件。**先记下来，不立刻插卡片**——
           // 本轮全部改动在 RUN_FINISHED 时汇总成一张卡片（见 flushDiffSummary）。
@@ -2029,6 +2052,12 @@ class FloatingAssistantView(
         lifecycleScope.launch(Dispatchers.Main) {
           showAction(line)
           adapter.appendToolStep(line)
+          // 浮动状态条的实时输出：与卡片步骤区同源（都是 PROGRESS 行），
+          // 累积进当前运行中工具的缓冲；没有运行中工具时丢弃（状态条已无从显示）。
+          runningToolCardId?.let { id ->
+            runningToolOutput[id]?.appendLine(line)
+            publishLiveToolOutput()
+          }
         }
       }
       com.tom.rv2ide.ai.agent.AgentEvent.Type.FAILED -> {
@@ -2738,6 +2767,50 @@ class FloatingAssistantView(
   }
 
   /**
+   * 把浮动工具状态条装进 [binding.assistantToolStatusBarCompose]。
+   *
+   * <p>**数据源是 Compose 面板的状态**（[AssistantComposePanelHost.state]），而不是 adapter：
+   * 状态条要的 [AgentUIMessage]（id 为 String、与 liveToolOutput 的键同源）正是
+   * `state.messages` 的元素类型；从 adapter 取还得再过一次映射。也因此本装配
+   * **依赖 Compose 渲染路径**——XML 路径下 composePanel 为 null，状态条不装（保持空白）。
+   *
+   * <p>可见性由组件自己管（toolMessages 为空时 `return`，不渲染任何东西），
+   * 因此宿主无需在运行态切换时增删视图。
+   *
+   * <p>onOpenDetail 传空实现：详情面板（AharouComputerSheet）尚未接线，
+   * 点缩略图暂无下钻；先保证状态条本身的运行/翻页/停止可用。
+   */
+  private fun installToolStatusBar() {
+    val darkTheme =
+        run {
+          val tv = android.util.TypedValue()
+          val resolved = context.theme.resolveAttribute(android.R.attr.colorBackground, tv, true)
+          val bg = if (resolved) tv.data else 0xFF07111F.toInt()
+          androidx.core.graphics.ColorUtils.calculateLuminance(bg) <= 0.5
+        }
+    binding.assistantToolStatusBarCompose.setContent {
+      com.tom.rv2ide.artificial.agent.compose.theme.AIEditorTheme(darkTheme = darkTheme) {
+        val bridge = inputBar
+        // messages 是 mutableStateOf——这里直接读它，TOOL 消息随流式追加自然触发重组。
+        // takeLast(8) 与 Aharou 一致：状态条只回看最近一串工具，不是完整历史。
+        val toolMessages =
+            (composePanel?.state?.messages?.value ?: emptyList())
+                .filter { it.role == com.tom.rv2ide.artificial.agent.compose.model.MessageRole.TOOL }
+                .takeLast(8)
+        com.tom.rv2ide.artificial.agent.compose.components.independent.FloatingToolStatusBar(
+            toolMessages = toolMessages,
+            liveOutputFor = { id -> bridge.liveToolOutput[id] },
+            onOpenDetail = {},
+            onStop = {
+              displayedConversationId?.let { cancel(it) }
+              setRunningUi(false)
+            },
+        )
+      }
+    }
+  }
+
+  /**
    * 把顶栏装进 [binding.assistantHeaderCompose]（Compose 装配）。
    *
    * <p>XML 顶栏（菜单/标题/全屏/最小化/关闭五控件）退役，其入口由移植的 [ChatHeader]
@@ -3367,6 +3440,20 @@ class FloatingAssistantView(
 
   private fun updateEmptyState() {
     binding.assistantEmpty.isVisible = adapter.isEmpty()
+  }
+
+  /**
+   * 把实时输出缓冲投影到输入栏桥，驱动浮动状态条重组。
+   *
+   * <p>每次 PROGRESS 全量重建一个小 Map：条目数 = 运行中工具数（通常 0-1 个），
+   * 重建比增量维护简单且无一致性风险。
+   *
+   * <p>必须在主线程调用（写 mutableStateOf + 读 runningToolOutput）。
+   */
+  private fun publishLiveToolOutput() {
+    inputBar.liveToolOutput =
+        runningToolOutput.mapKeys { (id, _) -> id.toString() }
+            .mapValues { (_, buf) -> buf.toString() }
   }
 
   /**

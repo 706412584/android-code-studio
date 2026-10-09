@@ -28,6 +28,7 @@ import com.tom.rv2ide.artificial.agent.compose.components.independent.ProviderSe
 import com.tom.rv2ide.artificial.agent.compose.compat.ReasoningEffort
 import com.tom.rv2ide.artificial.agent.compose.components.independent.ChatSession
 import com.tom.rv2ide.artificial.agent.compose.components.tools.ParsedTodoItem
+import com.tom.rv2ide.artificial.agent.compose.model.AgentUIMessage
 import com.tom.rv2ide.artificial.agent.compose.components.independent.QueuedRequest
 
 /**
@@ -94,6 +95,17 @@ internal class AssistantInputBarBridge {
 
   /** 推理强度档位。 */
   var reasoningEffort by mutableStateOf(ReasoningEffort.MEDIUM)
+
+  // ── 工具运行状态条（FloatingToolStatusBar） ──
+
+  /**
+   * 正在运行的工具的实时输出，键 = 工具卡片 id（[AssistantMessageAdapter.Item] 的 Long id
+   * 字符串化，与 Compose 消息映射的 [AgentUIMessage.id] 同源）。
+   *
+   * <p>宿主在 PROGRESS 事件里累积、TOOL_FINISHED 时移除。键存在 = 该工具仍在跑——
+   * 状态条正是以「liveOutputFor(id) != null」判定运行态，因此移除动作本身就是收尾信号。
+   */
+  var liveToolOutput: Map<String, String> by mutableStateOf(emptyMap())
 
   // ── 待办（TodoDashboardBar） ──
 
