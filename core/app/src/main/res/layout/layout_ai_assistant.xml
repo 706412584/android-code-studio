@@ -118,18 +118,12 @@
           android:textColor="?android:textColorSecondary"
           android:textAppearance="@style/TextAppearance.Material3.BodyMedium" />
 
-        <!-- 滚动到底部 FAB：用户向上滚动时浮现，点击立刻快速平滑回到底部 -->
-        <com.google.android.material.floatingactionbutton.FloatingActionButton
-          android:id="@+id/assistantScrollBottomFab"
-          android:layout_width="wrap_content"
-          android:layout_height="wrap_content"
-          android:layout_gravity="bottom|end"
-          android:layout_marginEnd="16dp"
-          android:layout_marginBottom="16dp"
-          android:contentDescription="回到底部"
-          android:visibility="gone"
-          app:fabSize="mini"
-          app:srcCompat="@drawable/ic_chevron_down" />
+        <!--
+          滚动到底部 FAB（XML 版）已移除：跳底改由 Compose 面板内部实现
+          （见 AssistantComposePanel 的 atBottom 判定与右下角跳底按钮）——
+          智能跟随需要「用户是否在底部」的实时判定，那是列表内部的知识，
+          宿主侧的 FAB 只能做无条件跳转，做不到「上滑时不打断」。
+        -->
 
       </FrameLayout>
 
