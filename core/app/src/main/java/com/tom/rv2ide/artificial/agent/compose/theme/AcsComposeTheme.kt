@@ -23,6 +23,7 @@ package com.tom.rv2ide.artificial.agent.compose.theme
 
 import android.os.Build
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Typography
 import androidx.compose.material3.darkColorScheme
@@ -298,6 +299,20 @@ fun AIEditorTheme(
     }
   }
 
+  // 用 ACS 主题的实际颜色覆盖 Compose 色板。
+  //
+  // <p><b>为什么必须覆盖</b>：内置的 LightColorScheme/DarkColorScheme 是**硬编码**的
+  // （浅色的 background/surface 都是纯白 #FFFFFF），完全不跟随用户在 ACS 里选的主题。
+  // 后果是「顶栏和输入框一块死白，与侧栏/编辑器色调不统一，看起来突兀」——
+  // 用户实测反馈过。而 XML 侧的控件读的是 ?attr/colorSurface 等主题属性，
+  // 两者因此对不上。
+  //
+  // <p>只覆盖消息区实际用到的槽位：面板底色（surface 系）、文字色（onSurface 系）、
+  // 主色与描边。不整套搬运——M3 有几十个槽位，逐个搬容易搬错且无收益，
+  // 而未被覆盖的槽位会继续用内置值（与覆盖值同色系，不会突兀）。
+  val hostColors = remember(context) { resolveHostColors(context) }
+  val finalScheme = remember(colorScheme, hostColors) { colorScheme.overlayHost(hostColors) }
+
   // 缩放后 typography：倍率不变时复用同一实例，避免每次重组都重建 Typography。
   val typography =
       remember(textScale) {
@@ -307,9 +322,86 @@ fun AIEditorTheme(
   CompositionLocalProvider(
       LocalAppSemanticColors provides if (darkTheme) DarkSemanticColors else LightSemanticColors
   ) {
-    MaterialTheme(colorScheme = colorScheme, typography = typography, content = content)
+    MaterialTheme(colorScheme = finalScheme, typography = typography, content = content)
   }
 }
+
+/** 从 ACS 主题解析出的颜色。null 表示该属性在主题里没定义（保留 Compose 内置值）。 */
+private class HostColors(
+    val surface: Color?,
+    val surfaceContainerLow: Color?,
+    val surfaceContainer: Color?,
+    val surfaceContainerHigh: Color?,
+    val surfaceContainerHighest: Color?,
+    val onSurface: Color?,
+    val onSurfaceVariant: Color?,
+    val primary: Color?,
+    val outline: Color?,
+    val outlineVariant: Color?,
+    val background: Color?,
+    val onBackground: Color?,
+)
+
+/**
+ * 解析宿主（ACS）主题里的颜色属性。
+ *
+ * <p>逐个 `resolveAttribute` 而不是只取一两个：消息区用到的槽位分散在
+ * 气泡底（surfaceContainerLow）、输入栏（surface）、工具卡（surfaceContainer）等处，
+ * 少搬一个那处就还是死白。
+ *
+ * <p>取不到（主题没定义该 attr）时留 null，调用方保留 Compose 内置值——
+ * 比塞一个猜的颜色安全：宁可某处不跟随，也不要把文字画成与底色同色。
+ */
+private fun resolveHostColors(context: android.content.Context): HostColors {
+  val typed = android.util.TypedValue()
+  fun attr(id: Int): Color? {
+    val resolved = context.theme.resolveAttribute(id, typed, true)
+    if (!resolved) {
+      return null
+    }
+    return if (typed.type >= android.util.TypedValue.TYPE_FIRST_COLOR_INT &&
+        typed.type <= android.util.TypedValue.TYPE_LAST_COLOR_INT) {
+      Color(typed.data)
+    } else {
+      // 解出来是资源引用（@color/xxx）而不是字面值：再解析一层。
+      runCatching { Color(androidx.core.content.ContextCompat.getColor(context, typed.resourceId)) }
+          .getOrNull()
+    }
+  }
+  return HostColors(
+      surface = attr(com.tom.rv2ide.R.attr.colorSurface),
+      surfaceContainerLow = attr(com.tom.rv2ide.R.attr.colorSurfaceContainerLow),
+      surfaceContainer = attr(com.tom.rv2ide.R.attr.colorSurfaceContainer),
+      surfaceContainerHigh = attr(com.tom.rv2ide.R.attr.colorSurfaceContainerHigh),
+      surfaceContainerHighest =
+          attr(com.tom.rv2ide.R.attr.colorSurfaceContainerHighest),
+      onSurface = attr(com.tom.rv2ide.R.attr.colorOnSurface),
+      onSurfaceVariant = attr(com.tom.rv2ide.R.attr.colorOnSurfaceVariant),
+      primary = attr(com.tom.rv2ide.R.attr.colorPrimary),
+      outline = attr(com.tom.rv2ide.R.attr.colorOutline),
+      outlineVariant = attr(com.tom.rv2ide.R.attr.colorOutlineVariant),
+      background = attr(android.R.attr.colorBackground),
+      onBackground = attr(com.tom.rv2ide.R.attr.colorOnBackground),
+  )
+}
+
+/** 把宿主颜色盖到 Compose 色板上；未取到的槽位保留原值。 */
+private fun ColorScheme.overlayHost(host: HostColors): ColorScheme =
+    copy(
+        surface = host.surface ?: surface,
+        surfaceContainerLow = host.surfaceContainerLow ?: surfaceContainerLow,
+        surfaceContainer = host.surfaceContainer ?: surfaceContainer,
+        surfaceContainerHigh = host.surfaceContainerHigh ?: surfaceContainerHigh,
+        surfaceContainerHighest = host.surfaceContainerHighest ?: surfaceContainerHighest,
+        onSurface = host.onSurface ?: onSurface,
+        onSurfaceVariant = host.onSurfaceVariant ?: onSurfaceVariant,
+        primary = host.primary ?: primary,
+        outline = host.outline ?: outline,
+        outlineVariant = host.outlineVariant ?: outlineVariant,
+        // background 跟随 ACS 的 android:colorBackground（顶栏与输入栏用的就是它）。
+        background = host.background ?: background,
+        onBackground = host.onBackground ?: onBackground,
+    )
 
 /**
  * 按倍率缩放整套 typography。
