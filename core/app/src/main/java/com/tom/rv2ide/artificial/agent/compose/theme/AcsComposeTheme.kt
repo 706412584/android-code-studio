@@ -380,7 +380,14 @@ private fun resolveHostColors(context: android.content.Context): HostColors {
       primary = attr(com.tom.rv2ide.R.attr.colorPrimary),
       outline = attr(com.tom.rv2ide.R.attr.colorOutline),
       outlineVariant = attr(com.tom.rv2ide.R.attr.colorOutlineVariant),
-      background = attr(android.R.attr.colorBackground),
+      // 顶栏/输入栏用 colorSurfaceDim，与**侧栏背景同色**
+      // （activity_editor.xml:9 的 android:background="?attr/colorSurfaceDim"）。
+      //
+      // 不用 colorBackground：它在多数浅色主题下是纯白（sunny_glow #FFFBFF、
+      // vscode #FFFFFF），而侧栏是 SurfaceDim（sunny_glow #E6E2E6）——
+      // 于是「顶栏/输入栏一块死白、侧栏偏灰」，正是用户反馈的突兀感。
+      // 同一个界面里的「页面框架」应当同色，这是层次设计不是巧合。
+      background = attr(com.tom.rv2ide.R.attr.colorSurfaceDim),
       onBackground = attr(com.tom.rv2ide.R.attr.colorOnBackground),
   )
 }

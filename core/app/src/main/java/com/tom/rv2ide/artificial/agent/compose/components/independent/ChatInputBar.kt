@@ -264,7 +264,10 @@ internal fun ChatInputBar(
     }
 
     Surface(
-        color = Color.Transparent,
+        // 输入栏底 = 顶栏底（colorScheme.background，已被宿主主题覆盖为侧栏同色的
+        // SurfaceDim）。**不能留 Transparent**：那样会继承面板卡片的 colorSurface
+        // （近白），与顶栏/侧栏的偏灰色调对不上——用户反馈的「输入框纯白」正是这个。
+        color = MaterialTheme.colorScheme.background,
         modifier = modifier.fillMaxWidth()
     ) {
         val imeInset = rememberImeBottomInset()
