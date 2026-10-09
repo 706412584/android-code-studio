@@ -2748,7 +2748,7 @@ class FloatingAssistantView(
           androidx.core.graphics.ColorUtils.calculateLuminance(bg) <= 0.5
         }
     binding.assistantInputBarCompose.setContent {
-      com.tom.rv2ide.artificial.agent.compose.theme.AIEditorTheme(darkTheme = darkTheme) {
+      com.tom.rv2ide.artificial.agent.compose.theme.AIEditorTheme(darkTheme = darkTheme, followHostFrame = mode != Mode.FULLSCREEN) {
         val bridge = inputBar
         com.tom.rv2ide.artificial.agent.compose.components.independent.ChatInputBar(
             value = bridge.text,
@@ -2835,7 +2835,7 @@ class FloatingAssistantView(
         }
     applyToolStatusBarVisibility()
     binding.assistantToolStatusBarCompose.setContent {
-      com.tom.rv2ide.artificial.agent.compose.theme.AIEditorTheme(darkTheme = darkTheme) {
+      com.tom.rv2ide.artificial.agent.compose.theme.AIEditorTheme(darkTheme = darkTheme, followHostFrame = mode != Mode.FULLSCREEN) {
         val bridge = inputBar
         // messages 是 mutableStateOf——这里直接读它，TOOL 消息随流式追加自然触发重组。
         // takeLast(8) 与 Aharou 一致：状态条只回看最近一串工具，不是完整历史。
@@ -2907,7 +2907,7 @@ class FloatingAssistantView(
           androidx.core.graphics.ColorUtils.calculateLuminance(bg) <= 0.5
         }
     binding.assistantHeaderCompose.setContent {
-      com.tom.rv2ide.artificial.agent.compose.theme.AIEditorTheme(darkTheme = darkTheme) {
+      com.tom.rv2ide.artificial.agent.compose.theme.AIEditorTheme(darkTheme = darkTheme, followHostFrame = mode != Mode.FULLSCREEN) {
         com.tom.rv2ide.artificial.agent.compose.components.independent.ChatHeader(
             inputTokens = 0,
             outputTokens = 0,
@@ -2976,7 +2976,7 @@ class FloatingAssistantView(
           androidx.core.graphics.ColorUtils.calculateLuminance(bg) <= 0.5
         }
     drawerView.setContent {
-      com.tom.rv2ide.artificial.agent.compose.theme.AIEditorTheme(darkTheme = darkTheme) {
+      com.tom.rv2ide.artificial.agent.compose.theme.AIEditorTheme(darkTheme = darkTheme, followHostFrame = mode != Mode.FULLSCREEN) {
         com.tom.rv2ide.artificial.agent.compose.components.independent.ChatDrawerContent(
             sessions = drawerSessions.value,
             currentWorkspacePath = drawerCurrentCwd.value,

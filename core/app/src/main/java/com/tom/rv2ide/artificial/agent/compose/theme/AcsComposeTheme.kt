@@ -32,8 +32,12 @@ import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.ReadOnlyComposable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
@@ -284,20 +288,43 @@ fun AIEditorTheme(
      * 的「基准值 × 用户缩放」语义一致。逐组件改会漏，且新增组件时容易忘。
      */
     textScale: Float = 1f,
+    /**
+     * 是否跟随宿主的「页面框架」底色（SurfaceDim）。
+     *
+     * <p>编辑器侧栏 / 悬浮 / 内联宿主的页面框架（顶栏、输入栏）应与**侧栏背景**同色
+     * （activity_editor.xml 的 android:background="?attr/colorSurfaceDim"）——不跟的话
+     * 框架一块死白压在偏灰的侧栏上，观感割裂（用户实测反馈）。
+     *
+     * <p>真全屏宿主（AssistantFullscreenActivity）的面板即整页、底下没有侧栏，
+     * 框架色应回到主题 surface（浅色白 / 深色面板色）——传 false，否则灰顶栏压白面板
+     * 同样割裂（用户实测反馈：「点击全屏后应该恢复之前的白色」）。
+     */
+    followHostFrame: Boolean = true,
     content: @Composable () -> Unit
 ) {
   val context = LocalContext.current
-  val colorScheme = remember(darkTheme, dynamicColor, context) {
-    if (dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-      val system = if (darkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
-      // M3 组件默认按 surfaceTint 做高度染色，会与自有配色叠加出预期外的色调，这里关掉
-      system.copy(surfaceTint = if (darkTheme) Color.Transparent else system.surface)
-    } else if (darkTheme) {
-      DarkColorScheme
-    } else {
-      LightColorScheme
-    }
-  }
+  // 配色方案：用户在 AI 设置里选的一套（见 AssistantThemePrefs）。默认蓝 =
+  // ACS 历史手调配色，其余三套由种子推导（见 AppThemePreset）。
+  //
+  // <p><b>为什么在组合里读偏好而不是宿主传参</b>：设置页改完方案后用户直接返回面板
+  // （同一 Activity 内切换），宿主不会重建、也不会通知；与聊天字号同一处理
+  // （见 rememberChatTextScale）——自己订阅偏好，改动即触发重组。
+  val preset = rememberThemePreset()
+  val colorScheme =
+      remember(darkTheme, dynamicColor, preset, context) {
+        val base = if (darkTheme) preset.dark else preset.light
+        if (dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+          val system = if (darkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
+          // M3 组件默认按 surfaceTint 做高度染色，会与自有配色叠加出预期外的色调，这里关掉。
+          // 语义色不跟随莫奈（推导器未接），与所选方案并存时会有轻微色温差——与 Aharou 相同。
+          system.copy(surfaceTint = if (darkTheme) Color.Transparent else system.surface)
+        } else {
+          base.colorScheme
+        }
+      }
+  // 语义色跟随所选方案：DEFAULT 恒等于原先的 Light/DarkSemanticColors（见 DEFAULT 的构造），
+  // 其余方案由推导给出。
+  val semanticColors = if (darkTheme) preset.dark.semanticColors else preset.light.semanticColors
 
   // 用 ACS 主题的实际颜色覆盖 Compose 色板。
   //
@@ -310,7 +337,7 @@ fun AIEditorTheme(
   // <p>只覆盖消息区实际用到的槽位：面板底色（surface 系）、文字色（onSurface 系）、
   // 主色与描边。不整套搬运——M3 有几十个槽位，逐个搬容易搬错且无收益，
   // 而未被覆盖的槽位会继续用内置值（与覆盖值同色系，不会突兀）。
-  val hostColors = remember(context) { resolveHostColors(context) }
+  val hostColors = remember(context, followHostFrame) { resolveHostColors(context, followHostFrame) }
   val finalScheme = remember(colorScheme, hostColors) { colorScheme.overlayHost(hostColors) }
 
   // 缩放后 typography：倍率不变时复用同一实例，避免每次重组都重建 Typography。
@@ -319,11 +346,36 @@ fun AIEditorTheme(
         if (textScale == 1f) AppTypography else AppTypography.scaledBy(textScale)
       }
 
-  CompositionLocalProvider(
-      LocalAppSemanticColors provides if (darkTheme) DarkSemanticColors else LightSemanticColors
-  ) {
+  CompositionLocalProvider(LocalAppSemanticColors provides semanticColors) {
     MaterialTheme(colorScheme = finalScheme, typography = typography, content = content)
   }
+}
+
+/**
+ * 读当前选中的配色方案，并在设置页改动时即时重组。
+ *
+ * <p>与 [com.tom.rv2ide.artificial.agent.compose.rememberChatTextScale] 同一模式：
+ * 自己订阅偏好文件，不依赖宿主转发通知。只认配色方案的键，同文件里的其它键
+ * （字号/卡片缩放/渲染开关）不触发重组。
+ */
+@Composable
+private fun rememberThemePreset(): AppThemePreset {
+  val context = LocalContext.current
+  var presetId by remember { mutableStateOf(AssistantThemePrefs.presetId(context)) }
+  DisposableEffect(context) {
+    val prefs =
+        context.applicationContext.getSharedPreferences(
+            "ai_agent_tools", android.content.Context.MODE_PRIVATE)
+    val listener =
+        android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+          if (key == "assistant_theme_preset_id") {
+            presetId = AssistantThemePrefs.presetId(context)
+          }
+        }
+    prefs.registerOnSharedPreferenceChangeListener(listener)
+    onDispose { prefs.unregisterOnSharedPreferenceChangeListener(listener) }
+  }
+  return AppThemePreset.findById(presetId)
 }
 
 /** 从 ACS 主题解析出的颜色。null 表示该属性在主题里没定义（保留 Compose 内置值）。 */
@@ -351,8 +403,14 @@ private class HostColors(
  *
  * <p>取不到（主题没定义该 attr）时留 null，调用方保留 Compose 内置值——
  * 比塞一个猜的颜色安全：宁可某处不跟随，也不要把文字画成与底色同色。
+ *
+ * @param followHostFrame 见 [AIEditorTheme.followHostFrame]。false 时 background
+ *   不取 SurfaceDim（全屏宿主要恢复白色框架）。
  */
-private fun resolveHostColors(context: android.content.Context): HostColors {
+private fun resolveHostColors(
+    context: android.content.Context,
+    followHostFrame: Boolean,
+): HostColors {
   val typed = android.util.TypedValue()
   fun attr(id: Int): Color? {
     val resolved = context.theme.resolveAttribute(id, typed, true)
@@ -387,7 +445,10 @@ private fun resolveHostColors(context: android.content.Context): HostColors {
       // vscode #FFFFFF），而侧栏是 SurfaceDim（sunny_glow #E6E2E6）——
       // 于是「顶栏/输入栏一块死白、侧栏偏灰」，正是用户反馈的突兀感。
       // 同一个界面里的「页面框架」应当同色，这是层次设计不是巧合。
-      background = attr(com.tom.rv2ide.R.attr.colorSurfaceDim),
+      //
+      // 全屏宿主（followHostFrame = false）不走这里：面板即整页，没有侧栏可跟，
+      // background 保留 surface 内置值（浅色白），见 AIEditorTheme 的参数文档。
+      background = if (followHostFrame) attr(com.tom.rv2ide.R.attr.colorSurfaceDim) else null,
       onBackground = attr(com.tom.rv2ide.R.attr.colorOnBackground),
   )
 }
