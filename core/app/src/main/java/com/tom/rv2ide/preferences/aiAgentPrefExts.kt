@@ -27,6 +27,7 @@ import com.tom.rv2ide.activities.FolderPickerActivity
 import com.tom.rv2ide.ai.agent.ProjectRulesLoader
 import com.tom.rv2ide.artificial.agent.AssistantUiStyleStore
 import com.tom.rv2ide.artificial.agent.compose.AssistantComposeRender
+import com.tom.rv2ide.artificial.agent.compose.AssistantThinkingCollapsePref
 import com.tom.rv2ide.artificial.agent.compose.AssistantToolStatusBarPref
 import com.tom.rv2ide.artificial.agent.ShizukuShellBackend
 import com.tom.rv2ide.artificial.agent.codegraph.CodeGraphInstaller
@@ -635,6 +636,7 @@ private class AdvancedPage(
     // （Compose 面板 vs XML 列表），放一起用户才好理解它们的从属关系。
     addPreference(ComposeRenderSwitch())
     addPreference(ToolStatusBarSwitch())
+    addPreference(ThinkingCollapseSwitch())
     addPreference(PromptTemplatePreference())
     addPreference(AutoSwitchProviderSwitch())
   }
@@ -1943,6 +1945,31 @@ private class ToolStatusBarSwitch(
 
   override fun onPreferenceChanged(preference: Preference, newValue: Any?): Boolean {
     AssistantToolStatusBarPref.setEnabled(preference.context, newValue as? Boolean ?: false)
+    return true
+  }
+}
+
+/**
+ * 「思考完毕后自动折叠」开关。
+ *
+ * <p>开启（默认）时思考块在流式期间展开、结束自动折叠；关闭则始终展开。
+ * 见 [AssistantThinkingCollapsePref] 的类文档。
+ */
+@Parcelize
+private class ThinkingCollapseSwitch(
+    override val key: String = AssistantThinkingCollapsePref.KEY_ENABLED,
+    override val title: Int = string.ai_agent_thinking_collapse,
+    override val summary: Int? = string.ai_agent_thinking_collapse_summary,
+) : BasePreference() {
+
+  override fun onCreatePreference(context: Context): Preference =
+      androidx.preference.SwitchPreference(context).apply {
+        key = AssistantThinkingCollapsePref.KEY_ENABLED
+        isChecked = AssistantThinkingCollapsePref.isEnabled(context)
+      }
+
+  override fun onPreferenceChanged(preference: Preference, newValue: Any?): Boolean {
+    AssistantThinkingCollapsePref.setEnabled(preference.context, newValue as? Boolean ?: true)
     return true
   }
 }

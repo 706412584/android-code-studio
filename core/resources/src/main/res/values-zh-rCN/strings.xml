@@ -69,6 +69,8 @@
   <string name="ai_agent_compose_render_summary">用新的 Compose 界面渲染助手消息；关闭则使用经典列表</string>
   <string name="ai_agent_tool_status_bar">工具运行状态条</string>
   <string name="ai_agent_tool_status_bar_summary">工具运行时在输入区上方显示浮动迷你终端状态条；默认关闭</string>
+  <string name="ai_agent_thinking_collapse">思考完毕后自动折叠</string>
+  <string name="ai_agent_thinking_collapse_summary">思考内容在输出期间保持展开，结束后自动折叠；关闭则始终展开</string>
   <string name="ai_agent_description">使用 AI 助手 生成由 AI 驱动的代码</string>
   <string name="ai_agent_prompt_hint">描述你想要生成什么代码…</string>
   <string name="ai_agent_send">发送</string>

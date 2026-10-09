@@ -183,6 +183,15 @@ class FloatingAssistantView(
           binding.root.post { applyToolStatusBarVisibility() }
           return@OnSharedPreferenceChangeListener
         }
+        // 思考自动折叠开关：写进 adapter 的属性（下次 finishThinking 生效），
+        // 已渲染的历史块不动——它们是过去的行为，改开关不该追溯改写。
+        if (key ==
+            com.tom.rv2ide.artificial.agent.compose.AssistantThinkingCollapsePref.KEY_ENABLED) {
+          adapter.autoCollapseThinking =
+              com.tom.rv2ide.artificial.agent.compose.AssistantThinkingCollapsePref
+                  .isEnabled(context)
+          return@OnSharedPreferenceChangeListener
+        }
         if (key !in uiStyleKeys) {
           return@OnSharedPreferenceChangeListener
         }
@@ -196,7 +205,13 @@ class FloatingAssistantView(
         }
       }
 
-  private val adapter = AssistantMessageAdapter(uiStyleStore)
+  private val adapter =
+      AssistantMessageAdapter(uiStyleStore).apply {
+        // 思考块的折叠策略由偏好决定（见 AssistantThinkingCollapsePref）。
+        // 在构造后立即读一次：默认值（true）已与偏好默认一致，但用户可能改过。
+        autoCollapseThinking =
+            com.tom.rv2ide.artificial.agent.compose.AssistantThinkingCollapsePref.isEnabled(context)
+      }
   private val settings = AgentToolSettings(context)
 
   /**

@@ -83,6 +83,16 @@ class AssistantMessageAdapter(
 ) : RecyclerView.Adapter<RecyclerView.ViewHolder>() {
 
   /**
+   * 思考块是否「流式期间展开、结束后自动折叠」。
+   *
+   * <p>由宿主从偏好读出后设置（见 `AssistantThinkingCollapsePref`）。做成可变属性而不是
+   * 构造参数：偏好可能在运行中改变，而 adapter 由宿主持有、不重建——构造参数改了也传不进来。
+   *
+   * <p>默认 true：与偏好默认值一致，也让「无参构造」的测试/预览场景有确定行为。
+   */
+  var autoCollapseThinking: Boolean = true
+
+  /**
    * 按工具名解析展示分类。
    *
    * <p>做成注入的窄接口而不是直接持有 `ToolRegistry`：适配器只想知道「这张卡片该用什么
@@ -780,7 +790,9 @@ class AssistantMessageAdapter(
       return -1L
     }
     val id = nextId++
-    val block = Thinking(id, delta, streaming = streaming, expanded = false)
+    // 默认**展开**：流式期间用户最想看的就是模型正在想什么；结束时的自动折叠由
+    // [finishThinking] 按偏好处理。关掉自动折叠时则一直展开到用户手动收起。
+    val block = Thinking(id, delta, streaming = streaming, expanded = true)
 
     // 末项是工具组时把推理块也收进去，**不打断分组**。
     //
@@ -806,21 +818,46 @@ class AssistantMessageAdapter(
    * <p>穿透分组：推理块现在可能被收在 [ToolGroup] 里（见 [appendThinking]），
    * 只查顶层会让组内推理块永久停在「思考中」。
    */
+  /**
+   * 收尾一个思维链块：标记不再流式，并按偏好决定是否自动折叠。
+   *
+   * <p>「思考完毕」是自动折叠的唯一时机——此时模型已转向输出正文或调用工具，
+   * 推理内容对用户的价值从「正在发生」降为「可回看」。
+   *
+   * <p>只在块**确实在流式**时才动它（`streaming == true`）：重复调用（工具连续调用
+   * 时每轮都会 finish 一次）不该反复改写用户的展开态。这也意味着用户若在思考期间
+   * 手动收起，结束时的折叠不会与他的操作冲突（已是折叠态，copy 结果相同）。
+   */
   fun finishThinking(id: Long) {
-    replaceThinking(id) { if (it.streaming) it.copy(streaming = false) else it }
+    replaceThinking(id) {
+      if (!it.streaming) {
+        it
+      } else {
+        it.copy(streaming = false, expanded = if (autoCollapseThinking) false else it.expanded)
+      }
+    }
   }
 
   fun toggleThinkingExpanded(id: Long) {
     replaceThinking(id) { it.copy(expanded = !it.expanded) }
   }
 
-  /** 把仍在流式的思维链块全部收尾（运行结束或失败时调用），含组内的。 */
+  /**
+   * 把仍在流式的思维链块全部收尾（运行结束或失败时调用），含组内的。
+   *
+   * <p>折叠策略与 [finishThinking] 一致（按 [autoCollapseThinking]）——运行结束时
+   * 这些块同样已「思考完毕」，不折叠的话最后一段推理会一直占着屏幕。
+   */
   fun finishAllThinking() {
     for (i in items.indices) {
       when (val top = items[i]) {
         is Thinking -> {
           if (top.streaming) {
-            items[i] = top.copy(streaming = false)
+            items[i] =
+                top.copy(
+                    streaming = false,
+                    expanded = if (autoCollapseThinking) false else top.expanded,
+                )
             notifyItemChanged(i)
           }
         }
@@ -832,7 +869,14 @@ class AssistantMessageAdapter(
               top.copy(
                   children =
                       top.children.map {
-                        if (it is Thinking && it.streaming) it.copy(streaming = false) else it
+                        if (it is Thinking && it.streaming) {
+                          it.copy(
+                              streaming = false,
+                              expanded = if (autoCollapseThinking) false else it.expanded,
+                          )
+                        } else {
+                          it
+                        }
                       })
           notifyItemChanged(i)
         }

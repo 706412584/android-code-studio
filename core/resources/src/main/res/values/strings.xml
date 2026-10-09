@@ -69,6 +69,8 @@
   <string name="ai_agent_compose_render_summary">Render assistant messages with the new Compose UI. Turn off to use the classic list.</string>
   <string name="ai_agent_tool_status_bar">Tool Running Status Bar</string>
   <string name="ai_agent_tool_status_bar_summary">Show a floating mini-terminal status bar above the input while tools run. Off by default.</string>
+  <string name="ai_agent_thinking_collapse">Auto-collapse Thinking</string>
+  <string name="ai_agent_thinking_collapse_summary">Keep reasoning expanded while it streams, then collapse it when done. Turn off to keep it always expanded.</string>
   <string name="ai_agent_description">Get AI-powered code generation using AI Agent</string>
   <string name="ai_agent_prompt_hint">Describe what code you want to generate...</string>
   <string name="ai_agent_send">Send</string>
