@@ -633,108 +633,27 @@
       android:focusable="true" />
 
     <!--
-      抽屉本体。宽度 240dp 且不超过容器的 78%：窄面板（贴边形态可能只有 300dp）上
-      固定 240dp 会盖掉几乎全部对话，比例上限保证右侧始终露出一条对话区。
+      抽屉本体。宽度 280dp 且不超过容器的 78%：窄面板（贴边形态可能只有 300dp）上
+      固定宽会盖掉几乎全部对话，比例上限保证右侧始终露出一条对话区。
+
+      2026-10-09 接线：内部内容由 XML（RecyclerView + 底部三按钮）换成 Compose 的
+      ChatDrawerContent（会话/文件双 Tab + 搜索 + 状态点）。原 XML 控件退役：
+      会话列表/空态/三个动作全部由 Compose 侧承载（动作回调仍落回宿主既有方法）。
     -->
-    <LinearLayout
+    <FrameLayout
       android:id="@+id/assistantDrawer"
-      android:layout_width="240dp"
+      android:layout_width="280dp"
       android:layout_height="match_parent"
       android:layout_gravity="start"
       android:background="?attr/colorSurface"
-      android:orientation="vertical"
       android:elevation="8dp">
 
-      <TextView
+      <androidx.compose.ui.platform.ComposeView
+        android:id="@+id/assistantDrawerCompose"
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:paddingStart="16dp"
-        android:paddingEnd="16dp"
-        android:paddingTop="16dp"
-        android:paddingBottom="8dp"
-        android:text="@string/ai_conversation_list_title"
-        android:textAppearance="@style/TextAppearance.Material3.TitleSmall"
-        android:textStyle="bold" />
+        android:layout_height="match_parent" />
 
-      <View
-        android:layout_width="match_parent"
-        android:layout_height="1dp"
-        android:background="?attr/colorOutline" />
-
-      <androidx.recyclerview.widget.RecyclerView
-        android:id="@+id/assistantConversations"
-        android:layout_width="match_parent"
-        android:layout_height="0dp"
-        android:layout_weight="1"
-        android:clipToPadding="false"
-        android:paddingTop="4dp"
-        android:paddingBottom="4dp" />
-
-      <TextView
-        android:id="@+id/assistantConversationsEmpty"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:padding="24dp"
-        android:text="@string/ai_conversation_empty"
-        android:textAlignment="center"
-        android:textAppearance="@style/TextAppearance.Material3.BodySmall"
-        android:textColor="?android:textColorSecondary"
-        android:visibility="gone"
-        tools:visibility="visible" />
-
-      <View
-        android:layout_width="match_parent"
-        android:layout_height="1dp"
-        android:background="?attr/colorOutline" />
-
-      <!--
-        抽屉底部的两个动作。
-
-        新建会话与设置放在这里而不是标题栏：标题栏右侧已有三个按钮，再加会挤掉标题；
-        而这两个动作的使用场景恰好都是「打开列表时顺手做」（找会话时想开新的、
-        或想去调配置），放抽屉里比放标题栏更贴合意图。
-
-        溢出菜单因此取消——它原先只承载「全屏/设置/复制/关闭」四项，
-        全屏移到标题栏、设置移到此处、关闭移到标题栏，只剩「复制」无处可去，
-        也一并移到这里。
-      -->
-      <com.google.android.material.button.MaterialButton
-        android:id="@+id/assistantNewConversation"
-        style="@style/Widget.Material3.Button.TextButton"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:gravity="start|center_vertical"
-        android:minHeight="48dp"
-        android:text="@string/ai_assistant_new_conversation"
-        app:icon="@drawable/ic_add"
-        app:iconGravity="textStart"
-        app:iconTint="?attr/colorOnSurfaceVariant" />
-
-      <com.google.android.material.button.MaterialButton
-        android:id="@+id/assistantCopyConversation"
-        style="@style/Widget.Material3.Button.TextButton"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:gravity="start|center_vertical"
-        android:minHeight="48dp"
-        android:text="@string/ai_assistant_export"
-        app:icon="@drawable/ic_content_copy"
-        app:iconGravity="textStart"
-        app:iconTint="?attr/colorOnSurfaceVariant" />
-
-      <com.google.android.material.button.MaterialButton
-        android:id="@+id/assistantSettings"
-        style="@style/Widget.Material3.Button.TextButton"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:gravity="start|center_vertical"
-        android:minHeight="48dp"
-        android:text="@string/ai_assistant_settings"
-        app:icon="@drawable/ic_settings"
-        app:iconGravity="textStart"
-        app:iconTint="?attr/colorOnSurfaceVariant" />
-
-    </LinearLayout>
+    </FrameLayout>
 
   </FrameLayout>
 

@@ -61,7 +61,17 @@ class AssistantSidebarFragment : Fragment() {
   override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
     super.onViewCreated(view, savedInstanceState)
 
-    val host = ActivityHost(requireContext(), viewLifecycleOwner.lifecycleScope, view as ViewGroup)
+    // onOpenFile：抽屉文件 Tab 点文件 → 编辑器打开。侧栏只在编辑器 Activity 内存在，
+    // activity 是 IEditorHandler（EditorActivity 继承链保证）；不是时静默忽略。
+    val host =
+        ActivityHost(
+            requireContext(),
+            viewLifecycleOwner.lifecycleScope,
+            view as ViewGroup,
+            onOpenFile = { file ->
+              (activity as? com.tom.rv2ide.interfaces.IEditorHandler)?.openFile(file)
+            },
+        )
     val assistantView =
         FloatingAssistantView(
             host,

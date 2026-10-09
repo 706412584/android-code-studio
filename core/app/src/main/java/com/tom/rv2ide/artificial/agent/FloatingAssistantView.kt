@@ -29,6 +29,8 @@ import androidx.constraintlayout.widget.ConstraintLayout
 import androidx.core.view.isVisible
 import com.google.android.material.color.MaterialColors
 import androidx.lifecycle.LifecycleCoroutineScope
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.tom.rv2ide.adapters.AssistantMessageAdapter
 import com.tom.rv2ide.adapters.ConversationListAdapter
@@ -358,13 +360,28 @@ class FloatingAssistantView(
   private val throttle = StreamingThrottle()
 
   /**
-   * 会话列表适配器。
+   * 会话抽屉的 Compose 状态桥（2026-10-09 起 XML RecyclerView 退役）。
    *
-   * <p>`lateinit` 而不是构造时创建：它需要 `binding`（在 attach 里才 inflate），
-   * 而构造顺序上 binding 已就绪，但适配器的回调又要引用本类的方法——
-   * 放在 attach 里初始化最清晰。
+   * <p>三个 mutableStateOf 分别承载「列表 / 当前会话 / 当前工作区」：宿主原有的
+   * `conversationAdapter.setXxx` 调用点全部平移到这里，Compose 抽屉按状态重组。
+   * 投影（`ConversationSummary` → `ChatSession`）在 [projectSessions] 完成。
    */
-  private lateinit var conversationAdapter: ConversationListAdapter
+  private val drawerSessions = mutableStateOf<List<com.tom.rv2ide.artificial.agent.compose.components.independent.ChatSession>>(emptyList())
+  private val drawerActiveId = mutableStateOf<String?>(null)
+  private val drawerCurrentCwd = mutableStateOf("")
+
+  /** 会话搜索关键词与命中（会话 Tab 的搜索框）。命中在 reloadConversations 时懒查询。 */
+  val chatSearchQuery = mutableStateOf("")
+  private val chatSearchState = mutableStateOf(com.tom.rv2ide.artificial.agent.compose.components.independent.ChatSearchState())
+
+  /** 抽屉「文件」Tab 的宿主状态机（读目录/新建/重命名/粘贴冲突等）。 */
+  private val drawerFileHost = AssistantDrawerFileHost()
+
+  /**
+   * 文件 Tab 的工作区搜索引擎。工作区就绪时创建一次（walk 引擎直读宿主文件）；
+   * 无工作区时为 null，抽屉退回「搜索不可用」空态。
+   */
+  private var drawerSearchEngine: com.tom.rv2ide.artificial.agent.compose.compat.WorkspaceSearchEngine? = null
 
   /**
    * 最近一次通过列表打开的会话 id。
@@ -655,24 +672,13 @@ class FloatingAssistantView(
     // 抽屉遮罩点击关闭。
     binding.assistantDrawerScrim.setOnClickListener { toggleConversationPanel() }
 
-    // 抽屉底部的三个动作（原溢出菜单的去处）。
-    binding.assistantNewConversation.setOnClickListener {
-      toggleConversationPanel()
-      startNewConversation()
-    }
-    binding.assistantCopyConversation.setOnClickListener { copyConversation() }
-    binding.assistantSettings.setOnClickListener { openAssistantSettings() }
+    // 抽屉底部三个动作改由 Compose 抽屉的设置卡承载（见 installDrawerCompose）。
 
     refreshModelLabel()
 
-    // 会话列表
-    conversationAdapter =
-        ConversationListAdapter(
-            onOpen = { summary -> openConversation(summary) },
-            onDelete = { summary -> confirmDeleteConversation(summary) },
-        )
-    binding.assistantConversations.layoutManager = LinearLayoutManager(context)
-    binding.assistantConversations.adapter = conversationAdapter
+    // 会话抽屉的 Compose 装配。XML RecyclerView 已退役；动作回调仍落回本类既有方法，
+    // 会话数据继续走 orchestrator.listConversations()（reloadConversations 投影后提交）。
+    installDrawerCompose()
 
     // 这里 workspace 还是 null（调用点一律是 attach() 紧接 setWorkspace()），
     // 所以本次调用只是把标题置成静态文案；真正的项目名由紧随其后的 setWorkspace 设置。
@@ -761,7 +767,43 @@ class FloatingAssistantView(
     refreshGitBranch()
     // 标题要跟着换项目名，会话列表里各条会话的归属标注也要重算。
     refreshWorkspaceLabel()
-    conversationAdapter.setCurrentCwd(workspace?.absolutePath)
+    drawerCurrentCwd.value = workspace?.absolutePath ?: ""
+    drawerFileHost.setWorkspace(workspace)
+    drawerSearchEngine =
+        workspace?.let {
+          com.tom.rv2ide.artificial.agent.compose.compat.WorkspaceSearchEngine(
+              com.tom.rv2ide.artificial.agent.compose.compat.HostFileAccessProvider(it))
+        }
+  }
+
+  /** 在编辑器里打开工作区文件（文件 Tab 点文件）。经 [AssistantHost.onOpenFileRequested] 交给宿主。 */
+  private fun openWorkspaceFile(path: String) {
+    val root = drawerFileHost.workspaceRoot ?: return
+    val prefix = "~/workspace"
+    val file =
+        when {
+          path == prefix -> root
+          path.startsWith("/") -> File(root, path.removePrefix("/"))
+          else -> File(path)
+        }
+    if (file.isFile) {
+      host.onOpenFileRequested(file)
+    }
+  }
+
+  /** 把一条工作区路径以「附件描述」的形式塞进输入框（文件 Tab 的加入输入动作）。 */
+  private fun addPathToInput(path: String) {
+    val existing = binding.assistantInput.text?.toString().orEmpty()
+    val line = context.getString(string.ai_assistant_attachment_marker, path)
+    binding.assistantInput.setText(if (existing.isBlank()) line else existing + "\n" + line)
+  }
+
+  /** 会话搜索命中 → 打开该会话（行级跳转由接线层的 lineFor 通道完成，当前先开会话）。 */
+  private fun openSearchHitInEditor(
+      hit: com.tom.rv2ide.artificial.agent.compose.components.independent.ChatSearchHit
+  ) {
+    toggleConversationPanel()
+    openConversationById(hit.sessionId)
   }
 
   /**
@@ -2715,6 +2757,86 @@ class FloatingAssistantView(
    * 滑动给了「它是从侧边拉出来的」这一空间暗示，用户知道点遮罩或再点菜单能收回去。
    * 直接显隐则像内容被替换，用户会去找返回键。
    */
+  /**
+   * 把会话抽屉装进 [binding.assistantDrawerCompose]（Compose 装配）。
+   *
+   * <p>**会话数据仍然由本类的 [reloadConversations] 拉取**：listConversations 读盘，
+   * 每次展开重拉一次，投影后写进 [drawerSessions]——与原适配器 submitList 同构。
+   * 文件 Tab 的目录操作直接落在 orchestrator 的文件工具语义上（容器路径 =
+   * 工作区绝对路径），重命名/删除后调用 [refreshBrowse] 重拉。
+   *
+   * <p>设置只在这里解析一次：`darkTheme` 用与 [AssistantComposePanelHost] 相同的
+   * colorBackground 亮度判据（ACS 可应用内切主题而不改系统 uiMode）。
+   */
+  private fun installDrawerCompose() {
+    val drawerView = binding.assistantDrawerCompose
+    val darkTheme =
+        run {
+          val tv = android.util.TypedValue()
+          val resolved = context.theme.resolveAttribute(android.R.attr.colorBackground, tv, true)
+          val bg = if (resolved) tv.data else 0xFF07111F.toInt()
+          androidx.core.graphics.ColorUtils.calculateLuminance(bg) <= 0.5
+        }
+    drawerView.setContent {
+      com.tom.rv2ide.artificial.agent.compose.theme.AIEditorTheme(darkTheme = darkTheme) {
+        com.tom.rv2ide.artificial.agent.compose.components.independent.ChatDrawerContent(
+            sessions = drawerSessions.value,
+            currentWorkspacePath = drawerCurrentCwd.value,
+            currentSessionId = drawerActiveId.value,
+            agentStates = emptyMap(),
+            onSelect = { session ->
+              toggleConversationPanel()
+              openConversationById(session.id)
+            },
+            onDelete = { session -> confirmDeleteConversationById(session.id) },
+            onRename = { session, title -> renameConversation(session.id, title) },
+            onTogglePin = { session -> togglePinConversation(session.id) },
+            onExport = { copyConversation() },
+            browseState = drawerFileHost.browseState,
+            expandedPaths = drawerFileHost.expandedPaths,
+            fileOpPaths = drawerFileHost.fileOpPaths.toSet(),
+            clipboard = drawerFileHost.clipboard,
+            pasteConflict = drawerFileHost.pasteConflict,
+            onToggleExpand = { path -> drawerFileHost.toggleExpand(path) },
+            onOpenFile = { path -> openWorkspaceFile(path) },
+            onRefreshBrowse = { drawerFileHost.refreshExpanded() },
+            onCreateFile = { dir, name -> drawerFileHost.createEntry(dir, name, isFolder = false) },
+            onCreateFolder = { dir, name -> drawerFileHost.createEntry(dir, name, isFolder = true) },
+            onRenameEntry = { path, name -> drawerFileHost.renameEntry(path, name) },
+            onDeleteEntry = { path -> drawerFileHost.deleteEntry(path) },
+            onCopyEntry = { src, dst -> drawerFileHost.copyEntry(src, dst, cut = false) },
+            onCutEntry = { src, dst -> drawerFileHost.copyEntry(src, dst, cut = true) },
+            onAddToInput = { path -> addPathToInput(path) },
+            onPasteEntry = { dir, onConflict -> drawerFileHost.paste(dir, onConflict) },
+            onPasteOverwrite = { drawerFileHost.pasteOverwrite() },
+            onCancelPasteOverwrite = { drawerFileHost.cancelPasteOverwrite() },
+            onClearClipboard = { drawerFileHost.clearClipboard() },
+            onNavigateToSettings = { openAssistantSettings() },
+            searchQuery = chatSearchQuery.value,
+            searchState = chatSearchState.value,
+            onSearchQueryChange = { q -> chatSearchQuery.value = q },
+            onClearSearch = { chatSearchQuery.value = "" },
+            onOpenSearchHit = { hit -> openSearchHitInEditor(hit) },
+            fileSearchEngine = drawerSearchEngine,
+        )
+      }
+    }
+  }
+
+  /** `ConversationSummary`（JSONL 会话）→ 抽屉用的 `ChatSession` 投影。 */
+  private fun projectSessions(
+      summaries: List<com.tom.rv2ide.ai.agent.conversation.ConversationSummary>
+  ): List<com.tom.rv2ide.artificial.agent.compose.components.independent.ChatSession> =
+      summaries.map { s ->
+        com.tom.rv2ide.artificial.agent.compose.components.independent.ChatSession(
+            id = s.getId(),
+            title = s.getTitle(),
+            createdAt = s.getCreatedAt(),
+            updatedAt = s.getModifiedAt(),
+            workspacePath = s.getCwd(),
+        )
+      }
+
   private fun toggleConversationPanel() {
     // 每次切换都递增。关闭动画的收尾回调会比对它，只有仍是最新一轮才真正隐藏——
     // 否则「关到一半又点开」时，迟到的收尾回调会把刚打开的抽屉隐藏掉。
@@ -2774,12 +2896,11 @@ class FloatingAssistantView(
             emptyList()
           }
       withContext(Dispatchers.Main) {
-        // 先设当前工作区再提交列表：归属标注要在 bind 时就能拿到正确值，
+        // 先设当前工作区再提交列表：归属标注要在投影时就能拿到正确值，
         // 否则会先按上一次的项目渲染一遍再纠正，用户能看到一次闪烁。
-        conversationAdapter.setCurrentCwd(workspace?.absolutePath)
-        conversationAdapter.submitList(summaries)
-        conversationAdapter.setActive(orchestrator.activeConversationId)
-        binding.assistantConversationsEmpty.isVisible = summaries.isEmpty()
+        drawerCurrentCwd.value = workspace?.absolutePath ?: ""
+        drawerSessions.value = projectSessions(summaries)
+        drawerActiveId.value = orchestrator.activeConversationId
       }
     }
   }
@@ -2824,10 +2945,11 @@ class FloatingAssistantView(
           lastGitBranch = null
           refreshGitBranch()
           refreshWorkspaceLabel()
-          conversationAdapter.setCurrentCwd(projectDir.absolutePath)
+          drawerCurrentCwd.value = projectDir.absolutePath
+          drawerFileHost.setWorkspace(projectDir)
         }
         orchestrator.openConversation(convId)
-        conversationAdapter.setActive(convId)
+        drawerActiveId.value = convId
         // 订阅 + 回放。**不再在切会话时取消该会话的运行**：它可能正在跑，而用户点开
         // 就是想看实时输出——订阅后就能收到后续增量（历史由 subscribeWithHistory 原子取回）。
         loadAndSubscribe(convId) {
@@ -2955,6 +3077,51 @@ class FloatingAssistantView(
   }
 
   /** 删除会话前确认。删除不可撤销，静默删除会让误触的代价过大。 */
+  // ── Compose 会话抽屉的会话操作入口（按 id，替代原适配器回调） ──
+
+  private fun openConversationById(id: String) {
+    drawerSessions.value.firstOrNull { it.id == id }?.let { session ->
+      openConversation(
+          com.tom.rv2ide.ai.agent.conversation.ConversationSummary(
+              session.id, session.title, session.workspacePath,
+              session.createdAt, session.updatedAt, 0))
+    }
+  }
+
+  private fun confirmDeleteConversationById(id: String) {
+    drawerSessions.value.firstOrNull { it.id == id }?.let { session ->
+      confirmDeleteConversation(
+          com.tom.rv2ide.ai.agent.conversation.ConversationSummary(
+              session.id, session.title, session.workspacePath,
+              session.createdAt, session.updatedAt, 0))
+    }
+  }
+
+  private fun renameConversation(id: String, title: String) {
+    if (title.isBlank()) return
+    lifecycleScope.launch(Dispatchers.IO) {
+      try {
+        orchestrator.renameConversation(id, title.trim())
+      } catch (e: java.io.IOException) {
+        com.tom.rv2ide.ai.tool.api.ErrorLog.record("agent", "重命名会话失败", e, null)
+      }
+      withContext(Dispatchers.Main) { reloadConversations() }
+    }
+  }
+
+  /**
+   * 置顶切换。ACS 的 JSONL 会话存储没有置顶位（ConversationSummary 无该字段），
+   * 存在面板偏好里（会话 id 列表）；投影时按它排序。
+   */
+  private fun togglePinConversation(id: String) {
+    val prefs = context.applicationContext.getSharedPreferences("ai_agent_tools", android.content.Context.MODE_PRIVATE)
+    val key = "assistant_pinned_sessions"
+    val pinned = prefs.getStringSet(key, emptySet())?.toMutableSet() ?: mutableSetOf()
+    if (!pinned.add(id)) pinned.remove(id)
+    prefs.edit().putStringSet(key, pinned).apply()
+    reloadConversations()
+  }
+
   private fun confirmDeleteConversation(
       summary: com.tom.rv2ide.ai.agent.conversation.ConversationSummary
   ) {
@@ -3263,9 +3430,10 @@ class FloatingAssistantView(
             lastGitBranch = null
             refreshGitBranch()
             refreshWorkspaceLabel()
-            conversationAdapter.setCurrentCwd(projectDir.absolutePath)
+            drawerCurrentCwd.value = projectDir.absolutePath
+            drawerFileHost.setWorkspace(projectDir)
           }
-          conversationAdapter.setActive(summary.id)
+          drawerActiveId.value = summary.id
           // 新会话通常为空，但走同一条回放路径：若期间已有内容（例如 orchestrator
           // 自动补了一条），也能一致地渲染出来。
           replayMessages(messages)

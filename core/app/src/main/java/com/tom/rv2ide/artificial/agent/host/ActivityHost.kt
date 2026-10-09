@@ -59,9 +59,21 @@ class ActivityHost(
      * 收起面板只是回到它们本来的界面，传 null 即维持原行为。
      */
     private val onClosed: (() -> Unit)? = null,
+    /**
+     * 打开一个文件的出口（会话抽屉文件 Tab）。
+     *
+     * <p>可空——只有**编辑器**宿主能真正打开文件（`IEditorHandler.openFile`）；
+     * 主页/真全屏/内联页没有编辑器可切，传 null 时点击静默忽略
+     * （与 [onClosed] 同一套「宿主能力不齐就降级」约定）。
+     */
+    private val onOpenFile: ((java.io.File) -> Unit)? = null,
 ) : AssistantHost {
 
   override fun widthPx(): Int = container.resources.displayMetrics.widthPixels
+
+  override fun onOpenFileRequested(file: java.io.File) {
+    onOpenFile?.invoke(file)
+  }
 
   override fun onPanelOpened() = applyYield(yield = true)
 
