@@ -2915,8 +2915,6 @@ class FloatingAssistantView(
                 // 这只是多一个入口，不该让面板崩。
               }
             },
-            currentMode = inputBar.mode,
-            onToggleMode = { next -> inputBar.mode = next },
             connectionState = null,
             showMenuButton = true,
             // 二选一：非全屏显示全屏图标，全屏显示最小化图标。

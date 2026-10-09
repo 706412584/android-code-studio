@@ -58,7 +58,6 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import com.tom.rv2ide.artificial.agent.compose.compat.AgentMode
 import com.tom.rv2ide.artificial.agent.compose.compat.OnboardingStep
 import com.tom.rv2ide.artificial.agent.compose.compat.onboardingTarget
 import com.tom.rv2ide.artificial.agent.compose.components.markdown.formatTokenCount
@@ -95,8 +94,6 @@ internal fun ChatHeader(
     onNewChat: () -> Unit,
     onNavigateToTerminal: () -> Unit,
     onNavigateToGit: () -> Unit,
-    currentMode: AgentMode,
-    onToggleMode: (AgentMode) -> Unit,
     connectionState: ConnectionState? = null,
     showMenuButton: Boolean = true,
     terminalActive: Boolean = false,
