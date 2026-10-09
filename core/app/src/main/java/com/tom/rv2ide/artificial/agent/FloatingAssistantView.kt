@@ -744,7 +744,17 @@ class FloatingAssistantView(
           path.startsWith("/") -> File(root, path.removePrefix("/"))
           else -> File(path)
         }
-    if (file.isFile) {
+    if (!file.isFile) {
+      return
+    }
+    // 搜索命中走这条链路时会在 request() 里预存行号（见 DrawerSearchOpenRequest 文档）；
+    // 文件树点击没有预存，lineFor 返回 0，两条来源共用一个出口互不干扰。
+    val line =
+        com.tom.rv2ide.artificial.agent.compose.components.independent.DrawerSearchOpenRequest
+            .lineFor(path)
+    if (line > 0) {
+      host.onOpenFileAtLineRequested(file, line)
+    } else {
       host.onOpenFileRequested(file)
     }
   }

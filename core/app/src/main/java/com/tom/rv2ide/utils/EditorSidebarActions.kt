@@ -81,9 +81,7 @@ internal object EditorSidebarActions {
 
     @Suppress("KotlinConstantConditions")
     registry.registerAction(FileTreeSidebarAction(context, ++order))
-    registry.registerAction(BuildVariantsSidebarAction(context, ++order))
-    registry.registerAction(GitClientAction(context, ++order))
-    // AI 助手（2026-10-09 回到侧栏）。
+    // AI 助手（2026-10-09 回到侧栏，2026-10-09 提到第二位——仅次于文件树，高频入口）。
     //
     // 历史：这里曾有一份助手页，后来被移除，理由是「与悬浮助手界面重复」——当时悬浮形态
     // （FloatingAssistantView + 可拖拽 FAB）是主入口，侧栏那份是旧路径（单发生成 +
@@ -92,6 +90,8 @@ internal object EditorSidebarActions {
     // 现在悬浮形态**已移除**（入口不再飘在代码上、也不再与编辑器争空间），侧栏成为唯一入口，
     // 因此不存在重复问题；且侧栏内跑的是新的 Compose 渲染路径，不是当年的旧路径。
     registry.registerAction(AssistantSidebarAction(context, ++order))
+    registry.registerAction(BuildVariantsSidebarAction(context, ++order))
+    registry.registerAction(GitClientAction(context, ++order))
     registry.registerAction(AssetStudioSidebarAction(context, ++order))
     registry.registerAction(SubModuleSidebarAction(context, ++order))
     registry.registerAction(PreferencesSidebarAction(context, ++order))

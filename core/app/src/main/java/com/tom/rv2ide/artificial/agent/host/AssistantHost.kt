@@ -109,6 +109,19 @@ interface AssistantHost {
   fun onOpenFileRequested(file: java.io.File) {}
 
   /**
+   * 请求宿主打开文件并**选中指定行**（搜索结果命中行跳转）。
+   *
+   * <p><b>为什么不用 [onOpenFileRequested] 加行号参数</b>：文件 Tab 点文件、会话搜索点会话
+   * 都不关心行号，加参数会让最大调用方变成 null 传递方；拆成独立方法让两条链路各自直白。
+   *
+   * <p>[line] 从 1 计。默认实现退化为不带选区的普通打开：宿主不支持定位（主页/真全屏）
+   * 时能打开就已经达成目标，不因少一个能力而静默失败。
+   */
+  fun onOpenFileAtLineRequested(file: java.io.File, line: Int) {
+    onOpenFileRequested(file)
+  }
+
+  /**
    * 请求宿主切到指定 id 的侧栏标签页（顶栏工作台入口：Git / 终端）。
    *
    * <p><b>为什么按 id 而不是按页类型</b>：侧栏页由 `ActionItem` 注册表管理

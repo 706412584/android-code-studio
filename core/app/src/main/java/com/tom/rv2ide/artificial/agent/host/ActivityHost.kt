@@ -68,6 +68,17 @@ class ActivityHost(
      */
     private val onOpenFile: ((java.io.File) -> Unit)? = null,
     /**
+     * 打开文件并定位到指定行的出口（会话搜索命中跳转）。
+     *
+     * <p>与 [onOpenFile] 分开成两个参数而不是合成一个「file + 可空行号」：
+     * 文件 Tab 的调用方永远没有行号，合成后它每次都要写 `null`，而搜索链路
+     * 每次都要构造选区——两条链路各自直白，互不携带对方不关心的信息。
+     *
+     * <p>可空，降级约定同 [onOpenFile]。编辑器宿主不传它时，
+     * [AssistantHost.onOpenFileAtLineRequested] 的默认实现会退化为普通打开。
+     */
+    private val onOpenFileAtLine: ((java.io.File, Int) -> Unit)? = null,
+    /**
      * 切到指定侧栏标签页的出口（顶栏 Git / 终端入口）。
      *
      * <p>可空——只有**编辑器**宿主有侧栏可切（`EditorSidebarActions`）。
@@ -80,6 +91,16 @@ class ActivityHost(
 
   override fun onOpenFileRequested(file: java.io.File) {
     onOpenFile?.invoke(file)
+  }
+
+  override fun onOpenFileAtLineRequested(file: java.io.File, line: Int) {
+    // 宿主没传行级出口时退化为普通打开：能打开文件就已达成搜索跳转的大半目标，
+    // 不因少一个能力而静默失败。
+    if (onOpenFileAtLine != null) {
+      onOpenFileAtLine.invoke(file, line)
+    } else {
+      onOpenFile?.invoke(file)
+    }
   }
 
   override fun onOpenSidebarPage(pageId: String) {

@@ -71,6 +71,23 @@ class AssistantSidebarFragment : Fragment() {
             onOpenFile = { file ->
               (activity as? com.tom.rv2ide.interfaces.IEditorHandler)?.openFile(file)
             },
+            // 搜索命中行跳转：1 起行号换算成 sora 的 0 起选区（整行高亮到下一行首）。
+            // 0 表示文件名命中、无具体行——走普通打开。
+            onOpenFileAtLine = { file, line ->
+              val editor = activity as? com.tom.rv2ide.interfaces.IEditorHandler
+              if (editor == null || line <= 0) {
+                editor?.openFile(file)
+              } else {
+                val zeroBased = (line - 1).coerceAtLeast(0)
+                editor.openFileAndSelect(
+                    file,
+                    com.tom.rv2ide.models.Range(
+                        com.tom.rv2ide.models.Position(zeroBased, 0),
+                        com.tom.rv2ide.models.Position(zeroBased + 1, 0),
+                    ),
+                )
+              }
+            },
             // 顶栏的 Git / 终端入口：切到本 Activity 侧栏里的对应标签页。
             // 侧栏 Fragment 与助手页是**兄弟**（都挂在 EditorSidebarFragment 的
             // fragmentContainer 下），因此从 parentFragment 拿到侧栏容器再转发。
