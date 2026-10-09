@@ -3250,7 +3250,49 @@ class FloatingAssistantView(
       }
     }
     updateEmptyState()
+    // 回放完磁盘历史后，把**本轮尚未落盘**的实时态接回去。
+    //
+    // 为什么需要：正文与动作文案只在 TURN_FINISHED 落盘，而一次运行可能几分钟。
+    // 视图重建（切全屏 / 系统回收 / 旋转）后历史里没有本轮内容——不补这段，
+    // 用户看到的是「刚写了一半的回答消失了」（运行其实还在后台跑）。
+    //
+    // 与后续增量的关系：快照是某一瞬间的前缀，之后到达的 STREAM_DELTA 仍走正常
+    // 订阅路径追加，因此**不会重复**——但前提是这里只在历史里确实没有本轮正文时
+    // 才用（本轮正文一旦落盘，快照已清空，isNotEmpty 判据自然为假）。
+    restoreLiveRunState()
     scrollToBottom()
+  }
+
+  /**
+   * 用 orchestrator 的实时态快照接回渲染（见 [AgentOrchestrator.currentRunSnapshot]）。
+   *
+   * <p>只补**本轮未落盘**的部分：流式正文气泡 + 状态条动作文案。
+   * 拿不到快照（没有运行 / 已落盘）时是空操作。
+   *
+   * <p>关键是把 [SessionUiState.streamingMessageId] 一并接上——后续 TEXT_DELTA
+   * 到达时靠它判断「追加到哪个气泡」，不设就会另起一段、正文被劈成两条。
+   */
+  private fun restoreLiveRunState() {
+    val conversationId = displayedConversationId ?: return
+    val snapshot =
+        try {
+          orchestrator.currentRunSnapshot(conversationId)
+        } catch (e: Exception) {
+          return
+        }
+    val ui = uiState(conversationId)
+    if (snapshot.text.isNotEmpty()) {
+      // 与实时路径同一写法（见 TEXT_DELTA 分支）：建气泡并把 id 记进 ui，
+      // 之后的增量走 appendTo 追加进同一个气泡。
+      ui.streamingMessageId =
+          adapter.append(AssistantMessageAdapter.Role.ASSISTANT, snapshot.text)
+      // streamedThisRun 的语义是「本轮已往列表写过内容」，供 RUN_FINISHED 时判断
+      // 是否需要补落尾。补了正文就必须置位，否则结束时会再追加一遍。
+      ui.streamedThisRun = true
+    }
+    if (snapshot.lastAction.isNotEmpty()) {
+      showAction(snapshot.lastAction)
+    }
   }
 
   /** 删除会话前确认。删除不可撤销，静默删除会让误触的代价过大。 */

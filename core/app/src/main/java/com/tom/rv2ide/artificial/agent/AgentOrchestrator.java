@@ -241,6 +241,55 @@ public final class AgentOrchestrator {
         && activeCancellations.containsKey(conversationId);
   }
 
+  /**
+   * 一次运行中**尚未落盘**的实时态快照。
+   *
+   * <p>用途：视图重建（切全屏 / 系统回收 / 旋转）后回放磁盘历史时，本轮还没结束的
+   * 正文与动作文案没有任何持久化来源——不补这一段，用户看到的是「写了一半的回答
+   * 消失了」。视图在 replayMessages 之后读它，把流式气泡与状态条接回去。
+   *
+   * <p><b>只读且不改变状态</b>：纯查询，拿不到时返回空快照。
+   *
+   * <p>与事件流的一致性：快照读的是 PersistingListener 的私有缓冲，写入发生在
+   * 事件投递线程。这里只做「尽力而为」的读取——拿到的是某一瞬间的正文前缀，
+   * 之后到达的增量仍走正常订阅路径追加。因此视图**不要**用快照覆盖已有渲染，
+   * 只在「本轮没有任何已渲染内容」时用它起步（见 FloatingAssistantView 的用法）。
+   */
+  public RunSnapshot currentRunSnapshot(String conversationId) {
+    if (conversationId == null || conversationId.isEmpty()) {
+      return RunSnapshot.EMPTY;
+    }
+    PersistingListener listener = activeListeners.get(conversationId);
+    if (listener == null) {
+      return RunSnapshot.EMPTY;
+    }
+    return listener.snapshot();
+  }
+
+  /** 见 {@link #currentRunSnapshot}。 */
+  public static final class RunSnapshot {
+    static final RunSnapshot EMPTY = new RunSnapshot("", "");
+
+    /** 本轮已产生的正文（未落盘部分）；空串表示没有。 */
+    public final String text;
+    /** 最近一条动作文案；空串表示没有。 */
+    public final String lastAction;
+
+    RunSnapshot(String text, String lastAction) {
+      this.text = text == null ? "" : text;
+      this.lastAction = lastAction == null ? "" : lastAction;
+    }
+  }
+
+  /**
+   * 当前活跃运行的 PersistingListener，按会话索引。
+   *
+   * <p>只用于 {@link #currentRunSnapshot}：快照必须读**本次运行**的缓冲
+   * （上一轮已清空，下一轮还没建）。运行结束时移除，因此空表 = 没有可查的运行。
+   */
+  private final java.util.Map<String, PersistingListener> activeListeners =
+      new java.util.concurrent.ConcurrentHashMap<>();
+
   /** 一条排队的请求：完整记下发起一次运行所需的全部参数。 */
   private static final class QueuedRequest {
     final String providerId;
@@ -1492,6 +1541,9 @@ public final class AgentOrchestrator {
           rawInputJson,
           reasoningEffort);
     } finally {
+      // 本轮结束：注销实时态持有者。放在广播**之前**——广播会唤醒视图去收尾，
+      // 那些视图不该再查到一份属于已结束运行的快照。
+      activeListeners.remove(conversationId);
       // 通知所有订阅者「本会话这次运行结束了」。必须广播而不是只靠调用方自己的
       // 协程收尾：运行可能是另一个入口发起的，那些视图没有对应的 job，只有这个
       // 事件能让它们把停止键与状态条收掉（见 AgentEvent.Type.RUN_FINISHED）。
@@ -1703,6 +1755,9 @@ public final class AgentOrchestrator {
         };
     PersistingListener persistingListener =
         new PersistingListener(conversationId, userRequest, fanOut);
+    // 登记本轮的实时态持有者，供视图重建时拉快照（见 currentRunSnapshot）。
+    // 先登记后执行：登记晚于首个增量会让「刚重建的视图」查不到本轮正文。
+    activeListeners.put(conversationId, persistingListener);
 
     // 工具进度（含子 agent 步骤行）经事件流上报。PROGRESS 不落盘（见
     // PersistingListener.persist 的 default 分支），只广播给订阅者。
@@ -2022,6 +2077,29 @@ public final class AgentOrchestrator {
      */
     private final java.util.List<String> stepBuffer = new java.util.ArrayList<>();
 
+    /**
+     * 本轮已产生的**正文**（TEXT_DELTA 累积）。
+     *
+     * <p><b>为什么需要它</b>：正文只在 TURN_FINISHED 时落盘，而一次运行可能持续几分钟。
+     * 视图重建（切全屏、系统回收、旋转）后回放磁盘历史时，本轮尚未结束的正文没有任何
+     * 来源——用户看到的是「刚写了一半的回答消失了」。
+     *
+     * <p><b>为什么不落盘</b>：增量太碎（每个 token 一条），逐条写盘既慢又会把会话文件
+     * 撑爆。这里只作为**进程内**的实时态缓存，供新视图拉取（见
+     * {@link #currentRunSnapshot}）；运行结束（TURN_FINISHED 落盘）后即清空，
+     * 后续回放改从磁盘读。
+     */
+    private final StringBuilder textBuffer = new StringBuilder();
+
+    /**
+     * 本轮累积的**动作文案**（最近一条 PROGRESS）。
+     *
+     * <p>视图的状态条（「正在读取 xxx」）是视图本地态，重建后同样无来源。
+     * 只留最近一条：状态条表达的语义是「此刻在做什么」，历史步骤行由
+     * {@link #stepBuffer} 与工具卡片承载。
+     */
+    private volatile String lastAction = "";
+
     PersistingListener(String conversationId, String userRequest, AgentEvent.Listener downstream) {
       this.conversationId = conversationId;
       this.downstream = downstream;
@@ -2056,6 +2134,18 @@ public final class AgentOrchestrator {
           // 累积当前工具的步骤行；由 TOOL_FINISHED 一并写入（见 stepBuffer 注释）。
           if (event.getMessage() != null && !event.getMessage().isEmpty()) {
             stepBuffer.add(event.getMessage());
+            // 状态条文案：只留最近一条（见 lastAction 注释）。
+            lastAction = event.getMessage();
+          }
+          break;
+        case TEXT_DELTA:
+          // 正文累积：**不落盘**，只作进程内实时态（见 textBuffer 注释）。
+          // 视图重建时由 currentRunSnapshot 拉取，避免「写了一半的回答消失」。
+          // 加锁与 snapshot() 的读取互斥，否则快照可能读到 append 到一半的 StringBuilder。
+          if (event.getMessage() != null) {
+            synchronized (this) {
+              textBuffer.append(event.getMessage());
+            }
           }
           break;
         case TURN_FINISHED:
@@ -2067,6 +2157,12 @@ public final class AgentOrchestrator {
                   reasoningBuffer.toString(),
                   event.getToolCalls()));
           reasoningBuffer.setLength(0);
+          // 本轮正文已落盘，实时态缓冲不再需要——清空后重建视图改从磁盘回放。
+          // 不清的话快照会与磁盘历史**重复**渲染同一段正文（气泡出现两遍）。
+          synchronized (this) {
+            textBuffer.setLength(0);
+            lastAction = "";
+          }
           break;
         case TOOL_FINISHED:
           if (event.getToolResult() != null) {
@@ -2082,6 +2178,17 @@ public final class AgentOrchestrator {
         default:
           break;
       }
+    }
+
+    /** 见 {@link #currentRunSnapshot}。调用方可能来自任意线程，读取做最小同步。 */
+    RunSnapshot snapshot() {
+      String text;
+      String action;
+      synchronized (this) {
+        text = textBuffer.toString();
+        action = lastAction;
+      }
+      return new RunSnapshot(text, action);
     }
 
     private void appendEntry(ConversationEntry entry) {
