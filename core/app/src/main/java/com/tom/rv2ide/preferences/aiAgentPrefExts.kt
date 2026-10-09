@@ -614,128 +614,6 @@ private class AssistantTextColorPreference(
   }
 }
 
-/**
- * 助手头像选择。
- *
- * <p>经 [com.tom.rv2ide.activities.AvatarPickerActivity] 选图：Preference 拿不到
- * Activity 与 result API，仓库的既定解法是「蹦床 Activity + 静态回调」
- * （与 FolderPickerActivity 同一模式）。
- *
- * <p>选中后 Activity 已把图片拷进私有目录，这里只存路径。存路径而不是 Uri：
- * `ACTION_GET_CONTENT` 不授予持久读权限，重启后 Uri 就失效了。
- */
-@Parcelize
-private class AssistantAvatarPreference(
-    override val key: String = "assistant_avatar_pref",
-    override val title: Int = R.string.ai_agent_ui_avatar_title,
-    override val summary: Int? = R.string.ai_agent_ui_avatar_summary,
-) : BasePreference() {
-
-  override fun onCreatePreference(context: Context): Preference {
-    return androidx.preference.Preference(context).apply {
-      key = "assistant_avatar_pref"
-      title = context.getString(R.string.ai_agent_ui_avatar_title)
-      summary = describeAvatar(context, AssistantUiStyleStore(context))
-    }
-  }
-
-  override fun onPreferenceClick(preference: Preference): Boolean {
-    val context = preference.context
-    val store = AssistantUiStyleStore(context)
-    val hasCustom = store.avatarPath != null
-
-    // 两个层级：先选「内置头像 or 自定义图片」，内置那一支再弹具体头像。
-    // 不用一个超长列表混装：内置 5 个 + 自定义 2 个动作放一起，用户分不清
-    // 「选这个」与「做那个」的区别。
-    val builtinLabels =
-        AssistantUiStyleStore.AVATAR_BUILTINS.map { builtinLabel(context, it) }.toTypedArray()
-    val actions =
-        if (hasCustom) {
-          arrayOf(
-              context.getString(R.string.ai_agent_ui_avatar_builtin_section),
-              context.getString(R.string.ai_agent_ui_avatar_pick),
-              context.getString(R.string.ai_agent_ui_avatar_reset),
-          )
-        } else {
-          arrayOf(
-              context.getString(R.string.ai_agent_ui_avatar_builtin_section),
-              context.getString(R.string.ai_agent_ui_avatar_pick),
-          )
-        }
-
-    com.google.android.material.dialog.MaterialAlertDialogBuilder(context)
-        .setTitle(R.string.ai_agent_ui_avatar_title)
-        .setItems(actions) { _, which ->
-          when (which) {
-            0 -> showBuiltinPicker(context, store, preference, builtinLabels)
-            1 -> pickCustomAvatar(context, store, preference)
-            else -> {
-              store.avatarPath = null
-              preference.summary = describeAvatar(context, store)
-            }
-          }
-        }
-        .setNegativeButton(android.R.string.cancel, null)
-        .show()
-    return true
-  }
-
-  /** 内置头像单选。选中即写入；自定义图片存在时也立即生效（它优先级更低）。 */
-  private fun showBuiltinPicker(
-      context: Context,
-      store: AssistantUiStyleStore,
-      preference: Preference,
-      labels: Array<String>,
-  ) {
-    val checked = AssistantUiStyleStore.AVATAR_BUILTINS.indexOf(store.avatarBuiltin).coerceAtLeast(0)
-    com.google.android.material.dialog.MaterialAlertDialogBuilder(context)
-        .setTitle(R.string.ai_agent_ui_avatar_builtin_section)
-        .setSingleChoiceItems(labels, checked) { dialog, which ->
-          store.avatarBuiltin = AssistantUiStyleStore.AVATAR_BUILTINS[which]
-          // 选了内置头像就意味着不再想要自定义图片——一并清掉，否则用户会困惑
-          // 「我明明选了猫，显示的还是自己那张图」（自定义优先级更高）。
-          store.avatarPath = null
-          preference.summary = describeAvatar(context, store)
-          dialog.dismiss()
-        }
-        .setNegativeButton(android.R.string.cancel, null)
-        .show()
-  }
-
-  /** 拉起选图 Activity；结果经静态回调写回。 */
-  private fun pickCustomAvatar(
-      context: Context,
-      store: AssistantUiStyleStore,
-      preference: Preference,
-  ) {
-    com.tom.rv2ide.activities.AvatarPickerActivity.onAvatarPicked = { path ->
-      store.avatarPath = path
-      preference.summary = describeAvatar(context, store)
-    }
-    context.startActivity(
-        android.content.Intent(context, com.tom.rv2ide.activities.AvatarPickerActivity::class.java)
-            .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK))
-  }
-
-  private fun builtinLabel(context: Context, id: String): String =
-      when (id) {
-        AssistantUiStyleStore.AVATAR_BUILTIN_ANIME ->
-            context.getString(R.string.ai_agent_ui_avatar_anime)
-        AssistantUiStyleStore.AVATAR_BUILTIN_CAT -> context.getString(R.string.ai_agent_ui_avatar_cat)
-        AssistantUiStyleStore.AVATAR_BUILTIN_FOX -> context.getString(R.string.ai_agent_ui_avatar_fox)
-        AssistantUiStyleStore.AVATAR_BUILTIN_SPARK ->
-            context.getString(R.string.ai_agent_ui_avatar_spark)
-        else -> context.getString(R.string.ai_agent_ui_avatar_default)
-      }
-
-  private fun describeAvatar(context: Context, store: AssistantUiStyleStore): String {
-    val custom = store.avatarPath
-    if (custom != null) {
-      return context.getString(R.string.ai_agent_ui_avatar_custom)
-    }
-    return builtinLabel(context, store.avatarBuiltin)
-  }
-}
 
 /** 高级：外观定制、提示词模板与自动切换服务商。改动频率低，但出问题时要能找到。 */
 @Parcelize
@@ -748,10 +626,11 @@ private class AdvancedPage(
 
   init {
     // 外观定制放最前：它们是用户最常想改的（字号/颜色），而提示词模板属于「出问题才找」。
+    // 头像设置已移除（2026-10-09）：Compose 渲染路径下消息不带头像位
+    // （Aharou 的渲染层没有头像概念），留着开关改了也看不到效果。
     addPreference(AssistantTextSizePreference())
     addPreference(AssistantCardScalePreference())
     addPreference(AssistantTextColorPreference())
-    addPreference(AssistantAvatarPreference())
     // 渲染路径紧随外观：两者都是「助手长什么样」的范畴，且它决定外观定制的**作用对象**
     // （Compose 面板 vs XML 列表），放一起用户才好理解它们的从属关系。
     addPreference(ComposeRenderSwitch())
