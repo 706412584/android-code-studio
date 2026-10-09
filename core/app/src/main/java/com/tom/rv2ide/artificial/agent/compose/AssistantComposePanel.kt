@@ -25,21 +25,28 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import com.tom.rv2ide.artificial.agent.compose.compat.FileAccessProvider
 import com.tom.rv2ide.artificial.agent.compose.compat.ProvideAcsImageViewer
@@ -56,6 +63,8 @@ import com.tom.rv2ide.artificial.agent.compose.theme.AIEditorTheme
 import com.tom.rv2ide.artificial.agent.compose.theme.Radius
 import com.tom.rv2ide.artificial.agent.compose.theme.Spacing
 import com.tom.rv2ide.resources.R
+import compose.icons.FeatherIcons
+import compose.icons.feathericons.ChevronDown
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 
@@ -212,6 +221,39 @@ private fun PanelContent(
     // （见 AcsMessageMapper 约定 1），这里只做聚合，不重新推断成组规则。
     val renderItems = remember(messages) { toRenderItems(messages) }
 
+    // ── 智能滚动跟随 ──
+    //
+    // 语义（用户要求）：新内容到达时，**只有用户本来就在底部**才自动跟随；
+    // 用户上滑看历史时不得打断（流式输出期间尤其明显——否则每来一个增量就把
+    // 用户拽回底部，历史根本读不成）。不在底部时改由右下角的按钮提供显式跳转。
+    //
+    // 判据用「末项是否可见」而不是算像素距离：LazyColumn 的可见项列表在滚动时
+    // 才更新，这里读它代价低，且不受条目高度差异影响（长回答与短气泡的高度差可达
+    // 几十倍，固定像素阈值要么太松要么太紧）。
+    val atBottom by remember {
+      derivedStateOf {
+        val info = listState.layoutInfo
+        val lastIndex = info.totalItemsCount - 1
+        if (lastIndex < 0) {
+          true
+        } else {
+          // 末项可见即视为「在底部」。留一个条目的余量：用户滚到倒数第二项时
+          // 通常仍在跟读最新内容，此时自动跟随符合预期。
+          info.visibleItemsInfo.any { it.index >= lastIndex - 1 }
+        }
+      }
+    }
+
+    // 条目数变化时决定是否跟随。用 renderItems.size 而不是 messages.size：
+    // 工具组会把多条折成一项，按 messages 判会在「组内新增一条」时漏掉跟随。
+    LaunchedEffect(renderItems.size) {
+      if (atBottom && renderItems.isNotEmpty()) {
+        // 瞬时定位而不是动画：流式期间每次追加都会触发，动画会被下一次调用打断
+        // 并排队，表现为「一直追不上底部」（与宿主 scrollToBottom 同一取舍）。
+        listState.scrollToItem(renderItems.lastIndex)
+      }
+    }
+
     // 刻意不铺背景色：面板底色由宿主的 MaterialCardView（?attr/colorSurface）提供，
     // XML 路径的 RecyclerView 同样没有背景。这里若铺 [MaterialTheme.colorScheme.background]，
     // 会与宿主主题（可能是自定义的 VSCODE 浅色等）产生一块可见色差。
@@ -242,6 +284,39 @@ private fun PanelContent(
                     callbacks = callbacks,
                 )
             is RenderItem.Group -> ToolGroupRow(item, callbacks)
+          }
+        }
+      }
+
+      // 跳到底部按钮：只在用户离开底部时出现。
+      // 放右下角（与输入栏留出间距），半透明底 + 阴影，深浅色主题都用 M3 槽位。
+      androidx.compose.animation.AnimatedVisibility(
+          visible = !atBottom && renderItems.isNotEmpty(),
+          modifier =
+              Modifier.align(Alignment.BottomEnd)
+                  .padding(end = Spacing.md, bottom = Spacing.md),
+          enter = androidx.compose.animation.fadeIn(),
+          exit = androidx.compose.animation.fadeOut(),
+      ) {
+        val scope = rememberCoroutineScope()
+        Surface(
+            onClick = {
+              scope.launch {
+                listState.animateScrollToItem(renderItems.lastIndex.coerceAtLeast(0))
+              }
+            },
+            shape = RoundedCornerShape(Radius.lg),
+            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+            shadowElevation = 6.dp,
+            modifier = Modifier.size(36.dp),
+        ) {
+          Box(contentAlignment = Alignment.Center) {
+            Icon(
+                compose.icons.FeatherIcons.ChevronDown,
+                contentDescription = stringResource(R.string.chat_scroll_to_bottom),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(18.dp),
+            )
           }
         }
       }
@@ -498,12 +573,17 @@ internal class AssistantComposePanelHost(
       }
 
   /**
-   * 滚到最后一条。
+   * 强制滚到最后一条（**用户主动操作时用**：发消息、切会话、点跳底按钮）。
    *
-   * <p>用后发先至的 `scrollToItem` 而不是动画：流式输出期间每次追加都会调用，动画会被下一次
-   * 调用打断并排队，表现为「一直追不上底部」。瞬时定位与 XML 路径的 `scrollToPosition` 同义。
+   * <p>与面板内智能跟随的分工：跟随只在用户本来就在底部时生效（见
+   * [AssistantComposePanel] 的 atBottom 判定）；而「我刚发了一条」这种
+   * 用户主动行为必须无条件滚到底——否则用户发完消息却看不到自己那条。
+   *
+   * <p>用后发先至的 `scrollToItem` 而不是动画：流式输出期间每次追加都会调用，
+   * 动画会被下一次调用打断并排队，表现为「一直追不上底部」。
+   * 瞬时定位与 XML 路径的 `scrollToPosition` 同义。
    */
-  fun scrollToBottom(scope: CoroutineScope) {
+  fun forceScrollToBottom(scope: CoroutineScope) {
     val count = state.messages.value.size
     if (count == 0) {
       return

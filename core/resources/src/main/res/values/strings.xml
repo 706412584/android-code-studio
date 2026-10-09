@@ -1708,6 +1708,7 @@ This AI agent is designed to assist you in developing Android applications direc
   <string name="config_confirm_approve">Approve</string>
   <string name="config_confirm_reject">Reject</string>
   <string name="chat_open_sidebar">Open sidebar</string>
+  <string name="chat_scroll_to_bottom">Scroll to bottom</string>
   <string name="chat_new_session">New Session</string>
   <string name="chat_open_git">Open Git</string>
   <string name="chat_open_terminal">Open terminal</string>

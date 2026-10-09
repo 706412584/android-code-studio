@@ -1697,7 +1697,8 @@ class FloatingAssistantView(
     lastOpenedConversationId = conversationId
     markLocalEcho(conversationId, text)
     adapter.append(AssistantMessageAdapter.Role.USER, text)
-    scrollToBottom()
+    // 用户主动发送：无条件滚到底（否则看不到自己刚发的那条）。
+    scrollToBottom(force = true)
     val agents = Agents(context)
     val providerId = agents.getProvider()
     val modelId =
@@ -3260,7 +3261,8 @@ class FloatingAssistantView(
     // 订阅路径追加，因此**不会重复**——但前提是这里只在历史里确实没有本轮正文时
     // 才用（本轮正文一旦落盘，快照已清空，isNotEmpty 判据自然为假）。
     restoreLiveRunState()
-    scrollToBottom()
+    // 回放/切换会话结束时无条件滚到底：用户刚打开这个会话，要看到最新的内容。
+    scrollToBottom(force = true)
   }
 
   /**
@@ -3406,11 +3408,27 @@ class FloatingAssistantView(
     scrollToBottom()
   }
 
-  private fun scrollToBottom() {
+  /**
+   * 滚到最新内容。
+   *
+   * <p><b>Compose 路径下改为「请求跟随」而非「强制滚动」</b>（2026-10-09）：
+   * 智能跟随已由面板接管（见 [com.tom.rv2ide.artificial.agent.compose.AssistantComposePanel]
+   * 的 atBottom 判定与跳底按钮）。宿主在流式期间有 12 处调用本方法——若继续无条件
+   * scrollToItem，用户上滑看历史时会被每个增量拽回底部，历史根本读不成。
+   *
+   * <p>因此这里只通知面板「有新内容」，由面板按用户当前是否在底部决定是否跟随。
+   * XML 路径（回退用）保持原行为：那条路径没有智能跟随。
+   */
+  private fun scrollToBottom(force: Boolean = false) {
     updateEmptyState()
     val panel = composePanel
     if (panel != null) {
-      panel.scrollToBottom(lifecycleScope)
+      if (force) {
+        // 用户主动操作（发消息/切会话）：无条件滚到底，否则他看不到自己刚发的那条。
+        panel.forceScrollToBottom(lifecycleScope)
+      }
+      // 非 force 时不做任何事：面板内部的 LaunchedEffect(renderItems.size)
+      // 会在内容变化时自行判定「用户是否在底部」再决定是否跟随。
       return
     }
     binding.assistantMessages.post {
