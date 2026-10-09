@@ -205,6 +205,12 @@ internal fun ChatInputBar(
     tokenProgress: Float = 0f,
     tokenEstimated: Boolean = false,
     /**
+     * 上下文窗口总大小（token）；0 = 模型未声明窗口。
+     *
+     * <p>是「上下文按钮该不该显示」的判据（见该按钮的调用点注释）。
+     */
+    contextWindowSize: Int = 0,
+    /**
      * 点击上下文占用图标（工具行里的圆环）时打开详情 + 手动压缩入口。
      *
      * <p>为 null 时整个图标不渲染——宿主没有上下文信息可展示（例如模型未配置上下文
@@ -593,11 +599,15 @@ internal fun ChatInputBar(
                         )
                     }
                     // 上下文占用：圆环 + 点击详情/压缩入口。
-                    // 只在宿主提供回调且有实际用量时渲染（见 onContextUsageClick 文档）。
+                    //
+                    // 显示条件是**窗口已配置**（contextWindowSize > 0）而不是「有用量」：
+                    // tokenProgress 是「已用量占比」，首次对话前必然是 0——用它判断会让
+                    // 按钮在用户最需要知道「窗口多大」的时候恰好不出现（实测反馈）。
                     onContextUsageClick?.let { openUsage ->
-                        if (tokenProgress > 0f) {
+                        if (contextWindowSize > 0) {
                             ContextUsageButton(
                                 progress = tokenProgress,
+                                windowConfigured = true,
                                 estimated = tokenEstimated,
                                 onClick = openUsage,
                             )
@@ -754,11 +764,16 @@ private fun FullScreenInputDialog(
 @Composable
 internal fun ContextUsageButton(
     progress: Float,
+    /** 窗口是否已配置。未配置时不该走到这里（调用点已判），保留参数是为了自文档。 */
+    windowConfigured: Boolean,
     estimated: Boolean,
     onClick: () -> Unit,
 ) {
     val clamped = progress.coerceIn(0f, 1f)
     val percent = (clamped * 100).toInt()
+    // 「尚未对话」与「真的用了 0%」都表现为 progress == 0，但前者显示 0 会误导
+    // （用户以为窗口是空的、而不是还没开始）。用「–」区分：点开详情能看到窗口总量。
+    val hasUsage = progress > 0f
     val ringColor =
         when {
             clamped >= 0.9f -> MaterialTheme.colorScheme.error
@@ -792,18 +807,23 @@ internal fun ContextUsageButton(
                 size = androidx.compose.ui.geometry.Size(arcSize, arcSize),
                 style = Stroke(width = stroke),
             )
-            drawArc(
-                color = ringColor,
-                startAngle = -90f,
-                sweepAngle = 360f * clamped,
-                useCenter = false,
-                topLeft = topLeft,
-                size = androidx.compose.ui.geometry.Size(arcSize, arcSize),
-                style = Stroke(width = stroke, cap = androidx.compose.ui.graphics.StrokeCap.Round),
-            )
+            // 未对话时不画进度弧——一圈空环配「–」表达「有窗口、还没用」，
+            // 画一段 0 长度的弧与「不画」在视觉上无差别，省一次绘制。
+            if (hasUsage) {
+                drawArc(
+                    color = ringColor,
+                    startAngle = -90f,
+                    sweepAngle = 360f * clamped,
+                    useCenter = false,
+                    topLeft = topLeft,
+                    size = androidx.compose.ui.geometry.Size(arcSize, arcSize),
+                    style =
+                        Stroke(width = stroke, cap = androidx.compose.ui.graphics.StrokeCap.Round),
+                )
+            }
         }
         Text(
-            text = "$percent",
+            text = if (hasUsage) "$percent" else "–",
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )

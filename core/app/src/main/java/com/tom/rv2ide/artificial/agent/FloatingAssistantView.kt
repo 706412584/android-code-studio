@@ -744,6 +744,9 @@ class FloatingAssistantView(
   private fun applyContextRing() {
     // XML 圆环退役：进度写进输入栏桥，SendButton 外圈画出占用。
     val total = lastContextSize
+    // 窗口大小单独同步：它是「上下文按钮该不该显示」的判据（未运行时用量为 0，
+    // 只看向量占比会让按钮在首次对话前永不出现）。
+    inputBar.contextWindowSize = total
     if (total <= 0) {
       inputBar.tokenProgress = 0f
       return
@@ -2794,6 +2797,7 @@ class FloatingAssistantView(
             queuedRequests = bridge.queuedRequests,
             tokenProgress = bridge.tokenProgress,
             tokenEstimated = bridge.tokenEstimated,
+            contextWindowSize = bridge.contextWindowSize,
             // 上下文详情 + 手动压缩：入口原先挂在 XML 工具条的圆环上，圆环退役后
             // 这两个功能（showContextUsage / compactConversation）就没有调用点了。
             onContextUsageClick = { showContextUsage() },
