@@ -56,6 +56,7 @@ import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.Velocity
@@ -162,12 +163,14 @@ internal fun formatClockTime(millis: Long): String =
     Instant.ofEpochMilli(millis).atZone(ZoneId.systemDefault()).format(CHAT_CLOCK_FORMATTER)
 
 /**
- * 「思考」字形：矢量原子/思考图标（对齐用户参考图）。
- * 颜色跟随调用方给的主题色 tint，等比缩放到指定尺寸。
+ * 「思考」字形：`∴`（THEREFORE，"所以"）文本字形。
  *
- * TODO: 待接入 ACS 资源。Aharou 此处引的是自绘的 `R.drawable.ic_thinking`（14dp 原子图形），
- *  ACS 没有该资源、也不宜为此单造一个 drawable，故改用 ACS 既有的 `R.drawable.ic_ai_agent`
- *  ——`item_assistant_thinking.xml` 的思维链卡片用的就是它，语义同位，颜色同样由 tint 控制。
+ * <p><b>来源</b>：cc-haha 的思考块标记（`src/components/messages/AssistantThinkingMessage.tsx`
+ * 渲染 `∴ Thinking`，dim + italic）。用户指定用它替换此前的 `ic_ai_agent` 机器人图标——
+ * `∴` 表达"由此推出"，与思考的语义贴合，且是纯文本字形，任何字体都能渲染、无需资源。
+ *
+ * <p>颜色跟随调用方给的主题色 tint；字号随 [iconSize]，稍加粗保持与相邻 label 文字的
+ * 视觉重量一致。
  */
 @Composable
 internal fun ThinkingGlyph(
@@ -175,11 +178,12 @@ internal fun ThinkingGlyph(
     tint: Color = MaterialTheme.colorScheme.onSurfaceVariant,
     iconSize: Dp = 16.dp
 ) {
-    Icon(
-        painter = painterResource(R.drawable.ic_ai_agent),
-        contentDescription = null,
-        tint = tint,
-        modifier = modifier.size(iconSize)
+    Text(
+        text = "∴",
+        color = tint,
+        style = MaterialTheme.typography.labelLarge,
+        fontWeight = FontWeight.SemiBold,
+        modifier = modifier.size(iconSize),
     )
 }
 
