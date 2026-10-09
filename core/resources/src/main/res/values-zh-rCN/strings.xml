@@ -328,6 +328,8 @@
   <string name="ai_agent_ui_text_size_summary">助手面板里消息正文的字号</string>
   <string name="ai_agent_ui_card_scale_title">卡片大小</string>
   <string name="ai_agent_ui_card_scale_summary">消息与工具卡片的内边距和圆角</string>
+  <string name="ai_agent_ui_theme_preset_title">消息配色方案</string>
+  <string name="ai_agent_ui_theme_preset_summary">AI 消息面板的整体配色（默认蓝 / 咖啡 / 石墨 / 森林）</string>
   <string name="ai_agent_ui_text_color_title">助手正文颜色</string>
   <string name="ai_agent_ui_text_color_summary">只作用于助手的回复文本（用户气泡保持主题色）</string>
   <string name="ai_agent_ui_avatar_title">助手头像</string>

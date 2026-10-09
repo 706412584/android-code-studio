@@ -29,6 +29,8 @@ import com.tom.rv2ide.artificial.agent.AssistantUiStyleStore
 import com.tom.rv2ide.artificial.agent.compose.AssistantComposeRender
 import com.tom.rv2ide.artificial.agent.compose.AssistantThinkingCollapsePref
 import com.tom.rv2ide.artificial.agent.compose.AssistantToolStatusBarPref
+import com.tom.rv2ide.artificial.agent.compose.theme.AppThemePreset
+import com.tom.rv2ide.artificial.agent.compose.theme.AssistantThemePrefs
 import com.tom.rv2ide.artificial.agent.ShizukuShellBackend
 import com.tom.rv2ide.artificial.agent.codegraph.CodeGraphInstaller
 import com.tom.rv2ide.artificial.agent.codegraph.CodeGraphManager
@@ -616,6 +618,55 @@ private class AssistantTextColorPreference(
 }
 
 
+/**
+ * 助手消息配色方案。
+ *
+ * <p>移植自 Aharou 的主题预设（默认蓝/咖啡/石墨/森林，见 [AppThemePreset]）：
+ * 单选对话框列出全部方案，选中即写偏好——Compose 面板自己订阅同一份偏好
+ * （见 `AIEditorTheme.rememberThemePreset`），改动即时生效，无需重启面板。
+ *
+ * <p>摘要显示当前方案名，与 [AssistantTextColorPreference] 的「点开才知道选了啥」不同——
+ * 配色方案是外观总纲，用户应能在列表页直接看到当前值。
+ */
+@Parcelize
+private class AssistantThemePresetPreference(
+    override val key: String = "assistant_theme_preset_pref",
+    override val title: Int = R.string.ai_agent_ui_theme_preset_title,
+    override val summary: Int? = R.string.ai_agent_ui_theme_preset_summary,
+) : BasePreference() {
+
+  override fun onCreatePreference(context: Context): Preference {
+    return androidx.preference.Preference(context).apply {
+      key = "assistant_theme_preset_pref"
+      title = context.getString(R.string.ai_agent_ui_theme_preset_title)
+      summary = currentName(context)
+    }
+  }
+
+  override fun onPreferenceClick(preference: Preference): Boolean {
+    val context = preference.context
+    val all = AppThemePreset.ALL_PRESETS
+    val shown = all.map { it.displayName }.toTypedArray()
+    val checked = all.indexOfFirst { it.id == AssistantThemePrefs.presetId(context) }
+
+    com.google.android.material.dialog.MaterialAlertDialogBuilder(context)
+        .setTitle(R.string.ai_agent_ui_theme_preset_title)
+        // checked = -1（未设置过）时单选列表没有选中项——正合适：默认蓝只是显示回退。
+        .setSingleChoiceItems(shown, checked) { dialog, which ->
+          val preset = all[which]
+          AssistantThemePrefs.setPresetId(context, preset.id)
+          preference.summary = preset.displayName
+          dialog.dismiss()
+        }
+        .setNegativeButton(android.R.string.cancel, null)
+        .show()
+    return true
+  }
+
+  private fun currentName(context: Context): String =
+      AppThemePreset.findById(AssistantThemePrefs.presetId(context)).displayName
+}
+
 /** 高级：外观定制、提示词模板与自动切换服务商。改动频率低，但出问题时要能找到。 */
 @Parcelize
 private class AdvancedPage(
@@ -629,6 +680,8 @@ private class AdvancedPage(
     // 外观定制放最前：它们是用户最常想改的（字号/颜色），而提示词模板属于「出问题才找」。
     // 头像设置已移除（2026-10-09）：Compose 渲染路径下消息不带头像位
     // （Aharou 的渲染层没有头像概念），留着开关改了也看不到效果。
+    // 配色方案放第一：它是外观总纲（整套换色），比单项的字号/正文颜色更上游。
+    addPreference(AssistantThemePresetPreference())
     addPreference(AssistantTextSizePreference())
     addPreference(AssistantCardScalePreference())
     addPreference(AssistantTextColorPreference())
