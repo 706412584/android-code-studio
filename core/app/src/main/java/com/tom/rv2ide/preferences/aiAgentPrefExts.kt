@@ -34,6 +34,7 @@ import com.tom.rv2ide.artificial.agent.codegraph.CodeGraphManager
 import com.tom.rv2ide.preferences.internal.prefManager
 import com.tom.rv2ide.services.AssistantOverlayService
 import com.tom.rv2ide.resources.R.string
+import kotlin.math.roundToInt
 import com.tom.androidcodestudio.project.manager.ProjectManager
 import java.io.File
 import kotlinx.coroutines.CoroutineScope
@@ -452,7 +453,17 @@ private class AssistantTextSizePreference(
           valueFrom = AssistantUiStyleStore.MIN_TEXT_SIZE
           valueTo = AssistantUiStyleStore.MAX_TEXT_SIZE
           stepSize = 1f
-          value = store.textSize
+          // 四舍五入到整数刻度：Slider 要求 value 是 valueFrom 的整数倍偏移，
+          // 存量值若是 13.5 这类非整数（旧版本或手工改过偏好），直接赋给 value 会抛
+          // IllegalStateException 崩溃（与卡片大小同一类问题，见那边的详细注释）。
+          value =
+              store.textSize
+                  .roundToInt()
+                  .coerceIn(
+                      AssistantUiStyleStore.MIN_TEXT_SIZE.toInt(),
+                      AssistantUiStyleStore.MAX_TEXT_SIZE.toInt(),
+                  )
+                  .toFloat()
           setLabelFormatter { "${it.toInt()}sp" }
         }
     val container =
@@ -482,19 +493,39 @@ private class AssistantCardScalePreference(
     override val summary: Int? = R.string.ai_agent_ui_card_scale_summary,
 ) : DialogPreference() {
 
+  /**
+   * 刻度用**整数**，显示与写回时换算成缩放倍率。
+   *
+   * <p><b>为什么不用 0.8..1.3 的浮点范围</b>：`1.3f - 0.8f` 在 float32 下是
+   * `0.49999994`，Slider 的刻度校验（`value == valueFrom + n * stepSize`）会因
+   * 累积误差拒绝合法值，直接抛 `IllegalStateException` 崩溃——
+   * 实测栈：`Value(1.05) must be equal to valueFrom(0.8) plus a multiple of stepSize(0.1)`。
+   * 存量值（旧版 0.05 步长时代留下的 1.05 等）更是必然踩中。
+   *
+   * <p>整数刻度（0..5，步长 1）不存在浮点误差，换算在两端各做一次：
+   * 读时 `(scale - MIN) / STEP`，写时 `MIN + index * STEP`。
+   */
   override fun onConfigureDialog(preference: Preference, dialog: MaterialAlertDialogBuilder) {
     val context = preference.context
     val store = AssistantUiStyleStore(context)
+    val minScale = AssistantUiStyleStore.MIN_CARD_SCALE
+    val maxScale = AssistantUiStyleStore.MAX_CARD_SCALE
+    // 刻度数 = 5（0..5 共 6 档，对应 0.8/0.9/1.0/1.1/1.2/1.3）。
+    val steps = 5
     val slider =
         com.google.android.material.slider.Slider(context).apply {
-          valueFrom = AssistantUiStyleStore.MIN_CARD_SCALE
-          valueTo = AssistantUiStyleStore.MAX_CARD_SCALE
-          // 0.1 而不是 0.05：(1.3f - 0.8f) 在 float32 下是 0.49999994，
-          // 配 0.05 步长会算出 10 个刻度（应为 11），末端 1.30 不是刻度、实际最多到 1.25。
-          // 0.1 步长同样有 5 个刻度且整除关系更稳。
-          stepSize = 0.1f
-          value = store.cardScale
-          setLabelFormatter { String.format(java.util.Locale.US, "%.1f×", it) }
+          valueFrom = 0f
+          valueTo = steps.toFloat()
+          stepSize = 1f
+          // 存量值可能落在刻度之间（如 1.05）或范围外：先钳制再四舍五入到最近刻度。
+          value = (((store.cardScale - minScale) / (maxScale - minScale) * steps) + 0.5f)
+              .toInt()
+              .coerceIn(0, steps)
+              .toFloat()
+          setLabelFormatter {
+            val scale = minScale + it / steps * (maxScale - minScale)
+            String.format(java.util.Locale.US, "%.1f×", scale)
+          }
         }
     val container =
         android.widget.FrameLayout(context).apply {
@@ -504,7 +535,7 @@ private class AssistantCardScalePreference(
         }
     dialog.setView(container)
     dialog.setPositiveButton(android.R.string.ok) { iface, _ ->
-      store.cardScale = slider.value
+      store.cardScale = minScale + slider.value / steps * (maxScale - minScale)
       iface.dismiss()
     }
     dialog.setNegativeButton(android.R.string.cancel, null)
