@@ -273,6 +273,16 @@ private val AppTypography = Typography().run {
 fun AIEditorTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
     dynamicColor: Boolean = false,
+    /**
+     * 字号缩放倍率（1.0 = 默认）。来自 AI 设置的「聊天字号」——
+     * 用户选 13sp（默认值）时为 1.0，选 20sp 时为 20/13 ≈ 1.54。
+     *
+     * <p>为什么在这里统一缩放而不是逐组件改字号：渲染层的字号全部取自
+     * [MaterialTheme.typography]，在主题这一层按倍率重算一次即可覆盖所有组件
+     * （正文/工具卡/思考块/小字），与 XML 路径 `AssistantMessageAdapter.scaledSp`
+     * 的「基准值 × 用户缩放」语义一致。逐组件改会漏，且新增组件时容易忘。
+     */
+    textScale: Float = 1f,
     content: @Composable () -> Unit
 ) {
   val context = LocalContext.current
@@ -288,9 +298,44 @@ fun AIEditorTheme(
     }
   }
 
+  // 缩放后 typography：倍率不变时复用同一实例，避免每次重组都重建 Typography。
+  val typography =
+      remember(textScale) {
+        if (textScale == 1f) AppTypography else AppTypography.scaledBy(textScale)
+      }
+
   CompositionLocalProvider(
       LocalAppSemanticColors provides if (darkTheme) DarkSemanticColors else LightSemanticColors
   ) {
-    MaterialTheme(colorScheme = colorScheme, typography = AppTypography, content = content)
+    MaterialTheme(colorScheme = colorScheme, typography = typography, content = content)
   }
+}
+
+/**
+ * 按倍率缩放整套 typography。
+ *
+ * <p>只缩放消息渲染实际用到的槽位（body/label 系）——标题类槽位属于面板框架，
+ * 跟随「聊天字号」一起变会让顶栏与设置项的字号失控（用户调的是**消息**字号）。
+ * lineHeight 同步缩放，否则字号变大而行高不变，中文正文会挤在一起。
+ */
+private fun Typography.scaledBy(scale: Float): Typography =
+    copy(
+        bodyLarge = bodyLarge.scaledText(scale),
+        bodyMedium = bodyMedium.scaledText(scale),
+        bodySmall = bodySmall.scaledText(scale),
+        labelLarge = labelLarge.scaledText(scale),
+        labelMedium = labelMedium.scaledText(scale),
+        labelSmall = labelSmall.scaledText(scale),
+    )
+
+/** 缩放单个 TextStyle 的字号与行高（行高为 Unspecified 时保持不变）。 */
+private fun androidx.compose.ui.text.TextStyle.scaledText(
+    scale: Float
+): androidx.compose.ui.text.TextStyle {
+  // isSpecified 是 TextUnit 的扩展属性（androidx.compose.ui.unit），
+  // 行高为 Unspecified 时不能参与乘法（会得到非法值）。
+  val newLineHeight =
+      if (lineHeight != androidx.compose.ui.unit.TextUnit.Unspecified) lineHeight * scale
+      else lineHeight
+  return copy(fontSize = fontSize * scale, lineHeight = newLineHeight)
 }

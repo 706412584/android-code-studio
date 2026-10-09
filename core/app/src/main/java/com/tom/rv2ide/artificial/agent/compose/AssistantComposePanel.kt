@@ -36,10 +36,12 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
@@ -212,7 +214,7 @@ private fun PanelContent(
     question: PendingUserQuestion?,
     onQuestionDone: (UserQuestionAnswer?) -> Unit,
 ) {
-  AIEditorTheme(darkTheme = darkTheme) {
+  AIEditorTheme(darkTheme = darkTheme, textScale = rememberChatTextScale()) {
     // 读一次快照：列表变化时本函数重组，而 LazyColumn 按 key 只重组变化的条目
     val messages by state.messages
     // 「挂操作行」只给最新一条助手消息，因此这里算一次，避免在 item 作用域里逐条求末项
@@ -369,6 +371,50 @@ private sealed interface RenderItem {
   ) : RenderItem {
     override val key: String get() = "g$id"
   }
+}
+
+/**
+ * 「聊天字号」设置换算成的缩放倍率，随设置变更即时更新。
+ *
+ * <p>倍率 = 用户选的字号 / 默认字号（见 [AssistantUiStyleStore.getTextSize] 与
+ * `DEFAULT_TEXT_SIZE`）。默认字号对应 1.0，因此默认设置下不产生任何视觉变化。
+ *
+ * <p><b>为什么在组合里监听偏好而不是等宿主通知</b>：设置页改完字号后用户可能直接
+ * 返回助手面板（同一 Activity 内切换），宿主那条 uiStyleListener 链路只处理
+ * 「重绑消息」，不会让 Compose 重建主题。这里自己订阅同一份偏好文件，
+ * 改动即触发重组——不依赖宿主记得转发。
+ */
+@Composable
+private fun rememberChatTextScale(): Float {
+  val context = androidx.compose.ui.platform.LocalContext.current
+  val store = remember(context) { com.tom.rv2ide.artificial.agent.AssistantUiStyleStore(context) }
+  // 状态初值取当前设置；监听器把它推向新值。
+  var scale by remember(store) {
+    mutableStateOf(
+        store.textSize / com.tom.rv2ide.artificial.agent.AssistantUiStyleStore.DEFAULT_TEXT_SIZE)
+  }
+  DisposableEffect(store) {
+    // 偏好文件名是 AssistantUiStyleStore 的 private 常量，这里写字面量——
+    // 该 store 的其它外部使用点（FloatingAssistantView 的 uiStyleListener）同样如此。
+    val prefs =
+        context.applicationContext.getSharedPreferences(
+            "ai_agent_tools",
+            android.content.Context.MODE_PRIVATE,
+        )
+    val listener =
+        android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+          // 只认字号键：同一份偏好里还有卡片缩放、颜色、头像等十来个键，
+          // 不筛会让改颜色也触发一次主题重建。
+          if (key == com.tom.rv2ide.artificial.agent.AssistantUiStyleStore.KEY_TEXT_SIZE) {
+            scale =
+                store.textSize /
+                    com.tom.rv2ide.artificial.agent.AssistantUiStyleStore.DEFAULT_TEXT_SIZE
+          }
+        }
+    prefs.registerOnSharedPreferenceChangeListener(listener)
+    onDispose { prefs.unregisterOnSharedPreferenceChangeListener(listener) }
+  }
+  return scale
 }
 
 /**
