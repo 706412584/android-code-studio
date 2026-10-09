@@ -249,13 +249,44 @@ private fun PanelContent(
       }
     }
 
-    // 条目数变化时决定是否跟随。用 renderItems.size 而不是 messages.size：
-    // 工具组会把多条折成一项，按 messages 判会在「组内新增一条」时漏掉跟随。
-    LaunchedEffect(renderItems.size) {
+    // 跟随触发键：**末条消息的 id + 内容尺寸**，而不是条目数。
+    //
+    // <p><b>为什么条目数不够</b>：流式正文走 `adapter.appendTo`——增量写进**同一条**
+    // 消息，条目数不变。按 size 判会在最需要跟随的时候（正文一段段长出来）一次
+    // 都不触发，表现为「最新的回答不滚动、写满了还要手动往下拉」（实测）。
+    // 思考块同理（appendTo 进同一个 Thinking），工具步骤也是。加上末条内容的
+    // 长度做键，任何一条尾部内容的变化都会触发判定；条目**新增**（新气泡/新卡片）
+    // 时末条 id 变化，同样覆盖。取整百避免每个 token 都重算。
+    val followKey =
+        remember(renderItems) {
+          val last = renderItems.lastOrNull()
+          when (last) {
+            is RenderItem.Single ->
+                last.message.id to
+                    (last.message.content.length + (last.message.reasoning?.length ?: 0)) / 100
+            is RenderItem.Group ->
+                last.id to (last.children.lastOrNull()?.content?.length ?: 0) / 100
+            is RenderItem.DiffGroup ->
+                last.id to last.children.size
+            null -> "" to 0
+          }
+        }
+
+    // 条目尾部内容变化时决定是否跟随。
+    LaunchedEffect(followKey) {
       if (atBottom && renderItems.isNotEmpty()) {
         // 瞬时定位而不是动画：流式期间每次追加都会触发，动画会被下一次调用打断
         // 并排队，表现为「一直追不上底部」（与宿主 scrollToBottom 同一取舍）。
-        listState.scrollToItem(renderItems.lastIndex)
+        //
+        // **不能只 scrollToItem(lastIndex)**：末条是一条正在变长的长消息时，
+        // 它的顶部对齐视口顶、内容下半截全在屏幕外——「滚了但没滚到底」。
+        // 用「滚到末项 + 再滚一个视口高度」表达「把最后的内容顶到可视区」：
+        // LazyColumn 会把超出列表范围的偏移钳到最大滚动距离，即列表真正的底部。
+        val lastIndex = renderItems.lastIndex
+        if (listState.layoutInfo.totalItemsCount > 0) {
+          val viewport = listState.layoutInfo.viewportEndOffset
+          listState.scrollToItem(lastIndex, scrollOffset = viewport)
+        }
       }
     }
 
@@ -822,7 +853,12 @@ internal class AssistantComposePanelHost(
     if (count == 0) {
       return
     }
-    scope.launch { listState.scrollToItem(count - 1) }
+    scope.launch {
+      // 与面板内跟随同一写法（+一个视口高度再钳底）：末条是长消息时
+      // scrollToItem 只露出它的顶部，用户仍然看不到自己刚发的那条的回答。
+      val viewport = listState.layoutInfo.viewportEndOffset
+      listState.scrollToItem(count - 1, scrollOffset = viewport)
+    }
   }
 
   /**
