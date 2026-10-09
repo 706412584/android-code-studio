@@ -2779,6 +2779,9 @@ class FloatingAssistantView(
             queuedRequests = bridge.queuedRequests,
             tokenProgress = bridge.tokenProgress,
             tokenEstimated = bridge.tokenEstimated,
+            // 上下文详情 + 手动压缩：入口原先挂在 XML 工具条的圆环上，圆环退役后
+            // 这两个功能（showContextUsage / compactConversation）就没有调用点了。
+            onContextUsageClick = { showContextUsage() },
             todoItems = bridge.todoItems,
             sessionId = displayedConversationId ?: "",
         )
