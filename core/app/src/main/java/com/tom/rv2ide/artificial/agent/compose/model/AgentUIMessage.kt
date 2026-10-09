@@ -142,6 +142,15 @@ data class AgentUIMessage(
      * 映射层按"默认收起"处理（与组头组件的文档一致：默认收起，运行中也不自动弹开）。
      */
     val groupExpanded: Boolean = false,
+    /**
+     * 用户对所属分组的**显式**展开意图：null = 没手动操作过。
+     *
+     * <p>与 [groupExpanded] 的区别是保住了「未操作」这个状态——渲染层的自动折叠策略
+     * （工具组：末尾展开、有后续内容折叠，见 AssistantComposePanel.ToolGroupRow）
+     * 需要它：只凭 [groupExpanded] 的布尔值分不清「用户手动折叠了最新组」与
+     * 「自动策略折叠的」，于是手动折叠会被自动逻辑重新展开。
+     */
+    val groupPinned: Boolean? = null,
 )
 
 /** 消息角色。取值与 Aharou 的 `MessageRole` 一致。 */

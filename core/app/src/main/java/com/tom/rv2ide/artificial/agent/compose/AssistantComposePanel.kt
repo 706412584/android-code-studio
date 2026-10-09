@@ -372,6 +372,14 @@ private sealed interface RenderItem {
       val id: String,
       val expanded: Boolean,
       val children: List<AgentUIMessage>,
+      /**
+       * 该组之后是否还有非工具消息（助手文本/用户消息）。
+       *
+       * <p>折叠策略的判据（见 [ToolGroupRow]）：还有后续内容 = 这段工具调用已经
+       * 过去 = 收起；仍是列表末尾 = 正在干活 = 展开。用户的要求是「默认展开，
+       * 等 AI 发下一条消息后再折叠」。
+       */
+      val hasLaterContent: Boolean = false,
   ) : RenderItem {
     override val key: String get() = "g$id"
   }
@@ -455,6 +463,16 @@ private fun toRenderItems(messages: List<AgentUIMessage>): List<RenderItem> {
     var j = i
     while (j < messages.size && messages[j].groupId == gid) j++
     val children = messages.subList(i, j).toList()
+    // 「该组之后是否还有消息」——工具组的折叠策略（见 ToolGroupRow 文档）：
+    // 之后还有内容 = 这一段工具调用已经过去 = 折叠；仍是列表末尾 = 正在干活 = 展开。
+    //
+    // 判据是「组之后还有任何消息」而**不是**「有非工具消息」：AI 连续调用两轮工具
+    // （中间无正文，例如「先列目录、再读文件」）时，第二组出现即意味着第一组已经过去。
+    // 只认非工具消息的话，那两轮之间没有任何文本，两个组会一直同时展开、占满屏幕。
+    //
+    // 也不用「是否运行中」：工具跑完、模型还在想的阶段 isRunActive 已是 false，
+    // 那时组会提前折叠——用户还没看到回答就先看到一堆收起的卡片。
+    val hasLaterContent = j < messages.size
     // 前缀决定渲染成哪种组：`d` 是改动汇总卡（带「全部撤销」），其余是工具组。
     // 用前缀而不是「组内条目类型」判断：靠内容判断会在空组/混合组上分叉，
     // 而映射层已保证同组条目类型一致。
@@ -462,7 +480,17 @@ private fun toRenderItems(messages: List<AgentUIMessage>): List<RenderItem> {
         if (gid.startsWith("d")) {
           RenderItem.DiffGroup(gid, messages[i].groupExpanded, children)
         } else {
-          RenderItem.Group(gid, messages[i].groupExpanded, children)
+          RenderItem.Group(
+              id = gid,
+              // 展开态 = 用户手动意图优先，否则「还有后续内容就折叠、仍是末尾就展开」。
+              //
+              // groupPinned 的 null 与 false 必须区分（这正是它存在的原因）：
+              // null = 用户没动过 → 交给自动策略；false = 用户手动折叠了 → 尊重意图，
+              // 不能因为「还是末尾」就把它弹开。
+              expanded = messages[i].groupPinned ?: !hasLaterContent,
+              children = children,
+              hasLaterContent = hasLaterContent,
+          )
         }
     i = j
   }

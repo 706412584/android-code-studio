@@ -86,9 +86,10 @@ object AcsMessageMapper {
    * 一条消息所属的分组上下文。
    *
    * @param id 组标识（取自适配器条目的 id，同一组内各条一致）
-   * @param expanded 用户手动开关过的展开意图；未开关过时为 false（默认收起）
+   * @param pinned 用户手动开关过的展开意图；**null = 没操作过**（渲染层按自动策略
+   *   决定展开与否——工具组是「末尾展开、有后续内容折叠」，见 ToolGroupRow）
    */
-  private class GroupCtx(val id: String, val expanded: Boolean)
+  private class GroupCtx(val id: String, val pinned: Boolean?)
 
   private fun append(
       item: AssistantMessageAdapter.Item,
@@ -104,7 +105,9 @@ object AcsMessageMapper {
       // `pinnedExpanded` 为 null 表示用户没手动开关过，按默认收起处理——与组头组件的
       // 文档一致（默认收起，运行中也不自动弹开）。
       is AssistantMessageAdapter.ToolGroup -> {
-        val ctx = GroupCtx(item.id.toString(), item.pinnedExpanded ?: false)
+        // 三态直传：pinnedExpanded 的 null（未操作）与 false（手动折叠）对渲染层
+        // 意义完全不同——前者交给自动策略，后者必须尊重用户意图。
+        val ctx = GroupCtx(item.id.toString(), item.pinnedExpanded)
         item.children.forEach { append(it, out, ctx) }
       }
       // 本轮改动汇总：用 `d` 前缀的组标识把它们折成一张卡。前缀与工具组的 `g` 区分开
@@ -114,7 +117,7 @@ object AcsMessageMapper {
       // Aharou 没有对应组件（它把汇总卡摊平），这里由 ACS 侧补：用户要求「撤销改动
       // 在消息尾部追加卡片、限高、每行撤销 + 全部撤销」，逐条平铺做不到「全部撤销」。
       is AssistantMessageAdapter.DiffGroup -> {
-        val ctx = GroupCtx("d${item.id}", item.pinnedExpanded ?: false)
+        val ctx = GroupCtx("d${item.id}", item.pinnedExpanded)
         item.children.forEach { append(it, out, ctx) }
       }
     }
@@ -123,7 +126,14 @@ object AcsMessageMapper {
   /** 把分组标识盖到消息上；[group] 为 null 时原样返回（不造无谓的 copy）。 */
   private fun AgentUIMessage.inGroup(group: GroupCtx?): AgentUIMessage =
       if (group == null) this
-      else copy(groupId = group.id, groupExpanded = group.expanded)
+      else
+          copy(
+              groupId = group.id,
+              // groupExpanded 是「最终值」的近似：有显式意图就用它，没有时先给 false
+              // （默认收起），渲染层拿到 groupPinned == null 会按自动策略覆盖它。
+              groupExpanded = group.pinned ?: false,
+              groupPinned = group.pinned,
+          )
 
   private fun fromMessage(m: AssistantMessageAdapter.Message) =
       AgentUIMessage(
