@@ -58,6 +58,9 @@ class AssistantInputFeatures(
   /** 视图与选择器共用的 Context。从 host 取，保证与宿主一致。 */
   private val context: Context = host.context
 
+  /** 宿主注入的输入栏桥；XML 退役后附件的 Compose 投影写进它。 */
+  internal var owner: FloatingAssistantView? = null
+
   /**
    * 读图片内容用的作用域。
    *
@@ -106,7 +109,8 @@ class AssistantInputFeatures(
     // 默认值必须是「自动」：用户没表态时应该由协议层的策略决定，
     // 而不是我们替他固定成某一档。
     applyReasoningEffort(reasoningPrefs().getString(KEY_REASONING, DEFAULT_REASONING))
-    binding.assistantToolbarAdd.setOnClickListener { showAddMenu() }
+    // XML 的 `+` 按钮退役：附件类型选择（文件/图片）由 Compose 输入栏的
+    // AttachmentSheet 承载（ChatInputBar 的 onUploadFile/onUploadImage）。
   }
 
   /**
@@ -122,14 +126,10 @@ class AssistantInputFeatures(
    * 发送按钮是互斥的。原先它独占输入区上方一整行，也是同样的空间问题：
    * 一个一周改一次的设置占着每天都要看的输入框上方 32dp。
    */
-  private fun showAddMenu() {
-    // 槽位切换只在有得切时才列出来。菜单项本身要稳定可预期，但一个点了什么都不做的
-    // 项比少一项更糟——用户会反复点它确认自己没看错。
+  /** 推理强度 + 模型槽位切换的合并菜单。附件选择已移到 Compose 输入栏的 AttachmentSheet。 */
+  fun showAddMenu() {
     val slotSwitchable = hasSwitchableSlots()
     val items = mutableListOf<Pair<String, () -> Unit>>()
-    if (attachmentsAvailable) {
-      items.add(context.getString(string.ai_assistant_toolbar_attach) to { showAttachSheet() })
-    }
     items.add(
         context.getString(
             string.ai_assistant_toolbar_reasoning_value,
@@ -174,6 +174,12 @@ class AssistantInputFeatures(
         }
         .show()
   }
+
+  /** Compose 输入栏 AttachmentSheet 的「上传文件」入口。 */
+  fun pickFileAttachment() = openFilePicker()
+
+  /** Compose 输入栏 AttachmentSheet 的「上传图片 / 拍照」入口。 */
+  fun pickImageAttachment() = openImagePicker()
 
   private fun openFilePicker() {
     // 真正的 Intent 构造交给宿主（Activity 与 Service 走不同机制）。这里只负责
@@ -324,27 +330,33 @@ class AssistantInputFeatures(
     return uri.lastPathSegment?.substringAfterLast('/') ?: uri.toString()
   }
 
-  /** 重建标签行。条目数是个位数，全量重建比 diff 更简单且不会错。 */
+  /** 把待发附件投影到输入栏桥（Compose 侧渲染预览行）。 */
   private fun renderAttachments() {
-    val group = binding.assistantAttachList
-    group.removeAllViews()
-    binding.assistantAttachScroll.isVisible = attachments.isNotEmpty()
-
+    val bridge = owner?.inputBar ?: return
+    bridge.pendingAttachments.clear()
     for (attachment in attachments) {
-      val chip =
-          Chip(context, null, com.google.android.material.R.style.Widget_Material3_Chip_Input).apply {
-            text = attachment.name
-            isCloseIconVisible = true
-            // 显式给关闭图标：Chip 的默认 close icon 来自主题，部分主题下为 null，
-            // 此时 isCloseIconVisible=true 会得到一个「点了没反应」的空洞。
-            closeIcon = androidx.core.content.ContextCompat.getDrawable(
-                context, com.tom.rv2ide.R.drawable.ic_close)
-            setOnCloseIconClickListener {
-              attachments.remove(attachment)
-              renderAttachments()
-            }
-          }
-      group.addView(chip)
+      val image =
+          if (attachment.isImage && attachment.bytes != null) {
+            val mime =
+                context.contentResolver.getType(attachment.uri)
+                    ?: if (attachment.name.endsWith(".png", ignoreCase = true)) "image/png"
+                    else "image/jpeg"
+            com.tom.rv2ide.artificial.agent.compose.compat.AgentImage(
+                mimeType = mime,
+                base64Data =
+                    android.util.Base64.encodeToString(
+                        attachment.bytes!!, android.util.Base64.NO_WRAP),
+            )
+          } else null
+      bridge.pendingAttachments.add(
+          com.tom.rv2ide.artificial.agent.compose.compat.PendingUploadAttachment(
+              fileName = attachment.name,
+              containerPath = localPathOf(attachment.uri) ?: attachment.uri.toString(),
+              localPath = localPathOf(attachment.uri) ?: "",
+              mimeType = if (attachment.isImage) "image/*" else "application/octet-stream",
+              sizeBytes = attachment.bytes?.size?.toLong() ?: 0L,
+              image = image,
+          ))
     }
   }
 
@@ -659,12 +671,8 @@ class AssistantInputFeatures(
    * 这两个每轮都要看的信息。
    */
   private fun applyReasoningEffort(effort: String?) {
-    val value = effort ?: DEFAULT_REASONING
-    binding.assistantToolbarAdd.contentDescription =
-        context.getString(
-            string.ai_assistant_toolbar_reasoning_value,
-            context.getString(reasoningLabelRes(value)),
-        )
+    // XML `+` 按钮退役：推理强度的当前档位由 Compose 输入栏的
+    // ReasoningEffortSelector 自行显示（reasoningLabelRes 供选择器用）。
   }
 
   /** 推理强度值 → 字符串资源。 */

@@ -1,0 +1,840 @@
+/*
+ * This file is part of AndroidCodeStudio.
+ *
+ * Adapted from Aharou (https://github.com/520huxiangli/Aharou),
+ * licensed under the GNU General Public License v3.0 or later.
+ * Modifications for AndroidCodeStudio are licensed under the same terms.
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
+
+package com.tom.rv2ide.artificial.agent.compose.components.independent
+
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextField
+import androidx.compose.material3.TextFieldDefaults
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
+import androidx.compose.ui.window.DialogWindowProvider
+import androidx.core.view.WindowCompat
+import com.tom.rv2ide.artificial.agent.compose.compat.PendingUploadAttachment
+import com.tom.rv2ide.artificial.agent.compose.components.tools.ParsedTodoItem
+import com.tom.rv2ide.artificial.agent.compose.compat.AgentMode
+import com.tom.rv2ide.artificial.agent.compose.compat.OnboardingStep
+import com.tom.rv2ide.artificial.agent.compose.compat.ReasoningEffort
+import com.tom.rv2ide.artificial.agent.compose.compat.onboardingTarget
+import com.tom.rv2ide.artificial.agent.compose.compat.rememberImeBottomInset
+import com.tom.rv2ide.artificial.agent.compose.components.style.rememberBoundNestedScrollConnection
+import com.tom.rv2ide.artificial.agent.compose.theme.Brand
+import com.tom.rv2ide.artificial.agent.compose.theme.Radius
+import com.tom.rv2ide.artificial.agent.compose.theme.Spacing
+import com.tom.rv2ide.artificial.agent.compose.theme.semanticColors
+import com.tom.rv2ide.resources.R
+import compose.icons.FeatherIcons
+import compose.icons.feathericons.ArrowUp
+import compose.icons.feathericons.Maximize
+import compose.icons.feathericons.Minimize
+import compose.icons.feathericons.Plus
+import compose.icons.feathericons.Square
+
+/**
+ * 输入栏（Aharou `ChatInputBar.kt` 移植，2026-10-09 接线进 ACS 助手面板底部）。
+ *
+ * <p><b>裁剪清单（相对 Aharou 原文）</b>：
+ * - voice 全家（VoiceMicButton / LiveTranscript / VoiceCallService）不移植——ACS 无音频设施；
+ * - WorkspaceIconButton 不移植——ACS 无多工作区切换 VM，工作区跟随宿主项目；
+ * - ProviderDashboardBar 调用分支移除——ACS 无 Runner 数据源（组件已移植但无生产者）；
+ * - ToolPermissionPanel / PlanApprovalPanel 不搬——ACS 的授权走 host.dialogs 原生弹窗；
+ * - slashCommands 形状改为 ACS 的 `SlashCommandCatalog.Definition`（Java，name/description）。
+ * 其余（输入框/粘贴折叠/附件预览/模式胶囊/模型按钮/推理强度/发送停止环/全屏输入）
+ * 逐字保留。
+ */
+
+/** 输入框区域蒙版高度：盖住圆角容器，滚动内容滑入时被渐变遮罩；随键盘（IME）上移。 */
+private val INPUT_BAR_MASK_HEIGHT = 110.dp
+
+/** 输入框高度上下限：超过上限后文本在框内滚动，右上角露出「展开」按钮。与 TextField 的 heightIn 一致。 */
+private val INPUT_FIELD_MIN_HEIGHT = 44.dp
+private val INPUT_FIELD_MAX_HEIGHT = 140.dp
+
+/**
+ * M3 无标签 TextField 的默认 contentPadding（上下左右各 16dp）。
+ * 文本是否超过输入框高度要先用相同约束实测一遍，反推文本可视区域得靠这个值。
+ */
+private val INPUT_FIELD_CONTENT_PADDING = 16.dp
+
+/** 斜杠命令列表高度上限：技能也注册为命令，数量多时溢出部分在列表内滚动，不挤走输入框。 */
+private val SLASH_COMMAND_LIST_MAX_HEIGHT = 200.dp
+
+/** 斜杠菜单条目的最小投影：ACS 的 Definition 是 Java 类，名字/描述直读。 */
+data class InputSlashCommand(
+    val name: String,
+    val description: String,
+    /** ACS 目录里的命令都接受到行尾的参数（/mode plan 等），点击补一个空格。 */
+    val acceptsArgs: Boolean = true,
+)
+
+@Composable
+internal fun ChatInputBar(
+    value: String,
+    onValueChange: (String) -> Unit,
+    onSend: (String) -> Unit, // 入参是输入框当前文本：须与最后一次输入同步可见，否则发送会丢末字符
+    /** 回车键是否直接发送：开启后 IME 回车键变为「发送」，关闭则回车换行（默认）。 */
+    enterToSend: Boolean = false,
+    onStop: () -> Unit,
+    /** 长按停止键：强制打断（ACS 语义 = 取消会话全部运行）。 */
+    onForceStop: () -> Unit = {},
+    isBusy: Boolean,
+    /** 该会话是否还有 agent 协程在跑：软打断后 [isBusy] 已回到 false，但任务仍在后台跑当前这一步。 */
+    canForceStop: Boolean = false,
+    activeModelName: String?,
+    onSelectModel: () -> Unit,
+    currentMode: AgentMode,
+    onToggleMode: (AgentMode) -> Unit,
+    reasoningEffort: ReasoningEffort,
+    onReasoningEffortChange: (ReasoningEffort) -> Unit,
+    pendingAttachments: List<PendingUploadAttachment>,
+    onRemoveAttachment: (Int) -> Unit,
+    onReadAttachment: suspend (String) -> String?,
+    pastedTexts: List<PastedText> = emptyList(),
+    onStashPaste: (String) -> String = { it },
+    onRemovePaste: (Int) -> Unit = {},
+    canUploadFiles: Boolean,
+    canUploadImages: Boolean,
+    onUploadFile: () -> Unit,
+    onUploadImage: () -> Unit,
+    onTakePhoto: () -> Unit,
+    slashCommands: List<InputSlashCommand> = emptyList(),
+    queuedRequests: List<QueuedRequest> = emptyList(),
+    onRemoveQueued: (String) -> Unit = {},
+    onMoveQueued: (Int, Int) -> Unit = { _, _ -> },
+    onEditQueued: (QueuedRequest) -> Unit = {},
+    onInterjectQueued: (String) -> Unit = {},
+    tokenProgress: Float = 0f,
+    tokenEstimated: Boolean = false,
+    todoItems: List<ParsedTodoItem> = emptyList(),
+    sessionId: String = "",
+    onTodoExpandedChange: (Boolean) -> Unit = {},
+    forceCollapseDashboard: Boolean = false,
+    /** 消息列表正在滚动时内容区淡出到 40%，停止滚动恢复；用于长列表阅读时降低底部干扰（同 git 页 tab 栏）。 */
+    isScrolling: Boolean = false,
+    modifier: Modifier = Modifier
+) {
+    val hasContent = value.isNotBlank() || pendingAttachments.isNotEmpty()
+    val canSend = hasContent
+    var showAttachmentSheet by remember { mutableStateOf(false) }
+    var showFullScreenInput by remember { mutableStateOf(false) }
+    // TextField 的 String 重载在整串替换时会保留旧 selection 下标（点快捷命令补全时光标会停在中间），
+    // 这里自持 TextFieldValue：外部改值时把光标移到末尾。
+    var inputFieldValue by remember { mutableStateOf(TextFieldValue(value, TextRange(value.length))) }
+    LaunchedEffect(value) {
+        if (inputFieldValue.text != value) {
+            inputFieldValue = TextFieldValue(value, TextRange(value.length))
+        }
+    }
+    val showSlashMenu = !isBusy && slashCommands.isNotEmpty() &&
+        value.startsWith("/") && !value.contains("\n")
+    val filteredCommands = if (showSlashMenu) {
+        if (value == "/") slashCommands
+        else slashCommands.filter { "/${it.name}".startsWith(value) }
+    } else emptyList()
+
+    // 文本是否已经超出输入框高度（超出后框内滚动，展开按钮才有意义）。
+    // 按换行符数硬编码阈值在长行自动折行时会判断错，这里按 TextField 的实际宽度实测文本高度。
+    val textMeasurer = rememberTextMeasurer()
+    val inputDensity = LocalDensity.current
+    var inputFieldWidthPx by remember { mutableStateOf(0) }
+    val inputTextStyle = MaterialTheme.typography.bodyLarge
+    val inputOverflows = remember(value, inputFieldWidthPx, inputDensity, inputTextStyle) {
+        val horizontalPaddingPx = with(inputDensity) { INPUT_FIELD_CONTENT_PADDING.toPx() }
+        val contentWidthPx = inputFieldWidthPx - (horizontalPaddingPx * 2).toInt()
+        val maxTextHeightPx = with(inputDensity) {
+            (INPUT_FIELD_MAX_HEIGHT - INPUT_FIELD_CONTENT_PADDING * 2).toPx()
+        }
+        contentWidthPx > 0 && value.isNotEmpty() && textMeasurer.measure(
+            text = AnnotatedString(value),
+            style = inputTextStyle,
+            constraints = Constraints(maxWidth = contentWidthPx)
+        ).size.height > maxTextHeightPx
+    }
+
+    Surface(
+        color = Color.Transparent,
+        modifier = modifier.fillMaxWidth()
+    ) {
+        val imeInset = rememberImeBottomInset()
+        // 滚动弱化：内容区（slash 菜单/排队面板/待办面板/输入框本体）整体淡出到 40%，蒙版渐变保持不透明。
+        val contentAlpha by animateFloatAsState(
+            targetValue = if (isScrolling) 0.4f else 1f,
+            animationSpec = tween(200),
+            label = "inputbar-content-alpha"
+        )
+        // 渐变终点固定在蒙版可视高度内：若跟随整个 Box（含 imeInset 被键盘拉长的部分），
+        // 键盘弹起时可见区域只占渐变前段，alpha 被摊薄到几乎透明——看起来像没有蒙版。
+        val maskGradientEndY = with(LocalDensity.current) { INPUT_BAR_MASK_HEIGHT.toPx() }
+        BoxWithConstraints(
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            // 展开内容的高度上限要按「键盘弹起后真正可见的高度」算：本页在 API 30+ 走 SOFT_INPUT_ADJUST_NOTHING，
+            // 窗口不被键盘压缩，maxHeight 仍是整屏高，扣掉 imeInset 这一步不能省。
+            val overlayMaxHeight = (maxHeight - imeInset - Spacing.md).coerceAtLeast(0.dp)
+
+            // 半透明渐变蒙版：盖住输入框区域 + 导航栏（手势小白条）区域，滚动内容滑入时被遮罩
+            // （能看见但看不清）；高度含 IME inset 随键盘上移，渐变在 INPUT_BAR_MASK_HEIGHT 内完成，
+            // 之下为纯色。注意 IME padding 不能加在外层 Box 上——align(BottomCenter) 的子项
+            // 对齐在 padding 内部，会漏掉导航栏那条区域。
+            Box(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+                    .height(INPUT_BAR_MASK_HEIGHT + imeInset)
+                    .background(
+                        Brush.verticalGradient(
+                            listOf(
+                                MaterialTheme.colorScheme.surface.copy(alpha = 0f),
+                                MaterialTheme.colorScheme.surface.copy(alpha = 0.98f)
+                            ),
+                            startY = 0f,
+                            endY = maskGradientEndY
+                        )
+                    )
+            )
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    // 图层必须常驻：按 contentAlpha 条件增删 graphicsLayer 时，图层从无到有
+                    // 与附件预览行插入撞在同一帧，新建的 RenderNode 当帧抓不到内容，表现为
+                    // 附件已渲染、尺寸位置全对却一片空白（冷启动贴底滚动时最易撞上）。
+                    // 授权面板的淡出一直是常驻图层，没有这个问题。
+                    .graphicsLayer { alpha = contentAlpha }
+                    .padding(horizontal = Spacing.lg)
+                    .padding(bottom = Spacing.md)
+                    .padding(bottom = imeInset)
+            ) {
+            if (filteredCommands.isNotEmpty()) {
+                Surface(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = Spacing.sm),
+                    shape = RoundedCornerShape(Radius.lg),
+                    color = MaterialTheme.colorScheme.surface,
+                    border = androidx.compose.foundation.BorderStroke(
+                        1.dp, MaterialTheme.colorScheme.outlineVariant
+                    )
+                ) {
+                    val slashScrollState = rememberScrollState()
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(max = minOf(SLASH_COMMAND_LIST_MAX_HEIGHT, overlayMaxHeight))
+                            .nestedScroll(rememberBoundNestedScrollConnection(slashScrollState))
+                            .verticalScroll(slashScrollState)
+                            .padding(horizontal = Spacing.sm, vertical = Spacing.xs)
+                    ) {
+                        filteredCommands.forEach { command ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(Radius.sm))
+                                    .clickable {
+                                        onValueChange(
+                                            if (command.acceptsArgs) "/${command.name} " else "/${command.name}"
+                                        )
+                                    }
+                                    .padding(horizontal = Spacing.md, vertical = Spacing.sm),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    "/${command.name}",
+                                    style = MaterialTheme.typography.labelLarge,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                                Spacer(Modifier.width(Spacing.sm))
+                                Text(
+                                    command.description,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.weight(1f),
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (queuedRequests.isNotEmpty()) {
+                QueuedRequestPanel(
+                    queuedRequests = queuedRequests,
+                    sessionId = sessionId,
+                    forceCollapse = forceCollapseDashboard,
+                    onRemoveQueued = onRemoveQueued,
+                    onMoveQueued = onMoveQueued,
+                    onEditQueued = onEditQueued,
+                    onInterjectQueued = onInterjectQueued
+                )
+            }
+
+            if (todoItems.isNotEmpty()) {
+                TodoDashboardBar(
+                    items = todoItems,
+                    sessionId = sessionId,
+                    forceCollapse = forceCollapseDashboard,
+                    onExpandedChange = onTodoExpandedChange
+                )
+            }
+
+            // 附件预览行必须放在输入框卡片**外面**，作为外层 Column 的直接子项：
+            // 卡片带 clip / background / border，高度依赖自身尺寸；预览行嵌在里面时，
+            // 插入/移除会同时改动三个修饰符的尺寸计算，时序稍有偏差就是「占位对了、
+            // 屏幕上一片空白」，且时好时坏。参照 Operit（AgentChatInputSection）：
+            // 附件行与输入框卡片是兄弟节点，高度由外层自然流动。
+            if (pendingAttachments.isNotEmpty()) {
+                PendingAttachmentPreviewList(
+                    attachments = pendingAttachments,
+                    onRemoveAttachment = onRemoveAttachment,
+                    onReadAttachment = onReadAttachment,
+                    modifier = Modifier.padding(bottom = Spacing.xs)
+                )
+            }
+
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(Radius.lg))
+                    .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.98f))
+                    .border(
+                        1.dp,
+                        MaterialTheme.colorScheme.outlineVariant,
+                        RoundedCornerShape(Radius.lg)
+                    )
+                    .padding(horizontal = Spacing.sm, vertical = Spacing.xs)
+            ) {
+                if (pastedTexts.isNotEmpty()) {
+                    // 同样按数量重建：粘贴 chip 行插入/移除也会改变输入框高度。
+                    key(pastedTexts.size) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .horizontalScroll(rememberScrollState())
+                                .padding(horizontal = Spacing.xs, vertical = Spacing.xs),
+                            horizontalArrangement = Arrangement.spacedBy(Spacing.sm)
+                        ) {
+                            pastedTexts.forEach { pasted ->
+                                PastedTextChip(
+                                    pasted = pasted,
+                                    onRemove = {
+                                        // 先摘掉输入框里的标记再回收块 —— 反过来的话，缓冲没了、
+                                        // 标记还在，发送时它就成了展开不出来的死字面量。
+                                        //
+                                        // 用 indexOf 定位后 substring 拼接，而不是 replace：同一标记
+                                        // 在文本里出现两次时（用户手动复制过），replace 会把两处都删掉。
+                                        // 光标落在被删位置，接着打字不会跳到末尾。
+                                        val marker = PastedText.placeholderFor(pasted.id)
+                                        val current = inputFieldValue.text
+                                        val at = current.indexOf(marker)
+                                        if (at >= 0) {
+                                            val stripped = current.substring(0, at) +
+                                                current.substring(at + marker.length)
+                                            inputFieldValue =
+                                                TextFieldValue(stripped, TextRange(at))
+                                            onValueChange(stripped)
+                                        }
+                                        onRemovePaste(pasted.id)
+                                    }
+                                )
+                            }
+                        }
+                    }
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.Top
+                ) {
+                    TextField(
+                        value = inputFieldValue,
+                        onValueChange = { new ->
+                            // 大段粘贴折成 [Pasted#N] 标记，普通输入原样通过。
+                            val folded = foldLongPasteIfNeeded(inputFieldValue, new, onStashPaste)
+                            inputFieldValue = folded
+                            onValueChange(folded.text)
+                            // 用户可能直接删掉 [Pasted#N] 字面量，对应的缓冲块要跟着回收，
+                            // 否则 chip 会赖在输入框上方，点开还是一段早已不在文本里的内容。
+                            val referenced = pastedIdsIn(folded.text)
+                            pastedTexts.filterNot { it.id in referenced }
+                                .forEach { onRemovePaste(it.id) }
+                        },
+                        modifier = Modifier
+                            .weight(1f)
+                            .heightIn(min = INPUT_FIELD_MIN_HEIGHT, max = INPUT_FIELD_MAX_HEIGHT)
+                            .onSizeChanged { inputFieldWidthPx = it.width },
+                        placeholder = {
+                            Text(
+                                stringResource(if (isBusy) R.string.chat_queue_hint else R.string.chat_input_placeholder),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        },
+                        enabled = true,
+                        keyboardOptions = if (enterToSend) {
+                            KeyboardOptions(imeAction = ImeAction.Send)
+                        } else {
+                            KeyboardOptions(imeAction = ImeAction.Default)
+                        },
+                        keyboardActions = if (enterToSend) {
+                            KeyboardActions(onSend = { onSend(inputFieldValue.text) })
+                        } else {
+                            KeyboardActions.Default
+                        },
+                        colors = TextFieldDefaults.colors(
+                            focusedContainerColor = Color.Transparent,
+                            unfocusedContainerColor = Color.Transparent,
+                            disabledContainerColor = Color.Transparent,
+                            focusedIndicatorColor = Color.Transparent,
+                            unfocusedIndicatorColor = Color.Transparent,
+                            disabledIndicatorColor = Color.Transparent
+                        )
+                    )
+
+                    if (inputOverflows) {
+                        IconButton(
+                            onClick = { showFullScreenInput = true },
+                            modifier = Modifier.size(32.dp)
+                        ) {
+                            Icon(
+                                FeatherIcons.Maximize,
+                                contentDescription = stringResource(R.string.chat_input_expand),
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                    }
+                }
+
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = Spacing.xs, vertical = Spacing.xs),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(
+                        modifier = Modifier.weight(1f),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        val modeColor = when (currentMode) {
+                            AgentMode.PLAN -> MaterialTheme.colorScheme.primaryContainer
+                            AgentMode.AUTO -> MaterialTheme.colorScheme.error
+                            AgentMode.BUILD -> MaterialTheme.semanticColors.success
+                        }
+                        val modeTextColor = when (currentMode) {
+                            AgentMode.PLAN -> MaterialTheme.colorScheme.onPrimaryContainer
+                            AgentMode.AUTO -> MaterialTheme.colorScheme.onError
+                            AgentMode.BUILD -> MaterialTheme.semanticColors.onSuccess
+                        }
+                        Surface(
+                            shape = RoundedCornerShape(16.dp),
+                            color = modeColor,
+                            modifier = Modifier
+                                .clickable {
+                                    val nextMode = when (currentMode) {
+                                        AgentMode.BUILD -> AgentMode.PLAN
+                                        AgentMode.PLAN -> AgentMode.AUTO
+                                        AgentMode.AUTO -> AgentMode.BUILD
+                                    }
+                                    onToggleMode(nextMode)
+                                }
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .width(46.dp)
+                                    .padding(vertical = 4.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = currentMode.name,
+                                    style = MaterialTheme.typography.labelSmall.copy(
+                                        fontWeight = FontWeight.Bold,
+                                        color = modeTextColor
+                                    )
+                                )
+                            }
+                        }
+                        Spacer(Modifier.width(Spacing.xs))
+
+                        // ACS 投影：宿主只给「当前模型名 + 打开选择器」两个量，
+                        // ModelIconButton 需要的 provider 列表由 ModelSheet 内部组装，
+                        // 这里用最小占位 provider 承载模型名（logo 识别只看模型名）。
+                        ModelIconButton(
+                            provider =
+                                activeModelName?.let {
+                                    ProviderSelectionTarget(
+                                        id = "",
+                                        name = it,
+                                        isEnabled = true,
+                                        models = listOf(it),
+                                        effectiveModel = it,
+                                    )
+                                },
+                            providers = emptyList(),
+                            modelMetadata = emptyMap(),
+                            onSelectModel = { _, _ -> onSelectModel() },
+                            modifier = Modifier.onboardingTarget(OnboardingStep.SELECT_MODEL)
+                        )
+
+                        // 档位一律全列：models.dev 的声明常缺档（例如只给 low/high/max），
+                        // 按声明过滤会让用户选不到「中」这类档位。
+                        ReasoningEffortSelector(
+                            effort = reasoningEffort,
+                            availableEfforts = ReasoningEffort.entries,
+                            onChange = onReasoningEffortChange,
+                            enabled = !isBusy
+                        )
+                    }
+                    UploadIconButton(
+                        enabled = !isBusy,
+                        icon = FeatherIcons.Plus,
+                        contentDescription = stringResource(R.string.chat_add_attachment),
+                        onClick = { showAttachmentSheet = true }
+                    )
+                    SendButton(canSend = canSend, hasContent = hasContent, isBusy = isBusy, canForceStop = canForceStop, tokenProgress = tokenProgress, tokenEstimated = tokenEstimated, onSend = { onSend(inputFieldValue.text) }, onStop = onStop, onForceStop = onForceStop)
+                }
+            }
+        }
+        }
+    }
+
+    if (showAttachmentSheet) {
+        AttachmentSheet(
+            canUploadFiles = canUploadFiles && !isBusy,
+            canUploadImages = canUploadImages && !isBusy,
+            onUploadFile = {
+                showAttachmentSheet = false
+                onUploadFile()
+            },
+            onUploadImage = {
+                showAttachmentSheet = false
+                onUploadImage()
+            },
+            onTakePhoto = {
+                showAttachmentSheet = false
+                onTakePhoto()
+            },
+            onDismiss = { showAttachmentSheet = false }
+        )
+    }
+
+    if (showFullScreenInput) {
+        FullScreenInputDialog(
+            value = value,
+            onValueChange = onValueChange,
+            placeholder = stringResource(if (isBusy) R.string.chat_queue_hint else R.string.chat_input_placeholder),
+            onDismiss = { showFullScreenInput = false }
+        )
+    }
+}
+
+/**
+ * 全屏输入框：底部输入框被高度上限截断、框内滚动时，点右上角「展开」进入这里，
+ * 用整屏编辑同一份草稿（内容实时回写，收起后输入框里就是最新文本）。
+ */
+@Composable
+private fun FullScreenInputDialog(
+    value: String,
+    onValueChange: (String) -> Unit,
+    placeholder: String,
+    onDismiss: () -> Unit
+) {
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(
+            // 不设则 dialog window 是 WRAP_CONTENT，内容铺不满屏
+            usePlatformDefaultWidth = false,
+            // 不设则内容被系统栏 inset 挤进安全区，底色在状态栏处断开、露出后面的聊天界面
+            decorFitsSystemWindows = false
+        )
+    ) {
+        // dialog 有自己的 window：系统栏图标色要单独按当前主题设置，否则浅色主题下状态栏图标压在浅底上看不见。
+        val dialogWindow = (LocalView.current.parent as? DialogWindowProvider)?.window
+        val lightBackground = MaterialTheme.colorScheme.background.luminance() > 0.5f
+        SideEffect {
+            dialogWindow?.let { window ->
+                WindowCompat.getInsetsController(window, window.decorView).apply {
+                    isAppearanceLightStatusBars = lightBackground
+                    isAppearanceLightNavigationBars = lightBackground
+                }
+            }
+        }
+
+        val imeInset = rememberImeBottomInset()
+        val focusRequester = remember { FocusRequester() }
+        // 打开即聚焦，键盘不停，可以接着往下写。
+        LaunchedEffect(Unit) { focusRequester.requestFocus() }
+
+        Surface(
+            modifier = Modifier.fillMaxSize(),
+            color = MaterialTheme.colorScheme.background
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .statusBarsPadding()
+                    .padding(bottom = imeInset)
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = Spacing.md, vertical = Spacing.xs),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = stringResource(R.string.chat_input_fullscreen_title),
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onBackground,
+                        modifier = Modifier.weight(1f)
+                    )
+                    IconButton(onClick = onDismiss) {
+                        Icon(
+                            FeatherIcons.Minimize,
+                            contentDescription = stringResource(R.string.common_collapse_action),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+
+                TextField(
+                    value = value,
+                    onValueChange = onValueChange,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f)
+                        .focusRequester(focusRequester),
+                    placeholder = {
+                        Text(
+                            placeholder,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    },
+                    colors = TextFieldDefaults.colors(
+                        focusedContainerColor = Color.Transparent,
+                        unfocusedContainerColor = Color.Transparent,
+                        disabledContainerColor = Color.Transparent,
+                        focusedIndicatorColor = Color.Transparent,
+                        unfocusedIndicatorColor = Color.Transparent,
+                        disabledIndicatorColor = Color.Transparent
+                    )
+                )
+            }
+        }
+    }
+}
+
+@Composable
+internal fun UploadIconButton(
+    enabled: Boolean,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    contentDescription: String,
+    onClick: () -> Unit
+) {
+    IconButton(
+        onClick = onClick,
+        enabled = enabled,
+        modifier = Modifier.size(36.dp)
+    ) {
+        Icon(
+            icon,
+            contentDescription = contentDescription,
+            tint = if (enabled) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.38f),
+            modifier = Modifier.size(20.dp)
+        )
+    }
+}
+
+@Composable
+@OptIn(ExperimentalFoundationApi::class)
+internal fun SendButton(
+    canSend: Boolean,
+    hasContent: Boolean,
+    isBusy: Boolean,
+    canForceStop: Boolean,
+    tokenProgress: Float,
+    tokenEstimated: Boolean,
+    onSend: () -> Unit,
+    onStop: () -> Unit,
+    onForceStop: () -> Unit
+) {
+    val haptic = LocalHapticFeedback.current
+    // AI 工作中：输入框为空显示停止按钮；有内容显示橙色发送（消息排队发送）；空闲时按常规发送按钮
+    val showStop = isBusy && !hasContent
+    // 强打断入口：AI 正在跑，或软打断之后协程仍在后台跑当前这一步。
+    val forceStopEnabled = isBusy || canForceStop
+    val clickable = showStop || canSend || forceStopEnabled
+    val buttonColor = when {
+        showStop -> MaterialTheme.colorScheme.error
+        isBusy -> Brand.Orange
+        canSend -> MaterialTheme.semanticColors.success
+        else -> MaterialTheme.colorScheme.surfaceVariant
+    }
+    // 前景色相对按钮底色而非主题：深色主题下的亮绿底用主题 onSurface（近白）会看不清。
+    val iconTint = when {
+        !clickable -> MaterialTheme.colorScheme.onSurfaceVariant
+        buttonColor.luminance() > 0.5f -> Color(0xFF1C1C1E)
+        else -> Color.White
+    }
+    val arcColor = buttonColor.copy(alpha = 0.85f)
+    val clampedProgress = tokenProgress.coerceIn(0f, 1f)
+    Box(
+        modifier = Modifier
+            .padding(Spacing.xs)
+            .size(44.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        if (clampedProgress > 0f) {
+            val usageLabel = stringResource(
+                if (tokenEstimated) R.string.chat_context_usage_estimated else R.string.chat_context_usage,
+                (clampedProgress * 100).toInt()
+            )
+            Canvas(
+                modifier = Modifier
+                    .size(44.dp)
+                    // 上下文用量只靠这圈弧表达，给读屏补上百分比。
+                    .semantics { contentDescription = usageLabel }
+            ) {
+                val stroke = 3.dp.toPx()
+                val arcSize = size.minDimension - stroke
+                val topLeft = androidx.compose.ui.geometry.Offset(stroke / 2f, stroke / 2f)
+                drawArc(
+                    color = arcColor,
+                    startAngle = -90f,
+                    sweepAngle = 360f * clampedProgress,
+                    useCenter = false,
+                    topLeft = topLeft,
+                    size = androidx.compose.ui.geometry.Size(arcSize, arcSize),
+                    style = Stroke(width = stroke, cap = StrokeCap.Round)
+                )
+            }
+        }
+        Box(
+            modifier = Modifier
+                .size(36.dp)
+                .clip(CircleShape)
+                .background(buttonColor)
+                .combinedClickable(
+                    enabled = clickable,
+                    // 软打断后没有内容时按钮是“禁用”外观，点击不该发空消息。
+                    onClick = when {
+                        showStop -> onStop
+                        canSend -> onSend
+                        else -> ({})
+                    },
+                    // AI 工作中长按一律强制打断：有草稿时按钮显示的是发送，但长按本就不是发送手势。
+                    onLongClick = if (forceStopEnabled) {
+                        {
+                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            onForceStop()
+                        }
+                    } else null
+                ),
+            contentAlignment = Alignment.Center
+        ) {
+            if (showStop) {
+                Icon(
+                    FeatherIcons.Square,
+                    contentDescription = stringResource(R.string.chat_stop_long_press_hint),
+                    tint = iconTint,
+                    modifier = Modifier.size(18.dp)
+                )
+            } else {
+                Icon(
+                    FeatherIcons.ArrowUp,
+                    contentDescription = stringResource(R.string.chat_send),
+                    tint = iconTint,
+                    modifier = Modifier.size(18.dp)
+                )
+            }
+        }
+    }
+}

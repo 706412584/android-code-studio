@@ -557,7 +557,17 @@ class AssistantOverlayService : Service(), LifecycleOwner {
    */
   private fun installImeHandling() {
     val container = rootView ?: return
-    val input = container.findViewById<View>(R.id.assistantInput) ?: return
+    // XML 输入框退役（Compose 输入栏接管）：应用外悬浮的窗口沿用 FLAG_NOT_FOCUSABLE
+    // 兜底——ComposeView 的 TextField 拿不到焦点监听，输入法适配走 Android 的
+    // 默认行为（用户点输入框时系统自行决定是否唤起 IME；悬浮窗场景键盘可用性
+    // 本就受限）。找不到旧 id 时跳过，与本方法原契约一致。
+    // XML 输入框已随输入区退役（悬浮窗布局是独立的 layout_ai_assistant_fab/overlay，
+    // 但同一 id 链已不存在）。Compose 的 TextField 拿不到 View 级焦点监听，
+    // 悬浮窗场景下输入法适配交由系统默认行为；此方法退化为无操作，
+    // 保留签名以收拢全部调用点。
+    return
+    @Suppress("UNREACHABLE_CODE")
+    val input = container.findViewById<View>(android.view.View.NO_ID) ?: return
     input.setOnFocusChangeListener { _, hasFocus ->
       val params = layoutParams ?: return@setOnFocusChangeListener
       if (hasFocus) {

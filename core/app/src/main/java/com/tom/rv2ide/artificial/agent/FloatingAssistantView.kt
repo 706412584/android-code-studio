@@ -212,7 +212,7 @@ class FloatingAssistantView(
    * `registerForActivityResult`，应用外悬浮的 Service 宿主走蹦床 Activity），
    * 由 `host.attachments` 提供，视图本身不必知道当前宿主是哪种形态。
    */
-  private val inputFeatures = AssistantInputFeatures(host, binding)
+  private val inputFeatures = AssistantInputFeatures(host, binding).also { it.owner = this }
 
   /**
    * 持久化 diff 存储。
@@ -369,6 +369,9 @@ class FloatingAssistantView(
   private val drawerSessions = mutableStateOf<List<com.tom.rv2ide.artificial.agent.compose.components.independent.ChatSession>>(emptyList())
   private val drawerActiveId = mutableStateOf<String?>(null)
   private val drawerCurrentCwd = mutableStateOf("")
+
+  /** Compose 输入栏的状态桥：XML 输入区退役后，输入文本/忙碌/附件/模型都走这里。 */
+  internal val inputBar = AssistantInputBarBridge()
 
   /** 会话搜索关键词与命中（会话 Tab 的搜索框）。命中在 reloadConversations 时懒查询。 */
   val chatSearchQuery = mutableStateOf("")
@@ -619,25 +622,8 @@ class FloatingAssistantView(
     // 与偏好变更走同一个入口，避免「初装」与「改开关」两条路径的判定逻辑分叉。
     applyComposeRenderPath()
 
-    // 不设 OnClickListener：拖动用的 OnTouchListener 会消费全部事件，click 永远不会触发。
-    // 打开面板的动作用 ACTION_UP 且未进入拖动时手动调用 open()（见 setUpDragging）。
-    binding.assistantSend.setOnClickListener { onSendClicked() }
-    binding.assistantStop.setOnClickListener { onStopClicked() }
-    // 工具条上的服务商与模型标签：两者都点开同一个选择器。
-    // 分成两个可点控件而不是合成一个：服务商名与模型名各自独立省略，
-    // 窄面板下仍能读出「哪个服务商」；合成一段时两段文字会一起被压成省略号。
-    binding.assistantToolbarModel.setOnClickListener {
-      host.dialogs.showModelPicker { refreshModelLabel() }
-    }
-    binding.assistantToolbarProvider.setOnClickListener {
-      host.dialogs.showModelPicker { refreshModelLabel() }
-    }
-    // 上下文圆环：点开占用详情，并就地提供「压缩上下文」入口。
-    binding.assistantContextRing.setOnClickListener { showContextUsage() }
-    // 权限模式标签：点开三档选择。改完立即生效——权限判定每次工具调用都重读偏好。
-    binding.assistantPermissionChip.setOnClickListener { showPermissionPicker() }
-    // git 分支标签：点它刷新一次（外部可能在终端里切过分支）。
-    binding.assistantGitChip.setOnClickListener { refreshGitBranch() }
+    // Compose 输入栏取代了 XML 输入区：发送/停止/模型选择/权限切换不再挂在
+    // XML 控件上，回调由 installInputBar() 直接闭包进 ChatInputBar 的参数。
     inputFeatures.onNotice = { appendTrace(it) }
     // 槽位切换发生在 inputFeatures 内部，而模型标签由本类渲染——切完要刷新。
     inputFeatures.onModelChanged = {
@@ -676,6 +662,18 @@ class FloatingAssistantView(
 
     refreshModelLabel()
 
+    // 斜杠命令投影一次：catalog 是静态表，attach 时写进桥即可。
+    inputBar.slashCommands =
+        com.tom.rv2ide.ai.agent.command.SlashCommandCatalog.definitions().map { d ->
+          com.tom.rv2ide.artificial.agent.compose.components.independent.InputSlashCommand(
+              name = d.getName(),
+              description = d.getDescription(),
+              acceptsArgs = d.getUsage().contains(' '),
+          )
+        }
+    inputFeatures.owner = this
+    // Compose 输入栏装配（XML 输入区退役）。
+    installInputBar()
     // 会话抽屉的 Compose 装配。XML RecyclerView 已退役；动作回调仍落回本类既有方法，
     // 会话数据继续走 orchestrator.listConversations()（reloadConversations 投影后提交）。
     installDrawerCompose()
@@ -684,21 +682,6 @@ class FloatingAssistantView(
     // 所以本次调用只是把标题置成静态文案；真正的项目名由紧随其后的 setWorkspace 设置。
     // 留着它是为了让「标题永远有内容」这件事不依赖调用顺序。
     refreshWorkspaceLabel()
-
-    // 回车即发送：面板输入框是多行的，若不拦截回车，用户按回车只会换行。
-    binding.assistantInput.setOnEditorActionListener { _, actionId, event ->
-      val isSendAction = actionId == android.view.inputmethod.EditorInfo.IME_ACTION_SEND
-      val isEnter =
-          event != null &&
-              event.keyCode == android.view.KeyEvent.KEYCODE_ENTER &&
-              event.action == android.view.KeyEvent.ACTION_DOWN
-      if (isSendAction || isEnter) {
-        sendFromInput()
-        true
-      } else {
-        false
-      }
-    }
 
     updateEmptyState()
 
@@ -740,22 +723,14 @@ class FloatingAssistantView(
    * 就是这个字符串）。
    */
   private fun applyContextRing() {
-    val ring = binding.assistantContextRing
+    // XML 圆环退役：进度写进输入栏桥，SendButton 外圈画出占用。
     val total = lastContextSize
     if (total <= 0) {
-      ring.clear()
+      inputBar.tokenProgress = 0f
       return
     }
-    val percent = (lastContextUsed * 100 / total).coerceIn(0, 100)
-    ring.show(
-        lastContextUsed.toFloat() / total,
-        context.getString(
-            string.ai_assistant_context_usage_short,
-            percent,
-            formatTokens(lastContextUsed),
-            formatTokens(total),
-        ),
-    )
+    inputBar.tokenProgress = (lastContextUsed.toFloat() / total).coerceIn(0f, 1f)
+    inputBar.tokenEstimated = false
   }
 
   /** 设置工作区。主屏上用户可能先选项目，因此每次打开面板前都更新。 */
@@ -793,9 +768,9 @@ class FloatingAssistantView(
 
   /** 把一条工作区路径以「附件描述」的形式塞进输入框（文件 Tab 的加入输入动作）。 */
   private fun addPathToInput(path: String) {
-    val existing = binding.assistantInput.text?.toString().orEmpty()
+    val existing = inputBar.text
     val line = context.getString(string.ai_assistant_attachment_marker, path)
-    binding.assistantInput.setText(if (existing.isBlank()) line else existing + "\n" + line)
+    inputBar.text = (if (existing.isBlank()) line else existing + "\n" + line)
   }
 
   /** 会话搜索命中 → 打开该会话（行级跳转由接线层的 lineFor 通道完成，当前先开会话）。 */
@@ -1358,7 +1333,7 @@ class FloatingAssistantView(
   private fun density(): Float = context.resources.displayMetrics.density
 
   private fun sendFromInput() {
-    val typed = binding.assistantInput.text?.toString()?.trim().orEmpty()
+    val typed = inputBar.text.trim()
     val attachments = inputFeatures.attachmentContext()
     // 「只附了文件、没打字」也是有效请求：用户附一张图再点发送是很自然的动作，
     // 按空文本丢弃会让附件静默消失。此时用附件名当占位文本，至少列表里看得出
@@ -1375,7 +1350,7 @@ class FloatingAssistantView(
     if (typed.isNotEmpty()) {
       val parsed = com.tom.rv2ide.ai.agent.command.SlashCommandCatalog.parse(typed)
       if (parsed.isCommand) {
-        binding.assistantInput.setText("")
+        inputBar.text = ""
         handleCommand(parsed)
         return
       }
@@ -1389,7 +1364,7 @@ class FloatingAssistantView(
     // 收到「图片内容」和「图片路径」两份信息，可能重复处理或困惑于该用哪个。
     val textAttachments = if (imagePayload != null) inputFeatures.attachmentContextExcludingImage() else attachments
 
-    binding.assistantInput.setText("")
+    inputBar.text = ""
     inputFeatures.clearAttachments()
     // 非图片附件仍以文本形式追加在用户请求之后。空串时拼接结果与原来完全一致，
     // 保证无附件路径的行为不变。
@@ -2137,7 +2112,7 @@ class FloatingAssistantView(
    *
    * <p>运行中则由 [execute] 把消息排进队列，而不是像此前那样让同一个按钮变成「停止」——
    * 那种二合一让「我要再发一条」与「我要停下来」两个互斥意图共用一个控件，想连发的
-   * 用户点下去实际取消了任务（实测如此）。停止现在由左侧独立的 [binding.assistantStop]
+   * 用户点下去实际取消了任务（实测如此）。停止由 Compose 输入栏的停止键（SendButton 的 showStop 分支）
    * 承担。
    */
   private fun onSendClicked() {
@@ -2172,8 +2147,7 @@ class FloatingAssistantView(
     // 用户点下去会取消正在跑的任务（实测如此）。
     //
     // 停止键只在运行中可见。放在发送键左侧：发送是高频动作，位置不该变。
-    binding.assistantStop.isVisible = running
-    binding.assistantStop.setOnClickListener { onStopClicked() }
+    inputBar.isBusy = running
 
     // 状态条与分隔线在这里一并显隐。
     //
@@ -2462,13 +2436,13 @@ class FloatingAssistantView(
           val quoteBlock = AssistantMessageActions.referenceContext(listOf(ref))
           val fullText = if (quoteBlock.isNotEmpty()) "$quoteBlock\n\n$question" else question
 
-          val current = binding.assistantInput.text?.toString().orEmpty()
+          val current = inputBar.text
           if (current.isBlank()) {
-            binding.assistantInput.setText(fullText)
+            inputBar.text = fullText
           } else {
-            binding.assistantInput.setText("$current\n\n$fullText")
+            inputBar.text = ("$current\n\n$fullText")
           }
-          binding.assistantInput.setSelection(binding.assistantInput.text?.length ?: 0)
+          // Compose 输入框无 Selection 概念外泄：外部 set 值时组件把光标移到末尾。
         }
         .setNegativeButton(android.R.string.cancel, null)
         .show()
@@ -2496,10 +2470,8 @@ class FloatingAssistantView(
    * 「危险工具需确认」七个字会挤掉模型名。完整说明放在弹窗里。
    */
   private fun refreshPermissionChip() {
-    val chip = binding.assistantPermissionChip
-    val mode = settings.permissionMode
-    chip.text = context.getString(permissionShortLabelRes(mode))
-    chip.contentDescription = context.getString(permissionLongLabelRes(mode))
+    // XML 权限 chip 退役：权限短名仍在（点击入口由 `+` 菜单与设置页承载），
+    // 面板上不再有常驻 chip——与 Aharou 的输入栏一致。
   }
 
   /**
@@ -2596,7 +2568,7 @@ class FloatingAssistantView(
   private fun refreshGitBranch() {
     val ws = workspace
     if (ws == null || !ws.exists()) {
-      binding.assistantGitChip.isVisible = false
+      lastGitBranch = null
       return
     }
     lifecycleScope.launch(Dispatchers.IO) {
@@ -2610,17 +2582,8 @@ class FloatingAssistantView(
             null
           }
       withContext(Dispatchers.Main) {
-        // 缓存下来，宽度变化时不必重新读磁盘就能恢复标签。
+        // 缓存下来；XML 的 git chip 已随工具条退役，分支名留给设置页与抽屉。
         lastGitBranch = branch
-        val chip = binding.assistantGitChip
-        if (branch.isNullOrBlank()) {
-          chip.isVisible = false
-        } else {
-          chip.isVisible = true
-          binding.assistantGitBranch.text = branch
-        }
-        // 分支标签显隐会改变工具条剩余宽度，重新算一次密度。
-        applyToolbarDensity()
       }
     }
   }
@@ -2651,53 +2614,15 @@ class FloatingAssistantView(
    * 本方法在此之前的所有调用点都发生在面板不可见时。
    */
   private fun applyToolbarDensity() {
-    val bar = binding.assistantToolbar
-    bar.post {
-      val widthDp = (bar.width / density()).toInt()
-      if (widthDp <= 0) {
-        return@post
-      }
-
-      // 极窄档：连 git 也让位，模型名收窄。
-      val veryNarrow = widthDp < MODEL_VISIBLE_MIN_DP
-      if (veryNarrow) {
-        binding.assistantGitChip.isVisible = false
-      } else {
-        // 够宽时按仓库状态决定——refreshGitBranch 已经写好了 isVisible，
-        // 这里只在「之前被窄宽度压掉」的情况下重新问一次。
-        refreshGitBranchVisibilityOnly()
-      }
-
-      // 服务商名：比 git 更早让位。它的信息在模型名旁边（「deepseek-chat」
-      // 已经暗示了服务商），而 git 分支名没有替代品。
-      //
-      // 不必再与 veryNarrow 相与：PROVIDER_VISIBLE_MIN_DP(425) > MODEL_VISIBLE_MIN_DP(257)，
-      // 宽度达到 425 时 veryNarrow 必然为 false，那个条件是恒真的死逻辑。
-      binding.assistantToolbarProvider.isVisible = widthDp >= PROVIDER_VISIBLE_MIN_DP
-
-      // 模型名：极窄时压到一半宽。
-      //
-      // 用 maxWidth(dp) 而不是 maxEms：实测 maxEms 在 `layout_width=wrap_content`
-      // 的中文文本上不生效——provider 标签设了 maxEms=7 仍然渲染出全部 12 个字符
-      // （UI dump 里 bounds 宽 308px）。dp 是确定的长度，不受字体度量影响。
-      binding.assistantToolbarModel.maxWidth =
-          dp(if (veryNarrow) MODEL_MAX_WIDTH_NARROW_DP else MODEL_MAX_WIDTH_DP)
-    }
+    // XML 工具条已退役：Compose 输入栏内部自管密度（窄面板下 ModelIconButton 只剩
+    // logo，服务商名由模型名隐含）。保留空方法收拢全部旧调用点。
   }
 
   /** 上一次 git 分支查询的结果；避免每次宽度变化都去读一次仓库。 */
   private var lastGitBranch: String? = null
 
-  /** 仅按已缓存的仓库状态重设 git 标签可见性，不重新读磁盘。 */
-  private fun refreshGitBranchVisibilityOnly() {
-    val branch = lastGitBranch
-    if (branch.isNullOrBlank()) {
-      binding.assistantGitChip.isVisible = false
-      return
-    }
-    binding.assistantGitChip.isVisible = true
-    binding.assistantGitBranch.text = branch
-  }
+  /** 仅按已缓存的仓库状态重设 git 标签可见性。XML chip 退役后为空操作。 */
+  private fun refreshGitBranchVisibilityOnly() {}
 
   /**
    * 刷新工具条上的服务商与模型两个标签。
@@ -2721,14 +2646,9 @@ class FloatingAssistantView(
             providerId,
             AgentOrchestrator.customBaseUrlFor(context, providerId),
         )
-    val providerChip = binding.assistantToolbarProvider
-    providerChip.text =
-        if (usable) providerLabel else "⚠ " + providerLabel
-    providerChip.contentDescription = providerLabel
-
-    val modelChip = binding.assistantToolbarModel
-    modelChip.text = agents.getAgent()
-    modelChip.contentDescription = AssistantModelPicker.summaryLabel(context)
+    // XML 的服务商/模型 chip 退役：输入栏的 ModelIconButton 只看模型名
+    // （logo 按 modelBrandKey 识别，服务商由模型名隐含）。
+    inputBar.modelName = agents.getAgent()
   }
 
   /**
@@ -2757,6 +2677,70 @@ class FloatingAssistantView(
    * 滑动给了「它是从侧边拉出来的」这一空间暗示，用户知道点遮罩或再点菜单能收回去。
    * 直接显隐则像内容被替换，用户会去找返回键。
    */
+  /**
+   * 把输入栏装进 [binding.assistantInputBarCompose]。
+   *
+   * <p>状态全部读 [inputBar] 桥；动作直接闭包回本类既有方法（sendFromInput /
+   * onStopClicked / showModelPicker），与 XML 时代的点击监听一一对应。
+   * 附件的增删仍在 [AssistantInputFeatures]（已改为读写桥）。
+   */
+  private fun installInputBar() {
+    val darkTheme =
+        run {
+          val tv = android.util.TypedValue()
+          val resolved = context.theme.resolveAttribute(android.R.attr.colorBackground, tv, true)
+          val bg = if (resolved) tv.data else 0xFF07111F.toInt()
+          androidx.core.graphics.ColorUtils.calculateLuminance(bg) <= 0.5
+        }
+    binding.assistantInputBarCompose.setContent {
+      com.tom.rv2ide.artificial.agent.compose.theme.AIEditorTheme(darkTheme = darkTheme) {
+        val bridge = inputBar
+        com.tom.rv2ide.artificial.agent.compose.components.independent.ChatInputBar(
+            value = bridge.text,
+            onValueChange = { bridge.text = it },
+            onSend = {
+              sendFromInput()
+            },
+            onStop = { onStopClicked() },
+            onForceStop = {
+              displayedConversationId?.let { cancel(it) }
+              setRunningUi(false)
+            },
+            isBusy = bridge.isBusy,
+            canForceStop = bridge.canForceStop,
+            activeModelName = bridge.modelName,
+            onSelectModel = { host.dialogs.showModelPicker { refreshModelLabel() } },
+            currentMode = bridge.mode,
+            onToggleMode = { next ->
+              bridge.mode = next
+            },
+            reasoningEffort = bridge.reasoningEffort,
+            onReasoningEffortChange = { bridge.reasoningEffort = it },
+            pendingAttachments = bridge.pendingAttachments,
+            onRemoveAttachment = { idx ->
+              if (idx in bridge.pendingAttachments.indices) bridge.pendingAttachments.removeAt(idx)
+            },
+            onReadAttachment = { path ->
+              kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                runCatching { java.io.File(path).takeIf { it.isFile }?.readText() }.getOrNull()
+              }
+            },
+            canUploadFiles = true,
+            canUploadImages = true,
+            onUploadFile = { inputFeatures.pickFileAttachment() },
+            onUploadImage = { inputFeatures.pickImageAttachment() },
+            onTakePhoto = { inputFeatures.pickImageAttachment() },
+            slashCommands = bridge.slashCommands,
+            queuedRequests = bridge.queuedRequests,
+            tokenProgress = bridge.tokenProgress,
+            tokenEstimated = bridge.tokenEstimated,
+            todoItems = bridge.todoItems,
+            sessionId = displayedConversationId ?: "",
+        )
+      }
+    }
+  }
+
   /**
    * 把会话抽屉装进 [binding.assistantDrawerCompose]（Compose 装配）。
    *
@@ -3313,6 +3297,19 @@ class FloatingAssistantView(
     // 按**当前显示的**会话读取：待办是会话级的，读全局的会把上一个项目的
     // 任务清单显示在刚开的会话里（用户以为 agent 搞错了项目）。
     val todos = orchestrator.getTodos(displayedConversationId)
+    // 双路渲染：XML 任务卡（assistantTodos）与 Compose 输入栏的 TodoDashboardBar
+    // 同时接收数据。XML 卡即将退役；过渡期两处同显，避免一次切换丢信息。
+    inputBar.todoItems =
+        todos.map { item ->
+          com.tom.rv2ide.artificial.agent.compose.components.tools.ParsedTodoItem(
+              id = item.content,
+              subject = item.content,
+              description = "",
+              status = item.status,
+              priority = 0,
+              order = 0,
+          )
+        }
     val card = binding.assistantTodos.todoCard
     if (todos.isEmpty()) {
       card.isVisible = false

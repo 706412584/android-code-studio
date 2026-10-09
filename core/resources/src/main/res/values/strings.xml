@@ -1801,4 +1801,12 @@ This AI agent is designed to assist you in developing Android applications direc
   <string name="session_group_last_7_days">Last 7 Days</string>
   <string name="session_group_last_30_days">Last 30 Days</string>
   <string name="session_group_month_format">MMMM yyyy</string>
+  <string name="chat_input_placeholder">Type a message to chat with AI…</string>
+  <string name="chat_queue_hint">AI is busy; pressing enter will queue the message</string>
+  <string name="chat_input_expand">Expand input box</string>
+  <string name="chat_input_fullscreen_title">Full-screen input</string>
+  <string name="chat_stop_long_press_hint">Stop (long press to force interrupt)</string>
+  <string name="chat_send">Send</string>
+  <string name="chat_context_usage">Context %1$d%% used</string>
+  <string name="chat_context_usage_estimated">Estimated input budget usage: %1$d%%</string>
 </resources>

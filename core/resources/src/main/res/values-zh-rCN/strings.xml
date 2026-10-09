@@ -1746,4 +1746,12 @@
   <string name="session_group_last_7_days">7天内</string>
   <string name="session_group_last_30_days">30天内</string>
   <string name="session_group_month_format">yyyy年M月</string>
+  <string name="chat_input_placeholder">输入消息，与 AI 对话…</string>
+  <string name="chat_queue_hint">AI 正在处理中，回车发送将自动排队</string>
+  <string name="chat_input_expand">展开输入框</string>
+  <string name="chat_input_fullscreen_title">全屏输入</string>
+  <string name="chat_stop_long_press_hint">停止（长按强制打断）</string>
+  <string name="chat_send">发送</string>
+  <string name="chat_context_usage">上下文已用 %1$d%%</string>
+  <string name="chat_context_usage_estimated">预计占可用输入预算 %1$d%%</string>
 </resources>
