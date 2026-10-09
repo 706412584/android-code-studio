@@ -174,6 +174,11 @@ public class ComposeMultiplatformProjectGenTest {
   }
 
   private void writeCatalog(File root) throws IOException {
+    // 注意：本测试的编译类路径上没有 templates-api（core:app 的 test 依赖不含它，
+    // QuickDevelop 的同类测试也因此硬编码），只能字面量——升级模板常量时
+    // 这里要手动跟着改（审查 minor #3 的残留，权衡后接受）。
+    String activityCompose = "1.11.0"; // templates-api ANDROIDX_ACTIVITY_COMPOSE
+    String coreKtx = "1.17.0"; // templates-api ANDROIDX_CORE_KTEXT_VERSION
     String toml =
         "[versions]\n"
             + "agp = \""
@@ -186,8 +191,12 @@ public class ComposeMultiplatformProjectGenTest {
             + CMP_VERSION
             + "\"\n"
             + "lifecycleRuntime = \"2.9.2\"\n"
-            + "activityCompose = \"1.11.0\"\n"
-            + "coreKtx = \"1.17.0\"\n"
+            + "activityCompose = \""
+            + activityCompose
+            + "\"\n"
+            + "coreKtx = \""
+            + coreKtx
+            + "\"\n"
             + "\n[plugins]\n"
             + "android-application = { id = \"com.android.application\", version.ref = \"agp\" }\n"
             + "android-library = { id = \"com.android.library\", version.ref = \"agp\" }\n"
@@ -205,6 +214,10 @@ public class ComposeMultiplatformProjectGenTest {
   }
 
   private void writeTopLevel(File root) throws IOException {
+    // 与真实模板输出对齐（ComposeMultiplatform.kt）：includeCleanTask=false——
+    // KMP 插件链的 LifecycleBasePlugin 已注册 clean，顶层再注册会撞名
+    // （「Cannot add task 'clean'」）。测试树若保留该构造，真实 Gradle 构建
+    // 会在 configuration 阶段失败，与模板产物不再等价。
     Files.write(
         new File(root, "build.gradle.kts").toPath(),
         ("// Top-level build file where you can add configuration options common to all sub-projects/modules.\n"
@@ -215,10 +228,6 @@ public class ComposeMultiplatformProjectGenTest {
                 + "    alias(libs.plugins.kotlin.multiplatform) apply false\n"
                 + "    alias(libs.plugins.kotlin.compose) apply false\n"
                 + "    alias(libs.plugins.compose) apply false\n"
-                + "}\n"
-                + "\n"
-                + "tasks.register<Delete>(\"clean\") {\n"
-                + "    delete(rootProject.layout.buildDirectory)\n"
                 + "}\n")
             .getBytes(StandardCharsets.UTF_8));
   }

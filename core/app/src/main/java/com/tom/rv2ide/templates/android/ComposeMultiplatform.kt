@@ -140,7 +140,11 @@ class ComposeMultiplatform : Template {
           packageHelper.setPackageIdBlocking(options.packageId)
 
           val sdkHelper = SdkVersionHelper.getInstance(context)
-          sdkHelper.setAllSdkVersionsBlocking(options.minSdk, 34, 34)
+          // 落盘到全局 SDK 偏好的 minSdk 也要钳到 23，与 build 文件里的
+          // maxOf(options.minSdk, CMP_MIN_SDK) 保持一致——否则用户选 21 时，
+          // 项目元数据显示 21、实际 Gradle 是 23（对抗审查 moderate #1）。
+          sdkHelper.setAllSdkVersionsBlocking(
+              maxOf(options.minSdk, CMP_MIN_SDK), 34, 34)
 
           val projectRoot = File(options.saveLocation, options.projectName)
           Log.d(TAG, "Project root: ${projectRoot.absolutePath}")
