@@ -3546,8 +3546,8 @@ class FloatingAssistantView(
     // 按**当前显示的**会话读取：待办是会话级的，读全局的会把上一个项目的
     // 任务清单显示在刚开的会话里（用户以为 agent 搞错了项目）。
     val todos = orchestrator.getTodos(displayedConversationId)
-    // 双路渲染：XML 任务卡（assistantTodos）与 Compose 输入栏的 TodoDashboardBar
-    // 同时接收数据。XML 卡即将退役；过渡期两处同显，避免一次切换丢信息。
+    // 唯一渲染路径：Compose 输入栏的 TodoDashboardBar（XML 任务卡已退役，
+    // 见 layout_ai_assistant.xml 的对应说明——两处同显会让用户看到重复清单）。
     inputBar.todoItems =
         todos.map { item ->
           com.tom.rv2ide.artificial.agent.compose.components.tools.ParsedTodoItem(
@@ -3559,50 +3559,7 @@ class FloatingAssistantView(
               order = 0,
           )
         }
-    val card = binding.assistantTodos.todoCard
-    if (todos.isEmpty()) {
-      card.isVisible = false
-      return
-    }
-    card.isVisible = true
-
-    val total = todos.size
-    val done = todos.count { it.status == com.tom.rv2ide.ai.tool.TodoItem.STATUS_COMPLETED }
-    binding.assistantTodos.todoTitle.text =
-        context.getString(string.ai_assistant_todo_progress, done, total)
-    binding.assistantTodos.todoProgress.max = total
-    binding.assistantTodos.todoProgress.setProgressCompat(done, true)
-
-    // 重建清单。条目数通常个位数，全量重建比 diff 更简单且不会错——
-    // 这里没有列表复用，重建代价是一次几次 View 的创建。
-    val list = binding.assistantTodos.todoList
-    list.removeAllViews()
-    for (item in todos) {
-      val row = TextView(context).apply {
-        text = todoGlyph(item.status) + " " + item.content
-        textSize = 13f
-        setPadding(0, dp(4), 0, dp(4))
-        // 已完成的条目弱化：视线应落在「还没做的」上。
-        setTextColor(
-            MaterialColors.getColor(
-                list,
-                if (item.status == com.tom.rv2ide.ai.tool.TodoItem.STATUS_COMPLETED)
-                    com.google.android.material.R.attr.colorOnSurfaceVariant
-                else com.google.android.material.R.attr.colorOnSurface,
-            )
-        )
-      }
-      list.addView(row)
-    }
   }
-
-  /** 任务状态 → 前缀符号。用符号而非图标：一行一条，符号更紧凑且不打断文字阅读。 */
-  private fun todoGlyph(status: String): String =
-      when (status) {
-        com.tom.rv2ide.ai.tool.TodoItem.STATUS_COMPLETED -> "✓"
-        com.tom.rv2ide.ai.tool.TodoItem.STATUS_IN_PROGRESS -> "◐"
-        else -> "○"
-      }
 
   /**
    * 新建会话：可选已有项目作为该会话的 cwd。

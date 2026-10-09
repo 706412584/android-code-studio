@@ -218,12 +218,11 @@
       </LinearLayout>
 
       <!--
-        任务卡片。放在状态行与输入区之间——「agent 在做什么」与「还有哪些任务」
-        是同一类信息，相邻显示便于对照。默认折叠，见 layout_assistant_todos.xml。
+        任务卡片（XML 版）已退役：改由 Compose 输入栏的 TodoDashboardBar 渲染
+        （见 ChatInputBar 的 todoItems 参数与 FloatingAssistantView.refreshTodos）。
+        两处同显会让用户看到重复的清单，因此这里整体移除——
+        layout_assistant_todos.xml 随之失去引用（保留文件以便对照，不再 include）。
       -->
-      <include
-        android:id="@+id/assistantTodos"
-        layout="@layout/layout_assistant_todos" />
 
       <!--
         浮动工具状态条（2026-10-09 接线）：Aharou 的 FloatingToolStatusBar——
