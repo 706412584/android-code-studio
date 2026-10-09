@@ -26,9 +26,9 @@ import com.tom.rv2ide.actions.sidebar.PreferencesSidebarAction
 import com.tom.rv2ide.actions.sidebar.SubModuleSidebarAction
 import com.tom.rv2ide.actions.sidebar.GitClientAction
 import com.tom.rv2ide.actions.sidebar.TerminalSidebarAction
+import com.tom.rv2ide.databinding.FragmentEditorSidebarBinding
 import com.tom.rv2ide.fragments.sidebar.EditorSidebarFragment
 import androidx.fragment.app.Fragment
-import java.lang.ref.WeakReference
 
 internal object EditorSidebarActions {
 
@@ -103,6 +103,101 @@ internal object EditorSidebarActions {
     fragmentCache.remove(fragmentId)
   }
 
+  /**
+   * 侧栏当前的切页状态。
+   *
+   * <p><b>为什么需要它</b>：切页（隐藏旧 Fragment、显示新的、高亮导航项）原本只写在
+   * `onItemClick` 闭包里，外部调用者（顶栏的 Git / 终端按钮）无从触发。抽出本类后，
+   * 点击与编程切页共用同一条路径，不会出现「点导航能切、顶栏按钮切不了」的分叉。
+   *
+   * <p>[adapter] 是「通知它可以提交新列表」的出口，[items] 供重算高亮。
+   */
+  private class SidebarState {
+    var currentFragmentId: String? = null
+    var adapter: SidebarNavigationAdapter? = null
+    var items: List<SidebarNavigationItem> = emptyList()
+  }
+
+  /**
+   * 每个侧栏 Fragment 一份状态。
+   *
+   * <p>用 [java.util.WeakHashMap] 而不是单例字段：侧栏 Fragment 会随配置变更重建，
+   * 强引用会把旧实例（及其整棵视图树）钉在内存里。
+   */
+  private val sidebarStates =
+      java.util.WeakHashMap<EditorSidebarFragment, SidebarState>()
+
+  /**
+   * 切到 [actionId] 对应的侧栏标签页；成功返回 true。
+   *
+   * <p>供外部入口使用（顶栏的 Git / 终端按钮经 [EditorSidebarFragment.selectPage] 转发）。
+   * 找不到该 action 或侧栏尚未 [setup] 时返回 false，调用方据此决定是否降级。
+   */
+  @JvmStatic
+  fun selectPage(sidebarFragment: EditorSidebarFragment, actionId: String): Boolean {
+    val state = sidebarStates[sidebarFragment] ?: return false
+    val registry = ActionsRegistry.getInstance()
+    val action =
+        registry.getActions(ActionItem.Location.EDITOR_SIDEBAR)[actionId] as? SidebarActionItem
+            ?: return false
+    switchTo(sidebarFragment, action, state)
+    return true
+  }
+
+  /**
+   * 执行一次切页：隐藏其余 Fragment、显示目标的、更新标题与导航高亮。
+   *
+   * <p>点击与编程切页共用本方法——两条路径若各写一份，迟早分叉
+   * （例如只在一处更新高亮，另一处导航项停在旧位置上）。
+   */
+  private fun switchTo(
+      sidebarFragment: EditorSidebarFragment,
+      action: SidebarActionItem,
+      state: SidebarState,
+  ) {
+    val item = state.items.firstOrNull { it.id == action.id } ?: return
+    val binding = sidebarFragment.getBinding() ?: return
+
+    if (action.fragmentClass == null) {
+      return
+    }
+
+    if (state.currentFragmentId == action.id) {
+      return
+    }
+
+    val fragmentManager = sidebarFragment.childFragmentManager
+    val fragment =
+        cachedFragmentFor(action.id, fragmentManager) { action.fragmentClass!!.java.newInstance() }
+
+    val transaction = fragmentManager.beginTransaction()
+
+    fragmentManager.fragments.forEach { existingFragment ->
+      if (existingFragment.isAdded) {
+        transaction.hide(existingFragment)
+      }
+    }
+
+    // 复用前确认它确实挂在本 manager 上，否则 add 会因重复添加而抛异常
+    if (fragment.fragmentManager === fragmentManager) {
+      transaction.show(fragment)
+    } else {
+      transaction.add(binding.fragmentContainer.id, fragment, action.id)
+    }
+
+    transaction.commitNow()
+
+    state.currentFragmentId = action.id
+
+    updateTitleVisibility(binding, item.title)
+    updateSubtitleVisibility(binding, item.subtitle)
+
+    val updatedItems = state.items.map { navItem ->
+      navItem.copy(isSelected = navItem.id == item.id)
+    }
+    state.adapter?.submitList(updatedItems)
+  }
+
   @JvmStatic
   fun setup(sidebarFragment: EditorSidebarFragment) {
     val binding = sidebarFragment.getBinding() ?: return
@@ -120,31 +215,6 @@ internal object EditorSidebarActions {
 
     val data = ActionData()
     data.put(Context::class.java, context)
-
-    val titleRef = WeakReference(binding.title)
-    val subtitleRef = WeakReference(binding.subtitle)
-
-    fun updateTitleVisibility(title: String?) {
-      titleRef.get()?.let { titleView ->
-        if (!title.isNullOrEmpty()) {
-          titleView.text = title
-          titleView.visibility = android.view.View.VISIBLE
-        } else {
-          titleView.visibility = android.view.View.GONE
-        }
-      }
-    }
-
-    fun updateSubtitleVisibility(subtitle: String?) {
-      subtitleRef.get()?.let { subtitleView ->
-        if (!subtitle.isNullOrEmpty()) {
-          subtitleView.text = subtitle
-          subtitleView.visibility = android.view.View.VISIBLE
-        } else {
-          subtitleView.visibility = android.view.View.GONE
-        }
-      }
-    }
 
     val sortedActions =
         actions.entries.sortedBy { (_, action) ->
@@ -167,10 +237,14 @@ internal object EditorSidebarActions {
           )
         }
 
-    var currentFragmentId: String? = null
-    lateinit var adapter: SidebarNavigationAdapter
+    val state =
+        SidebarState().also {
+          it.items = navigationItems
+          sidebarStates[sidebarFragment] = it
+        }
 
-    adapter = SidebarNavigationAdapter(
+    val adapter =
+        SidebarNavigationAdapter(
             onItemClick = { item ->
               val action = item.action
 
@@ -179,42 +253,7 @@ internal object EditorSidebarActions {
                 return@SidebarNavigationAdapter
               }
 
-              if (currentFragmentId == action.id) {
-                return@SidebarNavigationAdapter
-              }
-
-              val fragmentManager = sidebarFragment.childFragmentManager
-              val fragment = cachedFragmentFor(action.id, fragmentManager) {
-                action.fragmentClass!!.java.newInstance()
-              }
-
-              val transaction = fragmentManager.beginTransaction()
-
-              fragmentManager.fragments.forEach { existingFragment ->
-                if (existingFragment.isAdded) {
-                  transaction.hide(existingFragment)
-                }
-              }
-
-              // 复用前确认它确实挂在本 manager 上，否则 add 会因重复添加而抛异常
-              if (fragment.fragmentManager === fragmentManager) {
-                transaction.show(fragment)
-              } else {
-                transaction.add(binding.fragmentContainer.id, fragment, action.id)
-              }
-
-              transaction.commitNow()
-
-              currentFragmentId = action.id
-
-              updateTitleVisibility(item.title)
-              updateSubtitleVisibility(item.subtitle)
-
-              val updatedItems =
-                  navigationItems.map { navItem -> 
-                    navItem.copy(isSelected = navItem.id == item.id) 
-                  }
-              adapter.submitList(updatedItems)
+              switchTo(sidebarFragment, action, state)
             },
             onItemLongClick = { item ->
               if (item.action is TerminalSidebarAction) {
@@ -254,17 +293,42 @@ internal object EditorSidebarActions {
           .commitNow()
     }
 
-    currentFragmentId = initialItem.id
+    state.currentFragmentId = initialItem.id
 
-    updateTitleVisibility(initialItem.title)
-    updateSubtitleVisibility(initialItem.subtitle)
+    updateTitleVisibility(binding, initialItem.title)
+    updateSubtitleVisibility(binding, initialItem.subtitle)
 
     // 导航栏高亮同步到实际显示项，否则恢复后高亮停留在第一个 tab
-    adapter.submitList(
+    state.adapter?.submitList(
         navigationItems.map { navItem ->
           navItem.copy(isSelected = navItem.id == initialItem.id)
         }
     )
+  }
+
+  /** 更新侧栏标题；空串等价于隐藏（不留一条无法解释的空白）。 */
+  private fun updateTitleVisibility(binding: FragmentEditorSidebarBinding, title: String?) {
+    val titleView = binding.title
+    if (!title.isNullOrEmpty()) {
+      titleView.text = title
+      titleView.visibility = android.view.View.VISIBLE
+    } else {
+      titleView.visibility = android.view.View.GONE
+    }
+  }
+
+  /** 更新侧栏副标题；空串等价于隐藏。 */
+  private fun updateSubtitleVisibility(
+      binding: FragmentEditorSidebarBinding,
+      subtitle: String?,
+  ) {
+    val subtitleView = binding.subtitle
+    if (!subtitle.isNullOrEmpty()) {
+      subtitleView.text = subtitle
+      subtitleView.visibility = android.view.View.VISIBLE
+    } else {
+      subtitleView.visibility = android.view.View.GONE
+    }
   }
 
   @JvmStatic

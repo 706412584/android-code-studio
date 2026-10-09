@@ -32,6 +32,7 @@ import androidx.lifecycle.LifecycleCoroutineScope
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.recyclerview.widget.LinearLayoutManager
+import com.tom.rv2ide.activities.TerminalActivity
 import com.tom.rv2ide.adapters.AssistantMessageAdapter
 import com.tom.rv2ide.adapters.ConversationListAdapter
 import com.tom.rv2ide.artificial.agent.compose.compat.toAnswerList
@@ -632,28 +633,10 @@ class FloatingAssistantView(
       refreshContextRingFromConfig()
     }
 
-    // 标题栏：左菜单开抽屉，右侧全屏/最小化/关闭。
-    binding.assistantMenu.setOnClickListener { toggleConversationPanel() }
-    binding.assistantTodos.todoHeader.setOnClickListener { toggleTodos() }
-    // 全屏键：单击与长按**都**进真全屏（沉浸式 Activity）。
-    //
-    // 早先是两档语义（单击 = 窗口内最大化，长按 = 真全屏）。改成单一语义的原因是
-    // 编辑器改为并列分栏后，「窗口内最大化」不再有意义：面板已经占据固定的分栏区域，
-    // 再 `applyMode(FULLSCREEN)` 只会把它撑满**那块分栏**，屏幕上什么都不会变，
-    // 用户按下去会觉得按钮坏了。
-    //
-    // 长按保留为同一动作的快捷方式而不是删掉：已有用户习惯了长按，且长按是无副作用的
-    // 冗余入口，去掉它只会让老用户困惑。
-    binding.assistantFullscreen.setOnClickListener { launchTrueFullscreen() }
-    binding.assistantFullscreen.setOnLongClickListener {
-      launchTrueFullscreen()
-      true
-    }
-    // 最小化与关闭都是收起面板（再点 FAB 可打开），行为一致，语义不同：
-    // 关闭是「我不需要它了」，最小化是「先收起来，等下还要用」。
-    // 两者都保留面板状态，不做额外区分——差别只在用户的预期，不在实现。
-    binding.assistantMinimize.setOnClickListener { close() }
-    binding.assistantClose.setOnClickListener { close() }
+    // 顶栏由 Compose 装配（installHeaderCompose，XML 顶栏退役）：
+    // 左菜单开抽屉、新建会话回调闭包进 ChatHeader。
+    // 待办卡的展开/收起改由 Compose 输入栏的 TodoDashboardBar 承载；
+    // XML 任务卡只保留只读展示（refreshTodos 双路渲染的另一半）。
 
     // 抽屉遮罩点击关闭。
     binding.assistantDrawerScrim.setOnClickListener { toggleConversationPanel() }
@@ -672,16 +655,16 @@ class FloatingAssistantView(
           )
         }
     inputFeatures.owner = this
+    // Compose 顶栏装配（XML 标题栏退役）。
+    installHeaderCompose()
     // Compose 输入栏装配（XML 输入区退役）。
     installInputBar()
     // 会话抽屉的 Compose 装配。XML RecyclerView 已退役；动作回调仍落回本类既有方法，
     // 会话数据继续走 orchestrator.listConversations()（reloadConversations 投影后提交）。
     installDrawerCompose()
 
-    // 这里 workspace 还是 null（调用点一律是 attach() 紧接 setWorkspace()），
-    // 所以本次调用只是把标题置成静态文案；真正的项目名由紧随其后的 setWorkspace 设置。
-    // 留着它是为了让「标题永远有内容」这件事不依赖调用顺序。
-    refreshWorkspaceLabel()
+    // 项目名刷新已随 XML 标题退役（refreshWorkspaceLabel 现为空操作），保留调用点
+    // 是为了将来若顶栏加回项目标识只需在那一处恢复逻辑。
 
     updateEmptyState()
 
@@ -782,28 +765,13 @@ class FloatingAssistantView(
   }
 
   /**
-   * 把面板标题替换为当前项目名。
+   * 项目名刷新。XML 标题（assistantTitle）已随顶栏退役。
    *
-   * <p><b>为什么占标题栏</b>：标题原本只印静态的「AI 助手」，对用户零信息量；而
-   * 「这个对话绑在哪个项目」恰恰是用户从界面上看不出来的关键状态。面板顶部是唯一
-   * 一直可见的位置，把它放这里不需要新增任何控件，也不占用已经拥挤的工具条。
-   *
-   * <p>长按显示完整路径（TooltipCompat）：标题用 middle 省略，而项目名常常尾部才有
-   * 区分度，省略后可能看不出是哪个——完整路径是兜底的确认手段。
-   *
-   * <p>无项目时回退为原来的标题文案，而不是留空：空标题会让面板看起来像出了故障。
+   * <p>Compose 顶栏（ChatHeader）与 Aharou 一致**不设标题位**：会话名在抽屉里可改名，
+   * 顶栏把空间留给按钮；项目归属在抽屉会话行与文件 Tab 的 cwd 上仍然可见。
+   * 保留空方法收拢全部旧调用点（attach/setWorkspace/openConversation/beginNewConversation）。
    */
-  private fun refreshWorkspaceLabel() {
-    val ws = workspace
-    val title = binding.assistantTitle
-    if (ws == null) {
-      title.text = context.getString(string.ai_assistant_title)
-      androidx.appcompat.widget.TooltipCompat.setTooltipText(title, null)
-      return
-    }
-    title.text = ws.name
-    androidx.appcompat.widget.TooltipCompat.setTooltipText(title, ws.absolutePath)
-  }
+  private fun refreshWorkspaceLabel() {}
 
   /**
    * 让悬浮按钮可拖动，并把位置持久化。
@@ -1180,16 +1148,6 @@ class FloatingAssistantView(
     val card = binding.assistantCard
     val params = card.layoutParams as ConstraintLayout.LayoutParams
 
-    // 全屏按钮的语义**不再随形态翻转**：单击与长按都是「进入真全屏」这一个动作，
-    // 没有对应的「退出」状态可描述（退出由真全屏 Activity 自己的返回键负责）。
-    // 写进 contentDescription 而不是按钮文字（按钮是图标），无障碍服务读它。
-    //
-    // 仍补上长按提示：虽然单击已等价，但纯图标按钮无法自述，
-    // 读屏用户需要被告知这个按钮会离开当前界面、进入一个独立屏幕。
-    binding.assistantFullscreen.contentDescription =
-        "${context.getString(string.ai_assistant_fullscreen)} · " +
-            context.getString(string.ai_assistant_fullscreen_hint)
-
     when (newMode) {
       Mode.FULLSCREEN -> {
         // 铺满且**无边框**：本形态的唯一使用者是 AssistantFullscreenActivity
@@ -1302,16 +1260,8 @@ class FloatingAssistantView(
 
     card.layoutParams = params
 
-    // 标题栏右侧三键在 INLINE 下无意义：
-    // - 全屏：页面本身已经占满容器，再切全屏没有目标形态；
-    // - 最小化 / 关闭：内联页没有可收起的宿主，收起后无处可去。
-    // 保留「菜单（会话抽屉）」与「设置」（在抽屉底部），页面导航由宿主的返回键负责。
-    //
-    // 只在 INLINE 下改可见性，且每次 applyMode 都显式重设：从 INLINE 切回其他形态
-    // （理论上宿主允许时）不会把按钮永久藏掉。
-    binding.assistantFullscreen.isVisible = newMode != Mode.INLINE
-    binding.assistantMinimize.isVisible = newMode != Mode.INLINE && newMode != Mode.EMBEDDED
-    binding.assistantClose.isVisible = newMode != Mode.INLINE && newMode != Mode.EMBEDDED
+    // 顶栏右侧三键已随 Compose 顶栏退役：INLINE/EMBEDDED 下不再需要单独隐藏
+    // （Compose 顶栏没有这三个键，形态差异由 showMenuButton 与宿主返回键承载）。
 
     // 换形态就换了宽度，工具条能放下几个控件随之变化，必须重算。
     //
@@ -2614,8 +2564,8 @@ class FloatingAssistantView(
    * 本方法在此之前的所有调用点都发生在面板不可见时。
    */
   private fun applyToolbarDensity() {
-    // XML 工具条已退役：Compose 输入栏内部自管密度（窄面板下 ModelIconButton 只剩
-    // logo，服务商名由模型名隐含）。保留空方法收拢全部旧调用点。
+    // XML 工具条已退役：Compose 输入栏 / 顶栏内部自管密度。
+    // 保留空方法收拢全部旧调用点。
   }
 
   /** 上一次 git 分支查询的结果；避免每次宽度变化都去读一次仓库。 */
@@ -2646,9 +2596,37 @@ class FloatingAssistantView(
             providerId,
             AgentOrchestrator.customBaseUrlFor(context, providerId),
         )
-    // XML 的服务商/模型 chip 退役：输入栏的 ModelIconButton 只看模型名
-    // （logo 按 modelBrandKey 识别，服务商由模型名隐含）。
+    // 模型入口在输入栏芯片（ChatInputBar 的 ModelIconButton）。它按 provider 列表
+    // 渲染选择面板，所以这里必须把**真实的**已配置服务商投影进去——空列表会弹出
+    // 一张没有内容的卡片（曾经就是这个问题）。
     inputBar.modelName = agents.getAgent()
+    val currentModel = agents.getAgent()
+    // currentProvider 用于选中态与 logo 识别；models 里要含当前模型，
+    // 否则面板出现「服务商在列表里、正在用的模型却不在」的矛盾。
+    inputBar.currentProvider =
+        com.tom.rv2ide.artificial.agent.compose.components.independent.ProviderSelectionTarget(
+            id = providerId,
+            name = providerLabel,
+            isEnabled = usable,
+            models = if (currentModel.isBlank()) emptyList() else listOf(currentModel),
+            effectiveModel = currentModel,
+        )
+    inputBar.providers =
+        AssistantModelPicker.configuredProviderEntries(context).map { entry ->
+          com.tom.rv2ide.artificial.agent.compose.components.independent.ProviderSelectionTarget(
+              id = entry.id,
+              name = entry.label,
+              models = entry.models,
+              // 从已配置清单来的服务商必然可用（configuredProviders 已按同一判据筛过）。
+              isEnabled = true,
+              effectiveModel =
+                  if (entry.id == providerId && currentModel.isNotBlank()) {
+                    currentModel
+                  } else {
+                    entry.models.firstOrNull().orEmpty()
+                  },
+          )
+        }
   }
 
   /**
@@ -2709,7 +2687,15 @@ class FloatingAssistantView(
             isBusy = bridge.isBusy,
             canForceStop = bridge.canForceStop,
             activeModelName = bridge.modelName,
-            onSelectModel = { host.dialogs.showModelPicker { refreshModelLabel() } },
+            currentProvider = bridge.currentProvider,
+            providers = bridge.providers,
+            // 选中即写入偏好（AssistantModelPicker.applySelection 与 XML 选择器同源），
+            // 再刷新标签——模型名、logo、面板选中态全都依赖它。
+            onSelectModel = { providerId, model ->
+              com.tom.rv2ide.artificial.agent.AssistantModelPicker.applySelection(
+                  context, providerId, model)
+              refreshModelLabel()
+            },
             currentMode = bridge.mode,
             onToggleMode = { next ->
               bridge.mode = next
@@ -2736,6 +2722,92 @@ class FloatingAssistantView(
             tokenEstimated = bridge.tokenEstimated,
             todoItems = bridge.todoItems,
             sessionId = displayedConversationId ?: "",
+        )
+      }
+    }
+  }
+
+  /**
+   * 把顶栏装进 [binding.assistantHeaderCompose]（Compose 装配）。
+   *
+   * <p>XML 顶栏（菜单/标题/全屏/最小化/关闭五控件）退役，其入口由移植的 [ChatHeader]
+   * 承接并重组：左菜单开抽屉、右侧新建会话 + Git / 终端 + 全屏二选一。
+   * 关闭键不再恢复——侧栏有系统的返回键，再放一颗是多余的。
+   *
+   * <p><b>入口映射与 Aharou 的差异</b>：Aharou 的工作台有 5 个入口（Terminal/Git/Browser/
+   * Sandbox/Shared）。ACS 只保留 Git 与终端——另三个（浏览器/沙箱/共享）没有对应功能，
+   * 留着就是点了没反应的占位按钮。
+   *
+   * <p>两个保留入口的落点**不同**，因为 ACS 的载体不同：
+   * - Git 是侧栏标签页 → 经 [AssistantHost.onOpenSidebarPage] 切页；
+   * - 终端是独立 Activity（侧栏没有终端页，`TerminalSidebarAction` 未注册）→ 直接启动。
+   *
+   * <p>全屏 / 最小化合并为**一颗二选一按钮**（ACS 自有，Aharou 顶栏没有）：
+   * 非全屏显示全屏图标、全屏显示最小化图标。分成两颗常驻按钮在窄侧栏里放不下。
+   *
+   * <p>模型切换**不在顶栏**，在输入栏芯片（[ChatInputBar]）——与 Aharou 一致。
+   * 顶栏只保留导航类入口，避免在 300dp 宽的侧栏里挤掉按钮。
+   *
+   * <p>token 统计：ChatHeader 的 TokenStats 只在远程模式（connectionState != null）显示，
+   * ACS 恒传 null，因此 inputTokens/outputTokens 恒传 0 不占位。
+   *
+   * <p>定时任务胶囊：ScheduledTaskPill 的数据源（定时任务）ACS 尚未接线，task 恒传 null
+   * （组件内部对 null 直接不渲染）。
+   */
+  private fun installHeaderCompose() {
+    val darkTheme =
+        run {
+          val tv = android.util.TypedValue()
+          val resolved = context.theme.resolveAttribute(android.R.attr.colorBackground, tv, true)
+          val bg = if (resolved) tv.data else 0xFF07111F.toInt()
+          androidx.core.graphics.ColorUtils.calculateLuminance(bg) <= 0.5
+        }
+    binding.assistantHeaderCompose.setContent {
+      com.tom.rv2ide.artificial.agent.compose.theme.AIEditorTheme(darkTheme = darkTheme) {
+        com.tom.rv2ide.artificial.agent.compose.components.independent.ChatHeader(
+            inputTokens = 0,
+            outputTokens = 0,
+            sessionId = displayedConversationId,
+            onOpenDrawer = { toggleConversationPanel() },
+            onNewChat = { startNewConversation() },
+            // Git：切到编辑器侧栏的 Git 标签页（宿主实现）。宿主不支持（主页/真全屏/
+            // 应用外悬浮）时点击无反应——这是 onOpenSidebarPage 的默认空实现约定。
+            onNavigateToGit = {
+              host.onOpenSidebarPage(com.tom.rv2ide.actions.sidebar.GitClientAction.ID)
+            },
+            // 终端：ACS 的终端是独立 Activity（与主页动作列表的「终端」一致），
+            // 侧栏**没有**终端页——`TerminalSidebarAction` 并未注册进侧栏
+            // （见 EditorSidebarActions.registerActions），走切页会找不到目标而静默失败。
+            //
+            // NEW_TASK 对应用外悬浮（Service context）是必需的，对 Activity 宿主无害。
+            onNavigateToTerminal = {
+              try {
+                context.startActivity(
+                    android.content.Intent(context, TerminalActivity::class.java)
+                        .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK))
+              } catch (e: Exception) {
+                // 后台启动 Activity 受限（Android 10+）/ 无可用 Activity：静默忽略，
+                // 这只是多一个入口，不该让面板崩。
+              }
+            },
+            currentMode = inputBar.mode,
+            onToggleMode = { next -> inputBar.mode = next },
+            connectionState = null,
+            showMenuButton = true,
+            // 二选一：非全屏显示全屏图标，全屏显示最小化图标。
+            // 本视图在编辑器/侧栏宿主里不是 FULLSCREEN，因此恒为 false；
+            // 真全屏宿主（AssistantFullscreenActivity，Mode.FULLSCREEN）为 true。
+            isFullscreen = mode == Mode.FULLSCREEN,
+            onToggleFullscreen = {
+              if (mode == Mode.FULLSCREEN) {
+                // 全屏里「最小化」= 退出这个独立窗口，回到编辑器。
+                // 用 finish 而不是 close()：宿主是 AssistantFullscreenActivity，
+                // 它的 onClosed 已接 finish（见 bindLayout），close() 会走到同一条路。
+                close()
+              } else {
+                launchTrueFullscreen()
+              }
+            },
         )
       }
     }
@@ -3345,18 +3417,6 @@ class FloatingAssistantView(
       }
       list.addView(row)
     }
-  }
-
-  /**
-   * 任务卡片的展开/收起。默认折叠——清单通常 5-10 条，默认展开会持续占掉
-   * 面板约 1/3 高度，而折叠态的进度数字（2/5）已能回答「还剩几条」。
-   */
-  private fun toggleTodos() {
-    val b = binding.assistantTodos
-    val expand = !b.todoScroll.isVisible
-    b.todoScroll.isVisible = expand
-    b.todoDivider.isVisible = expand
-    b.todoChevron.text = if (expand) "▾" else "▸"
   }
 
   /** 任务状态 → 前缀符号。用符号而非图标：一行一条，符号更紧凑且不打断文字阅读。 */

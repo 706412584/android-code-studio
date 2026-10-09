@@ -49,86 +49,19 @@
       android:orientation="vertical">
 
       <!--
-        标题栏。
+        顶栏（2026-10-09 接线）：整个标题栏由移植的 ChatHeader 承载——
+        左菜单开抽屉、右侧新建会话 + Git / 终端 + 全屏（全屏时变最小化图标）。
+        原 XML 的 assistantMenu/assistantTitle/assistantFullscreen/assistantMinimize/
+        assistantClose 五控件退役：字体/交互由 Compose 组件自管，宿主只注入回调。
 
-        布局：左「菜单」+ 居中标题 + 右侧三键（全屏 / 最小化 / 关闭）。
-
-        左菜单点击从左侧滑出会话列表抽屉。做成抽屉而不是整页互斥切换：
-        抽屉保留了「当前对话还在右边」的视觉连续性，用户滑出列表找一条旧会话时
-        不会觉得自己离开了对话；整页切换则会让对话内容整个消失，回来时位置也丢了。
-
-        右侧三键用图标而不是文字：文字宽度随语言变化（英文 "Minimize" 比中文
-        「最小化」宽一倍），在窄面板里会把标题挤成省略号。图标宽度恒定。
-        全屏/侧栏切换从溢出菜单移到这里——它本来就是高频操作，藏在菜单里多余。
+        Aharou 的顶栏没有标题位：会话名在抽屉里可改名，顶栏把空间留给按钮。
+        关闭键不再恢复——页面形态的收起语义由宿主返回键承载。
+        模型切换也不在顶栏，在输入栏芯片（与 Aharou 一致）。
       -->
-      <LinearLayout
+      <androidx.compose.ui.platform.ComposeView
+        android:id="@+id/assistantHeaderCompose"
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:orientation="horizontal"
-        android:gravity="center_vertical"
-        android:paddingStart="4dp"
-        android:paddingEnd="4dp"
-        android:paddingTop="4dp"
-        android:paddingBottom="2dp">
-
-        <com.google.android.material.button.MaterialButton
-          android:id="@+id/assistantMenu"
-          style="@style/Widget.Material3.Button.IconButton"
-          android:layout_width="wrap_content"
-          android:layout_height="wrap_content"
-          android:contentDescription="@string/ai_conversation_list_title"
-          app:icon="@drawable/ic_menu"
-          app:iconTint="?attr/colorOnSurfaceVariant" />
-
-        <!-- 标题居中：两侧按钮数量不等（左 1 右 3），靠 weight 均分会偏。
-             用 weight=1 + 居中文字让标题落在剩余空间的中间。
-
-             标题内容运行时替换为**当前项目名**（见 FloatingAssistantView.refreshWorkspaceLabel）：
-             这块空间原本只印静态的「AI 助手」，对用户零信息量，而「这个对话绑在哪个项目」
-             恰恰是用户看不出来的关键信息。无项目时回退为原来的标题文案。
-
-             ellipsize 用 middle 而非 end：项目名常常长而尾部才有区分度（如
-             「.../MyGameActivity」与「.../MyNativeC」），掐尾巴会让两条看起来一样。 -->
-        <TextView
-          android:id="@+id/assistantTitle"
-          android:layout_width="0dp"
-          android:layout_height="wrap_content"
-          android:layout_weight="1"
-          android:ellipsize="middle"
-          android:gravity="center"
-          android:maxLines="1"
-          android:text="@string/ai_assistant_title"
-          android:textAppearance="@style/TextAppearance.Material3.TitleMedium"
-          android:textStyle="bold" />
-
-        <com.google.android.material.button.MaterialButton
-          android:id="@+id/assistantFullscreen"
-          style="@style/Widget.Material3.Button.IconButton"
-          android:layout_width="wrap_content"
-          android:layout_height="wrap_content"
-          android:contentDescription="@string/ai_assistant_fullscreen"
-          app:icon="@drawable/ic_fullscreen"
-          app:iconTint="?attr/colorOnSurfaceVariant" />
-
-        <com.google.android.material.button.MaterialButton
-          android:id="@+id/assistantMinimize"
-          style="@style/Widget.Material3.Button.IconButton"
-          android:layout_width="wrap_content"
-          android:layout_height="wrap_content"
-          android:contentDescription="@string/ai_assistant_minimize"
-          app:icon="@drawable/ic_minimize"
-          app:iconTint="?attr/colorOnSurfaceVariant" />
-
-        <com.google.android.material.button.MaterialButton
-          android:id="@+id/assistantClose"
-          style="@style/Widget.Material3.Button.IconButton"
-          android:layout_width="wrap_content"
-          android:layout_height="wrap_content"
-          android:contentDescription="@string/ai_assistant_close"
-          app:icon="@drawable/ic_close"
-          app:iconTint="?attr/colorOnSurfaceVariant" />
-
-      </LinearLayout>
+        android:layout_height="wrap_content" />
 
       <!--
         服务商 / 模型选择条已移除——模型与槽位都移进了输入区工具条。

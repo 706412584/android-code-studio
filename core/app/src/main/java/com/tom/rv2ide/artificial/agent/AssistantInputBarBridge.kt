@@ -24,6 +24,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import com.tom.rv2ide.artificial.agent.compose.compat.AgentMode
 import com.tom.rv2ide.artificial.agent.compose.compat.PendingUploadAttachment
+import com.tom.rv2ide.artificial.agent.compose.components.independent.ProviderSelectionTarget
 import com.tom.rv2ide.artificial.agent.compose.compat.ReasoningEffort
 import com.tom.rv2ide.artificial.agent.compose.components.independent.ChatSession
 import com.tom.rv2ide.artificial.agent.compose.components.tools.ParsedTodoItem
@@ -71,6 +72,22 @@ internal class AssistantInputBarBridge {
 
   /** 当前模型显示名（原 assistantToolbarModel 的文本）。 */
   var modelName by mutableStateOf<String?>(null)
+
+  /**
+   * 当前服务商投影（含它的模型列表）。
+   *
+   * <p>由 [FloatingAssistantView.refreshModelLabel] 从 `ProviderConfigStore` 投影。
+   * null 表示当前服务商没有记录——此时芯片退化为「只有模型名」的占位投影。
+   */
+  var currentProvider by mutableStateOf<ProviderSelectionTarget?>(null)
+
+  /**
+   * 全部可选服务商投影，供输入栏芯片弹出的模型面板渲染。
+   *
+   * <p>**不要留空**：芯片的选择面板靠它渲染服务商与模型列表，空列表会弹出一张
+   * 没有内容的卡片——用户看不到任何可选项，点空白还会穿透到底下的编辑器。
+   */
+  var providers by mutableStateOf<List<ProviderSelectionTarget>>(emptyList())
 
   /** 当前对话模式（Aharou 三档；ACS ChatMode 的投影由宿主换算）。 */
   var mode by mutableStateOf(AgentMode.BUILD)

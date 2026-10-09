@@ -109,6 +109,22 @@ interface AssistantHost {
   fun onOpenFileRequested(file: java.io.File) {}
 
   /**
+   * 请求宿主切到指定 id 的侧栏标签页（顶栏工作台入口：Git / 终端）。
+   *
+   * <p><b>为什么按 id 而不是按页类型</b>：侧栏页由 `ActionItem` 注册表管理
+   * （`GitClientAction.ID` / `TerminalSidebarAction.ID`），宿主只知道「切到哪个 action」，
+   * 不需要知道它对应哪个 Fragment 类。
+   *
+   * <p><b>为什么是「打开侧栏并切页」而不是只切页</b>：顶栏按钮在侧栏页**内部**，
+   * 用户点它时侧栏已经开着；但从真全屏宿主点进来时侧栏是关的。宿主自行决定
+   * 「先开抽屉再切页」还是「只切页」，视图层不关心。
+   *
+   * <p>默认空实现：主页 / 真全屏 / 应用外悬浮没有侧栏可切，点击静默忽略
+   * （与 [onOpenFileRequested] 同一套降级约定）。
+   */
+  fun onOpenSidebarPage(pageId: String) {}
+
+  /**
    * 宿主让位后，留给面板的比例。
    *
    * <p><b>为什么放在这里而不是各处自算</b>：让位量由宿主决定（它缩编辑器），

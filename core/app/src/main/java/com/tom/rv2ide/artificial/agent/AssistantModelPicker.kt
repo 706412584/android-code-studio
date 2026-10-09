@@ -180,10 +180,37 @@ object AssistantModelPicker {
   }
 
   /** 一个已配置的服务商及其可用模型。 */
-  private class ProviderEntry(val id: String, val label: String, val models: List<String>)
+  internal class ProviderEntry(val id: String, val label: String, val models: List<String>)
 
   /**
-   * 已配置的服务商清单（含各自已配置的模型）。
+   * 当前**已配置**的服务商清单（含各自已配置的模型）。
+   *
+   * <p>供其它选择器投影使用（例如 Compose 侧的 [com.tom.rv2ide.artificial.agent.compose
+   * .components.independent.ModelSheet]）。判据与 [show] 完全一致——两条路径若各写一份
+   * 「哪些服务商算已配置」，迟早在某个边界上分叉。
+   */
+  internal fun configuredProviderEntries(context: Context): List<ProviderEntry> =
+      configuredProviders(context)
+
+  /**
+   * 分两步写入一次选择：先选定服务商与模型。
+   *
+   * <p><b>顺序必须如此</b>：`setAgent` 会按模型名反查服务商并覆写 provider，
+   * 先写 provider 会被这次反查覆盖回去。
+   *
+   * <p>与 [show] 的模型行点击同一套写入，因此 Compose 选择器与 XML 选择器
+   * 切换后的结果严格一致（包括「当前」标记的落点）。
+   */
+  internal fun applySelection(context: Context, providerId: String, model: String) {
+    val agents = Agents(context)
+    if (model.isNotBlank()) {
+      agents.setAgent(model)
+    }
+    agents.setProvider(providerId)
+  }
+
+  /**
+   * 已配置服务商清单。
    *
    * <p><b>「已配置」的判据必须与发请求那条路径完全一致</b>（[AgentModelConfigs.isProviderUsable]）。
    * 但**只遍历 [ProviderConfigStore] 的记录是不够的**：判据读的是 `ApiKey` 的偏好槽位，

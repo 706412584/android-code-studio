@@ -71,6 +71,13 @@ class AssistantSidebarFragment : Fragment() {
             onOpenFile = { file ->
               (activity as? com.tom.rv2ide.interfaces.IEditorHandler)?.openFile(file)
             },
+            // 顶栏的 Git / 终端入口：切到本 Activity 侧栏里的对应标签页。
+            // 侧栏 Fragment 与助手页是**兄弟**（都挂在 EditorSidebarFragment 的
+            // fragmentContainer 下），因此从 parentFragment 拿到侧栏容器再转发。
+            onOpenSidebarPage = { pageId ->
+              val sidebar = parentFragment as? com.tom.rv2ide.fragments.sidebar.EditorSidebarFragment
+              sidebar?.selectPage(pageId)
+            },
         )
     val assistantView =
         FloatingAssistantView(

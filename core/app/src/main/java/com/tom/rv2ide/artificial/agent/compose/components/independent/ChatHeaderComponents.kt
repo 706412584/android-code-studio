@@ -66,11 +66,10 @@ import com.tom.rv2ide.artificial.agent.compose.theme.Radius
 import com.tom.rv2ide.artificial.agent.compose.theme.Spacing
 import com.tom.rv2ide.resources.R
 import compose.icons.FeatherIcons
-import compose.icons.feathericons.Folder
 import compose.icons.feathericons.GitBranch
-import compose.icons.feathericons.Globe
-import compose.icons.feathericons.HardDrive
+import compose.icons.feathericons.Maximize2
 import compose.icons.feathericons.Menu
+import compose.icons.feathericons.Minimize2
 import compose.icons.feathericons.Plus
 import compose.icons.feathericons.Terminal
 
@@ -96,16 +95,24 @@ internal fun ChatHeader(
     onNewChat: () -> Unit,
     onNavigateToTerminal: () -> Unit,
     onNavigateToGit: () -> Unit,
-    onNavigateToBrowser: () -> Unit = {},
-    onNavigateToSandbox: () -> Unit = {},
-    onNavigateToShared: () -> Unit = {},
     currentMode: AgentMode,
     onToggleMode: (AgentMode) -> Unit,
     connectionState: ConnectionState? = null,
     showMenuButton: Boolean = true,
     terminalActive: Boolean = false,
     gitActive: Boolean = false,
-    browserActive: Boolean = false
+    /**
+     * 全屏 / 最小化二选一按钮（ACS 自有入口，Aharou 顶栏没有）。
+     *
+     * <p>**一颗按钮两种状态**：非全屏时显示「全屏」图标（点击进入全屏），全屏时显示
+     * 「最小化」图标（点击退出）。分成两颗常驻按钮会在侧栏这种窄宽度里挤掉别的入口，
+     * 而任一时刻只有其中一个动作是有意义的。
+     *
+     * @param isFullscreen 当前是否处于全屏
+     * @param onToggleFullscreen 切换全屏；null 时该按钮不渲染（宿主不支持全屏）
+     */
+    isFullscreen: Boolean = false,
+    onToggleFullscreen: (() -> Unit)? = null,
 ) {
     Surface(
         color = MaterialTheme.colorScheme.background
@@ -123,56 +130,49 @@ internal fun ChatHeader(
             ) {
                 // 大屏常驻侧栏时隐掉汉堡键：侧栏已经摆在左边，再给个开关反而困惑。
                 if (showMenuButton) {
-                    IconButton(
+                    HeaderIconButton(
+                        icon = FeatherIcons.Menu,
+                        contentDescription = stringResource(R.string.chat_open_sidebar),
                         onClick = onOpenDrawer,
                         modifier = Modifier.onboardingTarget(OnboardingStep.OPEN_SIDEBAR)
-                    ) {
-                        Icon(
-                            FeatherIcons.Menu,
-                            contentDescription = stringResource(R.string.chat_open_sidebar),
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
+                    )
                 } else {
                     Spacer(modifier = Modifier.width(Spacing.sm))
                 }
                 // 会话标题已从顶栏移除：侧边栏可重命名，顶栏把空间留给按钮。
+                // 模型切换在输入栏（ChatInputBar 的模型芯片），顶栏不再重复放一个。
                 Spacer(modifier = Modifier.weight(1f))
-                IconButton(onClick = onNewChat) {
-                    Icon(
-                        FeatherIcons.Plus,
-                        contentDescription = stringResource(R.string.chat_new_session),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-                WorkbenchIconButton(
+                HeaderIconButton(
+                    icon = FeatherIcons.Plus,
+                    contentDescription = stringResource(R.string.chat_new_session),
+                    onClick = onNewChat,
+                )
+                HeaderIconButton(
                     icon = FeatherIcons.GitBranch,
                     contentDescription = stringResource(R.string.chat_open_git),
                     active = gitActive,
-                    onClick = onNavigateToGit
+                    onClick = onNavigateToGit,
                 )
-                WorkbenchIconButton(
+                HeaderIconButton(
                     icon = FeatherIcons.Terminal,
                     contentDescription = stringResource(R.string.chat_open_terminal),
                     active = terminalActive,
-                    onClick = onNavigateToTerminal
+                    onClick = onNavigateToTerminal,
                 )
-                WorkbenchIconButton(
-                    icon = FeatherIcons.Globe,
-                    contentDescription = stringResource(R.string.chat_open_browser),
-                    active = browserActive,
-                    onClick = onNavigateToBrowser
-                )
-                WorkbenchIconButton(
-                    icon = FeatherIcons.Folder,
-                    contentDescription = stringResource(R.string.chat_open_sandbox),
-                    active = false,
-                    onClick = onNavigateToSandbox
-                )
-                WorkbenchIconButton(
-                    icon = FeatherIcons.HardDrive,
-                    contentDescription = stringResource(R.string.chat_open_shared),
-                    active = false,
-                    onClick = onNavigateToShared
-                )
+                // 全屏 / 最小化二选一：同一颗按钮，按当前状态换图标与动作。
+                onToggleFullscreen?.let { toggle ->
+                    HeaderIconButton(
+                        icon = if (isFullscreen) FeatherIcons.Minimize2 else FeatherIcons.Maximize2,
+                        contentDescription =
+                            stringResource(
+                                if (isFullscreen) {
+                                    R.string.ai_assistant_minimize
+                                } else {
+                                    R.string.ai_assistant_fullscreen
+                                }),
+                        onClick = toggle,
+                    )
+                }
             }
             // 远程模式：左边 SSH 连接状态，右边 token 累计统计
             if (connectionState != null) {
@@ -197,18 +197,27 @@ internal fun ChatHeader(
     }
 }
 
-/** 顶栏工作台入口按钮：大屏右栏开着对应内容时高亮，否则看不出点一下是开还是关。 */
+/**
+ * 顶栏图标按钮。
+ *
+ * <p>尺寸收到 [BUTTON_SIZE]：侧栏只有约 300dp 宽，默认 48dp 触摸目标放不下
+ * 「菜单 + 新建 + Git + 终端 + 全屏」五个——最后一个会被推到可视区外。
+ * 这里同时把触摸目标收窄到 36dp，`contentDescription` 仍保证无障碍可读。
+ *
+ * @param active 工作台入口高亮：大屏右栏开着对应内容时，否则看不出点一下是开还是关
+ */
 @Composable
-private fun WorkbenchIconButton(
+private fun HeaderIconButton(
     icon: ImageVector,
     contentDescription: String,
-    active: Boolean,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    active: Boolean = false
 ) {
-    IconButton(onClick = onClick) {
+    IconButton(onClick = onClick, modifier = modifier.size(BUTTON_SIZE)) {
         Box(
             modifier = Modifier
-                .size(32.dp)
+                .size(BUTTON_GLYPH_SIZE)
                 .then(
                     if (active) {
                         Modifier
@@ -223,6 +232,7 @@ private fun WorkbenchIconButton(
             Icon(
                 icon,
                 contentDescription = contentDescription,
+                modifier = Modifier.size(18.dp),
                 tint = if (active) {
                     MaterialTheme.colorScheme.primary
                 } else {
@@ -232,6 +242,12 @@ private fun WorkbenchIconButton(
         }
     }
 }
+
+/** 顶栏按钮的触摸目标边长。窄侧栏里 48dp 的默认值放不下 5 个按钮。 */
+private val BUTTON_SIZE = 36.dp
+
+/** 按钮内高亮底块（[active] 时可见）的边长。 */
+private val BUTTON_GLYPH_SIZE = 30.dp
 
 @Composable
 private fun ConnectionIndicator(

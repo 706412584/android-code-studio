@@ -67,12 +67,23 @@ class ActivityHost(
      * （与 [onClosed] 同一套「宿主能力不齐就降级」约定）。
      */
     private val onOpenFile: ((java.io.File) -> Unit)? = null,
+    /**
+     * 切到指定侧栏标签页的出口（顶栏 Git / 终端入口）。
+     *
+     * <p>可空——只有**编辑器**宿主有侧栏可切（`EditorSidebarActions`）。
+     * 其余宿主传 null 时点击静默忽略（与 [onOpenFile] 同一套降级约定）。
+     */
+    private val onOpenSidebarPage: ((String) -> Unit)? = null,
 ) : AssistantHost {
 
   override fun widthPx(): Int = container.resources.displayMetrics.widthPixels
 
   override fun onOpenFileRequested(file: java.io.File) {
     onOpenFile?.invoke(file)
+  }
+
+  override fun onOpenSidebarPage(pageId: String) {
+    onOpenSidebarPage?.invoke(pageId)
   }
 
   override fun onPanelOpened() = applyYield(yield = true)

@@ -49,6 +49,15 @@ class EditorSidebarFragment :
    */
   private var pendingInsets: Insets? = null
 
+  /**
+   * 切到指定 id 的标签页；没有该 action 时返回 false。
+   *
+   * <p>转发给 [EditorSidebarActions.selectPage]——切页逻辑（隐藏旧 Fragment、显示新的、
+   * 高亮导航项）都在那里。本方法只是把入口暴露给外部调用者（顶栏的 Git / 终端按钮）。
+   */
+  internal fun selectPage(actionId: String): Boolean =
+      EditorSidebarActions.selectPage(this, actionId)
+
   internal fun onApplyWindowInsets(insets: Insets) {
     pendingInsets = insets
     _binding?.apply {

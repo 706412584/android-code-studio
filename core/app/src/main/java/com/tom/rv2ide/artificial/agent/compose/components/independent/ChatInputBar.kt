@@ -99,10 +99,12 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.window.DialogWindowProvider
 import androidx.core.view.WindowCompat
+import com.tom.rv2ide.artificial.agent.compose.compat.ModelMetadata
 import com.tom.rv2ide.artificial.agent.compose.compat.PendingUploadAttachment
 import com.tom.rv2ide.artificial.agent.compose.components.tools.ParsedTodoItem
 import com.tom.rv2ide.artificial.agent.compose.compat.AgentMode
 import com.tom.rv2ide.artificial.agent.compose.compat.OnboardingStep
+import com.tom.rv2ide.artificial.agent.compose.components.independent.ProviderSelectionTarget
 import com.tom.rv2ide.artificial.agent.compose.compat.ReasoningEffort
 import com.tom.rv2ide.artificial.agent.compose.compat.onboardingTarget
 import com.tom.rv2ide.artificial.agent.compose.compat.rememberImeBottomInset
@@ -169,8 +171,16 @@ internal fun ChatInputBar(
     isBusy: Boolean,
     /** 该会话是否还有 agent 协程在跑：软打断后 [isBusy] 已回到 false，但任务仍在后台跑当前这一步。 */
     canForceStop: Boolean = false,
+    /** 当前模型名；null 时芯片只显示通用图标（无模型名可识别）。 */
     activeModelName: String?,
-    onSelectModel: () -> Unit,
+    /** 当前服务商（含它的模型列表）。null 时退化为「只有模型名」的占位投影。 */
+    currentProvider: ProviderSelectionTarget? = null,
+    /** 全部可选服务商；供芯片弹出的选择面板渲染。**不可传空**——空面板会显示为空白卡片。 */
+    providers: List<ProviderSelectionTarget> = emptyList(),
+    /** 模型名 → 能力标签（视觉/工具/上下文）。缺省时标签一律不渲染。 */
+    modelMetadata: Map<String, ModelMetadata> = emptyMap(),
+    /** 选中某个服务商的某个模型。 */
+    onSelectModel: (String, String) -> Unit = { _, _ -> },
     currentMode: AgentMode,
     onToggleMode: (AgentMode) -> Unit,
     reasoningEffort: ReasoningEffort,
@@ -545,23 +555,24 @@ internal fun ChatInputBar(
                         }
                         Spacer(Modifier.width(Spacing.xs))
 
-                        // ACS 投影：宿主只给「当前模型名 + 打开选择器」两个量，
-                        // ModelIconButton 需要的 provider 列表由 ModelSheet 内部组装，
-                        // 这里用最小占位 provider 承载模型名（logo 识别只看模型名）。
+                        // 模型芯片：服务商与模型列表由 [providers] 传入（宿主投影自 ACS 已配置的服务商）。
+                        // **必须传真实列表**：传空会让弹窗一片空白——那样用户只看到一张
+                        // 无内容的卡片，点空白还会穿透到底下的编辑器。
                         ModelIconButton(
                             provider =
-                                activeModelName?.let {
-                                    ProviderSelectionTarget(
-                                        id = "",
-                                        name = it,
-                                        isEnabled = true,
-                                        models = listOf(it),
-                                        effectiveModel = it,
-                                    )
-                                },
-                            providers = emptyList(),
-                            modelMetadata = emptyMap(),
-                            onSelectModel = { _, _ -> onSelectModel() },
+                                currentProvider
+                                    ?: activeModelName?.let {
+                                      ProviderSelectionTarget(
+                                          id = "",
+                                          name = it,
+                                          isEnabled = true,
+                                          models = listOf(it),
+                                          effectiveModel = it,
+                                      )
+                                    },
+                            providers = providers,
+                            modelMetadata = modelMetadata,
+                            onSelectModel = onSelectModel,
                             modifier = Modifier.onboardingTarget(OnboardingStep.SELECT_MODEL)
                         )
 
