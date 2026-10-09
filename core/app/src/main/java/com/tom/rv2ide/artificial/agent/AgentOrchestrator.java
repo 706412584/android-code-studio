@@ -268,15 +268,18 @@ public final class AgentOrchestrator {
 
   /** 见 {@link #currentRunSnapshot}。 */
   public static final class RunSnapshot {
-    static final RunSnapshot EMPTY = new RunSnapshot("", "");
+    static final RunSnapshot EMPTY = new RunSnapshot("", "", "");
 
     /** 本轮已产生的正文（未落盘部分）；空串表示没有。 */
     public final String text;
+    /** 本轮已产生的推理（未落盘部分）；空串表示没有。 */
+    public final String reasoning;
     /** 最近一条动作文案；空串表示没有。 */
     public final String lastAction;
 
-    RunSnapshot(String text, String lastAction) {
+    RunSnapshot(String text, String reasoning, String lastAction) {
       this.text = text == null ? "" : text;
+      this.reasoning = reasoning == null ? "" : reasoning;
       this.lastAction = lastAction == null ? "" : lastAction;
     }
   }
@@ -2126,8 +2129,11 @@ public final class AgentOrchestrator {
       switch (event.getType()) {
         case REASONING_DELTA:
           // 累积本轮思考；不落盘（增量太碎），由 TURN_FINISHED 一并写入。
+          // 加锁理由同 TEXT_DELTA：快照会读它（推理流式期间切全屏同样会丢思考块）。
           if (event.getMessage() != null) {
-            reasoningBuffer.append(event.getMessage());
+            synchronized (this) {
+              reasoningBuffer.append(event.getMessage());
+            }
           }
           break;
         case PROGRESS:
@@ -2156,10 +2162,10 @@ public final class AgentOrchestrator {
                   event.getMessage(),
                   reasoningBuffer.toString(),
                   event.getToolCalls()));
-          reasoningBuffer.setLength(0);
-          // 本轮正文已落盘，实时态缓冲不再需要——清空后重建视图改从磁盘回放。
-          // 不清的话快照会与磁盘历史**重复**渲染同一段正文（气泡出现两遍）。
+          // 本轮正文与推理已落盘，实时态缓冲不再需要——清空后重建视图改从磁盘回放。
+          // 不清的话快照会与磁盘历史**重复**渲染同一段内容（气泡出现两遍）。
           synchronized (this) {
+            reasoningBuffer.setLength(0);
             textBuffer.setLength(0);
             lastAction = "";
           }
@@ -2183,12 +2189,14 @@ public final class AgentOrchestrator {
     /** 见 {@link #currentRunSnapshot}。调用方可能来自任意线程，读取做最小同步。 */
     RunSnapshot snapshot() {
       String text;
+      String reasoning;
       String action;
       synchronized (this) {
         text = textBuffer.toString();
+        reasoning = reasoningBuffer.toString();
         action = lastAction;
       }
-      return new RunSnapshot(text, action);
+      return new RunSnapshot(text, reasoning, action);
     }
 
     private void appendEntry(ConversationEntry entry) {

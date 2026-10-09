@@ -3281,6 +3281,15 @@ class FloatingAssistantView(
           return
         }
     val ui = uiState(conversationId)
+    if (snapshot.reasoning.isNotEmpty()) {
+      // 推理块同样只在 TURN_FINISHED 落盘：推理流式期间切全屏，思考内容会消失。
+      // streaming = true：这一块确实还在生成（本轮未结束），与回放历史时的
+      // streaming=false 相对——那时代码路径不同（replayMessages 的 AssistantModelMessage）。
+      val id =
+          adapter.appendThinking(
+              snapshot.reasoning, null, streaming = true)
+      ui.lastThinkingId = id
+    }
     if (snapshot.text.isNotEmpty()) {
       // 与实时路径同一写法（见 TEXT_DELTA 分支）：建气泡并把 id 记进 ui，
       // 之后的增量走 appendTo 追加进同一个气泡。
