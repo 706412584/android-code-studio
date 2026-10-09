@@ -83,8 +83,16 @@ internal object AssistantComposeRender {
    */
   const val KEY_ENABLED = "assistant_compose_render"
 
+  /**
+   * 默认 **true**（2026-10-09 翻转）：Compose 渲染已是唯一在维护的路径，
+   * XML 列表仅作回退保留。新装用户直接走 Compose，不再需要手动开开关。
+   *
+   * <p>历史：接线期默认 false 是因为 Compose 侧未真机验证，需要能随时切回；
+   * 现在渲染层已完整（消息/工具卡/思考块/diff/询问面板/滚动），
+   * 默认值继续为 false 只会让用户看到过时的界面。
+   */
   fun isEnabled(context: Context): Boolean =
-      context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).getBoolean(KEY_ENABLED, false)
+      context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).getBoolean(KEY_ENABLED, true)
 
   fun setEnabled(context: Context, enabled: Boolean) {
     context

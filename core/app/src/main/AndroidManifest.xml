@@ -87,8 +87,17 @@
     <!--
       AI 助手真全屏宿主：独立窗口 + 隐藏系统栏（沉浸式）。
       与 FloatingAssistantView.Mode.FULLSCREEN（窗口内最大化）不同，这里是真正的全屏。
+
+      configChanges：与 EditorActivityKt 同款（orientation|screenSize）+ 几个常见项。
+      助手面板的内容由 orchestrator（进程级单例）驱动，本 Activity 只是宿主——
+      旋转/窗口尺寸变化时没有必须重建的配置依赖，声明后系统直接把变更推给本
+      Activity，避免「转个屏就把正在流式输出的界面重建一遍」。
+      注意：这只能挡住配置变更类重建；系统内存回收仍会销毁 Activity（那种情况下
+      靠 dispose 不取消运行 + 重建后回放来保证工作不丢）。
     -->
     <activity
+      android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden|density|uiMode"
+      android:launchMode="singleTop"
       android:exported="false"
       android:name=".activities.editor.AssistantFullscreenActivity"
       android:theme="@style/Theme.AndroidIDE" />

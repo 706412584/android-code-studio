@@ -202,10 +202,10 @@ class FloatingAssistantView(
   /**
    * Compose 渲染路径的面板；为 null 时消息区走 [adapter] + RecyclerView（XML 路径）。
    *
-   * <p>两条路径**并存**而不是替换：Compose 侧组件尚未真机验证，作为回退必须能随时切回来。
-   * 是否启用由 [com.tom.rv2ide.artificial.agent.compose.AssistantComposeRender] 决定，
-   * 默认关闭。两者共用同一个 [adapter] 作为数据源——Compose 读它的快照、写它的展开态，
-   * 因此切换路径不会丢消息，也不会出现两份互不同步的对话。
+   * <p>两条路径并存：Compose 是**默认且唯一在维护**的路径（[AssistantComposeRender]
+   * 默认 true），XML 列表仅作紧急回退保留。两者共用同一个 [adapter] 作为数据源——
+   * Compose 读它的快照、写它的展开态，因此切换路径不会丢消息，
+   * 也不会出现两份互不同步的对话。
    */
   private var composePanel: com.tom.rv2ide.artificial.agent.compose.AssistantComposePanelHost? = null
 
@@ -637,7 +637,7 @@ class FloatingAssistantView(
         registry.getCachedDisplayCategory(com.tom.rv2ide.ai.tool.ToolRegistry.canonicalName(toolName))
     }
 
-    // Compose 渲染路径（并存开关，默认关）。接在适配器配置之后：面板要读适配器快照，
+    // Compose 渲染路径（2026-10-09 起默认开）。接在适配器配置之后：面板要读适配器快照，
     // 且回滚/菜单回调都落在本类已有方法上，早于此处装上会拿到未配置完的适配器。
     // 与偏好变更走同一个入口，避免「初装」与「改开关」两条路径的判定逻辑分叉。
     applyComposeRenderPath()
@@ -1108,11 +1108,24 @@ class FloatingAssistantView(
     return true
   }
 
-  /** 释放资源：取消进行中的运行，避免视图销毁后回调仍写控件。 */
+  /**
+   * 释放资源：**退订并断开回调，但不取消正在进行的运行**。
+   *
+   * <p><b>为什么不再 cancelAll</b>（2026-10-09 修正）：视图销毁 ≠ 用户想停下工作。
+   * 三种销毁场景里只有一种是「真的不要了」：
+   * <ul>
+   *   <li>切全屏 / 旋转 / 系统回收后重建——运行应当继续，新视图会重新订阅并回放；
+   *   <li>切到另一个会话——同上，后台会话本就该继续跑（`runInConversation` 的显式
+   *       会话 id 设计就是为了这个）；
+   *   <li>用户点停止键——由 [onStopClicked] / [cancel] 显式取消，不走本方法。
+   * </ul>
+   * 旧行为下「进全屏」会顺手把刚发起的运行掐掉——用户看到的是「工作中状态丢了」，
+   * 实际是被终止。运行本体挂在 orchestrator（进程级单例）上继续跑，只损失渲染连续性。
+   *
+   * <p>视图侧的收尾仍必须做：退订（否则 orchestrator 的订阅表持有已销毁的视图，
+   * 既泄漏又往 detach 的控件写数据）、摘除存活集合、让出回调、注销偏好监听。
+   */
   fun dispose() {
-    // 视图销毁要停掉**所有**会话的运行：协程挂在 lifecycleScope 上会随之取消，
-    // 但 orchestrator 的取消令牌与 MCP 连接需要显式收尾。
-    cancelAll()
     // 退订事件广播。**必须**做：orchestrator 是进程级单例，不退订会让它的订阅表
     // 一直持有本视图（及其 binding/Adapter），销毁后既泄漏内存，又会在下一个
     // 事件到来时往已 detach 的控件里写数据。
