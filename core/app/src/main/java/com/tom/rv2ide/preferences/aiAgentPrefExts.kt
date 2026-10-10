@@ -19,6 +19,7 @@ package com.tom.rv2ide.preferences
 
 import android.content.Context
 import android.content.Intent
+import android.view.View
 import android.widget.Toast
 import androidx.preference.Preference
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
@@ -1991,11 +1992,14 @@ private class McpServersPreference(
         servers
             .map { server ->
               val state = if (server.enabled) "✓" else "✗"
-              // 标出传输类型：同一个 server 用 http 还是 sse 连不通时表现完全不同
-              // （前者打不开长连接，后者 POST 无响应），出问题时需要一眼看到用的是哪个。
+              // 标出传输类型：http/sse/stdio 连不通时表现完全不同（HTTP 无响应、
+              // SSE 打不开长连接、stdio 起不了进程），出问题时需要一眼看到用的是哪个。
               val type =
-                  if (server.type == com.tom.rv2ide.artificial.agent.McpServers.TYPE_SSE) "SSE"
-                  else "HTTP"
+                  when (server.type) {
+                    com.tom.rv2ide.artificial.agent.McpServers.TYPE_SSE -> "SSE"
+                    com.tom.rv2ide.artificial.agent.McpServers.TYPE_STDIO -> "STDIO"
+                    else -> "HTTP"
+                  }
               "$state [$type] ${server.displayName()}"
             }
             .toMutableList()
@@ -2038,10 +2042,16 @@ private class McpServersPreference(
               for (item in updated) {
                 next.add(
                     if (item.url == server.url)
-                        // 必须带上 item.type：四参构造器默认成 http，
-                        // 漏了它会让用户切换启用状态时把 SSE 配置静默改成 HTTP。
+                        // 必须带上 item.type 与 stdio 三字段：七参构造器之外的重载会把
+                        // 它们默认清空，漏了会让切换启用状态时把 stdio 配置静默降级成 http。
                         com.tom.rv2ide.artificial.agent.McpServers.Server(
-                            item.url, item.label, !item.enabled, item.type)
+                            item.url,
+                            item.label,
+                            !item.enabled,
+                            item.type,
+                            item.args,
+                            item.env,
+                            item.cwd)
                     else item)
               }
               store.save(next)
@@ -2073,13 +2083,14 @@ private class McpServersPreference(
     container.addView(urlField)
     container.addView(labelField)
 
-    // 传输类型选择。默认选中 http：两套传输的地址形态不同（http 是消息端点、
-    // sse 是事件流端点），选错时连接会以很难归因的方式失败，因此必须让用户显式选择
-    // 而不是靠地址猜。
+    // 传输类型选择。默认选中 http：三种传输的地址形态不同（http 是消息端点、
+    // sse 是事件流端点、stdio 是本地命令），选错时连接会以很难归因的方式失败，
+    // 因此必须让用户显式选择而不是靠地址猜。
     val typeLabels =
         arrayOf(
             context.getString(R.string.ai_agent_mcp_type_http),
-            context.getString(R.string.ai_agent_mcp_type_sse))
+            context.getString(R.string.ai_agent_mcp_type_sse),
+            context.getString(R.string.ai_agent_mcp_type_stdio))
     container.addView(
         android.widget.TextView(context).apply {
           text = context.getString(R.string.ai_agent_mcp_type_label)
@@ -2093,6 +2104,66 @@ private class McpServersPreference(
         }
     container.addView(typePicker)
 
+    // stdio 专属字段：命令参数（空格分隔）、附加环境变量（KEY=VALUE 每行一个）、工作目录。
+    val argsField = com.google.android.material.textfield.TextInputEditText(context).apply {
+      hint = "--port 8080 --verbose"
+      inputType = android.text.InputType.TYPE_CLASS_TEXT
+    }
+    val envField = com.google.android.material.textfield.TextInputEditText(context).apply {
+      hint = "API_KEY=xxx\nLOG_LEVEL=debug"
+      inputType =
+          android.text.InputType.TYPE_CLASS_TEXT or
+              android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE
+    }
+    val cwdField = com.google.android.material.textfield.TextInputEditText(context).apply {
+      hint = "/data/data/com.termux/files/home（留空继承）"
+      inputType = android.text.InputType.TYPE_CLASS_TEXT
+    }
+    val stdioViews = listOf(argsField, envField, cwdField)
+    container.addView(
+        android.widget.TextView(context).apply {
+          text = context.getString(R.string.ai_agent_mcp_stdio_args)
+          setPadding(0, 24, 0, 4)
+        })
+    container.addView(argsField)
+    container.addView(
+        android.widget.TextView(context).apply {
+          text = context.getString(R.string.ai_agent_mcp_stdio_env)
+          setPadding(0, 16, 0, 4)
+        })
+    container.addView(envField)
+    container.addView(
+        android.widget.TextView(context).apply {
+          text = context.getString(R.string.ai_agent_mcp_stdio_cwd)
+          setPadding(0, 16, 0, 4)
+        })
+    container.addView(cwdField)
+    // 非 stdio 类型隐藏三字段：url 输入时它们没有意义，只会干扰。
+    fun syncStdioVisibility() {
+      val isStdio = typePicker.selectedItemPosition == 2
+      stdioViews.forEach { it.visibility = if (isStdio) View.VISIBLE else View.GONE }
+      (stdioViews[0].parent as? android.view.ViewGroup)?.let { group ->
+        // 提示行与输入框同显隐：按 idx 反查（args 提示行在 argsField 前 1 位）。
+        val idx = group.indexOfChild(argsField)
+        group.getChildAt(idx - 1).visibility = if (isStdio) View.VISIBLE else View.GONE
+      }
+      (stdioViews[1].parent as? android.view.ViewGroup)?.let { group ->
+        val idx = group.indexOfChild(envField)
+        group.getChildAt(idx - 1).visibility = if (isStdio) View.VISIBLE else View.GONE
+      }
+      (stdioViews[2].parent as? android.view.ViewGroup)?.let { group ->
+        val idx = group.indexOfChild(cwdField)
+        group.getChildAt(idx - 1).visibility = if (isStdio) View.VISIBLE else View.GONE
+      }
+    }
+    typePicker.onItemSelectedListener =
+        object : android.widget.AdapterView.OnItemSelectedListener {
+          override fun onItemSelected(parent: android.widget.AdapterView<*>?, view: android.view.View?, position: Int, id: Long) =
+              syncStdioVisibility()
+
+          override fun onNothingSelected(parent: android.widget.AdapterView<*>?) = Unit
+        }
+
     com.google.android.material.dialog.MaterialAlertDialogBuilder(context)
         .setTitle(R.string.ai_agent_mcp_add)
         .setMessage(R.string.ai_agent_mcp_add_hint)
@@ -2101,13 +2172,37 @@ private class McpServersPreference(
           val url = urlField.text?.toString()?.trim().orEmpty()
           if (url.isNotEmpty()) {
             val type =
-                if (typePicker.selectedItemPosition == 1)
-                    com.tom.rv2ide.artificial.agent.McpServers.TYPE_SSE
-                else com.tom.rv2ide.artificial.agent.McpServers.TYPE_HTTP
-            com.tom.rv2ide.artificial.agent.McpServers(context)
-                .add(
-                    com.tom.rv2ide.artificial.agent.McpServers.Server(
-                        url, labelField.text?.toString()?.trim().orEmpty(), true, type))
+                when (typePicker.selectedItemPosition) {
+                  1 -> com.tom.rv2ide.artificial.agent.McpServers.TYPE_SSE
+                  2 -> com.tom.rv2ide.artificial.agent.McpServers.TYPE_STDIO
+                  else -> com.tom.rv2ide.artificial.agent.McpServers.TYPE_HTTP
+                }
+            if (type == com.tom.rv2ide.artificial.agent.McpServers.TYPE_STDIO) {
+              // stdio：url 槽位存命令名；args 按空白切分（不支持带空格的参数——
+              // 键值对场景够用，引号解析的复杂度不值得）。
+              val args = argsField.text?.toString()?.trim()?.split(Regex("\\s+"))?.filter { it.isNotEmpty() } ?: emptyList()
+              val env =
+                  envField.text?.toString()?.trim()?.lines()
+                      ?.mapNotNull { line ->
+                        val kv = line.split('=', limit = 2)
+                        if (kv.size == 2 && kv[0].trim().isNotEmpty()) {
+                          kv[0].trim() to kv[1].trim()
+                        } else null
+                      }
+                      ?.toMap()
+                      ?: emptyMap()
+              val cwd = cwdField.text?.toString()?.trim().orEmpty()
+              com.tom.rv2ide.artificial.agent.McpServers(context)
+                  .add(
+                      com.tom.rv2ide.artificial.agent.McpServers.Server(
+                          url, labelField.text?.toString()?.trim().orEmpty(), true,
+                          type, args, env, cwd))
+            } else {
+              com.tom.rv2ide.artificial.agent.McpServers(context)
+                  .add(
+                      com.tom.rv2ide.artificial.agent.McpServers.Server(
+                          url, labelField.text?.toString()?.trim().orEmpty(), true, type))
+            }
             preference.summary = refreshSummary(context)
           }
         }

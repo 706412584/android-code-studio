@@ -150,6 +150,10 @@
   <string name="ai_agent_skills_import_empty">No .md files in Downloads. Put skill files there first.</string>
   <string name="ai_agent_skills_import_ok">Imported: %1$s</string>
   <string name="ai_agent_skills_import_failed">Import failed — check the file and try again</string>
+  <string name="ai_agent_mcp_type_stdio">stdio (local process via Termux)</string>
+  <string name="ai_agent_mcp_stdio_args">Command arguments (space separated)</string>
+  <string name="ai_agent_mcp_stdio_env">Environment variables (KEY=VALUE, one per line)</string>
+  <string name="ai_agent_mcp_stdio_cwd">Working directory (optional)</string>
   <string name="ai_agent_page_providers_summary">API keys, custom endpoint, enable switch</string>
   <string name="ai_agent_page_tools_title">Tools and permissions</string>
   <string name="ai_agent_page_tools_summary">Chat mode, permission level, shell backend, code completion</string>

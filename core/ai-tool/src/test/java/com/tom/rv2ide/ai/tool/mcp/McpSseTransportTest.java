@@ -654,7 +654,8 @@ final class McpSseTransportTest {
     assertEquals(McpClient.Transport.HTTP, McpClient.Transport.fromId(null));
     assertEquals(McpClient.Transport.HTTP, McpClient.Transport.fromId(""));
     assertEquals(McpClient.Transport.HTTP, McpClient.Transport.fromId("http"));
-    assertEquals(McpClient.Transport.HTTP, McpClient.Transport.fromId("stdio"));
+    // stdio 现在是受支持的传输（Termux 本地进程），不再是未知值。
+    assertEquals(McpClient.Transport.STDIO, McpClient.Transport.fromId("stdio"));
     assertEquals(McpClient.Transport.HTTP, McpClient.Transport.fromId("garbage"));
     assertEquals(McpClient.Transport.SSE, McpClient.Transport.fromId("sse"));
     assertEquals(McpClient.Transport.SSE, McpClient.Transport.fromId(" SSE "));

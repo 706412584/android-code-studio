@@ -1329,7 +1329,12 @@ public final class AgentOrchestrator {
                 http,
                 server.url,
                 java.util.Collections.<String, String>emptyMap(),
-                com.tom.rv2ide.ai.tool.mcp.McpClient.Transport.fromId(server.type));
+                com.tom.rv2ide.ai.tool.mcp.McpClient.Transport.fromId(server.type),
+                // stdio：url 槽位存命令名，参数/环境/工作目录随配置下发。
+                server.url,
+                server.args,
+                server.env,
+                server.cwd);
         java.util.List<com.tom.rv2ide.ai.tool.mcp.McpToolInfo> tools;
         try {
           tools = client.listTools();
