@@ -41,6 +41,7 @@ import com.tom.rv2ide.templates.preferences.Options
 
 class ComposeEmptyActivity : Template {
   override val displayName = "Compose Activity"
+  override val description = "Jetpack Compose 声明式 UI 入门：单 Activity + Compose 界面，纯 Kotlin 写界面"
   override val templateType = Template.TemplateType.ACTIVITY
 
   private val projectStructBuilder = ProjectStructBuilder()

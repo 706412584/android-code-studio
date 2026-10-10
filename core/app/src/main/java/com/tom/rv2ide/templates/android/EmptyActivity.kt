@@ -43,6 +43,7 @@ import kotlinx.coroutines.withContext
 
 class EmptyActivity : Template {
   override val displayName = "Empty Activity"
+  override val description = "最简单的入门模板：一个空白 Activity + XML 布局，适合新手上手"
   override val templateType = Template.TemplateType.ACTIVITY
 
   private val projectStructBuilder = ProjectStructBuilder()

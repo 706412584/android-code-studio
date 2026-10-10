@@ -44,6 +44,7 @@ import kotlinx.coroutines.withContext
 
 class NativeCpp : Template {
   override val displayName = "Native C++"
+  override val description = "C++ 原生工程（需 NDK/CMake），适合原生库/跨平台 C++ 代码开发"
   override val templateType = Template.TemplateType.ACTIVITY
 
   private val projectStructBuilder = ProjectStructBuilder()

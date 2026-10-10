@@ -44,6 +44,7 @@ import kotlinx.coroutines.withContext
 
 class ResponsiveActivity : Template {
   override val displayName = "Responsive activity"
+  override val description = "手机/平板双栏自适应布局，大屏自动显示列表+详情"
   override val templateType = Template.TemplateType.ACTIVITY
 
   private val projectStructBuilder = ProjectStructBuilder()

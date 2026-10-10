@@ -41,6 +41,7 @@ import kotlinx.coroutines.withContext
 
 class BasicActivity : Template {
   override val displayName = "Basic Activity"
+  override val description = "带 AppBar 与 FloatingActionButton 的标准 Material 界面，适合常规应用"
   override val templateType = Template.TemplateType.ACTIVITY
 
   private val projectStructBuilder = ProjectStructBuilder()

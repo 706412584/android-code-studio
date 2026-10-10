@@ -44,6 +44,7 @@ import kotlinx.coroutines.withContext
 
 class BottomNavigationActivity : Template {
   override val displayName = "Bottom Navigation"
+  override val description = "底部标签栏导航骨架，适合多标签切换类应用（如首页/发现/我的）"
   override val templateType = Template.TemplateType.ACTIVITY
 
   private val projectStructBuilder = ProjectStructBuilder()

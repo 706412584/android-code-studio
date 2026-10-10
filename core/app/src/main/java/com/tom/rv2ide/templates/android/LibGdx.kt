@@ -64,6 +64,7 @@ import kotlinx.coroutines.withContext
  */
 class LibGdx : Template {
   override val displayName = "LibGDX Game"
+  override val description = "libGDX 跨平台 2D/3D 游戏引擎，零 NDK：原生库已预置，装好即可构建"
   override val templateType = Template.TemplateType.ACTIVITY
 
   companion object {

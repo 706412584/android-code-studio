@@ -44,6 +44,7 @@ import kotlinx.coroutines.withContext
 
 class GameActivity : Template {
   override val displayName = "Game Activity"
+  override val description = "Android 官方游戏 Activity（需 NDK/CMake），面向重型 3D 游戏开发"
   override val templateType = Template.TemplateType.ACTIVITY
 
   private val projectStructBuilder = ProjectStructBuilder()

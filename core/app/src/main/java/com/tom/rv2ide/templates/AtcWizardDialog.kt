@@ -590,14 +590,25 @@ class TemplateAdapter(
     val title =
         TextView(ctx).apply {
           textSize = 14f
-          setPadding(12.dp, 12.dp, 12.dp, 8.dp)
+          setPadding(12.dp, 12.dp, 12.dp, 4.dp)
           gravity = android.view.Gravity.CENTER
         }
-    
+
+    // 模板的一句话中文描述：帮助用户理解模板适合做什么。无描述的模板此行隐藏。
+    val description =
+        TextView(ctx).apply {
+          textSize = 11f
+          setPadding(12.dp, 0.dp, 12.dp, 4.dp)
+          gravity = android.view.Gravity.CENTER
+          setTextColor(android.graphics.Color.GRAY)
+          maxLines = 3
+          visibility = android.view.View.GONE
+        }
+
     val image =
         ImageView(ctx).apply {
           scaleType = ImageView.ScaleType.CENTER_CROP
-          
+
           if (screenWidthDp >= 600) {
             android.util.Log.d("TemplateAdapter", "Using small size for large screen")
             layoutParams = LinearLayout.LayoutParams(100.dp, 100.dp).apply {
@@ -610,14 +621,23 @@ class TemplateAdapter(
         }
 
     layout.addView(title)
+    layout.addView(description)
     layout.addView(image)
     card.addView(layout)
-    return TemplateVH(card, title, image)
+    return TemplateVH(card, title, image, description)
   }
 
   override fun onBindViewHolder(holder: TemplateVH, position: Int) {
     val template = templates[position]
     holder.title.text = template.displayName
+
+    val desc = template.description
+    if (desc.isNotBlank()) {
+      holder.description.text = desc
+      holder.description.visibility = android.view.View.VISIBLE
+    } else {
+      holder.description.visibility = android.view.View.GONE
+    }
 
     val resId =
         ctx.resources.getIdentifier(
@@ -632,8 +652,12 @@ class TemplateAdapter(
   override fun getItemCount() = templates.size
 }
 
-class TemplateVH(val card: MaterialCardView, val title: TextView, val image: ImageView) :
-    RecyclerView.ViewHolder(card)
+class TemplateVH(
+    val card: MaterialCardView,
+    val title: TextView,
+    val image: ImageView,
+    val description: TextView,
+) : RecyclerView.ViewHolder(card)
 
 class SimpleTextWatcher(private val afterChanged: (CharSequence?) -> Unit) :
     android.text.TextWatcher {

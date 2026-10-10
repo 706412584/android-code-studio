@@ -29,6 +29,14 @@ import java.io.File
 
 interface Template {
   val displayName: String
+
+  /**
+   * 模板的一句话中文描述，显示在向导卡片标题下方，帮助用户理解该模板适合做什么。
+   * 空串表示不显示描述行（旧模板未配时保持原样）。
+   */
+  val description: String
+    get() = ""
+
   val templateType: TemplateType
 
   /**

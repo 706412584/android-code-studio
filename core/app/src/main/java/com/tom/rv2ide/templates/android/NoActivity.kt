@@ -41,6 +41,7 @@ import kotlinx.coroutines.withContext
 
 class NoActivity : Template {
   override val displayName = "No Activity"
+  override val description = "只生成空工程骨架，不含任何界面代码，适合从零手写一切的场景"
   override val templateType = Template.TemplateType.ACTIVITY
 
   private val projectStructBuilder = ProjectStructBuilder()

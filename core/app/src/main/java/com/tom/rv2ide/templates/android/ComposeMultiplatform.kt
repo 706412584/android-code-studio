@@ -92,6 +92,9 @@ import kotlinx.coroutines.withContext
  */
 class ComposeMultiplatform : Template {
   override val displayName = "Compose Multiplatform"
+  override val description =
+      "一份 Compose UI 代码同时跑 Android、桌面、网页三个平台；" +
+          "手机上出安卓 APK，桌面与网页安装包由 GitHub Actions 云端打包"
   override val templateType = Template.TemplateType.COMPOSE
 
   private val projectStructBuilder = ProjectStructBuilder()
@@ -179,17 +182,17 @@ class ComposeMultiplatform : Template {
           gradleDir.mkdirs()
           writeVersionCatalog(gradleDir)
 
-          // ---- settings.gradle.kts（复用结构化 writer：仓库预设 + include 三模块）----
+          // ---- settings.gradle.kts：带国内镜像的仓库预设 + include 三模块 ----
+          // 不用 RepositoryPresets.STANDARD_KTS（它没有镜像，会影响所有模板所以
+          // 不能动）：CMP 的依赖体量大（KGP+CMP 约 300MB），设备直连
+          // Maven Central 高延迟会导致插件 marker 解析超时（2026-10-10 实机
+          // 验证：阿里云镜像前置后 sync 成功）。
           settingsGradleWriter.writeToFile(
               projectRoot,
               SettingsGradleFileType.KTS,
               settingsGradleConfig {
-                pluginManagement(
-                    com.tom.androidcodestudio.project.manager.builder.toplevel.RepositoryPresets
-                        .STANDARD_KTS)
-                dependencyResolution(
-                    com.tom.androidcodestudio.project.manager.builder.toplevel.RepositoryPresets
-                        .DEPENDENCY_RESOLUTION_KTS)
+                pluginManagement(MIRRORED_PLUGIN_REPOSITORIES)
+                dependencyResolution(MIRRORED_DEPENDENCY_REPOSITORIES)
                 rootProjectName(options.projectName)
                 include(PRIMARY_MODULES)
               },
@@ -539,5 +542,29 @@ class ComposeMultiplatform : Template {
      * 版本）的 AAR manifest 声明 minSdkVersion="23"。向导下拉从 21 起选，这里兜底。
      */
     const val CMP_MIN_SDK = 23
+
+    /**
+     * 阿里云镜像前置的插件仓库。镜像在前、官方在后：镜像命中直接走国内快路，
+     * 未命中回落官方，不影响任何可用性。
+     */
+    const val MIRRORED_PLUGIN_REPOSITORIES =
+        """repositories {
+            maven { url = uri("https://maven.aliyun.com/repository/gradle-plugin") }
+            maven { url = uri("https://maven.aliyun.com/repository/google") }
+            maven { url = uri("https://maven.aliyun.com/repository/central") }
+            google()
+            mavenCentral()
+            gradlePluginPortal()
+        }"""
+
+    /** 阿里云镜像前置的依赖仓库（同上策略）。 */
+    const val MIRRORED_DEPENDENCY_REPOSITORIES =
+        """repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+            repositories {
+                maven { url = uri("https://maven.aliyun.com/repository/google") }
+                maven { url = uri("https://maven.aliyun.com/repository/central") }
+                google()
+                mavenCentral()
+            }"""
   }
 }

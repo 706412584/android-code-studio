@@ -80,6 +80,7 @@ import kotlinx.coroutines.withContext
  */
 class QuickDevelop : Template {
   override val displayName = "Quick Develop"
+  override val description = "中文命名组件的低代码模板：45 个中文 UI 组件 + 工具库，不写 XML 快速搭界面"
   override val templateType = Template.TemplateType.ACTIVITY
 
   private val projectStructBuilder = ProjectStructBuilder()
