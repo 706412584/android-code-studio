@@ -17,7 +17,6 @@
 
 package com.tom.rv2ide.preferences
 
-import android.app.AlertDialog
 import android.content.Context
 import android.graphics.Typeface
 import android.util.TypedValue
@@ -105,7 +104,7 @@ internal class ProviderManagementPreference(
           records.map { "${it.getLabel()}  ·  ${stateText(context, it)}" }.toTypedArray()
         }
 
-    AlertDialog.Builder(context)
+    com.google.android.material.dialog.MaterialAlertDialogBuilder(context)
         .setTitle(R.string.ai_agent_providers_title)
         .setItems(labels) { _, which ->
           // 空列表时只有一条提示项，点它等同于点「添加」。
@@ -132,7 +131,7 @@ internal class ProviderManagementPreference(
             context.getString(R.string.ai_agent_provider_edit),
             context.getString(R.string.ai_agent_provider_delete),
         )
-    AlertDialog.Builder(context)
+    com.google.android.material.dialog.MaterialAlertDialogBuilder(context)
         .setTitle(record.getLabel())
         .setItems(options) { _, which ->
           when (which) {
@@ -145,7 +144,7 @@ internal class ProviderManagementPreference(
   }
 
   private fun confirmDelete(context: Context, record: ProviderConfig, onChanged: () -> Unit) {
-    AlertDialog.Builder(context)
+    com.google.android.material.dialog.MaterialAlertDialogBuilder(context)
         .setMessage(context.getString(R.string.ai_agent_provider_delete_confirm, record.getLabel()))
         .setPositiveButton(R.string.ai_agent_provider_delete) { _, _ ->
           ProviderConfigStore(context).delete(record.getId())
@@ -260,7 +259,7 @@ internal class ProviderManagementPreference(
 
     wireFetch(context, binding, slotInputs, { focusedSlot }, { readDraft() })
 
-    AlertDialog.Builder(context)
+    com.google.android.material.dialog.MaterialAlertDialogBuilder(context)
         .setTitle(if (isNew) R.string.ai_agent_provider_add else R.string.ai_agent_provider_edit)
         .setView(binding.root)
         .setPositiveButton(R.string.ai_agent_provider_save) { _, _ ->
