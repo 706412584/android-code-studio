@@ -21,15 +21,19 @@
 
 package com.tom.rv2ide.artificial.agent.compose.components.markdown
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
@@ -49,6 +53,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
@@ -79,6 +84,8 @@ import com.mikepenz.markdown.compose.elements.MarkdownCodeFence
 import com.mikepenz.markdown.compose.elements.MarkdownTable
 import com.mikepenz.markdown.compose.elements.MarkdownTableHeader
 import com.mikepenz.markdown.compose.elements.MarkdownTableRow
+import org.intellij.markdown.ast.ASTNode
+import org.intellij.markdown.flavours.gfm.GFMElementTypes
 import com.mikepenz.markdown.compose.elements.material.MarkdownBasicText
 import com.mikepenz.markdown.m3.markdownColor
 import com.mikepenz.markdown.m3.markdownTypography
@@ -394,32 +401,54 @@ internal fun MarkdownContent(
                     }
                 },
                 // 库默认 maxLines=1 + Ellipsis，单元格长文会被截断；这里放开为完整多行显示。
+                //
+                // **超大表格守卫（真机 OOM 修复，方案 A）**：MarkdownTableBasicText 渲染每个
+                // 单元格时走 EntityConverter.replaceEntities（Regex.find + replace 重建字符串）。
+                // 一张几百行的表格意味着几千次 Regex 分配；堆已接近上限时（长会话 + 图片
+                // base64），连 24 字节的 Matcher 都分配不出——真机实测：
+                // `OutOfMemoryError: Failed to allocate a 24 byte allocation ... <1% of heap
+                // free after GC`，栈顶正是 replaceEntities ← MarkdownTableBasicText ← 本表格行。
+                // 超阈值表格退化为纯文本面板：内容完整可见、可复制，但不走表格组件，
+                // 从根上避开 Regex 风暴。阈值取值保守——正常回答里的表格远小于它。
                 table = {
-                    MarkdownTable(
-                        content = it.content,
-                        node = it.node,
-                        style = it.typography.table,
-                        headerBlock = { content, header, tableWidth, style ->
-                            MarkdownTableHeader(
-                                content = content,
-                                header = header,
-                                tableWidth = tableWidth,
-                                style = style,
-                                maxLines = Int.MAX_VALUE,
-                                overflow = TextOverflow.Clip,
-                            )
-                        },
-                        rowBlock = { content, header, tableWidth, style ->
-                            MarkdownTableRow(
-                                content = content,
-                                header = header,
-                                tableWidth = tableWidth,
-                                style = style,
-                                maxLines = Int.MAX_VALUE,
-                                overflow = TextOverflow.Clip,
-                            )
-                        },
-                    )
+                    val node = it.node
+                    val tooLarge =
+                        remember(it.content, node.startOffset, node.endOffset) {
+                            val rowCount =
+                                countDescendantRows(node, GFMElementTypes.ROW, TABLE_GUARD_MAX_ROWS)
+                            // 节点区间的字符数即该表格的源文本长度（GFM 表格为叶子区间的连续文本）
+                            rowCount > TABLE_GUARD_MAX_ROWS ||
+                                (node.endOffset - node.startOffset) > TABLE_GUARD_MAX_CHARS
+                        }
+                    if (tooLarge) {
+                        MarkdownLargeTableFallback(it.content, node)
+                    } else {
+                        MarkdownTable(
+                            content = it.content,
+                            node = node,
+                            style = it.typography.table,
+                            headerBlock = { content, header, tableWidth, style ->
+                                MarkdownTableHeader(
+                                    content = content,
+                                    header = header,
+                                    tableWidth = tableWidth,
+                                    style = style,
+                                    maxLines = Int.MAX_VALUE,
+                                    overflow = TextOverflow.Clip,
+                                )
+                            },
+                            rowBlock = { content, header, tableWidth, style ->
+                                MarkdownTableRow(
+                                    content = content,
+                                    header = header,
+                                    tableWidth = tableWidth,
+                                    style = style,
+                                    maxLines = Int.MAX_VALUE,
+                                    overflow = TextOverflow.Clip,
+                                )
+                            },
+                        )
+                    }
                 },
                 )
             }
@@ -621,4 +650,86 @@ private fun PlainMarkdownText(
         modifier = modifier,
         style = MaterialTheme.typography.bodyMedium.copy(color = color, lineHeight = 20.sp)
     )
+}
+
+// ── 超大表格守卫（真机 OOM 修复，方案 A）──
+
+/**
+ * 表格行数上限。超过即退化为纯文本。
+ *
+ * <p>取值依据：真机 OOM 崩溃栈（`EntityConverter.replaceEntities` 的 Regex 分配失败）来自
+ * 一张**数百行**的表格；而正常回答里的表格通常 ≤20 行。50 行留足余量，又不至于让守卫
+ * 在正常内容上误触发。
+ */
+private const val TABLE_GUARD_MAX_ROWS = 50
+
+/**
+ * 表格源文本字符数上限（行数之外的第二道闸）。
+ *
+ * <p>行数不多但**单元格极长**（一行几千字符）的表格同样是 Regex 风暴源——
+ * `MarkdownTableBasicText` 对每个单元格做 `replaceEntities`，单元格越大分配越多。
+ * 8000 字符约等于一整屏的文本量，超过就不适合表格形态。
+ */
+private const val TABLE_GUARD_MAX_CHARS = 8000
+
+/**
+ * 数一个 AST 子树里的表格行节点数，最多数到 [limit]（超过即提前返回，不做全树遍历）。
+ *
+ * <p>用节点类型（`GFMElementTypes.ROW`）而不是按 `\n` 切文本：表格的源文本区间里
+ * 还可能包含对齐行（`|---|---|`）与转义换行，节点计数才是行数的准确定义。
+ */
+private fun countDescendantRows(node: ASTNode, rowType: Any, limit: Int): Int {
+    var count = 0
+    // 显式栈遍历，不用递归：恶意/畸形输入理论上可能造出极深的嵌套，
+    // 递归会把栈打爆（崩溃比 OOM 更难排查）。
+    val stack = ArrayDeque<ASTNode>()
+    stack.addLast(node)
+    while (stack.isNotEmpty()) {
+        val current = stack.removeLast()
+        for (child in current.children) {
+            if (child.type === rowType) {
+                count++
+                if (count > limit) {
+                    return count
+                }
+            }
+            stack.addLast(child)
+        }
+    }
+    return count
+}
+
+/**
+ * 超大表格的退化渲染：纯文本面板（等宽、限高滚动、可选中复制）。
+ *
+ * <p>内容用 `node` 的 offset 区间从 `content` 里截取——那正是该表格的源文本
+ * （GFM 表格节点覆盖完整的表格区间）。不用 `it.content` 整体：一个 Markdown 文档里
+ * 可能有多张表，`content` 是全文。
+ */
+@Composable
+private fun MarkdownLargeTableFallback(content: String, node: ASTNode) {
+    val text = remember(content, node.startOffset, node.endOffset) {
+        val start = node.startOffset.coerceIn(0, content.length)
+        val end = node.endOffset.coerceIn(start, content.length)
+        content.substring(start, end)
+    }
+    Box(
+        modifier =
+            Modifier.fillMaxWidth()
+                .heightIn(max = 320.dp)
+                .clip(RoundedCornerShape(8.dp))
+                .background(LocalMarkdownColors.current.tableBackground)
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 8.dp, vertical = 6.dp),
+    ) {
+        Text(
+            text = text,
+            color = LocalMarkdownColors.current.text,
+            style =
+                MaterialTheme.typography.bodySmall.copy(
+                    fontFamily = FontFamily.Monospace,
+                    lineHeight = 16.sp,
+                ),
+        )
+    }
 }

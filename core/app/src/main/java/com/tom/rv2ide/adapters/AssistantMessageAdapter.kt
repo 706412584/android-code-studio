@@ -699,11 +699,13 @@ class AssistantMessageAdapter(
   }
 
   /**
-   * 向「运行中」的工具卡片追加一行步骤记录。
+   * 向「运行中」的工具卡片追加一行步骤记录（无目标 id 的回退路径）。
    *
    * <p>只回填到最近一张仍在运行的卡片（与 TOOL_FINISHED 的关联方式一致）——
-   * 步骤由工具执行期间产生，此刻不可能有别的卡片在跑。没有运行中的卡片时静默丢弃：
+   * 串行场景下此刻不可能有别的卡片在跑。没有运行中的卡片时静默丢弃：
    * 迟到的进度行没有归属，插到任意卡片上都是错误关联。
+   *
+   * <p>并行派遣时不要用这个重载——用 [appendToolStep] 的带 id 版本按调用归卡。
    */
   fun appendToolStep(step: String) {
     // 找「最近一张运行中的卡片」，但必须能看见组内的：分组后运行中的卡片
@@ -721,6 +723,17 @@ class AssistantMessageAdapter(
     }
     val running = target ?: return
     replaceToolCall(running.id) { it.copy(steps = it.steps + step) }
+  }
+
+  /**
+   * 向**指定卡片**追加一行步骤记录（并行派遣的归卡路径）。
+   *
+   * <p>宿主把 PROGRESS 事件的调用 id 解析成卡片 id 后传进来（见
+   * FloatingAssistantView 的 toolCardIdByCallId）。id 不存在时静默忽略，与其它
+   * 回填方法同约定——卡片可能已被清表（新会话）。
+   */
+  fun appendToolStep(id: Long, step: String) {
+    replaceToolCall(id) { it.copy(steps = it.steps + step) }
   }
 
   /**

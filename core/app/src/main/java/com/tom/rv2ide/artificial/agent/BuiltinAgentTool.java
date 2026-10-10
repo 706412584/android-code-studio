@@ -87,6 +87,12 @@ public final class BuiltinAgentTool extends BaseTool {
     return ToolDisplayCategory.AGENT;
   }
 
+  /** 同 {@link com.tom.rv2ide.ai.tool.AgentTool#isConcurrencySafe()}：子代理可并行派遣。 */
+  @Override
+  public boolean isConcurrencySafe() {
+    return true;
+  }
+
   @Override
   public JSONObject getParameters() throws org.json.JSONException {
     return new JSONObject()

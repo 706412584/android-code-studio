@@ -132,6 +132,13 @@ public final class ToolNames {
      */
     public static final String IDE_LOG_READ = "ide_log_read";
     /**
+     * 内存分析：进程内存画像 + AI 助手各子系统规模（消息数/缓存/队列）。
+     *
+     * <p>用于卡顿与 OOM 排查（用户实测的 Markdown 表格 OOM 之后加的诊断口）。
+     * 只读，无副作用。
+     */
+    public static final String MEMORY_ANALYSIS = "memory_analysis";
+    /**
      * 布局预览：把 `res/layout/*.xml` 经真实 View inflate 渲染成图片回传模型。
      *
      * <p>让 AI 改完 UI 后能自己看一眼渲染结果（app 层工具，需 Android 与模块依赖）。

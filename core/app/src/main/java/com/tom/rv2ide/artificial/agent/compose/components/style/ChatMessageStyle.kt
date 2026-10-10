@@ -223,6 +223,67 @@ private val BRAIN_PATH_DATA =
     )
 
 /**
+ * 「子代理」图标：机器人头（lucide `bot`，cc-haha 桌面端 AgentToolGroup 同款）。
+ *
+ * <p><b>来源</b>：cc-haha `desktop/src/components/chat/ToolCallGroup.tsx` 用
+ * lucide-react 的 `<Bot />`（组头 size=15、卡片头像 size=16）。此处把官方 bot.svg
+ * 的元素逐条转成 path 数据（`rect` 展开为带圆角的路径），Canvas 描边渲染——
+ * 与 [ThinkingGlyph] 同一套机制。
+ *
+ * <p><b>为什么不用 Feather 的等价物</b>：Feather 没有机器人字形，最近的 `Cpu` 是
+ * 芯片（方框+针脚），语义是「计算」不是「代理」。用户明确要求复刻 cc-haha 的机器人
+ * 头像，字形必须对得上。
+ */
+@Composable
+internal fun BotGlyph(
+    modifier: Modifier = Modifier,
+    tint: Color = MaterialTheme.colorScheme.onSurfaceVariant,
+    iconSize: Dp = 16.dp
+) {
+    val paths = remember(BOT_PATH_DATA) {
+        BOT_PATH_DATA.map { androidx.core.graphics.PathParser.createPathFromPathData(it) }
+    }
+    val paint =
+        remember(tint) {
+            android.graphics.Paint().apply {
+                style = android.graphics.Paint.Style.STROKE
+                strokeWidth = 2f
+                strokeCap = android.graphics.Paint.Cap.ROUND
+                strokeJoin = android.graphics.Paint.Join.ROUND
+                isAntiAlias = true
+            }
+        }
+    Canvas(modifier = modifier.size(iconSize)) {
+        val scale = size.width / 24f
+        paint.color = tint.toArgb()
+        drawIntoCanvas { canvas ->
+            val nc = canvas.nativeCanvas
+            nc.save()
+            nc.scale(scale, scale)
+            paths.forEach { path -> nc.drawPath(path, paint) }
+            nc.restore()
+        }
+    }
+}
+
+/**
+ * lucide bot.svg（24x24 视口）元素展开为 path 数据。
+ *
+ * <p>原始元素：天线 `M12 8V4H8`、头部圆角矩形 rect(4,8,16,12,rx=2)、左右耳
+ * `M2 14h2`/`M20 14h2`、双眼 `M15 13v2`/`M9 13v2`。rect 展开为四段直线+四段
+ * 圆角弧的闭合路径（与 SVG 渲染器对 rx=2 的处理一致）。
+ */
+private val BOT_PATH_DATA =
+    listOf(
+        "M12 8V4H8",
+        "M6 8H18A2 2 0 0 1 20 10V18A2 2 0 0 1 18 20H6A2 2 0 0 1 4 18V10A2 2 0 0 1 6 8Z",
+        "M2 14h2",
+        "M20 14h2",
+        "M15 13v2",
+        "M9 13v2",
+    )
+
+/**
  * 内容卡：白底 + 1px 细线 + 可选头部（标题 + 复制）与页脚统计。
  *
  * 参考图里「写入 .dsh-write-test.txt」下面那块就是它：头部一行放文件路径与「复制」，

@@ -465,6 +465,9 @@
   <string name="ai_assistant_compact_busy">Cannot compact while a run is in progress.</string>
   <!-- Sent-message queue. Position starts at 1; it becomes 1 when the running turn ends. -->
   <string name="ai_assistant_queued">Queued (%1$d in queue). It will be sent when the current run finishes.</string>
+  <!-- Injected mid-run: delivered after the current tool batch completes, without stopping the run. -->
+  <string name="ai_assistant_interjected">Inserted into the running turn — the model will see it once the current tools finish.</string>
+  <string name="ai_assistant_interject_fallback">Run is wrapping up; the message was queued instead.</string>
   <string name="ai_assistant_compact_failed">Nothing to compact, or compaction failed.</string>
   <string name="ai_assistant_compact_done">Context compacted: %1$s</string>
   <string name="ai_assistant_todo_progress">Tasks · %1$d/%2$d done</string>
@@ -1663,6 +1666,7 @@ This AI agent is designed to assist you in developing Android applications direc
   <string name="compose_tool_card_instruction">Input</string>
   <string name="compose_tool_card_result">Result</string>
   <string name="compose_tool_card_back">Back</string>
+  <string name="compose_tool_card_view_result">View result</string>
   <string name="compose_tool_card_expand">Expand</string>
   <string name="compose_tool_card_collapse">Collapse</string>
   <string name="compose_tool_card_running">Running</string>

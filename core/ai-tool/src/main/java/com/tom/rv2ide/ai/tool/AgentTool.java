@@ -106,6 +106,22 @@ public final class AgentTool extends BaseTool {
     return ToolDisplayCategory.AGENT;
   }
 
+  /**
+   * 子 agent 可并行执行（cc-haha 的 `AgentTool.isConcurrencySafe()=true` 同款语义）。
+   *
+   * <p>「一次派遣多个子代理」是模型的核心使用方式：并行调查多个模块、同时起草多个文件。
+   * 串行执行时总耗时是各子任务之和，并行后接近最大值——对几十秒起步的子代理差距显著。
+   *
+   * <p>安全前提：每个子代理在自己的 {@code AgentSession} 里跑、上下文完全隔离，
+   * 共享的只有线程安全的层（权限服务按会话加锁、DiffStore 的每个方法都 synchronized）。
+   * 唯一要注意的是 code 模式的写冲突——两个子代理同时改同一文件是模型自己的编排
+   * 责任（它看得见自己发起的调用），工具层不代它做互斥。
+   */
+  @Override
+  public boolean isConcurrencySafe() {
+    return true;
+  }
+
   @Override
   public JSONObject getParameters() throws org.json.JSONException {
     return new JSONObject()

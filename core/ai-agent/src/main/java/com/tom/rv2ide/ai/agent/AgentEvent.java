@@ -130,6 +130,15 @@ public final class AgentEvent {
   /** 仅 {@link Type#STREAM_RETRYING} 有值：中断原因（面向用户）。 */
   private final String retryReason;
 
+  /**
+   * 仅 {@link Type#PROGRESS} 有值：产生该进度的工具调用 id。
+   *
+   * <p><b>为什么进度要带调用 id</b>：并行执行（一次派遣多个子代理）时，多个工具的
+   * PROGRESS 交错到达；没有 id 时订阅方只能把行追加到「最近一张运行中的卡片」，
+   * 两个子代理的步骤会混进同一张卡。空串表示未标注（旧路径，订阅方按原逻辑兜底）。
+   */
+  private final String progressCallId;
+
   private AgentEvent(
       Type type, String message, ToolCall toolCall, ToolResult toolResult, List<ToolCall> toolCalls) {
     this(type, message, toolCall, toolResult, toolCalls, 0, 0, 0L, "");
@@ -145,6 +154,21 @@ public final class AgentEvent {
       int retryMaxAttempts,
       long retryDelayMs,
       String retryReason) {
+    this(type, message, toolCall, toolResult, toolCalls, retryAttempt, retryMaxAttempts, retryDelayMs,
+        retryReason, "");
+  }
+
+  private AgentEvent(
+      Type type,
+      String message,
+      ToolCall toolCall,
+      ToolResult toolResult,
+      List<ToolCall> toolCalls,
+      int retryAttempt,
+      int retryMaxAttempts,
+      long retryDelayMs,
+      String retryReason,
+      String progressCallId) {
     this.type = type;
     this.message = message == null ? "" : message;
     this.toolCall = toolCall;
@@ -154,6 +178,7 @@ public final class AgentEvent {
     this.retryMaxAttempts = retryMaxAttempts;
     this.retryDelayMs = retryDelayMs;
     this.retryReason = retryReason == null ? "" : retryReason;
+    this.progressCallId = progressCallId == null ? "" : progressCallId;
   }
 
   public static AgentEvent turnStarted(int turnIndex) {
@@ -255,6 +280,21 @@ public final class AgentEvent {
    */
   public static AgentEvent progress(String message) {
     return new AgentEvent(Type.PROGRESS, message, null, null, null);
+  }
+
+  /**
+   * 带调用 id 的步骤级进度（并行执行时按调用归卡）。
+   *
+   * @param callId 产生该进度的工具调用 id；空串等价于不带
+   * @param message 面向用户的单行描述
+   */
+  public static AgentEvent progress(String callId, String message) {
+    return new AgentEvent(Type.PROGRESS, message, null, null, null, 0, 0, 0L, "", callId);
+  }
+
+  /** 仅 {@link Type#PROGRESS} 有值：产生该进度的工具调用 id；空串表示未标注。 */
+  public String getProgressCallId() {
+    return progressCallId;
   }
 
   /** 第几次重试（从 1 开始）；非重试事件为 0。 */

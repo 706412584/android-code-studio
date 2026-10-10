@@ -185,6 +185,9 @@ internal fun AssistantComposePanel(
     callbacks: AssistantPanelCallbacks,
     darkTheme: Boolean,
     modifier: Modifier = Modifier,
+    /** 会话代次：变化时无条件滚底一次（打开面板/切会话/切全屏）。见 host 的同名字段。 */
+    conversationEpoch: androidx.compose.runtime.State<Int> =
+        androidx.compose.runtime.mutableIntStateOf(0),
     /** 容器路径解析用；透传给图像查看器（容器路径→本地文件需要它）。 */
     fileAccess: FileAccessProvider? = null,
     /** 待答的询问；非 null 时弹出对话框。由宿主驱动（见 [AssistantComposePanelHost.askQuestion]）。 */
@@ -207,7 +210,9 @@ internal fun AssistantComposePanel(
   //   - ProvideAcsToolOpeners：浏览器链接交给系统浏览器。不包则入口隐藏。
   // 两者都由 compat 写好，本层只决定「包不包」——这正是它们设计成可选接线的原因。
   ProvideAcsImageViewer(fileAccess = fileAccess) {
-    ProvideAcsToolOpeners { PanelContent(state, listState, callbacks, darkTheme, modifier, question, onQuestionDone) }
+    ProvideAcsToolOpeners {
+      PanelContent(state, listState, callbacks, darkTheme, modifier, conversationEpoch, question, onQuestionDone)
+    }
   }
 }
 
@@ -218,6 +223,7 @@ private fun PanelContent(
     callbacks: AssistantPanelCallbacks,
     darkTheme: Boolean,
     modifier: Modifier,
+    conversationEpoch: androidx.compose.runtime.State<Int>,
     question: PendingUserQuestion?,
     onQuestionDone: (UserQuestionAnswer?) -> Unit,
 ) {
@@ -250,6 +256,23 @@ private fun PanelContent(
           // 通常仍在跟读最新内容，此时自动跟随符合预期。
           info.visibleItemsInfo.any { it.index >= lastIndex - 1 }
         }
+      }
+    }
+
+    // 会话代次驱动的「一次性滚到底」。
+    //
+    // <p><b>为什么不能只靠 atBottom</b>：历史回放灌入条目后，首帧布局把列表放在
+    // 顶部，LaunchedEffect 首次执行时读到的 atBottom 已是 false（末项不可见）——
+    // 「决策提前」也救不了，因为 effect 本身就晚于首帧布局（实测复现两次）。
+    // 代次由宿主在「打开面板 / 切会话 / 切全屏」时递增，这里只置一个待办标记，
+    // 真正的滚动由下方 follow effect 在**新列表布局完成之后**执行（见那里的
+    // 「必须比对条目数」注释——只等 >0 会在切会话时于旧布局上滚动）。
+    var forceScrollPending by remember { mutableStateOf(false) }
+    LaunchedEffect(conversationEpoch.value) {
+      if (conversationEpoch.value > 0) {
+        android.util.Log.i(
+            "ACSDebug", "epoch observed: ${conversationEpoch.value}, pending scroll")
+        forceScrollPending = true
       }
     }
 
@@ -286,8 +309,29 @@ private fun PanelContent(
         }
 
     // 条目尾部内容变化时决定是否跟随。
-    LaunchedEffect(followKey) {
+    LaunchedEffect(followKey, forceScrollPending) {
       if (renderItems.isEmpty()) return@LaunchedEffect
+      // ── 强制滚底（会话代次驱动）：无条件执行，不看 atBottom ──
+      //
+      // 语义是「打开/切换会话/切全屏」——用户要看最新内容，不该受上一个会话
+      // 滚动位置的影响。两个坑都在等待条件里：
+      //   1. 只等 `totalItemsCount > 0` 不够：切会话后的头一两帧，layoutInfo 还是
+      //      **上一个会话**的布局（count 本就 > 0），会在旧布局上放行。
+      //      必须等到条目数 == 当前 renderItems 的数量（新列表真的完成布局）。
+      //   2. 滚动下标必须取 renderItems.lastIndex（组合数据）而不是
+      //      layoutInfo.totalItemsCount - 1（上一帧布局）——后者在切会话时会
+      //      落到旧会话的下标上，这就是「切过去还停在上一会话位置」的机制。
+      if (forceScrollPending) {
+        val expected = renderItems.size
+        snapshotFlow { listState.layoutInfo.totalItemsCount }.first { it == expected }
+        forceScrollPending = false
+        val viewport = listState.layoutInfo.viewportEndOffset
+        android.util.Log.i(
+            "ACSDebug",
+            "force scroll-to-bottom: items=$expected epoch=${conversationEpoch.value}")
+        listState.scrollToItem(renderItems.lastIndex, scrollOffset = viewport)
+        return@LaunchedEffect
+      }
       // **决策必须在等待布局之前做，等待之后不得重查 atBottom**。
       //
       // 时序：历史回放（打开面板/切全屏）灌入条目时，本 effect 读到的 layoutInfo
@@ -859,6 +903,28 @@ internal class AssistantComposePanelHost(
 ) {
 
   /**
+   * 会话代次：每次切换会话 / 打开面板 / 切全屏时由宿主 +1。
+   *
+   * <p>面板监听它做「一次性滚到底」——打开会话时用户要看的是最新内容，
+   * 而首帧布局把列表放在顶部、`atBottom` 初读即 false（实测两次修复都栽在
+   * 这个时序上）。代次变化时无条件滚底一次，之后交给 atBottom 正常跟随。
+   */
+  val conversationEpoch = androidx.compose.runtime.mutableIntStateOf(0)
+
+  /**
+   * 请求面板「一次性滚到底」：会话代次 +1（见 [conversationEpoch]）。
+   *
+   * <p>宿主在「打开面板 / 切会话回放完成 / 切全屏」时调用。**必须主线程**（写 Compose 状态）。
+   * 幂等性不需要：连点两次只是多滚一次到底，代价可忽略。
+   *
+   * @param reason 仅用于日志定位（ACSDebug），无行为影响
+   */
+  fun requestScrollToBottom(reason: String) {
+    conversationEpoch.intValue = conversationEpoch.intValue + 1
+    android.util.Log.i("ACSDebug", "epoch bump -> ${conversationEpoch.intValue} ($reason)")
+  }
+
+  /**
    * 主题明暗在构造期解析一次。
    *
    * <p>**不能在 `setContent` 的 lambda 里现算**：那会在每次重组时重新解析主题属性；
@@ -916,6 +982,7 @@ internal class AssistantComposePanelHost(
               listState = listState,
               callbacks = callbacks,
               darkTheme = darkTheme,
+              conversationEpoch = conversationEpoch,
               fileAccess = fileAccess,
               question = pendingQuestion.value,
               onQuestionDone = { finishQuestion(it) },

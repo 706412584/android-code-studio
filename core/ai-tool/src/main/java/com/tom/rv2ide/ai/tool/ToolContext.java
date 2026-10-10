@@ -230,7 +230,9 @@ public final class ToolContext {
   public void reportProgress(String message) {
     ProgressListener listener = this.progressListener;
     if (listener != null) {
-      listener.onProgress(message);
+      // 带上本上下文的工具调用 id：并行执行（一次派遣多个子 agent）时多个工具的
+      // 进度交错到达，订阅方靠这个 id 把步骤行归到正确的卡片上。
+      listener.onProgress(this.toolCallId, message);
     }
   }
 
@@ -241,6 +243,18 @@ public final class ToolContext {
   /** 工具执行进度的接收者。 */
   public interface ProgressListener {
     void onProgress(String message);
+
+    /**
+     * 带工具调用 id 的进度（并行执行时用于归卡）。
+     *
+     * <p>默认实现退化为 {@link #onProgress(String)}：已有的 lambda 实现只关心文本，
+     * 无需改动；需要区分来源的实现（orchestrator 的事件桥）覆写本方法。
+     *
+     * @param callId 产生进度的工具调用 id；可能为空（无上下文的测试路径）
+     */
+    default void onProgress(String callId, String message) {
+      onProgress(message);
+    }
   }
 
   public static final class Builder {

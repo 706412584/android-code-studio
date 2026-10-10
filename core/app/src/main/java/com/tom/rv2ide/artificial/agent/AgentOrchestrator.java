@@ -271,7 +271,7 @@ public final class AgentOrchestrator {
 
   /** 见 {@link #currentRunSnapshot}。 */
   public static final class RunSnapshot {
-    static final RunSnapshot EMPTY = new RunSnapshot("", "", "");
+    static final RunSnapshot EMPTY = new RunSnapshot("", "", "", null);
 
     /** 本轮已产生的正文（未落盘部分）；空串表示没有。 */
     public final String text;
@@ -280,10 +280,25 @@ public final class AgentOrchestrator {
     /** 最近一条动作文案；空串表示没有。 */
     public final String lastAction;
 
-    RunSnapshot(String text, String reasoning, String lastAction) {
+    /**
+     * 正在执行中的工具调用；null 表示没有（未在跑工具，或工具已结束）。
+     *
+     * <p><b>为什么快照要带上它</b>：工具开始执行时不落盘（只有 TOOL_FINISHED 落盘），
+     * 用户切走再切回一个「正在跑工具」的会话时，回放的历史里没有那张卡片——
+     * 没有本字段，视图接不回卡片，之后到达的 TOOL_FINISHED 只能把结果回填到
+     * 历史里最后一张无关卡片上（实测反馈的「状态混乱」之一）。
+     */
+    public final com.tom.rv2ide.ai.tool.api.ToolCall pendingToolCall;
+
+    RunSnapshot(
+        String text,
+        String reasoning,
+        String lastAction,
+        com.tom.rv2ide.ai.tool.api.ToolCall pendingToolCall) {
       this.text = text == null ? "" : text;
       this.reasoning = reasoning == null ? "" : reasoning;
       this.lastAction = lastAction == null ? "" : lastAction;
+      this.pendingToolCall = pendingToolCall;
     }
   }
 
@@ -298,6 +313,8 @@ public final class AgentOrchestrator {
 
   /** 一条排队的请求：完整记下发起一次运行所需的全部参数。 */
   private static final class QueuedRequest {
+    /** 稳定标识：队列面板按它做删除/插入/拖拽的锚点（下标在并发改动下会漂移）。 */
+    final String id;
     final String providerId;
     final String modelId;
     final String userRequest;
@@ -312,12 +329,29 @@ public final class AgentOrchestrator {
         String customBaseUrl,
         String rawInputJson,
         String reasoningEffort) {
+      this.id = java.util.UUID.randomUUID().toString();
       this.providerId = providerId;
       this.modelId = modelId;
       this.userRequest = userRequest;
       this.customBaseUrl = customBaseUrl;
       this.rawInputJson = rawInputJson;
       this.reasoningEffort = reasoningEffort;
+    }
+  }
+
+  /**
+   * 队列条目的只读投影（给 UI 渲染队列面板用）。
+   *
+   * <p>刻意只暴露 id 与文本：面板不需要（也不该拿到）provider/baseUrl 这类
+   * 内部参数——它们由队列条目自己保管，编辑/重排都不经过 UI。
+   */
+  public static final class QueuedEntry {
+    public final String id;
+    public final String text;
+
+    QueuedEntry(String id, String text) {
+      this.id = id;
+      this.text = text;
     }
   }
 
@@ -331,6 +365,94 @@ public final class AgentOrchestrator {
    */
   private final java.util.Map<String, java.util.ArrayDeque<QueuedRequest>> queuedRequests =
       new java.util.concurrent.ConcurrentHashMap<>();
+
+  /**
+   * 正在运行的 {@link AgentSession}，按会话索引。
+   *
+   * <p>只为「运行中立即插入」服务：UI 点插入按钮时要把消息投进正在跑的循环
+   * （见 {@link #injectIntoRun}）。运行结束（run 返回后）移除——移除与
+   * {@code acceptingInject=false} 有先后竞争，因此 injectIntoRun 对
+   * 「拿到的 session 已拒绝」也有回退路径（回退到队列）。
+   */
+  private final java.util.Map<String, AgentSession> activeSessions =
+      new java.util.concurrent.ConcurrentHashMap<>();
+
+  /**
+   * 运行中立即插入：把一条消息投进**正在跑**的循环，模型在本轮工具全部完成后
+   * 就能看到它（cc-haha「Guide now」同款语义，见 AgentSession 的 injectQueue）。
+   *
+   * <p>返回 false = 该会话没有可接收注入的运行（没在跑、或恰好在收尾），
+   * 调用方应回退到普通排队。
+   */
+  public boolean injectIntoRun(String conversationId, String text) {
+    if (conversationId == null || conversationId.isEmpty() || text == null
+        || text.trim().isEmpty()) {
+      return false;
+    }
+    AgentSession session = activeSessions.get(conversationId);
+    if (session == null) {
+      return false;
+    }
+    return session.offerInject(text);
+  }
+
+  /** 该会话队列的只读投影（面板渲染用）；无队列时为空列表。 */
+  public List<QueuedEntry> queuedEntries(String conversationId) {
+    if (conversationId == null || conversationId.isEmpty()) {
+      return new ArrayList<>();
+    }
+    java.util.ArrayDeque<QueuedRequest> queue = queuedRequests.get(conversationId);
+    if (queue == null) {
+      return new ArrayList<>();
+    }
+    List<QueuedEntry> out = new ArrayList<>();
+    synchronized (queue) {
+      for (QueuedRequest request : queue) {
+        out.add(new QueuedEntry(request.id, request.userRequest));
+      }
+    }
+    return out;
+  }
+
+  /** 按 id 移除一条排队请求。返回是否找到并移除。 */
+  public boolean removeQueued(String conversationId, String requestId) {
+    if (conversationId == null || conversationId.isEmpty() || requestId == null) {
+      return false;
+    }
+    java.util.ArrayDeque<QueuedRequest> queue = queuedRequests.get(conversationId);
+    if (queue == null) {
+      return false;
+    }
+    synchronized (queue) {
+      boolean removed = queue.removeIf(request -> request.id.equals(requestId));
+      if (queue.isEmpty()) {
+        queuedRequests.remove(conversationId);
+      }
+      return removed;
+    }
+  }
+
+  /** 队列内重排（拖拽）。返回是否执行了移动。 */
+  public boolean moveQueued(String conversationId, int fromIndex, int toIndex) {
+    if (conversationId == null || conversationId.isEmpty()) {
+      return false;
+    }
+    java.util.ArrayDeque<QueuedRequest> queue = queuedRequests.get(conversationId);
+    if (queue == null) {
+      return false;
+    }
+    synchronized (queue) {
+      List<QueuedRequest> list = new ArrayList<>(queue);
+      if (fromIndex < 0 || fromIndex >= list.size() || toIndex < 0 || toIndex >= list.size()) {
+        return false;
+      }
+      QueuedRequest moved = list.remove(fromIndex);
+      list.add(toIndex, moved);
+      queue.clear();
+      queue.addAll(list);
+      return true;
+    }
+  }
 
   /**
    * 把一条请求排进该会话的队列，返回它在队列中的位置（从 1 开始）。
@@ -368,6 +490,32 @@ public final class AgentOrchestrator {
       return;
     }
     queuedRequests.remove(conversationId);
+  }
+
+  /**
+   * 把一条请求插到队首（投递失败的回退路径用）。
+   *
+   * <p>「立即插入」的语义是「这条要**先于**其余排队消息被处理」——注入失败时若按
+   * 常规 {@link #enqueue} 追加到队尾，用户点的「立即」就变成了「最后」，与意图相反。
+   */
+  public void enqueueFront(
+      String conversationId,
+      String providerId,
+      String modelId,
+      String userRequest,
+      String customBaseUrl,
+      String rawInputJson,
+      String reasoningEffort) {
+    if (conversationId == null || conversationId.isEmpty()) {
+      return;
+    }
+    java.util.ArrayDeque<QueuedRequest> queue =
+        queuedRequests.computeIfAbsent(conversationId, k -> new java.util.ArrayDeque<>());
+    synchronized (queue) {
+      queue.addFirst(
+          new QueuedRequest(
+              providerId, modelId, userRequest, customBaseUrl, rawInputJson, reasoningEffort));
+    }
   }
 
   /**
@@ -463,6 +611,20 @@ public final class AgentOrchestrator {
     if (!list.contains(listener)) {
       list.add(listener);
     }
+  }
+
+  /**
+   * 订阅表总条数（所有会话的订阅者之和）。
+   *
+   * <p>诊断用：视图销毁未退订会在这里表现为「只增不减」，是泄漏的明确信号
+   * （见 memory_analysis 工具）。
+   */
+  public int subscriberCount() {
+    int total = 0;
+    for (java.util.List<AgentEvent.Listener> list : conversationListeners.values()) {
+      total += list.size();
+    }
+    return total;
   }
 
   /** 退订。会话的订阅表空了就移除，避免条目随会话数累积。 */
@@ -1275,6 +1437,11 @@ public final class AgentOrchestrator {
     // 文生视频：异步任务 + 轮询（cc-haha media-gen 协议）。同上经 ToolContext 注入。
     registry.register(new VideoGenerationTool(http));
 
+    // 内存分析：一次性拉取进程内存画像 + 助手各子系统规模（消息数/缓存/队列），
+    // 供卡顿与 OOM 排查（用户实测的 Markdown 表格 OOM 之后加的诊断口）。
+    registry.register(
+        new com.tom.rv2ide.artificial.agent.tool.MemoryAnalysisTool(appContext));
+
     // 外部 MCP server 提供的工具。只有 run() 路径（mcpClientsOut != null）才装配：
     // UI 的分类色查询不该触发网络请求，也不该创建无人释放的连接。
     if (includeMcp && mcpClientsOut != null) {
@@ -1804,9 +1971,25 @@ public final class AgentOrchestrator {
     //
     // **此前这个端口从未接线**：所有工具的 reportProgress 都因「无监听者时静默忽略」
     // 被吞掉——子 agent 运行期间界面因此毫无动静，看起来与卡死无异。
+    //
+    // 携带 call id：并行派遣多个子 agent 时进度交错到达，订阅方（视图）靠它把
+    // 步骤行归到正确的工具卡片上（见 AgentEvent.getProgressCallId）。
+    //
+    // 用匿名类而不是 lambda：ProgressListener 的单抽象方法是单参 onProgress(String)，
+    // 双参版本是 default 方法——lambda 只能实现抽象方法，写双参 lambda 会编译失败。
     toolContext =
         toolContext.withProgressListener(
-            message -> persistingListener.onEvent(AgentEvent.progress(message)));
+            new com.tom.rv2ide.ai.tool.ToolContext.ProgressListener() {
+              @Override
+              public void onProgress(String message) {
+                persistingListener.onEvent(AgentEvent.progress(message));
+              }
+
+              @Override
+              public void onProgress(String callId, String message) {
+                persistingListener.onEvent(AgentEvent.progress(callId, message));
+              }
+            });
 
     // 告知订阅者「用户发了这条」。必须在 PersistingListener 构造之后：构造函数里
     // 已把用户消息落盘，因此订阅者收到本事件时读到的历史一定包含它——否则会出现
@@ -1838,17 +2021,40 @@ public final class AgentOrchestrator {
 
     try {
       AgentSession session = new AgentSession(modelClient, registry, executor);
-      return session.run(
-          config,
-          systemPrompt,
-          userRequest,
-          history,
-          toolContext,
-          cancellation,
-          persistingListener,
-          contextManager,
-          rawInputJson,
-          reasoningEffort);
+      // 登记运行中的 session，供「立即插入」投递（见 injectIntoRun）。
+      // 先登记后 run：登记晚于首个请求会让「刚点插入」落进空窗、被当成没在跑。
+      activeSessions.put(conversationId, session);
+      try {
+        return session.run(
+            config,
+            systemPrompt,
+            userRequest,
+            history,
+            toolContext,
+            cancellation,
+            persistingListener,
+            contextManager,
+            rawInputJson,
+            reasoningEffort);
+      } finally {
+        activeSessions.remove(conversationId);
+        // 收尾时把**未被消费**的注入放回队列头部（保持原序）：它们已被用户点过
+        // 「插入」，但循环恰好没赶上最后一个检查点。不放回就永久丢失；
+        // 放回后由 runInConversation 的 finally 立即消化（RUN_FINISHED 之后）。
+        List<String> leftover = session.drainLeftoverInjects();
+        if (!leftover.isEmpty()) {
+          java.util.ArrayDeque<QueuedRequest> queue =
+              queuedRequests.computeIfAbsent(conversationId, k -> new java.util.ArrayDeque<>());
+          synchronized (queue) {
+            // 逆序 addFirst：保持它们在注入槽里的原始先后。
+            for (int i = leftover.size() - 1; i >= 0; i--) {
+              queue.addFirst(
+                  new QueuedRequest(
+                      providerId, modelId, leftover.get(i), customBaseUrl, null, reasoningEffort));
+            }
+          }
+        }
+      }
     } finally {
       // 只移除本次运行登记的那一个令牌：并发会话各有各的，不能整体清空。
       activeCancellations.remove(conversationId);
@@ -2115,6 +2321,15 @@ public final class AgentOrchestrator {
     private final java.util.List<String> stepBuffer = new java.util.ArrayList<>();
 
     /**
+     * 正在执行中的工具调用（TOOL_STARTED 记入、TOOL_FINISHED 清空）。
+     *
+     * <p>为 [RunSnapshot.pendingToolCall] 服务：视图切回「正在跑工具」的会话时，
+     * 靠它把那张未落盘的卡片重建出来，后续 TOOL_FINISHED / PROGRESS 才有正确落点。
+     * volatile：写方是事件线程（persist），读方是任意线程（snapshot）。
+     */
+    private volatile com.tom.rv2ide.ai.tool.api.ToolCall pendingToolCall = null;
+
+    /**
      * 本轮已产生的**正文**（TEXT_DELTA 累积）。
      *
      * <p><b>为什么需要它</b>：正文只在 TURN_FINISHED 时落盘，而一次运行可能持续几分钟。
@@ -2161,6 +2376,10 @@ public final class AgentOrchestrator {
         return;
       }
       switch (event.getType()) {
+        case TOOL_STARTED:
+          // 记下在途调用，供视图重建时接回卡片（见 pendingToolCall 注释）。
+          pendingToolCall = event.getToolCall();
+          break;
         case REASONING_DELTA:
           // 累积本轮思考；不落盘（增量太碎），由 TURN_FINISHED 一并写入。
           // 加锁理由同 TEXT_DELTA：快照会读它（推理流式期间切全屏同样会丢思考块）。
@@ -2214,6 +2433,25 @@ public final class AgentOrchestrator {
                     new java.util.ArrayList<>(stepBuffer)));
           }
           stepBuffer.clear();
+          // 并行执行时 TOOL_FINISHED 可能与另一调用的 TOOL_STARTED 交错——
+          // 只有结束的正是记录中的那个调用时才清（否则会把新调用误清掉）。
+          if (event.getToolCall() != null
+              && pendingToolCall != null
+              && pendingToolCall.getId().equals(event.getToolCall().getId())) {
+            pendingToolCall = null;
+          }
+          break;
+        case USER_MESSAGE:
+          // 运行中注入的用户消息（cc-haha queued_command 的落盘对应物）：
+          // 循环在检查点把它发成事件，这里落盘——不落盘的话它只活在内存里，
+          // 运行结束后的回放（切全屏/重启）就看不到这条消息，历史出现断层。
+          //
+          // 落盘**原文**（不含 "用户在你工作期间…" 包装）：包装只是给当轮请求的
+          // 瞬时增强，与 cc-haha 的 attachment 语义一致——fold 时模型看到干净消息。
+          if (event.getMessage() != null && !event.getMessage().isEmpty()) {
+            appendEntry(
+                UserMessageEntry.create(null, System.currentTimeMillis(), event.getMessage()));
+          }
           break;
         default:
           break;
@@ -2230,7 +2468,7 @@ public final class AgentOrchestrator {
         reasoning = reasoningBuffer.toString();
         action = lastAction;
       }
-      return new RunSnapshot(text, reasoning, action);
+      return new RunSnapshot(text, reasoning, action, pendingToolCall);
     }
 
     private void appendEntry(ConversationEntry entry) {

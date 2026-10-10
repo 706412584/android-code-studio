@@ -35,6 +35,8 @@ import com.tom.rv2ide.ai.agent.context.RunContextManager;
 import com.tom.rv2ide.ai.tool.api.ToolCallTextParser;
 import com.tom.rv2ide.ai.protocol.ToolModelMessage;
 import com.tom.rv2ide.ai.protocol.UserModelMessage;
+import com.tom.rv2ide.ai.tool.BaseTool;
+import com.tom.rv2ide.ai.tool.ExceptionUtils;
 import com.tom.rv2ide.ai.tool.ToolExecutor;
 import com.tom.rv2ide.ai.tool.ToolRegistry;
 import com.tom.rv2ide.ai.tool.ToolContext;
@@ -73,6 +75,76 @@ public final class AgentSession {
   private final ToolRegistry registry;
   private final ToolExecutor executor;
   private final long timeBudgetMs;
+
+  // ── 运行中消息注入（cc-haha queued_command 同款语义）──
+  //
+  // 用户在运行期间点「立即插入」时，消息**不打断当前轮**，而是进入本槽；循环在
+  // 「所有工具执行完、下一轮请求之前」消费它——这是唯一安全的注入点：此刻 messages
+  // 尾部是完整的 tool_result 集合，追加一条 user 消息不会让 tool_result 与 assistant
+  // 消息交错（OpenAI 兼容协议容忍交错，但 Anthropic 的 tool_use/tool_result 配对
+  // 依赖相邻性，半途插入会直接 400）。
+  //
+  // 线程：offerInject 由 UI/orchestrator 线程调用，poll 在循环线程——用锁而非
+  // 无锁队列，因为还要与 acceptingInject 的翻转原子。
+
+  private final Object injectLock = new Object();
+  private final java.util.ArrayDeque<String> injectQueue = new java.util.ArrayDeque<>();
+
+  /** 本实例是否还能接收注入。run 收尾（含所有 return 路径）时翻 false。 */
+  private boolean acceptingInject = true;
+
+  /**
+   * 尝试投递一条运行中注入。返回是否被接受。
+   *
+   * <p><b>返回 false 时调用方必须回退</b>（把消息留在队列里）：本实例已收尾，
+   * 没有循环会再读这个槽。
+   */
+  public boolean offerInject(String text) {
+    if (text == null || text.trim().isEmpty()) {
+      return false;
+    }
+    synchronized (injectLock) {
+      if (!acceptingInject) {
+        return false;
+      }
+      injectQueue.addLast(text);
+      return true;
+    }
+  }
+
+  /** 循环线程在安全边界取走一条注入；没有则返回 null。 */
+  private String pollInject() {
+    synchronized (injectLock) {
+      return injectQueue.pollFirst();
+    }
+  }
+
+  /**
+   * 取走**未被消费**的注入（运行收尾后调用）。
+   *
+   * <p>投递成功（offerInject 返回 true）但循环恰好已过最后一个检查点时，
+   * 消息会留在这里。调用方（orchestrator）负责把它们放回队列——不取走的话
+   * 这些消息就永久丢失了。
+   */
+  public List<String> drainLeftoverInjects() {
+    synchronized (injectLock) {
+      List<String> leftover = new ArrayList<>(injectQueue);
+      injectQueue.clear();
+      return leftover;
+    }
+  }
+
+  /**
+   * 运行中注入的包装文案（cc-haha `wrapCommandText` 的 human 分支同款语义）。
+   *
+   * <p>包装文本只进本轮请求的 messages 数组；落盘与 UI 气泡都用**原文**——
+   * 下轮运行 fold 历史时模型看到的是干净的用户消息，与 cc-haha 的瞬时 attachment 一致。
+   */
+  static String wrapInjectedUserMessage(String raw) {
+    return "用户在你工作期间发来一条新消息：\n"
+        + raw
+        + "\n\n重要：完成当前任务后，你必须处理上面的用户消息，不要忽略它。";
+  }
 
   public AgentSession(ModelClient modelClient, ToolRegistry registry, ToolExecutor executor) {
     this(modelClient, registry, executor, DEFAULT_TIME_BUDGET_MS);
@@ -172,6 +244,31 @@ public final class AgentSession {
       RunContextManager contextManager,
       String rawInputJson,
       String reasoningEffort) {
+    try {
+      return runLoop(
+          config, systemPrompt, userRequest, history, toolContext, cancellationToken, listener,
+          contextManager, rawInputJson, reasoningEffort);
+    } finally {
+      // 收尾：关闭注入槽。此后 offerInject 一律拒绝——调用方（orchestrator）据此
+      // 把消息留在队列里走正常排队路径。必须在 finally：本方法有多条 return
+      // （取消/超限/超时/正常完成），漏掉任何一条都会让注入槽永远可写而无人消费。
+      synchronized (injectLock) {
+        acceptingInject = false;
+      }
+    }
+  }
+
+  private AgentRunResult runLoop(
+      ModelConfig config,
+      String systemPrompt,
+      String userRequest,
+      List<ModelMessage> history,
+      ToolContext toolContext,
+      ModelCancellationToken cancellationToken,
+      AgentEvent.Listener listener,
+      RunContextManager contextManager,
+      String rawInputJson,
+      String reasoningEffort) {
 
     List<ModelMessage> messages = new ArrayList<>();
     messages.add(new SystemModelMessage(systemPrompt == null ? "" : systemPrompt));
@@ -211,6 +308,18 @@ public final class AgentSession {
         String message =
             "已达到总时长预算 " + (timeBudgetMs / 60000L) + " 分钟。\n" + lastOutput;
         return finish(listener, AgentEvent.failed(message), lastOutput, toolCallCount, turnIndex);
+      }
+
+      // 运行中注入检查点（cc-haha 同款语义）：此刻上一轮的工具已全部执行完
+      // （或本轮是首轮），messages 尾部是完整的 tool_result 集合——追加 user
+      // 消息不会破坏 tool_use/tool_result 配对（见 injectQueue 注释）。
+      //
+      // 首轮时也会取：用户在别处发起运行、消息刚插进来时循环可能还没发首个请求，
+      // 这种窗口下消息也应在首轮就被模型看到，而不是等下一轮。
+      String injected;
+      while ((injected = pollInject()) != null) {
+        emit(listener, AgentEvent.userMessage(injected));
+        messages.add(new UserModelMessage(wrapInjectedUserMessage(injected)));
       }
 
       // 每次请求前裁剪：预算在轮次之间会因新增消息而变得不足。
@@ -264,7 +373,14 @@ public final class AgentSession {
       messages.add(
           new AssistantModelMessage(output, response.getReasoningContent(), calls));
 
-      for (ToolCall call : calls) {
+      // 执行本轮的调用。**连续的可并发调用合批并行**（cc-haha 的 toolOrchestration
+      // 同款语义，上限见 MAX_PARALLEL_TOOLS）：一次派遣多个子 agent 时它们同时跑，
+      // 而不是一个跑完再跑下一个。其余调用保持串行——有副作用的工具（写文件、命令）
+      // 必须按序生效，乱序执行会让「先写后读」这类依赖悄悄失效。
+      //
+      // 结果仍按**原调用顺序**回灌 messages：并行只影响执行，不影响结果的消息序。
+      // 服务端（尤其 Anthropic 的 tool_result 配对）对顺序敏感，乱序回灌会 400。
+      for (int i = 0; i < calls.size(); ) {
         if (isCancelled(cancellationToken)) {
           return finish(listener, AgentEvent.failed("已取消"), lastOutput, toolCallCount, turnIndex);
         }
@@ -273,20 +389,139 @@ public final class AgentSession {
           return finish(listener, AgentEvent.failed(message), lastOutput, toolCallCount, turnIndex);
         }
 
-        emit(listener, AgentEvent.toolStarted(call));
-        ToolResult result = executor.execute(call, toolContext);
-        toolCallCount++;
-        emit(listener, AgentEvent.toolFinished(call, result));
+        // 找出一段连续的「可并发且并发安全」的调用。
+        int batchEnd = i;
+        if (isConcurrencySafe(calls.get(i))) {
+          while (batchEnd < calls.size()
+              && isConcurrencySafe(calls.get(batchEnd))
+              && (toolCallLimit <= 0 || toolCallCount + (batchEnd - i) < toolCallLimit)) {
+            batchEnd++;
+          }
+        }
 
-        // 结果回灌：四元组齐全，isError 单独传递（部分协议需要它来区分成败）
-        messages.add(
-            new ToolModelMessage(
-                result.getContent(),
-                call.getId(),
-                call.getName(),
-                result.isError(),
-                toolResultImageJson(result)));
+        if (batchEnd - i <= 1) {
+          // 单条：走串行路径（与原行为完全一致——单次调用是绝大多数场景）。
+          ToolCall call = calls.get(i);
+          emit(listener, AgentEvent.toolStarted(call));
+          ToolResult result = executor.execute(call, toolContext);
+          toolCallCount++;
+          emit(listener, AgentEvent.toolFinished(call, result));
+          messages.add(
+              new ToolModelMessage(
+                  result.getContent(),
+                  call.getId(),
+                  call.getName(),
+                  result.isError(),
+                  toolResultImageJson(result)));
+          i++;
+          continue;
+        }
+
+        // 并行批：全部 toolStarted 先发（UI 一次看到 N 张运行中的卡片），
+        // 然后并发执行，最后按序发 toolFinished 并回灌。
+        List<ToolCall> batch = new ArrayList<>(calls.subList(i, batchEnd));
+        for (ToolCall call : batch) {
+          emit(listener, AgentEvent.toolStarted(call));
+        }
+        List<ToolResult> results = executeParallel(batch, toolContext, cancellationToken);
+        for (int j = 0; j < batch.size(); j++) {
+          ToolCall call = batch.get(j);
+          ToolResult result = results.get(j);
+          toolCallCount++;
+          emit(listener, AgentEvent.toolFinished(call, result));
+          messages.add(
+              new ToolModelMessage(
+                  result.getContent(),
+                  call.getId(),
+                  call.getName(),
+                  result.isError(),
+                  toolResultImageJson(result)));
+        }
+        i = batchEnd;
       }
+    }
+  }
+
+  /** 并行批的大小上限。与 cc-haha 的 CLAUDE_CODE_MAX_TOOL_USE_CONCURRENCY 同为 10。 */
+  private static final int MAX_PARALLEL_TOOLS = 10;
+
+  /** 该调用是否可参与并行批：工具声明并发安全，且注册表能解析到它。 */
+  private boolean isConcurrencySafe(ToolCall call) {
+    if (call == null) {
+      return false;
+    }
+    BaseTool tool = registry.get(ToolRegistry.canonicalName(call.getName()));
+    // 未知工具不并行：它马上会被执行器拒绝，串行路径的报错顺序更可预期。
+    return tool != null && tool.isConcurrencySafe();
+  }
+
+  /**
+   * 并发执行一批调用，**返回顺序与入参一致**。
+   *
+   * <p>用固定线程池而不是 {@code parallelStream()}：池大小可控（{@link #MAX_PARALLEL_TOOLS}），
+   * 且执行器（工具）共享的状态（权限、diff 记录）在并发下的行为不依赖 ForkJoin 的
+   * 公共池策略。单批执行完即关池——池不跨批复用，避免运行期间常驻线程。
+   *
+   * <p>单个工具抛异常不会拖垮整批：捕获后转成 error 结果（与串行路径的
+   * {@link ToolExecutor} 约定一致——错误回灌给模型，而不是中断对话）。
+   */
+  private List<ToolResult> executeParallel(
+      List<ToolCall> batch, ToolContext toolContext, ModelCancellationToken cancellationToken) {
+    int size = Math.min(batch.size(), MAX_PARALLEL_TOOLS);
+    java.util.concurrent.ExecutorService pool =
+        java.util.concurrent.Executors.newFixedThreadPool(size);
+    try {
+      List<java.util.concurrent.Future<ToolResult>> futures = new ArrayList<>(size);
+      for (int j = 0; j < size; j++) {
+        ToolCall call = batch.get(j);
+        futures.add(
+            pool.submit(
+                () -> {
+                  if (isCancelled(cancellationToken)) {
+                    return ToolResult.error("已取消");
+                  }
+                  try {
+                    return executor.execute(call, toolContext);
+                  } catch (RuntimeException e) {
+                    ExceptionUtils.restoreInterrupt(e);
+                    return ToolResult.of(
+                        call.getId(),
+                        call.getName(),
+                        "工具执行失败: " + ExceptionUtils.describeException(e),
+                        true);
+                  }
+                }));
+      }
+      List<ToolResult> results = new ArrayList<>(batch.size());
+      for (int j = 0; j < batch.size(); j++) {
+        if (j < size) {
+          try {
+            results.add(futures.get(j).get());
+          } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            results.add(ToolResult.error("已取消"));
+          } catch (java.util.concurrent.ExecutionException e) {
+            results.add(ToolResult.error("工具执行失败: " + e.getMessage()));
+          }
+        } else {
+          // 超出上限的尾部：串行补执行，保证每个调用都有结果。
+          ToolCall call = batch.get(j);
+          try {
+            results.add(executor.execute(call, toolContext));
+          } catch (RuntimeException e) {
+            ExceptionUtils.restoreInterrupt(e);
+            results.add(
+                ToolResult.of(
+                    call.getId(),
+                    call.getName(),
+                    "工具执行失败: " + ExceptionUtils.describeException(e),
+                    true));
+          }
+        }
+      }
+      return results;
+    } finally {
+      pool.shutdownNow();
     }
   }
 

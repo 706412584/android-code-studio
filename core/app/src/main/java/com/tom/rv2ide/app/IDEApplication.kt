@@ -119,6 +119,11 @@ class IDEApplication : TermuxApplication() {
       log.error("ai[$type] $summary\n$details", throwable)
     }
 
+    // 内存采样：每 60s 往日志缓冲写一行内存画像（超阈值升级为 WARN）。
+    // 「有时候卡顿」类问题的排查入口——`ide_log_read` 一查就能看到内存轨迹
+    // （例：连续几条 java 420→480→510MB 即 OOM 前兆）。旁路诊断，零业务耦合。
+    com.tom.rv2ide.artificial.agent.tool.MemorySampler.start(this)
+
     if (GeneralPreferences.snowfallOverlay && isSnowfallSeasonActive()) {
       SeasonalEffects.init(this)
       SeasonalEffects.enableChristmas()
