@@ -557,14 +557,31 @@ class ComposeMultiplatform : Template {
             gradlePluginPortal()
         }"""
 
-    /** 阿里云镜像前置的依赖仓库（同上策略）。 */
+    /**
+     * 阿里云镜像前置的依赖仓库（同上策略）。
+     *
+     * mode 必须用 PREFER_PROJECT 而不是 FAIL_ON_PROJECT_REPOS：Kotlin/wasm 的
+     * Node.js 环境配置会在 project 级别注入 `nodejs.org/dist` 仓库（kotlinWasmNodeJsSetup
+     * 任务依赖它），FAIL_ON_PROJECT_REPOS 会直接炸 configuration——
+     * 「repository 'Distributions at https://nodejs.org/dist' was added by unknown code」
+     * （2026-10-10 本机跑 wasmJsBrowserDistribution 实测抓到）。
+     * PREFER_PROJECT 下 settings 仓库优先、project 仓库（KGP 注入的 Node 仓库）
+     * 仍然生效，两全。
+     *
+     * 必须带 gradlePluginPortal()：binaryen（wasm 优化器）的坐标
+     * `com.github.webassembly:binaryen` 是 integration 状态的 portal 构件，
+     * 依赖解析只走 dependencyResolutionManagement 的仓库列表——缺了 portal
+     * 就「Could not find com.github.webassembly:binaryen:123」（本机实测）。
+     */
     const val MIRRORED_DEPENDENCY_REPOSITORIES =
-        """repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+        """repositoriesMode.set(RepositoriesMode.PREFER_PROJECT)
             repositories {
                 maven { url = uri("https://maven.aliyun.com/repository/google") }
                 maven { url = uri("https://maven.aliyun.com/repository/central") }
+                maven { url = uri("https://maven.aliyun.com/repository/gradle-plugin") }
                 google()
                 mavenCentral()
+                gradlePluginPortal()
             }"""
   }
 }

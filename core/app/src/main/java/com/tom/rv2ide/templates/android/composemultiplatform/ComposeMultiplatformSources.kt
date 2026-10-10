@@ -363,9 +363,10 @@ object ComposeMultiplatformSources {
   /**
    * 云端出包 workflow。
    *
-   * 设备端只出 Android APK；桌面 fat jar（ubuntu）、Web 静态站（ubuntu）由
-   * 推送自动触发。fat jar 的产物目录覆盖两个候选位置（不同插件版本落在
-   * binaries/main 或 jars 下），artifact 上传用宽松 glob 兜底。
+   * 设备端只出 Android APK；桌面 fat jar 用 **三 OS 矩阵**（ubuntu/windows/macos）——
+   * fat jar 里的 skiko 渲染库按构建机 OS 打包，单 runner 出的 jar 换 OS 跑不起来
+   * （「Cannot find skiko-windows-x64.dll.sha256」），2026-10-10 远端实测踩中后修正。
+   * Web 静态站（ubuntu）由推送自动触发。artifact 上传用宽松 glob 兜底两个产物目录。
    * iOS 需要 macos runner + 声明 iOS target，v1 未启用——注释里留了模板。
    */
   fun ciWorkflow(projectName: String): String =
@@ -395,7 +396,10 @@ object ComposeMultiplatformSources {
                 path: app/build/outputs/apk/debug/*.apk
 
         desktop-jar:
-          runs-on: ubuntu-latest
+          strategy:
+            matrix:
+              os: [ubuntu-latest, windows-latest, macos-latest]
+          runs-on: ${'$'}{{ matrix.os }}
           steps:
             - uses: actions/checkout@v4
             - uses: actions/setup-java@v4
@@ -404,12 +408,13 @@ object ComposeMultiplatformSources {
                 java-version: '17'
             - uses: gradle/actions/setup-gradle@v4
             - run: chmod +x ./gradlew
-            # fat jar：任何装了 JRE 17+ 的机器 java -jar 直接跑。
-            # 要 deb/msi/dmg 原生包就把任务换成 :desktop:packageDistributionForCurrentOS
+              if: matrix.os != 'windows-latest'
+            # fat jar 里的 skiko 原生库按当前 OS 打包，必须每 OS 各出一份。
+            # 要 deb/msi/dmg 原生安装包就把任务换成 :desktop:packageDistributionForCurrentOS
             - run: ./gradlew :desktop:packageUberJarForCurrentOS
             - uses: actions/upload-artifact@v4
               with:
-                name: ${projectName}-desktop
+                name: ${projectName}-desktop-${'$'}{{ matrix.os }}
                 path: |
                   desktop/build/compose/binaries/main/**/*.jar
                   desktop/build/compose/jars/*.jar
