@@ -119,7 +119,6 @@
   <string name="ai_agent_provider_fetch_hint">Only available when the upstream provider exposes a model list endpoint.</string>
   <string name="ai_agent_provider_pick_model">Pick a model</string>
   <string name="ai_agent_provider_1m">1M</string>
-  <string name="ai_agent_provider_model_list_hint">Tap a model to fill the focused slot.</string>
   <string name="ai_agent_provider_save">Save</string>
   <string name="ai_agent_provider_required">Name, base URL and the main model are required</string>
   <string name="ai_agent_provider_from_preset">Start from a preset</string>

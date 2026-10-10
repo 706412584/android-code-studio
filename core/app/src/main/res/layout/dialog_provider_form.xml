@@ -136,9 +136,10 @@
       android:hint="@string/ai_agent_provider_slot_main"
       app:helperTextEnabled="true"
       app:helperText="@string/ai_agent_provider_slot_hint_main"
-      style="@style/Widget.Material3.TextInputLayout.OutlinedBox">
+      style="@style/Widget.Material3.TextInputLayout.OutlinedBox.ExposedDropdownMenu">
 
-      <com.google.android.material.textfield.TextInputEditText
+      <!-- 可编辑的下拉框：输入框右侧箭头展开「获取模型」拉到的清单，手输不受影响。 -->
+      <com.google.android.material.textfield.MaterialAutoCompleteTextView
         android:id="@+id/providerSlotMain"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
@@ -167,9 +168,9 @@
       android:layout_height="wrap_content"
       android:layout_marginTop="12dp"
       android:hint="@string/ai_agent_provider_slot_haiku"
-      style="@style/Widget.Material3.TextInputLayout.OutlinedBox">
+      style="@style/Widget.Material3.TextInputLayout.OutlinedBox.ExposedDropdownMenu">
 
-      <com.google.android.material.textfield.TextInputEditText
+      <com.google.android.material.textfield.MaterialAutoCompleteTextView
         android:id="@+id/providerSlotHaiku"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
@@ -192,9 +193,9 @@
       android:layout_height="wrap_content"
       android:layout_marginTop="12dp"
       android:hint="@string/ai_agent_provider_slot_sonnet"
-      style="@style/Widget.Material3.TextInputLayout.OutlinedBox">
+      style="@style/Widget.Material3.TextInputLayout.OutlinedBox.ExposedDropdownMenu">
 
-      <com.google.android.material.textfield.TextInputEditText
+      <com.google.android.material.textfield.MaterialAutoCompleteTextView
         android:id="@+id/providerSlotSonnet"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
@@ -217,9 +218,9 @@
       android:layout_height="wrap_content"
       android:layout_marginTop="12dp"
       android:hint="@string/ai_agent_provider_slot_opus"
-      style="@style/Widget.Material3.TextInputLayout.OutlinedBox">
+      style="@style/Widget.Material3.TextInputLayout.OutlinedBox.ExposedDropdownMenu">
 
-      <com.google.android.material.textfield.TextInputEditText
+      <com.google.android.material.textfield.MaterialAutoCompleteTextView
         android:id="@+id/providerSlotOpus"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
@@ -253,28 +254,6 @@
       app:helperText="@string/ai_agent_provider_fetch_hint"
       app:icon="@drawable/ic_search"
       app:iconGravity="textStart" />
-
-    <!--
-      拉取到的模型清单（默认隐藏）。
-
-      只 Toast 一个数量不够用：用户仍不知道有哪些模型、也不能从列表里选。
-      这里渲染成可点的列表，点某项即写入当前「焦点槽位」。
-    -->
-    <TextView
-      android:id="@+id/providerModelListHint"
-      android:layout_width="match_parent"
-      android:layout_height="wrap_content"
-      android:visibility="gone"
-      android:text="@string/ai_agent_provider_model_list_hint"
-      android:textAppearance="@style/TextAppearance.Material3.BodySmall"
-      android:textColor="?attr/colorOnSurfaceVariant" />
-
-    <LinearLayout
-      android:id="@+id/providerModelList"
-      android:layout_width="match_parent"
-      android:layout_height="wrap_content"
-      android:orientation="vertical"
-      android:visibility="gone" />
 
   </LinearLayout>
 

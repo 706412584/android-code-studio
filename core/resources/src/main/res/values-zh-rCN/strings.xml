@@ -114,7 +114,6 @@
   <string name="ai_agent_provider_fetch_hint">仅当上游服务商提供模型列表接口时才能获取。</string>
   <string name="ai_agent_provider_pick_model">选择模型</string>
   <string name="ai_agent_provider_1m">1M</string>
-  <string name="ai_agent_provider_model_list_hint">点击模型以填入当前槽位。</string>
   <string name="ai_agent_provider_save">保存</string>
   <string name="ai_agent_provider_required">名称、Base URL 与主模型为必填</string>
   <string name="ai_agent_provider_from_preset">从预设开始</string>

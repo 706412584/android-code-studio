@@ -18,13 +18,10 @@
 package com.tom.rv2ide.preferences
 
 import android.content.Context
-import android.graphics.Typeface
-import android.util.TypedValue
 import android.view.LayoutInflater
 import android.view.View
-import android.widget.EditText
-import android.widget.TextView
 import android.widget.Toast
+import com.google.android.material.textfield.MaterialAutoCompleteTextView
 import androidx.preference.Preference
 import com.tom.rv2ide.databinding.DialogProviderFormBinding
 import com.tom.rv2ide.ai.protocol.ModelProtocolType
@@ -182,14 +179,14 @@ internal class ProviderManagementPreference(
     val slotInputs = slotInputs(binding)
     val slotChecks = slotChecks(binding)
 
-    /** 当前获得焦点的槽位，拉取到的模型清单点选时写回它。 */
-    var focusedSlot = 0
-    slotInputs.forEachIndexed { i, input ->
-      input.setOnFocusChangeListener { _, hasFocus -> if (hasFocus) focusedSlot = i }
-    }
-
     slotChecks.forEachIndexed { i, check ->
       check.setOnCheckedChangeListener { _, isChecked -> apply1m(binding, i, isChecked) }
+    }
+
+    // 下拉选中后重算该槽位的「1M」勾选态——拉回的模型名不带后缀，
+    // 与旧「底部清单点选」行为保持一致。
+    slotInputs.forEachIndexed { i, input ->
+      input.setOnItemClickListener { _, _, _, _ -> sync1mCheck(binding, i) }
     }
 
     // 预设下拉（仅新建）。预设是「快速填充」而不是唯一来源：选中只覆盖连接信息，
@@ -257,7 +254,7 @@ internal class ProviderManagementPreference(
       )
     }
 
-    wireFetch(context, binding, slotInputs, { focusedSlot }, { readDraft() })
+    wireFetch(context, binding, { readDraft() })
 
     com.google.android.material.dialog.MaterialAlertDialogBuilder(context)
         .setTitle(if (isNew) R.string.ai_agent_provider_add else R.string.ai_agent_provider_edit)
@@ -306,48 +303,16 @@ internal class ProviderManagementPreference(
   /**
    * 接上「获取模型」按钮。
    *
-   * <p>拉取成功后把返回的真实列表渲染成可点清单——点某项即写入当前聚焦的槽位，
-   * 用户不必从弹窗里再挑一次、也不必猜模型名。拉取失败只提示，不阻断保存：
-   * 有些服务商不实现这个端点，而用户手填模型名照样能用。
+   * <p>拉取成功后把真实清单注入 4 个槽位下拉框（ExposedDropdownMenu）——用户点输入框
+   * 右侧箭头即可从列表直选，也可继续手输，与协议框同一交互。拉取失败只提示，不阻断
+   * 保存：有些服务商不实现这个端点，而用户手填模型名照样能用。
    */
   private fun wireFetch(
       context: Context,
       binding: DialogProviderFormBinding,
-      slotInputs: List<EditText>,
-      focusedSlot: () -> Int,
       readDraft: () -> ProviderConfig,
   ) {
     val button = binding.providerFetchModels
-    val list = binding.providerModelList
-    val listHint = binding.providerModelListHint
-
-    /** 清单项点选后写回聚焦槽位，并同步该槽位的「1M」勾选态。 */
-    fun renderList(models: List<String>) {
-      list.removeAllViews()
-      list.visibility = View.VISIBLE
-      listHint.visibility = View.VISIBLE
-      models.forEach { model ->
-        val row =
-            TextView(context).apply {
-              text = model
-              typeface = Typeface.MONOSPACE
-              setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
-              val v = TypedValue()
-              context.theme.resolveAttribute(android.R.attr.selectableItemBackground, v, true)
-              setBackgroundResource(v.resourceId)
-              setPadding(0, 24, 0, 24)
-              isClickable = true
-            }
-        row.setOnClickListener {
-          val index = focusedSlot()
-          val input = slotInputs.getOrNull(index) ?: return@setOnClickListener
-          // 只换基名，勾选框随后按新模型的后缀重算——拉回的模型名不带 [1m]。
-          input.setText(ContextSizeParser.stripSuffix(model))
-          sync1mCheck(binding, index)
-        }
-        list.addView(row)
-      }
-    }
 
     button.setOnClickListener {
       val draft = readDraft()
@@ -360,20 +325,31 @@ internal class ProviderManagementPreference(
           button.isEnabled = true
           button.setText(R.string.ai_agent_provider_fetch_models)
           if (models.isEmpty()) {
-            list.visibility = View.GONE
-            listHint.visibility = View.GONE
             Toast.makeText(context, R.string.ai_agent_provider_fetch_empty, Toast.LENGTH_LONG)
                 .show()
             return@withContext
           }
-          renderList(models)
+          injectModelChoices(binding, models)
         }
       }
     }
   }
 
-  /** 4 个模型槽位输入框，顺序与 {@link ProviderConfig#SLOT_ORDER} 一致。 */
-  private fun slotInputs(binding: DialogProviderFormBinding): List<EditText> =
+  /**
+   * 把拉取到的模型清单塞进每个槽位下拉框。
+   *
+   * <p>下拉项用 {@link ContextSizeParser#stripSuffix} 剥掉后缀——后缀是本地元数据，
+   * 由「1M」勾选框承载（点选后 {@link #sync1mCheck} 会按新名重算勾选态）。
+   */
+  private fun injectModelChoices(binding: DialogProviderFormBinding, models: List<String>) {
+    val names = models.map { ContextSizeParser.stripSuffix(it) }.distinct()
+    slotInputs(binding).forEach { input ->
+      input.setSimpleItems(names.toTypedArray())
+    }
+  }
+
+  /** 4 个模型槽位下拉框，顺序与 {@link ProviderConfig#SLOT_ORDER} 一致。 */
+  private fun slotInputs(binding: DialogProviderFormBinding): List<MaterialAutoCompleteTextView> =
       listOf(
           binding.providerSlotMain,
           binding.providerSlotHaiku,
