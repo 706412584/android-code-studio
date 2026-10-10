@@ -131,6 +131,11 @@
   <string name="ai_agent_image_gen_output_dir_title">图片保存位置</string>
   <string name="ai_agent_image_gen_output_dir_default">默认：当前项目的 ai-generated/ 文件夹</string>
   <string name="ai_agent_image_gen_output_dir_row">图片保存位置：%1$s</string>
+  <string name="ai_agent_skills_import">导入技能</string>
+  <string name="ai_agent_skills_import_hint">从「下载」目录选择 .md 文件导入</string>
+  <string name="ai_agent_skills_import_empty">「下载」目录里没有 .md 文件，请先把技能文件放进去。</string>
+  <string name="ai_agent_skills_import_ok">已导入：%1$s</string>
+  <string name="ai_agent_skills_import_failed">导入失败——请检查文件后重试</string>
   <string name="ai_agent_page_providers_summary">API 密钥、自定义端点、启用开关</string>
   <string name="ai_agent_page_tools_title">工具与权限</string>
   <string name="ai_agent_page_tools_summary">对话模式、权限级别、Shell 后端、代码补全</string>

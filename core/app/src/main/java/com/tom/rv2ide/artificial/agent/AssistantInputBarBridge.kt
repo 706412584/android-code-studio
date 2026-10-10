@@ -132,6 +132,9 @@ internal class AssistantInputBarBridge {
   /** 斜杠菜单条目。宿主在 attach 时从 SlashCommandCatalog 投影一次。 */
   var slashCommands by mutableStateOf<List<com.tom.rv2ide.artificial.agent.compose.components.independent.InputSlashCommand>>(emptyList())
 
+  /** 已安装技能（@ 菜单数据源）。宿主在 attach 时从 SkillRegistry 投影。 */
+  var skills by mutableStateOf<List<com.tom.rv2ide.artificial.agent.compose.components.independent.InputSlashCommand>>(emptyList())
+
   // ── 抽屉会话（跨桥复用：ChatDrawer 已有 drawerSessions，这里不重复） ──
 
   /** 最近会话列表的只读别名，供装配层取 sessionId。 */

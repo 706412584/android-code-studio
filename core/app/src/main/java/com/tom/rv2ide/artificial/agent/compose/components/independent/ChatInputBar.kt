@@ -158,6 +158,28 @@ data class InputSlashCommand(
     val acceptsArgs: Boolean = true,
 )
 
+/**
+ * 光标前最后一个 token 若形如 {@code @xxx}（前置是空白或行首）则返回它，否则 null。
+ *
+ * <p>cc-haha 的 ChatInput 同款扫描语义（只看最后一个空白之后的部分），保证「邮箱
+ * 地址 user@host」不会被误判——@ 前没有空白就不算触发。
+ */
+internal fun trailingAtToken(value: String): String? {
+    if (value.isEmpty()) return null
+    val start = when (val lastBlank = value.lastIndexOfAny(charArrayOf(' ', '\n', '\t'))) {
+        -1 -> 0
+        else -> lastBlank + 1
+    }
+    if (start >= value.length || value[start] != '@') return null
+    val token = value.substring(start)
+    // @ 后不能有空白：有空白说明用户已输入到别处，菜单不该再弹。
+    return if (token.any { it == ' ' || it == '\n' }) null else token
+}
+
+/** @ 选中技能后插入的引导语：替换掉 "@xxx" token，后续用户直接补任务描述。 */
+internal fun skillAtInsertion(skillName: String): String =
+    "使用技能 $skillName 处理："
+
 @Composable
 internal fun ChatInputBar(
     value: String,
@@ -197,6 +219,8 @@ internal fun ChatInputBar(
     onUploadImage: () -> Unit,
     onTakePhoto: () -> Unit,
     slashCommands: List<InputSlashCommand> = emptyList(),
+    /** 已安装技能（@ 触发选择后插入「使用技能」引导语）。空列表时 @ 无菜单。 */
+    skills: List<InputSlashCommand> = emptyList(),
     queuedRequests: List<QueuedRequest> = emptyList(),
     onRemoveQueued: (String) -> Unit = {},
     onMoveQueued: (Int, Int) -> Unit = { _, _ -> },
@@ -242,6 +266,16 @@ internal fun ChatInputBar(
     val filteredCommands = if (showSlashMenu) {
         if (value == "/") slashCommands
         else slashCommands.filter { "/${it.name}".startsWith(value) }
+    } else emptyList()
+
+    // @ 菜单：光标段（最后一个前置空白之后）以 @ 开头时弹技能选择。
+    // 与 slash 菜单同一浮层结构；选中插入引导语而不是命令文本——技能正文由模型
+    // 经 skill 工具加载（渐进披露），用户只需表达「用这个技能做什么」。
+    val atToken = remember(value) { trailingAtToken(value) }
+    val showSkillMenu = !isBusy && skills.isNotEmpty() && atToken != null
+    val filteredSkills = if (showSkillMenu) {
+        if (atToken == "@") skills
+        else skills.filter { it.name.startsWith(atToken.substring(1), ignoreCase = true) }
     } else emptyList()
 
     // 文本是否已经超出输入框高度（超出后框内滚动，展开按钮才有意义）。
@@ -320,57 +354,29 @@ internal fun ChatInputBar(
                     .padding(bottom = imeInset)
             ) {
             if (filteredCommands.isNotEmpty()) {
-                Surface(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(bottom = Spacing.sm),
-                    shape = RoundedCornerShape(Radius.lg),
-                    color = MaterialTheme.colorScheme.surface,
-                    border = androidx.compose.foundation.BorderStroke(
-                        1.dp, MaterialTheme.colorScheme.outlineVariant
-                    )
-                ) {
-                    val slashScrollState = rememberScrollState()
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .heightIn(max = minOf(SLASH_COMMAND_LIST_MAX_HEIGHT, overlayMaxHeight))
-                            .nestedScroll(rememberBoundNestedScrollConnection(slashScrollState))
-                            .verticalScroll(slashScrollState)
-                            .padding(horizontal = Spacing.sm, vertical = Spacing.xs)
-                    ) {
-                        filteredCommands.forEach { command ->
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clip(RoundedCornerShape(Radius.sm))
-                                    .clickable {
-                                        onValueChange(
-                                            if (command.acceptsArgs) "/${command.name} " else "/${command.name}"
-                                        )
-                                    }
-                                    .padding(horizontal = Spacing.md, vertical = Spacing.sm),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text(
-                                    "/${command.name}",
-                                    style = MaterialTheme.typography.labelLarge,
-                                    fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.primary
-                                )
-                                Spacer(Modifier.width(Spacing.sm))
-                                Text(
-                                    command.description,
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.weight(1f),
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                            }
-                        }
-                    }
-                }
+                SlashMenuList(
+                    items = filteredCommands,
+                    prefix = "/",
+                    onSelect = { command ->
+                        onValueChange(
+                            if (command.acceptsArgs) "/${command.name} " else "/${command.name}"
+                        )
+                    },
+                    overlayMaxHeight = overlayMaxHeight,
+                )
+            } else if (filteredSkills.isNotEmpty()) {
+                SlashMenuList(
+                    items = filteredSkills,
+                    prefix = "@",
+                    onSelect = { skill ->
+                        // 用 @token 整体替换：清掉光标段的 "@xxx"，留下后续补写的任务描述位置。
+                        onValueChange(
+                            value.removeSuffix(atToken ?: "@") +
+                                skillAtInsertion(skill.name)
+                        )
+                    },
+                    overlayMaxHeight = overlayMaxHeight,
+                )
             }
 
             if (queuedRequests.isNotEmpty()) {
@@ -959,6 +965,68 @@ internal fun SendButton(
                     tint = iconTint,
                     modifier = Modifier.size(18.dp)
                 )
+            }
+        }
+    }
+}
+
+/**
+ * 斜杠 / 技能共用菜单浮层（条目 = 前缀 + 名字 + 描述，点击回调）。
+ *
+ * <p>从原 slash 菜单内联块抽出：@ 技能选择与 / 命令补全是同一个 UI 形状
+ * （cc-haha 的 ComposerCapabilityMenu 与斜杠菜单也是同构），共用一个组件避免两份样式漂移。
+ */
+@Composable
+private fun SlashMenuList(
+    items: List<InputSlashCommand>,
+    prefix: String,
+    onSelect: (InputSlashCommand) -> Unit,
+    overlayMaxHeight: androidx.compose.ui.unit.Dp,
+) {
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(bottom = Spacing.sm),
+        shape = RoundedCornerShape(Radius.lg),
+        color = MaterialTheme.colorScheme.surface,
+        border = androidx.compose.foundation.BorderStroke(
+            1.dp, MaterialTheme.colorScheme.outlineVariant
+        )
+    ) {
+        val scrollState = rememberScrollState()
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(max = minOf(SLASH_COMMAND_LIST_MAX_HEIGHT, overlayMaxHeight))
+                .nestedScroll(rememberBoundNestedScrollConnection(scrollState))
+                .verticalScroll(scrollState)
+                .padding(horizontal = Spacing.sm, vertical = Spacing.xs)
+        ) {
+            items.forEach { item ->
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(Radius.sm))
+                        .clickable { onSelect(item) }
+                        .padding(horizontal = Spacing.md, vertical = Spacing.sm),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        "$prefix${item.name}",
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Spacer(Modifier.width(Spacing.sm))
+                    Text(
+                        item.description,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.weight(1f),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
             }
         }
     }

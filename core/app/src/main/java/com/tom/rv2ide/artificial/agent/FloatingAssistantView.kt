@@ -688,7 +688,10 @@ class FloatingAssistantView(
               description = d.getDescription(),
               acceptsArgs = d.getUsage().contains(' '),
           )
-        }
+        } + skillSlashCommands()
+    // 已安装技能投影：cc-haha 语义——skill 名即斜杠命令名（/技能名 直接触发），
+    // 同时进 @ 菜单。技能正文的加载仍由模型经 skill 工具完成（渐进披露不变）。
+    inputBar.skills = skillSlashCommands()
     inputFeatures.owner = this
     // Compose 顶栏装配（XML 标题栏退役）。
     installHeaderCompose()
@@ -1367,6 +1370,22 @@ class FloatingAssistantView(
         handleCommand(parsed)
         return
       }
+      // 技能斜杠触发（cc-haha 语义：skill 名即命令名）。catalog 不认识的名字按普通
+      // 消息处理（/etc/hosts 原则），但若与已安装技能同名，转成「用 skill 工具加载
+      // 该技能 + 用户参数」发给模型——正文由 skill 工具渐进加载，这里只表达意图。
+      val skillInvocation = parseSkillSlash(typed)
+      if (skillInvocation != null) {
+        inputBar.text = ""
+        // 附件语义与普通消息一致：非图片附件文本仍追加在请求后。
+        val request0 = skillInvocation
+        val imagePayload0 = inputFeatures.imageRawInputJson(request0)
+        val textAttachments0 =
+            if (imagePayload0 != null) inputFeatures.attachmentContextExcludingImage()
+            else inputFeatures.attachmentContext()
+        inputFeatures.clearAttachments()
+        execute(request0 + textAttachments0, inputFeatures.reasoningEffort(), imagePayload0)
+        return
+      }
     }
 
     val request = if (typed.isEmpty()) inputFeatures.attachmentNames() else typed
@@ -1385,6 +1404,39 @@ class FloatingAssistantView(
     // 推理强度随请求走：它在输入区可选，而每轮都可能被改，因此每次发送都重读一次，
     // 而不是在 attach 时读一次缓存。
     execute(request + textAttachments, inputFeatures.reasoningEffort(), imagePayload)
+  }
+
+  /** 已安装技能投影成菜单条目（slash 与 @ 菜单共用）。每次 attach 时重读——skill 目录可能被导入更新。 */
+  private fun skillSlashCommands(): List<com.tom.rv2ide.artificial.agent.compose.components.independent.InputSlashCommand> =
+      orchestrator.getSkillRegistry().all().map { skill ->
+        com.tom.rv2ide.artificial.agent.compose.components.independent.InputSlashCommand(
+            name = skill.getName(),
+            description = skill.getDescription(),
+            acceptsArgs = true,
+        )
+      }
+
+  /**
+   * 输入若是 {@code /技能名 参数} 且技能名与已安装技能同名，返回发送给模型的请求文本；否则 null。
+   *
+   * <p>cc-haha 的序列化语义：{@code /name args} → 指示模型用 skill 工具加载该技能并按参数执行。
+   */
+  private fun parseSkillSlash(typed: String): String? {
+    if (!typed.startsWith("/")) return null
+    val body = typed.substring(1)
+    val name = body.substringBefore(' ').trim()
+    if (name.isEmpty()) return null
+    val skill = orchestrator.getSkillRegistry().find(name) ?: return null
+    val args = body.substringAfter(' ', "").trim()
+    return buildString {
+      append("使用技能「")
+      append(skill.getName())
+      append("」：先用 skill 工具加载它的完整内容，再严格按其指示执行。")
+      if (args.isNotEmpty()) {
+        append("\n\n技能参数：")
+        append(args)
+      }
+    }
   }
 
   /** 执行一条斜杠命令。 */
@@ -2803,6 +2855,7 @@ class FloatingAssistantView(
             onUploadImage = { inputFeatures.pickImageAttachment() },
             onTakePhoto = { inputFeatures.pickImageAttachment() },
             slashCommands = bridge.slashCommands,
+            skills = bridge.skills,
             queuedRequests = bridge.queuedRequests,
             tokenProgress = bridge.tokenProgress,
             tokenEstimated = bridge.tokenEstimated,

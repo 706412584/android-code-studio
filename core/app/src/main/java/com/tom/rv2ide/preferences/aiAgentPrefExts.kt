@@ -1487,9 +1487,73 @@ private class SkillsPreference(
     com.google.android.material.dialog.MaterialAlertDialogBuilder(context)
         .setTitle(R.string.ai_agent_skills_title)
         .setMessage(message)
-        .setPositiveButton(android.R.string.ok, null)
+        // 导入入口：把任意位置的 .md / SKILL.md 拷进 skills 目录——免去用户翻隐私目录
+        // 手动放文件的麻烦（目录在 filesDir 下，文件管理器通常进不去）。
+        .setPositiveButton(R.string.ai_agent_skills_import) { _, _ ->
+          importSkill(context, preference)
+        }
+        .setNegativeButton(android.R.string.ok, null)
         .show()
     return true
+  }
+
+  /** 导入入口。Preference 拿不到 ActivityResultLauncher（注册时机在 Fragment 创建期），
+   *  SAF 回调接不进来，因此走「公共 Download 目录 → 就地拷入」的轻方案。 */
+  private fun importSkill(context: Context, preference: Preference) {
+    copyFromPublicDir(context, preference)
+  }
+
+  /**
+   * 从公共下载目录把 .md 文件拷进 skills 目录（文件名作 skill 名）。
+   *
+   * <p>选型说明：Preference 无法注册 ActivityResultLauncher（注册时机在 Fragment 创建期），
+   * SAF 在这里接不进回调；而公共目录 Download 用户用任何文件管理器都能放文件进去，
+   * 配合系统「下载」应用即可完成流转——比引导用户翻 filesDir 可行得多。
+   */
+  private fun copyFromPublicDir(context: Context, preference: Preference) {
+    val downloads =
+        android.os.Environment.getExternalStoragePublicDirectory(
+            android.os.Environment.DIRECTORY_DOWNLOADS)
+    val candidates =
+        downloads?.listFiles { file ->
+              file.isFile && file.name.lowercase(java.util.Locale.ROOT).endsWith(".md")
+            }
+            ?.sortedByDescending { it.lastModified() }
+            .orEmpty()
+    if (candidates.isEmpty()) {
+      Toast.makeText(context, R.string.ai_agent_skills_import_empty, Toast.LENGTH_LONG).show()
+      return
+    }
+    val names = candidates.map { it.name }.toTypedArray()
+    com.google.android.material.dialog.MaterialAlertDialogBuilder(context)
+        .setTitle(R.string.ai_agent_skills_import)
+        .setItems(names) { _, which ->
+          val src = candidates[which]
+          val target = java.io.File(skillsDir(context), src.nameWithoutExtension + ".md")
+          try {
+            src.copyTo(target, overwrite = true)
+            // 重进弹窗即看到新清单；副标题的计数也一并刷新。
+            preference.summary = summaryAfterImport(context)
+            Toast.makeText(
+                    context,
+                    context.getString(R.string.ai_agent_skills_import_ok, target.name),
+                    Toast.LENGTH_LONG,
+                )
+                .show()
+          } catch (e: Exception) {
+            Toast.makeText(context, R.string.ai_agent_skills_import_failed, Toast.LENGTH_LONG)
+                .show()
+          }
+        }
+        .setNegativeButton(android.R.string.cancel, null)
+        .show()
+  }
+
+  /** 导入后条目副标题（重新计数）。 */
+  private fun summaryAfterImport(context: Context): String {
+    val count = skillRegistry(context).size()
+    return if (count == 0) context.getString(R.string.ai_agent_skills_none)
+    else context.getString(R.string.ai_agent_skills_count, count)
   }
 
   private fun skillsDir(context: Context) =
