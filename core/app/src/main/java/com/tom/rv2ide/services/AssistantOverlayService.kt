@@ -76,13 +76,28 @@ import java.util.concurrent.atomic.AtomicInteger
 class AssistantOverlayService :
     Service(),
     LifecycleOwner,
-    androidx.savedstate.SavedStateRegistryOwner {
+    androidx.savedstate.SavedStateRegistryOwner,
+    androidx.activity.OnBackPressedDispatcherOwner {
 
   private val savedStateRegistryController =
       androidx.savedstate.SavedStateRegistryController.create(this)
 
   override val savedStateRegistry: androidx.savedstate.SavedStateRegistry
     get() = savedStateRegistryController.savedStateRegistry
+
+  /**
+   * Compose 的 [androidx.activity.compose.BackHandler]（会话抽屉的多选返回，见
+   * ChatDrawerContent）通过 LocalOnBackPressedDispatcherOwner 取 dispatcher——
+   * Activity 宿主自动有它，Service 宿主没有，不提供就崩：
+   * IllegalStateException "No OnBackPressedDispatcherOwner was provided via
+   * LocalOnBackPressedDispatcherOwner"（实测第三层：前两层 Lifecycle/SavedState
+   * 修掉后暴露）。悬浮窗没有 Activity 语义，dispatcher 的 fallback Runnable
+   * 永远不该触发（BackHandler enabled 才会吃返回键）；真没人处理时交回系统默认。
+   */
+  private val backPressedDispatcher = androidx.activity.OnBackPressedDispatcher { }
+
+  override val onBackPressedDispatcher: androidx.activity.OnBackPressedDispatcher
+    get() = backPressedDispatcher
 
   private lateinit var windowManager: WindowManager
 
@@ -275,7 +290,8 @@ class AssistantOverlayService :
     // lifecycleRegistry），把它与 SavedStateRegistry 一起挂到容器视图上，
     // ComposeView 便能解析到；Compose 状态随本服务生命周期销毁，与窗口同寿。
     // （经 Java 工具转发的原因见 OverlayViewTreeOwners 的类注释。）
-    com.tom.rv2ide.artificial.agent.compose.OverlayViewTreeOwners.install(container, this, this)
+    com.tom.rv2ide.artificial.agent.compose.OverlayViewTreeOwners.install(
+        container, this, this, this)
 
     val host = OverlayHost(this, serviceScope, container)
     // 注入进程级共享 orchestrator（AssistantOrchestratorProvider）：应用外悬浮跑在 Service 里、

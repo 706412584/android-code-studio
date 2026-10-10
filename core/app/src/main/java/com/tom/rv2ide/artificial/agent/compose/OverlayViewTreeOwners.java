@@ -29,18 +29,28 @@ import androidx.savedstate.SavedStateRegistryOwner;
  * Activity / Fragment 宿主自动有它；悬浮窗挂在 WindowManager 下什么都没有，不手动挂上就崩：
  * {@code IllegalStateException: ViewTreeLifecycleOwner not found}（实机复现）。
  *
+ * <p>同一类问题出现三层：Lifecycle / SavedStateRegistry（Recomposer 与状态恢复）、
+ * {@code OnBackPressedDispatcherOwner}（Compose 的 BackHandler 经
+ * LocalOnBackPressedDispatcherOwner 取它，会话抽屉的多选返回依赖）。
+ * 三个 owner 全部由宿主（AssistantOverlayService）实现，这里一并挂上。
+ *
  * <p><b>为什么是 Java 而不是 Kotlin</b>：{@code ViewTreeLifecycleOwner.set} /
  * {@code ViewTreeSavedStateRegistryOwner.set} 的 Kotlin 门面在部分组合版本下
  * Kotlin 编译器解析不到（metadata 兼容问题，实测 Unresolved reference），
- * 而 Java 直接调静态方法不受影响。工具只有两个转发方法，成本可忽略。
+ * 而 Java 直接调静态方法不受影响。工具只有转发方法，成本可忽略。
  */
 public final class OverlayViewTreeOwners {
 
   private OverlayViewTreeOwners() {}
 
-  /** 把 owner 挂到视图上；ComposeView 附加后沿树向上就能找到。 */
-  public static void install(View view, LifecycleOwner owner, SavedStateRegistryOwner registry) {
+  /** 把三个 owner 挂到视图上；ComposeView 附加后沿树向上就能找到。 */
+  public static void install(
+      View view,
+      LifecycleOwner owner,
+      SavedStateRegistryOwner registry,
+      androidx.activity.OnBackPressedDispatcherOwner backDispatcherOwner) {
     androidx.lifecycle.ViewTreeLifecycleOwner.set(view, owner);
     androidx.savedstate.ViewTreeSavedStateRegistryOwner.set(view, registry);
+    androidx.activity.ViewTreeOnBackPressedDispatcherOwner.set(view, backDispatcherOwner);
   }
 }
