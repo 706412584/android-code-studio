@@ -133,6 +133,8 @@
   <string name="ai_agent_image_gen_no_providers">No usable provider. Add one under Providers first.</string>
   <string name="ai_agent_image_gen_no_models">No image model found in this provider\'s catalog (names containing \"image\").</string>
   <string name="ai_agent_image_gen_clear">Clear</string>
+  <string name="ai_agent_image_gen_output_dir_title">Image save location</string>
+  <string name="ai_agent_image_gen_output_dir_default">Default: current project ai-generated/ folder</string>
   <string name="ai_agent_page_providers_summary">API keys, custom endpoint, enable switch</string>
   <string name="ai_agent_page_tools_title">Tools and permissions</string>
   <string name="ai_agent_page_tools_summary">Chat mode, permission level, shell backend, code completion</string>

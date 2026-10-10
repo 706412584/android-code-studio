@@ -34,11 +34,22 @@ public final class ImageGenerationEndpoint {
   private final String baseUrl;
   private final String apiKey;
   private final String model;
+  /**
+   * 图片保存目录（绝对路径）；空串 = 工具默认（工作区下 {@code ai-generated/}）。
+   *
+   * <p>由能力页「保存路径」设置，用户显式指定的目录优先于工作区约定。
+   */
+  private final String outputDir;
 
   public ImageGenerationEndpoint(String baseUrl, String apiKey, String model) {
+    this(baseUrl, apiKey, model, "");
+  }
+
+  public ImageGenerationEndpoint(String baseUrl, String apiKey, String model, String outputDir) {
     this.baseUrl = baseUrl == null ? "" : baseUrl.trim();
     this.apiKey = apiKey == null ? "" : apiKey.trim();
     this.model = model == null ? "" : model.trim();
+    this.outputDir = outputDir == null ? "" : outputDir.trim();
   }
 
   public String getBaseUrl() {
@@ -51,6 +62,11 @@ public final class ImageGenerationEndpoint {
 
   public String getModel() {
     return model;
+  }
+
+  /** 用户指定的保存目录；空串表示未指定。 */
+  public String getOutputDir() {
+    return outputDir;
   }
 
   /** 是否具备发请求的最低条件：API 根与模型名齐备（密钥可空，本地网关可能不鉴权）。 */

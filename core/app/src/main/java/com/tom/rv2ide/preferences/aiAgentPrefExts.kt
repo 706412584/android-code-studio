@@ -157,6 +157,7 @@ private class CapabilitiesPage(
     addPreference(AssistantOverlayPreference())
     addPreference(AgentsPreference())
     addPreference(ImageGenerationPreference())
+    addPreference(ImageOutputDirPreference())
     addPreference(ProjectRulesPreference())
     addPreference(SkillsPreference())
     addPreference(MemoriesPreference())
@@ -268,28 +269,6 @@ private object CodeGraphIndexActions {
       FolderPickerActivity.onFolderPicked = null
     }
     context.startActivity(Intent(context, FolderPickerActivity::class.java))
-  }
-
-  /**
-   * `content://` tree URI → 真实目录。
-   *
-   * <p>外部存储的文档 id 形如 `primary:MyFolder`，冒号后才是相对路径（与
-   * `AssistantInputFeatures.localPathOf` 同一约定）。非主存储卷（SD 卡等）拿不到路径，
-   * 返回 null——这类卷 CodeGraph 本来也难以作为 cwd 使用。
-   */
-  private fun treeUriToFile(context: Context, uriString: String): File? {
-    return try {
-      val uri = android.net.Uri.parse(uriString)
-      val id = android.provider.DocumentsContract.getTreeDocumentId(uri)
-      val relative = id.substringAfter(':', missingDelimiterValue = "")
-      if (relative.isEmpty()) {
-        null
-      } else {
-        File(android.os.Environment.getExternalStorageDirectory(), relative)
-      }
-    } catch (e: Exception) {
-      null
-    }
   }
 
   /**
@@ -704,6 +683,28 @@ private fun agentPrefs(context: Context) =
     context.applicationContext.getSharedPreferences("ai_agent_tools", Context.MODE_PRIVATE)
 
 /**
+ * `content://` tree URI → 真实目录。
+ *
+ * <p>外部存储的文档 id 形如 `primary:MyFolder`，冒号后才是相对路径（与
+ * `AssistantInputFeatures.localPathOf` 同一约定）。非主存储卷（SD 卡等）拿不到路径，
+ * 返回 null——这类卷 CodeGraph 本来也难以作为 cwd 使用。
+ */
+private fun treeUriToFile(context: Context, uriString: String): File? {
+  return try {
+    val uri = android.net.Uri.parse(uriString)
+    val id = android.provider.DocumentsContract.getTreeDocumentId(uri)
+    val relative = id.substringAfter(':', missingDelimiterValue = "")
+    if (relative.isEmpty()) {
+      null
+    } else {
+      File(android.os.Environment.getExternalStorageDirectory(), relative)
+    }
+  } catch (e: Exception) {
+    null
+  }
+}
+
+/**
  * 图片生成配置：能力页选定的服务商 + 模型。
  *
  * <p>两步单选弹窗：先选服务商（[ProviderConfigStore] 里已配置的），再从该服务商的
@@ -802,6 +803,53 @@ private class ImageGenerationPreference(
     val record = ProviderConfigStore(context).find(provider)
     val label = record?.getLabel() ?: provider
     return "$label · $model"
+  }
+}
+
+/**
+ * 图片保存目录：指定生成的图片落到哪。
+ *
+ * <p>复用 [FolderPickerActivity]（CodeGraph 索引同款目录选择器）。
+ * 未指定时默认落在当前项目工作区的 {@code ai-generated/} 下——生成的图属于项目产物，
+ * 路径可见、可被 file_read 引用。
+ */
+@Parcelize
+private class ImageOutputDirPreference(
+    override val key: String = "image_gen_output_dir_pref",
+    override val title: Int = R.string.ai_agent_image_gen_output_dir_title,
+    override val summary: Int? = null,
+) : BasePreference() {
+
+  override fun onCreatePreference(context: Context): Preference {
+    return androidx.preference.Preference(context).apply {
+      key = "image_gen_output_dir_pref"
+      title = context.getString(R.string.ai_agent_image_gen_output_dir_title)
+      summary = currentSummary(context)
+    }
+  }
+
+  override fun onPreferenceClick(preference: Preference): Boolean {
+    val context = preference.context
+    FolderPickerActivity.onFolderPicked = { uriString ->
+      val dir = treeUriToFile(context, uriString)
+      if (dir != null && dir.isDirectory) {
+        AgentImageToolSettings(context).setOutputDir(dir.absolutePath)
+        preference.summary = currentSummary(context)
+      }
+      FolderPickerActivity.onFolderPicked = null
+    }
+    context.startActivity(Intent(context, FolderPickerActivity::class.java))
+    return true
+  }
+
+  /** 未指定显示「默认：项目 ai-generated/」，指定后显示绝对路径。 */
+  private fun currentSummary(context: Context): String {
+    val dir = AgentImageToolSettings(context).outputDir()
+    return if (dir.isEmpty()) {
+      context.getString(R.string.ai_agent_image_gen_output_dir_default)
+    } else {
+      dir
+    }
   }
 }
 

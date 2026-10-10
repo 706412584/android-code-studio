@@ -329,6 +329,12 @@ internal class ProviderManagementPreference(
                 .show()
             return@withContext
           }
+          Toast.makeText(
+                  context,
+                  context.getString(R.string.ai_agent_provider_fetch_ok, models.size),
+                  Toast.LENGTH_SHORT,
+              )
+              .show()
           injectModelChoices(binding, models)
         }
       }

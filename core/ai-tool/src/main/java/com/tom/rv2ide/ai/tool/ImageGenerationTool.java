@@ -185,7 +185,7 @@ public final class ImageGenerationTool extends BaseTool {
               + (detail.isEmpty() ? "（空）" : detail));
     }
 
-    return renderResults(context, endpoint.getModel(), response.getBody());
+    return renderResults(context, endpoint, response.getBody());
   }
 
   /**
@@ -194,7 +194,8 @@ public final class ImageGenerationTool extends BaseTool {
    * <p>兼容两种返回形态：标准 OpenAI 的 {@code data[].b64_json}，以及部分网关的
    * {@code data[].url}（data URL 内嵌 base64 的形式）。
    */
-  private ToolResult renderResults(ToolContext context, String model, String responseBody) {
+  private ToolResult renderResults(
+      ToolContext context, ImageGenerationEndpoint endpoint, String responseBody) {
     JSONArray data;
     try {
       data = new JSONObject(responseBody).optJSONArray("data");
@@ -243,7 +244,7 @@ public final class ImageGenerationTool extends BaseTool {
 
       File file;
       try {
-        file = writeOutput(context, bytes, mime, i + 1);
+        file = writeOutput(context, endpoint, bytes, mime, i + 1);
       } catch (IOException e) {        note.append("第 ").append(i + 1).append(" 张：保存失败（").append(e.getMessage()).append("）\n");
         continue;
       }
@@ -263,7 +264,7 @@ public final class ImageGenerationTool extends BaseTool {
       return error("图片生成响应无法解析出有效图片。\n" + abbreviate(responseBody, 400));
     }
 
-    note.insert(0, "生成成功（" + model + "）。\n");
+    note.insert(0, "生成成功（" + endpoint.getModel() + "）。\n");
     note.append("共 ").append(saved).append('/').append(data.length()).append(" 张已保存。\n");
     if (firstBase64.isEmpty()) {
       return ok(note.toString());
@@ -295,15 +296,22 @@ public final class ImageGenerationTool extends BaseTool {
   }
 
   /**
-   * 落盘到项目工作区下的 {@value #OUTPUT_DIR} 子目录。
+   * 落盘：用户在能力页指定了目录就用它，否则落项目工作区下的 {@value #OUTPUT_DIR}。
    *
-   * <p>放工作区而不是 app 私有目录：生成的图属于当前项目的产物，路径直接可见、
+   * <p>默认放工作区而不是 app 私有目录：生成的图属于当前项目的产物，路径直接可见、
    * 可被 {@code file_read} 引用、可进版本库；core/ai-tool 零 Android 依赖，
    * 也拿不到 {@code getExternalFilesDir}。
    */
-  private static File writeOutput(ToolContext context, byte[] bytes, String mime, int index)
+  private static File writeOutput(
+      ToolContext context, ImageGenerationEndpoint endpoint, byte[] bytes, String mime, int index)
       throws IOException {
-    File base = new File(context.getHomePath(), OUTPUT_DIR);
+    String custom = endpoint.getOutputDir();
+    File base;
+    if (!custom.isEmpty()) {
+      base = new File(custom);
+    } else {
+      base = new File(context.getHomePath(), OUTPUT_DIR);
+    }
     if (!base.exists() && !base.mkdirs() && !base.isDirectory()) {
       throw new IOException("无法创建目录: " + base.getAbsolutePath());
     }

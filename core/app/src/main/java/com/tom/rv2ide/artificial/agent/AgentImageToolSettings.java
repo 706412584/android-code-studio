@@ -37,6 +37,10 @@ public final class AgentImageToolSettings {
   public static final String KEY_IMAGE_PROVIDER = "image_gen_provider";
   /** 图片生成模型名。空 = 未配置。 */
   public static final String KEY_IMAGE_MODEL = "image_gen_model";
+  /**
+   * 图片保存目录（绝对路径）。空 = 默认（当前项目工作区下的 {@code ai-generated/}）。
+   */
+  public static final String KEY_IMAGE_OUTPUT_DIR = "image_gen_output_dir";
 
   private final SharedPreferences prefs;
 
@@ -56,8 +60,22 @@ public final class AgentImageToolSettings {
     return prefs.getString(KEY_IMAGE_MODEL, "");
   }
 
+  /** 图片保存目录（绝对路径）；空串 = 默认（项目工作区下 ai-generated/）。 */
+  public String outputDir() {
+    return prefs.getString(KEY_IMAGE_OUTPUT_DIR, "");
+  }
+
   public void set(String providerId, String model) {
     prefs.edit().putString(KEY_IMAGE_PROVIDER, providerId).putString(KEY_IMAGE_MODEL, model).apply();
+  }
+
+  /** 设置保存目录；传空串恢复默认。 */
+  public void setOutputDir(String path) {
+    if (path == null || path.trim().isEmpty()) {
+      prefs.edit().remove(KEY_IMAGE_OUTPUT_DIR).apply();
+    } else {
+      prefs.edit().putString(KEY_IMAGE_OUTPUT_DIR, path.trim()).apply();
+    }
   }
 
   /** 清除配置（服务商被删除时调用方应同步清理）。 */
@@ -86,6 +104,7 @@ public final class AgentImageToolSettings {
     if (record == null || record.getBaseUrl().isEmpty()) {
       return null;
     }
-    return new ImageGenerationEndpoint(record.getBaseUrl(), record.getApiKey(), model);
+    return new ImageGenerationEndpoint(
+        record.getBaseUrl(), record.getApiKey(), model, outputDir());
   }
 }
