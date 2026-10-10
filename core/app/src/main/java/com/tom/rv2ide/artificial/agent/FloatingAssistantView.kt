@@ -620,6 +620,11 @@ class FloatingAssistantView(
       parent.addView(fabBinding.root)
     }
     parent.addView(binding.assistantOverlay)
+    // 面板触摸即「用户在看」：完成通知的 6s 宽限以此刷新（observe 语义，不消费事件）。
+    binding.assistantOverlay.setOnTouchListener { _, _ ->
+      com.tom.rv2ide.artificial.agent.RunCompletionNotifier.noteInteraction()
+      false
+    }
 
     if (defaultMode != Mode.INLINE && defaultMode != Mode.EMBEDDED) {
       setUpDragging()
@@ -1883,6 +1888,24 @@ class FloatingAssistantView(
           // 位置必须在运行结束：运行中插的卡片会被后续消息推到上面去，
           // 用户下次看到它时已经不在「刚才那轮」的位置了。
           flushDiffSummary(conversationId)
+
+          // 完成通知：面板不在屏幕上（后台跑完）且用户 6s 无交互时提醒。
+          // 可见时用户就在屏幕前，通知纯属打扰。
+          val startMsForNotify = ui.runStartedAtMs
+          val overlay = binding.assistantOverlay
+          val hostVisibleNow = overlay.isAttachedToWindow &&
+              overlay.windowVisibility == android.view.View.VISIBLE
+          val durationForNotify =
+              if (startMsForNotify > 0L)
+                  android.os.SystemClock.elapsedRealtime() - startMsForNotify
+              else 0L
+          com.tom.rv2ide.artificial.agent.RunCompletionNotifier.maybeNotify(
+              context,
+              hostVisibleNow,
+              true,
+              durationForNotify,
+              conversationId,
+          )
 
           // 回填本轮耗时到收尾的助手消息上。耗时是展示信息，由视图侧自己记
           // （RUN_STARTED 起点、RUN_FINISHED 终点），不走协议层——协议层要补时间戳

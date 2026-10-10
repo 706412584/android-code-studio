@@ -158,6 +158,12 @@
   <string name="ai_agent_market_uninstall_confirm">移除这个市场安装的技能？</string>
   <string name="ai_agent_market_uninstalled">已卸载：%1$s</string>
   <string name="ai_agent_skills_manual_hint">%1$s 是手动添加的——删除对应文件即可移除</string>
+  <string name="ai_agent_notify_channel">AI 任务完成</string>
+  <string name="ai_agent_notify_channel_desc">离开屏幕时 AI 任务完成的通知</string>
+  <string name="ai_agent_notify_done_title">AI 任务已完成</string>
+  <string name="ai_agent_notify_failed_title">AI 任务失败</string>
+  <string name="ai_agent_notify_text">点按查看结果</string>
+  <string name="ai_agent_notify_text_with_duration">耗时 %1$s——点按查看</string>
   <string name="ai_agent_page_providers_summary">API 密钥、自定义端点、启用开关</string>
   <string name="ai_agent_page_tools_title">工具与权限</string>
   <string name="ai_agent_page_tools_summary">对话模式、权限级别、Shell 后端、代码补全</string>
