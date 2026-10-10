@@ -84,6 +84,9 @@ public final class ToolContext {
    */
   private final ImageGenerationEndpoint imageGeneration;
 
+  /** 视频生成端点配置；未配置时为 null（能力页「视频生成」块下发）。 */
+  private final VideoGenerationEndpoint videoGeneration;
+
   private ToolContext(Builder builder) {
     this.homePath = builder.homePath == null ? "" : builder.homePath;
     this.extraWriteRoots =
@@ -97,6 +100,7 @@ public final class ToolContext {
     this.settings = builder.settings == null ? ToolSettingsPort.defaults() : builder.settings;
     this.imageDataProvider = builder.imageDataProvider;
     this.imageGeneration = builder.imageGeneration;
+    this.videoGeneration = builder.videoGeneration;
   }
 
   public String getHomePath() {
@@ -138,6 +142,11 @@ public final class ToolContext {
     return imageGeneration;
   }
 
+  /** 视频生成端点配置；未配置时为 null。 */
+  public VideoGenerationEndpoint getVideoGeneration() {
+    return videoGeneration;
+  }
+
   /**
    * 返回一个仅替换 {@code toolCallId} 的副本。
    *
@@ -155,6 +164,7 @@ public final class ToolContext {
         .settings(this.settings)
         .imageDataProvider(this.imageDataProvider)
         .imageGeneration(this.imageGeneration)
+        .videoGeneration(this.videoGeneration)
         .build();
   }
 
@@ -176,6 +186,7 @@ public final class ToolContext {
         .settings(this.settings)
         .imageDataProvider(this.imageDataProvider)
         .imageGeneration(this.imageGeneration)
+        .videoGeneration(this.videoGeneration)
         .build();
   }
 
@@ -206,6 +217,7 @@ public final class ToolContext {
     private ToolSettingsPort settings;
     private ImageDataProvider imageDataProvider;
     private ImageGenerationEndpoint imageGeneration;
+    private VideoGenerationEndpoint videoGeneration;
 
     public Builder homePath(String value) {
       this.homePath = value;
@@ -250,6 +262,11 @@ public final class ToolContext {
 
     public Builder imageGeneration(ImageGenerationEndpoint value) {
       this.imageGeneration = value;
+      return this;
+    }
+
+    public Builder videoGeneration(VideoGenerationEndpoint value) {
+      this.videoGeneration = value;
       return this;
     }
 

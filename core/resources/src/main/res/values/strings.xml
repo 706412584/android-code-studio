@@ -136,6 +136,15 @@
   <string name="ai_agent_image_gen_output_dir_title">Image save location</string>
   <string name="ai_agent_image_gen_output_dir_default">Default: current project ai-generated/ folder</string>
   <string name="ai_agent_image_gen_output_dir_row">Image save location: %1$s</string>
+  <string name="ai_agent_video_gen_title">Video generation</string>
+  <string name="ai_agent_video_gen_summary">Off — tap to pick a provider and video model</string>
+  <string name="ai_agent_video_gen_pick_provider">Pick a video provider</string>
+  <string name="ai_agent_video_gen_pick_model">Video model · %1$s</string>
+  <string name="ai_agent_video_gen_no_providers">No usable provider. Add one under Providers first.</string>
+  <string name="ai_agent_video_gen_no_models">No video model found in this provider\'s catalog (names containing \"video\").</string>
+  <string name="ai_agent_video_gen_clear">Clear</string>
+  <string name="ai_agent_video_gen_output_dir_row">Video save location: %1$s</string>
+  <string name="ai_agent_video_gen_output_dir_default">Default: current project ai-generated/ folder</string>
   <string name="ai_agent_skills_import">Import skill</string>
   <string name="ai_agent_skills_import_hint">Pick a .md file from Downloads to import</string>
   <string name="ai_agent_skills_import_empty">No .md files in Downloads. Put skill files there first.</string>

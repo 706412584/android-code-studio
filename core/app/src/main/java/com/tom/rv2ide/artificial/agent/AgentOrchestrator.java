@@ -68,6 +68,7 @@ import com.tom.rv2ide.ai.tool.ToolInvokerAware;
 import com.tom.rv2ide.ai.tool.ToolPermissionService;
 import com.tom.rv2ide.ai.tool.HttpRequestTool;
 import com.tom.rv2ide.ai.tool.ImageGenerationTool;
+import com.tom.rv2ide.ai.tool.VideoGenerationTool;
 import com.tom.rv2ide.ai.tool.ShellBackendRegistry;
 import com.tom.rv2ide.ai.tool.ShellExecuteTool;
 import com.tom.rv2ide.ai.tool.ToolRegistry;
@@ -1262,6 +1263,8 @@ public final class AgentOrchestrator {
     registry.register(new HttpRequestTool(http));
     // 文生图：端点经 ToolContext 注入（能力页配置），未配置时工具明确报错引导用户去配置。
     registry.register(new ImageGenerationTool(http));
+    // 文生视频：异步任务 + 轮询（cc-haha media-gen 协议）。同上经 ToolContext 注入。
+    registry.register(new VideoGenerationTool(http));
 
     // 外部 MCP server 提供的工具。只有 run() 路径（mcpClientsOut != null）才装配：
     // UI 的分类色查询不该触发网络请求，也不该创建无人释放的连接。
@@ -1739,6 +1742,8 @@ public final class AgentOrchestrator {
             .imageDataProvider(AndroidImageDataProvider.INSTANCE)
             // 文生图端点（能力页配置）；未配置时为 null，工具侧明确报错。
             .imageGeneration(new AgentImageToolSettings(appContext).resolveEndpoint())
+            // 文生视频端点（同上）。
+            .videoGeneration(new AgentImageToolSettings(appContext).resolveVideoEndpoint())
             .build();
 
     List<ConversationLog.EntryLocation> entries = loadEntries(conversationId);

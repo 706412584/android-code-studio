@@ -20,6 +20,7 @@ package com.tom.rv2ide.artificial.agent;
 import android.content.Context;
 import android.content.SharedPreferences;
 import com.tom.rv2ide.ai.tool.ImageGenerationEndpoint;
+import com.tom.rv2ide.ai.tool.VideoGenerationEndpoint;
 
 /**
  * 图片生成偏好：能力页选定的服务商与模型，存 "ai_agent_tools" SharedPreferences。
@@ -41,6 +42,12 @@ public final class AgentImageToolSettings {
    * 图片保存目录（绝对路径）。空 = 默认（当前项目工作区下的 {@code ai-generated/}）。
    */
   public static final String KEY_IMAGE_OUTPUT_DIR = "image_gen_output_dir";
+  /** 视频生成服务商 id。空 = 未配置。 */
+  public static final String KEY_VIDEO_PROVIDER = "video_gen_provider";
+  /** 视频生成模型名。空 = 未配置。 */
+  public static final String KEY_VIDEO_MODEL = "video_gen_model";
+  /** 视频保存目录。空 = 默认（工作区下 ai-generated/）。 */
+  public static final String KEY_VIDEO_OUTPUT_DIR = "video_gen_output_dir";
 
   private final SharedPreferences prefs;
 
@@ -76,6 +83,68 @@ public final class AgentImageToolSettings {
     } else {
       prefs.edit().putString(KEY_IMAGE_OUTPUT_DIR, path.trim()).apply();
     }
+  }
+
+  // ---- 视频生成（与图片生成同文件：同属「媒体生成」偏好域，键前缀区分） ----
+
+  /** 视频生成服务商 id；空串表示未配置。 */
+  public String videoProviderId() {
+    return prefs.getString(KEY_VIDEO_PROVIDER, "");
+  }
+
+  /** 视频生成模型名；空串表示未配置。 */
+  public String videoModel() {
+    return prefs.getString(KEY_VIDEO_MODEL, "");
+  }
+
+  /** 视频保存目录；空串 = 默认（工作区下 ai-generated/）。 */
+  public String videoOutputDir() {
+    return prefs.getString(KEY_VIDEO_OUTPUT_DIR, "");
+  }
+
+  /** 设置视频生成的服务商与模型。 */
+  public void setVideo(String providerId, String model) {
+    prefs.edit()
+        .putString(KEY_VIDEO_PROVIDER, providerId)
+        .putString(KEY_VIDEO_MODEL, model)
+        .apply();
+  }
+
+  /** 设置视频保存目录；传空串恢复默认。 */
+  public void setVideoOutputDir(String path) {
+    if (path == null || path.trim().isEmpty()) {
+      prefs.edit().remove(KEY_VIDEO_OUTPUT_DIR).apply();
+    } else {
+      prefs.edit().putString(KEY_VIDEO_OUTPUT_DIR, path.trim()).apply();
+    }
+  }
+
+  /** 清除视频生成配置。 */
+  public void clearVideo() {
+    prefs.edit()
+        .remove(KEY_VIDEO_PROVIDER)
+        .remove(KEY_VIDEO_MODEL)
+        .remove(KEY_VIDEO_OUTPUT_DIR)
+        .apply();
+  }
+
+  /** 解析视频生成端点；未配置或服务商已被删时返回 null。 */
+  public VideoGenerationEndpoint resolveVideoEndpoint() {
+    String provider = videoProviderId();
+    String model = videoModel();
+    if (provider.isEmpty() || model.isEmpty()) {
+      return null;
+    }
+    android.content.Context ctx = com.tom.rv2ide.app.BaseApplication.getBaseInstance();
+    if (ctx == null) {
+      return null;
+    }
+    ProviderConfig record = new ProviderConfigStore(ctx).find(provider);
+    if (record == null || record.getBaseUrl().isEmpty()) {
+      return null;
+    }
+    return new VideoGenerationEndpoint(
+        record.getBaseUrl(), record.getApiKey(), model, videoOutputDir());
   }
 
   /** 清除配置（服务商被删除时调用方应同步清理）。 */

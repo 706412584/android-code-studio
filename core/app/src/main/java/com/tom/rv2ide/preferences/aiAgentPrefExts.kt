@@ -157,6 +157,7 @@ private class CapabilitiesPage(
     addPreference(AssistantOverlayPreference())
     addPreference(AgentsPreference())
     addPreference(ImageGenerationPreference())
+    addPreference(VideoGenerationPreference())
     addPreference(ProjectRulesPreference())
     addPreference(SkillsPreference())
     addPreference(MemoriesPreference())
@@ -716,43 +717,58 @@ private fun treeUriToFile(context: Context, uriString: String): File? {
  * 资源覆盖 {@code onCreatePreference} 里设置的值——重进设置页就会显示回「未启用」，
  * 而实际配置好好地存在偏好里（实测踩过）。
  */
-@Parcelize
-private class ImageGenerationPreference(
-    override val key: String = "image_generation_pref",
-    override val title: Int = R.string.ai_agent_image_gen_title,
-    // null 很重要：非 null 会被基类覆盖动态 summary，见类注释。
-    override val summary: Int? = null,
+/**
+ * 媒体生成配置的共用流程（服务商单选 + 模型拉取过滤 + 保存位置行 + 清除）。
+ *
+ * <p>图片/视频两套配置除「存储键、模型过滤词、字符串资源」外完全同构，抽基类
+ * 消掉第二份拷贝。子类只提供投影（哪个 provider/model/outputDir、怎么写回）。
+ *
+ * <p>不能加 @Parcelize：抽象类无法 Parcelable 化，子类各自声明即可。
+ */
+private abstract class MediaGenerationPreference(
+    private val modelKeyword: String,
 ) : BasePreference() {
 
-  override fun onCreatePreference(context: Context): Preference {
-    return androidx.preference.Preference(context).apply {
-      key = "image_generation_pref"
-      title = context.getString(R.string.ai_agent_image_gen_title)
-      summary = currentSummary(context)
-    }
-  }
+  /** 当前选定的服务商 id / 模型名 / 保存目录；未配置时前三者可为空串。 */
+  protected abstract fun providerId(settings: AgentImageToolSettings): String
+
+  protected abstract fun model(settings: AgentImageToolSettings): String
+
+  protected abstract fun outputDir(settings: AgentImageToolSettings): String
+
+  protected abstract fun setProviderModel(
+      settings: AgentImageToolSettings,
+      providerId: String,
+      model: String,
+  )
+
+  protected abstract fun setOutputDir(settings: AgentImageToolSettings, path: String)
+
+  protected abstract fun clear(settings: AgentImageToolSettings)
+
+  protected abstract fun strings(): MediaGenStrings
 
   override fun onPreferenceClick(preference: Preference): Boolean {
     val context = preference.context
     val records = ProviderConfigStore(context).load().filter { it.isUsable() }
     val settings = AgentImageToolSettings(context)
+    val s = strings()
 
     val rows = mutableListOf<String>()
     records.forEach { record ->
-      val mark = if (record.getId() == settings.providerId()) "✓ " else ""
+      val mark = if (record.getId() == providerId(settings)) "✓ " else ""
       rows.add("$mark${record.getLabel()}")
     }
     // 保存位置作为列表末行：点它打开目录选择器，不必为它单开一个设置条目。
-    val outputDirRow = context.getString(R.string.ai_agent_image_gen_output_dir_row, outputDirLabel(context))
-    rows.add(outputDirRow)
+    rows.add(context.getString(s.outputDirRow, outputDirLabel(context)))
 
     if (records.isEmpty()) {
       // 没有服务商时列表只剩保存位置行，仍可用；提示放在标题下不阻断。
-      Toast.makeText(context, R.string.ai_agent_image_gen_no_providers, Toast.LENGTH_SHORT).show()
+      Toast.makeText(context, s.noProviders, Toast.LENGTH_SHORT).show()
     }
 
     com.google.android.material.dialog.MaterialAlertDialogBuilder(context)
-        .setTitle(R.string.ai_agent_image_gen_pick_provider)
+        .setTitle(s.pickProvider)
         .setItems(rows.toTypedArray()) { dialog, which ->
           if (which < records.size) {
             dialog.dismiss()
@@ -762,7 +778,7 @@ private class ImageGenerationPreference(
             FolderPickerActivity.onFolderPicked = { uriString ->
               val dir = treeUriToFile(context, uriString)
               if (dir != null && dir.isDirectory) {
-                settings.setOutputDir(dir.absolutePath)
+                setOutputDir(settings, dir.absolutePath)
               }
               FolderPickerActivity.onFolderPicked = null
             }
@@ -771,8 +787,8 @@ private class ImageGenerationPreference(
         }
         .setNegativeButton(android.R.string.cancel, null)
         // 清除入口：显式出口，避免只能改不能撤。
-        .setNeutralButton(R.string.ai_agent_image_gen_clear) { _, _ ->
-          settings.clear()
+        .setNeutralButton(s.clear) { _, _ ->
+          clear(settings)
           preference.summary = currentSummary(context)
         }
         .show()
@@ -786,26 +802,23 @@ private class ImageGenerationPreference(
       record: com.tom.rv2ide.artificial.agent.ProviderConfig,
       settings: AgentImageToolSettings,
   ) {
+    val s = strings()
     Toast.makeText(context, R.string.ai_agent_image_gen_fetching, Toast.LENGTH_SHORT).show()
     CoroutineScope(Dispatchers.IO).launch {
       val all = ModelCatalogFetcher.fetch(record)
-      // 图片模型按名字过滤：agnes 的目录里文本/图片/视频混在一起，
-      // 全列出来会把 image_generation 不可用的模型也塞给用户。
-      val models = all.filter { it.contains("image", ignoreCase = true) }
+      // 模型按关键词过滤：agnes 的目录里文本/图片/视频混在一起，
+      // 全列出来会把该能力不可用的模型也塞给用户。
+      val models = all.filter { it.contains(modelKeyword, ignoreCase = true) }
       withContext(Dispatchers.Main) {
         if (models.isEmpty()) {
-          Toast.makeText(
-                  context, R.string.ai_agent_image_gen_no_models, Toast.LENGTH_LONG)
-              .show()
+          Toast.makeText(context, s.noModels, Toast.LENGTH_LONG).show()
           return@withContext
         }
-        val checked = models.indexOf(settings.model())
+        val checked = models.indexOf(model(settings))
         com.google.android.material.dialog.MaterialAlertDialogBuilder(context)
-            .setTitle(
-                context.getString(
-                    R.string.ai_agent_image_gen_pick_model, record.getLabel()))
+            .setTitle(context.getString(s.pickModel, record.getLabel()))
             .setSingleChoiceItems(models.toTypedArray(), checked) { dialog, which ->
-              settings.set(record.getId(), models[which])
+              setProviderModel(settings, record.getId(), models[which])
               preference.summary = currentSummary(context)
               dialog.dismiss()
             }
@@ -816,12 +829,12 @@ private class ImageGenerationPreference(
   }
 
   /** 条目副标题：未配置给引导语；已配置显示「服务商 · 模型」。 */
-  private fun currentSummary(context: Context): String {
+  protected fun currentSummary(context: Context): String {
     val settings = AgentImageToolSettings(context)
-    val provider = settings.providerId()
-    val model = settings.model()
+    val provider = providerId(settings)
+    val model = model(settings)
     if (provider.isEmpty() || model.isEmpty()) {
-      return context.getString(R.string.ai_agent_image_gen_summary)
+      return context.getString(strings().summaryOff)
     }
     val record = ProviderConfigStore(context).find(provider)
     val label = record?.getLabel() ?: provider
@@ -830,13 +843,110 @@ private class ImageGenerationPreference(
 
   /** 保存位置行的文案：默认路径给说明，指定过给短路径。 */
   private fun outputDirLabel(context: Context): String {
-    val dir = AgentImageToolSettings(context).outputDir()
+    val dir = outputDir(AgentImageToolSettings(context))
     return if (dir.isEmpty()) {
-      context.getString(R.string.ai_agent_image_gen_output_dir_default)
+      context.getString(strings().outputDirDefault)
     } else {
       dir.substringAfterLast('/')
     }
   }
+
+  /** 该能力用到的全部字符串资源 id（图片/视频各一份）。 */
+  protected class MediaGenStrings(
+      val summaryOff: Int,
+      val pickProvider: Int,
+      val pickModel: Int,
+      val noProviders: Int,
+      val noModels: Int,
+      val clear: Int,
+      val outputDirRow: Int,
+      val outputDirDefault: Int,
+  )
+}
+
+@Parcelize
+private class ImageGenerationPreference(
+    override val key: String = "image_generation_pref",
+    override val title: Int = R.string.ai_agent_image_gen_title,
+    // null 很重要：非 null 会被基类覆盖动态 summary，见类注释。
+    override val summary: Int? = null,
+) : MediaGenerationPreference(modelKeyword = "image") {
+
+  override fun onCreatePreference(context: Context): Preference {
+    return androidx.preference.Preference(context).apply {
+      key = "image_generation_pref"
+      title = context.getString(R.string.ai_agent_image_gen_title)
+      summary = currentSummary(context)
+    }
+  }
+
+  override fun providerId(settings: AgentImageToolSettings) = settings.providerId()
+
+  override fun model(settings: AgentImageToolSettings) = settings.model()
+
+  override fun outputDir(settings: AgentImageToolSettings) = settings.outputDir()
+
+  override fun setProviderModel(settings: AgentImageToolSettings, providerId: String, model: String) =
+      settings.set(providerId, model)
+
+  override fun setOutputDir(settings: AgentImageToolSettings, path: String) =
+      settings.setOutputDir(path)
+
+  override fun clear(settings: AgentImageToolSettings) = settings.clear()
+
+  override fun strings() =
+      MediaGenStrings(
+          summaryOff = R.string.ai_agent_image_gen_summary,
+          pickProvider = R.string.ai_agent_image_gen_pick_provider,
+          pickModel = R.string.ai_agent_image_gen_pick_model,
+          noProviders = R.string.ai_agent_image_gen_no_providers,
+          noModels = R.string.ai_agent_image_gen_no_models,
+          clear = R.string.ai_agent_image_gen_clear,
+          outputDirRow = R.string.ai_agent_image_gen_output_dir_row,
+          outputDirDefault = R.string.ai_agent_image_gen_output_dir_default,
+      )
+}
+
+@Parcelize
+private class VideoGenerationPreference(
+    override val key: String = "video_generation_pref",
+    override val title: Int = R.string.ai_agent_video_gen_title,
+    override val summary: Int? = null,
+) : MediaGenerationPreference(modelKeyword = "video") {
+
+  override fun onCreatePreference(context: Context): Preference {
+    return androidx.preference.Preference(context).apply {
+      key = "video_generation_pref"
+      title = context.getString(R.string.ai_agent_video_gen_title)
+      summary = currentSummary(context)
+    }
+  }
+
+  override fun providerId(settings: AgentImageToolSettings) = settings.videoProviderId()
+
+  override fun model(settings: AgentImageToolSettings) = settings.videoModel()
+
+  override fun outputDir(settings: AgentImageToolSettings) = settings.videoOutputDir()
+
+  override fun setProviderModel(settings: AgentImageToolSettings, providerId: String, model: String) =
+      settings.setVideo(providerId, model)
+
+  override fun setOutputDir(settings: AgentImageToolSettings, path: String) =
+      settings.setVideoOutputDir(path)
+
+  override fun clear(settings: AgentImageToolSettings) = settings.clearVideo()
+
+  override fun strings() =
+      MediaGenStrings(
+          summaryOff = R.string.ai_agent_video_gen_summary,
+          pickProvider = R.string.ai_agent_video_gen_pick_provider,
+          pickModel = R.string.ai_agent_video_gen_pick_model,
+          noProviders = R.string.ai_agent_video_gen_no_providers,
+          noModels = R.string.ai_agent_video_gen_no_models,
+          clear = R.string.ai_agent_video_gen_clear,
+          outputDirRow = R.string.ai_agent_video_gen_output_dir_row,
+          outputDirDefault = R.string.ai_agent_video_gen_output_dir_default,
+      )
 }
 
 @Parcelize

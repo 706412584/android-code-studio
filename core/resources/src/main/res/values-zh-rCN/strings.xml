@@ -131,6 +131,15 @@
   <string name="ai_agent_image_gen_output_dir_title">图片保存位置</string>
   <string name="ai_agent_image_gen_output_dir_default">默认：当前项目的 ai-generated/ 文件夹</string>
   <string name="ai_agent_image_gen_output_dir_row">图片保存位置：%1$s</string>
+  <string name="ai_agent_video_gen_title">视频生成</string>
+  <string name="ai_agent_video_gen_summary">未启用——点按选择服务商与视频模型</string>
+  <string name="ai_agent_video_gen_pick_provider">选择视频服务商</string>
+  <string name="ai_agent_video_gen_pick_model">视频模型 · %1$s</string>
+  <string name="ai_agent_video_gen_no_providers">没有可用的服务商，请先在「服务商」里添加。</string>
+  <string name="ai_agent_video_gen_no_models">该服务商目录里没有找到视频模型（名称含 video）。</string>
+  <string name="ai_agent_video_gen_clear">清除配置</string>
+  <string name="ai_agent_video_gen_output_dir_row">视频保存位置：%1$s</string>
+  <string name="ai_agent_video_gen_output_dir_default">默认：当前项目的 ai-generated/ 文件夹</string>
   <string name="ai_agent_skills_import">导入技能</string>
   <string name="ai_agent_skills_import_hint">从「下载」目录选择 .md 文件导入</string>
   <string name="ai_agent_skills_import_empty">「下载」目录里没有 .md 文件，请先把技能文件放进去。</string>

@@ -65,6 +65,8 @@ public final class ToolNames {
     public static final String HTTP_REQUEST = "http_request";
     public static final String IMAGE_UNDERSTANDING = "image_understanding";
     public static final String IMAGE_GENERATION = "image_generation";
+    /** 文生视频（异步任务 + 轮询，协议照 cc-haha media-gen）。 */
+    public static final String VIDEO_GENERATION = "video_generation";
     // ---- 手机控制（真机测试闭环，经 Shizuku 走 adb 级权限，不依赖无障碍服务） ----
     /** 截取设备屏幕。 */
     public static final String PHONE_SCREENSHOT = "phone_screenshot";
