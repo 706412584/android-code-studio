@@ -63,6 +63,8 @@ import com.tom.rv2ide.artificial.agent.compose.components.bubbles.AgentMessageIt
 import com.tom.rv2ide.artificial.agent.compose.components.tools.AskUserQuestionPanel
 import com.tom.rv2ide.artificial.agent.compose.components.tools.ToolCallGroupHeader
 import com.tom.rv2ide.artificial.agent.compose.model.AgentUIMessage
+import com.tom.rv2ide.artificial.agent.compose.components.style.CHUNK_SPLIT_THRESHOLD_CHARS
+import com.tom.rv2ide.artificial.agent.compose.components.style.splitLongContent
 import com.tom.rv2ide.artificial.agent.compose.model.MessageRole
 import com.tom.rv2ide.artificial.agent.compose.model.ToolRunStatus
 import com.tom.rv2ide.artificial.agent.compose.theme.AIEditorTheme
@@ -268,6 +270,11 @@ private fun PanelContent(
                     last.message.id,
                     (last.message.content.length + (last.message.reasoning?.length ?: 0)) / 100,
                     renderItems.size)
+            is RenderItem.SingleChunk ->
+                Triple(
+                    last.message.id,
+                    last.slice.length / 100,
+                    renderItems.size)
             is RenderItem.Group ->
                 Triple(
                     last.id,
@@ -330,6 +337,16 @@ private fun PanelContent(
                 MessageRow(
                     message = item.message,
                     showActions = item.message.id == lastId,
+                    callbacks = callbacks,
+                )
+            is RenderItem.SingleChunk ->
+                MessageRow(
+                    message = item.message,
+                    showActions = item.chunkIndex == item.chunkCount - 1 &&
+                        item.message.id == lastId,
+                    contentSlice = item.slice,
+                    isChunkHeader = item.chunkIndex == 0,
+                    isChunkFooter = item.chunkIndex == item.chunkCount - 1,
                     callbacks = callbacks,
                 )
             is RenderItem.Group -> ToolGroupRow(item, callbacks)
@@ -410,6 +427,23 @@ private sealed interface RenderItem {
 
   data class Single(val message: AgentUIMessage) : RenderItem {
     override val key: String get() = message.id
+  }
+
+  /**
+   * 超长正文的第 [chunkIndex] 块（0 起）。
+   *
+   * <p>为什么要拆：无界长度的 LazyColumn item 每次重组都要全量排版，
+   * 长消息（数万字符的工具输出/正文）会把主线程卡住上百毫秒（实测掉帧上百、
+   * 与 GC 风暴叠加成「重试期间巨卡」）。拆成有界 chunk 后每个 item 高度有界，
+   * LazyColumn 只排版视口内的块。同一条消息的块共享消息 id 作 key 前缀。
+   */
+  data class SingleChunk(
+      val message: AgentUIMessage,
+      val chunkIndex: Int,
+      val chunkCount: Int,
+      val slice: String,
+  ) : RenderItem {
+    override val key: String get() = "${message.id}#$chunkIndex"
   }
 
   data class Group(
@@ -500,7 +534,22 @@ private fun toRenderItems(messages: List<AgentUIMessage>): List<RenderItem> {
   while (i < messages.size) {
     val gid = messages[i].groupId
     if (gid == null) {
-      out += RenderItem.Single(messages[i])
+      val message = messages[i]
+      // 超长正文拆成有界 chunk（接线 ChatTextBound.splitLongContent——实现早已移植，
+      // 此前无调用点，超长消息作为无界单 item 全量排版，实测主线程 100% 掉帧上百）。
+      // 只拆助手正文；用户消息与思考块通常不长，不折腾。
+      val chunks =
+          if (message.role == MessageRole.ASSISTANT &&
+              message.content.length > CHUNK_SPLIT_THRESHOLD_CHARS) {
+            splitLongContent(message.content)
+          } else null
+      if (chunks != null && chunks.size > 1) {
+        chunks.forEachIndexed { idx, slice ->
+          out += RenderItem.SingleChunk(message, idx, chunks.size, slice)
+        }
+      } else {
+        out += RenderItem.Single(message)
+      }
       i++
       continue
     }
@@ -714,11 +763,17 @@ private fun MessageRow(
     message: AgentUIMessage,
     showActions: Boolean,
     callbacks: AssistantPanelCallbacks,
+    contentSlice: String? = null,
+    isChunkHeader: Boolean = true,
+    isChunkFooter: Boolean = true,
 ) {
   val id = message.id.toLongOrNull()
   AgentMessageItem(
       message = message,
       showActions = showActions,
+      contentSlice = contentSlice,
+      isChunkHeader = isChunkHeader,
+      isChunkFooter = isChunkFooter,
       // 展开态来自数据（见 AssistantPanelCallbacks.onToggleExpanded）；组件按
       // 「override == true 才展开」解释，false 与 null 在视觉上同为收起
       toolExpandedOverride = message.expanded,
