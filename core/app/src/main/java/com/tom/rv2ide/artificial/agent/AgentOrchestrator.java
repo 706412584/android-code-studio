@@ -81,6 +81,7 @@ import com.tom.rv2ide.artificial.agent.tool.LayoutPreviewTool;
 import com.tom.rv2ide.artificial.agent.tool.LaunchAppTool;
 import com.tom.rv2ide.artificial.agent.tool.LogcatReadTool;
 import com.tom.rv2ide.artificial.agent.tool.PhoneActionCaptureTool;
+import com.tom.rv2ide.artificial.agent.tool.ProjectInfoTool;
 import com.tom.rv2ide.artificial.agent.tool.PhoneBaselineTool;
 import com.tom.rv2ide.artificial.agent.tool.PhoneClearDataTool;
 import com.tom.rv2ide.artificial.agent.tool.PhoneClickTool;
@@ -1118,6 +1119,14 @@ public final class AgentOrchestrator {
     registry.register(new com.tom.rv2ide.ai.tool.DiagnosticsTool());
     // IDE 自身日志（读被测应用日志用 logcat_read，两者目标进程不同）。
     registry.register(new com.tom.rv2ide.ai.tool.IdeLogTool());
+    // 压缩/解压 zip：手机上解压 SDK/依赖包、打包产物、备份归档。
+    registry.register(new com.tom.rv2ide.ai.tool.ArchiveTool());
+    // 代码导航：跳定义/找引用，按符号语义匹配，胜过文本 grep。端口在 executeRun 注入。
+    registry.register(new com.tom.rv2ide.ai.tool.LspNavigateTool());
+    // 代码格式化（经语言服务器，就地写回）。
+    registry.register(new com.tom.rv2ide.ai.tool.FormatCodeTool());
+    // 项目结构查询：模块/变体/真实任务名（app 层工具，直接读 IWorkspace）。
+    registry.register(new ProjectInfoTool());
     // 向用户提问（多选/单选）。阻塞式：调用方（FloatingAssistantView）切到主线程弹窗，
     // 用户作答后唤醒 agent 循环继续执行。
     registry.register(new com.tom.rv2ide.ai.tool.AskUserQuestionTool());
@@ -1768,6 +1777,18 @@ public final class AgentOrchestrator {
                             .getServer(id)))
             // IDE 自身日志源：读 logback 事件的内存环形缓冲（见 IdeLogBufferAppender）。
             .ideLog(com.tom.rv2ide.logging.IdeLogBufferHolder.INSTANCE.get())
+            // LSP 导航端口（跳定义/找引用）。与诊断同样按调用时现查语言服务器。
+            .lspNavigation(
+                new ReportedLspNavigationPort(
+                    id ->
+                        com.tom.rv2ide.lsp.api.ILanguageServerRegistry.getDefault()
+                            .getServer(id)))
+            // 代码格式化端口（读文件→格式化→写回，在适配器内完成）。
+            .codeFormat(
+                new ReportedCodeFormatPort(
+                    id ->
+                        com.tom.rv2ide.lsp.api.ILanguageServerRegistry.getDefault()
+                            .getServer(id)))
             .build();
 
     List<ConversationLog.EntryLocation> entries = loadEntries(conversationId);

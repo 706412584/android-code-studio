@@ -102,6 +102,12 @@ public final class ToolContext {
    */
   private final IdeLogSource ideLog;
 
+  /** LSP 导航端口（跳定义/找引用）；未注入时为 null。 */
+  private final LspNavigationPort lspNavigation;
+
+  /** 代码格式化端口；未注入时为 null。 */
+  private final CodeFormatPort codeFormat;
+
   private ToolContext(Builder builder) {
     this.homePath = builder.homePath == null ? "" : builder.homePath;
     this.extraWriteRoots =
@@ -118,6 +124,8 @@ public final class ToolContext {
     this.videoGeneration = builder.videoGeneration;
     this.diagnostics = builder.diagnostics;
     this.ideLog = builder.ideLog;
+    this.lspNavigation = builder.lspNavigation;
+    this.codeFormat = builder.codeFormat;
   }
 
   public String getHomePath() {
@@ -179,6 +187,16 @@ public final class ToolContext {
     return ideLog;
   }
 
+  /** LSP 导航端口（跳定义/找引用）；未注入时为 null。 */
+  public LspNavigationPort getLspNavigation() {
+    return lspNavigation;
+  }
+
+  /** 代码格式化端口；未注入时为 null。 */
+  public CodeFormatPort getCodeFormat() {
+    return codeFormat;
+  }
+
   /**
    * 返回一个仅替换 {@code toolCallId} 的副本。
    *
@@ -199,6 +217,8 @@ public final class ToolContext {
         .videoGeneration(this.videoGeneration)
         .diagnostics(this.diagnostics)
         .ideLog(this.ideLog)
+        .lspNavigation(this.lspNavigation)
+        .codeFormat(this.codeFormat)
         .build();
   }
 
@@ -223,6 +243,8 @@ public final class ToolContext {
         .videoGeneration(this.videoGeneration)
         .diagnostics(this.diagnostics)
         .ideLog(this.ideLog)
+        .lspNavigation(this.lspNavigation)
+        .codeFormat(this.codeFormat)
         .build();
   }
 
@@ -256,6 +278,8 @@ public final class ToolContext {
     private VideoGenerationEndpoint videoGeneration;
     private DiagnosticsPort diagnostics;
     private IdeLogSource ideLog;
+    private LspNavigationPort lspNavigation;
+    private CodeFormatPort codeFormat;
 
     public Builder homePath(String value) {
       this.homePath = value;
@@ -317,6 +341,18 @@ public final class ToolContext {
     /** 注入 IDE 自身日志源。 */
     public Builder ideLog(IdeLogSource value) {
       this.ideLog = value;
+      return this;
+    }
+
+    /** 注入 LSP 导航端口（跳定义/找引用）。 */
+    public Builder lspNavigation(LspNavigationPort value) {
+      this.lspNavigation = value;
+      return this;
+    }
+
+    /** 注入代码格式化端口。 */
+    public Builder codeFormat(CodeFormatPort value) {
+      this.codeFormat = value;
       return this;
     }
 
