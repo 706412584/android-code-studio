@@ -300,16 +300,26 @@ fun AIEditorTheme(
      * 同样割裂（用户实测反馈：「点击全屏后应该恢复之前的白色」）。
      */
     followHostFrame: Boolean = true,
+    /**
+     * 固定使用的配色方案；null（默认）= 读用户在 AI 设置里选的方案。
+     *
+     * <p>UI 壳（顶栏/输入栏/状态条/会话抽屉）传 [AppThemePreset.DEFAULT]：「消息配色
+     * 方案」设置只染**聊天消息渲染区**（AssistantComposePanel 内的主题），壳若跟着
+     * 换色，面板内会出现咖啡色消息 + 蓝色壳的割裂（用户实测反馈）。
+     * 消息区不传本参数，随设置走。
+     */
+    presetOverride: AppThemePreset? = null,
     content: @Composable () -> Unit
 ) {
   val context = LocalContext.current
-  // 配色方案：用户在 AI 设置里选的一套（见 AssistantThemePrefs）。默认蓝 =
-  // ACS 历史手调配色，其余三套由种子推导（见 AppThemePreset）。
+  // 配色方案：UI 壳固定传 DEFAULT；消息区读用户在 AI 设置里选的一套
+  // （见 AssistantThemePrefs）。默认蓝 = ACS 历史手调配色，
+  // 其余三套由种子推导（见 AppThemePreset）。
   //
   // <p><b>为什么在组合里读偏好而不是宿主传参</b>：设置页改完方案后用户直接返回面板
   // （同一 Activity 内切换），宿主不会重建、也不会通知；与聊天字号同一处理
   // （见 rememberChatTextScale）——自己订阅偏好，改动即触发重组。
-  val preset = rememberThemePreset()
+  val preset = presetOverride ?: rememberThemePreset()
   val colorScheme =
       remember(darkTheme, dynamicColor, preset, context) {
         val base = if (darkTheme) preset.dark else preset.light
@@ -438,17 +448,16 @@ private fun resolveHostColors(
       primary = attr(com.tom.rv2ide.R.attr.colorPrimary),
       outline = attr(com.tom.rv2ide.R.attr.colorOutline),
       outlineVariant = attr(com.tom.rv2ide.R.attr.colorOutlineVariant),
-      // 顶栏/输入栏用 colorSurfaceDim，与**侧栏背景同色**
-      // （activity_editor.xml:9 的 android:background="?attr/colorSurfaceDim"）。
-      //
-      // 不用 colorBackground：它在多数浅色主题下是纯白（sunny_glow #FFFBFF、
-      // vscode #FFFFFF），而侧栏是 SurfaceDim（sunny_glow #E6E2E6）——
-      // 于是「顶栏/输入栏一块死白、侧栏偏灰」，正是用户反馈的突兀感。
-      // 同一个界面里的「页面框架」应当同色，这是层次设计不是巧合。
+      // 顶栏/输入栏要与**编辑器侧栏**同色。侧栏真实底色经实机采样是
+      // colorSurfaceContainerLow（sunny_glow #F9F4F6）——不是早年推断的
+      // colorSurfaceDim（#E6E2E6，activity_editor.xml 根布局的那层被内容卡片
+      // 全遮住了，露出的是 NavigationView 的 ContainerLow 底）。
+      // 用 SurfaceDim 会让顶栏比侧栏深一档，正是「没有融合」的残留。
       //
       // 全屏宿主（followHostFrame = false）不走这里：面板即整页，没有侧栏可跟，
       // background 保留 surface 内置值（浅色白），见 AIEditorTheme 的参数文档。
-      background = if (followHostFrame) attr(com.tom.rv2ide.R.attr.colorSurfaceDim) else null,
+      background =
+          if (followHostFrame) attr(com.tom.rv2ide.R.attr.colorSurfaceContainerLow) else null,
       onBackground = attr(com.tom.rv2ide.R.attr.colorOnBackground),
   )
 }

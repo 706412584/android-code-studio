@@ -37,6 +37,7 @@ import com.tom.rv2ide.adapters.AssistantMessageAdapter
 import com.tom.rv2ide.adapters.ConversationListAdapter
 import com.tom.rv2ide.artificial.agent.compose.compat.toAnswerList
 import com.tom.rv2ide.artificial.agent.compose.compat.toPendingUserQuestion
+import com.tom.rv2ide.artificial.agent.compose.theme.AppThemePreset
 import com.tom.rv2ide.artificial.agent.host.AssistantHost
 import com.tom.rv2ide.artificial.agents.Agents
 import com.tom.rv2ide.databinding.LayoutAiAssistantBinding
@@ -2748,7 +2749,15 @@ class FloatingAssistantView(
           androidx.core.graphics.ColorUtils.calculateLuminance(bg) <= 0.5
         }
     binding.assistantInputBarCompose.setContent {
-      com.tom.rv2ide.artificial.agent.compose.theme.AIEditorTheme(darkTheme = darkTheme, followHostFrame = mode != Mode.FULLSCREEN) {
+      com.tom.rv2ide.artificial.agent.compose.theme.AIEditorTheme(
+                darkTheme = darkTheme,
+                // UI 壳（顶栏/输入栏/状态条/会话抽屉）不随「消息配色方案」换色：
+                // 那个设置只染聊天消息渲染区（见 AssistantComposePanel 的主题），
+                // 壳保持与 ACS 主题一致，否则面板内咖啡色消息 + 蓝色壳会割裂
+                // （用户反馈：配色方案不要对 UI 壳生效）。
+                followHostFrame = mode != Mode.FULLSCREEN,
+                presetOverride = AppThemePreset.DEFAULT,
+            ) {
         val bridge = inputBar
         com.tom.rv2ide.artificial.agent.compose.components.independent.ChatInputBar(
             value = bridge.text,
@@ -2835,7 +2844,15 @@ class FloatingAssistantView(
         }
     applyToolStatusBarVisibility()
     binding.assistantToolStatusBarCompose.setContent {
-      com.tom.rv2ide.artificial.agent.compose.theme.AIEditorTheme(darkTheme = darkTheme, followHostFrame = mode != Mode.FULLSCREEN) {
+      com.tom.rv2ide.artificial.agent.compose.theme.AIEditorTheme(
+                darkTheme = darkTheme,
+                // UI 壳（顶栏/输入栏/状态条/会话抽屉）不随「消息配色方案」换色：
+                // 那个设置只染聊天消息渲染区（见 AssistantComposePanel 的主题），
+                // 壳保持与 ACS 主题一致，否则面板内咖啡色消息 + 蓝色壳会割裂
+                // （用户反馈：配色方案不要对 UI 壳生效）。
+                followHostFrame = mode != Mode.FULLSCREEN,
+                presetOverride = AppThemePreset.DEFAULT,
+            ) {
         val bridge = inputBar
         // messages 是 mutableStateOf——这里直接读它，TOOL 消息随流式追加自然触发重组。
         // takeLast(8) 与 Aharou 一致：状态条只回看最近一串工具，不是完整历史。
@@ -2907,7 +2924,15 @@ class FloatingAssistantView(
           androidx.core.graphics.ColorUtils.calculateLuminance(bg) <= 0.5
         }
     binding.assistantHeaderCompose.setContent {
-      com.tom.rv2ide.artificial.agent.compose.theme.AIEditorTheme(darkTheme = darkTheme, followHostFrame = mode != Mode.FULLSCREEN) {
+      com.tom.rv2ide.artificial.agent.compose.theme.AIEditorTheme(
+                darkTheme = darkTheme,
+                // UI 壳（顶栏/输入栏/状态条/会话抽屉）不随「消息配色方案」换色：
+                // 那个设置只染聊天消息渲染区（见 AssistantComposePanel 的主题），
+                // 壳保持与 ACS 主题一致，否则面板内咖啡色消息 + 蓝色壳会割裂
+                // （用户反馈：配色方案不要对 UI 壳生效）。
+                followHostFrame = mode != Mode.FULLSCREEN,
+                presetOverride = AppThemePreset.DEFAULT,
+            ) {
         com.tom.rv2ide.artificial.agent.compose.components.independent.ChatHeader(
             inputTokens = 0,
             outputTokens = 0,
@@ -2976,7 +3001,15 @@ class FloatingAssistantView(
           androidx.core.graphics.ColorUtils.calculateLuminance(bg) <= 0.5
         }
     drawerView.setContent {
-      com.tom.rv2ide.artificial.agent.compose.theme.AIEditorTheme(darkTheme = darkTheme, followHostFrame = mode != Mode.FULLSCREEN) {
+      com.tom.rv2ide.artificial.agent.compose.theme.AIEditorTheme(
+                darkTheme = darkTheme,
+                // UI 壳（顶栏/输入栏/状态条/会话抽屉）不随「消息配色方案」换色：
+                // 那个设置只染聊天消息渲染区（见 AssistantComposePanel 的主题），
+                // 壳保持与 ACS 主题一致，否则面板内咖啡色消息 + 蓝色壳会割裂
+                // （用户反馈：配色方案不要对 UI 壳生效）。
+                followHostFrame = mode != Mode.FULLSCREEN,
+                presetOverride = AppThemePreset.DEFAULT,
+            ) {
         com.tom.rv2ide.artificial.agent.compose.components.independent.ChatDrawerContent(
             sessions = drawerSessions.value,
             currentWorkspacePath = drawerCurrentCwd.value,

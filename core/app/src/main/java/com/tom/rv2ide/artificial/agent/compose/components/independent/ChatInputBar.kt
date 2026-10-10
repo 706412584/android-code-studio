@@ -412,7 +412,11 @@ internal fun ChatInputBar(
                 modifier = Modifier
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(Radius.lg))
-                    .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.98f))
+                    // 卡片底 = 栏底同色系：surface 被宿主覆盖成近白（#FFFBFF）时，
+                    // 卡片浮在 ContainerLow 的灰栏底上会白得刺眼（用户反馈的
+                    // 「输入框纯白」残留）。改用 surfaceContainer 系（主题未覆盖时
+                    // 回退栏底同色），与栏底的区分交给 1px 描边，不再靠白底。
+                    .background(MaterialTheme.colorScheme.surfaceContainerLow)
                     .border(
                         1.dp,
                         MaterialTheme.colorScheme.outlineVariant,

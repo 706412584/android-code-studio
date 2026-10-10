@@ -144,9 +144,14 @@ class AssistantOverlayService :
 
   override fun onCreate() {
     super.onCreate()
-    // SavedStateRegistryController 必须在 ON_CREATE 事件之前执行 attachState，
-    // 否则 registry 在观察者收到 ON_CREATE 时还不可用（其文档的强约束）。
+    // SavedStateRegistryController 必须在 ON_CREATE 事件之前完成 attach + restore，
+    // 否则 registry 在观察者收到 ON_CREATE 时还不可用（其文档的强约束）；
+    // performRestore 不能省——Recreator 观察者在 ON_CREATE 里
+    // consumeRestoredStateForKey，注册表尚未进入「已恢复」态就直接抛
+    // IllegalStateException（实测：修 ViewTreeLifecycleOwner 后暴露的第二层崩溃，
+    // Service 没有 savedInstanceState 可恢复，传 null 即「无恢复状态」）。
     savedStateRegistryController.performAttach()
+    savedStateRegistryController.performRestore(null)
     windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
     // 先置 STARTED，保证取到的作用域从创建起就是活跃的。
     lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_CREATE)
