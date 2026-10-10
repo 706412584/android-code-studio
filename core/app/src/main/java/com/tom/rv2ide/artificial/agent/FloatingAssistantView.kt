@@ -2748,6 +2748,16 @@ class FloatingAssistantView(
     val agents = Agents(context)
     val providerId = agents.getProvider()
     val providerLabel = com.tom.rv2ide.artificial.agent.ProviderPresets.labelFor(providerId)
+    // 推理强度：从持久化偏好恢复（重建视图时输入栏的初值）。与 onReasoningEffortChange
+    // 的落盘互为逆操作——少了这一读，用户的选择在每次点开/切全屏后回到默认档（实测）。
+    inputBar.reasoningEffort =
+        when (inputFeatures.reasoningEffort()) {
+          com.tom.rv2ide.ai.protocol.AiBehaviorSettings.REASONING_LOW ->
+              com.tom.rv2ide.artificial.agent.compose.compat.ReasoningEffort.LOW
+          com.tom.rv2ide.ai.protocol.AiBehaviorSettings.REASONING_HIGH ->
+              com.tom.rv2ide.artificial.agent.compose.compat.ReasoningEffort.HIGH
+          else -> com.tom.rv2ide.artificial.agent.compose.compat.ReasoningEffort.MEDIUM
+        }
     // 未配置密钥的服务商加「⚠」前缀：否则用户切过去、发一条消息、收到
     // 「未配置有效的 API 密钥」，要绕一圈才知道问题在哪。
     val usable =
@@ -2868,7 +2878,19 @@ class FloatingAssistantView(
               bridge.mode = next
             },
             reasoningEffort = bridge.reasoningEffort,
-            onReasoningEffortChange = { bridge.reasoningEffort = it },
+            onReasoningEffortChange = { next ->
+              bridge.reasoningEffort = next
+              // 落盘：推理强度是跨会话偏好，重建视图（点开/切全屏）后必须恢复。
+              // 此前只改内存状态，用户的选择在下次重建时静默丢失（实测反馈）。
+              inputFeatures.setReasoningEffort(
+                  when (next) {
+                    com.tom.rv2ide.artificial.agent.compose.compat.ReasoningEffort.LOW ->
+                        com.tom.rv2ide.ai.protocol.AiBehaviorSettings.REASONING_LOW
+                    com.tom.rv2ide.artificial.agent.compose.compat.ReasoningEffort.HIGH ->
+                        com.tom.rv2ide.ai.protocol.AiBehaviorSettings.REASONING_HIGH
+                    else -> com.tom.rv2ide.ai.protocol.AiBehaviorSettings.REASONING_MEDIUM
+                  })
+            },
             pendingAttachments = bridge.pendingAttachments,
             onRemoveAttachment = { idx ->
               if (idx in bridge.pendingAttachments.indices) bridge.pendingAttachments.removeAt(idx)

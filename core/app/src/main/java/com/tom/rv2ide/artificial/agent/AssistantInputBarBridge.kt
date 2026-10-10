@@ -103,7 +103,13 @@ internal class AssistantInputBarBridge {
   /** 当前对话模式（Aharou 三档；ACS ChatMode 的投影由宿主换算）。 */
   var mode by mutableStateOf(AgentMode.BUILD)
 
-  /** 推理强度档位。 */
+  /**
+   * 推理强度档位。
+   *
+   * <p><b>初值从持久化偏好读</b>（不是硬编码 MEDIUM）：此前每次重建视图
+   * （点开/切全屏）都会回到默认档，用户改过的选择被静默重置（实测反馈）。
+   * 写回由宿主在 [onReasoningEffortChange] 里落盘（见 FloatingAssistantView）。
+   */
   var reasoningEffort by mutableStateOf(ReasoningEffort.MEDIUM)
 
   // ── 工具运行状态条（FloatingToolStatusBar） ──

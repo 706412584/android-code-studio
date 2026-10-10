@@ -287,27 +287,27 @@ private fun PanelContent(
 
     // 条目尾部内容变化时决定是否跟随。
     LaunchedEffect(followKey) {
-      if (atBottom && renderItems.isNotEmpty()) {
-        // 瞬时定位而不是动画：流式期间每次追加都会触发，动画会被下一次调用打断
-        // 并排队，表现为「一直追不上底部」（与宿主 scrollToBottom 同一取舍）。
-        //
-        // **不能只 scrollToItem(lastIndex)**：末条是一条正在变长的长消息时，
-        // 它的顶部对齐视口顶、内容下半截全在屏幕外——「滚了但没滚到底」。
-        // 用「滚到末项 + 再滚一个视口高度」表达「把最后的内容顶到可视区」：
-        // LazyColumn 会把超出列表范围的偏移钳到最大滚动距离，即列表真正的底部。
-        //
-        // **布局就绪等待**：历史回放（打开面板/切全屏）一次性灌入全部条目，
-        // 本 effect 首次运行时 LazyColumn 可能还没布局（totalItemsCount == 0），
-        // 直接跳过会让回放后停在顶部（实测）。用 snapshotFlow 等计数就绪后再滚——
-        // 用户若在布局前就上滑，atBottom 变 false，循环体自然不再执行。
-        snapshotFlow { listState.layoutInfo.totalItemsCount }
-            .first { it > 0 }
-        if (atBottom) {
-          val lastIndex = renderItems.lastIndex
-          val viewport = listState.layoutInfo.viewportEndOffset
-          listState.scrollToItem(lastIndex, scrollOffset = viewport)
-        }
-      }
+      if (renderItems.isEmpty()) return@LaunchedEffect
+      // **决策必须在等待布局之前做，等待之后不得重查 atBottom**。
+      //
+      // 时序：历史回放（打开面板/切全屏）灌入条目时，本 effect 读到的 layoutInfo
+      // 还是**上一帧**（0 条目 → atBottom 为 true，表达「用户没滚过、应该跟到底部」）。
+      // 若等布局就绪后再重查：列表此时已以「顶部」姿态完成布局，末项不可见 →
+      // atBottom 变 false → 滚动被跳过，回放停在顶部（实测复现的正是这条）。
+      // 等待期间用户上滑的窗口只有一两帧，代价可忽略。
+      val shouldFollow = atBottom
+      if (!shouldFollow) return@LaunchedEffect
+      snapshotFlow { listState.layoutInfo.totalItemsCount }.first { it > 0 }
+      // 瞬时定位而不是动画：流式期间每次追加都会触发，动画会被下一次调用打断
+      // 并排队，表现为「一直追不上底部」（与宿主 scrollToBottom 同一取舍）。
+      //
+      // **不能只 scrollToItem(lastIndex)**：末条是一条正在变长的长消息时，
+      // 它的顶部对齐视口顶、内容下半截全在屏幕外——「滚了但没滚到底」。
+      // 用「滚到末项 + 再滚一个视口高度」表达「把最后的内容顶到可视区」：
+      // LazyColumn 会把超出列表范围的偏移钳到最大滚动距离，即列表真正的底部。
+      val lastIndex = renderItems.lastIndex
+      val viewport = listState.layoutInfo.viewportEndOffset
+      listState.scrollToItem(lastIndex, scrollOffset = viewport)
     }
 
     // 刻意不铺背景色：面板底色由宿主的 MaterialCardView（?attr/colorSurface）提供，
@@ -379,11 +379,15 @@ private fun PanelContent(
           enter = androidx.compose.animation.fadeIn(),
           exit = androidx.compose.animation.fadeOut(),
       ) {
-        val scope = rememberCoroutineScope()
+        val jumpScope = rememberCoroutineScope()
         Surface(
             onClick = {
-              scope.launch {
-                listState.animateScrollToItem(renderItems.lastIndex.coerceAtLeast(0))
+              // 瞬时定位到末尾（用户要求：直接显示最新消息，不要慢滚动画）。
+              // 与跟随路径同款写法：滚到末项 + 一个视口高度，偏移被钳到列表底部。
+              jumpScope.launch {
+                val lastIndex = renderItems.lastIndex.coerceAtLeast(0)
+                val viewport = listState.layoutInfo.viewportEndOffset
+                listState.scrollToItem(lastIndex, scrollOffset = viewport)
               }
             },
             shape = RoundedCornerShape(Radius.lg),
