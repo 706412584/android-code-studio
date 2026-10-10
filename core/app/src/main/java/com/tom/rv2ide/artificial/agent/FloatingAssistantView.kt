@@ -2971,6 +2971,14 @@ class FloatingAssistantView(
                 // 用 finish 而不是 close()：宿主是 AssistantFullscreenActivity，
                 // 它的 onClosed 已接 finish（见 bindLayout），close() 会走到同一条路。
                 close()
+              } else if (host is com.tom.rv2ide.artificial.agent.host.OverlayHost) {
+                // 应用外悬浮：**禁用真全屏**。悬浮窗点全屏会拉起
+                // AssistantFullscreenActivity——它自己是个普通 Activity 窗口，
+                // 而 overlay 窗口仍悬在系统窗口层，两层窗口互相盖住，面板
+                // 「看起来全屏却缩不回去」，屏幕被占据只能杀后台（用户实测）。
+                // 全屏键在悬浮模式的语义改为**折叠**：收面板、露出 FAB 图标，
+                // 窗口随内容缩回图标大小（close() 对 overlay 的效果正是如此）。
+                close()
               } else {
                 launchTrueFullscreen()
               }
