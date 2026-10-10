@@ -1112,6 +1112,11 @@ public final class AgentOrchestrator {
     // 而 ripgrep 没有——本工具在进程内用 java.util.regex 搜索，不依赖任何后端。
     registry.register(new com.tom.rv2ide.ai.tool.GrepTool());
     registry.register(new ListDirectoryTool());
+    // 编译诊断：经 IDE 语言服务器做静态分析，改完一批文件后一次确认（秒级，
+    // 比 gradle_build 快得多）。诊断端口在 executeRun 里注入（需 LSP 注册表）。
+    registry.register(new com.tom.rv2ide.ai.tool.DiagnosticsTool());
+    // IDE 自身日志（读被测应用日志用 logcat_read，两者目标进程不同）。
+    registry.register(new com.tom.rv2ide.ai.tool.IdeLogTool());
     // 向用户提问（多选/单选）。阻塞式：调用方（FloatingAssistantView）切到主线程弹窗，
     // 用户作答后唤醒 agent 循环继续执行。
     registry.register(new com.tom.rv2ide.ai.tool.AskUserQuestionTool());
@@ -1749,6 +1754,16 @@ public final class AgentOrchestrator {
             .imageGeneration(new AgentImageToolSettings(appContext).resolveEndpoint())
             // 文生视频端点（同上）。
             .videoGeneration(new AgentImageToolSettings(appContext).resolveVideoEndpoint())
+            // 编译诊断端口：经 IDE 语言服务器做静态分析。
+            // 服务器**按调用时现查**（而不是这里固化实例）：用户可能在会话中途才打开
+            // 项目编辑器（语言服务器随之启动），固化会永久拿到 null。
+            .diagnostics(
+                new ReportedDiagnosticsPort(
+                    id ->
+                        com.tom.rv2ide.lsp.api.ILanguageServerRegistry.getDefault()
+                            .getServer(id)))
+            // IDE 自身日志源：读 logback 事件的内存环形缓冲（见 IdeLogBufferAppender）。
+            .ideLog(IdeLogBufferSource.get())
             .build();
 
     List<ConversationLog.EntryLocation> entries = loadEntries(conversationId);

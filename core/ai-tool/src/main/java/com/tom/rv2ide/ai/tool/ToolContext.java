@@ -87,6 +87,21 @@ public final class ToolContext {
   /** 视频生成端点配置；未配置时为 null（能力页「视频生成」块下发）。 */
   private final VideoGenerationEndpoint videoGeneration;
 
+  /**
+   * 编译诊断端口（IDE 语言服务器）；未注入时为 null。
+   *
+   * <p>由 app 层在构建上下文时注入——诊断需要 LSP 栈，而本模块零 Android 依赖。
+   */
+  private final DiagnosticsPort diagnostics;
+
+  /**
+   * IDE 自身日志源；未注入时为 null。
+   *
+   * <p>用于让 AI 读到工具链内部被吞掉的错误（协议层/工具层异常）。
+   * 与 {@code logcat_read} 目标不同——那个读被测应用。
+   */
+  private final IdeLogSource ideLog;
+
   private ToolContext(Builder builder) {
     this.homePath = builder.homePath == null ? "" : builder.homePath;
     this.extraWriteRoots =
@@ -101,6 +116,8 @@ public final class ToolContext {
     this.imageDataProvider = builder.imageDataProvider;
     this.imageGeneration = builder.imageGeneration;
     this.videoGeneration = builder.videoGeneration;
+    this.diagnostics = builder.diagnostics;
+    this.ideLog = builder.ideLog;
   }
 
   public String getHomePath() {
@@ -148,6 +165,21 @@ public final class ToolContext {
   }
 
   /**
+   * 编译诊断端口（IDE 语言服务器）；未注入时为 null。
+   *
+   * <p>为 null 时诊断工具会明确报「语言服务器不可用」，而不是返回空诊断列表——
+   * 后者会被模型误读成「代码没问题」。
+   */
+  public DiagnosticsPort getDiagnostics() {
+    return diagnostics;
+  }
+
+  /** IDE 自身日志源；未注入时为 null（工具据此报「未接入」而不是返回空日志）。 */
+  public IdeLogSource getIdeLog() {
+    return ideLog;
+  }
+
+  /**
    * 返回一个仅替换 {@code toolCallId} 的副本。
    *
    * <p>执行器在派发到具体工具前用当前调用的 id 覆盖上下文，使工具内部的进度与错误
@@ -165,6 +197,8 @@ public final class ToolContext {
         .imageDataProvider(this.imageDataProvider)
         .imageGeneration(this.imageGeneration)
         .videoGeneration(this.videoGeneration)
+        .diagnostics(this.diagnostics)
+        .ideLog(this.ideLog)
         .build();
   }
 
@@ -187,6 +221,8 @@ public final class ToolContext {
         .imageDataProvider(this.imageDataProvider)
         .imageGeneration(this.imageGeneration)
         .videoGeneration(this.videoGeneration)
+        .diagnostics(this.diagnostics)
+        .ideLog(this.ideLog)
         .build();
   }
 
@@ -218,6 +254,8 @@ public final class ToolContext {
     private ImageDataProvider imageDataProvider;
     private ImageGenerationEndpoint imageGeneration;
     private VideoGenerationEndpoint videoGeneration;
+    private DiagnosticsPort diagnostics;
+    private IdeLogSource ideLog;
 
     public Builder homePath(String value) {
       this.homePath = value;
@@ -267,6 +305,18 @@ public final class ToolContext {
 
     public Builder videoGeneration(VideoGenerationEndpoint value) {
       this.videoGeneration = value;
+      return this;
+    }
+
+    /** 注入编译诊断端口（IDE 语言服务器适配器）。 */
+    public Builder diagnostics(DiagnosticsPort value) {
+      this.diagnostics = value;
+      return this;
+    }
+
+    /** 注入 IDE 自身日志源。 */
+    public Builder ideLog(IdeLogSource value) {
+      this.ideLog = value;
       return this;
     }
 

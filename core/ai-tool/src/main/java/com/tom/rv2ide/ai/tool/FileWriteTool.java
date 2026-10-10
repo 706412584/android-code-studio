@@ -90,7 +90,10 @@ public final class FileWriteTool extends BaseTool {
                 output.close();
             }
             int lineCount = input.optString("content").split("\n", -1).length;
-            return ok(ToolMessages.format(existed ? ToolMessages.FILE_WRITE_UPDATED : ToolMessages.FILE_WRITE_CREATED, path, lineCount));
+            String message = ToolMessages.format(existed ? ToolMessages.FILE_WRITE_UPDATED : ToolMessages.FILE_WRITE_CREATED, path, lineCount);
+            // 搭车诊断：把写完后（新建时尤其容易漏 import/签名）的编译错误直接附上。
+            String diagnostics = FileDiagnostics.describe(context, file);
+            return ok(diagnostics.isEmpty() ? message : message + "\n" + diagnostics);
         } catch (Exception e) {
             return error(ToolMessages.format(ToolMessages.FILE_WRITE_FAILED, e.getMessage()));
         }

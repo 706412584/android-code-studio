@@ -116,6 +116,17 @@ public final class ToolNames {
     /** 写操作：暂存 / 提交 / 分支 / 丢弃 / 远程同步。授权粒度按 action 细分。 */
     public static final String GIT_WRITE = "git_write";
 
+    // ---- IDE 自省（编辑器/语言服务器内部状态，通用编码 agent 无法获得）----
+    /**
+     * 编译诊断：经 IDE 语言服务器对文件做静态分析，返回带行列号的错误/警告。
+     *
+     * <p>通用 agent 只能靠跑一次构建才知道改对没有（分钟级）；这里复用 IDE 已建立的
+     * 符号索引，一次分析是秒级。只读，无副作用。
+     */
+    public static final String DIAGNOSTICS = "diagnostics";
+    /** 读取 IDE 自身日志（`~/.androidide/logs/`），用于排查 AI 工具层被吞掉的异常。 */
+    public static final String IDE_LOG_READ = "ide_log_read";
+
     private static final String CUSTOM_AGENT_PREFIX = "agentx_";
     private static final String CUSTOM_MCP_PREFIX = "mcpx_";
 

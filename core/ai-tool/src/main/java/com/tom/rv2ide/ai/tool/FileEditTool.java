@@ -134,7 +134,13 @@ public final class FileEditTool extends BaseTool {
             } finally {
                 output.close();
             }
-            return ok(ToolMessages.format(ToolMessages.FILE_EDIT_SUCCESS, FileToolPathPolicy.displayPath(context.getHomePath(), file), replaced));
+            String message = ToolMessages.format(
+                    ToolMessages.FILE_EDIT_SUCCESS,
+                    FileToolPathPolicy.displayPath(context.getHomePath(), file),
+                    replaced);
+            // 搭车诊断：把改完后的编译错误直接附在结果里（高频路径，严格有界）。
+            String diagnostics = FileDiagnostics.describe(context, file);
+            return ok(diagnostics.isEmpty() ? message : message + "\n" + diagnostics);
         } catch (Exception e) {
             return error(ToolMessages.format(ToolMessages.FILE_EDIT_FAILED, e.getMessage()));
         }
