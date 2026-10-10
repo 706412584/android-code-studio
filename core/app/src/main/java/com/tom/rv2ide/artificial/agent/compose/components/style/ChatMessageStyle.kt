@@ -21,6 +21,7 @@
 
 package com.tom.rv2ide.artificial.agent.compose.components.style
 
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -50,6 +51,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
+import androidx.compose.ui.graphics.nativeCanvas
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.platform.LocalClipboardManager
@@ -163,14 +167,15 @@ internal fun formatClockTime(millis: Long): String =
     Instant.ofEpochMilli(millis).atZone(ZoneId.systemDefault()).format(CHAT_CLOCK_FORMATTER)
 
 /**
- * 「思考」字形：`∴`（THEREFORE，"所以"）文本字形。
+ * 「思考」图标：大脑（lucide `brain`，cc-haha 桌面端 ThinkingBlock 同款）。
  *
- * <p><b>来源</b>：cc-haha 的思考块标记（`src/components/messages/AssistantThinkingMessage.tsx`
- * 渲染 `∴ Thinking`，dim + italic）。用户指定用它替换此前的 `ic_ai_agent` 机器人图标——
- * `∴` 表达"由此推出"，与思考的语义贴合，且是纯文本字形，任何字体都能渲染、无需资源。
+ * <p><b>来源</b>：cc-haha 桌面端 `desktop/src/components/chat/ThinkingBlock.tsx`
+ * 用 lucide-react 的 `<Brain />`；此处把官方 brain.svg 的 8 条 path 逐条转成
+ * android.graphics.Path（`PathParser.createPathFromPathData`，项目内
+ * VectorRenderer.kt 同款用法），Canvas 描边渲染。CLI 版的 `∴ Thinking` 字形只适用
+ * 等宽终端，图形界面用大脑图标才与「已思考」折叠头匹配（用户实测反馈）。
  *
- * <p>颜色跟随调用方给的主题色 tint；字号随 [iconSize]，稍加粗保持与相邻 label 文字的
- * 视觉重量一致。
+ * <p>颜色跟随调用方给的主题色 tint；线宽 2（24dp 视口下 lucide 默认），圆头圆角。
  */
 @Composable
 internal fun ThinkingGlyph(
@@ -178,14 +183,44 @@ internal fun ThinkingGlyph(
     tint: Color = MaterialTheme.colorScheme.onSurfaceVariant,
     iconSize: Dp = 16.dp
 ) {
-    Text(
-        text = "∴",
-        color = tint,
-        style = MaterialTheme.typography.labelLarge,
-        fontWeight = FontWeight.SemiBold,
-        modifier = modifier.size(iconSize),
-    )
+    val paths = remember(BRAIN_PATH_DATA) {
+        BRAIN_PATH_DATA.map { androidx.core.graphics.PathParser.createPathFromPathData(it) }
+    }
+    val paint =
+        remember(tint) {
+            android.graphics.Paint().apply {
+                style = android.graphics.Paint.Style.STROKE
+                strokeWidth = 2f
+                strokeCap = android.graphics.Paint.Cap.ROUND
+                strokeJoin = android.graphics.Paint.Join.ROUND
+                isAntiAlias = true
+            }
+        }
+    Canvas(modifier = modifier.size(iconSize)) {
+        val scale = size.width / 24f
+        paint.color = tint.toArgb()
+        drawIntoCanvas { canvas ->
+            val nc = canvas.nativeCanvas
+            nc.save()
+            nc.scale(scale, scale)
+            paths.forEach { path -> nc.drawPath(path, paint) }
+            nc.restore()
+        }
+    }
 }
+
+/** lucide brain.svg（24x24 视口）官方 path 数据，逐条对应。 */
+private val BRAIN_PATH_DATA =
+    listOf(
+        "M12 18V5",
+        "M15 13a4.17 4.17 0 0 1-3-4 4.17 4.17 0 0 1-3 4",
+        "M17.598 6.5A3 3 0 1 0 12 5a3 3 0 1 0-5.598 1.5",
+        "M17.997 5.125a4 4 0 0 1 2.526 5.77",
+        "M18 18a4 4 0 0 0 2-7.464",
+        "M19.967 17.483A4 4 0 1 1 12 18a4 4 0 1 1-7.967-.517",
+        "M6 18a4 4 0 0 1-2-7.464",
+        "M6.003 5.125a4 4 0 0 0-2.526 5.77",
+    )
 
 /**
  * 内容卡：白底 + 1px 细线 + 可选头部（标题 + 复制）与页脚统计。
