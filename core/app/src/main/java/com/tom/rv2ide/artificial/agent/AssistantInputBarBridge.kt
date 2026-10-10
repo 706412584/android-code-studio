@@ -19,6 +19,7 @@ package com.tom.rv2ide.artificial.agent
 
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -63,6 +64,15 @@ internal class AssistantInputBarBridge {
 
   /** 进度是否为估算值。 */
   var tokenEstimated by mutableStateOf(false)
+
+  /**
+   * 上下文窗口总大小（token）；0 表示模型未声明窗口。
+   *
+   * <p><b>为什么不能只看 [tokenProgress]</b>：它表达的是「**已用**量占比」，
+   * 未运行时必然是 0——用它判断「要不要显示上下文按钮」会让按钮在首次对话前
+   * 永远不出现（用户看到的正是这个）。按钮的显示条件应是「**窗口已配置**」。
+   */
+  var contextWindowSize by mutableIntStateOf(0)
 
   // ── 附件（原 AssistantInputFeatures.attachments 的 Compose 投影） ──
 

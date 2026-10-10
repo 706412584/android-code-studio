@@ -183,6 +183,15 @@ class FloatingAssistantView(
           binding.root.post { applyToolStatusBarVisibility() }
           return@OnSharedPreferenceChangeListener
         }
+        // 思考自动折叠开关：写进 adapter 的属性（下次 finishThinking 生效），
+        // 已渲染的历史块不动——它们是过去的行为，改开关不该追溯改写。
+        if (key ==
+            com.tom.rv2ide.artificial.agent.compose.AssistantThinkingCollapsePref.KEY_ENABLED) {
+          adapter.autoCollapseThinking =
+              com.tom.rv2ide.artificial.agent.compose.AssistantThinkingCollapsePref
+                  .isEnabled(context)
+          return@OnSharedPreferenceChangeListener
+        }
         if (key !in uiStyleKeys) {
           return@OnSharedPreferenceChangeListener
         }
@@ -196,7 +205,13 @@ class FloatingAssistantView(
         }
       }
 
-  private val adapter = AssistantMessageAdapter(uiStyleStore)
+  private val adapter =
+      AssistantMessageAdapter(uiStyleStore).apply {
+        // 思考块的折叠策略由偏好决定（见 AssistantThinkingCollapsePref）。
+        // 在构造后立即读一次：默认值（true）已与偏好默认一致，但用户可能改过。
+        autoCollapseThinking =
+            com.tom.rv2ide.artificial.agent.compose.AssistantThinkingCollapsePref.isEnabled(context)
+      }
   private val settings = AgentToolSettings(context)
 
   /**
@@ -729,6 +744,9 @@ class FloatingAssistantView(
   private fun applyContextRing() {
     // XML 圆环退役：进度写进输入栏桥，SendButton 外圈画出占用。
     val total = lastContextSize
+    // 窗口大小单独同步：它是「上下文按钮该不该显示」的判据（未运行时用量为 0，
+    // 只看向量占比会让按钮在首次对话前永不出现）。
+    inputBar.contextWindowSize = total
     if (total <= 0) {
       inputBar.tokenProgress = 0f
       return
@@ -2779,6 +2797,10 @@ class FloatingAssistantView(
             queuedRequests = bridge.queuedRequests,
             tokenProgress = bridge.tokenProgress,
             tokenEstimated = bridge.tokenEstimated,
+            contextWindowSize = bridge.contextWindowSize,
+            // 上下文详情 + 手动压缩：入口原先挂在 XML 工具条的圆环上，圆环退役后
+            // 这两个功能（showContextUsage / compactConversation）就没有调用点了。
+            onContextUsageClick = { showContextUsage() },
             todoItems = bridge.todoItems,
             sessionId = displayedConversationId ?: "",
         )
@@ -2912,8 +2934,6 @@ class FloatingAssistantView(
                 // 这只是多一个入口，不该让面板崩。
               }
             },
-            currentMode = inputBar.mode,
-            onToggleMode = { next -> inputBar.mode = next },
             connectionState = null,
             showMenuButton = true,
             // 二选一：非全屏显示全屏图标，全屏显示最小化图标。

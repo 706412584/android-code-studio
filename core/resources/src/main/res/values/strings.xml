@@ -66,9 +66,11 @@
   <string name="ai_agent_code_completion">Code Completion</string>
   <string name="ai_agent_code_completion_summary">Enable AI-powered code suggestions</string>
   <string name="ai_agent_compose_render">Compose Message Rendering</string>
-  <string name="ai_agent_compose_render_summary">Render assistant messages with the new Compose UI. Turn off to use the classic list.</string>
+  <string name="ai_agent_compose_render_summary">Render assistant messages with the Compose UI. On by default; turn off only as a fallback — the classic list no longer receives new features.</string>
   <string name="ai_agent_tool_status_bar">Tool Running Status Bar</string>
   <string name="ai_agent_tool_status_bar_summary">Show a floating mini-terminal status bar above the input while tools run. Off by default.</string>
+  <string name="ai_agent_thinking_collapse">Auto-collapse Thinking</string>
+  <string name="ai_agent_thinking_collapse_summary">Keep reasoning expanded while it streams, then collapse it when done. Turn off to keep it always expanded.</string>
   <string name="ai_agent_description">Get AI-powered code generation using AI Agent</string>
   <string name="ai_agent_prompt_hint">Describe what code you want to generate...</string>
   <string name="ai_agent_send">Send</string>
@@ -377,6 +379,11 @@
   <string name="ai_assistant_unknown_file">a file</string>
   <string name="ai_assistant_revert">Undo this change</string>
   <string name="ai_assistant_revert_done">Undone</string>
+  <string name="chat_diff_group_title">Changes this run · %1$d file(s)</string>
+  <string name="chat_diff_revert_all">Undo all</string>
+  <string name="chat_diff_all_reverted">All undone</string>
+  <string name="chat_diff_revert">Undo</string>
+  <string name="chat_diff_reverted">Undone</string>
   <string name="ai_assistant_revert_ok">Undo succeeded — %1$s</string>
   <string name="ai_assistant_revert_failed">Undo failed — %1$s</string>
 

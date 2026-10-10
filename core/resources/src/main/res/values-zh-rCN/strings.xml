@@ -66,9 +66,11 @@
   <string name="ai_agent_code_completion">代码补全</string>
   <string name="ai_agent_code_completion_summary">启用 AI 驱动的代码建议</string>
   <string name="ai_agent_compose_render">Compose 消息渲染</string>
-  <string name="ai_agent_compose_render_summary">用新的 Compose 界面渲染助手消息；关闭则使用经典列表</string>
+  <string name="ai_agent_compose_render_summary">用 Compose 界面渲染助手消息；默认开启，仅在遇到问题时关闭——经典列表已不再更新</string>
   <string name="ai_agent_tool_status_bar">工具运行状态条</string>
   <string name="ai_agent_tool_status_bar_summary">工具运行时在输入区上方显示浮动迷你终端状态条；默认关闭</string>
+  <string name="ai_agent_thinking_collapse">思考完毕后自动折叠</string>
+  <string name="ai_agent_thinking_collapse_summary">思考内容在输出期间保持展开，结束后自动折叠；关闭则始终展开</string>
   <string name="ai_agent_description">使用 AI 助手 生成由 AI 驱动的代码</string>
   <string name="ai_agent_prompt_hint">描述你想要生成什么代码…</string>
   <string name="ai_agent_send">发送</string>
@@ -372,6 +374,11 @@
   <string name="ai_assistant_unknown_file">某个文件</string>
   <string name="ai_assistant_revert">撤销这次改动</string>
   <string name="ai_assistant_revert_done">已撤销</string>
+  <string name="chat_diff_group_title">本轮改动 · %1$d 个文件</string>
+  <string name="chat_diff_revert_all">全部撤销</string>
+  <string name="chat_diff_all_reverted">已全部撤销</string>
+  <string name="chat_diff_revert">撤销</string>
+  <string name="chat_diff_reverted">已撤销</string>
   <string name="ai_assistant_revert_ok">撤销成功 — %1$s</string>
   <string name="ai_assistant_revert_failed">撤销失败 — %1$s</string>
 

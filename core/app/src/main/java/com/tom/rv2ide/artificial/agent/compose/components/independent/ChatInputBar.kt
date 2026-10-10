@@ -204,6 +204,19 @@ internal fun ChatInputBar(
     onInterjectQueued: (String) -> Unit = {},
     tokenProgress: Float = 0f,
     tokenEstimated: Boolean = false,
+    /**
+     * 上下文窗口总大小（token）；0 = 模型未声明窗口。
+     *
+     * <p>是「上下文按钮该不该显示」的判据（见该按钮的调用点注释）。
+     */
+    contextWindowSize: Int = 0,
+    /**
+     * 点击上下文占用图标（工具行里的圆环）时打开详情 + 手动压缩入口。
+     *
+     * <p>为 null 时整个图标不渲染——宿主没有上下文信息可展示（例如模型未配置上下文
+     * 窗口）时，显示一个空环比不显示更让人困惑。
+     */
+    onContextUsageClick: (() -> Unit)? = null,
     todoItems: List<ParsedTodoItem> = emptyList(),
     sessionId: String = "",
     onTodoExpandedChange: (Boolean) -> Unit = {},
@@ -585,6 +598,21 @@ internal fun ChatInputBar(
                             enabled = !isBusy
                         )
                     }
+                    // 上下文占用：圆环 + 点击详情/压缩入口。
+                    //
+                    // 显示条件是**窗口已配置**（contextWindowSize > 0）而不是「有用量」：
+                    // tokenProgress 是「已用量占比」，首次对话前必然是 0——用它判断会让
+                    // 按钮在用户最需要知道「窗口多大」的时候恰好不出现（实测反馈）。
+                    onContextUsageClick?.let { openUsage ->
+                        if (contextWindowSize > 0) {
+                            ContextUsageButton(
+                                progress = tokenProgress,
+                                windowConfigured = true,
+                                estimated = tokenEstimated,
+                                onClick = openUsage,
+                            )
+                        }
+                    }
                     UploadIconButton(
                         enabled = !isBusy,
                         icon = FeatherIcons.Plus,
@@ -720,6 +748,85 @@ private fun FullScreenInputDialog(
                 )
             }
         }
+    }
+}
+
+/**
+ * 上下文占用图标：一圈按比例填充的环 + 中间百分比数字。
+ *
+ * <p><b>为什么做成独立按钮而不是复用发送键外圈</b>：发送键的点击语义已被
+ * 「发送/停止」占满（含长按强打断），再叠加「看详情」会让同一个手势有两个含义。
+ * 独立按钮语义单一，也不会在忙碌时与停止键冲突。
+ *
+ * <p>颜色按占用分档（与旧 XML 圆环同一判据）：<70% 主色、70-90% 警示橙、
+ * ≥90% 错误红——接近上限时要能一眼看出，否则用户只会在发请求被截断时才发现。
+ */
+@Composable
+internal fun ContextUsageButton(
+    progress: Float,
+    /** 窗口是否已配置。未配置时不该走到这里（调用点已判），保留参数是为了自文档。 */
+    windowConfigured: Boolean,
+    estimated: Boolean,
+    onClick: () -> Unit,
+) {
+    val clamped = progress.coerceIn(0f, 1f)
+    val percent = (clamped * 100).toInt()
+    // 「尚未对话」与「真的用了 0%」都表现为 progress == 0，但前者显示 0 会误导
+    // （用户以为窗口是空的、而不是还没开始）。用「–」区分：点开详情能看到窗口总量。
+    val hasUsage = progress > 0f
+    val ringColor =
+        when {
+            clamped >= 0.9f -> MaterialTheme.colorScheme.error
+            clamped >= 0.7f -> Brand.Orange
+            else -> MaterialTheme.colorScheme.primary
+        }
+    val label =
+        stringResource(
+            if (estimated) R.string.chat_context_usage_estimated else R.string.chat_context_usage,
+            percent,
+        )
+    Box(
+        modifier =
+            Modifier.size(36.dp)
+                .clip(androidx.compose.foundation.shape.CircleShape)
+                .clickable(onClick = onClick)
+                .semantics { contentDescription = label },
+        contentAlignment = Alignment.Center,
+    ) {
+        Canvas(modifier = Modifier.size(26.dp)) {
+            val stroke = 2.5.dp.toPx()
+            val arcSize = size.minDimension - stroke
+            val topLeft = androidx.compose.ui.geometry.Offset(stroke / 2f, stroke / 2f)
+            // 底环：让「还剩多少」有参照，否则小占用时只看到一小段弧、读不出比例。
+            drawArc(
+                color = ringColor.copy(alpha = 0.18f),
+                startAngle = -90f,
+                sweepAngle = 360f,
+                useCenter = false,
+                topLeft = topLeft,
+                size = androidx.compose.ui.geometry.Size(arcSize, arcSize),
+                style = Stroke(width = stroke),
+            )
+            // 未对话时不画进度弧——一圈空环配「–」表达「有窗口、还没用」，
+            // 画一段 0 长度的弧与「不画」在视觉上无差别，省一次绘制。
+            if (hasUsage) {
+                drawArc(
+                    color = ringColor,
+                    startAngle = -90f,
+                    sweepAngle = 360f * clamped,
+                    useCenter = false,
+                    topLeft = topLeft,
+                    size = androidx.compose.ui.geometry.Size(arcSize, arcSize),
+                    style =
+                        Stroke(width = stroke, cap = androidx.compose.ui.graphics.StrokeCap.Round),
+                )
+            }
+        }
+        Text(
+            text = if (hasUsage) "$percent" else "–",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }
 
