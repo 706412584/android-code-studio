@@ -63,15 +63,18 @@ public final class DiagnosticsTool extends BaseTool {
   static final int MAX_MAX_ITEMS = 500;
 
   /**
-   * 受支持的文件扩展名。
+   * 受支持的文件扩展名（用于**目录扫描**挑选候选文件）。
    *
-   * <p><b>为什么只有 java / kt</b>：IDE 虽注册了四个语言服务器，但只有它们实现了
+   * <p><b>为什么只有 java / kt / kts</b>：IDE 虽注册了四个语言服务器，但只有它们实现了
    * 按需分析——{@code XMLLanguageServer.analyze} 与 {@code ClangLanguageServer.analyze}
    * 恒返回 {@code NO_UPDATE}（未实现），把它们列进来只会让模型反复拿到无效结果。
    * 其中 Kotlin 也只做缺失导入检查（类型错误由 KLS 服务进程推送，不在此接口内）。
+   *
+   * <p><b>与端口的支持集合必须一致</b>：单文件的最终判定交给
+   * {@link DiagnosticsPort#isSupported}，这里只是扫描时少列无关文件。
    */
   private static final Set<String> SUPPORTED_EXTENSIONS =
-      Collections.unmodifiableSet(new HashSet<>(Arrays.asList("java", "kt")));
+      Collections.unmodifiableSet(new HashSet<>(Arrays.asList("java", "kt", "kts")));
 
   /** 扫描目录时跳过的目录名：构建产物与依赖，既非源码也极耗时间。 */
   private static final Set<String> SKIP_DIRS =
@@ -89,10 +92,12 @@ public final class DiagnosticsTool extends BaseTool {
   public String getDescription() {
     return "用 IDE 语言服务器分析源码，返回编译错误与警告（含行列号与严重级别）。"
         + "path 传单个文件时只分析该文件；传目录时递归分析其中受支持的文件"
-        + "（.java / .kt 完整分析；.xml / .c/.cpp 的语言服务器未实现按需分析，传了会明确报错）。"
+        + "（.java 完整分析；.kt/.kts **只检查缺失导入**，其类型错误不在此接口内；"
+        + ".xml / .c/.cpp 的语言服务器未实现按需分析，传了会明确报错）。"
         + "推荐在改完一批文件后调用一次，确认没有引入编译错误——"
         + "这比跑完整构建（gradle_build）快得多，且能一次拿到全部诊断。"
-        + "注意：文件必须属于当前项目的模块（不在模块内的文件无法分析，会明确说明）。";
+        + "注意：文件必须属于当前项目的模块（不在模块内的文件无法分析，会明确说明）；"
+        + "首次分析要建符号索引，可能较慢，超时会提示可稍后重试。";
   }
 
   @Override
@@ -167,12 +172,10 @@ public final class DiagnosticsTool extends BaseTool {
               + "请改用途径：在编辑器中打开项目（让语言服务器启动）后重试，"
               + "或用 gradle_build 跑构建获取错误。");
     }
-    if (!port.isAvailable()) {
-      String reason = port.unavailableReason();
+    String reason = port.unavailableReason();
+    if (!reason.isEmpty()) {
       return error(
-          "语言服务器当前不可用"
-              + (reason.isEmpty() ? "。" : "：" + reason + "。")
-              + "诊断需要项目已在编辑器中打开（语言服务器随项目会话启动）。");
+          "语言服务器当前不可用：" + reason + "。诊断需要项目已在编辑器中打开（语言服务器随项目会话启动）。");
     }
 
     int minSeverity = DiagnosticsMessages.parseSeverity(input.optString("min_severity", "warning"));
@@ -190,8 +193,16 @@ public final class DiagnosticsTool extends BaseTool {
     }
 
     List<File> files;
+    boolean filesTruncated = false;
     if (target.isDirectory()) {
-      files = collectSupportedFiles(target, maxFiles);
+      // 多取一个用于判断「是否还有更多」，避免静默截断让模型以为整个目录都查完了。
+      List<File> collected = collectSupportedFiles(target, maxFiles + 1);
+      if (collected.size() > maxFiles) {
+        filesTruncated = true;
+        files = collected.subList(0, maxFiles);
+      } else {
+        files = collected;
+      }
       if (files.isEmpty()) {
         return ok(
             "目录 "
@@ -200,11 +211,11 @@ public final class DiagnosticsTool extends BaseTool {
                 + "（.java / .kt，已跳过 build/.gradle 等产物目录）。");
       }
     } else {
-      if (!isSupported(target)) {
+      if (!port.isSupported(target.getAbsolutePath())) {
         return error(
             "不支持的文件类型："
                 + extensionOf(target)
-                + "。可分析的是 .java 与 .kt（XML/Clang 语言服务器未实现按需分析）。");
+                + "。可分析的是 .java / .kt / .kts（XML/Clang 语言服务器未实现按需分析）。");
       }
       files = Collections.singletonList(target);
     }
@@ -230,7 +241,9 @@ public final class DiagnosticsTool extends BaseTool {
         continue;
       }
       if (report.isFailed()) {
-        failures.add(display(context, file) + "：" + report.getFailureReason());
+        // 超时与其它失败区别对待：超时可再试（首次分析要建索引），其余重试无用。
+        String hint = report.isTimedOut() ? "（可稍后重试，首次分析较慢）" : "";
+        failures.add(display(context, file) + "：" + report.getFailureReason() + hint);
         continue;
       }
 
@@ -275,13 +288,15 @@ public final class DiagnosticsTool extends BaseTool {
         .append(DiagnosticsMessages.severityName(minSeverity))
         .append(" 及以上诊断：\n\n");
     header.append(sb);
-    if (truncated) {
-      header
-          .append("… 已达上限（最多 ")
-          .append(maxItems)
-          .append(" 条 / ")
-          .append(maxFiles)
-          .append(" 个文件），结果被截断；可缩小路径范围后重试。\n");
+    if (truncated || filesTruncated) {
+      header.append("… 结果被截断：");
+      if (filesTruncated) {
+        header.append("目录内文件数超过 max_files=").append(maxFiles).append("，未覆盖全部文件；");
+      }
+      if (truncated) {
+        header.append("诊断条数达到 max_items=").append(maxItems).append("；");
+      }
+      header.append("可缩小路径范围或调大上限后重试。\n");
     }
     if (!failures.isEmpty()) {
       header.append("\n以下文件分析未完成：\n");

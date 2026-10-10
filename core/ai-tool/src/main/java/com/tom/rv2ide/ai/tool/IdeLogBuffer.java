@@ -15,9 +15,8 @@
  * along with AndroidCodeStudio.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-package com.tom.rv2ide.artificial.agent;
+package com.tom.rv2ide.ai.tool;
 
-import com.tom.rv2ide.ai.tool.IdeLogSource;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -30,50 +29,39 @@ import java.util.Locale;
  *
  * <p><b>为什么用内存缓冲而不是读文件/logcat</b>：
  * <ul>
- *   <li>文件：ACS 的 logback 只接了 {@code LogcatAppender}，没有写日志文件
- *       （{@code IDELogcatReader} 那个 {@code AndroidIDE-LOG-*.txt} 是 UI 手动导出的 logcat 转储，
- *       非常驻），因此没有可读的稳定日志文件
+ *   <li>文件：logback 只接了 {@code LogcatAppender}，没有写日志文件（{@code IDELogcatReader}
+ *       那个 {@code AndroidIDE-LOG-*.txt} 是 UI 手动导出的 logcat 转储，非常驻）
  *   <li>logcat：应用只能可靠读取**自身进程**的日志，而工具经 Shizuku/Termux 后端跑的
  *       {@code logcat} 是另一个进程，读不到 ACS 自己；且要依赖 shell 后端可用
  * </ul>
- * 直接挂一个 logback appender 到 root logger，事件落进本缓冲，读取既可靠又零依赖。
  *
  * <p><b>为什么是环形</b>：日志在应用整个生命周期内持续产生，无上限会持续吃内存。
  * 默认保留最近 {@link #DEFAULT_CAPACITY} 条，够排查「刚刚发生了什么」，又不失控。
+ *
+ * <p>放在 {@code ai-tool}（纯 Java、零 Android）而非 app 层，是为了**可 JVM 单测**——
+ * 环形淘汰与并发写入是这里最容易出错、也最该被钉住的部分。
  */
-public final class IdeLogBufferSource implements IdeLogSource {
+public final class IdeLogBuffer implements IdeLogSource {
 
   /** 默认保留条数。 */
-  static final int DEFAULT_CAPACITY = 1000;
+  public static final int DEFAULT_CAPACITY = 1000;
 
-  /** 单条消息最大字符数，防止异常消息把缓冲撑爆。 */
-  private static final int MAX_MESSAGE_CHARS = 4000;
+  /** 单条消息最大字符数，防止超长消息把缓冲撑爆。 */
+  private static final int MAX_MESSAGE_CHARS = 2000;
 
-  /** 单条异常堆栈最大字符数。 */
-  private static final int MAX_THROWABLE_CHARS = 8000;
-
-  private static volatile IdeLogBufferSource instance;
-
-  /** 全局单例：logback appender 是全局的，缓冲也必须是全局唯一的一份。 */
-  public static IdeLogBufferSource get() {
-    IdeLogBufferSource local = instance;
-    if (local == null) {
-      synchronized (IdeLogBufferSource.class) {
-        local = instance;
-        if (local == null) {
-          local = new IdeLogBufferSource(DEFAULT_CAPACITY);
-          instance = local;
-        }
-      }
-    }
-    return local;
-  }
+  /**
+   * 单条异常堆栈最大字符数。
+   *
+   * <p>取 4000（而非更大）：缓冲是 1000 条，最坏情况约 1000×(2000+4000) 字符 ≈ 20MB，
+   * 已是偏高的常驻内存。堆栈前几帧通常足以定位，剪掉尾部对排查影响很小。
+   */
+  private static final int MAX_THROWABLE_CHARS = 4000;
 
   private final int capacity;
   private final Deque<Entry> buffer = new ArrayDeque<>();
-  private volatile boolean started = false;
+  private volatile boolean started;
 
-  IdeLogBufferSource(int capacity) {
+  public IdeLogBuffer(int capacity) {
     this.capacity = Math.max(1, capacity);
   }
 

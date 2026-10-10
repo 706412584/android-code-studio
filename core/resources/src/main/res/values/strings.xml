@@ -606,6 +606,7 @@
   <string name="ai_assistant_work_git_write">Git %1$s</string>
   <string name="ai_assistant_work_diagnostics">Checking %1$s</string>
   <string name="ai_assistant_work_ide_log">Reading IDE log</string>
+  <string name="ai_assistant_work_layout_preview">Previewing %1$s</string>
   <string name="ai_assistant_work_tool">Running %1$s</string>
 
   <!-- Bottom-fixed retry card -->

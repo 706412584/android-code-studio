@@ -77,6 +77,7 @@ import com.tom.rv2ide.artificial.agent.tool.GitWriteTool;
 import com.tom.rv2ide.artificial.agent.tool.GradleBuildTool;
 import com.tom.rv2ide.artificial.secrets.ApiKey;
 import com.tom.rv2ide.artificial.agent.tool.InstallApkTool;
+import com.tom.rv2ide.artificial.agent.tool.LayoutPreviewTool;
 import com.tom.rv2ide.artificial.agent.tool.LaunchAppTool;
 import com.tom.rv2ide.artificial.agent.tool.LogcatReadTool;
 import com.tom.rv2ide.artificial.agent.tool.PhoneActionCaptureTool;
@@ -1198,6 +1199,9 @@ public final class AgentOrchestrator {
               }
             }));
 
+    // 布局预览：改完 XML 界面后渲染成图片自查（复用设计器的 inflate + 预览渲染）。
+    registry.register(new LayoutPreviewTool(appContext));
+
     // 运行测试闭环：构建 → 安装 → 启动 → 读日志
     registry.register(new GradleBuildTool(this::lookupBuildService));
     registry.register(new InstallApkTool(appContext));
@@ -1763,7 +1767,7 @@ public final class AgentOrchestrator {
                         com.tom.rv2ide.lsp.api.ILanguageServerRegistry.getDefault()
                             .getServer(id)))
             // IDE 自身日志源：读 logback 事件的内存环形缓冲（见 IdeLogBufferAppender）。
-            .ideLog(IdeLogBufferSource.get())
+            .ideLog(com.tom.rv2ide.logging.IdeLogBufferHolder.INSTANCE.get())
             .build();
 
     List<ConversationLog.EntryLocation> entries = loadEntries(conversationId);

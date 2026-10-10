@@ -32,9 +32,6 @@ final class DiagnosticsMessages {
 
   private DiagnosticsMessages() {}
 
-  /** 单条诊断的展示上限；超出则截断并提示（避免编辑结果被诊断淹没）。 */
-  static final int MAX_INLINE_ITEMS = 20;
-
   /** error=1, warning=2, info=3, hint=4；无法识别时回落到 warning。 */
   static int parseSeverity(String raw) {
     if (raw == null) {

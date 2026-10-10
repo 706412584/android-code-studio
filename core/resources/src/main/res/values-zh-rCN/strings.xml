@@ -591,6 +591,7 @@
   <string name="ai_assistant_work_git_write">正在执行 git %1$s</string>
   <string name="ai_assistant_work_diagnostics">正在检查 %1$s</string>
   <string name="ai_assistant_work_ide_log">正在读取 IDE 日志</string>
+  <string name="ai_assistant_work_layout_preview">正在预览 %1$s</string>
   <string name="ai_assistant_work_tool">正在执行 %1$s</string>
 
   <!-- 底部固定的重试小卡片 -->

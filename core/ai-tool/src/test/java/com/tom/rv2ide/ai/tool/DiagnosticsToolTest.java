@@ -58,6 +58,14 @@ class DiagnosticsToolTest {
     }
 
     @Override
+    public boolean isSupported(String filePath) {
+      String name = new File(filePath).getName();
+      int dot = name.lastIndexOf('.');
+      String ext = dot < 0 ? "" : name.substring(dot + 1).toLowerCase(java.util.Locale.US);
+      return "java".equals(ext) || "kt".equals(ext) || "kts".equals(ext);
+    }
+
+    @Override
     public boolean isAvailable() {
       return available;
     }

@@ -36,7 +36,13 @@ import java.util.List;
  */
 final class FileDiagnostics {
 
-  /** 搭车诊断的等待上限。取 1.5s：编辑路径上任何更长的等待都是对交互的伤害。 */
+  /**
+   * 搭车诊断的等待上限。
+   *
+   * <p>这个预算是**真的硬上限**（见 {@link GatedAnalyzer}）：语言服务器的 analyze 是阻塞式
+   * 实现、不响应协程取消，所以不能靠协程超时；这里用独立可中断线程加 {@code join(timeout)}，
+   * 到点即放弃等待。取 1.5s：编辑是高频路径，任何更长的等待都是对交互的伤害。
+   */
   static final long TIMEOUT_MS = 1_500L;
 
   /** 搭车诊断最多列出多少条（超出只报数量，全量请用 diagnostics 工具）。 */
@@ -50,19 +56,29 @@ final class FileDiagnostics {
    * 没拿到就不提，模型需要时可用 diagnostics 工具主动查。
    */
   static String describe(ToolContext context, File file) {
+    try {
+      return describeUnsafe(context, file);
+    } catch (Throwable t) {
+      // 兜底：搭车诊断绝不能影响编辑结果。
+      //
+      // 这不是过度防御——`describe` 的调用点在 file_edit/file_write **写盘成功之后**、
+      // 返回 ok(...) 之前，且被外层 catch(Exception) 包着。诊断里任何未预期异常（若冒泡）
+      // 都会把「已经成功的编辑」翻成 error；而 DiffRecorder 见到 error 就**不记录 diff**，
+      // 于是用户既看到「编辑失败」、又拿不到回滚入口，文件却已经改了。用 Throwable 而非
+      // Exception：连 NoClassDefFoundError 之类的链接错误也不该破坏编辑。
+      return "";
+    }
+  }
+
+  private static String describeUnsafe(ToolContext context, File file) {
     if (context == null) {
       return "";
     }
     DiagnosticsPort port = context.getDiagnostics();
-    if (port == null || !port.isAvailable() || !isAnalyzable(file)) {
+    if (port == null || !port.isAvailable() || !port.isSupported(file.getAbsolutePath())) {
       return "";
     }
-    DiagnosticsPort.Report report;
-    try {
-      report = port.analyze(file.getAbsolutePath(), TIMEOUT_MS);
-    } catch (RuntimeException e) {
-      return "";
-    }
+    DiagnosticsPort.Report report = port.analyze(file.getAbsolutePath(), TIMEOUT_MS);
     if (report == null || report.isUnavailable() || report.isFailed()) {
       return "";
     }
@@ -80,14 +96,6 @@ final class FileDiagnostics {
       displayPath = file.getName();
     }
     return DiagnosticsMessages.block(displayPath, items, MAX_ITEMS);
-  }
-
-  /** 只有语言服务器支持按需分析的类型才值得尝试。 */
-  private static boolean isAnalyzable(File file) {
-    String name = file.getName();
-    int dot = name.lastIndexOf('.');
-    String ext = dot < 0 ? "" : name.substring(dot + 1).toLowerCase(java.util.Locale.US);
-    return "java".equals(ext) || "kt".equals(ext) || "kts".equals(ext);
   }
 
   private FileDiagnostics() {}

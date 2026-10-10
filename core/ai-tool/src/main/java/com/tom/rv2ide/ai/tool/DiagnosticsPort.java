@@ -49,6 +49,14 @@ public interface DiagnosticsPort {
   Report analyze(String absolutePath, long timeoutMs);
 
   /**
+   * 该文件类型是否支持按需分析。
+   *
+   * <p>由实现决定支持集合，避免工具层与适配器各维护一份（曾出现 `.kts` 在适配器支持、
+   * 工具却拒绝的不一致）。工具层只应据本方法做前置校验。
+   */
+  boolean isSupported(String filePath);
+
+  /**
    * 本端口当前是否可用（是否已连接语言服务器）。
    *
    * <p>不可用时 {@link #unavailableReason()} 必须给出可执行的说明，
@@ -137,26 +145,39 @@ public interface DiagnosticsPort {
     private final List<Item> items;
     private final String unavailableReason;
     private final String failureReason;
+    private final boolean timedOut;
 
-    private Report(List<Item> items, String unavailableReason, String failureReason) {
-      this.items = items;
+    private Report(
+        List<Item> items, String unavailableReason, String failureReason, boolean timedOut) {
+      this.items = items == null ? java.util.Collections.emptyList() : items;
       this.unavailableReason = unavailableReason == null ? "" : unavailableReason;
       this.failureReason = failureReason == null ? "" : failureReason;
+      this.timedOut = timedOut;
     }
 
     /** 分析完成（可能有 0 条诊断）。 */
     public static Report of(List<Item> items) {
-      return new Report(items == null ? java.util.Collections.emptyList() : items, null, null);
+      return new Report(items, null, null, false);
     }
 
     /** 无可用语言服务器。 */
     public static Report unavailable(String reason) {
-      return new Report(java.util.Collections.emptyList(), reason, null);
+      return new Report(java.util.Collections.emptyList(), reason, null, false);
     }
 
-    /** 语言服务器存在但分析失败。 */
+    /** 语言服务器存在但分析失败（非超时）。 */
     public static Report failed(String reason) {
-      return new Report(java.util.Collections.emptyList(), null, reason);
+      return new Report(java.util.Collections.emptyList(), null, reason, false);
+    }
+
+    /**
+     * 分析超时。
+     *
+     * <p>与 {@link #failed} 分开：超时是「可再试」的（首次分析要建索引，重试可能成功），
+     * 而「文件不属于模块」之类重试再多次也没用。文案不同。
+     */
+    public static Report timedOut(String reason) {
+      return new Report(java.util.Collections.emptyList(), null, reason, true);
     }
 
     public List<Item> getItems() {
@@ -177,6 +198,10 @@ public interface DiagnosticsPort {
 
     public boolean isFailed() {
       return !failureReason.isEmpty();
+    }
+
+    public boolean isTimedOut() {
+      return timedOut;
     }
   }
 }

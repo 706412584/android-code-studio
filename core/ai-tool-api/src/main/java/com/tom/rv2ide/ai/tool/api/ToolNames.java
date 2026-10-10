@@ -124,8 +124,19 @@ public final class ToolNames {
      * 符号索引，一次分析是秒级。只读，无副作用。
      */
     public static final String DIAGNOSTICS = "diagnostics";
-    /** 读取 IDE 自身日志（`~/.androidide/logs/`），用于排查 AI 工具层被吞掉的异常。 */
+    /**
+     * 读取 IDE 自身日志（进程内 logback 环形缓冲），用于排查 AI 工具层被吞掉的异常。
+     *
+     * <p>不是读文件也不是读设备 logcat：logback 只接了 `LogcatAppender`（无稳定日志文件），
+     * 而经 shell 后端跑 logcat 是另一个进程、读不到本应用自身的行。
+     */
     public static final String IDE_LOG_READ = "ide_log_read";
+    /**
+     * 布局预览：把 `res/layout/*.xml` 经真实 View inflate 渲染成图片回传模型。
+     *
+     * <p>让 AI 改完 UI 后能自己看一眼渲染结果（app 层工具，需 Android 与模块依赖）。
+     */
+    public static final String LAYOUT_PREVIEW = "layout_preview";
 
     private static final String CUSTOM_AGENT_PREFIX = "agentx_";
     private static final String CUSTOM_MCP_PREFIX = "mcpx_";
