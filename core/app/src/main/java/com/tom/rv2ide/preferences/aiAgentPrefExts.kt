@@ -806,13 +806,19 @@ private abstract class MediaGenerationPreference(
     val s = strings()
     Toast.makeText(context, R.string.ai_agent_image_gen_fetching, Toast.LENGTH_SHORT).show()
     CoroutineScope(Dispatchers.IO).launch {
-      val all = ModelCatalogFetcher.fetch(record)
+      val result = ModelCatalogFetcher.fetchDetailed(record)
       // 模型按关键词过滤：agnes 的目录里文本/图片/视频混在一起，
       // 全列出来会把该能力不可用的模型也塞给用户。
-      val models = all.filter { it.contains(modelKeyword, ignoreCase = true) }
+      val models = result.models.filter { it.contains(modelKeyword, ignoreCase = true) }
       withContext(Dispatchers.Main) {
         if (models.isEmpty()) {
-          Toast.makeText(context, s.noModels, Toast.LENGTH_LONG).show()
+          // 网络拉不到与目录里没有匹配模型是两种问题，文案必须分开——
+          // 否则用户会照着「没有模型」去改模型名，而真正的原因是网络。
+          val message =
+              if (result.error.isNotEmpty())
+                context.getString(R.string.ai_agent_image_gen_fetch_failed, result.error)
+              else context.getString(s.noModels)
+          Toast.makeText(context, message, Toast.LENGTH_LONG).show()
           return@withContext
         }
         val checked = models.indexOf(model(settings))
@@ -1681,18 +1687,23 @@ private class SkillsPreference(
     Toast.makeText(context, R.string.ai_agent_market_loading, Toast.LENGTH_SHORT).show()
     CoroutineScope(Dispatchers.IO).launch {
       val client = com.tom.rv2ide.ai.tool.skill.SkillMarketClient()
-      val skills = client.list(30)
+      val result = client.listDetailed(30)
       withContext(Dispatchers.Main) {
-        if (skills.isEmpty()) {
-          Toast.makeText(context, R.string.ai_agent_market_empty, Toast.LENGTH_LONG).show()
+        if (result.skills.isEmpty()) {
+          // 全部上游失败（多为网络）与「市场真的空」文案分开。
+          val message =
+              if (result.error.isNotEmpty())
+                context.getString(R.string.ai_agent_market_unreachable, result.error)
+              else context.getString(R.string.ai_agent_market_empty)
+          Toast.makeText(context, message, Toast.LENGTH_LONG).show()
           return@withContext
         }
-        val labels = skills.map { it.toLine() }.toTypedArray()
+        val labels = result.skills.map { it.toLine() }.toTypedArray()
         com.google.android.material.dialog.MaterialAlertDialogBuilder(context)
             .setTitle(R.string.ai_agent_market_title)
             .setItems(labels) { dialog, which ->
               dialog.dismiss()
-              installFromMarket(context, preference, client, skills[which])
+              installFromMarket(context, preference, client, result.skills[which])
             }
             .setNegativeButton(android.R.string.cancel, null)
             .show()

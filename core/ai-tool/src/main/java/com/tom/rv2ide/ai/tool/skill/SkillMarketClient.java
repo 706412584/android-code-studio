@@ -125,10 +125,32 @@ public final class SkillMarketClient {
 
   /** 按下载量拉市场列表（两上游合并）。失败的上游跳过——一个挂了不该清空整页。 */
   public List<MarketSkill> list(int limit) {
+    return listDetailed(limit).skills;
+  }
+
+  /**
+   * 列表 + 失败原因（两个上游**都**失败时才有值；单个挂掉仍返回另一个的结果）。
+   *
+   * <p>UI 需要区分「上游确实没有技能」与「网络拉不到」——错误文案混用会误导用户
+   * 以为市场是空的（实测：设备直连海外上游 100% 丢包，与空列表不可区分）。
+   */
+  public DetailedList listDetailed(int limit) {
     List<MarketSkill> out = new ArrayList<>();
-    out.addAll(listClawhub(limit));
-    out.addAll(listSkillhub(limit));
-    return out;
+    StringBuilder errors = new StringBuilder();
+    try {
+      out.addAll(parseClawhubList(
+          httpGet(CLAWHUB_BASE + "/skills?limit=" + limit + "&sort=downloads")));
+    } catch (Exception e) {
+      errors.append("ClawHub: ").append(e.getMessage()).append("; ");
+    }
+    try {
+      out.addAll(parseSkillhubList(
+          httpGet(SKILLHUB_BASE + "/skills?page=1&pageSize=" + limit)));
+    } catch (Exception e) {
+      errors.append("SkillHub: ").append(e.getMessage());
+    }
+    boolean allFailed = out.isEmpty() && errors.length() > 0;
+    return new DetailedList(out, allFailed ? errors.toString().trim() : "");
   }
 
   /** 关键词搜索（两上游合并）。 */
@@ -137,6 +159,17 @@ public final class SkillMarketClient {
     out.addAll(searchClawhub(query, limit));
     out.addAll(searchSkillhub(query, limit));
     return out;
+  }
+
+  /** listDetailed 的返回：条目 + 全部上游失败时的原因。 */
+  public static final class DetailedList {
+    public final List<MarketSkill> skills;
+    public final String error;
+
+    DetailedList(List<MarketSkill> skills, String error) {
+      this.skills = skills;
+      this.error = error;
+    }
   }
 
   private List<MarketSkill> listClawhub(int limit) {

@@ -47,9 +47,22 @@ object ModelCatalogFetcher {
    * @return 模型 id 列表（已去重、排序）；失败时返回空列表
    */
   fun fetch(config: ProviderConfig): List<String> {
+    return fetchDetailed(config).models
+  }
+
+  /**
+   * 拉取并把**失败原因**一并带回。
+   *
+   * <p>旧版失败只回空列表，调用方无法区分「服务商目录里确实没有这类模型」和
+   * 「网络根本拉不到」（实测踩过：设备直连海外端点 100% 丢包，提示却一样是
+   * 「没有找到模型」，用户被误导成模型名问题）。UI 据此给不同文案。
+   */
+  data class FetchResult(val models: List<String>, val error: String)
+
+  fun fetchDetailed(config: ProviderConfig): FetchResult {
     val baseUrl = config.getBaseUrl().trimEnd('/')
     if (baseUrl.isEmpty()) {
-      return emptyList()
+      return FetchResult(emptyList(), "未配置 Base URL")
     }
 
     val url = baseUrl + "/models"
@@ -69,13 +82,19 @@ object ModelCatalogFetcher {
       // 非 2xx 直接当失败：401 会返回一个 JSON 错误对象，硬解析会得到空列表，
       // 但那掩盖了「密钥不对」这个真正原因，调用方无法区分。
       if (response.code !in 200..299) {
-        emptyList()
+        FetchResult(emptyList(), "HTTP ${response.code}（密钥或端点有误）")
       } else {
-        parseModelIds(response.body)
+        FetchResult(parseModelIds(response.body), "")
       }
     } catch (e: Throwable) {
-      emptyList()
+      FetchResult(emptyList(), describe(e))
     }
+  }
+
+  private fun describe(e: Throwable): String {
+    val message = e.message
+    val detail = if (message.isNullOrBlank()) e.javaClass.simpleName else message
+    return "网络请求失败：$detail"
   }
 
   /**

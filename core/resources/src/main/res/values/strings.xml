@@ -156,7 +156,9 @@
   <string name="ai_agent_mcp_stdio_cwd">Working directory (optional)</string>
   <string name="ai_agent_market_title">Skill market</string>
   <string name="ai_agent_market_loading">Loading market…</string>
-  <string name="ai_agent_market_empty">Market unreachable or empty (check network)</string>
+  <string name="ai_agent_market_empty">Market has no skills yet</string>
+  <string name="ai_agent_market_unreachable">Market unreachable: %1$s</string>
+  <string name="ai_agent_image_gen_fetch_failed">Model fetch failed: %1$s</string>
   <string name="ai_agent_market_installing">Installing…</string>
   <string name="ai_agent_market_installed">Installed: %1$s (restart a conversation to load it)</string>
   <string name="ai_agent_market_uninstall">Uninstall</string>

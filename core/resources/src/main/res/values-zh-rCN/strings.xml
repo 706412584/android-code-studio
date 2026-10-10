@@ -151,7 +151,9 @@
   <string name="ai_agent_mcp_stdio_cwd">工作目录（可选）</string>
   <string name="ai_agent_market_title">技能市场</string>
   <string name="ai_agent_market_loading">正在加载市场…</string>
-  <string name="ai_agent_market_empty">市场不可达或为空（请检查网络）</string>
+  <string name="ai_agent_market_empty">市场暂无技能</string>
+  <string name="ai_agent_market_unreachable">市场不可达：%1$s</string>
+  <string name="ai_agent_image_gen_fetch_failed">模型列表获取失败：%1$s</string>
   <string name="ai_agent_market_installing">正在安装…</string>
   <string name="ai_agent_market_installed">已安装：%1$s（新会话中生效）</string>
   <string name="ai_agent_market_uninstall">卸载</string>
