@@ -130,6 +130,7 @@
   <string name="ai_agent_image_gen_clear">清除配置</string>
   <string name="ai_agent_image_gen_output_dir_title">图片保存位置</string>
   <string name="ai_agent_image_gen_output_dir_default">默认：当前项目的 ai-generated/ 文件夹</string>
+  <string name="ai_agent_image_gen_output_dir_row">图片保存位置：%1$s</string>
   <string name="ai_agent_page_providers_summary">API 密钥、自定义端点、启用开关</string>
   <string name="ai_agent_page_tools_title">工具与权限</string>
   <string name="ai_agent_page_tools_summary">对话模式、权限级别、Shell 后端、代码补全</string>

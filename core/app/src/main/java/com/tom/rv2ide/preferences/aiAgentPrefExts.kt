@@ -157,7 +157,6 @@ private class CapabilitiesPage(
     addPreference(AssistantOverlayPreference())
     addPreference(AgentsPreference())
     addPreference(ImageGenerationPreference())
-    addPreference(ImageOutputDirPreference())
     addPreference(ProjectRulesPreference())
     addPreference(SkillsPreference())
     addPreference(MemoriesPreference())
@@ -705,18 +704,24 @@ private fun treeUriToFile(context: Context, uriString: String): File? {
 }
 
 /**
- * 图片生成配置：能力页选定的服务商 + 模型。
+ * 图片生成配置：能力页选定的服务商 + 模型 + 保存位置。
  *
- * <p>两步单选弹窗：先选服务商（[ProviderConfigStore] 里已配置的），再从该服务商的
- * {@code /models} 目录拉取并只留含 image 关键词的模型。选定的只是两个 id，
+ * <p>单弹窗承载全部配置：服务商列表（当前项加 ✓）之后追加一行「保存位置」，
+ * 点服务商进第二步选模型（从该服务商的 {@code /models} 目录拉取并只留含 image
+ * 关键词的），点保存位置行打开目录选择器。选定的只是 id，
  * 连接信息每次运行时由 [com.tom.rv2ide.artificial.agent.AgentImageToolSettings] 现读——
  * 改密钥立即生效，不必同步。
+ *
+ * <p><b>summary 必须传 null</b>：基类 [BasePreference.onCreateView] 会用静态 summary
+ * 资源覆盖 {@code onCreatePreference} 里设置的值——重进设置页就会显示回「未启用」，
+ * 而实际配置好好地存在偏好里（实测踩过）。
  */
 @Parcelize
 private class ImageGenerationPreference(
     override val key: String = "image_generation_pref",
     override val title: Int = R.string.ai_agent_image_gen_title,
-    override val summary: Int? = R.string.ai_agent_image_gen_summary,
+    // null 很重要：非 null 会被基类覆盖动态 summary，见类注释。
+    override val summary: Int? = null,
 ) : BasePreference() {
 
   override fun onCreatePreference(context: Context): Preference {
@@ -730,24 +735,42 @@ private class ImageGenerationPreference(
   override fun onPreferenceClick(preference: Preference): Boolean {
     val context = preference.context
     val records = ProviderConfigStore(context).load().filter { it.isUsable() }
-    if (records.isEmpty()) {
-      Toast.makeText(
-              context, R.string.ai_agent_image_gen_no_providers, Toast.LENGTH_LONG)
-          .show()
-      return true
-    }
     val settings = AgentImageToolSettings(context)
-    val labels = records.map { it.getLabel() }.toTypedArray()
-    val checked = records.indexOfFirst { it.getId() == settings.providerId() }
+
+    val rows = mutableListOf<String>()
+    records.forEach { record ->
+      val mark = if (record.getId() == settings.providerId()) "✓ " else ""
+      rows.add("$mark${record.getLabel()}")
+    }
+    // 保存位置作为列表末行：点它打开目录选择器，不必为它单开一个设置条目。
+    val outputDirRow = context.getString(R.string.ai_agent_image_gen_output_dir_row, outputDirLabel(context))
+    rows.add(outputDirRow)
+
+    if (records.isEmpty()) {
+      // 没有服务商时列表只剩保存位置行，仍可用；提示放在标题下不阻断。
+      Toast.makeText(context, R.string.ai_agent_image_gen_no_providers, Toast.LENGTH_SHORT).show()
+    }
 
     com.google.android.material.dialog.MaterialAlertDialogBuilder(context)
         .setTitle(R.string.ai_agent_image_gen_pick_provider)
-        .setSingleChoiceItems(labels, checked) { dialog, which ->
-          dialog.dismiss()
-          pickModel(context, preference, records[which], settings)
+        .setItems(rows.toTypedArray()) { dialog, which ->
+          if (which < records.size) {
+            dialog.dismiss()
+            pickModel(context, preference, records[which], settings)
+          } else {
+            // 保存位置行。对话框保持打开，选择器回来后行文案自动刷新。
+            FolderPickerActivity.onFolderPicked = { uriString ->
+              val dir = treeUriToFile(context, uriString)
+              if (dir != null && dir.isDirectory) {
+                settings.setOutputDir(dir.absolutePath)
+              }
+              FolderPickerActivity.onFolderPicked = null
+            }
+            context.startActivity(Intent(context, FolderPickerActivity::class.java))
+          }
         }
         .setNegativeButton(android.R.string.cancel, null)
-        // 清除入口：长按列表项之外的显式出口，避免只能改不能撤。
+        // 清除入口：显式出口，避免只能改不能撤。
         .setNeutralButton(R.string.ai_agent_image_gen_clear) { _, _ ->
           settings.clear()
           preference.summary = currentSummary(context)
@@ -792,7 +815,7 @@ private class ImageGenerationPreference(
     }
   }
 
-  /** 条目副标题：未配置给引导语，已配置显示「服务商 · 模型」。 */
+  /** 条目副标题：未配置给引导语；已配置显示「服务商 · 模型」。 */
   private fun currentSummary(context: Context): String {
     val settings = AgentImageToolSettings(context)
     val provider = settings.providerId()
@@ -804,51 +827,14 @@ private class ImageGenerationPreference(
     val label = record?.getLabel() ?: provider
     return "$label · $model"
   }
-}
 
-/**
- * 图片保存目录：指定生成的图片落到哪。
- *
- * <p>复用 [FolderPickerActivity]（CodeGraph 索引同款目录选择器）。
- * 未指定时默认落在当前项目工作区的 {@code ai-generated/} 下——生成的图属于项目产物，
- * 路径可见、可被 file_read 引用。
- */
-@Parcelize
-private class ImageOutputDirPreference(
-    override val key: String = "image_gen_output_dir_pref",
-    override val title: Int = R.string.ai_agent_image_gen_output_dir_title,
-    override val summary: Int? = null,
-) : BasePreference() {
-
-  override fun onCreatePreference(context: Context): Preference {
-    return androidx.preference.Preference(context).apply {
-      key = "image_gen_output_dir_pref"
-      title = context.getString(R.string.ai_agent_image_gen_output_dir_title)
-      summary = currentSummary(context)
-    }
-  }
-
-  override fun onPreferenceClick(preference: Preference): Boolean {
-    val context = preference.context
-    FolderPickerActivity.onFolderPicked = { uriString ->
-      val dir = treeUriToFile(context, uriString)
-      if (dir != null && dir.isDirectory) {
-        AgentImageToolSettings(context).setOutputDir(dir.absolutePath)
-        preference.summary = currentSummary(context)
-      }
-      FolderPickerActivity.onFolderPicked = null
-    }
-    context.startActivity(Intent(context, FolderPickerActivity::class.java))
-    return true
-  }
-
-  /** 未指定显示「默认：项目 ai-generated/」，指定后显示绝对路径。 */
-  private fun currentSummary(context: Context): String {
+  /** 保存位置行的文案：默认路径给说明，指定过给短路径。 */
+  private fun outputDirLabel(context: Context): String {
     val dir = AgentImageToolSettings(context).outputDir()
     return if (dir.isEmpty()) {
       context.getString(R.string.ai_agent_image_gen_output_dir_default)
     } else {
-      dir
+      dir.substringAfterLast('/')
     }
   }
 }
