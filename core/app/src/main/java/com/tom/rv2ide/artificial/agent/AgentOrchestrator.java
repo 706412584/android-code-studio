@@ -67,6 +67,7 @@ import com.tom.rv2ide.ai.tool.ToolInvoker;
 import com.tom.rv2ide.ai.tool.ToolInvokerAware;
 import com.tom.rv2ide.ai.tool.ToolPermissionService;
 import com.tom.rv2ide.ai.tool.HttpRequestTool;
+import com.tom.rv2ide.ai.tool.ImageGenerationTool;
 import com.tom.rv2ide.ai.tool.ShellBackendRegistry;
 import com.tom.rv2ide.ai.tool.ShellExecuteTool;
 import com.tom.rv2ide.ai.tool.ToolRegistry;
@@ -1259,6 +1260,8 @@ public final class AgentOrchestrator {
     // 通用 HTTP：带自定义方法/头/体，并返回状态码与非 2xx 的错误体（web_fetch 只做 GET 且
     // 非 2xx 当失败）。支持 POST/PUT/DELETE 等可变方法，故为 SYSTEM 且需确认。
     registry.register(new HttpRequestTool(http));
+    // 文生图：端点经 ToolContext 注入（能力页配置），未配置时工具明确报错引导用户去配置。
+    registry.register(new ImageGenerationTool(http));
 
     // 外部 MCP server 提供的工具。只有 run() 路径（mcpClientsOut != null）才装配：
     // UI 的分类色查询不该触发网络请求，也不该创建无人释放的连接。
@@ -1734,6 +1737,8 @@ public final class AgentOrchestrator {
             .conversationId(conversationId)
             // 读图时的缩放实现。工具模块零 Android 依赖，因此由这里注入。
             .imageDataProvider(AndroidImageDataProvider.INSTANCE)
+            // 文生图端点（能力页配置）；未配置时为 null，工具侧明确报错。
+            .imageGeneration(new AgentImageToolSettings(appContext).resolveEndpoint())
             .build();
 
     List<ConversationLog.EntryLocation> entries = loadEntries(conversationId);

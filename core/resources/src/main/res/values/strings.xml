@@ -125,6 +125,14 @@
   <string name="ai_agent_provider_ready">ready</string>
   <string name="ai_agent_provider_no_key">no API key</string>
   <string name="ai_agent_provider_incomplete">incomplete</string>
+  <string name="ai_agent_image_gen_title">Image generation</string>
+  <string name="ai_agent_image_gen_summary">Off — tap to pick a provider and image model</string>
+  <string name="ai_agent_image_gen_pick_provider">Pick an image provider</string>
+  <string name="ai_agent_image_gen_pick_model">Image model · %1$s</string>
+  <string name="ai_agent_image_gen_fetching">Fetching model list…</string>
+  <string name="ai_agent_image_gen_no_providers">No usable provider. Add one under Providers first.</string>
+  <string name="ai_agent_image_gen_no_models">No image model found in this provider\'s catalog (names containing \"image\").</string>
+  <string name="ai_agent_image_gen_clear">Clear</string>
   <string name="ai_agent_page_providers_summary">API keys, custom endpoint, enable switch</string>
   <string name="ai_agent_page_tools_title">Tools and permissions</string>
   <string name="ai_agent_page_tools_summary">Chat mode, permission level, shell backend, code completion</string>

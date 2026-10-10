@@ -25,7 +25,10 @@ import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.tom.rv2ide.R
 import com.tom.rv2ide.activities.FolderPickerActivity
 import com.tom.rv2ide.ai.agent.ProjectRulesLoader
+import com.tom.rv2ide.artificial.agent.AgentImageToolSettings
 import com.tom.rv2ide.artificial.agent.AssistantUiStyleStore
+import com.tom.rv2ide.artificial.agent.ModelCatalogFetcher
+import com.tom.rv2ide.artificial.agent.ProviderConfigStore
 import com.tom.rv2ide.artificial.agent.compose.AssistantComposeRender
 import com.tom.rv2ide.artificial.agent.compose.AssistantThinkingCollapsePref
 import com.tom.rv2ide.artificial.agent.compose.AssistantToolStatusBarPref
@@ -153,6 +156,7 @@ private class CapabilitiesPage(
   init {
     addPreference(AssistantOverlayPreference())
     addPreference(AgentsPreference())
+    addPreference(ImageGenerationPreference())
     addPreference(ProjectRulesPreference())
     addPreference(SkillsPreference())
     addPreference(MemoriesPreference())
@@ -698,6 +702,108 @@ private class AdvancedPage(
 /** 读写 "ai_agent_tools" 存储的助手。 */
 private fun agentPrefs(context: Context) =
     context.applicationContext.getSharedPreferences("ai_agent_tools", Context.MODE_PRIVATE)
+
+/**
+ * 图片生成配置：能力页选定的服务商 + 模型。
+ *
+ * <p>两步单选弹窗：先选服务商（[ProviderConfigStore] 里已配置的），再从该服务商的
+ * {@code /models} 目录拉取并只留含 image 关键词的模型。选定的只是两个 id，
+ * 连接信息每次运行时由 [com.tom.rv2ide.artificial.agent.AgentImageToolSettings] 现读——
+ * 改密钥立即生效，不必同步。
+ */
+@Parcelize
+private class ImageGenerationPreference(
+    override val key: String = "image_generation_pref",
+    override val title: Int = R.string.ai_agent_image_gen_title,
+    override val summary: Int? = R.string.ai_agent_image_gen_summary,
+) : BasePreference() {
+
+  override fun onCreatePreference(context: Context): Preference {
+    return androidx.preference.Preference(context).apply {
+      key = "image_generation_pref"
+      title = context.getString(R.string.ai_agent_image_gen_title)
+      summary = currentSummary(context)
+    }
+  }
+
+  override fun onPreferenceClick(preference: Preference): Boolean {
+    val context = preference.context
+    val records = ProviderConfigStore(context).load().filter { it.isUsable() }
+    if (records.isEmpty()) {
+      Toast.makeText(
+              context, R.string.ai_agent_image_gen_no_providers, Toast.LENGTH_LONG)
+          .show()
+      return true
+    }
+    val settings = AgentImageToolSettings(context)
+    val labels = records.map { it.getLabel() }.toTypedArray()
+    val checked = records.indexOfFirst { it.getId() == settings.providerId() }
+
+    com.google.android.material.dialog.MaterialAlertDialogBuilder(context)
+        .setTitle(R.string.ai_agent_image_gen_pick_provider)
+        .setSingleChoiceItems(labels, checked) { dialog, which ->
+          dialog.dismiss()
+          pickModel(context, preference, records[which], settings)
+        }
+        .setNegativeButton(android.R.string.cancel, null)
+        // 清除入口：长按列表项之外的显式出口，避免只能改不能撤。
+        .setNeutralButton(R.string.ai_agent_image_gen_clear) { _, _ ->
+          settings.clear()
+          preference.summary = currentSummary(context)
+        }
+        .show()
+    return true
+  }
+
+  /** 第二步：拉该服务商的模型目录，单选写入。拉取在 IO 线程，UI 全程有提示。 */
+  private fun pickModel(
+      context: Context,
+      preference: Preference,
+      record: com.tom.rv2ide.artificial.agent.ProviderConfig,
+      settings: AgentImageToolSettings,
+  ) {
+    Toast.makeText(context, R.string.ai_agent_image_gen_fetching, Toast.LENGTH_SHORT).show()
+    CoroutineScope(Dispatchers.IO).launch {
+      val all = ModelCatalogFetcher.fetch(record)
+      // 图片模型按名字过滤：agnes 的目录里文本/图片/视频混在一起，
+      // 全列出来会把 image_generation 不可用的模型也塞给用户。
+      val models = all.filter { it.contains("image", ignoreCase = true) }
+      withContext(Dispatchers.Main) {
+        if (models.isEmpty()) {
+          Toast.makeText(
+                  context, R.string.ai_agent_image_gen_no_models, Toast.LENGTH_LONG)
+              .show()
+          return@withContext
+        }
+        val checked = models.indexOf(settings.model())
+        com.google.android.material.dialog.MaterialAlertDialogBuilder(context)
+            .setTitle(
+                context.getString(
+                    R.string.ai_agent_image_gen_pick_model, record.getLabel()))
+            .setSingleChoiceItems(models.toTypedArray(), checked) { dialog, which ->
+              settings.set(record.getId(), models[which])
+              preference.summary = currentSummary(context)
+              dialog.dismiss()
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+      }
+    }
+  }
+
+  /** 条目副标题：未配置给引导语，已配置显示「服务商 · 模型」。 */
+  private fun currentSummary(context: Context): String {
+    val settings = AgentImageToolSettings(context)
+    val provider = settings.providerId()
+    val model = settings.model()
+    if (provider.isEmpty() || model.isEmpty()) {
+      return context.getString(R.string.ai_agent_image_gen_summary)
+    }
+    val record = ProviderConfigStore(context).find(provider)
+    val label = record?.getLabel() ?: provider
+    return "$label · $model"
+  }
+}
 
 @Parcelize
 private class PermissionModePreference(

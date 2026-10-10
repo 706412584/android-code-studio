@@ -120,6 +120,14 @@
   <string name="ai_agent_provider_ready">可用</string>
   <string name="ai_agent_provider_no_key">缺密钥</string>
   <string name="ai_agent_provider_incomplete">未完成</string>
+  <string name="ai_agent_image_gen_title">图片生成</string>
+  <string name="ai_agent_image_gen_summary">未启用——点按选择服务商与图片模型</string>
+  <string name="ai_agent_image_gen_pick_provider">选择图片服务商</string>
+  <string name="ai_agent_image_gen_pick_model">图片模型 · %1$s</string>
+  <string name="ai_agent_image_gen_fetching">正在获取模型列表…</string>
+  <string name="ai_agent_image_gen_no_providers">没有可用的服务商，请先在「服务商」里添加。</string>
+  <string name="ai_agent_image_gen_no_models">该服务商目录里没有找到图片模型（名称含 image）。</string>
+  <string name="ai_agent_image_gen_clear">清除配置</string>
   <string name="ai_agent_page_providers_summary">API 密钥、自定义端点、启用开关</string>
   <string name="ai_agent_page_tools_title">工具与权限</string>
   <string name="ai_agent_page_tools_summary">对话模式、权限级别、Shell 后端、代码补全</string>

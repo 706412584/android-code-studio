@@ -77,6 +77,13 @@ public final class ToolContext {
    */
   private final ImageDataProvider imageDataProvider;
 
+  /**
+   * 图片生成端点配置；未配置时为 null。
+   *
+   * <p>由 app 层在构建上下文时注入（读「能力」页偏好），工具层不感知 Android 存储。
+   */
+  private final ImageGenerationEndpoint imageGeneration;
+
   private ToolContext(Builder builder) {
     this.homePath = builder.homePath == null ? "" : builder.homePath;
     this.extraWriteRoots =
@@ -89,6 +96,7 @@ public final class ToolContext {
     this.progressListener = builder.progressListener;
     this.settings = builder.settings == null ? ToolSettingsPort.defaults() : builder.settings;
     this.imageDataProvider = builder.imageDataProvider;
+    this.imageGeneration = builder.imageGeneration;
   }
 
   public String getHomePath() {
@@ -125,6 +133,11 @@ public final class ToolContext {
     return imageDataProvider;
   }
 
+  /** 图片生成端点配置；未配置时为 null（工具据此报「未配置」而不是发无效请求）。 */
+  public ImageGenerationEndpoint getImageGeneration() {
+    return imageGeneration;
+  }
+
   /**
    * 返回一个仅替换 {@code toolCallId} 的副本。
    *
@@ -141,6 +154,7 @@ public final class ToolContext {
         .progressListener(this.progressListener)
         .settings(this.settings)
         .imageDataProvider(this.imageDataProvider)
+        .imageGeneration(this.imageGeneration)
         .build();
   }
 
@@ -161,6 +175,7 @@ public final class ToolContext {
         .progressListener(newProgressListener)
         .settings(this.settings)
         .imageDataProvider(this.imageDataProvider)
+        .imageGeneration(this.imageGeneration)
         .build();
   }
 
@@ -190,6 +205,7 @@ public final class ToolContext {
     private ProgressListener progressListener;
     private ToolSettingsPort settings;
     private ImageDataProvider imageDataProvider;
+    private ImageGenerationEndpoint imageGeneration;
 
     public Builder homePath(String value) {
       this.homePath = value;
@@ -229,6 +245,11 @@ public final class ToolContext {
 
     public Builder imageDataProvider(ImageDataProvider value) {
       this.imageDataProvider = value;
+      return this;
+    }
+
+    public Builder imageGeneration(ImageGenerationEndpoint value) {
+      this.imageGeneration = value;
       return this;
     }
 
