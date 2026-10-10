@@ -107,7 +107,7 @@ class ImageGenerationToolTest {
   }
 
   @Test
-  public void returnsImagePayloadAndWritesFile() throws Exception {
+  public void returnsTextOnlyResultAndWritesFile() throws Exception {
     FakePort port =
         new FakePort(
             ok(new JSONObject()
@@ -118,12 +118,11 @@ class ImageGenerationToolTest {
 
     ToolResult result = tool.execute(input("a red circle"), ctx);
 
-    assertFalse(result.isError());
-    assertTrue(result.hasImage());
-    assertEquals("image/png", result.getImageMimeType());
-    byte[] decoded = java.util.Base64.getDecoder().decode(result.getImageBase64());
-    // PNG magic
-    assertEquals((byte) 0x89, decoded[0]);
+    assertFalse(result.isError(), result.getContent());
+    // 图片不进上下文（实测决策）：结果纯文本，含成功确认与落盘路径。
+    assertFalse(result.hasImage());
+    assertTrue(result.getContent().contains("生成成功"));
+    assertTrue(result.getContent().contains("无需再次生成"));
     // 落盘在 homePath/ai-generated 下
     Path dir = tmpDir.resolve("ai-generated");
     try (java.util.stream.Stream<Path> files = Files.list(dir)) {
@@ -143,9 +142,9 @@ class ImageGenerationToolTest {
 
     ToolResult result = tool.execute(input("cat"), context());
 
-    assertFalse(result.isError());
-    assertTrue(result.hasImage());
-    assertEquals("image/jpeg", result.getImageMimeType());
+    assertFalse(result.isError(), result.getContent());
+    assertFalse(result.hasImage());
+    assertTrue(result.getContent().contains("ai-generated"));
   }
 
   @Test

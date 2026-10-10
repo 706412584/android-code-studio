@@ -208,8 +208,6 @@ public final class ImageGenerationTool extends BaseTool {
 
     StringBuilder note = new StringBuilder();
     int saved = 0;
-    String firstMime = "image/png";
-    String firstBase64 = "";
 
     for (int i = 0; i < data.length(); i++) {
       JSONObject item = data.optJSONObject(i);
@@ -250,12 +248,11 @@ public final class ImageGenerationTool extends BaseTool {
       }
 
       saved++;
-      if (i == 0 || firstBase64.isEmpty()) {
-        // 只把第一张作为内联图片回传：n>1 时多张全发会撑爆上下文，
-        // 其余的路径已在文本里，模型/用户可自行查看。
-        firstMime = mime;
-        firstBase64 = base64;
-      }
+      // **图片不进上下文**（用户实测决策）：1024px 全图的 base64 ≈700KB ≈175K
+      // token，塞进 ToolResult 会同时引发两个实测问题——①上下文被单次工具结果
+      // 撑满，后续轮次模型"看不到"自己刚生成的结果，误判失败而反复重新生成；
+      // ②大 base64 随会话历史反复搬运，低端机上 GC 风暴、主线程掉帧上百。
+      // 现在结果只给纯文本（成功确认 + 落盘路径），模型靠文本确认成功。
       note.append("图片 ").append(i + 1).append('/').append(data.length())
           .append(": ").append(file.getAbsolutePath()).append('\n');
     }
@@ -266,10 +263,8 @@ public final class ImageGenerationTool extends BaseTool {
 
     note.insert(0, "生成成功（" + endpoint.getModel() + "）。\n");
     note.append("共 ").append(saved).append('/').append(data.length()).append(" 张已保存。\n");
-    if (firstBase64.isEmpty()) {
-      return ok(note.toString());
-    }
-    return ToolResult.withImage(getName(), note.toString(), firstMime, firstBase64);
+    note.append("图片文件已在上方路径，任务完成，无需再次生成。\n");
+    return ok(note.toString());
   }
 
   /** 尺寸规范化：宽x高，每边 16-4096；无效返回 null。 */
