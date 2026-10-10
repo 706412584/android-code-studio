@@ -1062,7 +1062,17 @@ class FloatingAssistantView(
     lifecycleScope.launch(Dispatchers.IO) {
       val messages = subscribeToConversation(conversationId)
       withContext(Dispatchers.Main) {
-        replayMessages(messages)
+        // 全量批量回放：语义与从前一致（整段历史一次入列、顺序不变），
+        // 差别只在 adapter 的批量模式——从前数百条逐条 notifyItemInserted
+        // 会连续触发数百次列表更新调度（实测主线程掉帧 30-127 连发）；
+        // 批量模式下整个回放只发一次更新，LazyColumn 自身只渲染可见窗口
+        // （「边滑边渲染」由惰性列表天然提供）。
+        adapter.beginBatch()
+        try {
+          replayMessages(messages)
+        } finally {
+          adapter.endBatch()
+        }
         lastOpenedConversationId = conversationId
         updateEmptyState()
         // 回放完成：在锁内取走缓冲并解除缓冲态。取走与解除必须同时发生——若先解除
@@ -1078,10 +1088,6 @@ class FloatingAssistantView(
           handleEvent(conversationId, event)
         }
         syncRunningUiForDisplayed()
-        // 任务卡片也要跟着换会话。此前只在 open() 与工具结束时刷新，导致
-        // 「A 会话有 5 条待办 → 点开 B 会话 → 卡片仍显示 A 的清单」——
-        // 数据层已按会话隔离（见 AgentOrchestrator.todoStoreFor），但 UI 没重读。
-        // 放在这里而不是各个调用点：切会话的三条路径（点列表/新建/恢复）都走本方法。
         refreshTodos()
         afterReplay()
       }
@@ -3301,9 +3307,27 @@ class FloatingAssistantView(
       ui.lastToolCardId = null
     }
     throttle.reset()
+    replayMessagesRange(messages)
+  }
+
+  /** 回放期的工具卡片配对队列；跨分帧 chunk 共享（见 [replayMessagesRange]）。 */
+  private val pendingReplayToolCards = java.util.ArrayDeque<Long>()
+
+  /**
+   * 把一段历史消息渲染进列表（不清表、不重置指针）。
+   *
+   * <p>从 [replayMessages] 抽出：分帧补帧需要按批调用同一段渲染逻辑，
+   * 而 clear/指针重置只属于首次回放。工具卡片配对队列（[pendingToolCards]）
+   * 是实例字段——尾部 chunk 与头部 chunk 之间连续使用，配对语义不受分帧影响。
+   */
+  private fun replayMessagesRange(messages: List<com.tom.rv2ide.ai.protocol.ModelMessage>) {
     // 待回填的工具卡片，按建立顺序排队。工具结果到达时取队首回填——
     // 与实时路径用 lastToolCardId 的语义一致（成对、按序）。
-    val pendingToolCards = java.util.ArrayDeque<Long>()
+    // 实例字段：分帧补帧时尾部 chunk 与头部 chunk 分开渲染，但配对队列
+    // 必须跨 chunk 连续（头部 chunk 的调用要等尾部 chunk 已排队的结果配对）。
+    // 首次回放（replayMessages）前清空。
+    pendingReplayToolCards.clear()
+    val pendingToolCards = pendingReplayToolCards
     for (message in messages) {
       when (message) {
         is com.tom.rv2ide.ai.protocol.UserModelMessage ->

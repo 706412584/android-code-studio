@@ -331,7 +331,21 @@ private fun PanelContent(
           contentPadding =
               PaddingValues(horizontal = Spacing.lg, vertical = Spacing.sm),
       ) {
-        items(items = renderItems, key = { it.key }) { item ->
+        items(
+            items = renderItems,
+            key = { it.key },
+            // contentType：同类型条目在滚动进出视口时复用组合状态与测量缓存
+            // （Compose 的等价物即 cc-haha 的「条目级窗口复用」）。不分类时
+            // LazyColumn 把所有 item 当同一种处理，跨类型滚动的重组代价更高。
+            contentType = { item ->
+              when (item) {
+                is RenderItem.Single -> item.message.role
+                is RenderItem.SingleChunk -> item.message.role
+                is RenderItem.Group -> "group"
+                is RenderItem.DiffGroup -> "diff"
+              }
+            },
+        ) { item ->
           when (item) {
             is RenderItem.Single ->
                 MessageRow(

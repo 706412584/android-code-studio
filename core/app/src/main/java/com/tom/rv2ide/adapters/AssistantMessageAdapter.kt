@@ -399,7 +399,7 @@ class AssistantMessageAdapter(
       // 不重绑的话，运行结束时最后一组仍停在展开态（用户得滚动一下才收起来）。
       val last = items.lastIndex
       if (last >= 0 && items[last] is ToolGroup) {
-        notifyItemChanged(last)
+        notifyCompat { notifyItemChanged(last) }
       }
     }
 
@@ -411,7 +411,7 @@ class AssistantMessageAdapter(
   fun append(role: Role, text: String, diffId: String?, durationMs: Long): Long {
     val id = nextId++
     items.add(Message(id, role, text, diffId, reverted = false, durationMs = durationMs))
-    notifyItemInserted(items.size - 1)
+    notifyCompat { notifyItemInserted(items.size - 1) }
     return id
   }
 
@@ -437,7 +437,7 @@ class AssistantMessageAdapter(
           Diff(nextId++, path, diffId, result = null, computing = true)
         }
     items.add(DiffGroup(nextId++, children))
-    notifyItemInserted(items.size - 1)
+    notifyCompat { notifyItemInserted(items.size - 1) }
     return children.map { it.id }
   }
 
@@ -458,7 +458,7 @@ class AssistantMessageAdapter(
       is Diff -> {
         if (top.id == id) {
           items[topIndex] = transform(top)
-          notifyItemChanged(topIndex)
+          notifyCompat { notifyItemChanged(topIndex) }
           return true
         }
       }
@@ -468,7 +468,7 @@ class AssistantMessageAdapter(
           val next = top.children.toMutableList()
           next[childIndex] = transform(next[childIndex])
           items[topIndex] = top.copy(children = next)
-          notifyItemChanged(topIndex)
+          notifyCompat { notifyItemChanged(topIndex) }
           return true
         }
       }
@@ -515,7 +515,7 @@ class AssistantMessageAdapter(
     val index = indexOf(id)
     val old = items.getOrNull(index) as? DiffGroup ?: return
     items[index] = old.copy(pinnedExpanded = currentlyCollapsed)
-    notifyItemChanged(index)
+    notifyCompat { notifyItemChanged(index) }
   }
 
   /**
@@ -530,7 +530,7 @@ class AssistantMessageAdapter(
       return
     }
     items[index] = old.copy(reverted = true)
-    notifyItemChanged(index)
+    notifyCompat { notifyItemChanged(index) }
   }
 
   /**
@@ -546,7 +546,7 @@ class AssistantMessageAdapter(
       return
     }
     items[index] = old.copy(text = text)
-    notifyItemChanged(index)
+    notifyCompat { notifyItemChanged(index) }
   }
 
   /**
@@ -559,7 +559,7 @@ class AssistantMessageAdapter(
     val index = indexOf(id)
     val old = items.getOrNull(index) as? Message ?: return
     items[index] = old.copy(durationMs = durationMs)
-    notifyItemChanged(index)
+    notifyCompat { notifyItemChanged(index) }
   }
 
   /** 追加到指定消息的正文之后（增量累积用）。 */
@@ -567,7 +567,7 @@ class AssistantMessageAdapter(
     val index = indexOf(id)
     val old = items.getOrNull(index) as? Message ?: return
     items[index] = old.copy(text = old.text + delta)
-    notifyItemChanged(index)
+    notifyCompat { notifyItemChanged(index) }
   }
 
   /**
@@ -587,7 +587,7 @@ class AssistantMessageAdapter(
       return false
     }
     items.removeAt(index)
-    notifyItemRemoved(index)
+    notifyCompat { notifyItemRemoved(index) }
     return true
   }
 
@@ -606,7 +606,7 @@ class AssistantMessageAdapter(
       return false
     }
     items.removeAt(index)
-    notifyItemRemoved(index)
+    notifyCompat { notifyItemRemoved(index) }
     return true
   }
 
@@ -645,18 +645,18 @@ class AssistantMessageAdapter(
         // 必须同时通知「旧的末项」：它从「末项」变成「非末项」时，自动折叠策略
         // 会把它从展开改为折叠，但仅 notifyItemInserted 不会重绑它，
         // 于是它会永久停在展开态（直到用户滚动离开再回来）。
-        notifyItemChanged(items.size - 1)
-        notifyItemInserted(items.size)
+        notifyCompat { notifyItemChanged(items.size - 1) }
+        notifyCompat { notifyItemInserted(items.size) }
       }
       ToolGrouping.Decision.MERGE_LAST_TWO -> {
         // 首两张合并成组：把旧的单卡片替换成组，位置不变。
         val groupId = nextId++
         items[items.size - 1] = ToolGroup(groupId, listOf(last as ToolCall, call))
-        notifyItemChanged(items.size - 1)
+        notifyCompat { notifyItemChanged(items.size - 1) }
       }
       ToolGrouping.Decision.APPEND -> {
         items.add(call)
-        notifyItemInserted(items.size - 1)
+        notifyCompat { notifyItemInserted(items.size - 1) }
       }
     }
     return id
@@ -803,12 +803,12 @@ class AssistantMessageAdapter(
     val last = items.lastOrNull()
     if (last is ToolGroup && ToolGrouping.shouldThinkingJoinGroup(true)) {
       items[items.size - 1] = last.copy(children = last.children + block)
-      notifyItemChanged(items.size - 1)
+      notifyCompat { notifyItemChanged(items.size - 1) }
       return id
     }
 
     items.add(block)
-    notifyItemInserted(items.size - 1)
+    notifyCompat { notifyItemInserted(items.size - 1) }
     return id
   }
 
@@ -858,7 +858,7 @@ class AssistantMessageAdapter(
                     streaming = false,
                     expanded = if (autoCollapseThinking) false else top.expanded,
                 )
-            notifyItemChanged(i)
+            notifyCompat { notifyItemChanged(i) }
           }
         }
         is ToolGroup -> {
@@ -878,7 +878,7 @@ class AssistantMessageAdapter(
                           it
                         }
                       })
-          notifyItemChanged(i)
+          notifyCompat { notifyItemChanged(i) }
         }
         else -> {}
       }
@@ -901,7 +901,7 @@ class AssistantMessageAdapter(
       is Thinking -> {
         if (top.id == id) {
           items[topIndex] = transform(top)
-          notifyItemChanged(topIndex)
+          notifyCompat { notifyItemChanged(topIndex) }
           return true
         }
       }
@@ -911,7 +911,7 @@ class AssistantMessageAdapter(
           val next = top.children.toMutableList()
           next[childIndex] = transform(next[childIndex] as Thinking)
           items[topIndex] = top.copy(children = next)
-          notifyItemChanged(topIndex)
+          notifyCompat { notifyItemChanged(topIndex) }
           return true
         }
       }
@@ -946,7 +946,51 @@ class AssistantMessageAdapter(
     val oldSize = items.size
     items.clear()
     if (oldSize > 0) {
-      notifyItemRangeRemoved(0, oldSize)
+      notifyCompat { notifyItemRangeRemoved(0, oldSize) }
+    }
+  }
+
+  // ---- 批量模式（历史回放分帧） ----
+
+  /**
+   * 批量深度：>0 时所有 notifyXXX 抑制为「脏标记」，[endBatch] 时一次性补发。
+   *
+   * <p><b>为什么需要它</b>：历史回放逐条 append 会逐条 notifyItemInserted——
+   * 数百条历史就是数百次RecyclerView 全量 diff，主线程连续掉帧（实测打开长会话
+   * 时序数帧 30-127 连发）。cc-haha 的对应物是「窗口虚拟化 + 尾部优先渐进渲染」，
+   * RecyclerView 侧的等价做法是：批量区间内只标脏，收帧时一次 range-inserted。
+   */
+  private var batchDepth = 0
+  private var batchDirty = false
+  private var batchStartSize = 0
+
+  /** 进入批量模式。嵌套安全；[endBatch] 必须与 [beginBatch] 成对（try/finally）。 */
+  fun beginBatch() {
+    if (batchDepth == 0) {
+      batchDirty = false
+      batchStartSize = items.size
+    }
+    batchDepth++
+  }
+
+  /** 结束批量模式：最外层收帧，一次性补发整个批次的插入通知。 */
+  fun endBatch() {
+    check(batchDepth > 0) { "endBatch without beginBatch" }
+    batchDepth--
+    if (batchDepth == 0 && batchDirty) {
+      batchDirty = false
+      // 只要批内有任何变更（插入或更新）就整表重发：分组的插入/折叠会让旧下标
+      // 失效，精确 range 的收益为零，而漏发会让 UI 停在旧内容上（静默不一致）。
+      notifyDataSetChanged()
+    }
+  }
+
+  /** 批量模式中跳过细粒度通知的统一入口；各 notify 调用点用 [notifyCompat] 包裹。 */
+  private fun notifyCompat(notify: () -> Unit) {
+    if (batchDepth > 0) {
+      batchDirty = true
+    } else {
+      notify()
     }
   }
 
@@ -995,7 +1039,7 @@ class AssistantMessageAdapter(
       is ToolCall -> {
         if (top.id == id) {
           items[topIndex] = transform(top)
-          notifyItemChanged(topIndex)
+          notifyCompat { notifyItemChanged(topIndex) }
           return true
         }
       }
@@ -1006,7 +1050,7 @@ class AssistantMessageAdapter(
           // 索引已确认该位置是 ToolCall（见 indexOfFirst 的条件）。
           next[childIndex] = transform(next[childIndex] as ToolCall)
           items[topIndex] = top.copy(children = next)
-          notifyItemChanged(topIndex)
+          notifyCompat { notifyItemChanged(topIndex) }
           return true
         }
       }
@@ -1721,7 +1765,7 @@ class AssistantMessageAdapter(
     // 记「展开与否」而不是「折叠与否」：pinnedExpanded 的语义是展开意图，
     // 直接存 `!currentlyCollapsed` 就是用户想要的最终状态。
     items[index] = old.copy(pinnedExpanded = currentlyCollapsed)
-    notifyItemChanged(index)
+    notifyCompat { notifyItemChanged(index) }
   }
 
   /**
