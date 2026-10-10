@@ -1635,6 +1635,7 @@
   <string name="compose_style_chat_copy">复制</string>
   <string name="compose_style_chat_copied">已复制</string>
   <string name="compose_tool_card_image_preview">图片</string>
+  <string name="compose_tool_card_image_count">%1$d 张图片</string>
   <string name="compose_tool_card_tap_to_view">点击查看大图</string>
   <string name="ai_assistant_image_close">关闭</string>
   <string name="sidebar_assistant_title">AI 助手</string>

@@ -1690,6 +1690,7 @@ This AI agent is designed to assist you in developing Android applications direc
   <string name="compose_style_chat_copy">Copy</string>
   <string name="compose_style_chat_copied">Copied</string>
   <string name="compose_tool_card_image_preview">Image</string>
+  <string name="compose_tool_card_image_count">%1$d images</string>
   <string name="compose_tool_card_tap_to_view">Tap to view</string>
   <string name="ai_assistant_image_close">Close</string>
   <string name="sidebar_assistant_title">AI Assistant</string>

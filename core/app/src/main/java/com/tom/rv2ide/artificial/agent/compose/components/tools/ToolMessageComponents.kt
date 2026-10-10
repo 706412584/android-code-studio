@@ -414,6 +414,16 @@ internal fun ToolMessageBody(
             }
           }
         }
+    // 生成图常显预览（cc-haha ImageGenerationBlock 语义）：图片是这条结果的主体，
+    // 折进卡片里用户看不到「查看图片功能回来了」。只在非 running 且磁盘有文件时显示；
+    // 折叠展开均常驻。expandedOverride 的旧分支里同样渲染一份，展开时是同一入口。
+    if (!running && !message.isError) {
+      val imagePaths = remember(message.content) { generatedImagePaths(message) }
+      if (imagePaths.isNotEmpty()) {
+        Spacer(Modifier.height(Spacing.xs))
+        ToolResultImageFromPaths(imagePaths)
+      }
+    }
     if (streaming) {
       // 展开态与落库卡片同构：先「指令」（工具参数），再「结果」（实时输出尾部）；
       // 折叠态只保留标题行。「还在跑」由标题行行尾的涟漪场景文案表达，不在这里重复一遍。
@@ -449,6 +459,29 @@ internal fun ToolMessageBody(
             Spacer(Modifier.height(Spacing.xs))
             WebSearchResultCard(result = webSearchData)
           } else if (message.imageBase64 != null) {
+            // 工具结果里的图（截图 / 生成图 / 第三方 MCP 返回的图）。
+            //
+            // **为什么单独一个分支而不是与下面并列**：图片是这条工具结果的**主要内容**，
+            // 不是附加信息。落到下面的 `else` 里会把「结果」文本区也画出来，而那种结果的
+            // content 往往就是一大段 base64 或尺寸描述——正文与图重复且难看。
+            Spacer(Modifier.height(Spacing.xs))
+            ToolResultImage(message)
+          } else if (generatedImagePaths(message).isNotEmpty()) {
+            // 生成图的**路径引用**分支（cc-haha 同款协议/UI 分离）：图片文件不进模型
+            // 上下文（base64 会撑爆窗口并引发 GC 风暴），工具结果只写落盘路径；
+            // UI 从 content 里提取路径、从磁盘加载内联显示。用户看到的仍是图片，
+            // 模型看到的是几百字节文本。位置在 imageBase64 之后：旧会话里内联
+            // base64 的结果优先走原分支，不受影响。
+            Spacer(Modifier.height(Spacing.xs))
+            ToolResultImageFromPaths(generatedImagePaths(message))
+          } else if (generatedImagePaths(message).isNotEmpty()) {
+            // 生成图的**路径引用**分支（cc-haha 同款协议/UI 分离）：图片文件不进模型
+            // 上下文（base64 会撑爆窗口并引发 GC 风暴），工具结果只写落盘路径；
+            // UI 从 content 里提取路径、从磁盘加载内联显示。用户看到的仍是图片，
+            // 模型看到的是几百字节文本。位置在 imageBase64 之后：旧会话里内联
+            // base64 的结果优先走原分支，不受影响。
+            Spacer(Modifier.height(Spacing.xs))
+            ToolResultImageFromPaths(generatedImagePaths(message))
             // 工具结果里的图（截图 / 生成图 / 第三方 MCP 返回的图）。
             //
             // **为什么单独一个分支而不是与下面并列**：图片是这条工具结果的**主要内容**，
@@ -865,10 +898,91 @@ private fun ToolResultImage(message: AgentUIMessage) {
   }
 }
 
+/**
+ * 从工具结果的 content 里提取**本机存在的**图片绝对路径（cc-haha InlineImageGallery 的
+ * 提取语义）：匹配以图片扩展名结尾的绝对路径行，且磁盘上确有该文件。
+ *
+ * <p>纯内存正则 + 一次 exists 检查，缓存到 content 键上——LazyColumn 每次重组都会调用
+ * 本分支，不缓存的话每帧都跑正则与 IO。
+ */
+internal fun generatedImagePaths(message: AgentUIMessage): List<String> {
+  val content = message.content
+  if (content.length > 100_000) return emptyList() // 防御：异常大 content 不跑正则
+  val matcher = IMAGE_PATH_PATTERN.findAll(content)
+  val paths = ArrayList<String>(2)
+  for (m in matcher) {
+    val path = m.groupValues[1]
+    val file = java.io.File(path)
+    // 磁盘确认：会话可回放跨项目，历史里的路径可能已被清理——不存在的文件不渲染破图。
+    if (file.isFile) paths.add(path)
+  }
+  return paths
+}
+
+/** 绝对路径 + 图片扩展名（与 ImageGenerationTool 的落盘命名对应：.png/.jpg/.webp）。 */
+private val IMAGE_PATH_PATTERN =
+    Regex("""(/(?:[\w .-]+/)*[\w.-]+\.(?:png|jpe?g|webp))""", RegexOption.IGNORE_CASE)
+
+/**
+ * 生成图路径引用的内联预览（磁盘加载，不经过模型上下文）。
+ *
+ * <p>渲染形态与 [ToolResultImage] 一致（卡片 + 点击灯箱），数据源从 base64 换成
+ * [ImageSource.LocalFile]——查看器自己处理磁盘读取与降采样。
+ */
+@Composable
+private fun ToolResultImageFromPaths(paths: List<String>) {
+  val viewer = LocalImageViewer.current
+  val title = ToolCardStrings.IMAGE_PREVIEW_LABEL
+  Surface(
+      shape = RoundedCornerShape(ChatStyle.panelCorner),
+      color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
+      modifier =
+          Modifier.fillMaxWidth()
+              .clip(RoundedCornerShape(ChatStyle.panelCorner))
+              .clickable {
+                viewer.show(
+                    ImageViewerRequest(
+                        sources = paths.map { ImageSource.LocalFile(it) },
+                        title = title,
+                    ))
+              },
+  ) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(Spacing.sm),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+      Icon(
+          imageVector = FeatherIcons.Image,
+          contentDescription = null,
+          tint = Brand.IconGray,
+          modifier = Modifier.size(ChatStyle.rowIconSize))
+      Spacer(Modifier.width(Spacing.sm))
+      Column(modifier = Modifier.weight(1f)) {
+        Text(
+            text =
+                if (paths.size == 1) java.io.File(paths[0]).name
+                else stringResource(R.string.compose_tool_card_image_count, paths.size),
+            color = MaterialTheme.colorScheme.onSurface,
+            style = MaterialTheme.typography.labelLarge,
+        )
+        Text(
+            text = ToolCardStrings.TAP_TO_VIEW,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = MaterialTheme.typography.labelSmall,
+        )
+      }
+      Icon(
+          imageVector = FeatherIcons.ChevronRight,
+          contentDescription = null,
+          tint = Brand.IconGray,
+          modifier = Modifier.size(18.dp))
+    }
+  }
+}
+
 /** 展开区的一段带小标题的内容块（如「指令」「结果」）：弱底等宽小面板，超出限高后在窗口内滚动。 */
 @Composable
-internal fun ToolSection(label: String, content: String, live: Boolean = false) {
-  Text(
+internal fun ToolSection(label: String, content: String, live: Boolean = false) {  Text(
       text = label,
       color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
       style = MaterialTheme.typography.labelSmall,
