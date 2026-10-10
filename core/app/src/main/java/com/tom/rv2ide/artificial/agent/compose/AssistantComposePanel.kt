@@ -43,6 +43,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -71,6 +72,7 @@ import com.tom.rv2ide.resources.R
 import compose.icons.FeatherIcons
 import compose.icons.feathericons.ChevronDown
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 /**
@@ -258,17 +260,21 @@ private fun PanelContent(
     // 长度做键，任何一条尾部内容的变化都会触发判定；条目**新增**（新气泡/新卡片）
     // 时末条 id 变化，同样覆盖。取整百避免每个 token 都重算。
     val followKey =
-        remember(renderItems) {
+        remember(renderItems, renderItems.size) {
           val last = renderItems.lastOrNull()
           when (last) {
             is RenderItem.Single ->
-                last.message.id to
-                    (last.message.content.length + (last.message.reasoning?.length ?: 0)) / 100
+                Triple(
+                    last.message.id,
+                    (last.message.content.length + (last.message.reasoning?.length ?: 0)) / 100,
+                    renderItems.size)
             is RenderItem.Group ->
-                last.id to (last.children.lastOrNull()?.content?.length ?: 0) / 100
-            is RenderItem.DiffGroup ->
-                last.id to last.children.size
-            null -> "" to 0
+                Triple(
+                    last.id,
+                    (last.children.lastOrNull()?.content?.length ?: 0) / 100,
+                    renderItems.size)
+            is RenderItem.DiffGroup -> Triple(last.id, last.children.size, renderItems.size)
+            null -> Triple("", 0, 0)
           }
         }
 
@@ -282,8 +288,15 @@ private fun PanelContent(
         // 它的顶部对齐视口顶、内容下半截全在屏幕外——「滚了但没滚到底」。
         // 用「滚到末项 + 再滚一个视口高度」表达「把最后的内容顶到可视区」：
         // LazyColumn 会把超出列表范围的偏移钳到最大滚动距离，即列表真正的底部。
-        val lastIndex = renderItems.lastIndex
-        if (listState.layoutInfo.totalItemsCount > 0) {
+        //
+        // **布局就绪等待**：历史回放（打开面板/切全屏）一次性灌入全部条目，
+        // 本 effect 首次运行时 LazyColumn 可能还没布局（totalItemsCount == 0），
+        // 直接跳过会让回放后停在顶部（实测）。用 snapshotFlow 等计数就绪后再滚——
+        // 用户若在布局前就上滑，atBottom 变 false，循环体自然不再执行。
+        snapshotFlow { listState.layoutInfo.totalItemsCount }
+            .first { it > 0 }
+        if (atBottom) {
+          val lastIndex = renderItems.lastIndex
           val viewport = listState.layoutInfo.viewportEndOffset
           listState.scrollToItem(lastIndex, scrollOffset = viewport)
         }

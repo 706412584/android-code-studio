@@ -74,10 +74,19 @@ public final class VideoGenerationEndpoint {
     return trimSlash(baseUrl) + "/videos";
   }
 
-  /** Agnes 兼容轮询端点：剥掉结尾 /v1 后拼 /agnesapi（cc-haha 语义原样）。 */
-  public String agnesPollUrl(String videoId) {
+  /**
+   * Agnes 兼容轮询端点：剥掉结尾 /v1 后拼 /agnesapi。
+   *
+   * <p><b>必须带 model_name</b>（官方文档与 FrameBaker 实测一致）：缺了它服务端无法
+   * 找到对应任务。text 模式下官方说可省，但带上无害且省一个分支。
+   */
+  public String agnesPollUrl(String videoId, String model) {
     String root = trimSlash(baseUrl).replaceAll("/v1$", "");
-    return root + "/agnesapi?video_id=" + urlEncode(videoId);
+    return root
+        + "/agnesapi?video_id="
+        + urlEncode(videoId)
+        + "&model_name="
+        + urlEncode(model);
   }
 
   /** Grok 提交端点：API 根 + {@code /videos/generations}。 */

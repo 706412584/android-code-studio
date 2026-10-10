@@ -100,11 +100,16 @@ class VideoGenerationToolTest {
     // 第一次调用 = POST 提交到 {base}/videos。
     assertEquals("POST", port.first()[0]);
     assertEquals("https://host/v1/videos", port.first()[1]);
-    // 最后一次调用 = 轮询 GET，URL 剥掉 /v1 拼 /agnesapi。
+    // 最后一次调用 = 轮询 GET，URL 剥掉 /v1 拼 /agnesapi 且必须带 model_name。
     assertEquals("GET", port.last()[0]);
-    assertEquals("https://host/agnesapi?video_id=v123", port.last()[1]);
+    assertEquals(
+        "https://host/agnesapi?video_id=v123&model_name=agnes-video-2.5-flash", port.last()[1]);
     JSONObject sent = new JSONObject(port.first()[2]);
     assertEquals("agnes-video-2.5-flash", sent.getString("model"));
+    // Agnes 语义（FrameBaker 实测）：mode 必发、seconds 字符串、size 固定。
+    assertEquals("text", sent.getString("mode"));
+    assertEquals("5", sent.getString("seconds"));
+    assertEquals("720P", sent.getString("size"));
   }
 
   @Test
@@ -189,6 +194,8 @@ class VideoGenerationToolTest {
         new VideoGenerationEndpoint("https://host/v1", "k", "agnes-video-2.5", "");
     assertFalse(agnes.isGrokProtocol());
     assertEquals("https://host/v1/videos", agnes.agnesCreateUrl());
-    assertEquals("https://host/agnesapi?video_id=v1", agnes.agnesPollUrl("v1"));
+    assertEquals(
+        "https://host/agnesapi?video_id=v1&model_name=agnes-video-2.5",
+        agnes.agnesPollUrl("v1", "agnes-video-2.5"));
   }
 }

@@ -78,8 +78,8 @@ public final class VideoGenerationTool extends BaseTool {
   @Override
   public String getDescription() {
     return "用文生视频模型生成短视频（异步任务，可能等待数分钟）。参数：prompt（必填，画面描述）、"
-        + "duration（可选，秒数 1-15，默认 8）、aspect_ratio（可选，如 16:9）、resolution（可选，480p/720p）。"
-        + "结果保存为视频文件并给出路径。未配置时提示去设置→能力→视频生成配置。";
+        + "aspect_ratio（可选，如 16:9，默认 16:9）。结果保存为视频文件并给出路径。"
+        + "未配置时提示去设置→能力→视频生成配置。";
   }
 
   @Override
@@ -111,20 +111,10 @@ public final class VideoGenerationTool extends BaseTool {
                         .put("type", "string")
                         .put("description", "画面描述，写清主体、运动、镜头"))
                 .put(
-                    "duration",
-                    new org.json.JSONObject()
-                        .put("type", "integer")
-                        .put("description", "时长秒数 1-15，默认 8"))
-                .put(
                     "aspect_ratio",
                     new org.json.JSONObject()
                         .put("type", "string")
-                        .put("description", "宽高比如 16:9 / 9:16"))
-                .put(
-                    "resolution",
-                    new org.json.JSONObject()
-                        .put("type", "string")
-                        .put("description", "分辨率 480p 或 720p"))
+                        .put("description", "宽高比如 16:9 / 9:16，默认 16:9"))
                 .put(
                     "timeout_seconds",
                     new org.json.JSONObject()
@@ -202,11 +192,25 @@ public final class VideoGenerationTool extends BaseTool {
   private Result generateAgnes(
       String prompt, VideoGenerationEndpoint endpoint, JSONObject input, int timeoutSeconds)
       throws Exception {
-    JSONObject body = new JSONObject().put("model", endpoint.getModel()).put("prompt", prompt);
-    // 可选生成参数按 cc-haha 的白名单透传。
+    // 请求体语义照 FrameBaker 的 generateVideoViaAgnes（实测跑通），而非 cc-haha：
+    // Agnes 官方 API 要求 mode（text/keyframe/reference）、seconds（字符串 "4"-"12"）、
+    // size 固定 "720P"。缺 mode 服务端直接报错。
+    JSONObject body =
+        new JSONObject()
+            .put("model", endpoint.getModel())
+            .put("prompt", prompt)
+            .put("mode", "text")
+            .put("seconds", "5")
+            .put("size", "720P");
+    if (input.has("aspect_ratio") && !input.isNull("aspect_ratio")) {
+      body.put("aspect_ratio", input.getString("aspect_ratio"));
+    } else {
+      body.put("aspect_ratio", "16:9");
+    }
+    // 可选协议字段按白名单透传（keyframe/reference 等进阶用法）。
     for (String key :
         new String[] {
-          "image", "mode", "height", "width", "num_frames", "frame_rate",
+          "image", "images", "height", "width", "num_frames", "frame_rate",
           "num_inference_steps", "seed", "negative_prompt"
         }) {
       if (input.has(key) && !input.isNull(key)) {
@@ -220,7 +224,7 @@ public final class VideoGenerationTool extends BaseTool {
       throw new VideoTaskException("视频接口未返回 video_id、id 或 task_id。");
     }
 
-    String pollUrl = endpoint.agnesPollUrl(videoId);
+    String pollUrl = endpoint.agnesPollUrl(videoId, endpoint.getModel());
     long deadline = System.currentTimeMillis() + timeoutSeconds * 1000L;
     int transientFailures = 0;
     String lastState = "unknown";
@@ -238,7 +242,14 @@ public final class VideoGenerationTool extends BaseTool {
               "视频生成失败（" + lastState + "）：" + pickError(status, lastState));
         }
         if ("completed".equals(lastState) || (lastState.equals("unknown") && status.has("url"))) {
+          // 结果 URL 可能出现在顶层 url 或 metadata.url（FrameBaker 两种都见过）。
           String url = status.optString("url", "");
+          if (url.isEmpty()) {
+            JSONObject metadata = status.optJSONObject("metadata");
+            if (metadata != null) {
+              url = metadata.optString("url", "");
+            }
+          }
           if (url.isEmpty()) {
             throw new VideoTaskException("视频任务已完成但未返回 URL。");
           }
