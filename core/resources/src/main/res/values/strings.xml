@@ -154,6 +154,15 @@
   <string name="ai_agent_mcp_stdio_args">Command arguments (space separated)</string>
   <string name="ai_agent_mcp_stdio_env">Environment variables (KEY=VALUE, one per line)</string>
   <string name="ai_agent_mcp_stdio_cwd">Working directory (optional)</string>
+  <string name="ai_agent_market_title">Skill market</string>
+  <string name="ai_agent_market_loading">Loading market…</string>
+  <string name="ai_agent_market_empty">Market unreachable or empty (check network)</string>
+  <string name="ai_agent_market_installing">Installing…</string>
+  <string name="ai_agent_market_installed">Installed: %1$s (restart a conversation to load it)</string>
+  <string name="ai_agent_market_uninstall">Uninstall</string>
+  <string name="ai_agent_market_uninstall_confirm">Remove this market-installed skill?</string>
+  <string name="ai_agent_market_uninstalled">Uninstalled: %1$s</string>
+  <string name="ai_agent_skills_manual_hint">%1$s was added manually — edit its files to remove it</string>
   <string name="ai_agent_page_providers_summary">API keys, custom endpoint, enable switch</string>
   <string name="ai_agent_page_tools_title">Tools and permissions</string>
   <string name="ai_agent_page_tools_summary">Chat mode, permission level, shell backend, code completion</string>

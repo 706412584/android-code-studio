@@ -1578,34 +1578,152 @@ private class SkillsPreference(
     val registry = skillRegistry(context)
     val skills = registry.all()
 
-    val message =
-        buildString {
-          append(context.getString(R.string.ai_agent_skills_dir))
-          append('\n')
-          append(skillsDir(context).absolutePath)
-          append("\n\n")
-          if (skills.isEmpty()) {
-            append(context.getString(R.string.ai_agent_skills_none))
-            append("\n\n")
-            append(context.getString(R.string.ai_agent_skills_format))
-          } else {
-            for (skill in skills) {
-              append(skill.toPromptLine()).append('\n')
-            }
+    if (skills.isEmpty()) {
+      // 无技能：给格式说明引导，避免空清单弹窗。
+      com.google.android.material.dialog.MaterialAlertDialogBuilder(context)
+          .setTitle(R.string.ai_agent_skills_title)
+          .setMessage(
+              context.getString(R.string.ai_agent_skills_dir)
+                  + "\n"
+                  + skillsDir(context).absolutePath
+                  + "\n\n"
+                  + context.getString(R.string.ai_agent_skills_none)
+                  + "\n\n"
+                  + context.getString(R.string.ai_agent_skills_format))
+          .setPositiveButton(R.string.ai_agent_market_title) { _, _ ->
+            showMarket(context, preference)
           }
-        }
+          .setNeutralButton(R.string.ai_agent_skills_import) { _, _ ->
+            importSkill(context, preference)
+          }
+          .setNegativeButton(android.R.string.ok, null)
+          .show()
+      return true
+    }
 
+    // 有技能：清单为可点列表——市场装的点选即卸载（确认后），手装的提示来源目录。
+    fun skillDir(skill: com.tom.rv2ide.ai.tool.skill.Skill): File? {
+      // 平铺 .md 的 source 是文件本身；SKILL.md 的 source 也在文件上，取 parent 即目录。
+      val file = File(skill.getSource())
+      return if (file.name.equals("SKILL.md", ignoreCase = true)) file.parentFile else file.parentFile
+    }
+    val labels =
+        skills.map { skill ->
+          val fromMarket = skillDir(skill)?.let {
+            com.tom.rv2ide.ai.tool.skill.SkillMarketClient.isMarketInstalled(it)
+          } == true
+          (if (fromMarket) "⬇ " else "") + skill.toPromptLine()
+        }
     com.google.android.material.dialog.MaterialAlertDialogBuilder(context)
         .setTitle(R.string.ai_agent_skills_title)
-        .setMessage(message)
-        // 导入入口：把任意位置的 .md / SKILL.md 拷进 skills 目录——免去用户翻隐私目录
-        // 手动放文件的麻烦（目录在 filesDir 下，文件管理器通常进不去）。
-        .setPositiveButton(R.string.ai_agent_skills_import) { _, _ ->
+        .setItems(labels.toTypedArray()) { _, which ->
+          val skill = skills[which]
+          val dir = skillDir(skill)
+          if (dir != null &&
+              com.tom.rv2ide.ai.tool.skill.SkillMarketClient.isMarketInstalled(dir)) {
+            confirmUninstall(context, preference, skill.getName(), dir)
+          } else {
+            Toast.makeText(
+                    context,
+                    context.getString(R.string.ai_agent_skills_manual_hint, skill.getName()),
+                    Toast.LENGTH_SHORT,
+                )
+                .show()
+          }
+        }
+        .setPositiveButton(R.string.ai_agent_market_title) { _, _ ->
+          showMarket(context, preference)
+        }
+        .setNeutralButton(R.string.ai_agent_skills_import) { _, _ ->
           importSkill(context, preference)
         }
-        .setNegativeButton(android.R.string.ok, null)
+        .setNegativeButton(android.R.string.cancel, null)
         .show()
     return true
+  }
+
+  /** 卸载确认：市场安装的技能可一键移除。 */
+  private fun confirmUninstall(
+      context: Context,
+      preference: Preference,
+      name: String,
+      dir: File,
+  ) {
+    com.google.android.material.dialog.MaterialAlertDialogBuilder(context)
+        .setTitle(name)
+        .setMessage(R.string.ai_agent_market_uninstall_confirm)
+        .setPositiveButton(R.string.ai_agent_market_uninstall) { _, _ ->
+          val ok =
+              com.tom.rv2ide.ai.tool.skill.SkillMarketClient.uninstall(dir)
+          if (ok) {
+            preference.summary = summaryAfterImport(context)
+            Toast.makeText(
+                    context,
+                    context.getString(R.string.ai_agent_market_uninstalled, name),
+                    Toast.LENGTH_SHORT,
+                )
+                .show()
+          } else {
+            Toast.makeText(context, R.string.ai_agent_skills_import_failed, Toast.LENGTH_SHORT)
+                .show()
+          }
+        }
+        .setNegativeButton(android.R.string.cancel, null)
+        .show()
+  }
+
+  /**
+   * 技能市场：拉在线列表 → 选条目 → 后台安装 → 刷新清单。
+   *
+   * <p>网络在 IO 线程；列表为空时给出两种可能（无网/上游挂）的提示。
+   */
+  private fun showMarket(context: Context, preference: Preference) {
+    Toast.makeText(context, R.string.ai_agent_market_loading, Toast.LENGTH_SHORT).show()
+    CoroutineScope(Dispatchers.IO).launch {
+      val client = com.tom.rv2ide.ai.tool.skill.SkillMarketClient()
+      val skills = client.list(30)
+      withContext(Dispatchers.Main) {
+        if (skills.isEmpty()) {
+          Toast.makeText(context, R.string.ai_agent_market_empty, Toast.LENGTH_LONG).show()
+          return@withContext
+        }
+        val labels = skills.map { it.toLine() }.toTypedArray()
+        com.google.android.material.dialog.MaterialAlertDialogBuilder(context)
+            .setTitle(R.string.ai_agent_market_title)
+            .setItems(labels) { dialog, which ->
+              dialog.dismiss()
+              installFromMarket(context, preference, client, skills[which])
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+      }
+    }
+  }
+
+  /** 安装选中的市场技能（IO 线程执行，结果 Toast）。 */
+  private fun installFromMarket(
+      context: Context,
+      preference: Preference,
+      client: com.tom.rv2ide.ai.tool.skill.SkillMarketClient,
+      skill: com.tom.rv2ide.ai.tool.skill.SkillMarketClient.MarketSkill,
+  ) {
+    Toast.makeText(context, R.string.ai_agent_market_installing, Toast.LENGTH_SHORT).show()
+    CoroutineScope(Dispatchers.IO).launch {
+      val result = client.install(skill, skillsDir(context))
+      withContext(Dispatchers.Main) {
+        if (result.ok) {
+          preference.summary = summaryAfterImport(context)
+          Toast.makeText(
+                  context,
+                  context.getString(R.string.ai_agent_market_installed, skill.name),
+                  Toast.LENGTH_LONG,
+              )
+              .show()
+        } else {
+          Toast.makeText(context, result.message, Toast.LENGTH_LONG).show()
+        }
+      }
+    }
   }
 
   /** 导入入口。Preference 拿不到 ActivityResultLauncher（注册时机在 Fragment 创建期），
