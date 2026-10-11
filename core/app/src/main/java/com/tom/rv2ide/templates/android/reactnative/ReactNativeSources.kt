@@ -821,6 +821,12 @@ object ReactNativeSources {
       - **node**：模板已写死 Termux 内的 node 路径，无需配置 PATH。
         在设备外的环境（如云端 CI）构建时会自动回退到 PATH 上的 node。
 
+      > **设备端 release 构建限制**：RN 的 hermesc（JS 编译器）只有
+      > x86_64/Windows/macOS 版本，没有 linux-arm64——设备上
+      > `assembleRelease`（hermesEnabled=true）会失败。发布包请在
+      > GitHub Actions 云端构建（workflow 已配好）；设备上以 debug
+      > 构建 + Metro 开发调试为主。
+
       ## 项目结构（扁平化布局）
 
       ```
