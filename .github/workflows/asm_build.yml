@@ -29,11 +29,19 @@ on:
         options:
           - Debug
           - Release
+      revision:
+        description: '仅 Release 用：发布修订号（如 8 → 1.0.0+gh.r08 / versionCode 1029）。留空则只构建不发布。'
+        required: false
+        default: ''
 
 jobs:
   build_release_apk:
     name: Build APK
     runs-on: ubuntu-latest
+    # 显式声明权限：发布需要 contents:write（创建 Release + push updater.json 回写）。
+    # 不依赖仓库的默认 token 权限设置，避免换个环境就静默失效。
+    permissions:
+      contents: write
     steps:
       - name: Cancel previous runs
         uses: styfle/cancel-workflow-action@0.12.1
@@ -52,6 +60,31 @@ jobs:
           BUILD_TYPE="${SELECTED_TYPE:-Debug}"
           echo "BUILD_TYPE=$BUILD_TYPE" >> $GITHUB_ENV
           echo "BUILD_TYPE_LOWER=$(echo "$BUILD_TYPE" | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
+
+          # 发布：仅当 Release + 给了 revision 时启用。versionName/versionCode 的
+          # 计算必须与 tools/publish-release.ps1 完全一致，否则 updater.json 会错、
+          # 用户端更新失效：
+          #   versionName = 1.0.0+gh.r<NN>   versionCode = 1021 + revision
+          REV="${{ github.event.inputs.revision }}"
+          if [ "$BUILD_TYPE" = "Release" ] && [ -n "$REV" ]; then
+            REV_STR=$(printf '%02d' "$REV")
+            VERSION_NAME="1.0.0+gh.r$REV_STR"
+            VERSION_CODE=$((1021 + REV))
+            echo "PUBLISH=true" >> $GITHUB_ENV
+            echo "REVISION_NUM=$REV_STR" >> $GITHUB_ENV
+            echo "VERSION_NAME=$VERSION_NAME" >> $GITHUB_ENV
+            echo "VERSION_CODE=$VERSION_CODE" >> $GITHUB_ENV
+            echo "RELEASE_TAG=v$VERSION_NAME" >> $GITHUB_ENV
+            echo "发布模式：$VERSION_NAME (versionCode=$VERSION_CODE)"
+          else
+            # 构建模式：显式给默认值。**不能留空**——settings.gradle.kts 用
+            # `System.getenv("REVISION_NUM") ?: "06"`，空串不等于 null，留空会得到
+            # 版本名 `1.0.0+gh.r`（缺修订号）。显式设 06/1027 与历史默认完全一致。
+            echo "PUBLISH=false" >> $GITHUB_ENV
+            echo "REVISION_NUM=06" >> $GITHUB_ENV
+            echo "VERSION_CODE=1027" >> $GITHUB_ENV
+            echo "构建模式（不发布）"
+          fi
 
       - name: Set up JDK 21
         uses: actions/setup-java@v4
@@ -92,6 +125,12 @@ jobs:
           SIGNING_STORE_PASSWORD: ${{ secrets.SIGNING_STORE_PASSWORD }}
           SIGNING_KEY_PASSWORD: ${{ secrets.SIGNING_KEY_PASSWORD }}
           SIGNING_KEY_ALIAS: androidcs
+          # 发布时注入版本号（settings.gradle.kts 读 MAIN_VERSION/REVISION_NUM；
+          # ProjectConfig.kt 读 PROJECT_CONFIG_KT_BASE_VERSION_CODE）。构建模式下为空，
+          # 走默认 1.0.0+gh.r06 / 1027，与从前一致。
+          MAIN_VERSION: "1.0.0"
+          REVISION_NUM: ${{ env.REVISION_NUM }}
+          PROJECT_CONFIG_KT_BASE_VERSION_CODE: ${{ env.VERSION_CODE }}
         run: ./gradlew assemble${{ env.BUILD_TYPE }}
 
       - name: List APK files
@@ -124,3 +163,60 @@ jobs:
           name: apk-universal-${{ env.BUILD_TYPE_LOWER }}
           path: core/app/build/outputs/apk/${{ env.BUILD_TYPE_LOWER }}/*universal*.apk
         if: always()
+
+      # ---- 发布（仅 Release + 给了 revision 时）----
+      # 手动触发发布，语义与 tools/publish-release.ps1 一致。四条硬约束由脚本保证，
+      # 这里逐条复刻：tag=v<versionName>、资产名含 versionName、updater.json 的
+      # versionCode 与 APK 一致、证书是已发布那把（下面显式验签）。
+      - name: Verify APK signature cert
+        if: env.PUBLISH == 'true'
+        run: |
+          APK="core/app/build/outputs/apk/release/android-code-studio-arm64-v8a-$VERSION_NAME.apk"
+          test -f "$APK" || { echo "缺少产物: $APK"; exit 1; }
+          # 用 apksigner 核对证书指纹——用错证书的包用户无法覆盖安装。
+          APKSIGNER=$(find "$ANDROID_HOME/build-tools" -name apksigner -type f | sort -V | tail -1)
+          SHA1=$("$APKSIGNER" verify --print-certs "$APK" | grep -oiE 'SHA-1 digest: [0-9a-f]{40}' | head -1 | grep -oE '[0-9a-f]{40}' | tr 'a-f' 'A-F')
+          EXPECTED="83ABB7381685A06DBDAE877DED4A207F4919C1DA"
+          echo "证书 SHA-1: $SHA1"
+          [ "$SHA1" = "$EXPECTED" ] || { echo "证书不匹配！期望 $EXPECTED"; exit 1; }
+          echo "证书校验通过"
+
+      - name: Create GitHub Release
+        if: env.PUBLISH == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          APK_DIR="core/app/build/outputs/apk/release"
+          gh release create "$RELEASE_TAG" \
+            --target "${{ github.ref_name }}" \
+            --title "$RELEASE_TAG" \
+            --notes "Release $VERSION_NAME" \
+            "$APK_DIR/android-code-studio-arm64-v8a-$VERSION_NAME.apk" \
+            "$APK_DIR/android-code-studio-armeabi-v7a-$VERSION_NAME.apk"
+
+      - name: Sync updater.json
+        if: env.PUBLISH == 'true'
+        run: |
+          # 应用内更新（TomIDEUpdater）读 updater.json 的 baseUrl/apkUrl 拼下载地址，
+          # 因此 baseVersionCode 必须等于 APK 的 versionCode，否则用户每次启动都误报更新。
+          python3 - "$VERSION_NAME" "$VERSION_CODE" "$GITHUB_REPOSITORY" <<'PY'
+          import json, sys
+          version_name, version_code, repo = sys.argv[1], int(sys.argv[2]), sys.argv[3]
+          p = 'updater.json'
+          with open(p, encoding='utf-8-sig') as f:
+              data = json.load(f)
+          data['baseVersionCode'] = version_code
+          data['baseVersionName'] = version_name
+          for abi in ('armeabi-v7a', 'arm64-v8a'):
+              data['variants'][abi]['versionCode'] = version_code
+              data['variants'][abi]['versionName'] = version_name
+          data['changelog'] = f"https://raw.githubusercontent.com/{repo}/refs/heads/dev/whatsnew/{version_name}.md"
+          with open(p, 'w', encoding='utf-8') as f:
+              json.dump(data, f, ensure_ascii=False, indent=4)
+          print(f"updater.json -> {version_name} / {version_code}")
+          PY
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add updater.json
+          git commit -m "chore(release): $VERSION_NAME"
+          git push origin HEAD:${{ github.ref_name }}
