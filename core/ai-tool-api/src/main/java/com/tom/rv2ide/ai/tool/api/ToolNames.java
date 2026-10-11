@@ -43,6 +43,13 @@ public final class ToolNames {
     public static final String GREP = "grep";
     public static final String SHELL_EXECUTE = "shell_execute";
     /**
+     * 读取内置终端（Termux）会话屏幕内容。
+     *
+     * <p>与 {@link #SHELL_EXECUTE} 互补：后者起独立进程、返回本次输出；本工具读的是
+     * 用户在终端里手动跑的东西。只读。
+     */
+    public static final String TERMINAL_READ = "terminal_read";
+    /**
      * 取回后台命令的输出与状态。
      *
      * <p>与 {@link #SHELL_EXECUTE} 的 {@code run_in_background} 配对：启动返回任务 id，

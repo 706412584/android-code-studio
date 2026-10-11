@@ -123,6 +123,9 @@ public final class ToolContext {
    */
   private final DocumentSyncPort documentSync;
 
+  /** 终端会话读取端口；未注入时为 null（终端工具明确报「未接入」）。 */
+  private final TerminalPort terminal;
+
   private ToolContext(Builder builder) {
     this.homePath = builder.homePath == null ? "" : builder.homePath;
     this.extraWriteRoots =
@@ -143,6 +146,7 @@ public final class ToolContext {
     this.codeFormat = builder.codeFormat;
     this.backgroundShell = builder.backgroundShell;
     this.documentSync = builder.documentSync;
+    this.terminal = builder.terminal;
   }
 
   public String getHomePath() {
@@ -224,6 +228,11 @@ public final class ToolContext {
     return documentSync;
   }
 
+  /** 终端会话读取端口；未注入时为 null。 */
+  public TerminalPort getTerminal() {
+    return terminal;
+  }
+
   /**
    * 返回一个仅替换 {@code toolCallId} 的副本。
    *
@@ -248,6 +257,7 @@ public final class ToolContext {
         .codeFormat(this.codeFormat)
         .backgroundShell(this.backgroundShell)
         .documentSync(this.documentSync)
+        .terminal(this.terminal)
         .build();
   }
 
@@ -276,6 +286,7 @@ public final class ToolContext {
         .codeFormat(this.codeFormat)
         .backgroundShell(this.backgroundShell)
         .documentSync(this.documentSync)
+        .terminal(this.terminal)
         .build();
   }
 
@@ -327,6 +338,7 @@ public final class ToolContext {
     private CodeFormatPort codeFormat;
     private BackgroundShellPort backgroundShell;
     private DocumentSyncPort documentSync;
+    private TerminalPort terminal;
 
     public Builder homePath(String value) {
       this.homePath = value;
@@ -412,6 +424,12 @@ public final class ToolContext {
     /** 注入文档同步端口。 */
     public Builder documentSync(DocumentSyncPort value) {
       this.documentSync = value;
+      return this;
+    }
+
+    /** 注入终端会话读取端口。 */
+    public Builder terminal(TerminalPort value) {
+      this.terminal = value;
       return this;
     }
 

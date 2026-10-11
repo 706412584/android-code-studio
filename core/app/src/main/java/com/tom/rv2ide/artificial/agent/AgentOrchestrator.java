@@ -1378,6 +1378,8 @@ public final class AgentOrchestrator {
     // 端口在 executeRun 里注入（需要 app 层实现 + 完成回调）。
     registry.register(new com.tom.rv2ide.ai.tool.TaskOutputTool());
     registry.register(new com.tom.rv2ide.ai.tool.TaskStopTool());
+    // 终端会话读取：查看用户在终端里手动跑的命令及其输出（shell_execute 看不见）。端口在 executeRun 注入。
+    registry.register(new com.tom.rv2ide.ai.tool.TerminalReadTool());
 
     // CodeGraph 代码知识图谱（复用同一个 shell 后端执行 acs-codegraph）。
     // 注册后助手才能主动按符号查源码/调用关系/影响面，而不是靠 shell_execute 手敲
@@ -2057,6 +2059,8 @@ public final class AgentOrchestrator {
             // 文档同步端口：file_write/file_edit 写盘后通知编辑器刷新，
             // 避免「编辑器显示旧内容」以及自动保存覆盖 AI 修改。
             .documentSync(new ReportedDocumentSyncPort())
+            // 终端会话读取端口：读用户在内置终端里手动跑的命令的屏幕内容。
+            .terminal(new ReportedTerminalPort())
             .build();
 
     List<ConversationLog.EntryLocation> entries = loadEntries(conversationId);
