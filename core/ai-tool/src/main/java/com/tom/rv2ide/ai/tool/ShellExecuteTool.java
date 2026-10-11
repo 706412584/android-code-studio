@@ -256,7 +256,12 @@ public final class ShellExecuteTool extends BaseTool {
       return startBackground(command, cwd, requestedBackend, timeout, context);
     }
 
-    ShellRequest request = new ShellRequest(command, cwd, timeout, null);
+    // 接上运行取消信号：用户点停止后，后端的等待循环看到它就会终止进程并返回
+    // （Termux/Shizuku 后端都已支持轮询）。不接的话「停止」只能停循环、停不掉
+    // 正在跑的命令——实测点停止后 sleep 45 照跑满。
+    ToolContext.CancellationSignal runCancel = context == null ? null : context.getCancellation();
+    ShellRequest.CancellationSignal shellCancel = runCancel == null ? null : runCancel::isCancelled;
+    ShellRequest request = new ShellRequest(command, cwd, timeout, null, shellCancel);
     ShellRequest.ShellResult result;
     try {
       result = backend.execute(request, ShellRequest.ShellOutputSink.NOOP);

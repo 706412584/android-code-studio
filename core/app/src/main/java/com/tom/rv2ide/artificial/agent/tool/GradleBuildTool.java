@@ -62,6 +62,9 @@ public final class GradleBuildTool extends BaseTool {
   /** 最大超时：30 分钟。 */
   private static final long MAX_TIMEOUT_MS = 30 * 60 * 1000L;
 
+  /** 取消信号轮询分片（ms）。用户点停止后最迟这么久终止 Gradle 侧构建。 */
+  private static final long CANCEL_POLL_MS = 250L;
+
   /** 构建服务查询器。用接口注入而非直接依赖 Lookup，便于测试。 */
   public interface BuildServiceProvider {
     BuildService get();
@@ -176,17 +179,44 @@ public final class GradleBuildTool extends BaseTool {
 
     TaskExecutionResult result;
     try {
-      result = future.get(timeout, TimeUnit.MILLISECONDS);
-    } catch (java.util.concurrent.TimeoutException e) {
-      // 取消 Gradle 侧的真实构建，而不是只放弃本地等待
-      try {
-        service.cancelCurrentBuild();
-      } catch (RuntimeException cancelError) {
-        log.warn("取消构建失败", cancelError);
+      // 分片等待而不是一次 get(timeout)：后者在等待期间无法响应取消，用户点停止
+      // 只能干等到构建完成或超时——而构建动辄几分钟，表现为「停止没反应」。
+      // 每片 250ms 轮询一次取消信号，点停止后最迟 250ms 终止 Gradle 侧构建。
+      ToolContext.CancellationSignal runCancel = context == null ? null : context.getCancellation();
+      long deadline = System.currentTimeMillis() + timeout;
+      result = null;
+      while (true) {
+        if (runCancel != null && runCancel.isCancelled()) {
+          try {
+            service.cancelCurrentBuild();
+          } catch (RuntimeException cancelError) {
+            log.warn("取消构建失败", cancelError);
+          }
+          service.recordRejectedBuildAttempt();
+          return error("构建已被用户停止。");
+        }
+        long remaining = deadline - System.currentTimeMillis();
+        if (remaining <= 0) {
+          break; // 走下面的超时处理
+        }
+        try {
+          result = future.get(Math.min(CANCEL_POLL_MS, remaining), TimeUnit.MILLISECONDS);
+          break;
+        } catch (java.util.concurrent.TimeoutException slice) {
+          // 本片未完成：回到循环顶检查取消/总超时。
+        }
       }
-      // 超时的构建被取消了，产物不可信，登记为失败
-      service.recordRejectedBuildAttempt();
-      return error("构建超时（" + (timeout / 1000) + " 秒），已请求取消。");
+      if (result == null) {
+        // 总超时：取消 Gradle 侧的真实构建，而不是只放弃本地等待
+        try {
+          service.cancelCurrentBuild();
+        } catch (RuntimeException cancelError) {
+          log.warn("取消构建失败", cancelError);
+        }
+        // 超时的构建被取消了，产物不可信，登记为失败
+        service.recordRejectedBuildAttempt();
+        return error("构建超时（" + (timeout / 1000) + " 秒），已请求取消。");
+      }
     } catch (InterruptedException e) {
       Thread.currentThread().interrupt();
       return error("构建被中断。");

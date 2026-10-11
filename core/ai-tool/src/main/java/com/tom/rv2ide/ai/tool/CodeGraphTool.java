@@ -215,7 +215,11 @@ public final class CodeGraphTool extends BaseTool {
       cmd.append(' ').append(quote(query));
     }
 
-    ShellRequest request = new ShellRequest(cmd.toString(), cwd, TIMEOUT_MS, null);
+    // 接运行取消信号：codegraph 首次查询要加载索引，可能跑几十秒；用户点停止
+    // 应当立刻终止它，而不是等超时。
+    ToolContext.CancellationSignal runCancel = context.getCancellation();
+    ShellRequest.CancellationSignal shellCancel = runCancel == null ? null : runCancel::isCancelled;
+    ShellRequest request = new ShellRequest(cmd.toString(), cwd, TIMEOUT_MS, null, shellCancel);
     ShellRequest.ShellResult result = resolution.getBackend().execute(request, null);
 
     String out = result.getStdout() == null ? "" : result.getStdout();
