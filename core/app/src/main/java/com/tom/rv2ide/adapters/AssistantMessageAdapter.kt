@@ -963,6 +963,44 @@ class AssistantMessageAdapter(
     }
   }
 
+  // ---- 跨视图重建的状态搬运（见 ChatRenderStore） ----
+
+  /**
+   * 本适配器全部渲染态的不可变快照。
+   *
+   * <p><b>为什么需要它</b>：视图重建时适配器（连同它的条目与 id 计数器）会归零，此前只能
+   * `clear()` + 从磁盘回放重新填。把状态搬到一个进程级持有者上（[com.tom.rv2ide.artificial.agent.ChatRenderStore]），
+   * 新视图就能直接接管，列表与流式气泡指针原样保留。
+   *
+   * <p>条目是**不可变 data class**（见 [Item] 的类注释），因此这里可以直接共享引用，
+   * 不需要深拷贝——搬运后没有任何一方能就地改写它们。
+   *
+   * <p>`nextId` 必须一起搬：漏了的话新适配器从 0 重新分配 id，与仍在视图里的
+   * `streamingMessageId` / `toolCardIdByCallId`（它们记的是旧 id）对不上，后续增量会另起气泡。
+   */
+  data class State(val items: List<Item>, val nextId: Long, val isRunActive: Boolean)
+
+  /** 导出当前状态，供 [restoreState] 在新视图里恢复。 */
+  fun exportState(): State = State(items.toList(), nextId, isRunActive)
+
+  /**
+   * 用 [exportState] 的快照恢复。
+   *
+   * <p>只用于「视图重建后接管」，因此不发增量通知——此刻还没有绑定到 RecyclerView
+   * （`adapter` 是在 [FloatingAssistantView.attach] 里才设给列表的），发通知没有接收者。
+   * 接管完成后由视图发一次整表 `notifyItemRangeChanged` 触发渲染。
+   *
+   * <p>批量深度与运行态一并重置：批量模式只在回放期间有效，跨重建没有意义。
+   */
+  fun restoreState(state: State) {
+    items.clear()
+    items.addAll(state.items)
+    nextId = state.nextId
+    batchDepth = 0
+    batchDirty = false
+    isRunActive = state.isRunActive
+  }
+
   // ---- 批量模式（历史回放分帧） ----
 
   /**

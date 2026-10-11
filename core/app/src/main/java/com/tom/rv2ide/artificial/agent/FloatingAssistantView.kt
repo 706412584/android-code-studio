@@ -259,7 +259,64 @@ class FloatingAssistantView(
         }
       }
 
-  private val adapter =
+  /**
+   * 跨视图重建存活的渲染槽位（见 [ChatRenderStore]）。
+   *
+   * <p>适配器与全部按会话的渲染指针都放在这里，因此视图重建（配置变更 / 系统回收）后
+   * 新视图能接管同一个适配器实例，列表与流式指针原样保留——不再需要「清空 + 回放」。
+   *
+   * <p>lazy：`orchestrator` 本身是 lazy，构造期取用会触发它提前初始化。
+   */
+  private val renderSlot by lazy { ChatRenderStore.slotFor(orchestrator) }
+
+  /** 本视图自建的适配器；接管槽位里的既有适配器时为 null。 */
+  private var localAdapter: AssistantMessageAdapter? = null
+
+  /**
+   * 消息列表的数据源。
+   *
+   * <p>**优先接管槽位里的既有适配器**：视图重建时上一个视图已 dispose，槽位里的适配器
+   * 仍然装着全部消息与正确的 id 计数器，直接复用即可——这是「切后台回来不重绘」的全部机制。
+   *
+   * <p>三种情形自建：槽位为空（首个视图）、槽位里的适配器属于**另一个会话**
+   * （共享 orchestrator 时用户在别的入口切了会话）、槽位已被另一个存活视图占用
+   * （一个 `RecyclerView.Adapter` 不能同时挂在两个列表上）。
+   *
+   * <p>自建的那份**写回槽位**——否则下一次重建时槽位里还是旧的那份，接管不到最新内容。
+   */
+  private val adapter: AssistantMessageAdapter
+    get() {
+      localAdapter?.let {
+        return it
+      }
+      val slot = renderSlot
+      val existing = slot.adapter
+      // 复用判据刻意宽松：只排除「确定属于别的会话」这一种情况。
+      //
+      // 不能拿 orchestrator.activeConversationId 来判——attach() 时它可能还是 null
+      // （首个视图尚未 open），拿 null 去比会把「同一会话」误判成「不同会话」而丢弃列表。
+      // 真正决定该不该换适配器的是 restoreConversationIfNeeded / doOpenConversation 里
+      // 的会话切换，它们在切会话时会显式清空适配器（见 [clearSlotAdapterIfOtherConversation]）。
+      val displayed = slot.displayedConversationId ?: orchestrator.activeConversationId
+      val reusable =
+          existing != null &&
+              slot.owner?.get() == null &&
+              (slot.conversationId == null || slot.conversationId == displayed)
+      if (reusable) {
+        localAdapter = existing
+        slot.owner = java.lang.ref.WeakReference(this)
+        return existing!!
+      }
+      return newAdapter().also {
+        localAdapter = it
+        slot.adapter = it
+        slot.conversationId = displayed
+        slot.owner = java.lang.ref.WeakReference(this)
+      }
+    }
+
+  /** 造一个配好外观与折叠策略的适配器。 */
+  private fun newAdapter(): AssistantMessageAdapter =
       AssistantMessageAdapter(uiStyleStore).apply {
         // 思考块的折叠策略由偏好决定（见 AssistantThinkingCollapsePref）。
         // 在构造后立即读一次：默认值（true）已与偏好默认一致，但用户可能改过。
@@ -316,8 +373,8 @@ class FloatingAssistantView(
    * <p>只在主线程读写：写入来自 TOOL_FINISHED（主线程分支），取走发生在 RUN_FINISHED
    * （同样主线程），因此用普通 MutableMap 即可，不需要并发容器。
    */
-  private val pendingDiffs =
-      HashMap<String, MutableList<Pair<String, String?>>>()
+  private val pendingDiffs: MutableMap<String, MutableList<Pair<String, String?>>>
+    get() = renderSlot.pendingDiffs
 
   /**
    * 正在运行的工具的实时输出累积（键 = 工具卡片 id）。
@@ -326,11 +383,16 @@ class FloatingAssistantView(
    * TOOL_FINISHED 时移除——键消失即「该工具不再运行」，浮动状态条据此切换运行态。
    * 写入只在主线程（与 pendingDiffs 同一纪律）。
    */
-  private val runningToolOutput = HashMap<Long, StringBuilder>()
+  private val runningToolOutput: MutableMap<Long, StringBuilder>
+    get() = renderSlot.runningToolOutput
 
   /** 当前正在运行的工具卡片 id；无运行中工具时为 null。与 ui.lastToolCardId 的区别：
    * 它跨会话全局唯一——PROGRESS 不带会话校验也能安全找到目标。 */
-  private var runningToolCardId: Long? = null
+  private var runningToolCardId: Long?
+    get() = renderSlot.runningToolCardId
+    set(value) {
+      renderSlot.runningToolCardId = value
+    }
 
   /**
    * 工具调用 id → 卡片 id 的映射（**并行执行的核心配对表**）。
@@ -343,7 +405,8 @@ class FloatingAssistantView(
    * <p>只在主线程读写（TOOL_STARTED/FINISHED/PROGRESS 都切到 Main）。TOOL_FINISHED 时
    * 不移除条目：迟到的 PROGRESS（网络抖动重排）仍能找到目标卡片，条目随会话回放清空。
    */
-  private val toolCardIdByCallId = HashMap<String, Long>()
+  private val toolCardIdByCallId: MutableMap<String, Long>
+    get() = renderSlot.toolCardIdByCallId
 
   /**
    * 每个会话最近一次事件流写到哪张卡片。
@@ -351,32 +414,15 @@ class FloatingAssistantView(
    * <p>多会话并行时，同一个视图的 [adapter] 只显示一个会话的消息，因此这些「最近卡片」
    * 指针必须按会话隔离，否则 A 会话的 TOOL_FINISHED 会回填到 B 会话的卡片上。
    */
-  private class SessionUiState {
-    var streamingMessageId: Long? = null
-    var lastToolCardId: Long? = null
-    var lastThinkingId: Long? = null
-    var streamedThisRun: Boolean = false
-    var retryCountThisRun: Int = 0
-    var retryCardPinned: Boolean = false
-
-    /**
-     * 本次运行的起始时刻（`SystemClock.elapsedRealtime()`）；0 表示未在运行。
-     *
-     * <p>为什么必须视图侧自己记：`AgentSession` 的 `startedAt` 是方法内局部变量，
-     * `turnStarted` / `turnFinished` 事件都不带时间戳，`AgentRunResult` 也只有
-     * turns / toolCallCount。要在协议层补时间戳就得改事件契约与全部构造点，
-     * 而「这一轮花了多久」只是展示信息——在入口记两个时刻成本低得多。
-     *
-     * <p>用 `elapsedRealtime` 而不是 `currentTimeMillis`：后者会被系统对时调整，
-     * 跨一次校时就会算出负耗时。
-     */
-    var runStartedAtMs: Long = 0L
-
-    /** 本轮收尾的助手消息 id；耗时最终回填到它身上。 */
-    var runEndMessageId: Long? = null
-  }
-
-  private val sessionUi = ConcurrentHashMap<String, SessionUiState>()
+  /**
+   * 按会话的渲染指针。
+   *
+   * <p>**委托到 [renderSlot]**：这些指针记录「流式气泡 / 最近卡片」的 id，跨视图重建必须
+   * 存活——只留列表、丢掉指针的话，重建后到达的 `TEXT_DELTA` 找不到 `streamingMessageId`
+   * 会另起一段气泡，正文被劈成两条。类型定义见 [SessionUiState]。
+   */
+  private val sessionUi: MutableMap<String, SessionUiState>
+    get() = renderSlot.sessionUi
 
   private fun uiState(conversationId: String): SessionUiState =
       sessionUi.getOrPut(conversationId) { SessionUiState() }
@@ -445,8 +491,17 @@ class FloatingAssistantView(
    * <p>事件入口据此过滤：只有属于当前显示会话的事件才写控件；后台会话的事件仍由
    * orchestrator 的 PersistingListener 落盘（不丢内容），只是不渲染。用户切回该会话时
    * 走 [doOpenConversation] 从日志回放。
+   *
+   * <p>赋值同步到 [renderSlot] 的 `displayedConversationId`（视图认为在看什么）。
+   * **不**同步 `conversationId`——那个描述的是「适配器里装的是什么」，两者在切会话时
+   * 会短暂不一致（先标记显示、再由回放换掉内容）。混用会让重建时把旧内容当新会话复用。
+   * `conversationId` 只在适配器内容真正换成该会话后更新（见 [replayMessages] / [startRun]）。
    */
-  private var displayedConversationId: String? = null
+  private var displayedConversationId: String?
+    get() = renderSlot.displayedConversationId
+    set(value) {
+      renderSlot.displayedConversationId = value
+    }
 
   private var workspace: java.io.File? = null
 
@@ -752,6 +807,9 @@ class FloatingAssistantView(
     binding.assistantMessages.adapter = adapter
     // 工具结果图片的解码要在视图销毁时一并取消，因此用本视图的 lifecycleScope，
     // 而不是让适配器自建一个（那样会在 detach 后仍往 ImageView 里写）。
+    //
+    // **接管槽位里的既有适配器时必须重赋**：那几个回调原先闭包的是上一个（已销毁的）
+    // 视图，不重赋会让点击回滚、长按菜单落到 detach 的控件上。
     adapter.imageScope = lifecycleScope
 
     adapter.setOnRevertClickListener { messageId, diffId -> revertDiff(messageId, diffId) }
@@ -764,6 +822,12 @@ class FloatingAssistantView(
     val registry = orchestrator.buildRegistry(false, null)
     adapter.setCategoryResolver { toolName ->
         registry.getCachedDisplayCategory(com.tom.rv2ide.ai.tool.ToolRegistry.canonicalName(toolName))
+    }
+
+    // 接管了槽位里的既有适配器时，列表里已经有内容——此刻 RecyclerView 刚拿到 adapter，
+    // 首帧只渲染可见窗口。请求滚到底，使重建后停在最新内容（与 open() 的兜底一致）。
+    if (adapter.itemCount > 0) {
+      binding.assistantMessages.post { composePanel?.requestScrollToBottom("attach") }
     }
 
     // Compose 渲染路径（2026-10-09 起默认开）。接在适配器配置之后：面板要读适配器快照，
@@ -1303,16 +1367,20 @@ class FloatingAssistantView(
     // 注销内存画像：与注册对称。不注销会让 registry 持有本视图（及其 binding），
     // 表现为 memory_analysis 报告里的视图数只增不减（泄漏）。
     com.tom.rv2ide.artificial.agent.tool.MemoryStatsRegistry.unregister(memoryStatsProvider)
-    // 丢弃未汇总的改动记录：视图已销毁，它们永远不会被渲染成卡片了。
-    // 不清理虽然随本视图一起被回收（不是进程级泄漏），但留着会让「这个会话还有
-    // 待汇总改动」这个判断在别处读到陈旧数据。
-    pendingDiffs.clear()
+    // **不清 pendingDiffs**：它现在归 [renderSlot]（跨重建存活），清掉会让重建后
+    // 汇总不出本轮改动。真正该清的是「会话被删除」与「本轮结束已汇总」两处，各在那里清。
+    //
+    // **不断开槽位里的适配器**：正是靠它存活，新视图才能接管。只把 owner 让出来，
+    // 使新视图可以接手（重建顺序是「旧 dispose → 新 attach」）。
+    renderSlot.owner?.let { if (it.get() === this) renderSlot.owner = null }
     // 注销 Compose 面板对适配器的数据观察者。适配器是本类的字段、(可能)与其它视图共享
     // orchestrator 的生命周期，不注销会让它继续持有面板的 mutableStateOf 与消息快照。
     // 未决提问同样要收尾，否则提问方一直等到超时（见 uninstallComposePanel）。
     composePanel?.cancelPendingQuestion()
     composePanel?.state?.dispose()
     composePanel = null
+    // 本视图自建的适配器随视图回收；接管来的那份仍归槽位（不能置空 localAdapter 之外的引用）。
+    localAdapter = null
   }
 
   /**
@@ -1759,6 +1827,18 @@ class FloatingAssistantView(
     // 用户在当前视图里发消息，就是要看这个会话：切显示过去，并清掉上一会话的渲染指针。
     displayedConversationId = conversationId
     lastOpenedConversationId = conversationId
+    // 适配器里若还装着**别的会话**的内容，先清空——留着旧会话的条目会把两段对话混在一个
+    // 列表里。何时会发生：视图重建后接管了槽位里的适配器（它装着会话 A），而用户此刻在
+    // 会话 B 里发消息（多会话并行的常规操作）。从前适配器随视图走、重建后必为空，
+    // 所以不需要这一步；现在适配器跨重建存活，就必须显式判断。
+    //
+    // 放在这里而不是 execute()：execute 在该会话已运行时直接入队返回，那种情况下
+    // 不该动列表（用户看的是它正在跑的内容）。
+    if (renderSlot.conversationId != null && renderSlot.conversationId != conversationId) {
+      adapter.clear()
+    }
+    // 本次运行的内容即将写进适配器：此刻起适配器属于本会话。
+    renderSlot.conversationId = conversationId
     // 先登记回显标记再画气泡：orchestrator 广播该消息时会命中它，避免画第二遍。
     markLocalEcho(conversationId, userRequest)
     adapter.append(AssistantMessageAdapter.Role.USER, userRequest)
@@ -2087,6 +2167,19 @@ class FloatingAssistantView(
           ui.lastThinkingId = null
           ui.lastToolCardId = null
           ui.streamedThisRun = false
+          // 新一轮开始：清掉上一轮留下的重试结论（计数 + 卡片固定标记）。
+          //
+          // **必须在这里清，不能只靠 startRun**：startRun 只在**发起运行的视图**里跑，
+          // 而运行可能由另一个入口发起（侧边栏 ↔ 全屏）。此前另一个视图发起新一轮时，
+          // 本视图的 retryCardPinned 仍是 true——RUN_FINISHED 又因「固定」刻意保留
+          // 卡片，于是上一轮的「重试 N 次仍失败，已停止」永久残留在屏幕上，
+          // 用户看到的正是「切回来后还挂着一条已停止的重试卡片」。
+          // RUN_STARTED 是每个订阅者都收到的起点事件，清理放这里才覆盖全部入口。
+          ui.retryCountThisRun = 0
+          ui.retryCardPinned = false
+          if (displayedConversationId == conversationId) {
+            hideRetryCard()
+          }
           // 工具组的自动折叠依赖「是否有运行在进行」：只有运行中且位于末尾的组默认展开。
           // 不置位的话，末组会在运行期间就折叠起来，用户看不到正在跑的工具。
           //
@@ -2136,6 +2229,8 @@ class FloatingAssistantView(
           // 那时会再收到 RUN_STARTED。这里先按「已结束」收尾，由后续事件重新点亮。
           setRunningUi(false)
           binding.assistantWorking.stopWorking()
+          // 运行真正结束：收尾窗口关闭，长按强制打断不再有意义（运行已不在）。
+          inputBar.canForceStop = false
           if (!ui.retryCardPinned) {
             hideRetryCard()
           }
@@ -2517,6 +2612,13 @@ class FloatingAssistantView(
     // 会有一段「点了没反应」的空窗。
     setRunningUi(false)
     binding.assistantWorking.stopWorking()
+    // 软打断后的收尾窗口：运行仍在（工具正被终止、或某个不支持取消的工具在等超时），
+    // 但 UI 已回到非忙碌。置 canForceStop 让长按强制打断保持可用——不置的话按钮
+    // 变回「发送」且空输入时整体禁用，用户在这个窗口里再点/长按都是死键
+    // （实测「停止要连点几次」的来源之一）。
+    if (isConversationRunning(displayed)) {
+      inputBar.canForceStop = true
+    }
   }
 
   /**
@@ -3668,6 +3770,10 @@ class FloatingAssistantView(
    */
   private fun replayMessages(messages: List<com.tom.rv2ide.ai.protocol.ModelMessage>) {
     adapter.clear()
+    // 此刻起适配器里装的就是当前显示的会话：更新槽位的会话标记，供重建时判断能否复用。
+    // **必须在这里而不是 displayedConversationId 的 setter 里**：setter 在切会话时先跑，
+    // 那会儿适配器还是**上一个会话**的内容，提前标记会让重建复用旧内容（显示错会话）。
+    renderSlot.conversationId = displayedConversationId
     // 重置**当前显示会话**的渲染指针（不是全局字段——那些已按会话隔离）。
     displayedConversationId?.let { id ->
       val ui = uiState(id)
@@ -3675,6 +3781,12 @@ class FloatingAssistantView(
       ui.streamedThisRun = false
       ui.lastThinkingId = null
       ui.lastToolCardId = null
+      // 重试卡片是瞬时结论：重新打开一个会话时先收掉，由该会话后续的实时事件
+      // 重新点亮（新一轮失败会再置它）。不清的话，「上一轮固定住的失败结论」
+      // 会跨会话切换一直挂着——实测从全屏切回侧边栏后仍残留「重试 N 次仍失败，已停止」。
+      ui.retryCountThisRun = 0
+      ui.retryCardPinned = false
+      hideRetryCard()
     }
     // 配对表随回放清空：旧会话的调用 id 不再指向任何卡片（卡片已随 clear 消失），
     // 留着只会让迟到的事件找到过期 id。实时路径的条目由新的 TOOL_STARTED 重建。
@@ -3938,6 +4050,15 @@ class FloatingAssistantView(
     cancel(deletedId)
     executionJobs.remove(deletedId)
     sessionUi.remove(deletedId)
+    // 槽位里那个适配器若正显示被删的会话，把它标记为「无会话」：适配器随后会被
+    // clear()（见下方 withContext），但标记必须一起清，否则重建时会把一个空适配器
+    // 当成「该会话已有内容」而复用，列表停在空白。
+    if (renderSlot.conversationId == deletedId) {
+      renderSlot.conversationId = null
+    }
+    if (renderSlot.displayedConversationId == deletedId) {
+      renderSlot.displayedConversationId = null
+    }
     // 被删的正是订阅中的会话时要退订：它的文件已不存在，继续收它的增量没有意义，
     // 且 handleEvent 会往一个已清空的列表里写。
     if (subscribedConversationId == deletedId) {
