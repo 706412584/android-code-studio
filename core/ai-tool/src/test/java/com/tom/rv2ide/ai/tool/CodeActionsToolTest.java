@@ -220,4 +220,34 @@ class CodeActionsToolTest {
     assertFalse(tool.isAllowedInReadonlyMode());
     assertFalse(tool.isConcurrencySafe());
   }
+
+  /**
+   * schema 结构回归：required 必须在顶层，且 properties 的每一项都必须是对象。
+   *
+   * <p>历史 bug（2026-10-12 真机验证发现）：required 被误嵌进 properties 内部，
+   * 生成非法 JSON Schema。严格校验的服务商（agnes）直接 400 拒绝整个请求——
+   * 工具列表里只要有它就全部请求失败。假服务器不校验 schema，单元测试只查
+   * 「required 含哪些名字」也查不出嵌套位置，所以单列这个结构断言。
+   */
+  @Test
+  void parametersSchemaHasRequiredAtTopLevel() throws Exception {
+    JSONObject params = new CodeActionsTool().getParameters();
+    assertEquals("object", params.optString("type"));
+    JSONObject props = params.optJSONObject("properties");
+    assertTrue(props != null && props.length() > 0, "properties 不能为空");
+    // 顶层 required：存在、是数组、含两个必填项。
+    org.json.JSONArray required = params.optJSONArray("required");
+    assertTrue(required != null, "required 必须在顶层");
+    assertEquals(2, required.length(), "required 应含 file_path 与 action");
+    // 反向断言：properties 内绝不能有名为 required 的项（旧 bug 的形态）。
+    assertFalse(props.has("required"), "required 不得嵌套在 properties 内");
+    // properties 的每一项都必须是 schema 对象（数组/字符串会导致服务商 400）。
+    for (java.util.Iterator<String> it = props.keys(); it.hasNext(); ) {
+      String key = it.next();
+      Object value = props.get(key);
+      assertTrue(
+          value instanceof JSONObject,
+          "properties." + key + " 必须是 schema 对象，实际是 " + value.getClass().getSimpleName());
+    }
+  }
 }
