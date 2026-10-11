@@ -152,6 +152,27 @@ public final class ToolNames {
      * 面向 SPA 与需要视觉确认的场景。只读浏览，不支持点击/表单交互。
      */
     public static final String BROWSER = "browser";
+    /** 压缩 / 解压 zip（手机上处理 SDK/依赖包、打包、备份）。 */
+    public static final String ARCHIVE = "archive";
+    /**
+     * 代码导航：经语言服务器跳定义 / 找引用。
+     *
+     * <p>按符号语义匹配，胜过文本 grep（同名符号不会被误判）。语言服务器已实现这两项，
+     * 复用其符号索引即可。只读。
+     */
+    public static final String LSP_NAVIGATE = "lsp_navigate";
+    /**
+     * 项目结构查询：模块、Android 变体、每个变体的真实 Gradle 任务名。
+     *
+     * <p>让模型不用猜模块名/任务名（猜错会让 gradle_build 白跑一次）。只读。
+     */
+    public static final String PROJECT_INFO = "project_info";
+    /**
+     * 代码格式化：经语言服务器格式化源文件（就地写回）。
+     *
+     * <p>手机上无法手动对齐格式，用语言服务器的 formatter 比让模型猜缩进可靠。
+     */
+    public static final String FORMAT_CODE = "format_code";
 
     private static final String CUSTOM_AGENT_PREFIX = "agentx_";
     private static final String CUSTOM_MCP_PREFIX = "mcpx_";

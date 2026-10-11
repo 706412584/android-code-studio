@@ -22,6 +22,7 @@ import com.tom.rv2ide.ai.tool.GatedAnalyzer
 import com.tom.rv2ide.lsp.api.ILanguageServer
 import com.tom.rv2ide.lsp.models.DiagnosticResult
 import com.tom.rv2ide.lsp.models.DiagnosticSeverity
+import com.tom.rv2ide.projects.IProjectManager
 import java.io.File
 import java.util.Locale
 import kotlinx.coroutines.runBlocking
@@ -108,12 +109,66 @@ class ReportedDiagnosticsPort(private val serverProvider: (String) -> ILanguageS
       return if (SERVER_ID_KOTLIN == serverId) {
         DiagnosticsPort.Report.of(emptyList())
       } else {
-        DiagnosticsPort.Report.failed(
-            "语言服务器未返回分析结果：文件可能不属于当前项目的任何模块，或设置中关闭了代码分析，或分析过程出错")
+        DiagnosticsPort.Report.failed(javaNoUpdateReason(file))
       }
     }
 
     return DiagnosticsPort.Report.of(result.diagnostics.map { it.toPortItem() })
+  }
+
+  /**
+   * 诊断 Java 返回 `NO_UPDATE` 的**具体**原因，给模型可操作的指引。
+   *
+   * Java 的 `analyze` 在多种情况下都返回同一个 `NO_UPDATE` 哨兵（见类注释），其中最常见、
+   * 也最容易误导模型的是「文件不属于当前已加载的工作区」——典型场景：编辑器打开的是项目 A
+   * （工作区绑定 `ide_last_project`），而 AI 会话 cwd 指向项目 B，于是 B 的文件在 A 的
+   * 工作区里 `findModuleForFile` 恒为 null，诊断永远跑不起来。旧文案把这种情况与「关了分析」
+   * 「分析出错」混成一句模糊的「可能……或……或……」，模型无从判断该做什么。
+   *
+   * 这里按 `IProjectManager` 的当前工作区把三种情况分开，各给一条明确的下一步。
+   */
+  private fun javaNoUpdateReason(file: File): String {
+    val workspace =
+        try {
+          IProjectManager.getInstance().getWorkspace()
+        } catch (e: RuntimeException) {
+          null
+        }
+            ?: return "当前没有已完成 Gradle 同步的项目。请在编辑器中打开该文件所属的项目，" +
+                "待底部状态栏显示同步完成后再重试诊断。"
+
+    val module =
+        try {
+          workspace.findModuleForFile(file, false)
+        } catch (e: RuntimeException) {
+          null
+        }
+    if (module != null) {
+      // 文件确实在已加载的模块里：NO_UPDATE 来自设置（关闭了诊断/代码分析）或分析本身无产出。
+      return "该文件所属模块已加载，但语言服务器未产出结果——很可能是编辑器设置里关闭了" +
+          "「代码分析（code analysis）」。请在设置中开启后重试。"
+    }
+
+    val loadedProject =
+        try {
+          workspace.getProjectDir().canonicalPath
+        } catch (e: Exception) {
+          workspace.getProjectDir().absolutePath
+        }
+    val inLoadedProject =
+        try {
+          file.canonicalPath.startsWith(loadedProject)
+        } catch (e: Exception) {
+          false
+        }
+    return if (inLoadedProject) {
+      "该文件在当前项目目录内，但不属于任何已识别的 Gradle 模块（可能 Gradle 同步尚未完成，" +
+          "或该文件不在模块的源码集 src 下）。请等待同步完成，或确认文件位置后重试。"
+    } else {
+      "该文件不属于编辑器当前打开的项目。编辑器加载的项目是：$loadedProject，" +
+          "而该文件在其之外——这通常意味着 AI 会话绑定的项目与编辑器正在打开的项目不一致。" +
+          "请在编辑器中打开该文件所属的项目，待 Gradle 同步完成后再重试诊断。"
+    }
   }
 
   private fun com.tom.rv2ide.lsp.models.DiagnosticItem.toPortItem(): DiagnosticsPort.Item =

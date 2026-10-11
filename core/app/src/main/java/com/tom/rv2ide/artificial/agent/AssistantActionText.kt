@@ -77,6 +77,10 @@ object AssistantActionText {
       ToolNames.DIAGNOSTICS -> context.getString(string.ai_assistant_work_diagnostics, target)
       ToolNames.IDE_LOG_READ -> context.getString(string.ai_assistant_work_ide_log)
       ToolNames.LAYOUT_PREVIEW -> context.getString(string.ai_assistant_work_layout_preview, target)
+      ToolNames.ARCHIVE -> context.getString(string.ai_assistant_work_archive, target)
+      ToolNames.LSP_NAVIGATE -> context.getString(string.ai_assistant_work_navigate, target)
+      ToolNames.FORMAT_CODE -> context.getString(string.ai_assistant_work_formatting, target)
+      ToolNames.PROJECT_INFO -> context.getString(string.ai_assistant_work_project_info)
       // 这三个是 app 层的工具，名字常量在各自类里（不在 ToolNames 中）。
       "gradle_build" -> context.getString(string.ai_assistant_work_building)
       "install_apk" -> context.getString(string.ai_assistant_work_installing)
