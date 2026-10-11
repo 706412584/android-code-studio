@@ -108,6 +108,14 @@ public final class ToolContext {
   /** 代码格式化端口；未注入时为 null。 */
   private final CodeFormatPort codeFormat;
 
+  /**
+   * 后台命令执行端口；未注入时为 null。
+   *
+   * <p>为 null 时 {@code shell_execute} 的 {@code run_in_background} 参数不可用，
+   * {@code task_output} / {@code task_stop} 会明确报「未接入」——而不是假装成功。
+   */
+  private final BackgroundShellPort backgroundShell;
+
   private ToolContext(Builder builder) {
     this.homePath = builder.homePath == null ? "" : builder.homePath;
     this.extraWriteRoots =
@@ -126,6 +134,7 @@ public final class ToolContext {
     this.ideLog = builder.ideLog;
     this.lspNavigation = builder.lspNavigation;
     this.codeFormat = builder.codeFormat;
+    this.backgroundShell = builder.backgroundShell;
   }
 
   public String getHomePath() {
@@ -197,6 +206,11 @@ public final class ToolContext {
     return codeFormat;
   }
 
+  /** 后台命令执行端口；未注入时为 null。 */
+  public BackgroundShellPort getBackgroundShell() {
+    return backgroundShell;
+  }
+
   /**
    * 返回一个仅替换 {@code toolCallId} 的副本。
    *
@@ -219,6 +233,7 @@ public final class ToolContext {
         .ideLog(this.ideLog)
         .lspNavigation(this.lspNavigation)
         .codeFormat(this.codeFormat)
+        .backgroundShell(this.backgroundShell)
         .build();
   }
 
@@ -245,6 +260,7 @@ public final class ToolContext {
         .ideLog(this.ideLog)
         .lspNavigation(this.lspNavigation)
         .codeFormat(this.codeFormat)
+        .backgroundShell(this.backgroundShell)
         .build();
   }
 
@@ -294,6 +310,7 @@ public final class ToolContext {
     private IdeLogSource ideLog;
     private LspNavigationPort lspNavigation;
     private CodeFormatPort codeFormat;
+    private BackgroundShellPort backgroundShell;
 
     public Builder homePath(String value) {
       this.homePath = value;
@@ -367,6 +384,12 @@ public final class ToolContext {
     /** 注入代码格式化端口。 */
     public Builder codeFormat(CodeFormatPort value) {
       this.codeFormat = value;
+      return this;
+    }
+
+    /** 注入后台命令执行端口。 */
+    public Builder backgroundShell(BackgroundShellPort value) {
+      this.backgroundShell = value;
       return this;
     }
 

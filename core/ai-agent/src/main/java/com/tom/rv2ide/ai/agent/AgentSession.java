@@ -90,8 +90,44 @@ public final class AgentSession {
   private final Object injectLock = new Object();
   private final java.util.ArrayDeque<String> injectQueue = new java.util.ArrayDeque<>();
 
+  /**
+   * 系统通知槽（如「后台任务已完成」）。
+   *
+   * <p><b>为什么与用户注入分开</b>：两者的来源与渲染完全不同。用户注入要作为
+   * {@link AgentEvent.Type#USER_MESSAGE} 上报，让 UI 画出用户气泡；而系统通知不是
+   * 用户说的话，画成用户气泡会让人以为是自己发的。因此分两个槽，通知走 PROGRESS
+   * 事件（UI 只显示一行提示），但同样在「工具执行完、下一轮请求前」这个安全点注入。
+   */
+  private final java.util.ArrayDeque<String> noticeQueue = new java.util.ArrayDeque<>();
+
   /** 本实例是否还能接收注入。run 收尾（含所有 return 路径）时翻 false。 */
   private boolean acceptingInject = true;
+
+  /**
+   * 投递一条系统通知（后台任务完成等）。返回是否被接受。
+   *
+   * <p>返回 false 表示本实例已收尾、没有循环会再读——调用方应改走「状态栏通知」
+   * 之类的兜底路径，而不是把通知丢掉。
+   */
+  public boolean offerNotice(String text) {
+    if (text == null || text.trim().isEmpty()) {
+      return false;
+    }
+    synchronized (injectLock) {
+      if (!acceptingInject) {
+        return false;
+      }
+      noticeQueue.addLast(text);
+      return true;
+    }
+  }
+
+  /** 循环线程在安全边界取走一条通知；没有则返回 null。 */
+  private String pollNotice() {
+    synchronized (injectLock) {
+      return noticeQueue.pollFirst();
+    }
+  }
 
   /**
    * 尝试投递一条运行中注入。返回是否被接受。
@@ -144,6 +180,17 @@ public final class AgentSession {
     return "用户在你工作期间发来一条新消息：\n"
         + raw
         + "\n\n重要：完成当前任务后，你必须处理上面的用户消息，不要忽略它。";
+  }
+
+  /**
+   * 系统通知的包装文案。
+   *
+   * <p>与用户注入的措辞刻意不同：通知是**事实陈述**（某个后台任务结束了），
+   * 模型据此自行决定要不要处理（通常会用 {@code task_output} 看结果）。
+   * 用「你必须处理」会强迫它在无关时也去处理，浪费轮次。
+   */
+  static String wrapNotice(String raw) {
+    return "[系统通知]\n" + raw;
   }
 
   public AgentSession(ModelClient modelClient, ToolRegistry registry, ToolExecutor executor) {
@@ -320,6 +367,15 @@ public final class AgentSession {
       while ((injected = pollInject()) != null) {
         emit(listener, AgentEvent.userMessage(injected));
         messages.add(new UserModelMessage(wrapInjectedUserMessage(injected)));
+      }
+
+      // 系统通知（后台任务完成等）走同一安全点，但不作为用户消息渲染。
+      // 以 user 角色注入消息体：此刻尾部是完整 tool_result 集合，追加 user 消息
+      // 不会破坏 Anthropic 的 tool_use/tool_result 配对（见上方注释）。
+      String notice;
+      while ((notice = pollNotice()) != null) {
+        emit(listener, AgentEvent.progress(notice));
+        messages.add(new UserModelMessage(wrapNotice(notice)));
       }
 
       // 每次请求前裁剪：预算在轮次之间会因新增消息而变得不足。

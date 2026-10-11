@@ -88,7 +88,9 @@ public final class ShellExecuteTool extends BaseTool {
         + "可用于运行脚本、查看文件、调用系统命令。"
         + "命令由「后端」执行，不同后端能用的命令不同："
         + "一个提供 adb 权限（pm/am/logcat），另一个提供命令行工具链（git/node/python）。"
-        + "默认用用户设置的后端；需要另一个后端的能力时，用 backend 参数临时指定。";
+        + "默认用用户设置的后端；需要另一个后端的能力时，用 backend 参数临时指定。"
+        + "命令耗时长且你暂时不需要结果时，用 run_in_background 后台执行："
+        + "立即返回任务 id，完成时会自动通知，中间可以继续做别的事。";
   }
 
   @Override
@@ -199,7 +201,18 @@ public final class ShellExecuteTool extends BaseTool {
                             "**通常不需要填**——省略即用用户设置的后端。"
                                 + "仅当本次命令依赖某个后端独有的能力时才指定，"
                                 + "用完不必切回（它只作用于这一次调用，不改用户设置）。"
-                                + "取值见工具说明；指定不可用的后端会自动回退并说明原因。")))
+                                + "取值见工具说明；指定不可用的后端会自动回退并说明原因。"))
+                .put(
+                    "run_in_background",
+                    new JSONObject()
+                        .put("type", "boolean")
+                        .put(
+                            "description",
+                            "后台执行。适合耗时长、且你现在不需要结果的命令（大构建、"
+                                + "长测试、日志流、dev server）。设为 true 时立即返回任务 id，"
+                                + "**完成时会自动收到通知，不需要轮询**；中间可以继续做别的事。"
+                                + "用 task_output 可取回结果、task_stop 可停止。"
+                                + "不要同时用命令末尾的 '&'——用这个参数就不需要它。")))
         .put("required", new org.json.JSONArray().put("command"));
   }
 
@@ -236,6 +249,11 @@ public final class ShellExecuteTool extends BaseTool {
 
     if (context != null) {
       context.reportProgress("执行命令: " + abbreviate(command, 80));
+    }
+
+    // 后台执行：启动即返回任务句柄，不阻塞循环（见 BackgroundShellPort）。
+    if (input.optBoolean("run_in_background", false)) {
+      return startBackground(command, cwd, requestedBackend, timeout, context);
     }
 
     ShellRequest request = new ShellRequest(command, cwd, timeout, null);
@@ -275,6 +293,43 @@ public final class ShellExecuteTool extends BaseTool {
     if (result.isTimedOut()) {
       return error(sb.toString());
     }
+    return ok(sb.toString());
+  }
+
+  /**
+   * 启动一条后台命令并立即返回任务句柄。
+   *
+   * <p>端口未注入（未接入后台执行）时**明确报错**，而不是退化成同步执行——
+   * 后者会让模型以为命令已在后台跑，实际却阻塞了整个循环。
+   */
+  private ToolResult startBackground(
+      String command, String cwd, String requestedBackend, long timeout, ToolContext context) {
+    BackgroundShellPort port = context == null ? null : context.getBackgroundShell();
+    if (port == null) {
+      return error("后台执行未接入（当前运行未注入后台命令端口）。请改用同步执行，或去掉 run_in_background。");
+    }
+    if (!port.isAvailable()) {
+      return error("后台执行不可用：" + port.unavailableReason());
+    }
+
+    BackgroundShellPort.TaskStatus status =
+        port.start(command, cwd, requestedBackend, timeout);
+    if (status == null || status.getState() == BackgroundShellPort.State.FAILED) {
+      String reason = status == null ? "未知错误" : status.getError();
+      return error("后台任务启动失败：" + reason);
+    }
+
+    StringBuilder sb = new StringBuilder();
+    sb.append("已在后台启动。\n");
+    sb.append("task_id: ").append(status.getTaskId()).append('\n');
+    sb.append("command: ").append(abbreviate(command, 200)).append('\n');
+    if (!status.getOutputFilePath().isEmpty()) {
+      sb.append("output_file: ").append(status.getOutputFilePath()).append('\n');
+    }
+    sb.append(
+        "任务完成时会自动收到通知，**不需要轮询**。中间可以继续做别的事。"
+            + "需要主动取回时用 task_output（task_id 填上面的值），"
+            + "需要停止时用 task_stop。");
     return ok(sb.toString());
   }
 

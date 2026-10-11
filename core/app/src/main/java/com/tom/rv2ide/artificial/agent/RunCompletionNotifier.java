@@ -126,6 +126,67 @@ public final class RunCompletionNotifier {
     manager.notify(NOTIFICATION_ID, notification);
   }
 
+  /**
+   * 后台任务（{@code shell_execute run_in_background}）完成时的通知。
+   *
+   * <p><b>与 {@link #maybeNotify} 的区别</b>：那个是「整轮 AI 运行结束」，而这个是
+   * 「某个后台命令结束」——后者往往发生在 AI 仍在跑（继续做别的事）的时候，
+   * 因此**不能**套用「面板可见就不通知」的抑制逻辑：用户可能正看着面板，
+   * 但一条耗时命令悄悄跑完仍是值得知道的事。仅在用户明确离开（面板不可见）时
+   * 才需要提醒，可见时留给面板内的进度行。
+   *
+   * @param success 任务是否成功（退出码 0）
+   * @param conversationId 用于点击回到对应会话
+   */
+  public static void notifyBackgroundTask(
+      Context context, boolean success, String conversationId) {
+    NotificationManager manager =
+        (NotificationManager) context.getSystemService(Context.NOTIFICATION_SERVICE);
+    if (manager == null) {
+      return;
+    }
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+      NotificationChannel channel =
+          new NotificationChannel(
+              CHANNEL_ID,
+              context.getString(com.tom.rv2ide.resources.R.string.ai_agent_notify_channel),
+              NotificationManager.IMPORTANCE_DEFAULT);
+      channel.setDescription(
+          context.getString(com.tom.rv2ide.resources.R.string.ai_agent_notify_channel_desc));
+      manager.createNotificationChannel(channel);
+    }
+
+    String title =
+        context.getString(
+            success
+                ? com.tom.rv2ide.resources.R.string.ai_bg_task_done_title
+                : com.tom.rv2ide.resources.R.string.ai_bg_task_failed_title);
+    String text = context.getString(com.tom.rv2ide.resources.R.string.ai_bg_task_text);
+
+    Intent intent = context.getPackageManager().getLaunchIntentForPackage(context.getPackageName());
+    if (intent == null) {
+      return;
+    }
+    intent.putExtra("ai_conversation_id", conversationId);
+    PendingIntent contentIntent =
+        PendingIntent.getActivity(
+            context,
+            conversationId == null ? 0 : conversationId.hashCode(),
+            intent,
+            PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+
+    android.app.Notification notification =
+        new android.app.Notification.Builder(context, CHANNEL_ID)
+            .setSmallIcon(android.R.drawable.stat_sys_download_done)
+            .setContentTitle(title)
+            .setContentText(text)
+            .setAutoCancel(true)
+            .setContentIntent(contentIntent)
+            .build();
+    // 用另一个通知 id，避免覆盖正在显示的运行完成通知。
+    manager.notify(NOTIFICATION_ID + 1, notification);
+  }
+
   private static String formatDuration(long ms) {
     long seconds = ms / 1000;
     if (seconds < 60) {

@@ -166,6 +166,9 @@
   <string name="ai_agent_notify_failed_title">AI 任务失败</string>
   <string name="ai_agent_notify_text">点按查看结果</string>
   <string name="ai_agent_notify_text_with_duration">耗时 %1$s——点按查看</string>
+  <string name="ai_bg_task_done_title">后台任务已完成</string>
+  <string name="ai_bg_task_failed_title">后台任务失败</string>
+  <string name="ai_bg_task_text">点按查看输出</string>
   <string name="ai_agent_page_providers_summary">API 密钥、自定义端点、启用开关</string>
   <string name="ai_agent_page_tools_title">工具与权限</string>
   <string name="ai_agent_page_tools_summary">对话模式、权限级别、Shell 后端、代码补全</string>

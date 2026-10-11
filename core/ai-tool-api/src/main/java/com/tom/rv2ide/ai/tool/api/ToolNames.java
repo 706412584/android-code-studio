@@ -42,6 +42,20 @@ public final class ToolNames {
      */
     public static final String GREP = "grep";
     public static final String SHELL_EXECUTE = "shell_execute";
+    /**
+     * 取回后台命令的输出与状态。
+     *
+     * <p>与 {@link #SHELL_EXECUTE} 的 {@code run_in_background} 配对：启动返回任务 id，
+     * 本工具按 id 取回（可阻塞等待或非阻塞查看）。照 cc-haha 的 TaskOutput 语义。
+     */
+    public static final String TASK_OUTPUT = "task_output";
+    /**
+     * 停止一个运行中的后台任务。
+     *
+     * <p>照 cc-haha 的 TaskStop 语义：仅在任务确实失控/无用时才停，不要因为
+     * 「已经看够了输出」就停——那会浪费一次已经投入的等待。
+     */
+    public static final String TASK_STOP = "task_stop";
     public static final String AGENT = "agent";
     public static final String AGENT_PIPELINE = "agent_pipeline";
     public static final String AGENT_OUTPUT = "agent_output";

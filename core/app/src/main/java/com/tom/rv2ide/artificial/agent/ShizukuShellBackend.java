@@ -72,6 +72,9 @@ public final class ShizukuShellBackend implements ShellBackend {
   /** 单个输出流的最大读取字节数，防止 OOM。 */
   private static final int MAX_OUTPUT_BYTES = 4 * 1024 * 1024;
 
+  /** 等待进程时的分片时长：每片之后检查一次取消信号。 */
+  private static final long CANCEL_POLL_MS = 250L;
+
   private final Context appContext;
 
   public ShizukuShellBackend(Context context) {
@@ -238,7 +241,7 @@ public final class ShizukuShellBackend implements ShellBackend {
         return ShellRequest.ShellResult.error("Shizuku 未能创建进程。");
       }
 
-      return collectOutput(process, request.getTimeoutMs(), sink);
+      return collectOutput(process, request.getTimeoutMs(), sink, request);
 
     } catch (Throwable e) {
       log.error("Shizuku 命令执行失败", e);
@@ -262,20 +265,38 @@ public final class ShizukuShellBackend implements ShellBackend {
    * 若在进程结束前读取可能永久阻塞。
    */
   private ShellRequest.ShellResult collectOutput(
-      IRemoteProcess process, long timeoutMs, ShellRequest.ShellOutputSink sink) {
+      IRemoteProcess process, long timeoutMs, ShellRequest.ShellOutputSink sink,
+      ShellRequest request) {
 
     boolean timedOut = false;
     int exitCode = -1;
 
     try {
-      boolean exited =
-          process.waitForTimeout(timeoutMs, TimeUnit.MILLISECONDS.toString());
+      // 分片等待，而不是一次 waitForTimeout(timeout)：后者在等待期间无法响应取消，
+      // 后台任务被 task_stop 时只能干等到超时。每片 250ms，取消延迟可忽略。
+      long deadline = System.currentTimeMillis() + timeoutMs;
+      boolean exited = false;
+      while (true) {
+        long remaining = deadline - System.currentTimeMillis();
+        if (remaining <= 0) {
+          break;
+        }
+        if (request != null && request.isCancellationRequested()) {
+          timedOut = true;
+          break;
+        }
+        long slice = Math.min(CANCEL_POLL_MS, remaining);
+        if (process.waitForTimeout(slice, TimeUnit.MILLISECONDS.toString())) {
+          exited = true;
+          break;
+        }
+      }
       if (!exited) {
         timedOut = true;
         try {
           process.destroy();
         } catch (Throwable e) {
-          log.warn("超时后终止 Shizuku 进程失败", e);
+          log.warn("终止 Shizuku 进程失败", e);
         }
       } else {
         exitCode = process.exitValue();

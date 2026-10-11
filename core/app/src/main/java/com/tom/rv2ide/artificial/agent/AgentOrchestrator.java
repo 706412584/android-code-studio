@@ -397,6 +397,65 @@ public final class AgentOrchestrator {
     return session.offerInject(text);
   }
 
+  /**
+   * 按会话缓存的后台任务执行器。
+   *
+   * <p><b>为什么按会话缓存而不是每次运行新建</b>：后台任务的生命周期跨运行——一条
+   * 8 分钟的构建常常在本次 AI 运行结束后才跑完。若执行器随运行创建、随运行丢弃，
+   * 下一轮运行就查不到上一轮启动的任务（`task_output` 会报「找不到任务」）。
+   * 按会话持有后，同一会话的任意一轮都能取回此前启动的任务。键与会话同生命周期，
+   * 会话删除时无需专门清理（数量极少，且每个只持有一个 map）。
+   */
+  private final java.util.Map<String, BackgroundShellRunner> backgroundRunners =
+      new java.util.concurrent.ConcurrentHashMap<>();
+
+  /**
+   * 取得本会话的后台命令执行端口（不存在则创建），并把任务完成通知路由回本会话。
+   *
+   * <p><b>通知的两条路径</b>：
+   * <ul>
+   *   <li>会话仍在跑（{@code activeSessions} 命中）→ 把通知投进正在跑的循环，
+   *       模型在下一轮自动看到，无需用户介入；
+   *   <li>会话已结束 → 发一条状态栏通知（用户在别处也能知道后台命令跑完了）。
+   * </ul>
+   * 两条都不做的话，后台命令完成就石沉大海——这正是「后台执行」最容易失败的地方：
+   * 启动了却没人知道结果。
+   */
+  private BackgroundShellRunner backgroundShellRunner(String conversationId) {
+    return backgroundRunners.computeIfAbsent(
+        conversationId == null ? "" : conversationId, key -> new BackgroundShellRunner(
+        appContext,
+        status -> {
+          boolean success = status != null && status.isSuccess();
+          String notice =
+              "后台任务 "
+                  + (status == null ? "?" : status.getTaskId())
+                  + " 已"
+                  + (success ? "成功完成" : "结束（未成功）")
+                  + (status != null && status.hasExitCode()
+                      ? "（exit_code=" + status.getExitCode() + "）"
+                      : "")
+                  + "。命令: "
+                  + (status == null ? "" : abbreviateForNotice(status.getCommand()))
+                  + "\n用 task_output 取回输出（task_id="
+                  + (status == null ? "?" : status.getTaskId())
+                  + "）。";
+          AgentSession session = activeSessions.get(conversationId);
+          if (session == null || !session.offerNotice(notice)) {
+            // 会话不在跑：退回状态栏通知。
+            RunCompletionNotifier.notifyBackgroundTask(appContext, success, conversationId);
+          }
+          return kotlin.Unit.INSTANCE;
+        }));
+  }
+
+  private static String abbreviateForNotice(String command) {
+    if (command == null) {
+      return "";
+    }
+    return command.length() <= 80 ? command : command.substring(0, 80) + "…";
+  }
+
   /** 该会话队列的只读投影（面板渲染用）；无队列时为空列表。 */
   public List<QueuedEntry> queuedEntries(String conversationId) {
     if (conversationId == null || conversationId.isEmpty()) {
@@ -1315,6 +1374,10 @@ public final class AgentOrchestrator {
     // 效果只落在自己那份上——用户切后端后，一部分工具还走旧后端，行为不一致且难排查。
     ShellBackendRegistry shellBackends = buildShellBackends();
     registry.register(new ShellExecuteTool(shellBackends));
+    // 后台任务取回 / 停止（与 shell_execute 的 run_in_background 配对）。
+    // 端口在 executeRun 里注入（需要 app 层实现 + 完成回调）。
+    registry.register(new com.tom.rv2ide.ai.tool.TaskOutputTool());
+    registry.register(new com.tom.rv2ide.ai.tool.TaskStopTool());
 
     // CodeGraph 代码知识图谱（复用同一个 shell 后端执行 acs-codegraph）。
     // 注册后助手才能主动按符号查源码/调用关系/影响面，而不是靠 shell_execute 手敲
@@ -1988,6 +2051,9 @@ public final class AgentOrchestrator {
                     id ->
                         com.tom.rv2ide.lsp.api.ILanguageServerRegistry.getDefault()
                             .getServer(id)))
+            // 后台命令执行端口：shell_execute 的 run_in_background 走它。
+            // 完成回调把通知投进本会话正在跑的循环（会话不在跑则退回状态栏通知）。
+            .backgroundShell(backgroundShellRunner(conversationId))
             .build();
 
     List<ConversationLog.EntryLocation> entries = loadEntries(conversationId);
