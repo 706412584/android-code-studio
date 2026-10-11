@@ -238,6 +238,12 @@ class EditorViewModel : ViewModel() {
                     } catch (err: IOException) {
                       // ignore exception
                       null
+                    } catch (err: IllegalStateException) {
+                      // 没有打开项目时 projectDir 会抛 IllegalStateException（"Path has not
+                      // been set."）。此时本就没有 openedFiles 缓存可读，按「无缓存」处理。
+                      // 不吞掉它会让 onStart 的协程崩掉整个进程（外层 try/catch 抓不到协程内
+                      // 的异常）——无项目状态下启动编辑器 Activity 就会闪退。
+                      null
                     }
 
                 withContext(Dispatchers.Main) { result(cache) }
