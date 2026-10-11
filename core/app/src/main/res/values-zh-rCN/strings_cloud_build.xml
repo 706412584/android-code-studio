@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="utf-8"?><!--
+  ~  This file is part of AndroidCodeStudio.
+  ~
+  ~  AndroidCodeStudio is free software: you can redistribute it and/or modify
+  ~  it under the terms of the GNU General Public License as published by
+  ~  the Free Software Foundation, either version 3 of the License, or
+  ~  (at your option) any later version.
+  -->
+<!--
+  云打包（GitHub Actions）文案（中文）。
+  与 values/strings_cloud_build.xml 保持同序，便于对照维护。
+-->
+<resources>
+
+  <!-- 入口与标题 -->
+  <string name="cloud_build_title">云打包</string>
+  <string name="cloud_build_action_label">云打包</string>
+
+  <!-- 检测阶段 -->
+  <string name="cloud_build_detecting_repo">正在识别项目仓库…</string>
+  <string name="cloud_build_no_project">当前没有打开的项目，请先打开一个项目。</string>
+  <string name="cloud_build_not_git_repo">这个项目还不是 git 仓库。请先初始化仓库并推送到 GitHub。</string>
+  <string name="cloud_build_no_github_remote">没有找到 GitHub 远程仓库。云打包目前只支持 GitHub Actions。</string>
+  <string name="cloud_build_no_workflow_local">仓库里没有 workflow 文件。请先添加 .github/workflows/build.yml 并推送。</string>
+  <string name="cloud_build_workflow_not_pushed">远程仓库上没有找到 workflow。本地这些文件还没有推送：%1$s。请先把代码推送到 GitHub。</string>
+
+  <!-- 配置 -->
+  <string name="cloud_build_repo">仓库：%1$s</string>
+  <string name="cloud_build_workflow_hint">Workflow</string>
+  <string name="cloud_build_branch_hint">分支</string>
+  <string name="cloud_build_token_configured">已配置 GitHub Token</string>
+  <string name="cloud_build_token_missing">尚未配置 GitHub Token——触发构建必须要它。</string>
+  <string name="cloud_build_configure_token">配置 Token</string>
+  <string name="cloud_build_select_workflow">请先选择 workflow。</string>
+  <string name="cloud_build_input_branch">请填写分支。</string>
+  <string name="cloud_build_start">开始构建</string>
+  <string name="cloud_build_retry">重试</string>
+  <string name="cloud_build_close">关闭</string>
+
+  <!-- 触发与进度 -->
+  <string name="cloud_build_triggering">正在触发 workflow，等待新的运行记录出现…</string>
+  <string name="cloud_build_jobs_pending">等待 job 出现…</string>
+  <string name="cloud_build_stop_tracking">停止跟踪</string>
+  <string name="cloud_build_tracking_stopped">已停止跟踪。构建仍在 GitHub 上继续。</string>
+  <string name="cloud_build_poll_failed">进度刷新失败：%1$s</string>
+
+  <!-- 结果 -->
+  <string name="cloud_build_failure_title">失败原因（日志片段）</string>
+  <string name="cloud_build_fetching_log">正在获取日志…</string>
+  <string name="cloud_build_copy_log">复制日志</string>
+  <string name="cloud_build_log_copied">日志已复制到剪贴板</string>
+  <string name="cloud_build_artifacts_title">构建产物</string>
+  <string name="cloud_build_no_artifacts">这次运行没有产物。</string>
+  <string name="cloud_build_artifact_list_failed">无法获取产物列表：%1$s</string>
+  <string name="cloud_build_artifact_expired">%1$s（已过期）</string>
+  <string name="cloud_build_artifact_size">%1$s（%2$s）</string>
+  <string name="cloud_build_download">下载</string>
+  <string name="cloud_build_downloading">下载中…</string>
+  <string name="cloud_build_downloaded">已下载</string>
+  <string name="cloud_build_downloaded_to">已保存到：%1$s</string>
+  <string name="cloud_build_build_again">再次构建</string>
+  <string name="cloud_build_open_run_page">在浏览器打开</string>
+  <string name="cloud_build_no_run_page">这次运行没有页面链接。</string>
+  <string name="cloud_build_open_page_failed">无法打开运行页面。</string>
+
+  <!-- Token 配置 -->
+  <string name="cloud_build_token_title">GitHub Token</string>
+  <string name="cloud_build_token_hint">Personal Access Token</string>
+  <string name="cloud_build_token_help">请在 GitHub 上创建一个带 repo 与 workflow 权限的 Personal Access Token（classic），然后粘贴到这里。它在本机加密保存，仅用于触发和跟踪构建。</string>
+  <string name="cloud_build_token_not_persistent">本机加密存储不可用——Token 只在本次会话内有效。</string>
+  <string name="cloud_build_token_save">保存</string>
+  <string name="cloud_build_token_saved">Token 已保存</string>
+</resources>

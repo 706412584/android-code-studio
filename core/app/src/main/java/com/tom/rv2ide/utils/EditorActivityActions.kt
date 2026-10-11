@@ -21,6 +21,7 @@ import com.tom.rv2ide.actions.ActionItem.Location.EDITOR_FILE_TABS
 import com.tom.rv2ide.actions.ActionItem.Location.EDITOR_FILE_TREE
 import com.tom.rv2ide.actions.ActionItem.Location.EDITOR_TOOLBAR
 import com.tom.rv2ide.actions.ActionsRegistry
+import com.tom.rv2ide.actions.build.CloudBuildAction
 import com.tom.rv2ide.actions.build.ProjectSyncAction
 import com.tom.rv2ide.actions.build.QuickRunWithCancellationAction
 import com.tom.rv2ide.actions.build.RunTasksAction
@@ -80,6 +81,8 @@ class EditorActivityActions {
       registry.registerAction(PreviewLayoutAction(context, order++))
       registry.registerAction(FindActionMenu(context, order++))
       registry.registerAction(ProjectSyncAction(context, order++))
+      // 云打包（GitHub Actions）——与上面几个构建动作同类，用户找「打包」时的第一落点。
+      registry.registerAction(CloudBuildAction(context, order++))
       
       // registry.registerAction(ReloadColorSchemesAction(context, order++))
       registry.registerAction(DisconnectLogSendersAction(context, order++))
