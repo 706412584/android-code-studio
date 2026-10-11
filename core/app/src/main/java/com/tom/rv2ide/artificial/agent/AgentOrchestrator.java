@@ -2054,6 +2054,9 @@ public final class AgentOrchestrator {
             // 后台命令执行端口：shell_execute 的 run_in_background 走它。
             // 完成回调把通知投进本会话正在跑的循环（会话不在跑则退回状态栏通知）。
             .backgroundShell(backgroundShellRunner(conversationId))
+            // 文档同步端口：file_write/file_edit 写盘后通知编辑器刷新，
+            // 避免「编辑器显示旧内容」以及自动保存覆盖 AI 修改。
+            .documentSync(new ReportedDocumentSyncPort())
             .build();
 
     List<ConversationLog.EntryLocation> entries = loadEntries(conversationId);

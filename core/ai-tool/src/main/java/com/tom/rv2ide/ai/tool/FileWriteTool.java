@@ -91,6 +91,9 @@ public final class FileWriteTool extends BaseTool {
             }
             int lineCount = input.optString("content").split("\n", -1).length;
             String message = ToolMessages.format(existed ? ToolMessages.FILE_WRITE_UPDATED : ToolMessages.FILE_WRITE_CREATED, path, lineCount);
+            // 通知编辑器刷新：否则打开着该文件的编辑器仍是旧内容，用户随手一改触发
+            // 自动保存会把 AI 的修改整段覆盖回磁盘（见 DocumentSyncPort）。
+            DocumentSync.notifyChanged(context, file);
             // 搭车诊断：把写完后（新建时尤其容易漏 import/签名）的编译错误直接附上。
             String diagnostics = FileDiagnostics.describe(context, file);
             return ok(diagnostics.isEmpty() ? message : message + "\n" + diagnostics);

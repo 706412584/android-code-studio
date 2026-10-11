@@ -116,6 +116,13 @@ public final class ToolContext {
    */
   private final BackgroundShellPort backgroundShell;
 
+  /**
+   * 文档同步端口；未注入时为 null。
+   *
+   * <p>为 null 时写盘后不通知编辑器（旧行为），不影响写盘本身。
+   */
+  private final DocumentSyncPort documentSync;
+
   private ToolContext(Builder builder) {
     this.homePath = builder.homePath == null ? "" : builder.homePath;
     this.extraWriteRoots =
@@ -135,6 +142,7 @@ public final class ToolContext {
     this.lspNavigation = builder.lspNavigation;
     this.codeFormat = builder.codeFormat;
     this.backgroundShell = builder.backgroundShell;
+    this.documentSync = builder.documentSync;
   }
 
   public String getHomePath() {
@@ -211,6 +219,11 @@ public final class ToolContext {
     return backgroundShell;
   }
 
+  /** 文档同步端口；未注入时为 null。 */
+  public DocumentSyncPort getDocumentSync() {
+    return documentSync;
+  }
+
   /**
    * 返回一个仅替换 {@code toolCallId} 的副本。
    *
@@ -234,6 +247,7 @@ public final class ToolContext {
         .lspNavigation(this.lspNavigation)
         .codeFormat(this.codeFormat)
         .backgroundShell(this.backgroundShell)
+        .documentSync(this.documentSync)
         .build();
   }
 
@@ -261,6 +275,7 @@ public final class ToolContext {
         .lspNavigation(this.lspNavigation)
         .codeFormat(this.codeFormat)
         .backgroundShell(this.backgroundShell)
+        .documentSync(this.documentSync)
         .build();
   }
 
@@ -311,6 +326,7 @@ public final class ToolContext {
     private LspNavigationPort lspNavigation;
     private CodeFormatPort codeFormat;
     private BackgroundShellPort backgroundShell;
+    private DocumentSyncPort documentSync;
 
     public Builder homePath(String value) {
       this.homePath = value;
@@ -390,6 +406,12 @@ public final class ToolContext {
     /** 注入后台命令执行端口。 */
     public Builder backgroundShell(BackgroundShellPort value) {
       this.backgroundShell = value;
+      return this;
+    }
+
+    /** 注入文档同步端口。 */
+    public Builder documentSync(DocumentSyncPort value) {
+      this.documentSync = value;
       return this;
     }
 
