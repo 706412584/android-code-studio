@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?><!--
+  ~  This file is part of AndroidIDE.
+  ~
+  ~  AndroidIDE is free software: you can redistribute it and/or modify
+  ~  it under the terms of the GNU General Public License as published by
+  ~  the Free Software Foundation, either version 3 of the License, or
+  ~  (at your option) any later version.
+  ~
+  ~  AndroidIDE is distributed in the hope that it will be useful,
+  ~  but WITHOUT ANY WARRANTY; without even the implied warranty of
+  ~  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  ~  GNU General Public License for more details.
+  ~
+  ~  You should have received a copy of the GNU General Public License
+  ~  along with AndroidIDE.  If not, see <https://www.gnu.org/licenses/>.
+  -->
+
+<!--
+  导航目的地 id。
+
+  这些 id 原定义在 res/navigation/nav_viewinfo.xml 里，但该目录在 AGP 8.13 的
+  library 资源打包阶段被忽略（见 ViewInfoSheet 的代码建图注释）。改为代码建图后，
+  导航图不再来自 XML，而 ViewInfoSheet / ViewInfoFragment / AddAttrFragment 仍按
+  R.id.<目的地> 引用它们，故在此显式声明。
+-->
+<resources>
+  <item name="viewInfoFragment" type="id" />
+  <item name="addAttrFragment" type="id" />
+  <item name="attrValueEditorFragment" type="id" />
+</resources>

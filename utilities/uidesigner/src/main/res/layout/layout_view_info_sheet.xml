@@ -20,14 +20,20 @@
   android:layout_width="match_parent"
   android:layout_height="match_parent">
 
+  <!--
+    navGraph 不在此声明：res/navigation 在 AGP 8.13 的 library 资源打包阶段被忽略
+    （目录整个丢失，而 R 符号仍由另一路径生成 → 引用该图必然链接失败）。
+    改由 ViewInfoSheet 在 onViewCreated 里用 NavGraphBuilder 代码建图
+    （见 ViewInfoSheet.findNavControllerFromFragment）。
+  -->
   <androidx.fragment.app.FragmentContainerView
     android:id="@+id/nav_host"
     android:name="androidx.navigation.fragment.NavHostFragment"
     android:layout_width="0dp"
     android:layout_height="wrap_content"
+    app:defaultNavHost="true"
     app:layout_constraintEnd_toEndOf="parent"
     app:layout_constraintStart_toStartOf="parent"
-    app:layout_constraintTop_toTopOf="parent"
-    app:navGraph="@navigation/nav_viewinfo" />
+    app:layout_constraintTop_toTopOf="parent" />
 
 </androidx.constraintlayout.widget.ConstraintLayout>
