@@ -209,8 +209,15 @@ class CodeEditorView(context: Context, file: File, selection: Range) :
   @Subscribe(threadMode = ThreadMode.MAIN)
   @Suppress("unused")
   fun onDocumentExternalChange(event: DocumentExternalChangeEvent) {
-    val current = file ?: return
-    if (event.changedFile.toFile().absolutePath != current.absolutePath) {
+    val current = file
+    log.info(
+        "DocumentExternalChange received: event={} current={}",
+        event.changedFile,
+        current?.absolutePath)
+    if (current == null) {
+      return
+    }
+    if (!sameFile(event.changedFile.toFile(), current)) {
       return
     }
     if (isModified) {
@@ -219,6 +226,18 @@ class CodeEditorView(context: Context, file: File, selection: Range) :
       return
     }
     reloadFromDisk()
+  }
+
+  /** 路径等价判定：`/data/user/0/...` 与 `/data/data/...` 是同一目录但字符串不同。 */
+  private fun sameFile(a: File, b: File): Boolean {
+    if (a.absolutePath == b.absolutePath) {
+      return true
+    }
+    return try {
+      a.canonicalPath == b.canonicalPath
+    } catch (e: Throwable) {
+      false
+    }
   }
 
   /** 从磁盘重新读取内容并保留光标位置；无未保存改动时才应调用。 */
