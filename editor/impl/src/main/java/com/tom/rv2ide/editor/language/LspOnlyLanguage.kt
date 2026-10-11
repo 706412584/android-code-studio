@@ -21,10 +21,10 @@ import com.tom.rv2ide.editor.language.newline.BracketsNewlineHandler
 import com.tom.rv2ide.editor.language.utils.CommonSymbolPairs
 import com.tom.rv2ide.lsp.api.ILanguageServer
 import com.tom.rv2ide.lsp.api.ILanguageServerRegistry
-import io.github.rosemoe.sora.lang.EmptyLanguage
 import io.github.rosemoe.sora.lang.Language.INTERRUPTION_LEVEL_NONE
 import io.github.rosemoe.sora.lang.analysis.AnalyzeManager
 import io.github.rosemoe.sora.lang.smartEnter.NewlineHandler
+import io.github.rosemoe.sora.lang.util.PlainTextAnalyzeManager
 import io.github.rosemoe.sora.text.ContentReference
 import io.github.rosemoe.sora.util.MyCharacter
 import io.github.rosemoe.sora.widget.SymbolPairMatch
@@ -38,11 +38,19 @@ import io.github.rosemoe.sora.widget.SymbolPairMatch
  * languageServer**。也就是说：只在注册表里注册服务器是不够的，.ts/.dart 文件
  * 必须挂上一个继承 [IDELanguage] 的实现，补全链路才通。
  *
+ * <p><b>为什么分析管理器用 [PlainTextAnalyzeManager] 而不是
+ * `EmptyLanguage.EmptyAnalyzeManager`</b>（设备实测踩坑）：sora 在弹出补全前
+ * 调 `StylesUtils.checkNoCompletion`，其逻辑是「光标处 span 为 null **或** 该 span
+ * 带 NO_COMPLETION 位 → 禁止补全」。`EmptyAnalyzeManager` 从不设置 Styles，
+ * spans 恒为 null，于是**每一次**补全请求都在触发前被 sora 拦下——现象是
+ * 「诊断和悬停都正常，补全永远不弹」。`PlainTextAnalyzeManager` 会设置一个
+ * 全文普通样式 span，绕过该拦截。这正是本类存在的第二个理由（第一个是补全入口）。
+ *
  * <p><b>为什么不做语法高亮</b>：JS/TS/Dart 在本仓库都没有 tree-sitter 语法库
  * （`editor/impl/build.gradle.kts` 只引入了 java/cpp/json/kotlin/log/xml 六种），
- * 也没有对应的 ANTLR 词法器。分析管理器用 sora 的空实现——与改造前
- * （EmptyLanguage）的高亮行为一致，不引入退化；补全/诊断/跳转/悬停/格式化
- * 全部走 LSP。将来若要高亮，替换 [getAnalyzeManager] 即可，不影响本类其余部分。
+ * 也没有对应的 ANTLR 词法器。普通文本样式与改造前（EmptyLanguage）的高亮行为
+ * 一致，不引入退化；补全/诊断/跳转/悬停/格式化全部走 LSP。将来若要高亮，
+ * 替换 [getAnalyzeManager] 即可，不影响本类其余部分。
  *
  * @param serverId 注册表中的服务器 id（见 LspHandler.registerLanguageServers）。
  */
@@ -56,8 +64,11 @@ class LspOnlyLanguage(private val serverId: String) : IDELanguage() {
   private val newlineHandlers: Array<NewlineHandler> =
       arrayOf(BracketsNewlineHandler({ getIndentAdvance(it ?: "") }, { useTab() }))
 
+  /** 每个编辑器实例独享（BaseAnalyzeManager 持有 receiver/contentRef 状态）。 */
+  private val analyzeManager = PlainTextAnalyzeManager()
+
   override fun getAnalyzeManager(): AnalyzeManager {
-    return EmptyLanguage.EmptyAnalyzeManager.INSTANCE
+    return analyzeManager
   }
 
   override fun getInterruptionLevel(): Int {

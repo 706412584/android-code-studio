@@ -78,8 +78,17 @@ abstract class ProcessLanguageServer : ILanguageServer {
     /** initialize 握手超时。TSLS 冷启动要加载 tsconfig，给足余量。 */
     private const val INITIALIZE_TIMEOUT_MS = 20_000L
 
-    /** 补全超时。超过说明服务器异常，返回空比卡住编辑器好。 */
-    private const val COMPLETION_TIMEOUT_MS = 4_000L
+    /**
+     * 补全超时。
+     *
+     * <p><b>为什么给 12 秒</b>：tsserver 的**首次**补全要加载整个项目的类型图
+     * （lib.d.ts + node_modules 里的类型定义），手机上实测远超 4 秒——4 秒会让
+     * 「第一次打开项目后的所有补全都超时」，用户看到的是「补全永远不弹」。
+     * 超时期间 sora 的补全线程被阻塞，但用户继续输入会让旧请求被取消
+     * （cancelChecker 生效，响应到达即丢弃），服务器预热完成后请求恢复毫秒级。
+     * 代价是首次补全可能要等几秒才弹出——比永不弹出好。
+     */
+    private const val COMPLETION_TIMEOUT_MS = 12_000L
 
     private const val DEFINITION_TIMEOUT_MS = 5_000L
     private const val HOVER_TIMEOUT_MS = 5_000L
@@ -279,11 +288,26 @@ abstract class ProcessLanguageServer : ILanguageServer {
           add("position", LspConverters.writePosition(params.position))
           add("context", JsonObject().apply { addProperty("triggerKind", 1) })
         }
+    val startedAt = System.currentTimeMillis()
     val response = stdio.request("textDocument/completion", request, COMPLETION_TIMEOUT_MS)
+    val elapsed = System.currentTimeMillis() - startedAt
     if (params.cancelChecker.isCancelled()) {
+      // 响应被取消丢弃时也要能看到「服务器实际花了多久」——首次冷启动补全
+      // 在手机上可能数秒，没有这条日志很难区分「服务器慢」与「链路断了」
+      log.info("[{}] completion cancelled after {}ms", serverId, elapsed)
       return CompletionResult.EMPTY
     }
-    return LspConverters.parseCompletionResult(response)
+    if (response == null) {
+      log.warn("[{}] completion timed out after {}ms", serverId, elapsed)
+      return CompletionResult.EMPTY
+    }
+    if (response.isErrorResponse()) {
+      log.warn("[{}] completion error: {}", serverId, response.errorMessage())
+      return CompletionResult.EMPTY
+    }
+    val result = LspConverters.parseCompletionResult(response)
+    log.info("[{}] completion returned {} items in {}ms", serverId, result.items.size, elapsed)
+    return result
   }
 
   override suspend fun findDefinition(params: DefinitionParams): DefinitionResult {
