@@ -32,9 +32,12 @@ import com.tom.rv2ide.editor.adapters.CompletionListAdapter
 import com.tom.rv2ide.editor.api.IEditor
 import com.tom.rv2ide.editor.api.ILspEditor
 import com.tom.rv2ide.editor.language.IDELanguage
+import com.tom.rv2ide.editor.language.LspOnlyLanguage
 import com.tom.rv2ide.editor.language.groovy.GroovyLanguage
 import com.tom.rv2ide.editor.language.treesitter.TreeSitterLanguage
 import com.tom.rv2ide.editor.language.treesitter.TreeSitterLanguageProvider
+import com.tom.rv2ide.lsp.dart.DartLanguageServer
+import com.tom.rv2ide.lsp.typescript.TypeScriptLanguageServer
 import com.tom.rv2ide.editor.schemes.IDEColorScheme
 import com.tom.rv2ide.editor.schemes.IDEColorSchemeProvider
 import com.tom.rv2ide.editor.snippets.AbstractSnippetVariableResolver
@@ -676,6 +679,12 @@ constructor(
         when (FileUtils.getFileExtension(file)) {
           "gradle" -> GroovyLanguage()
           // "c", "h", "cc", "cpp", "cxx" -> CppLanguage()
+          // 4 -> LSP-only languages（无内置语法分析，智能功能全部来自语言服务器）。
+          //     必须在这里返回 IDELanguage 子类：补全入口 doComplete 只从
+          //     IDELanguage 取 languageServer，EmptyLanguage 的补全是空操作。
+          "js", "jsx", "ts", "tsx", "mjs", "cjs" ->
+              LspOnlyLanguage(TypeScriptLanguageServer.SERVER_ID)
+          "dart" -> LspOnlyLanguage(DartLanguageServer.SERVER_ID)
           else -> EmptyLanguage()
         }
 

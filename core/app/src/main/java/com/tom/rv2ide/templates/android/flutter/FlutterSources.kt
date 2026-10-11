@@ -706,14 +706,29 @@ object FlutterSources {
       Flutter 的构建**必须依赖完整的 Flutter SDK**（Dart 编译器 + 引擎工具链，
       官方不支持 Android 宿主机）——手机上无法安装。因此：
 
-      - **在 ACS 里编辑 `lib/main.dart`**（当前以纯文本打开——ACS 的编辑器
-        尚未内置 Dart 语言支持；代码补全与诊断请借助云端 IDE 或本地 Flutter 环境）
+      - **在 ACS 里编辑 `lib/main.dart`**
       - **推送到 GitHub**，`.github/workflows/flutter.yml` 自动构建
       - **在 Actions 页面下载产物**：`$projectName-android-apk`（APK）与
         `$projectName-web`（网页站点，可直接部署到任意静态托管）
 
       > 在手机上点「构建」会报 `flutter.sdk not set in local.properties`
       > ——这是预期行为，不是配置错误。
+
+      ## 代码补全与诊断（Dart LSP）
+
+      ACS 支持 Dart 语言服务器（基于官方 Dart SDK 的分析服务器，
+      提供补全/诊断/跳转/格式化）。**需要先安装 Dart SDK**（约 67MB，
+      解压后约 169MB）——它不是 APK 内置组件：
+
+      1. 打开 **设置 → 编辑器 → 语言服务器 → Dart / Flutter**
+      2. 点击「下载」等待完成（安装在应用私有目录，不占用项目空间）
+      3. 重新打开本项目的 `.dart` 文件，补全与诊断即生效
+
+      安装后打开 `lib/main.dart` 即可看到：输入 `setState` / `Widget` 等
+      标识符时的补全、未定义变量的红线提示、`Ctrl+点击` 跳转定义。
+      分析基于项目内的 `pubspec.yaml`——Flutter SDK 自身的包
+      （`package:flutter/...`）在设备上未安装，因此对它们的引用会提示
+      未解析，这是预期行为（云端 CI 构建不受影响）。
 
       ## 项目结构
 

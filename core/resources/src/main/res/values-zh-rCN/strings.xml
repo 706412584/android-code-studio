@@ -1056,6 +1056,26 @@
   <string name="lsp_options_kotlin_summary">Kotlin 语言服务器提供智能编码功能，包括代码完成、错误突出显示等</string>
   <string name="kotlin_server_required">必须安装 Kotlin 语言服务器才能使用此功能</string>
 
+  <!-- Dart / TypeScript（React Native 与 Flutter 模板） -->
+  <string name="dart">Dart / Flutter</string>
+  <string name="dart_lsp_category_summary">Flutter 项目使用的 Dart 语言服务器</string>
+  <string name="lsp_options_dart_title">Dart SDK（语言服务器）</string>
+  <string name="lsp_options_dart_summary">为 Flutter 项目提供代码补全、错误提示与跳转的 Dart SDK。按需下载（约 67 MB）。</string>
+  <string name="dart_sdk_not_installed">未安装 — 点击下载</string>
+  <string name="dart_sdk_installed">已安装</string>
+  <string name="typescript">TypeScript / JavaScript</string>
+  <string name="typescript_lsp_category_summary">React Native 项目使用的 TypeScript 语言服务器</string>
+  <string name="lsp_options_typescript_title">TypeScript 语言服务器</string>
+  <string name="lsp_options_typescript_summary">为 .ts/.tsx/.js 文件提供代码补全与诊断。通过项目内 npm 安装（typescript-language-server + typescript）。</string>
+  <string name="typescript_lsp_hint">在项目根目录执行：npm install -D typescript-language-server typescript --registry=https://registry.npmmirror.com</string>
+  <string name="dart_sdk_uninstall_message">删除 Dart SDK（约 169 MB）？删除后 Dart 代码补全与诊断将不可用，直到重新安装。</string>
+  <string name="dart_sdk_install_success">Dart SDK 安装成功。</string>
+  <string name="dart_sdk_install_failed">Dart SDK 安装失败：\n%s</string>
+  <string name="dart_sdk_downloading">正在下载 Dart SDK</string>
+  <string name="dart_sdk_extracting">正在解压…</string>
+  <string name="dart_sdk_downloading_progress">下载中… %d%%</string>
+  <string name="dart_sdk_size">已安装 %s</string>
+
   <string name="lsp_options_c_cpp_title">C &amp; C++ 语言服务器</string>
   <string name="lsp_options_c_cpp_summary">C 和 C++ 语言服务器提供智能开发功能，例如代码完成、错误突出显示等</string>
 
