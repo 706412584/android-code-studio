@@ -93,7 +93,13 @@ jobs:
           distribution: 'adopt'
 
       - name: Generating missing dirs
-        run: mkdir -p /home/runner/work/android-code-studio/android-code-studio/core/app/build/intermediates/external_file_lib_dex_archives/debug/desugarDebugFileDependencies && mkdir -p /home/runner/work/android-code-studio/android-code-studio/core/app/build/intermediates/l8_art_profile/release/l8DexDesugarLibRelease
+        # release 构建需要 l8_art_profile 目录**及**其中的 baseline-prof.txt 文件
+        # （仓库里缺；本地发布脚本 publish-release.ps1 同样补这两样，见 CLAUDE.md）。
+        # 只建目录不建文件会让 assembleRelease 失败。
+        run: |
+          mkdir -p core/app/build/intermediates/external_file_lib_dex_archives/debug/desugarDebugFileDependencies
+          mkdir -p core/app/build/intermediates/l8_art_profile/release/l8DexDesugarLibRelease
+          touch core/app/build/intermediates/l8_art_profile/release/l8DexDesugarLibRelease/baseline-prof.txt
 
       - name: Change Gradle wrapper permissions
         run: chmod +x ./gradlew
@@ -131,7 +137,10 @@ jobs:
           MAIN_VERSION: "1.0.0"
           REVISION_NUM: ${{ env.REVISION_NUM }}
           PROJECT_CONFIG_KT_BASE_VERSION_CODE: ${{ env.VERSION_CODE }}
-        run: ./gradlew assemble${{ env.BUILD_TYPE }}
+        run: |
+          # Release 排除 lintVitalRelease：与本地 publish-release.ps1 一致。
+          # Debug 不受影响（-x 对不存在的任务是无害的）。
+          ./gradlew assemble${{ env.BUILD_TYPE }} -x lintVitalRelease
 
       - name: List APK files
         run: ls -la core/app/build/outputs/apk/${{ env.BUILD_TYPE_LOWER }}/ || echo "Directory not found"
@@ -187,10 +196,19 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           APK_DIR="core/app/build/outputs/apk/release"
+          # 有 whatsnew/<versionName>.md 就用它作 Release notes（updater.json 的
+          # changelog 也指向同一文件）；没有则退回占位说明。
+          NOTES_FILE="whatsnew/$VERSION_NAME.md"
+          if [ -f "$NOTES_FILE" ]; then
+            NOTES_ARGS=(--notes-file "$NOTES_FILE")
+          else
+            echo "警告：$NOTES_FILE 不存在，使用占位说明"
+            NOTES_ARGS=(--notes "Release $VERSION_NAME")
+          fi
           gh release create "$RELEASE_TAG" \
             --target "${{ github.ref_name }}" \
             --title "$RELEASE_TAG" \
-            --notes "Release $VERSION_NAME" \
+            "${NOTES_ARGS[@]}" \
             "$APK_DIR/android-code-studio-arm64-v8a-$VERSION_NAME.apk" \
             "$APK_DIR/android-code-studio-armeabi-v7a-$VERSION_NAME.apk"
 
