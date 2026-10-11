@@ -75,17 +75,21 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-gradle-
 
-      - name: Create local.properties
-        run: |
-          echo "signing.storeFile=signing/signing-key.jks" >> local.properties
-          echo "signing.storePassword=${{ secrets.SIGNING_SK_PASSWORD }}" >> local.properties
-          echo "signing.keyAlias=androidcs" >> local.properties
-          echo "signing.keyPassword=${{ secrets.SIGNING_SK_PASSWORD }}" >> local.properties
+      # 把正确的签名密钥（与已发布 r4/r5/r6 同证书的那把）还原到仓库内路径。
+      # 仓库自带的 signing/signing-key.jks 是 upstream 官方密钥，其密码只存在于
+      # upstream 仓库的 secret，本 fork 无法还原——用它签出的包无法覆盖安装。
+      # 因此改从 SIGNING_KEYSTORE_BASE64（由 tools/setup-ci-signing.ps1 写入）还原。
+      - name: Restore signing keystore
+        run: echo "${{ secrets.SIGNING_KEYSTORE_BASE64 }}" | base64 -d > signing/signing-key.jks
 
       - name: Assemble APK
         env:
+          # build.gradle.kts 的 signingConfigs.custom 读的是这四个环境变量
+          # （不是 local.properties——SigningConfigPlugin 并未被任何模块应用）。
+          SIGNING_STORE_FILE: signing/signing-key.jks
           SIGNING_STORE_PASSWORD: ${{ secrets.SIGNING_STORE_PASSWORD }}
           SIGNING_KEY_PASSWORD: ${{ secrets.SIGNING_KEY_PASSWORD }}
+          SIGNING_KEY_ALIAS: androidcs
         run: ./gradlew assemble${{ env.BUILD_TYPE }}
 
       - name: List APK files
