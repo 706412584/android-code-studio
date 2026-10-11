@@ -43,7 +43,7 @@ public class BaseApplication extends Application {
   public static final String DOCS_URL = "https://docs.androidide.com";
   public static final String CONTRIBUTOR_GUIDE_URL =
       BuildInfo.REPO_URL + "/blob/dev/docs/en/CONTRIBUTING.md";
-  public static final String EMAIL = "rv2.code.studio@gmail.com";
+  public static final String EMAIL = "706412584@qq.com";
   
   private static BaseApplication instance;
   private PreferenceManager mPrefsManager;

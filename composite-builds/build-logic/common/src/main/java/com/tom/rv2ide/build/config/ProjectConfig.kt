@@ -23,10 +23,14 @@ import org.gradle.api.Project
 object ProjectConfig {
 
   /*
-  * https://github.com/AndroidCSOfficial
+  * 本 fork 的仓库地址（App 身份来源）。BuildInfo.REPO_OWNER/REPO_URL 由此生成，
+  * 关于页 / 贡献者页 / 崩溃报告 / CONTRIBUTING / 赞助链接 / 应用内更新跳转全派生自它。
+  *
+  * 注意：构建系统仓库（acs-build-system，CMake/NDK 安装用）是**另一个仓库**，
+  * 见 AcsProvider.REPO_OWNER——那个仍指向上游，此处不要改（本 fork 没有该仓库）。
   */
   const val REPO_HOST = "github.com"
-  const val REPO_OWNER = "AndroidCSOfficial"
+  const val REPO_OWNER = "706412584"
   const val REPO_NAME = "android-code-studio"
 
   const val ACS_BUILD_SYSTEM_REPONAME = "acs-build-system"
