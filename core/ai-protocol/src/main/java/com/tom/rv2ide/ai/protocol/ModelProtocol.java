@@ -52,8 +52,4 @@ public interface ModelProtocol {
     default boolean supportsImageGeneration() {
         return false;
     }
-
-    default boolean supportsImageUnderstanding() {
-        return true;
-    }
 }

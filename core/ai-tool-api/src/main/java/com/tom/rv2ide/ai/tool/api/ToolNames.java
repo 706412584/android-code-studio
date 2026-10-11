@@ -84,7 +84,9 @@ public final class ToolNames {
     public static final String WEB_FETCH = "web_fetch";
     /** 通用 HTTP 请求（任意方法/头/体），供调试接口、上传、带鉴权的调用使用。 */
     public static final String HTTP_REQUEST = "http_request";
-    public static final String IMAGE_UNDERSTANDING = "image_understanding";
+    // 注：曾有一个 IMAGE_UNDERSTANDING = "image_understanding" 常量（LCP 移植时带过来的），
+    // 但 ACS 从未实现该工具——图片理解走的是「主模型直接接收 image block」（file_read 图片、
+    // phone_screenshot、浏览器截图都经 ToolResult.withImage），不需要独立工具。已删除该死声明。
     public static final String IMAGE_GENERATION = "image_generation";
     /** 文生视频（异步任务 + 轮询，协议照 cc-haha media-gen）。 */
     public static final String VIDEO_GENERATION = "video_generation";
