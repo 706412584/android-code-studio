@@ -135,6 +135,18 @@ public final class ToolContext {
    */
   private final CancellationSignal cancellation;
 
+  /** 编辑器会话端口（读状态/打开定位/保存全部）；未注入时为 null。 */
+  private final EditorSessionPort editorSession;
+
+  /** IDE 原生代码动作端口；未注入时为 null。 */
+  private final CodeActionsPort codeActions;
+
+  /** 构建变体端口（列出/切换）；未注入时为 null。 */
+  private final BuildVariantPort buildVariant;
+
+  /** 工作区符号搜索端口；未注入时为 null。 */
+  private final WorkspaceSymbolPort workspaceSymbol;
+
   private ToolContext(Builder builder) {
     this.homePath = builder.homePath == null ? "" : builder.homePath;
     this.extraWriteRoots =
@@ -157,6 +169,10 @@ public final class ToolContext {
     this.documentSync = builder.documentSync;
     this.terminal = builder.terminal;
     this.cancellation = builder.cancellation;
+    this.editorSession = builder.editorSession;
+    this.codeActions = builder.codeActions;
+    this.buildVariant = builder.buildVariant;
+    this.workspaceSymbol = builder.workspaceSymbol;
   }
 
   public String getHomePath() {
@@ -253,6 +269,26 @@ public final class ToolContext {
     boolean isCancelled();
   }
 
+  /** 编辑器会话端口；未注入时为 null（编辑器工具报「未接入」）。 */
+  public EditorSessionPort getEditorSession() {
+    return editorSession;
+  }
+
+  /** IDE 原生代码动作端口；未注入时为 null。 */
+  public CodeActionsPort getCodeActions() {
+    return codeActions;
+  }
+
+  /** 构建变体端口；未注入时为 null。 */
+  public BuildVariantPort getBuildVariant() {
+    return buildVariant;
+  }
+
+  /** 工作区符号搜索端口；未注入时为 null。 */
+  public WorkspaceSymbolPort getWorkspaceSymbol() {
+    return workspaceSymbol;
+  }
+
   /**
    * 返回一个仅替换 {@code toolCallId} 的副本。
    *
@@ -279,6 +315,10 @@ public final class ToolContext {
         .documentSync(this.documentSync)
         .terminal(this.terminal)
         .cancellation(this.cancellation)
+        .editorSession(this.editorSession)
+        .codeActions(this.codeActions)
+        .buildVariant(this.buildVariant)
+        .workspaceSymbol(this.workspaceSymbol)
         .build();
   }
 
@@ -309,6 +349,10 @@ public final class ToolContext {
         .documentSync(this.documentSync)
         .terminal(this.terminal)
         .cancellation(this.cancellation)
+        .editorSession(this.editorSession)
+        .codeActions(this.codeActions)
+        .buildVariant(this.buildVariant)
+        .workspaceSymbol(this.workspaceSymbol)
         .build();
   }
 
@@ -362,6 +406,10 @@ public final class ToolContext {
     private DocumentSyncPort documentSync;
     private TerminalPort terminal;
     private CancellationSignal cancellation;
+    private EditorSessionPort editorSession;
+    private CodeActionsPort codeActions;
+    private BuildVariantPort buildVariant;
+    private WorkspaceSymbolPort workspaceSymbol;
 
     public Builder homePath(String value) {
       this.homePath = value;
@@ -459,6 +507,30 @@ public final class ToolContext {
     /** 注入本次运行的取消信号。长操作（shell/构建）据此在用户点停止后尽快终止。 */
     public Builder cancellation(CancellationSignal value) {
       this.cancellation = value;
+      return this;
+    }
+
+    /** 注入编辑器会话端口（editor_state / file_open / save_all）。 */
+    public Builder editorSession(EditorSessionPort value) {
+      this.editorSession = value;
+      return this;
+    }
+
+    /** 注入 IDE 原生代码动作端口（code_actions）。 */
+    public Builder codeActions(CodeActionsPort value) {
+      this.codeActions = value;
+      return this;
+    }
+
+    /** 注入构建变体端口（build_variant）。 */
+    public Builder buildVariant(BuildVariantPort value) {
+      this.buildVariant = value;
+      return this;
+    }
+
+    /** 注入工作区符号搜索端口（workspace_symbol）。 */
+    public Builder workspaceSymbol(WorkspaceSymbolPort value) {
+      this.workspaceSymbol = value;
       return this;
     }
 

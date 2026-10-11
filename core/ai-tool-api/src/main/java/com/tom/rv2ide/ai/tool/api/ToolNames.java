@@ -197,6 +197,50 @@ public final class ToolNames {
      */
     public static final String FORMAT_CODE = "format_code";
 
+    // ---- 编辑器会话（与用户编辑器状态交互，通用编码 agent 无法获得）----
+
+    /**
+     * 读取编辑器当前状态：当前文件、光标、选区、已打开文件、未保存修改。
+     *
+     * <p>只读。通用 agent 只能假设「磁盘内容就是用户看到的内容」，而编辑器缓冲可能
+     * 领先磁盘（未保存修改）——这正是「构建用了旧内容」类问题的根源。
+     */
+    public static final String EDITOR_STATE = "editor_state";
+    /**
+     * 打开文件并定位到行/列（可选中范围），把用户带到代码位置。
+     *
+     * <p>只改编辑器视图状态（当前文件/光标/选区），不改文件内容。
+     */
+    public static final String FILE_OPEN = "file_open";
+    /**
+     * 保存全部编辑器缓冲到磁盘（与 {@link #EDITOR_STATE} 的「读」互补）。
+     *
+     * <p>写盘但不改内容，属工程状态操作；只读模式下拦截（磁盘写）。
+     */
+    public static final String SAVE_ALL = "save_all";
+
+    // ---- IDE 原生能力（类型系统感知 / 项目模型）----
+
+    /**
+     * IDE 原生 Java 代码动作：类型系统感知的代码生成/重构（就地写回）。
+     *
+     * <p>比模型手写文本可靠：import / 泛型 / 缩进由编译器信息生成。
+     */
+    public static final String CODE_ACTIONS = "code_actions";
+    /**
+     * 构建变体：列出 Android 模块的变体 / 切换指定模块的变体（切换会触发重新同步）。
+     *
+     * <p>{@link #PROJECT_INFO} 只读报告变体；本工具补上「切换」。
+     */
+    public static final String BUILD_VARIANT = "build_variant";
+    /**
+     * 工作区符号搜索：按名称查找 Java 符号声明位置（file:line）。
+     *
+     * <p>与 {@link #LSP_NAVIGATE}（给定位置做导航）互补；与 {@link #CODEGRAPH}
+     * （外部 CLI，依赖用户装索引）互补，走 IDE 内建能力。
+     */
+    public static final String WORKSPACE_SYMBOL = "workspace_symbol";
+
     private static final String CUSTOM_AGENT_PREFIX = "agentx_";
     private static final String CUSTOM_MCP_PREFIX = "mcpx_";
 
