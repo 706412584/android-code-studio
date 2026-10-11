@@ -21,7 +21,6 @@ import com.tom.rv2ide.javac.services.compiler.ReusableContext
 import com.tom.rv2ide.javac.services.compiler.ReusableJavaCompiler
 import com.tom.rv2ide.lsp.java.parser.ts.TSJavaParser
 import com.tom.rv2ide.lsp.java.parser.ts.TSMethodPruner.prune
-import com.tom.rv2ide.projects.FileManager
 import com.tom.rv2ide.utils.VMUtils
 import com.tom.rv2ide.utils.withStopWatch
 import jdkx.tools.JavaFileObject
@@ -52,9 +51,19 @@ class JavaCompilerImpl(context: Context?) : ReusableJavaCompiler(context) {
       return super.parse(filename, content)
     }
 
-    // If the file is NOT being parsed for a completion request,
-    // we should not prune method bodies of active documents
-    if (compilerConfig.completionInfo == null && FileManager.isActive(filename.toUri())) {
+    // 剪枝（把方法体清空成空白）只对**补全**有意义：补全只关心光标所在方法，清掉其余
+    // 方法体能大幅加速编译。非补全请求（典型是诊断）必须保留完整方法体——否则非 void
+    // 方法被清空后 javac 看到的是 `String ping() { }`，会误报 missing return statement。
+    //
+    // 旧条件额外要求 `isActive`，隐含假设"诊断只在编辑器已打开的活动文档上跑"。AI 的
+    // diagnostics 工具会对**未在编辑器打开**的文件跑诊断（isActive=false），于是主文件
+    // （compilerConfig.files 里的那个）被剪枝，每个非 void 方法都误报"缺少返回语句"——
+    // 实测正确代码 `return "123"` 与错误代码 `return 123` 都报同一条假错误。
+    //
+    // 去掉 isActive：补全路径 completionInfo != null 不受影响（仍剪枝）；活动文档的诊断
+    // completionInfo == null 同样跳过剪枝（行为不变）；依赖文件走上面的 files 预检提前
+    // 返回、本就不剪枝。唯一变化是"对未打开文件的诊断"现在拿到完整方法体。
+    if (compilerConfig.completionInfo == null) {
       return super.parse(filename, content)
     }
 
