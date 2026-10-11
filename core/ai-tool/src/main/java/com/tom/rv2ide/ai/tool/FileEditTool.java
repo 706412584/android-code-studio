@@ -134,7 +134,16 @@ public final class FileEditTool extends BaseTool {
             } finally {
                 output.close();
             }
-            return ok(ToolMessages.format(ToolMessages.FILE_EDIT_SUCCESS, FileToolPathPolicy.displayPath(context.getHomePath(), file), replaced));
+            String message = ToolMessages.format(
+                    ToolMessages.FILE_EDIT_SUCCESS,
+                    FileToolPathPolicy.displayPath(context.getHomePath(), file),
+                    replaced);
+            // 通知编辑器刷新：否则打开着该文件的编辑器仍是旧内容，用户随手一改触发
+            // 自动保存会把 AI 的修改整段覆盖回磁盘（见 DocumentSyncPort）。
+            DocumentSync.notifyChanged(context, file);
+            // 搭车诊断：把改完后的编译错误直接附在结果里（高频路径，严格有界）。
+            String diagnostics = FileDiagnostics.describe(context, file);
+            return ok(diagnostics.isEmpty() ? message : message + "\n" + diagnostics);
         } catch (Exception e) {
             return error(ToolMessages.format(ToolMessages.FILE_EDIT_FAILED, e.getMessage()));
         }

@@ -67,6 +67,8 @@ import com.tom.rv2ide.ai.tool.ToolInvoker;
 import com.tom.rv2ide.ai.tool.ToolInvokerAware;
 import com.tom.rv2ide.ai.tool.ToolPermissionService;
 import com.tom.rv2ide.ai.tool.HttpRequestTool;
+import com.tom.rv2ide.ai.tool.ImageGenerationTool;
+import com.tom.rv2ide.ai.tool.VideoGenerationTool;
 import com.tom.rv2ide.ai.tool.ShellBackendRegistry;
 import com.tom.rv2ide.ai.tool.ShellExecuteTool;
 import com.tom.rv2ide.ai.tool.ToolRegistry;
@@ -75,9 +77,11 @@ import com.tom.rv2ide.artificial.agent.tool.GitWriteTool;
 import com.tom.rv2ide.artificial.agent.tool.GradleBuildTool;
 import com.tom.rv2ide.artificial.secrets.ApiKey;
 import com.tom.rv2ide.artificial.agent.tool.InstallApkTool;
+import com.tom.rv2ide.artificial.agent.tool.LayoutPreviewTool;
 import com.tom.rv2ide.artificial.agent.tool.LaunchAppTool;
 import com.tom.rv2ide.artificial.agent.tool.LogcatReadTool;
 import com.tom.rv2ide.artificial.agent.tool.PhoneActionCaptureTool;
+import com.tom.rv2ide.artificial.agent.tool.ProjectInfoTool;
 import com.tom.rv2ide.artificial.agent.tool.PhoneBaselineTool;
 import com.tom.rv2ide.artificial.agent.tool.PhoneClearDataTool;
 import com.tom.rv2ide.artificial.agent.tool.PhoneClickTool;
@@ -268,7 +272,7 @@ public final class AgentOrchestrator {
 
   /** 见 {@link #currentRunSnapshot}。 */
   public static final class RunSnapshot {
-    static final RunSnapshot EMPTY = new RunSnapshot("", "", "");
+    static final RunSnapshot EMPTY = new RunSnapshot("", "", "", null);
 
     /** 本轮已产生的正文（未落盘部分）；空串表示没有。 */
     public final String text;
@@ -277,10 +281,25 @@ public final class AgentOrchestrator {
     /** 最近一条动作文案；空串表示没有。 */
     public final String lastAction;
 
-    RunSnapshot(String text, String reasoning, String lastAction) {
+    /**
+     * 正在执行中的工具调用；null 表示没有（未在跑工具，或工具已结束）。
+     *
+     * <p><b>为什么快照要带上它</b>：工具开始执行时不落盘（只有 TOOL_FINISHED 落盘），
+     * 用户切走再切回一个「正在跑工具」的会话时，回放的历史里没有那张卡片——
+     * 没有本字段，视图接不回卡片，之后到达的 TOOL_FINISHED 只能把结果回填到
+     * 历史里最后一张无关卡片上（实测反馈的「状态混乱」之一）。
+     */
+    public final com.tom.rv2ide.ai.tool.api.ToolCall pendingToolCall;
+
+    RunSnapshot(
+        String text,
+        String reasoning,
+        String lastAction,
+        com.tom.rv2ide.ai.tool.api.ToolCall pendingToolCall) {
       this.text = text == null ? "" : text;
       this.reasoning = reasoning == null ? "" : reasoning;
       this.lastAction = lastAction == null ? "" : lastAction;
+      this.pendingToolCall = pendingToolCall;
     }
   }
 
@@ -295,6 +314,8 @@ public final class AgentOrchestrator {
 
   /** 一条排队的请求：完整记下发起一次运行所需的全部参数。 */
   private static final class QueuedRequest {
+    /** 稳定标识：队列面板按它做删除/插入/拖拽的锚点（下标在并发改动下会漂移）。 */
+    final String id;
     final String providerId;
     final String modelId;
     final String userRequest;
@@ -309,12 +330,29 @@ public final class AgentOrchestrator {
         String customBaseUrl,
         String rawInputJson,
         String reasoningEffort) {
+      this.id = java.util.UUID.randomUUID().toString();
       this.providerId = providerId;
       this.modelId = modelId;
       this.userRequest = userRequest;
       this.customBaseUrl = customBaseUrl;
       this.rawInputJson = rawInputJson;
       this.reasoningEffort = reasoningEffort;
+    }
+  }
+
+  /**
+   * 队列条目的只读投影（给 UI 渲染队列面板用）。
+   *
+   * <p>刻意只暴露 id 与文本：面板不需要（也不该拿到）provider/baseUrl 这类
+   * 内部参数——它们由队列条目自己保管，编辑/重排都不经过 UI。
+   */
+  public static final class QueuedEntry {
+    public final String id;
+    public final String text;
+
+    QueuedEntry(String id, String text) {
+      this.id = id;
+      this.text = text;
     }
   }
 
@@ -328,6 +366,153 @@ public final class AgentOrchestrator {
    */
   private final java.util.Map<String, java.util.ArrayDeque<QueuedRequest>> queuedRequests =
       new java.util.concurrent.ConcurrentHashMap<>();
+
+  /**
+   * 正在运行的 {@link AgentSession}，按会话索引。
+   *
+   * <p>只为「运行中立即插入」服务：UI 点插入按钮时要把消息投进正在跑的循环
+   * （见 {@link #injectIntoRun}）。运行结束（run 返回后）移除——移除与
+   * {@code acceptingInject=false} 有先后竞争，因此 injectIntoRun 对
+   * 「拿到的 session 已拒绝」也有回退路径（回退到队列）。
+   */
+  private final java.util.Map<String, AgentSession> activeSessions =
+      new java.util.concurrent.ConcurrentHashMap<>();
+
+  /**
+   * 运行中立即插入：把一条消息投进**正在跑**的循环，模型在本轮工具全部完成后
+   * 就能看到它（cc-haha「Guide now」同款语义，见 AgentSession 的 injectQueue）。
+   *
+   * <p>返回 false = 该会话没有可接收注入的运行（没在跑、或恰好在收尾），
+   * 调用方应回退到普通排队。
+   */
+  public boolean injectIntoRun(String conversationId, String text) {
+    if (conversationId == null || conversationId.isEmpty() || text == null
+        || text.trim().isEmpty()) {
+      return false;
+    }
+    AgentSession session = activeSessions.get(conversationId);
+    if (session == null) {
+      return false;
+    }
+    return session.offerInject(text);
+  }
+
+  /**
+   * 按会话缓存的后台任务执行器。
+   *
+   * <p><b>为什么按会话缓存而不是每次运行新建</b>：后台任务的生命周期跨运行——一条
+   * 8 分钟的构建常常在本次 AI 运行结束后才跑完。若执行器随运行创建、随运行丢弃，
+   * 下一轮运行就查不到上一轮启动的任务（`task_output` 会报「找不到任务」）。
+   * 按会话持有后，同一会话的任意一轮都能取回此前启动的任务。键与会话同生命周期，
+   * 会话删除时无需专门清理（数量极少，且每个只持有一个 map）。
+   */
+  private final java.util.Map<String, BackgroundShellRunner> backgroundRunners =
+      new java.util.concurrent.ConcurrentHashMap<>();
+
+  /**
+   * 取得本会话的后台命令执行端口（不存在则创建），并把任务完成通知路由回本会话。
+   *
+   * <p><b>通知的两条路径</b>：
+   * <ul>
+   *   <li>会话仍在跑（{@code activeSessions} 命中）→ 把通知投进正在跑的循环，
+   *       模型在下一轮自动看到，无需用户介入；
+   *   <li>会话已结束 → 发一条状态栏通知（用户在别处也能知道后台命令跑完了）。
+   * </ul>
+   * 两条都不做的话，后台命令完成就石沉大海——这正是「后台执行」最容易失败的地方：
+   * 启动了却没人知道结果。
+   */
+  private BackgroundShellRunner backgroundShellRunner(String conversationId) {
+    return backgroundRunners.computeIfAbsent(
+        conversationId == null ? "" : conversationId, key -> new BackgroundShellRunner(
+        appContext,
+        status -> {
+          boolean success = status != null && status.isSuccess();
+          String notice =
+              "后台任务 "
+                  + (status == null ? "?" : status.getTaskId())
+                  + " 已"
+                  + (success ? "成功完成" : "结束（未成功）")
+                  + (status != null && status.hasExitCode()
+                      ? "（exit_code=" + status.getExitCode() + "）"
+                      : "")
+                  + "。命令: "
+                  + (status == null ? "" : abbreviateForNotice(status.getCommand()))
+                  + "\n用 task_output 取回输出（task_id="
+                  + (status == null ? "?" : status.getTaskId())
+                  + "）。";
+          AgentSession session = activeSessions.get(conversationId);
+          if (session == null || !session.offerNotice(notice)) {
+            // 会话不在跑：退回状态栏通知。
+            RunCompletionNotifier.notifyBackgroundTask(appContext, success, conversationId);
+          }
+          return kotlin.Unit.INSTANCE;
+        }));
+  }
+
+  private static String abbreviateForNotice(String command) {
+    if (command == null) {
+      return "";
+    }
+    return command.length() <= 80 ? command : command.substring(0, 80) + "…";
+  }
+
+  /** 该会话队列的只读投影（面板渲染用）；无队列时为空列表。 */
+  public List<QueuedEntry> queuedEntries(String conversationId) {
+    if (conversationId == null || conversationId.isEmpty()) {
+      return new ArrayList<>();
+    }
+    java.util.ArrayDeque<QueuedRequest> queue = queuedRequests.get(conversationId);
+    if (queue == null) {
+      return new ArrayList<>();
+    }
+    List<QueuedEntry> out = new ArrayList<>();
+    synchronized (queue) {
+      for (QueuedRequest request : queue) {
+        out.add(new QueuedEntry(request.id, request.userRequest));
+      }
+    }
+    return out;
+  }
+
+  /** 按 id 移除一条排队请求。返回是否找到并移除。 */
+  public boolean removeQueued(String conversationId, String requestId) {
+    if (conversationId == null || conversationId.isEmpty() || requestId == null) {
+      return false;
+    }
+    java.util.ArrayDeque<QueuedRequest> queue = queuedRequests.get(conversationId);
+    if (queue == null) {
+      return false;
+    }
+    synchronized (queue) {
+      boolean removed = queue.removeIf(request -> request.id.equals(requestId));
+      if (queue.isEmpty()) {
+        queuedRequests.remove(conversationId);
+      }
+      return removed;
+    }
+  }
+
+  /** 队列内重排（拖拽）。返回是否执行了移动。 */
+  public boolean moveQueued(String conversationId, int fromIndex, int toIndex) {
+    if (conversationId == null || conversationId.isEmpty()) {
+      return false;
+    }
+    java.util.ArrayDeque<QueuedRequest> queue = queuedRequests.get(conversationId);
+    if (queue == null) {
+      return false;
+    }
+    synchronized (queue) {
+      List<QueuedRequest> list = new ArrayList<>(queue);
+      if (fromIndex < 0 || fromIndex >= list.size() || toIndex < 0 || toIndex >= list.size()) {
+        return false;
+      }
+      QueuedRequest moved = list.remove(fromIndex);
+      list.add(toIndex, moved);
+      queue.clear();
+      queue.addAll(list);
+      return true;
+    }
+  }
 
   /**
    * 把一条请求排进该会话的队列，返回它在队列中的位置（从 1 开始）。
@@ -365,6 +550,32 @@ public final class AgentOrchestrator {
       return;
     }
     queuedRequests.remove(conversationId);
+  }
+
+  /**
+   * 把一条请求插到队首（投递失败的回退路径用）。
+   *
+   * <p>「立即插入」的语义是「这条要**先于**其余排队消息被处理」——注入失败时若按
+   * 常规 {@link #enqueue} 追加到队尾，用户点的「立即」就变成了「最后」，与意图相反。
+   */
+  public void enqueueFront(
+      String conversationId,
+      String providerId,
+      String modelId,
+      String userRequest,
+      String customBaseUrl,
+      String rawInputJson,
+      String reasoningEffort) {
+    if (conversationId == null || conversationId.isEmpty()) {
+      return;
+    }
+    java.util.ArrayDeque<QueuedRequest> queue =
+        queuedRequests.computeIfAbsent(conversationId, k -> new java.util.ArrayDeque<>());
+    synchronized (queue) {
+      queue.addFirst(
+          new QueuedRequest(
+              providerId, modelId, userRequest, customBaseUrl, rawInputJson, reasoningEffort));
+    }
   }
 
   /**
@@ -460,6 +671,20 @@ public final class AgentOrchestrator {
     if (!list.contains(listener)) {
       list.add(listener);
     }
+  }
+
+  /**
+   * 订阅表总条数（所有会话的订阅者之和）。
+   *
+   * <p>诊断用：视图销毁未退订会在这里表现为「只增不减」，是泄漏的明确信号
+   * （见 memory_analysis 工具）。
+   */
+  public int subscriberCount() {
+    int total = 0;
+    for (java.util.List<AgentEvent.Listener> list : conversationListeners.values()) {
+      total += list.size();
+    }
+    return total;
   }
 
   /** 退订。会话的订阅表空了就移除，避免条目随会话数累积。 */
@@ -1080,7 +1305,7 @@ public final class AgentOrchestrator {
 
   /** 构建工具注册表：文件工具 + shell 执行 + 运行测试闭环四件套。 */
   public ToolRegistry buildRegistry() {
-    return buildRegistry(true, null);
+    return buildRegistry(true, null, null);
   }
 
   /**
@@ -1098,6 +1323,21 @@ public final class AgentOrchestrator {
    */
   public ToolRegistry buildRegistry(
       boolean includeMcp, java.util.List<com.tom.rv2ide.ai.tool.mcp.McpClient> mcpClientsOut) {
+    return buildRegistry(includeMcp, mcpClientsOut, null);
+  }
+
+  /**
+   * 构建工具注册表（完整参数版）。
+   *
+   * @param browserToolOut 非空时，本次新建的 {@link BrowserTool} 登记到这里，
+   *     由调用方在运行结束时调 {@code close()} 释放 WebView。**必须登记而不是让工具
+   *     持有全局单例**：WebView 有线程亲和性且持有 native 资源，每次运行建一个、
+   *     运行结束销毁，避免跨会话泄漏。UI 路径（只查分类色）传 null，不装配浏览器。
+   */
+  public ToolRegistry buildRegistry(
+      boolean includeMcp,
+      java.util.List<com.tom.rv2ide.ai.tool.mcp.McpClient> mcpClientsOut,
+      java.util.List<com.tom.rv2ide.artificial.agent.tool.BrowserTool> browserToolOut) {
     ToolRegistry registry = new ToolRegistry();
 
     // 文件操作
@@ -1110,6 +1350,19 @@ public final class AgentOrchestrator {
     // 而 ripgrep 没有——本工具在进程内用 java.util.regex 搜索，不依赖任何后端。
     registry.register(new com.tom.rv2ide.ai.tool.GrepTool());
     registry.register(new ListDirectoryTool());
+    // 编译诊断：经 IDE 语言服务器做静态分析，改完一批文件后一次确认（秒级，
+    // 比 gradle_build 快得多）。诊断端口在 executeRun 里注入（需 LSP 注册表）。
+    registry.register(new com.tom.rv2ide.ai.tool.DiagnosticsTool());
+    // IDE 自身日志（读被测应用日志用 logcat_read，两者目标进程不同）。
+    registry.register(new com.tom.rv2ide.ai.tool.IdeLogTool());
+    // 压缩/解压 zip：手机上解压 SDK/依赖包、打包产物、备份归档。
+    registry.register(new com.tom.rv2ide.ai.tool.ArchiveTool());
+    // 代码导航：跳定义/找引用，按符号语义匹配，胜过文本 grep。端口在 executeRun 注入。
+    registry.register(new com.tom.rv2ide.ai.tool.LspNavigateTool());
+    // 代码格式化（经语言服务器，就地写回）。
+    registry.register(new com.tom.rv2ide.ai.tool.FormatCodeTool());
+    // 项目结构查询：模块/变体/真实任务名（app 层工具，直接读 IWorkspace）。
+    registry.register(new ProjectInfoTool());
     // 向用户提问（多选/单选）。阻塞式：调用方（FloatingAssistantView）切到主线程弹窗，
     // 用户作答后唤醒 agent 循环继续执行。
     registry.register(new com.tom.rv2ide.ai.tool.AskUserQuestionTool());
@@ -1121,6 +1374,12 @@ public final class AgentOrchestrator {
     // 效果只落在自己那份上——用户切后端后，一部分工具还走旧后端，行为不一致且难排查。
     ShellBackendRegistry shellBackends = buildShellBackends();
     registry.register(new ShellExecuteTool(shellBackends));
+    // 后台任务取回 / 停止（与 shell_execute 的 run_in_background 配对）。
+    // 端口在 executeRun 里注入（需要 app 层实现 + 完成回调）。
+    registry.register(new com.tom.rv2ide.ai.tool.TaskOutputTool());
+    registry.register(new com.tom.rv2ide.ai.tool.TaskStopTool());
+    // 终端会话读取：查看用户在终端里手动跑的命令及其输出（shell_execute 看不见）。端口在 executeRun 注入。
+    registry.register(new com.tom.rv2ide.ai.tool.TerminalReadTool());
 
     // CodeGraph 代码知识图谱（复用同一个 shell 后端执行 acs-codegraph）。
     // 注册后助手才能主动按符号查源码/调用关系/影响面，而不是靠 shell_execute 手敲
@@ -1191,6 +1450,9 @@ public final class AgentOrchestrator {
               }
             }));
 
+    // 布局预览：改完 XML 界面后渲染成图片自查（复用设计器的 inflate + 预览渲染）。
+    registry.register(new LayoutPreviewTool(appContext));
+
     // 运行测试闭环：构建 → 安装 → 启动 → 读日志
     registry.register(new GradleBuildTool(this::lookupBuildService));
     registry.register(new InstallApkTool(appContext));
@@ -1259,6 +1521,29 @@ public final class AgentOrchestrator {
     // 通用 HTTP：带自定义方法/头/体，并返回状态码与非 2xx 的错误体（web_fetch 只做 GET 且
     // 非 2xx 当失败）。支持 POST/PUT/DELETE 等可变方法，故为 SYSTEM 且需确认。
     registry.register(new HttpRequestTool(http));
+    // 文生图：端点经 ToolContext 注入（能力页配置），未配置时工具明确报错引导用户去配置。
+    registry.register(new ImageGenerationTool(http));
+    // 文生视频：异步任务 + 轮询（cc-haha media-gen 协议）。同上经 ToolContext 注入。
+    registry.register(new VideoGenerationTool(http));
+
+    // 内存分析：一次性拉取进程内存画像 + 助手各子系统规模（消息数/缓存/队列），
+    // 供卡顿与 OOM 排查（用户实测的 Markdown 表格 OOM 之后加的诊断口）。
+    registry.register(
+        new com.tom.rv2ide.artificial.agent.tool.MemoryAnalysisTool(appContext));
+
+    // 内置浏览器：系统 WebView 加载网页 → 取渲染后正文 / 跑 JS / 截图。
+    // 与 web_fetch 的分工：web_fetch 只拿 HTTP 响应的 HTML 源文本（无 JS 渲染），
+    // 本工具面向 SPA 与需要视觉确认的场景（先 navigate，再 get_text 或 screenshot）。
+    //
+    // 只在真实运行路径（browserToolOut != null）装配：UI 的分类色查询路径传 null，
+    // 不该在 UI 线程创建 WebView。每次运行新建、运行结束由 executeRun 的 finally
+    // 调 close() 释放——WebView 持有 native 资源，跨会话复用会造成泄漏。
+    if (browserToolOut != null) {
+      com.tom.rv2ide.artificial.agent.tool.BrowserTool browserTool =
+          new com.tom.rv2ide.artificial.agent.tool.BrowserTool(appContext);
+      registry.register(browserTool);
+      browserToolOut.add(browserTool);
+    }
 
     // 外部 MCP server 提供的工具。只有 run() 路径（mcpClientsOut != null）才装配：
     // UI 的分类色查询不该触发网络请求，也不该创建无人释放的连接。
@@ -1323,7 +1608,12 @@ public final class AgentOrchestrator {
                 http,
                 server.url,
                 java.util.Collections.<String, String>emptyMap(),
-                com.tom.rv2ide.ai.tool.mcp.McpClient.Transport.fromId(server.type));
+                com.tom.rv2ide.ai.tool.mcp.McpClient.Transport.fromId(server.type),
+                // stdio：url 槽位存命令名，参数/环境/工作目录随配置下发。
+                server.url,
+                server.args,
+                server.env,
+                server.cwd);
         java.util.List<com.tom.rv2ide.ai.tool.mcp.McpToolInfo> tools;
         try {
           tools = client.listTools();
@@ -1616,7 +1906,10 @@ public final class AgentOrchestrator {
     // 共享字段——并发两个会话时，一个运行结束会把另一个仍在使用的长连接关掉。
     java.util.List<com.tom.rv2ide.ai.tool.mcp.McpClient> mcpClients =
         new java.util.ArrayList<>();
-    ToolRegistry registry = buildRegistry(true, mcpClients);
+    // 本次运行的浏览器工具实例（同理随运行建立/释放；WebView 持有 native 资源）。
+    java.util.List<com.tom.rv2ide.artificial.agent.tool.BrowserTool> browserTools =
+        new java.util.ArrayList<>();
+    ToolRegistry registry = buildRegistry(true, mcpClients, browserTools);
     ToolPermissionService permissions = new ToolPermissionService(settings, registry);
     ToolExecutor executor =
         new ToolExecutor(registry, permissions, diffStore == null ? null : newDiffRecorder());
@@ -1653,6 +1946,8 @@ public final class AgentOrchestrator {
             // 子 agent 继承父会话 id：危险工具授权与父会话同桶，避免重复弹窗。
             conversationId);
     registry.register(new com.tom.rv2ide.ai.tool.AgentTool(subAgentRunner));
+    // 多子 agent 依赖编排（同层并行、上游输出注入下游）。
+    registry.register(new com.tom.rv2ide.ai.tool.AgentPipelineTool(subAgentRunner));
 
     // 内置子 agent：固定的角色提示词 + 受限工具集（审查/探索/定位/写测试/写文档）。
     // 模型可直接派遣它们，不必每次从零描述角色约束。
@@ -1734,6 +2029,40 @@ public final class AgentOrchestrator {
             .conversationId(conversationId)
             // 读图时的缩放实现。工具模块零 Android 依赖，因此由这里注入。
             .imageDataProvider(AndroidImageDataProvider.INSTANCE)
+            // 文生图端点（能力页配置）；未配置时为 null，工具侧明确报错。
+            .imageGeneration(new AgentImageToolSettings(appContext).resolveEndpoint())
+            // 文生视频端点（同上）。
+            .videoGeneration(new AgentImageToolSettings(appContext).resolveVideoEndpoint())
+            // 编译诊断端口：经 IDE 语言服务器做静态分析。
+            // 服务器**按调用时现查**（而不是这里固化实例）：用户可能在会话中途才打开
+            // 项目编辑器（语言服务器随之启动），固化会永久拿到 null。
+            .diagnostics(
+                new ReportedDiagnosticsPort(
+                    id ->
+                        com.tom.rv2ide.lsp.api.ILanguageServerRegistry.getDefault()
+                            .getServer(id)))
+            // IDE 自身日志源：读 logback 事件的内存环形缓冲（见 IdeLogBufferAppender）。
+            .ideLog(com.tom.rv2ide.logging.IdeLogBufferHolder.INSTANCE.get())
+            // LSP 导航端口（跳定义/找引用）。与诊断同样按调用时现查语言服务器。
+            .lspNavigation(
+                new ReportedLspNavigationPort(
+                    id ->
+                        com.tom.rv2ide.lsp.api.ILanguageServerRegistry.getDefault()
+                            .getServer(id)))
+            // 代码格式化端口（读文件→格式化→写回，在适配器内完成）。
+            .codeFormat(
+                new ReportedCodeFormatPort(
+                    id ->
+                        com.tom.rv2ide.lsp.api.ILanguageServerRegistry.getDefault()
+                            .getServer(id)))
+            // 后台命令执行端口：shell_execute 的 run_in_background 走它。
+            // 完成回调把通知投进本会话正在跑的循环（会话不在跑则退回状态栏通知）。
+            .backgroundShell(backgroundShellRunner(conversationId))
+            // 文档同步端口：file_write/file_edit 写盘后通知编辑器刷新，
+            // 避免「编辑器显示旧内容」以及自动保存覆盖 AI 修改。
+            .documentSync(new ReportedDocumentSyncPort())
+            // 终端会话读取端口：读用户在内置终端里手动跑的命令的屏幕内容。
+            .terminal(new ReportedTerminalPort())
             .build();
 
     List<ConversationLog.EntryLocation> entries = loadEntries(conversationId);
@@ -1770,9 +2099,25 @@ public final class AgentOrchestrator {
     //
     // **此前这个端口从未接线**：所有工具的 reportProgress 都因「无监听者时静默忽略」
     // 被吞掉——子 agent 运行期间界面因此毫无动静，看起来与卡死无异。
+    //
+    // 携带 call id：并行派遣多个子 agent 时进度交错到达，订阅方（视图）靠它把
+    // 步骤行归到正确的工具卡片上（见 AgentEvent.getProgressCallId）。
+    //
+    // 用匿名类而不是 lambda：ProgressListener 的单抽象方法是单参 onProgress(String)，
+    // 双参版本是 default 方法——lambda 只能实现抽象方法，写双参 lambda 会编译失败。
     toolContext =
         toolContext.withProgressListener(
-            message -> persistingListener.onEvent(AgentEvent.progress(message)));
+            new com.tom.rv2ide.ai.tool.ToolContext.ProgressListener() {
+              @Override
+              public void onProgress(String message) {
+                persistingListener.onEvent(AgentEvent.progress(message));
+              }
+
+              @Override
+              public void onProgress(String callId, String message) {
+                persistingListener.onEvent(AgentEvent.progress(callId, message));
+              }
+            });
 
     // 告知订阅者「用户发了这条」。必须在 PersistingListener 构造之后：构造函数里
     // 已把用户消息落盘，因此订阅者收到本事件时读到的历史一定包含它——否则会出现
@@ -1804,17 +2149,40 @@ public final class AgentOrchestrator {
 
     try {
       AgentSession session = new AgentSession(modelClient, registry, executor);
-      return session.run(
-          config,
-          systemPrompt,
-          userRequest,
-          history,
-          toolContext,
-          cancellation,
-          persistingListener,
-          contextManager,
-          rawInputJson,
-          reasoningEffort);
+      // 登记运行中的 session，供「立即插入」投递（见 injectIntoRun）。
+      // 先登记后 run：登记晚于首个请求会让「刚点插入」落进空窗、被当成没在跑。
+      activeSessions.put(conversationId, session);
+      try {
+        return session.run(
+            config,
+            systemPrompt,
+            userRequest,
+            history,
+            toolContext,
+            cancellation,
+            persistingListener,
+            contextManager,
+            rawInputJson,
+            reasoningEffort);
+      } finally {
+        activeSessions.remove(conversationId);
+        // 收尾时把**未被消费**的注入放回队列头部（保持原序）：它们已被用户点过
+        // 「插入」，但循环恰好没赶上最后一个检查点。不放回就永久丢失；
+        // 放回后由 runInConversation 的 finally 立即消化（RUN_FINISHED 之后）。
+        List<String> leftover = session.drainLeftoverInjects();
+        if (!leftover.isEmpty()) {
+          java.util.ArrayDeque<QueuedRequest> queue =
+              queuedRequests.computeIfAbsent(conversationId, k -> new java.util.ArrayDeque<>());
+          synchronized (queue) {
+            // 逆序 addFirst：保持它们在注入槽里的原始先后。
+            for (int i = leftover.size() - 1; i >= 0; i--) {
+              queue.addFirst(
+                  new QueuedRequest(
+                      providerId, modelId, leftover.get(i), customBaseUrl, null, reasoningEffort));
+            }
+          }
+        }
+      }
     } finally {
       // 只移除本次运行登记的那一个令牌：并发会话各有各的，不能整体清空。
       activeCancellations.remove(conversationId);
@@ -1825,6 +2193,14 @@ public final class AgentOrchestrator {
       // 否则每跑一次对话就多一条悬挂的连接（以及一个守护读线程）。
       // 只释放本次运行建立的连接，不影响并发会话仍在使用的连接。
       closeMcpClients(mcpClients);
+      // 浏览器工具持有的 WebView 同理：销毁掉 native 资源，不留悬挂的渲染进程。
+      for (com.tom.rv2ide.artificial.agent.tool.BrowserTool browserTool : browserTools) {
+        try {
+          browserTool.close();
+        } catch (Throwable t) {
+          com.tom.rv2ide.ai.tool.api.ErrorLog.record("agent", "释放浏览器工具失败", t, null);
+        }
+      }
     }
   }
 
@@ -2081,6 +2457,15 @@ public final class AgentOrchestrator {
     private final java.util.List<String> stepBuffer = new java.util.ArrayList<>();
 
     /**
+     * 正在执行中的工具调用（TOOL_STARTED 记入、TOOL_FINISHED 清空）。
+     *
+     * <p>为 [RunSnapshot.pendingToolCall] 服务：视图切回「正在跑工具」的会话时，
+     * 靠它把那张未落盘的卡片重建出来，后续 TOOL_FINISHED / PROGRESS 才有正确落点。
+     * volatile：写方是事件线程（persist），读方是任意线程（snapshot）。
+     */
+    private volatile com.tom.rv2ide.ai.tool.api.ToolCall pendingToolCall = null;
+
+    /**
      * 本轮已产生的**正文**（TEXT_DELTA 累积）。
      *
      * <p><b>为什么需要它</b>：正文只在 TURN_FINISHED 时落盘，而一次运行可能持续几分钟。
@@ -2127,6 +2512,10 @@ public final class AgentOrchestrator {
         return;
       }
       switch (event.getType()) {
+        case TOOL_STARTED:
+          // 记下在途调用，供视图重建时接回卡片（见 pendingToolCall 注释）。
+          pendingToolCall = event.getToolCall();
+          break;
         case REASONING_DELTA:
           // 累积本轮思考；不落盘（增量太碎），由 TURN_FINISHED 一并写入。
           // 加锁理由同 TEXT_DELTA：快照会读它（推理流式期间切全屏同样会丢思考块）。
@@ -2180,6 +2569,25 @@ public final class AgentOrchestrator {
                     new java.util.ArrayList<>(stepBuffer)));
           }
           stepBuffer.clear();
+          // 并行执行时 TOOL_FINISHED 可能与另一调用的 TOOL_STARTED 交错——
+          // 只有结束的正是记录中的那个调用时才清（否则会把新调用误清掉）。
+          if (event.getToolCall() != null
+              && pendingToolCall != null
+              && pendingToolCall.getId().equals(event.getToolCall().getId())) {
+            pendingToolCall = null;
+          }
+          break;
+        case USER_MESSAGE:
+          // 运行中注入的用户消息（cc-haha queued_command 的落盘对应物）：
+          // 循环在检查点把它发成事件，这里落盘——不落盘的话它只活在内存里，
+          // 运行结束后的回放（切全屏/重启）就看不到这条消息，历史出现断层。
+          //
+          // 落盘**原文**（不含 "用户在你工作期间…" 包装）：包装只是给当轮请求的
+          // 瞬时增强，与 cc-haha 的 attachment 语义一致——fold 时模型看到干净消息。
+          if (event.getMessage() != null && !event.getMessage().isEmpty()) {
+            appendEntry(
+                UserMessageEntry.create(null, System.currentTimeMillis(), event.getMessage()));
+          }
           break;
         default:
           break;
@@ -2196,7 +2604,7 @@ public final class AgentOrchestrator {
         reasoning = reasoningBuffer.toString();
         action = lastAction;
       }
-      return new RunSnapshot(text, reasoning, action);
+      return new RunSnapshot(text, reasoning, action, pendingToolCall);
     }
 
     private void appendEntry(ConversationEntry entry) {

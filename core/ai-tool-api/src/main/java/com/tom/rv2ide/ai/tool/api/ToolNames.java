@@ -42,6 +42,27 @@ public final class ToolNames {
      */
     public static final String GREP = "grep";
     public static final String SHELL_EXECUTE = "shell_execute";
+    /**
+     * 读取内置终端（Termux）会话屏幕内容。
+     *
+     * <p>与 {@link #SHELL_EXECUTE} 互补：后者起独立进程、返回本次输出；本工具读的是
+     * 用户在终端里手动跑的东西。只读。
+     */
+    public static final String TERMINAL_READ = "terminal_read";
+    /**
+     * 取回后台命令的输出与状态。
+     *
+     * <p>与 {@link #SHELL_EXECUTE} 的 {@code run_in_background} 配对：启动返回任务 id，
+     * 本工具按 id 取回（可阻塞等待或非阻塞查看）。照 cc-haha 的 TaskOutput 语义。
+     */
+    public static final String TASK_OUTPUT = "task_output";
+    /**
+     * 停止一个运行中的后台任务。
+     *
+     * <p>照 cc-haha 的 TaskStop 语义：仅在任务确实失控/无用时才停，不要因为
+     * 「已经看够了输出」就停——那会浪费一次已经投入的等待。
+     */
+    public static final String TASK_STOP = "task_stop";
     public static final String AGENT = "agent";
     public static final String AGENT_PIPELINE = "agent_pipeline";
     public static final String AGENT_OUTPUT = "agent_output";
@@ -63,8 +84,12 @@ public final class ToolNames {
     public static final String WEB_FETCH = "web_fetch";
     /** 通用 HTTP 请求（任意方法/头/体），供调试接口、上传、带鉴权的调用使用。 */
     public static final String HTTP_REQUEST = "http_request";
-    public static final String IMAGE_UNDERSTANDING = "image_understanding";
+    // 注：曾有一个 IMAGE_UNDERSTANDING = "image_understanding" 常量（LCP 移植时带过来的），
+    // 但 ACS 从未实现该工具——图片理解走的是「主模型直接接收 image block」（file_read 图片、
+    // phone_screenshot、浏览器截图都经 ToolResult.withImage），不需要独立工具。已删除该死声明。
     public static final String IMAGE_GENERATION = "image_generation";
+    /** 文生视频（异步任务 + 轮询，协议照 cc-haha media-gen）。 */
+    public static final String VIDEO_GENERATION = "video_generation";
     // ---- 手机控制（真机测试闭环，经 Shizuku 走 adb 级权限，不依赖无障碍服务） ----
     /** 截取设备屏幕。 */
     public static final String PHONE_SCREENSHOT = "phone_screenshot";
@@ -113,6 +138,64 @@ public final class ToolNames {
     public static final String GIT = "git";
     /** 写操作：暂存 / 提交 / 分支 / 丢弃 / 远程同步。授权粒度按 action 细分。 */
     public static final String GIT_WRITE = "git_write";
+
+    // ---- IDE 自省（编辑器/语言服务器内部状态，通用编码 agent 无法获得）----
+    /**
+     * 编译诊断：经 IDE 语言服务器对文件做静态分析，返回带行列号的错误/警告。
+     *
+     * <p>通用 agent 只能靠跑一次构建才知道改对没有（分钟级）；这里复用 IDE 已建立的
+     * 符号索引，一次分析是秒级。只读，无副作用。
+     */
+    public static final String DIAGNOSTICS = "diagnostics";
+    /**
+     * 读取 IDE 自身日志（进程内 logback 环形缓冲），用于排查 AI 工具层被吞掉的异常。
+     *
+     * <p>不是读文件也不是读设备 logcat：logback 只接了 `LogcatAppender`（无稳定日志文件），
+     * 而经 shell 后端跑 logcat 是另一个进程、读不到本应用自身的行。
+     */
+    public static final String IDE_LOG_READ = "ide_log_read";
+    /**
+     * 内存分析：进程内存画像 + AI 助手各子系统规模（消息数/缓存/队列）。
+     *
+     * <p>用于卡顿与 OOM 排查（用户实测的 Markdown 表格 OOM 之后加的诊断口）。
+     * 只读，无副作用。
+     */
+    public static final String MEMORY_ANALYSIS = "memory_analysis";
+    /**
+     * 布局预览：把 `res/layout/*.xml` 经真实 View inflate 渲染成图片回传模型。
+     *
+     * <p>让 AI 改完 UI 后能自己看一眼渲染结果（app 层工具，需 Android 与模块依赖）。
+     */
+    public static final String LAYOUT_PREVIEW = "layout_preview";
+    /**
+     * 内置浏览器：用系统 WebView 加载网页并读取内容/截图。
+     *
+     * <p>与 {@link #WEB_FETCH} 的差异：web_fetch 走 HTTP 客户端只拿 HTML 源文本
+     * （不含 JS 渲染结果），本工具执行真实渲染后可取 innerText、跑 JS、截图——
+     * 面向 SPA 与需要视觉确认的场景。只读浏览，不支持点击/表单交互。
+     */
+    public static final String BROWSER = "browser";
+    /** 压缩 / 解压 zip（手机上处理 SDK/依赖包、打包、备份）。 */
+    public static final String ARCHIVE = "archive";
+    /**
+     * 代码导航：经语言服务器跳定义 / 找引用。
+     *
+     * <p>按符号语义匹配，胜过文本 grep（同名符号不会被误判）。语言服务器已实现这两项，
+     * 复用其符号索引即可。只读。
+     */
+    public static final String LSP_NAVIGATE = "lsp_navigate";
+    /**
+     * 项目结构查询：模块、Android 变体、每个变体的真实 Gradle 任务名。
+     *
+     * <p>让模型不用猜模块名/任务名（猜错会让 gradle_build 白跑一次）。只读。
+     */
+    public static final String PROJECT_INFO = "project_info";
+    /**
+     * 代码格式化：经语言服务器格式化源文件（就地写回）。
+     *
+     * <p>手机上无法手动对齐格式，用语言服务器的 formatter 比让模型猜缩进可靠。
+     */
+    public static final String FORMAT_CODE = "format_code";
 
     private static final String CUSTOM_AGENT_PREFIX = "agentx_";
     private static final String CUSTOM_MCP_PREFIX = "mcpx_";

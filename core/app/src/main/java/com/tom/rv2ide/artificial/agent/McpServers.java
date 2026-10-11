@@ -43,6 +43,10 @@ public final class McpServers {
   private static final String FIELD_LABEL = "label";
   private static final String FIELD_ENABLED = "enabled";
   private static final String FIELD_TYPE = "type";
+  // stdio 专属字段：type=stdio 时 url 存命令名（复用唯一必填槽位），另存参数与环境。
+  private static final String FIELD_ARGS = "args";
+  private static final String FIELD_ENV = "env";
+  private static final String FIELD_CWD = "cwd";
 
   /** 默认传输类型。已有配置里没有 {@code type} 字段，必须落到它，否则升级即失效。 */
   public static final String DEFAULT_TYPE = "http";
@@ -51,6 +55,8 @@ public final class McpServers {
   public static final String TYPE_HTTP = "http";
 
   public static final String TYPE_SSE = "sse";
+
+  public static final String TYPE_STDIO = "stdio";
 
   /**
    * 归一化传输类型。
@@ -63,7 +69,13 @@ public final class McpServers {
       return DEFAULT_TYPE;
     }
     String value = raw.trim().toLowerCase(java.util.Locale.US);
-    return TYPE_SSE.equals(value) ? TYPE_SSE : DEFAULT_TYPE;
+    if (TYPE_SSE.equals(value)) {
+      return TYPE_SSE;
+    }
+    if (TYPE_STDIO.equals(value)) {
+      return TYPE_STDIO;
+    }
+    return DEFAULT_TYPE;
   }
 
   /** 一个 MCP server 配置。 */
@@ -73,7 +85,7 @@ public final class McpServers {
     public final boolean enabled;
 
     /**
-     * 传输类型：{@code http} 或 {@code sse}。
+     * 传输类型：{@code http} / {@code sse} / {@code stdio}。
      *
      * <p><b>为什么存字符串而不是枚举</b>：取值来自偏好里的 JSON，损坏或来自更高版本的
      * 未知值时只需回落到默认，不需要在读取处处理 {@code IllegalArgumentException}。
@@ -81,28 +93,71 @@ public final class McpServers {
      */
     public final String type;
 
+    /** stdio 命令参数；HTTP/SSE 时为空。 */
+    public final java.util.List<String> args;
+    /** stdio 附加环境变量；HTTP/SSE 时为空。 */
+    public final java.util.Map<String, String> env;
+    /** stdio 工作目录；空串继承父进程。 */
+    public final String cwd;
+
     public Server(String url, String label, boolean enabled) {
       this(url, label, enabled, DEFAULT_TYPE);
     }
 
     public Server(String url, String label, boolean enabled, String type) {
+      this(url, label, enabled, type, java.util.Collections.<String>emptyList(),
+          java.util.Collections.<String, String>emptyMap(), "");
+    }
+
+    public Server(
+        String url,
+        String label,
+        boolean enabled,
+        String type,
+        java.util.List<String> args,
+        java.util.Map<String, String> env,
+        String cwd) {
       this.url = url == null ? "" : url.trim();
       this.label = label == null ? "" : label.trim();
       this.enabled = enabled;
       this.type = normalizeType(type);
+      this.args =
+          args == null
+              ? java.util.Collections.<String>emptyList()
+              : new java.util.ArrayList<>(args);
+      this.env =
+          env == null
+              ? java.util.Collections.<String, String>emptyMap()
+              : new java.util.LinkedHashMap<>(env);
+      this.cwd = cwd == null ? "" : cwd.trim();
     }
 
-    /** 展示名：优先用户填的 label，否则用地址。 */
+    /** 展示名：优先用户填的 label，否则用地址（stdio 时即命令名）。 */
     public String displayName() {
       return label.isEmpty() ? url : label;
     }
 
     public JSONObject toJson() throws org.json.JSONException {
-      return new JSONObject()
-          .put(FIELD_URL, url)
-          .put(FIELD_LABEL, label)
-          .put(FIELD_ENABLED, enabled)
-          .put(FIELD_TYPE, type);
+      JSONObject json =
+          new JSONObject()
+              .put(FIELD_URL, url)
+              .put(FIELD_LABEL, label)
+              .put(FIELD_ENABLED, enabled)
+              .put(FIELD_TYPE, type);
+      if (TYPE_STDIO.equals(type)) {
+        org.json.JSONArray argv = new org.json.JSONArray();
+        for (String arg : args) {
+          argv.put(arg);
+        }
+        json.put(FIELD_ARGS, argv);
+        JSONObject envJson = new JSONObject();
+        for (java.util.Map.Entry<String, String> entry : env.entrySet()) {
+          envJson.put(entry.getKey(), entry.getValue());
+        }
+        json.put(FIELD_ENV, envJson);
+        json.put(FIELD_CWD, cwd);
+      }
+      return json;
     }
   }
 
@@ -134,12 +189,39 @@ public final class McpServers {
         }
         // optString 在字段缺失时返回 ""，normalizeType 会把它归到 http——
         // 这正是升级前写入的配置应有的行为。
+        String type = normalizeType(json.optString(FIELD_TYPE, DEFAULT_TYPE));
+        java.util.List<String> args = new java.util.ArrayList<>();
+        java.util.Map<String, String> envMap = new java.util.LinkedHashMap<>();
+        String cwd = "";
+        if (TYPE_STDIO.equals(type)) {
+          org.json.JSONArray argv = json.optJSONArray(FIELD_ARGS);
+          if (argv != null) {
+            for (int a = 0; a < argv.length(); a++) {
+              String arg = argv.optString(a, "").trim();
+              if (!arg.isEmpty()) {
+                args.add(arg);
+              }
+            }
+          }
+          org.json.JSONObject envJson = json.optJSONObject(FIELD_ENV);
+          if (envJson != null) {
+            java.util.Iterator<String> keys = envJson.keys();
+            while (keys.hasNext()) {
+              String key = keys.next();
+              envMap.put(key, envJson.optString(key, ""));
+            }
+          }
+          cwd = json.optString(FIELD_CWD, "").trim();
+        }
         servers.add(
             new Server(
                 url,
                 json.optString(FIELD_LABEL, ""),
                 json.optBoolean(FIELD_ENABLED, true),
-                json.optString(FIELD_TYPE, DEFAULT_TYPE)));
+                type,
+                args,
+                envMap,
+                cwd));
       }
     } catch (org.json.JSONException e) {
       // 配置损坏 → 当作空列表。不抛异常，否则 AI 功能会因此完全不可用。

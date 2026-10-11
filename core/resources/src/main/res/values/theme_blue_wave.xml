@@ -88,6 +88,7 @@
     <item name="colorOnErrorContainer">@color/_blue_wave_light_colorOnErrorContainer</item>
 
     <item name="android:colorBackground">@color/_blue_wave_light_colorBackground</item>
+    <item name="android:windowBackground">@color/_blue_wave_light_colorBackground</item>
     <item name="colorOnBackground">@color/_blue_wave_light_colorOnBackground</item>
 
     <item name="colorSurface">@color/_blue_wave_light_colorSurface</item>
@@ -181,6 +182,7 @@
     <item name="colorOnErrorContainer">@color/_blue_wave_dark_colorOnErrorContainer</item>
 
     <item name="android:colorBackground">@color/_blue_wave_dark_colorBackground</item>
+    <item name="android:windowBackground">@color/_blue_wave_dark_colorBackground</item>
     <item name="colorOnBackground">@color/_blue_wave_dark_colorOnBackground</item>
 
     <item name="colorSurface">@color/_blue_wave_dark_colorSurface</item>

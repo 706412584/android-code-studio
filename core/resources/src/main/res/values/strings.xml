@@ -119,13 +119,61 @@
   <string name="ai_agent_provider_fetch_hint">Only available when the upstream provider exposes a model list endpoint.</string>
   <string name="ai_agent_provider_pick_model">Pick a model</string>
   <string name="ai_agent_provider_1m">1M</string>
-  <string name="ai_agent_provider_model_list_hint">Tap a model to fill the focused slot.</string>
   <string name="ai_agent_provider_save">Save</string>
   <string name="ai_agent_provider_required">Name, base URL and the main model are required</string>
   <string name="ai_agent_provider_from_preset">Start from a preset</string>
   <string name="ai_agent_provider_ready">ready</string>
   <string name="ai_agent_provider_no_key">no API key</string>
   <string name="ai_agent_provider_incomplete">incomplete</string>
+  <string name="ai_agent_image_gen_title">Image generation</string>
+  <string name="ai_agent_image_gen_summary">Off — tap to pick a provider and image model</string>
+  <string name="ai_agent_image_gen_pick_provider">Pick an image provider</string>
+  <string name="ai_agent_image_gen_pick_model">Image model · %1$s</string>
+  <string name="ai_agent_image_gen_fetching">Fetching model list…</string>
+  <string name="ai_agent_image_gen_no_providers">No usable provider. Add one under Providers first.</string>
+  <string name="ai_agent_image_gen_no_models">No image model found in this provider\'s catalog (names containing \"image\").</string>
+  <string name="ai_agent_image_gen_clear">Clear</string>
+  <string name="ai_agent_image_gen_output_dir_title">Image save location</string>
+  <string name="ai_agent_image_gen_output_dir_default">Default: current project ai-generated/ folder</string>
+  <string name="ai_agent_image_gen_output_dir_row">Image save location: %1$s</string>
+  <string name="ai_agent_video_gen_title">Video generation</string>
+  <string name="ai_agent_video_gen_summary">Off — tap to pick a provider and video model</string>
+  <string name="ai_agent_video_gen_pick_provider">Pick a video provider</string>
+  <string name="ai_agent_video_gen_pick_model">Video model · %1$s</string>
+  <string name="ai_agent_video_gen_no_providers">No usable provider. Add one under Providers first.</string>
+  <string name="ai_agent_video_gen_no_models">No video model found in this provider\'s catalog (names containing \"video\").</string>
+  <string name="ai_agent_video_gen_clear">Clear</string>
+  <string name="ai_agent_video_gen_output_dir_row">Video save location: %1$s</string>
+  <string name="ai_agent_video_gen_output_dir_default">Default: current project ai-generated/ folder</string>
+  <string name="ai_agent_skills_import">Import skill</string>
+  <string name="ai_agent_skills_import_hint">Pick a .md file from Downloads to import</string>
+  <string name="ai_agent_skills_import_empty">No .md files in Downloads. Put skill files there first.</string>
+  <string name="ai_agent_skills_import_ok">Imported: %1$s</string>
+  <string name="ai_agent_skills_import_failed">Import failed — check the file and try again</string>
+  <string name="ai_agent_mcp_type_stdio">stdio (local process via Termux)</string>
+  <string name="ai_agent_mcp_stdio_args">Command arguments (space separated)</string>
+  <string name="ai_agent_mcp_stdio_env">Environment variables (KEY=VALUE, one per line)</string>
+  <string name="ai_agent_mcp_stdio_cwd">Working directory (optional)</string>
+  <string name="ai_agent_market_title">Skill market</string>
+  <string name="ai_agent_market_loading">Loading market…</string>
+  <string name="ai_agent_market_empty">Market has no skills yet</string>
+  <string name="ai_agent_market_unreachable">Market unreachable: %1$s</string>
+  <string name="ai_agent_image_gen_fetch_failed">Model fetch failed: %1$s</string>
+  <string name="ai_agent_market_installing">Installing…</string>
+  <string name="ai_agent_market_installed">Installed: %1$s (restart a conversation to load it)</string>
+  <string name="ai_agent_market_uninstall">Uninstall</string>
+  <string name="ai_agent_market_uninstall_confirm">Remove this market-installed skill?</string>
+  <string name="ai_agent_market_uninstalled">Uninstalled: %1$s</string>
+  <string name="ai_agent_skills_manual_hint">%1$s was added manually — edit its files to remove it</string>
+  <string name="ai_agent_notify_channel">AI task completion</string>
+  <string name="ai_agent_notify_channel_desc">Notify when an AI run finishes while you are away</string>
+  <string name="ai_agent_notify_done_title">AI task finished</string>
+  <string name="ai_agent_notify_failed_title">AI task failed</string>
+  <string name="ai_agent_notify_text">Tap to view the result</string>
+  <string name="ai_agent_notify_text_with_duration">Took %1$s — tap to view</string>
+  <string name="ai_bg_task_done_title">Background task finished</string>
+  <string name="ai_bg_task_failed_title">Background task failed</string>
+  <string name="ai_bg_task_text">Tap to view the output</string>
   <string name="ai_agent_page_providers_summary">API keys, custom endpoint, enable switch</string>
   <string name="ai_agent_page_tools_title">Tools and permissions</string>
   <string name="ai_agent_page_tools_summary">Chat mode, permission level, shell backend, code completion</string>
@@ -333,6 +381,8 @@
   <string name="ai_agent_ui_text_size_summary">Message text size in the assistant panel</string>
   <string name="ai_agent_ui_card_scale_title">Card size</string>
   <string name="ai_agent_ui_card_scale_summary">Padding and corner radius of message and tool cards</string>
+  <string name="ai_agent_ui_theme_preset_title">Message color scheme</string>
+  <string name="ai_agent_ui_theme_preset_summary">Overall palette of the AI message panel (default / coffee / graphite / forest)</string>
   <string name="ai_agent_ui_text_color_title">Assistant text color</string>
   <string name="ai_agent_ui_text_color_summary">Color of assistant reply text (user bubbles keep the theme color)</string>
   <string name="ai_agent_ui_avatar_title">Assistant avatar</string>
@@ -418,6 +468,9 @@
   <string name="ai_assistant_compact_busy">Cannot compact while a run is in progress.</string>
   <!-- Sent-message queue. Position starts at 1; it becomes 1 when the running turn ends. -->
   <string name="ai_assistant_queued">Queued (%1$d in queue). It will be sent when the current run finishes.</string>
+  <!-- Injected mid-run: delivered after the current tool batch completes, without stopping the run. -->
+  <string name="ai_assistant_interjected">Inserted into the running turn — the model will see it once the current tools finish.</string>
+  <string name="ai_assistant_interject_fallback">Run is wrapping up; the message was queued instead.</string>
   <string name="ai_assistant_compact_failed">Nothing to compact, or compaction failed.</string>
   <string name="ai_assistant_compact_done">Context compacted: %1$s</string>
   <string name="ai_assistant_todo_progress">Tasks · %1$d/%2$d done</string>
@@ -557,6 +610,13 @@
   <string name="ai_assistant_work_web">Fetching %1$s</string>
   <string name="ai_assistant_work_git_read">Checking git %1$s</string>
   <string name="ai_assistant_work_git_write">Git %1$s</string>
+  <string name="ai_assistant_work_diagnostics">Checking %1$s</string>
+  <string name="ai_assistant_work_ide_log">Reading IDE log</string>
+  <string name="ai_assistant_work_layout_preview">Previewing %1$s</string>
+  <string name="ai_assistant_work_archive">Archiving %1$s</string>
+  <string name="ai_assistant_work_navigate">Looking up %1$s</string>
+  <string name="ai_assistant_work_formatting">Formatting %1$s</string>
+  <string name="ai_assistant_work_project_info">Inspecting project</string>
   <string name="ai_assistant_work_tool">Running %1$s</string>
 
   <!-- Bottom-fixed retry card -->
@@ -1613,6 +1673,7 @@ This AI agent is designed to assist you in developing Android applications direc
   <string name="compose_tool_card_instruction">Input</string>
   <string name="compose_tool_card_result">Result</string>
   <string name="compose_tool_card_back">Back</string>
+  <string name="compose_tool_card_view_result">View result</string>
   <string name="compose_tool_card_expand">Expand</string>
   <string name="compose_tool_card_collapse">Collapse</string>
   <string name="compose_tool_card_running">Running</string>
@@ -1640,6 +1701,7 @@ This AI agent is designed to assist you in developing Android applications direc
   <string name="compose_style_chat_copy">Copy</string>
   <string name="compose_style_chat_copied">Copied</string>
   <string name="compose_tool_card_image_preview">Image</string>
+  <string name="compose_tool_card_image_count">%1$d images</string>
   <string name="compose_tool_card_tap_to_view">Tap to view</string>
   <string name="ai_assistant_image_close">Close</string>
   <string name="sidebar_assistant_title">AI Assistant</string>

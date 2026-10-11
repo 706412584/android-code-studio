@@ -19,16 +19,22 @@ package com.tom.rv2ide.preferences
 
 import android.content.Context
 import android.content.Intent
+import android.view.View
 import android.widget.Toast
 import androidx.preference.Preference
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.tom.rv2ide.R
 import com.tom.rv2ide.activities.FolderPickerActivity
 import com.tom.rv2ide.ai.agent.ProjectRulesLoader
+import com.tom.rv2ide.artificial.agent.AgentImageToolSettings
 import com.tom.rv2ide.artificial.agent.AssistantUiStyleStore
+import com.tom.rv2ide.artificial.agent.ModelCatalogFetcher
+import com.tom.rv2ide.artificial.agent.ProviderConfigStore
 import com.tom.rv2ide.artificial.agent.compose.AssistantComposeRender
 import com.tom.rv2ide.artificial.agent.compose.AssistantThinkingCollapsePref
 import com.tom.rv2ide.artificial.agent.compose.AssistantToolStatusBarPref
+import com.tom.rv2ide.artificial.agent.compose.theme.AppThemePreset
+import com.tom.rv2ide.artificial.agent.compose.theme.AssistantThemePrefs
 import com.tom.rv2ide.artificial.agent.ShizukuShellBackend
 import com.tom.rv2ide.artificial.agent.codegraph.CodeGraphInstaller
 import com.tom.rv2ide.artificial.agent.codegraph.CodeGraphManager
@@ -151,6 +157,8 @@ private class CapabilitiesPage(
   init {
     addPreference(AssistantOverlayPreference())
     addPreference(AgentsPreference())
+    addPreference(ImageGenerationPreference())
+    addPreference(VideoGenerationPreference())
     addPreference(ProjectRulesPreference())
     addPreference(SkillsPreference())
     addPreference(MemoriesPreference())
@@ -262,28 +270,6 @@ private object CodeGraphIndexActions {
       FolderPickerActivity.onFolderPicked = null
     }
     context.startActivity(Intent(context, FolderPickerActivity::class.java))
-  }
-
-  /**
-   * `content://` tree URI → 真实目录。
-   *
-   * <p>外部存储的文档 id 形如 `primary:MyFolder`，冒号后才是相对路径（与
-   * `AssistantInputFeatures.localPathOf` 同一约定）。非主存储卷（SD 卡等）拿不到路径，
-   * 返回 null——这类卷 CodeGraph 本来也难以作为 cwd 使用。
-   */
-  private fun treeUriToFile(context: Context, uriString: String): File? {
-    return try {
-      val uri = android.net.Uri.parse(uriString)
-      val id = android.provider.DocumentsContract.getTreeDocumentId(uri)
-      val relative = id.substringAfter(':', missingDelimiterValue = "")
-      if (relative.isEmpty()) {
-        null
-      } else {
-        File(android.os.Environment.getExternalStorageDirectory(), relative)
-      }
-    } catch (e: Exception) {
-      null
-    }
   }
 
   /**
@@ -616,6 +602,55 @@ private class AssistantTextColorPreference(
 }
 
 
+/**
+ * 助手消息配色方案。
+ *
+ * <p>移植自 Aharou 的主题预设（默认蓝/咖啡/石墨/森林，见 [AppThemePreset]）：
+ * 单选对话框列出全部方案，选中即写偏好——Compose 面板自己订阅同一份偏好
+ * （见 `AIEditorTheme.rememberThemePreset`），改动即时生效，无需重启面板。
+ *
+ * <p>摘要显示当前方案名，与 [AssistantTextColorPreference] 的「点开才知道选了啥」不同——
+ * 配色方案是外观总纲，用户应能在列表页直接看到当前值。
+ */
+@Parcelize
+private class AssistantThemePresetPreference(
+    override val key: String = "assistant_theme_preset_pref",
+    override val title: Int = R.string.ai_agent_ui_theme_preset_title,
+    override val summary: Int? = R.string.ai_agent_ui_theme_preset_summary,
+) : BasePreference() {
+
+  override fun onCreatePreference(context: Context): Preference {
+    return androidx.preference.Preference(context).apply {
+      key = "assistant_theme_preset_pref"
+      title = context.getString(R.string.ai_agent_ui_theme_preset_title)
+      summary = currentName(context)
+    }
+  }
+
+  override fun onPreferenceClick(preference: Preference): Boolean {
+    val context = preference.context
+    val all = AppThemePreset.ALL_PRESETS
+    val shown = all.map { it.displayName }.toTypedArray()
+    val checked = all.indexOfFirst { it.id == AssistantThemePrefs.presetId(context) }
+
+    com.google.android.material.dialog.MaterialAlertDialogBuilder(context)
+        .setTitle(R.string.ai_agent_ui_theme_preset_title)
+        // checked = -1（未设置过）时单选列表没有选中项——正合适：默认蓝只是显示回退。
+        .setSingleChoiceItems(shown, checked) { dialog, which ->
+          val preset = all[which]
+          AssistantThemePrefs.setPresetId(context, preset.id)
+          preference.summary = preset.displayName
+          dialog.dismiss()
+        }
+        .setNegativeButton(android.R.string.cancel, null)
+        .show()
+    return true
+  }
+
+  private fun currentName(context: Context): String =
+      AppThemePreset.findById(AssistantThemePrefs.presetId(context)).displayName
+}
+
 /** 高级：外观定制、提示词模板与自动切换服务商。改动频率低，但出问题时要能找到。 */
 @Parcelize
 private class AdvancedPage(
@@ -629,6 +664,8 @@ private class AdvancedPage(
     // 外观定制放最前：它们是用户最常想改的（字号/颜色），而提示词模板属于「出问题才找」。
     // 头像设置已移除（2026-10-09）：Compose 渲染路径下消息不带头像位
     // （Aharou 的渲染层没有头像概念），留着开关改了也看不到效果。
+    // 配色方案放第一：它是外观总纲（整套换色），比单项的字号/正文颜色更上游。
+    addPreference(AssistantThemePresetPreference())
     addPreference(AssistantTextSizePreference())
     addPreference(AssistantCardScalePreference())
     addPreference(AssistantTextColorPreference())
@@ -645,6 +682,279 @@ private class AdvancedPage(
 /** 读写 "ai_agent_tools" 存储的助手。 */
 private fun agentPrefs(context: Context) =
     context.applicationContext.getSharedPreferences("ai_agent_tools", Context.MODE_PRIVATE)
+
+/**
+ * `content://` tree URI → 真实目录。
+ *
+ * <p>外部存储的文档 id 形如 `primary:MyFolder`，冒号后才是相对路径（与
+ * `AssistantInputFeatures.localPathOf` 同一约定）。非主存储卷（SD 卡等）拿不到路径，
+ * 返回 null——这类卷 CodeGraph 本来也难以作为 cwd 使用。
+ */
+private fun treeUriToFile(context: Context, uriString: String): File? {
+  return try {
+    val uri = android.net.Uri.parse(uriString)
+    val id = android.provider.DocumentsContract.getTreeDocumentId(uri)
+    val relative = id.substringAfter(':', missingDelimiterValue = "")
+    if (relative.isEmpty()) {
+      null
+    } else {
+      File(android.os.Environment.getExternalStorageDirectory(), relative)
+    }
+  } catch (e: Exception) {
+    null
+  }
+}
+
+/**
+ * 图片生成配置：能力页选定的服务商 + 模型 + 保存位置。
+ *
+ * <p>单弹窗承载全部配置：服务商列表（当前项加 ✓）之后追加一行「保存位置」，
+ * 点服务商进第二步选模型（从该服务商的 {@code /models} 目录拉取并只留含 image
+ * 关键词的），点保存位置行打开目录选择器。选定的只是 id，
+ * 连接信息每次运行时由 [com.tom.rv2ide.artificial.agent.AgentImageToolSettings] 现读——
+ * 改密钥立即生效，不必同步。
+ *
+ * <p><b>summary 必须传 null</b>：基类 [BasePreference.onCreateView] 会用静态 summary
+ * 资源覆盖 {@code onCreatePreference} 里设置的值——重进设置页就会显示回「未启用」，
+ * 而实际配置好好地存在偏好里（实测踩过）。
+ */
+/**
+ * 媒体生成配置的共用流程（服务商单选 + 模型拉取过滤 + 保存位置行 + 清除）。
+ *
+ * <p>图片/视频两套配置除「存储键、模型过滤词、字符串资源」外完全同构，抽基类
+ * 消掉第二份拷贝。子类只提供投影（哪个 provider/model/outputDir、怎么写回）。
+ *
+ * <p>不能加 @Parcelize：抽象类无法 Parcelable 化，子类各自声明即可。
+ */
+private abstract class MediaGenerationPreference(
+    private val modelKeyword: String,
+) : BasePreference() {
+
+  /** 当前选定的服务商 id / 模型名 / 保存目录；未配置时前三者可为空串。 */
+  protected abstract fun providerId(settings: AgentImageToolSettings): String
+
+  protected abstract fun model(settings: AgentImageToolSettings): String
+
+  protected abstract fun outputDir(settings: AgentImageToolSettings): String
+
+  protected abstract fun setProviderModel(
+      settings: AgentImageToolSettings,
+      providerId: String,
+      model: String,
+  )
+
+  protected abstract fun setOutputDir(settings: AgentImageToolSettings, path: String)
+
+  protected abstract fun clear(settings: AgentImageToolSettings)
+
+  protected abstract fun strings(): MediaGenStrings
+
+  override fun onPreferenceClick(preference: Preference): Boolean {
+    val context = preference.context
+    val records = ProviderConfigStore(context).load().filter { it.isUsable() }
+    val settings = AgentImageToolSettings(context)
+    val s = strings()
+
+    val rows = mutableListOf<String>()
+    records.forEach { record ->
+      val mark = if (record.getId() == providerId(settings)) "✓ " else ""
+      rows.add("$mark${record.getLabel()}")
+    }
+    // 保存位置作为列表末行：点它打开目录选择器，不必为它单开一个设置条目。
+    rows.add(context.getString(s.outputDirRow, outputDirLabel(context)))
+
+    if (records.isEmpty()) {
+      // 没有服务商时列表只剩保存位置行，仍可用；提示放在标题下不阻断。
+      Toast.makeText(context, s.noProviders, Toast.LENGTH_SHORT).show()
+    }
+
+    com.google.android.material.dialog.MaterialAlertDialogBuilder(context)
+        .setTitle(s.pickProvider)
+        .setItems(rows.toTypedArray()) { dialog, which ->
+          if (which < records.size) {
+            dialog.dismiss()
+            pickModel(context, preference, records[which], settings)
+          } else {
+            // 保存位置行。对话框保持打开，选择器回来后行文案自动刷新。
+            FolderPickerActivity.onFolderPicked = { uriString ->
+              val dir = treeUriToFile(context, uriString)
+              if (dir != null && dir.isDirectory) {
+                setOutputDir(settings, dir.absolutePath)
+              }
+              FolderPickerActivity.onFolderPicked = null
+            }
+            context.startActivity(Intent(context, FolderPickerActivity::class.java))
+          }
+        }
+        .setNegativeButton(android.R.string.cancel, null)
+        // 清除入口：显式出口，避免只能改不能撤。
+        .setNeutralButton(s.clear) { _, _ ->
+          clear(settings)
+          preference.summary = currentSummary(context)
+        }
+        .show()
+    return true
+  }
+
+  /** 第二步：拉该服务商的模型目录，单选写入。拉取在 IO 线程，UI 全程有提示。 */
+  private fun pickModel(
+      context: Context,
+      preference: Preference,
+      record: com.tom.rv2ide.artificial.agent.ProviderConfig,
+      settings: AgentImageToolSettings,
+  ) {
+    val s = strings()
+    Toast.makeText(context, R.string.ai_agent_image_gen_fetching, Toast.LENGTH_SHORT).show()
+    CoroutineScope(Dispatchers.IO).launch {
+      val result = ModelCatalogFetcher.fetchDetailed(record)
+      // 模型按关键词过滤：agnes 的目录里文本/图片/视频混在一起，
+      // 全列出来会把该能力不可用的模型也塞给用户。
+      val models = result.models.filter { it.contains(modelKeyword, ignoreCase = true) }
+      withContext(Dispatchers.Main) {
+        if (models.isEmpty()) {
+          // 网络拉不到与目录里没有匹配模型是两种问题，文案必须分开——
+          // 否则用户会照着「没有模型」去改模型名，而真正的原因是网络。
+          val message =
+              if (result.error.isNotEmpty())
+                context.getString(R.string.ai_agent_image_gen_fetch_failed, result.error)
+              else context.getString(s.noModels)
+          Toast.makeText(context, message, Toast.LENGTH_LONG).show()
+          return@withContext
+        }
+        val checked = models.indexOf(model(settings))
+        com.google.android.material.dialog.MaterialAlertDialogBuilder(context)
+            .setTitle(context.getString(s.pickModel, record.getLabel()))
+            .setSingleChoiceItems(models.toTypedArray(), checked) { dialog, which ->
+              setProviderModel(settings, record.getId(), models[which])
+              preference.summary = currentSummary(context)
+              dialog.dismiss()
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+      }
+    }
+  }
+
+  /** 条目副标题：未配置给引导语；已配置显示「服务商 · 模型」。 */
+  protected fun currentSummary(context: Context): String {
+    val settings = AgentImageToolSettings(context)
+    val provider = providerId(settings)
+    val model = model(settings)
+    if (provider.isEmpty() || model.isEmpty()) {
+      return context.getString(strings().summaryOff)
+    }
+    val record = ProviderConfigStore(context).find(provider)
+    val label = record?.getLabel() ?: provider
+    return "$label · $model"
+  }
+
+  /** 保存位置行的文案：默认路径给说明，指定过给短路径。 */
+  private fun outputDirLabel(context: Context): String {
+    val dir = outputDir(AgentImageToolSettings(context))
+    return if (dir.isEmpty()) {
+      context.getString(strings().outputDirDefault)
+    } else {
+      dir.substringAfterLast('/')
+    }
+  }
+
+  /** 该能力用到的全部字符串资源 id（图片/视频各一份）。 */
+  protected class MediaGenStrings(
+      val summaryOff: Int,
+      val pickProvider: Int,
+      val pickModel: Int,
+      val noProviders: Int,
+      val noModels: Int,
+      val clear: Int,
+      val outputDirRow: Int,
+      val outputDirDefault: Int,
+  )
+}
+
+@Parcelize
+private class ImageGenerationPreference(
+    override val key: String = "image_generation_pref",
+    override val title: Int = R.string.ai_agent_image_gen_title,
+    // null 很重要：非 null 会被基类覆盖动态 summary，见类注释。
+    override val summary: Int? = null,
+) : MediaGenerationPreference(modelKeyword = "image") {
+
+  override fun onCreatePreference(context: Context): Preference {
+    return androidx.preference.Preference(context).apply {
+      key = "image_generation_pref"
+      title = context.getString(R.string.ai_agent_image_gen_title)
+      summary = currentSummary(context)
+    }
+  }
+
+  override fun providerId(settings: AgentImageToolSettings) = settings.providerId()
+
+  override fun model(settings: AgentImageToolSettings) = settings.model()
+
+  override fun outputDir(settings: AgentImageToolSettings) = settings.outputDir()
+
+  override fun setProviderModel(settings: AgentImageToolSettings, providerId: String, model: String) =
+      settings.set(providerId, model)
+
+  override fun setOutputDir(settings: AgentImageToolSettings, path: String) =
+      settings.setOutputDir(path)
+
+  override fun clear(settings: AgentImageToolSettings) = settings.clear()
+
+  override fun strings() =
+      MediaGenStrings(
+          summaryOff = R.string.ai_agent_image_gen_summary,
+          pickProvider = R.string.ai_agent_image_gen_pick_provider,
+          pickModel = R.string.ai_agent_image_gen_pick_model,
+          noProviders = R.string.ai_agent_image_gen_no_providers,
+          noModels = R.string.ai_agent_image_gen_no_models,
+          clear = R.string.ai_agent_image_gen_clear,
+          outputDirRow = R.string.ai_agent_image_gen_output_dir_row,
+          outputDirDefault = R.string.ai_agent_image_gen_output_dir_default,
+      )
+}
+
+@Parcelize
+private class VideoGenerationPreference(
+    override val key: String = "video_generation_pref",
+    override val title: Int = R.string.ai_agent_video_gen_title,
+    override val summary: Int? = null,
+) : MediaGenerationPreference(modelKeyword = "video") {
+
+  override fun onCreatePreference(context: Context): Preference {
+    return androidx.preference.Preference(context).apply {
+      key = "video_generation_pref"
+      title = context.getString(R.string.ai_agent_video_gen_title)
+      summary = currentSummary(context)
+    }
+  }
+
+  override fun providerId(settings: AgentImageToolSettings) = settings.videoProviderId()
+
+  override fun model(settings: AgentImageToolSettings) = settings.videoModel()
+
+  override fun outputDir(settings: AgentImageToolSettings) = settings.videoOutputDir()
+
+  override fun setProviderModel(settings: AgentImageToolSettings, providerId: String, model: String) =
+      settings.setVideo(providerId, model)
+
+  override fun setOutputDir(settings: AgentImageToolSettings, path: String) =
+      settings.setVideoOutputDir(path)
+
+  override fun clear(settings: AgentImageToolSettings) = settings.clearVideo()
+
+  override fun strings() =
+      MediaGenStrings(
+          summaryOff = R.string.ai_agent_video_gen_summary,
+          pickProvider = R.string.ai_agent_video_gen_pick_provider,
+          pickModel = R.string.ai_agent_video_gen_pick_model,
+          noProviders = R.string.ai_agent_video_gen_no_providers,
+          noModels = R.string.ai_agent_video_gen_no_models,
+          clear = R.string.ai_agent_video_gen_clear,
+          outputDirRow = R.string.ai_agent_video_gen_output_dir_row,
+          outputDirDefault = R.string.ai_agent_video_gen_output_dir_default,
+      )
+}
 
 @Parcelize
 private class PermissionModePreference(
@@ -1274,29 +1584,216 @@ private class SkillsPreference(
     val registry = skillRegistry(context)
     val skills = registry.all()
 
-    val message =
-        buildString {
-          append(context.getString(R.string.ai_agent_skills_dir))
-          append('\n')
-          append(skillsDir(context).absolutePath)
-          append("\n\n")
-          if (skills.isEmpty()) {
-            append(context.getString(R.string.ai_agent_skills_none))
-            append("\n\n")
-            append(context.getString(R.string.ai_agent_skills_format))
-          } else {
-            for (skill in skills) {
-              append(skill.toPromptLine()).append('\n')
-            }
+    if (skills.isEmpty()) {
+      // 无技能：给格式说明引导，避免空清单弹窗。
+      com.google.android.material.dialog.MaterialAlertDialogBuilder(context)
+          .setTitle(R.string.ai_agent_skills_title)
+          .setMessage(
+              context.getString(R.string.ai_agent_skills_dir)
+                  + "\n"
+                  + skillsDir(context).absolutePath
+                  + "\n\n"
+                  + context.getString(R.string.ai_agent_skills_none)
+                  + "\n\n"
+                  + context.getString(R.string.ai_agent_skills_format))
+          .setPositiveButton(R.string.ai_agent_market_title) { _, _ ->
+            showMarket(context, preference)
           }
-        }
+          .setNeutralButton(R.string.ai_agent_skills_import) { _, _ ->
+            importSkill(context, preference)
+          }
+          .setNegativeButton(android.R.string.ok, null)
+          .show()
+      return true
+    }
 
+    // 有技能：清单为可点列表——市场装的点选即卸载（确认后），手装的提示来源目录。
+    fun skillDir(skill: com.tom.rv2ide.ai.tool.skill.Skill): File? {
+      // 平铺 .md 的 source 是文件本身；SKILL.md 的 source 也在文件上，取 parent 即目录。
+      val file = File(skill.getSource())
+      return if (file.name.equals("SKILL.md", ignoreCase = true)) file.parentFile else file.parentFile
+    }
+    val labels =
+        skills.map { skill ->
+          val fromMarket = skillDir(skill)?.let {
+            com.tom.rv2ide.ai.tool.skill.SkillMarketClient.isMarketInstalled(it)
+          } == true
+          (if (fromMarket) "⬇ " else "") + skill.toPromptLine()
+        }
     com.google.android.material.dialog.MaterialAlertDialogBuilder(context)
         .setTitle(R.string.ai_agent_skills_title)
-        .setMessage(message)
-        .setPositiveButton(android.R.string.ok, null)
+        .setItems(labels.toTypedArray()) { _, which ->
+          val skill = skills[which]
+          val dir = skillDir(skill)
+          if (dir != null &&
+              com.tom.rv2ide.ai.tool.skill.SkillMarketClient.isMarketInstalled(dir)) {
+            confirmUninstall(context, preference, skill.getName(), dir)
+          } else {
+            Toast.makeText(
+                    context,
+                    context.getString(R.string.ai_agent_skills_manual_hint, skill.getName()),
+                    Toast.LENGTH_SHORT,
+                )
+                .show()
+          }
+        }
+        .setPositiveButton(R.string.ai_agent_market_title) { _, _ ->
+          showMarket(context, preference)
+        }
+        .setNeutralButton(R.string.ai_agent_skills_import) { _, _ ->
+          importSkill(context, preference)
+        }
+        .setNegativeButton(android.R.string.cancel, null)
         .show()
     return true
+  }
+
+  /** 卸载确认：市场安装的技能可一键移除。 */
+  private fun confirmUninstall(
+      context: Context,
+      preference: Preference,
+      name: String,
+      dir: File,
+  ) {
+    com.google.android.material.dialog.MaterialAlertDialogBuilder(context)
+        .setTitle(name)
+        .setMessage(R.string.ai_agent_market_uninstall_confirm)
+        .setPositiveButton(R.string.ai_agent_market_uninstall) { _, _ ->
+          val ok =
+              com.tom.rv2ide.ai.tool.skill.SkillMarketClient.uninstall(dir)
+          if (ok) {
+            preference.summary = summaryAfterImport(context)
+            Toast.makeText(
+                    context,
+                    context.getString(R.string.ai_agent_market_uninstalled, name),
+                    Toast.LENGTH_SHORT,
+                )
+                .show()
+          } else {
+            Toast.makeText(context, R.string.ai_agent_skills_import_failed, Toast.LENGTH_SHORT)
+                .show()
+          }
+        }
+        .setNegativeButton(android.R.string.cancel, null)
+        .show()
+  }
+
+  /**
+   * 技能市场：拉在线列表 → 选条目 → 后台安装 → 刷新清单。
+   *
+   * <p>网络在 IO 线程；列表为空时给出两种可能（无网/上游挂）的提示。
+   */
+  private fun showMarket(context: Context, preference: Preference) {
+    Toast.makeText(context, R.string.ai_agent_market_loading, Toast.LENGTH_SHORT).show()
+    CoroutineScope(Dispatchers.IO).launch {
+      val client = com.tom.rv2ide.ai.tool.skill.SkillMarketClient()
+      val result = client.listDetailed(30)
+      withContext(Dispatchers.Main) {
+        if (result.skills.isEmpty()) {
+          // 全部上游失败（多为网络）与「市场真的空」文案分开。
+          val message =
+              if (result.error.isNotEmpty())
+                context.getString(R.string.ai_agent_market_unreachable, result.error)
+              else context.getString(R.string.ai_agent_market_empty)
+          Toast.makeText(context, message, Toast.LENGTH_LONG).show()
+          return@withContext
+        }
+        val labels = result.skills.map { it.toLine() }.toTypedArray()
+        com.google.android.material.dialog.MaterialAlertDialogBuilder(context)
+            .setTitle(R.string.ai_agent_market_title)
+            .setItems(labels) { dialog, which ->
+              dialog.dismiss()
+              installFromMarket(context, preference, client, result.skills[which])
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+      }
+    }
+  }
+
+  /** 安装选中的市场技能（IO 线程执行，结果 Toast）。 */
+  private fun installFromMarket(
+      context: Context,
+      preference: Preference,
+      client: com.tom.rv2ide.ai.tool.skill.SkillMarketClient,
+      skill: com.tom.rv2ide.ai.tool.skill.SkillMarketClient.MarketSkill,
+  ) {
+    Toast.makeText(context, R.string.ai_agent_market_installing, Toast.LENGTH_SHORT).show()
+    CoroutineScope(Dispatchers.IO).launch {
+      val result = client.install(skill, skillsDir(context))
+      withContext(Dispatchers.Main) {
+        if (result.ok) {
+          preference.summary = summaryAfterImport(context)
+          Toast.makeText(
+                  context,
+                  context.getString(R.string.ai_agent_market_installed, skill.name),
+                  Toast.LENGTH_LONG,
+              )
+              .show()
+        } else {
+          Toast.makeText(context, result.message, Toast.LENGTH_LONG).show()
+        }
+      }
+    }
+  }
+
+  /** 导入入口。Preference 拿不到 ActivityResultLauncher（注册时机在 Fragment 创建期），
+   *  SAF 回调接不进来，因此走「公共 Download 目录 → 就地拷入」的轻方案。 */
+  private fun importSkill(context: Context, preference: Preference) {
+    copyFromPublicDir(context, preference)
+  }
+
+  /**
+   * 从公共下载目录把 .md 文件拷进 skills 目录（文件名作 skill 名）。
+   *
+   * <p>选型说明：Preference 无法注册 ActivityResultLauncher（注册时机在 Fragment 创建期），
+   * SAF 在这里接不进回调；而公共目录 Download 用户用任何文件管理器都能放文件进去，
+   * 配合系统「下载」应用即可完成流转——比引导用户翻 filesDir 可行得多。
+   */
+  private fun copyFromPublicDir(context: Context, preference: Preference) {
+    val downloads =
+        android.os.Environment.getExternalStoragePublicDirectory(
+            android.os.Environment.DIRECTORY_DOWNLOADS)
+    val candidates =
+        downloads?.listFiles { file ->
+              file.isFile && file.name.lowercase(java.util.Locale.ROOT).endsWith(".md")
+            }
+            ?.sortedByDescending { it.lastModified() }
+            .orEmpty()
+    if (candidates.isEmpty()) {
+      Toast.makeText(context, R.string.ai_agent_skills_import_empty, Toast.LENGTH_LONG).show()
+      return
+    }
+    val names = candidates.map { it.name }.toTypedArray()
+    com.google.android.material.dialog.MaterialAlertDialogBuilder(context)
+        .setTitle(R.string.ai_agent_skills_import)
+        .setItems(names) { _, which ->
+          val src = candidates[which]
+          val target = java.io.File(skillsDir(context), src.nameWithoutExtension + ".md")
+          try {
+            src.copyTo(target, overwrite = true)
+            // 重进弹窗即看到新清单；副标题的计数也一并刷新。
+            preference.summary = summaryAfterImport(context)
+            Toast.makeText(
+                    context,
+                    context.getString(R.string.ai_agent_skills_import_ok, target.name),
+                    Toast.LENGTH_LONG,
+                )
+                .show()
+          } catch (e: Exception) {
+            Toast.makeText(context, R.string.ai_agent_skills_import_failed, Toast.LENGTH_LONG)
+                .show()
+          }
+        }
+        .setNegativeButton(android.R.string.cancel, null)
+        .show()
+  }
+
+  /** 导入后条目副标题（重新计数）。 */
+  private fun summaryAfterImport(context: Context): String {
+    val count = skillRegistry(context).size()
+    return if (count == 0) context.getString(R.string.ai_agent_skills_none)
+    else context.getString(R.string.ai_agent_skills_count, count)
   }
 
   private fun skillsDir(context: Context) =
@@ -1624,11 +2121,14 @@ private class McpServersPreference(
         servers
             .map { server ->
               val state = if (server.enabled) "✓" else "✗"
-              // 标出传输类型：同一个 server 用 http 还是 sse 连不通时表现完全不同
-              // （前者打不开长连接，后者 POST 无响应），出问题时需要一眼看到用的是哪个。
+              // 标出传输类型：http/sse/stdio 连不通时表现完全不同（HTTP 无响应、
+              // SSE 打不开长连接、stdio 起不了进程），出问题时需要一眼看到用的是哪个。
               val type =
-                  if (server.type == com.tom.rv2ide.artificial.agent.McpServers.TYPE_SSE) "SSE"
-                  else "HTTP"
+                  when (server.type) {
+                    com.tom.rv2ide.artificial.agent.McpServers.TYPE_SSE -> "SSE"
+                    com.tom.rv2ide.artificial.agent.McpServers.TYPE_STDIO -> "STDIO"
+                    else -> "HTTP"
+                  }
               "$state [$type] ${server.displayName()}"
             }
             .toMutableList()
@@ -1671,10 +2171,16 @@ private class McpServersPreference(
               for (item in updated) {
                 next.add(
                     if (item.url == server.url)
-                        // 必须带上 item.type：四参构造器默认成 http，
-                        // 漏了它会让用户切换启用状态时把 SSE 配置静默改成 HTTP。
+                        // 必须带上 item.type 与 stdio 三字段：七参构造器之外的重载会把
+                        // 它们默认清空，漏了会让切换启用状态时把 stdio 配置静默降级成 http。
                         com.tom.rv2ide.artificial.agent.McpServers.Server(
-                            item.url, item.label, !item.enabled, item.type)
+                            item.url,
+                            item.label,
+                            !item.enabled,
+                            item.type,
+                            item.args,
+                            item.env,
+                            item.cwd)
                     else item)
               }
               store.save(next)
@@ -1706,13 +2212,14 @@ private class McpServersPreference(
     container.addView(urlField)
     container.addView(labelField)
 
-    // 传输类型选择。默认选中 http：两套传输的地址形态不同（http 是消息端点、
-    // sse 是事件流端点），选错时连接会以很难归因的方式失败，因此必须让用户显式选择
-    // 而不是靠地址猜。
+    // 传输类型选择。默认选中 http：三种传输的地址形态不同（http 是消息端点、
+    // sse 是事件流端点、stdio 是本地命令），选错时连接会以很难归因的方式失败，
+    // 因此必须让用户显式选择而不是靠地址猜。
     val typeLabels =
         arrayOf(
             context.getString(R.string.ai_agent_mcp_type_http),
-            context.getString(R.string.ai_agent_mcp_type_sse))
+            context.getString(R.string.ai_agent_mcp_type_sse),
+            context.getString(R.string.ai_agent_mcp_type_stdio))
     container.addView(
         android.widget.TextView(context).apply {
           text = context.getString(R.string.ai_agent_mcp_type_label)
@@ -1726,6 +2233,66 @@ private class McpServersPreference(
         }
     container.addView(typePicker)
 
+    // stdio 专属字段：命令参数（空格分隔）、附加环境变量（KEY=VALUE 每行一个）、工作目录。
+    val argsField = com.google.android.material.textfield.TextInputEditText(context).apply {
+      hint = "--port 8080 --verbose"
+      inputType = android.text.InputType.TYPE_CLASS_TEXT
+    }
+    val envField = com.google.android.material.textfield.TextInputEditText(context).apply {
+      hint = "API_KEY=xxx\nLOG_LEVEL=debug"
+      inputType =
+          android.text.InputType.TYPE_CLASS_TEXT or
+              android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE
+    }
+    val cwdField = com.google.android.material.textfield.TextInputEditText(context).apply {
+      hint = "/data/data/com.termux/files/home（留空继承）"
+      inputType = android.text.InputType.TYPE_CLASS_TEXT
+    }
+    val stdioViews = listOf(argsField, envField, cwdField)
+    container.addView(
+        android.widget.TextView(context).apply {
+          text = context.getString(R.string.ai_agent_mcp_stdio_args)
+          setPadding(0, 24, 0, 4)
+        })
+    container.addView(argsField)
+    container.addView(
+        android.widget.TextView(context).apply {
+          text = context.getString(R.string.ai_agent_mcp_stdio_env)
+          setPadding(0, 16, 0, 4)
+        })
+    container.addView(envField)
+    container.addView(
+        android.widget.TextView(context).apply {
+          text = context.getString(R.string.ai_agent_mcp_stdio_cwd)
+          setPadding(0, 16, 0, 4)
+        })
+    container.addView(cwdField)
+    // 非 stdio 类型隐藏三字段：url 输入时它们没有意义，只会干扰。
+    fun syncStdioVisibility() {
+      val isStdio = typePicker.selectedItemPosition == 2
+      stdioViews.forEach { it.visibility = if (isStdio) View.VISIBLE else View.GONE }
+      (stdioViews[0].parent as? android.view.ViewGroup)?.let { group ->
+        // 提示行与输入框同显隐：按 idx 反查（args 提示行在 argsField 前 1 位）。
+        val idx = group.indexOfChild(argsField)
+        group.getChildAt(idx - 1).visibility = if (isStdio) View.VISIBLE else View.GONE
+      }
+      (stdioViews[1].parent as? android.view.ViewGroup)?.let { group ->
+        val idx = group.indexOfChild(envField)
+        group.getChildAt(idx - 1).visibility = if (isStdio) View.VISIBLE else View.GONE
+      }
+      (stdioViews[2].parent as? android.view.ViewGroup)?.let { group ->
+        val idx = group.indexOfChild(cwdField)
+        group.getChildAt(idx - 1).visibility = if (isStdio) View.VISIBLE else View.GONE
+      }
+    }
+    typePicker.onItemSelectedListener =
+        object : android.widget.AdapterView.OnItemSelectedListener {
+          override fun onItemSelected(parent: android.widget.AdapterView<*>?, view: android.view.View?, position: Int, id: Long) =
+              syncStdioVisibility()
+
+          override fun onNothingSelected(parent: android.widget.AdapterView<*>?) = Unit
+        }
+
     com.google.android.material.dialog.MaterialAlertDialogBuilder(context)
         .setTitle(R.string.ai_agent_mcp_add)
         .setMessage(R.string.ai_agent_mcp_add_hint)
@@ -1734,13 +2301,37 @@ private class McpServersPreference(
           val url = urlField.text?.toString()?.trim().orEmpty()
           if (url.isNotEmpty()) {
             val type =
-                if (typePicker.selectedItemPosition == 1)
-                    com.tom.rv2ide.artificial.agent.McpServers.TYPE_SSE
-                else com.tom.rv2ide.artificial.agent.McpServers.TYPE_HTTP
-            com.tom.rv2ide.artificial.agent.McpServers(context)
-                .add(
-                    com.tom.rv2ide.artificial.agent.McpServers.Server(
-                        url, labelField.text?.toString()?.trim().orEmpty(), true, type))
+                when (typePicker.selectedItemPosition) {
+                  1 -> com.tom.rv2ide.artificial.agent.McpServers.TYPE_SSE
+                  2 -> com.tom.rv2ide.artificial.agent.McpServers.TYPE_STDIO
+                  else -> com.tom.rv2ide.artificial.agent.McpServers.TYPE_HTTP
+                }
+            if (type == com.tom.rv2ide.artificial.agent.McpServers.TYPE_STDIO) {
+              // stdio：url 槽位存命令名；args 按空白切分（不支持带空格的参数——
+              // 键值对场景够用，引号解析的复杂度不值得）。
+              val args = argsField.text?.toString()?.trim()?.split(Regex("\\s+"))?.filter { it.isNotEmpty() } ?: emptyList()
+              val env =
+                  envField.text?.toString()?.trim()?.lines()
+                      ?.mapNotNull { line ->
+                        val kv = line.split('=', limit = 2)
+                        if (kv.size == 2 && kv[0].trim().isNotEmpty()) {
+                          kv[0].trim() to kv[1].trim()
+                        } else null
+                      }
+                      ?.toMap()
+                      ?: emptyMap()
+              val cwd = cwdField.text?.toString()?.trim().orEmpty()
+              com.tom.rv2ide.artificial.agent.McpServers(context)
+                  .add(
+                      com.tom.rv2ide.artificial.agent.McpServers.Server(
+                          url, labelField.text?.toString()?.trim().orEmpty(), true,
+                          type, args, env, cwd))
+            } else {
+              com.tom.rv2ide.artificial.agent.McpServers(context)
+                  .add(
+                      com.tom.rv2ide.artificial.agent.McpServers.Server(
+                          url, labelField.text?.toString()?.trim().orEmpty(), true, type))
+            }
             preference.summary = refreshSummary(context)
           }
         }

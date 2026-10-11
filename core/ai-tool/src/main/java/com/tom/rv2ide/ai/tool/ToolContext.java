@@ -77,6 +77,55 @@ public final class ToolContext {
    */
   private final ImageDataProvider imageDataProvider;
 
+  /**
+   * 图片生成端点配置；未配置时为 null。
+   *
+   * <p>由 app 层在构建上下文时注入（读「能力」页偏好），工具层不感知 Android 存储。
+   */
+  private final ImageGenerationEndpoint imageGeneration;
+
+  /** 视频生成端点配置；未配置时为 null（能力页「视频生成」块下发）。 */
+  private final VideoGenerationEndpoint videoGeneration;
+
+  /**
+   * 编译诊断端口（IDE 语言服务器）；未注入时为 null。
+   *
+   * <p>由 app 层在构建上下文时注入——诊断需要 LSP 栈，而本模块零 Android 依赖。
+   */
+  private final DiagnosticsPort diagnostics;
+
+  /**
+   * IDE 自身日志源；未注入时为 null。
+   *
+   * <p>用于让 AI 读到工具链内部被吞掉的错误（协议层/工具层异常）。
+   * 与 {@code logcat_read} 目标不同——那个读被测应用。
+   */
+  private final IdeLogSource ideLog;
+
+  /** LSP 导航端口（跳定义/找引用）；未注入时为 null。 */
+  private final LspNavigationPort lspNavigation;
+
+  /** 代码格式化端口；未注入时为 null。 */
+  private final CodeFormatPort codeFormat;
+
+  /**
+   * 后台命令执行端口；未注入时为 null。
+   *
+   * <p>为 null 时 {@code shell_execute} 的 {@code run_in_background} 参数不可用，
+   * {@code task_output} / {@code task_stop} 会明确报「未接入」——而不是假装成功。
+   */
+  private final BackgroundShellPort backgroundShell;
+
+  /**
+   * 文档同步端口；未注入时为 null。
+   *
+   * <p>为 null 时写盘后不通知编辑器（旧行为），不影响写盘本身。
+   */
+  private final DocumentSyncPort documentSync;
+
+  /** 终端会话读取端口；未注入时为 null（终端工具明确报「未接入」）。 */
+  private final TerminalPort terminal;
+
   private ToolContext(Builder builder) {
     this.homePath = builder.homePath == null ? "" : builder.homePath;
     this.extraWriteRoots =
@@ -89,6 +138,15 @@ public final class ToolContext {
     this.progressListener = builder.progressListener;
     this.settings = builder.settings == null ? ToolSettingsPort.defaults() : builder.settings;
     this.imageDataProvider = builder.imageDataProvider;
+    this.imageGeneration = builder.imageGeneration;
+    this.videoGeneration = builder.videoGeneration;
+    this.diagnostics = builder.diagnostics;
+    this.ideLog = builder.ideLog;
+    this.lspNavigation = builder.lspNavigation;
+    this.codeFormat = builder.codeFormat;
+    this.backgroundShell = builder.backgroundShell;
+    this.documentSync = builder.documentSync;
+    this.terminal = builder.terminal;
   }
 
   public String getHomePath() {
@@ -125,6 +183,56 @@ public final class ToolContext {
     return imageDataProvider;
   }
 
+  /** 图片生成端点配置；未配置时为 null（工具据此报「未配置」而不是发无效请求）。 */
+  public ImageGenerationEndpoint getImageGeneration() {
+    return imageGeneration;
+  }
+
+  /** 视频生成端点配置；未配置时为 null。 */
+  public VideoGenerationEndpoint getVideoGeneration() {
+    return videoGeneration;
+  }
+
+  /**
+   * 编译诊断端口（IDE 语言服务器）；未注入时为 null。
+   *
+   * <p>为 null 时诊断工具会明确报「语言服务器不可用」，而不是返回空诊断列表——
+   * 后者会被模型误读成「代码没问题」。
+   */
+  public DiagnosticsPort getDiagnostics() {
+    return diagnostics;
+  }
+
+  /** IDE 自身日志源；未注入时为 null（工具据此报「未接入」而不是返回空日志）。 */
+  public IdeLogSource getIdeLog() {
+    return ideLog;
+  }
+
+  /** LSP 导航端口（跳定义/找引用）；未注入时为 null。 */
+  public LspNavigationPort getLspNavigation() {
+    return lspNavigation;
+  }
+
+  /** 代码格式化端口；未注入时为 null。 */
+  public CodeFormatPort getCodeFormat() {
+    return codeFormat;
+  }
+
+  /** 后台命令执行端口；未注入时为 null。 */
+  public BackgroundShellPort getBackgroundShell() {
+    return backgroundShell;
+  }
+
+  /** 文档同步端口；未注入时为 null。 */
+  public DocumentSyncPort getDocumentSync() {
+    return documentSync;
+  }
+
+  /** 终端会话读取端口；未注入时为 null。 */
+  public TerminalPort getTerminal() {
+    return terminal;
+  }
+
   /**
    * 返回一个仅替换 {@code toolCallId} 的副本。
    *
@@ -141,6 +249,15 @@ public final class ToolContext {
         .progressListener(this.progressListener)
         .settings(this.settings)
         .imageDataProvider(this.imageDataProvider)
+        .imageGeneration(this.imageGeneration)
+        .videoGeneration(this.videoGeneration)
+        .diagnostics(this.diagnostics)
+        .ideLog(this.ideLog)
+        .lspNavigation(this.lspNavigation)
+        .codeFormat(this.codeFormat)
+        .backgroundShell(this.backgroundShell)
+        .documentSync(this.documentSync)
+        .terminal(this.terminal)
         .build();
   }
 
@@ -161,6 +278,15 @@ public final class ToolContext {
         .progressListener(newProgressListener)
         .settings(this.settings)
         .imageDataProvider(this.imageDataProvider)
+        .imageGeneration(this.imageGeneration)
+        .videoGeneration(this.videoGeneration)
+        .diagnostics(this.diagnostics)
+        .ideLog(this.ideLog)
+        .lspNavigation(this.lspNavigation)
+        .codeFormat(this.codeFormat)
+        .backgroundShell(this.backgroundShell)
+        .documentSync(this.documentSync)
+        .terminal(this.terminal)
         .build();
   }
 
@@ -168,7 +294,9 @@ public final class ToolContext {
   public void reportProgress(String message) {
     ProgressListener listener = this.progressListener;
     if (listener != null) {
-      listener.onProgress(message);
+      // 带上本上下文的工具调用 id：并行执行（一次派遣多个子 agent）时多个工具的
+      // 进度交错到达，订阅方靠这个 id 把步骤行归到正确的卡片上。
+      listener.onProgress(this.toolCallId, message);
     }
   }
 
@@ -179,6 +307,18 @@ public final class ToolContext {
   /** 工具执行进度的接收者。 */
   public interface ProgressListener {
     void onProgress(String message);
+
+    /**
+     * 带工具调用 id 的进度（并行执行时用于归卡）。
+     *
+     * <p>默认实现退化为 {@link #onProgress(String)}：已有的 lambda 实现只关心文本，
+     * 无需改动；需要区分来源的实现（orchestrator 的事件桥）覆写本方法。
+     *
+     * @param callId 产生进度的工具调用 id；可能为空（无上下文的测试路径）
+     */
+    default void onProgress(String callId, String message) {
+      onProgress(message);
+    }
   }
 
   public static final class Builder {
@@ -190,6 +330,15 @@ public final class ToolContext {
     private ProgressListener progressListener;
     private ToolSettingsPort settings;
     private ImageDataProvider imageDataProvider;
+    private ImageGenerationEndpoint imageGeneration;
+    private VideoGenerationEndpoint videoGeneration;
+    private DiagnosticsPort diagnostics;
+    private IdeLogSource ideLog;
+    private LspNavigationPort lspNavigation;
+    private CodeFormatPort codeFormat;
+    private BackgroundShellPort backgroundShell;
+    private DocumentSyncPort documentSync;
+    private TerminalPort terminal;
 
     public Builder homePath(String value) {
       this.homePath = value;
@@ -229,6 +378,58 @@ public final class ToolContext {
 
     public Builder imageDataProvider(ImageDataProvider value) {
       this.imageDataProvider = value;
+      return this;
+    }
+
+    public Builder imageGeneration(ImageGenerationEndpoint value) {
+      this.imageGeneration = value;
+      return this;
+    }
+
+    public Builder videoGeneration(VideoGenerationEndpoint value) {
+      this.videoGeneration = value;
+      return this;
+    }
+
+    /** 注入编译诊断端口（IDE 语言服务器适配器）。 */
+    public Builder diagnostics(DiagnosticsPort value) {
+      this.diagnostics = value;
+      return this;
+    }
+
+    /** 注入 IDE 自身日志源。 */
+    public Builder ideLog(IdeLogSource value) {
+      this.ideLog = value;
+      return this;
+    }
+
+    /** 注入 LSP 导航端口（跳定义/找引用）。 */
+    public Builder lspNavigation(LspNavigationPort value) {
+      this.lspNavigation = value;
+      return this;
+    }
+
+    /** 注入代码格式化端口。 */
+    public Builder codeFormat(CodeFormatPort value) {
+      this.codeFormat = value;
+      return this;
+    }
+
+    /** 注入后台命令执行端口。 */
+    public Builder backgroundShell(BackgroundShellPort value) {
+      this.backgroundShell = value;
+      return this;
+    }
+
+    /** 注入文档同步端口。 */
+    public Builder documentSync(DocumentSyncPort value) {
+      this.documentSync = value;
+      return this;
+    }
+
+    /** 注入终端会话读取端口。 */
+    public Builder terminal(TerminalPort value) {
+      this.terminal = value;
       return this;
     }
 

@@ -73,7 +73,31 @@ import java.util.concurrent.atomic.AtomicInteger
  * `dispose()`，窗口会泄漏并继续显示在一个已死的服务上——点击它时回调无处可去，
  * 表现为「悬浮窗还在但点了没反应」。因此这里显式 `removeView`。
  */
-class AssistantOverlayService : Service(), LifecycleOwner {
+class AssistantOverlayService :
+    Service(),
+    LifecycleOwner,
+    androidx.savedstate.SavedStateRegistryOwner,
+    androidx.activity.OnBackPressedDispatcherOwner {
+
+  private val savedStateRegistryController =
+      androidx.savedstate.SavedStateRegistryController.create(this)
+
+  override val savedStateRegistry: androidx.savedstate.SavedStateRegistry
+    get() = savedStateRegistryController.savedStateRegistry
+
+  /**
+   * Compose 的 [androidx.activity.compose.BackHandler]（会话抽屉的多选返回，见
+   * ChatDrawerContent）通过 LocalOnBackPressedDispatcherOwner 取 dispatcher——
+   * Activity 宿主自动有它，Service 宿主没有，不提供就崩：
+   * IllegalStateException "No OnBackPressedDispatcherOwner was provided via
+   * LocalOnBackPressedDispatcherOwner"（实测第三层：前两层 Lifecycle/SavedState
+   * 修掉后暴露）。悬浮窗没有 Activity 语义，dispatcher 的 fallback Runnable
+   * 永远不该触发（BackHandler enabled 才会吃返回键）；真没人处理时交回系统默认。
+   */
+  private val backPressedDispatcher = androidx.activity.OnBackPressedDispatcher { }
+
+  override val onBackPressedDispatcher: androidx.activity.OnBackPressedDispatcher
+    get() = backPressedDispatcher
 
   private lateinit var windowManager: WindowManager
 
@@ -135,6 +159,14 @@ class AssistantOverlayService : Service(), LifecycleOwner {
 
   override fun onCreate() {
     super.onCreate()
+    // SavedStateRegistryController 必须在 ON_CREATE 事件之前完成 attach + restore，
+    // 否则 registry 在观察者收到 ON_CREATE 时还不可用（其文档的强约束）；
+    // performRestore 不能省——Recreator 观察者在 ON_CREATE 里
+    // consumeRestoredStateForKey，注册表尚未进入「已恢复」态就直接抛
+    // IllegalStateException（实测：修 ViewTreeLifecycleOwner 后暴露的第二层崩溃，
+    // Service 没有 savedInstanceState 可恢复，传 null 即「无恢复状态」）。
+    savedStateRegistryController.performAttach()
+    savedStateRegistryController.performRestore(null)
     windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
     // 先置 STARTED，保证取到的作用域从创建起就是活跃的。
     lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_CREATE)
@@ -249,6 +281,17 @@ class AssistantOverlayService : Service(), LifecycleOwner {
     }
     rootView = container
     layoutParams = params
+
+    // Compose 的 ComposeView 附加到窗口时会**沿视图树向上**找 ViewTreeLifecycleOwner
+    // 来创建 Recomposer（见 WindowRecomposerFactory.LifecycleAware）。悬浮窗挂在
+    // WindowManager 下，没有 Activity/Fragment 提供这个 owner——不在这里手动挂上，
+    // 点开面板就崩：IllegalStateException "ViewTreeLifecycleOwner not found from
+    // android.widget.FrameLayout"（实测）。本服务自己就是 LifecycleOwner（见
+    // lifecycleRegistry），把它与 SavedStateRegistry 一起挂到容器视图上，
+    // ComposeView 便能解析到；Compose 状态随本服务生命周期销毁，与窗口同寿。
+    // （经 Java 工具转发的原因见 OverlayViewTreeOwners 的类注释。）
+    com.tom.rv2ide.artificial.agent.compose.OverlayViewTreeOwners.install(
+        container, this, this, this)
 
     val host = OverlayHost(this, serviceScope, container)
     // 注入进程级共享 orchestrator（AssistantOrchestratorProvider）：应用外悬浮跑在 Service 里、

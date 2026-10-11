@@ -304,6 +304,19 @@ internal fun AgentMessageItem(
         return
     }
 
+    if (message.isTrace) {
+        // ACS 的 TRACE（过程信息：错误提示、模式切换、压缩结果）必须走**独立分支**。
+        //
+        // <p>映射层把 TRACE 标成 `role = TOOL, toolName = null`（见 AcsMessageMapper），
+        // 若落到工具行渲染，就得到一行「🔧 工具」——工具名兜底文案成了唯一可见内容，
+        // 真正的错误文本（如「模型请求失败: HTTP 400…」）藏在**点不开**的折叠里：
+        // 折叠态由 expandedOverride 驱动，而 TRACE 是 Message 条目，
+        // 宿主的 toggleExpanded 三种翻转都不认它，点了没反应。
+        // 用户看到的正是「一个空的工具卡片」。
+        TraceNoticeRow(message)
+        return
+    }
+
     if (message.isContextSummary) {
         CompactionSummaryCard(message, markdownCache)
         return
@@ -769,6 +782,62 @@ private fun BackgroundNotificationBar(message: AgentUIMessage) {
                 style = MaterialTheme.typography.bodySmall,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis
+            )
+        }
+    }
+}
+
+/**
+ * TRACE 过程信息行：一行「圆点 + 文本」，扁平行 + 弱底面板，与压缩提示同构。
+ *
+ * <p><b>为什么必须与工具行分开</b>：TRACE 在映射层是 `role = TOOL, toolName = null`，
+ * 若走工具行渲染就只剩「🔧 工具」这个兜底标签——错误正文藏在点不开的折叠里，
+ * 用户看到一张空卡片。本行直接铺文本，错误信息一眼可见。
+ *
+ * <p><b>为什么用本地展开态而不是数据里的 expanded</b>：TRACE 是 `Message` 条目，
+ * 数据模型里没有展开位，宿主也不提供翻转通道（同 [CompactionSummaryCard]）。
+ * 过程信息通常只有一两行，超过折叠阈值时点开看全文即可。
+ *
+ * <p>⚠️ 开头的行（错误/警告，见宿主 `appendTrace("⚠️ …")`）用 error 色圆点；
+ * 其余（模式切换、压缩完成等）用主色，与压缩卡片一致。
+ */
+@Composable
+private fun TraceNoticeRow(message: AgentUIMessage) {
+    var expanded by remember(message.id) { mutableStateOf(false) }
+    val content = message.content
+    val isWarning = content.trimStart().startsWith("⚠️")
+    Column(modifier = Modifier.fillMaxWidth().padding(vertical = Spacing.xs)) {
+        ChatHairline()
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = ChatStyle.toolRowMinHeight)
+                .clip(RoundedCornerShape(ChatStyle.panelCorner))
+                .background(chatMutedSurfaceColor())
+                .clickable { expanded = !expanded }
+                .padding(horizontal = Spacing.sm, vertical = Spacing.sm),
+            verticalAlignment = Alignment.Top,
+        ) {
+            Box(
+                modifier = Modifier
+                    .padding(top = 5.dp)
+                    .size(6.dp)
+                    .clip(CircleShape)
+                    .background(
+                        if (isWarning) MaterialTheme.colorScheme.error
+                        else MaterialTheme.colorScheme.primary
+                    )
+            )
+            Spacer(Modifier.width(Spacing.sm))
+            Text(
+                text = content,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.bodySmall,
+                // 折叠态限 4 行：错误消息常含长 URL/JSON，不限会整屏占满；
+                // 点开看全文（与压缩卡片同一交互）。
+                maxLines = if (expanded) Int.MAX_VALUE else 4,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f),
             )
         }
     }

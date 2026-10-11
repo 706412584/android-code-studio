@@ -45,6 +45,12 @@ class IDELoggingConfigurator : ContextAwareBase(), Configurator {
     val rootLogger = context.getLogger(Logger.ROOT_LOGGER_NAME)
     rootLogger.addAppender(appender)
 
+    // 给 AI 看的第二路：同一个 root logger 上再挂一个内存缓冲 appender，
+    // 让 `ide_log_read` 工具能读到工具链内部被吞掉的错误（协议层/工具层异常）。
+    val bufferAppender = IdeLogBufferAppender()
+    bufferAppender.start()
+    rootLogger.addAppender(bufferAppender)
+
     return Configurator.ExecutionStatus.DO_NOT_INVOKE_NEXT_IF_ANY
   }
 }

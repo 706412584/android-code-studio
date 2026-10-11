@@ -21,6 +21,7 @@
 
 package com.tom.rv2ide.artificial.agent.compose.components.style
 
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -50,12 +51,16 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
+import androidx.compose.ui.graphics.nativeCanvas
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.Velocity
@@ -162,12 +167,15 @@ internal fun formatClockTime(millis: Long): String =
     Instant.ofEpochMilli(millis).atZone(ZoneId.systemDefault()).format(CHAT_CLOCK_FORMATTER)
 
 /**
- * 「思考」字形：矢量原子/思考图标（对齐用户参考图）。
- * 颜色跟随调用方给的主题色 tint，等比缩放到指定尺寸。
+ * 「思考」图标：大脑（lucide `brain`，cc-haha 桌面端 ThinkingBlock 同款）。
  *
- * TODO: 待接入 ACS 资源。Aharou 此处引的是自绘的 `R.drawable.ic_thinking`（14dp 原子图形），
- *  ACS 没有该资源、也不宜为此单造一个 drawable，故改用 ACS 既有的 `R.drawable.ic_ai_agent`
- *  ——`item_assistant_thinking.xml` 的思维链卡片用的就是它，语义同位，颜色同样由 tint 控制。
+ * <p><b>来源</b>：cc-haha 桌面端 `desktop/src/components/chat/ThinkingBlock.tsx`
+ * 用 lucide-react 的 `<Brain />`；此处把官方 brain.svg 的 8 条 path 逐条转成
+ * android.graphics.Path（`PathParser.createPathFromPathData`，项目内
+ * VectorRenderer.kt 同款用法），Canvas 描边渲染。CLI 版的 `∴ Thinking` 字形只适用
+ * 等宽终端，图形界面用大脑图标才与「已思考」折叠头匹配（用户实测反馈）。
+ *
+ * <p>颜色跟随调用方给的主题色 tint；线宽 2（24dp 视口下 lucide 默认），圆头圆角。
  */
 @Composable
 internal fun ThinkingGlyph(
@@ -175,13 +183,105 @@ internal fun ThinkingGlyph(
     tint: Color = MaterialTheme.colorScheme.onSurfaceVariant,
     iconSize: Dp = 16.dp
 ) {
-    Icon(
-        painter = painterResource(R.drawable.ic_ai_agent),
-        contentDescription = null,
-        tint = tint,
-        modifier = modifier.size(iconSize)
-    )
+    val paths = remember(BRAIN_PATH_DATA) {
+        BRAIN_PATH_DATA.map { androidx.core.graphics.PathParser.createPathFromPathData(it) }
+    }
+    val paint =
+        remember(tint) {
+            android.graphics.Paint().apply {
+                style = android.graphics.Paint.Style.STROKE
+                strokeWidth = 2f
+                strokeCap = android.graphics.Paint.Cap.ROUND
+                strokeJoin = android.graphics.Paint.Join.ROUND
+                isAntiAlias = true
+            }
+        }
+    Canvas(modifier = modifier.size(iconSize)) {
+        val scale = size.width / 24f
+        paint.color = tint.toArgb()
+        drawIntoCanvas { canvas ->
+            val nc = canvas.nativeCanvas
+            nc.save()
+            nc.scale(scale, scale)
+            paths.forEach { path -> nc.drawPath(path, paint) }
+            nc.restore()
+        }
+    }
 }
+
+/** lucide brain.svg（24x24 视口）官方 path 数据，逐条对应。 */
+private val BRAIN_PATH_DATA =
+    listOf(
+        "M12 18V5",
+        "M15 13a4.17 4.17 0 0 1-3-4 4.17 4.17 0 0 1-3 4",
+        "M17.598 6.5A3 3 0 1 0 12 5a3 3 0 1 0-5.598 1.5",
+        "M17.997 5.125a4 4 0 0 1 2.526 5.77",
+        "M18 18a4 4 0 0 0 2-7.464",
+        "M19.967 17.483A4 4 0 1 1 12 18a4 4 0 1 1-7.967-.517",
+        "M6 18a4 4 0 0 1-2-7.464",
+        "M6.003 5.125a4 4 0 0 0-2.526 5.77",
+    )
+
+/**
+ * 「子代理」图标：机器人头（lucide `bot`，cc-haha 桌面端 AgentToolGroup 同款）。
+ *
+ * <p><b>来源</b>：cc-haha `desktop/src/components/chat/ToolCallGroup.tsx` 用
+ * lucide-react 的 `<Bot />`（组头 size=15、卡片头像 size=16）。此处把官方 bot.svg
+ * 的元素逐条转成 path 数据（`rect` 展开为带圆角的路径），Canvas 描边渲染——
+ * 与 [ThinkingGlyph] 同一套机制。
+ *
+ * <p><b>为什么不用 Feather 的等价物</b>：Feather 没有机器人字形，最近的 `Cpu` 是
+ * 芯片（方框+针脚），语义是「计算」不是「代理」。用户明确要求复刻 cc-haha 的机器人
+ * 头像，字形必须对得上。
+ */
+@Composable
+internal fun BotGlyph(
+    modifier: Modifier = Modifier,
+    tint: Color = MaterialTheme.colorScheme.onSurfaceVariant,
+    iconSize: Dp = 16.dp
+) {
+    val paths = remember(BOT_PATH_DATA) {
+        BOT_PATH_DATA.map { androidx.core.graphics.PathParser.createPathFromPathData(it) }
+    }
+    val paint =
+        remember(tint) {
+            android.graphics.Paint().apply {
+                style = android.graphics.Paint.Style.STROKE
+                strokeWidth = 2f
+                strokeCap = android.graphics.Paint.Cap.ROUND
+                strokeJoin = android.graphics.Paint.Join.ROUND
+                isAntiAlias = true
+            }
+        }
+    Canvas(modifier = modifier.size(iconSize)) {
+        val scale = size.width / 24f
+        paint.color = tint.toArgb()
+        drawIntoCanvas { canvas ->
+            val nc = canvas.nativeCanvas
+            nc.save()
+            nc.scale(scale, scale)
+            paths.forEach { path -> nc.drawPath(path, paint) }
+            nc.restore()
+        }
+    }
+}
+
+/**
+ * lucide bot.svg（24x24 视口）元素展开为 path 数据。
+ *
+ * <p>原始元素：天线 `M12 8V4H8`、头部圆角矩形 rect(4,8,16,12,rx=2)、左右耳
+ * `M2 14h2`/`M20 14h2`、双眼 `M15 13v2`/`M9 13v2`。rect 展开为四段直线+四段
+ * 圆角弧的闭合路径（与 SVG 渲染器对 rx=2 的处理一致）。
+ */
+private val BOT_PATH_DATA =
+    listOf(
+        "M12 8V4H8",
+        "M6 8H18A2 2 0 0 1 20 10V18A2 2 0 0 1 18 20H6A2 2 0 0 1 4 18V10A2 2 0 0 1 6 8Z",
+        "M2 14h2",
+        "M20 14h2",
+        "M15 13v2",
+        "M9 13v2",
+    )
 
 /**
  * 内容卡：白底 + 1px 细线 + 可选头部（标题 + 复制）与页脚统计。

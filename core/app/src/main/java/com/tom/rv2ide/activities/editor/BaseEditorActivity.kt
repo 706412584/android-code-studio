@@ -441,6 +441,13 @@ abstract class BaseEditorActivity :
           val editor = withContext(Dispatchers.Main) { findEditorForFile(file) }
 
           if (editor != null && !isDestroying) {
+            // 磁盘上有比编辑器更新的内容（AI 工具等外部写入）且用户还有未保存改动时
+            // 自动保存必须让路：否则会把编辑器 buffer（旧内容）整段写回，静默覆盖
+            // 外部改动。用户下一次编辑或手动保存即解除（见 CodeEditorView 的该标志）。
+            if (editor.hasExternalDiskChange) {
+              log.debug("Skipping auto-save for externally-changed file: ${file.absolutePath}")
+              continue
+            }
             val currentContent =
                 withContext(Dispatchers.Main) { editor.editor?.text?.toString() ?: "" }
 
@@ -570,6 +577,8 @@ abstract class BaseEditorActivity :
         if (editor != null) {
           val currentContent = editor.editor?.text?.toString() ?: ""
           editorContentHashes[editor] = currentContent.hashCode()
+          // 手动保存 = 用户明确选择「以编辑器内容为准」，外部冲突随之解除。
+          editor.clearExternalConflict()
         }
       }
       log.debug("Manual save completed, auto-save state synchronized")

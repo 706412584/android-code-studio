@@ -37,6 +37,7 @@ import com.tom.rv2ide.adapters.AssistantMessageAdapter
 import com.tom.rv2ide.adapters.ConversationListAdapter
 import com.tom.rv2ide.artificial.agent.compose.compat.toAnswerList
 import com.tom.rv2ide.artificial.agent.compose.compat.toPendingUserQuestion
+import com.tom.rv2ide.artificial.agent.compose.theme.AppThemePreset
 import com.tom.rv2ide.artificial.agent.host.AssistantHost
 import com.tom.rv2ide.artificial.agents.Agents
 import com.tom.rv2ide.databinding.LayoutAiAssistantBinding
@@ -166,6 +167,59 @@ class FloatingAssistantView(
   private val uiStylePrefs =
       context.applicationContext.getSharedPreferences("ai_agent_tools", Context.MODE_PRIVATE)
 
+  /**
+   * 内存画像提供者：把本视图的规模数据喂给 `memory_analysis` 工具（见 attach 的注册）。
+   *
+   * <p>**在工具线程被调用**，因此只读各字段的瞬时值、不做任何 UI 操作。所有读的值
+   * 都是普通 int/string 快照，最坏情况读到的是「上一帧」的数字——诊断场景完全够用。
+   */
+  private val memoryStatsProvider =
+      com.tom.rv2ide.artificial.agent.tool.MemoryStatsRegistry.Provider {
+        try {
+          com.tom.rv2ide.artificial.agent.tool.MemoryStatsRegistry.ViewStats(
+              /* viewLabel = */ when (mode) {
+                Mode.FULLSCREEN -> "全屏"
+                Mode.DOCKED -> "贴边"
+                Mode.SIDEBAR -> "侧栏"
+                Mode.INLINE -> "内联"
+                Mode.EMBEDDED -> "嵌入式"
+              },
+              /* conversationId = */ displayedConversationId ?: "",
+              /* messageCount = */ adapter.itemCount,
+              /* toolCardCount = */ adapter.runningToolCallIds().size,
+              /* streamingChars = */ streamingCharsApprox(),
+              /* markdownCacheEntries = */ 0,
+              /* markdownCacheWeight = */ 0,
+              /* queuedCount = */ inputBar.queuedRequests.size,
+              /* attachmentCount = */ inputBar.pendingAttachments.size,
+              /* subscriberCount = */ orchestrator.subscriberCount(),
+          )
+        } catch (t: Throwable) {
+          null
+        }
+      }
+
+  /**
+   * 当前流式气泡的字符数近似值。
+   *
+   * <p>取「最近一条消息的文本长度」而不是精确的流式缓冲——诊断只需要量级
+   * （「几万字符的流式消息」本身就是信号），而精确值需要穿透适配器分组、
+   * 多读几层且更易在重构中失效。
+   */
+  private fun streamingCharsApprox(): Int =
+      try {
+        val items = adapter.snapshot()
+        items.lastOrNull()?.let { item ->
+          when (item) {
+            is AssistantMessageAdapter.Message -> item.text.length
+            is AssistantMessageAdapter.Thinking -> item.text.length
+            else -> 0
+          }
+        } ?: 0
+      } catch (t: Throwable) {
+        0
+      }
+
   private val uiStyleListener =
       android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
         if (key == null) {
@@ -277,6 +331,19 @@ class FloatingAssistantView(
   /** 当前正在运行的工具卡片 id；无运行中工具时为 null。与 ui.lastToolCardId 的区别：
    * 它跨会话全局唯一——PROGRESS 不带会话校验也能安全找到目标。 */
   private var runningToolCardId: Long? = null
+
+  /**
+   * 工具调用 id → 卡片 id 的映射（**并行执行的核心配对表**）。
+   *
+   * <p><b>为什么需要它</b>：串行时代 TOOL_FINISHED 回填「最近一张运行中的卡片」永远
+   * 正确（同一时刻只有一张在跑）。并行派遣（一次多个子代理）时多张卡片同时处于运行态，
+   * 事件按各自完成顺序到达——没有配对表，先完成的子代理会把结果写进另一张还在跑的卡片。
+   * PROGRESS 步骤同理（经 {@code AgentEvent.getProgressCallId} 归卡）。
+   *
+   * <p>只在主线程读写（TOOL_STARTED/FINISHED/PROGRESS 都切到 Main）。TOOL_FINISHED 时
+   * 不移除条目：迟到的 PROGRESS（网络抖动重排）仍能找到目标卡片，条目随会话回放清空。
+   */
+  private val toolCardIdByCallId = HashMap<String, Long>()
 
   /**
    * 每个会话最近一次事件流写到哪张卡片。
@@ -404,6 +471,44 @@ class FloatingAssistantView(
   private val drawerSessions = mutableStateOf<List<com.tom.rv2ide.artificial.agent.compose.components.independent.ChatSession>>(emptyList())
   private val drawerActiveId = mutableStateOf<String?>(null)
   private val drawerCurrentCwd = mutableStateOf("")
+
+  /**
+   * 抽屉的每会话运行态投影（会话行左侧的脉冲圆点/转圈动画）。
+   *
+   * <p>ChatDrawer 的 `isExecuting` 判据是 `state is Loading || state is Streaming`，
+   * 因此这里只对「正在运行」的会话放 [AgentUIState.Loading]，其余不放（idle 的会话
+   * 无条目，渲染层自然不画圆点）。
+   *
+   * <p>数据源是 orchestrator 的全局运行表（`isRunning`）——它知道**所有入口**发起的
+   * 运行，而本视图的 executionJobs 只覆盖自己发起的。刷新时机：RUN_STARTED /
+   * RUN_FINISHED 事件、打开抽屉、会话列表重载。
+   */
+  private val drawerAgentStates =
+      mutableStateOf<
+          Map<String, com.tom.rv2ide.artificial.agent.compose.components.independent.AgentUIState>>(
+          emptyMap())
+
+  /**
+   * 重算 [drawerAgentStates]。
+   *
+   * <p>逐会话查 `orchestrator.isRunning`：会话数通常几十条，每条一次哈希查找，
+   * 代价可忽略；比维护一份增量表简单且不会漂移。
+   */
+  private fun refreshDrawerAgentStates() {
+    val sessions = drawerSessions.value
+    if (sessions.isEmpty()) {
+      drawerAgentStates.value = emptyMap()
+      return
+    }
+    val next = HashMap<String, com.tom.rv2ide.artificial.agent.compose.components.independent.AgentUIState>()
+    for (session in sessions) {
+      if (orchestrator.isRunning(session.id)) {
+        next[session.id] =
+            com.tom.rv2ide.artificial.agent.compose.components.independent.AgentUIState.Loading
+      }
+    }
+    drawerAgentStates.value = next
+  }
 
   /** Compose 输入栏的状态桥：XML 输入区退役后，输入文本/忙碌/附件/模型都走这里。 */
   internal val inputBar = AssistantInputBarBridge()
@@ -619,6 +724,11 @@ class FloatingAssistantView(
       parent.addView(fabBinding.root)
     }
     parent.addView(binding.assistantOverlay)
+    // 面板触摸即「用户在看」：完成通知的 6s 宽限以此刷新（observe 语义，不消费事件）。
+    binding.assistantOverlay.setOnTouchListener { _, _ ->
+      com.tom.rv2ide.artificial.agent.RunCompletionNotifier.noteInteraction()
+      false
+    }
 
     if (defaultMode != Mode.INLINE && defaultMode != Mode.EMBEDDED) {
       setUpDragging()
@@ -633,6 +743,10 @@ class FloatingAssistantView(
     // 外观设置变更时即时重绑消息（见 [uiStyleListener]）。注册放在 attach：
     // 视图未挂载时不需要刷新，而 dispose 会对称注销，不会泄漏。
     uiStylePrefs.registerOnSharedPreferenceChangeListener(uiStyleListener)
+
+    // 内存画像注册：`memory_analysis` 工具经它读本视图的规模数据（消息数/缓存/队列）。
+    // 与 uiStyleListener 同一生命周期纪律——attach 注册、dispose 注销。
+    com.tom.rv2ide.artificial.agent.tool.MemoryStatsRegistry.register(memoryStatsProvider)
 
     binding.assistantMessages.layoutManager = LinearLayoutManager(context)
     binding.assistantMessages.adapter = adapter
@@ -687,7 +801,10 @@ class FloatingAssistantView(
               description = d.getDescription(),
               acceptsArgs = d.getUsage().contains(' '),
           )
-        }
+        } + skillSlashCommands()
+    // 已安装技能投影：cc-haha 语义——skill 名即斜杠命令名（/技能名 直接触发），
+    // 同时进 @ 菜单。技能正文的加载仍由模型经 skill 工具完成（渐进披露不变）。
+    inputBar.skills = skillSlashCommands()
     inputFeatures.owner = this
     // Compose 顶栏装配（XML 标题栏退役）。
     installHeaderCompose()
@@ -990,6 +1107,9 @@ class FloatingAssistantView(
     }
     refreshTodos()
     updateEmptyState()
+    // 每次打开都请求滚底：首次打开由回放路径再 bump 一次（多滚一次无害）；
+    // 重复打开（列表已有内容、不回放）靠这里兜底——用户看到面板时应停在最新内容。
+    composePanel?.requestScrollToBottom("open")
   }
 
   /**
@@ -1046,6 +1166,11 @@ class FloatingAssistantView(
       conversationId: String,
       afterReplay: () -> Unit,
   ) {
+    // 会话代次：快速连点两个会话时，先发起的回放可能后完成——没有本守卫，
+    // 后完成的旧回放会把新会话的列表整个覆盖掉（「显示 C、列表是 B」）。
+    // 每次 loadAndSubscribe 递增；回放落地前校验代次未变，变了就整段放弃
+    // （订阅已被后一次调用接管，补放缓冲也由它负责）。
+    val generation = ++loadGeneration
     synchronized(pendingLock) {
       replayingConversationId = conversationId
       pendingLiveEvents.clear()
@@ -1053,7 +1178,23 @@ class FloatingAssistantView(
     lifecycleScope.launch(Dispatchers.IO) {
       val messages = subscribeToConversation(conversationId)
       withContext(Dispatchers.Main) {
-        replayMessages(messages)
+        if (generation != loadGeneration) {
+          // 期间用户已切到别的会话：本次回放作废。不 clear/不补放——那些动作
+          // 属于后一次加载。仅当 subscribeToConversation 里退订/重订的时序
+          // 已被后一次调用覆盖时安全（它一定会跑，且代次更大）。
+          return@withContext
+        }
+        // 全量批量回放：语义与从前一致（整段历史一次入列、顺序不变），
+        // 差别只在 adapter 的批量模式——从前数百条逐条 notifyItemInserted
+        // 会连续触发数百次列表更新调度（实测主线程掉帧 30-127 连发）；
+        // 批量模式下整个回放只发一次更新，LazyColumn 自身只渲染可见窗口
+        // （「边滑边渲染」由惰性列表天然提供）。
+        adapter.beginBatch()
+        try {
+          replayMessages(messages)
+        } finally {
+          adapter.endBatch()
+        }
         lastOpenedConversationId = conversationId
         updateEmptyState()
         // 回放完成：在锁内取走缓冲并解除缓冲态。取走与解除必须同时发生——若先解除
@@ -1069,15 +1210,18 @@ class FloatingAssistantView(
           handleEvent(conversationId, event)
         }
         syncRunningUiForDisplayed()
-        // 任务卡片也要跟着换会话。此前只在 open() 与工具结束时刷新，导致
-        // 「A 会话有 5 条待办 → 点开 B 会话 → 卡片仍显示 A 的清单」——
-        // 数据层已按会话隔离（见 AgentOrchestrator.todoStoreFor），但 UI 没重读。
-        // 放在这里而不是各个调用点：切会话的三条路径（点列表/新建/恢复）都走本方法。
         refreshTodos()
         afterReplay()
       }
     }
   }
+
+  /**
+   * 会话加载代次（见 [loadAndSubscribe] 的守卫）。
+   *
+   * <p>只在主线程读写（loadAndSubscribe 的调用方与回放落地都在 Main）。
+   */
+  private var loadGeneration = 0
 
   /**
    * 订阅指定会话并取回它的历史快照。**必须在 IO 线程调用**（会读盘）。
@@ -1156,6 +1300,9 @@ class FloatingAssistantView(
     // 注销外观监听：SharedPreferences 持有监听器的强引用，不注销会让本视图
     // （及其 binding/adapter）随偏好文件一起存活到进程结束。
     uiStylePrefs.unregisterOnSharedPreferenceChangeListener(uiStyleListener)
+    // 注销内存画像：与注册对称。不注销会让 registry 持有本视图（及其 binding），
+    // 表现为 memory_analysis 报告里的视图数只增不减（泄漏）。
+    com.tom.rv2ide.artificial.agent.tool.MemoryStatsRegistry.unregister(memoryStatsProvider)
     // 丢弃未汇总的改动记录：视图已销毁，它们永远不会被渲染成卡片了。
     // 不清理虽然随本视图一起被回收（不是进程级泄漏），但留着会让「这个会话还有
     // 待汇总改动」这个判断在别处读到陈旧数据。
@@ -1344,6 +1491,27 @@ class FloatingAssistantView(
    */
   private fun density(): Float = context.resources.displayMetrics.density
 
+  /**
+   * 预填输入框，可选立即发送。供外部入口（adb `am start` 深链调起真全屏）直达一条请求，
+   * 省去手动点输入框 + 逐字过输入法——实机测试时尤其有用（中文输入法会吞拉丁字母）。
+   *
+   * <p><b>必须在 [open] 之后调用</b>：[open] 负责装输入栏桥（[installInputBar]）、设好工作区
+   * 并恢复/新建会话；早于它时 [inputBar] 的文本写进去无处显示，发送也拿不到会话 cwd。
+   *
+   * @param text 预填文本；空串直接返回（不覆盖用户可能已输入的内容）
+   * @param autoSend 为 true 时立即走与点发送键完全相同的路径（[sendFromInput]），
+   *   因此斜杠命令、技能触发、附件、排队等语义全部一致——这是刻意复用而非另起一条发送路径
+   */
+  fun prefillAndSend(text: String, autoSend: Boolean) {
+    if (text.isEmpty()) {
+      return
+    }
+    inputBar.text = text
+    if (autoSend) {
+      sendFromInput()
+    }
+  }
+
   private fun sendFromInput() {
     val typed = inputBar.text.trim()
     val attachments = inputFeatures.attachmentContext()
@@ -1366,6 +1534,22 @@ class FloatingAssistantView(
         handleCommand(parsed)
         return
       }
+      // 技能斜杠触发（cc-haha 语义：skill 名即命令名）。catalog 不认识的名字按普通
+      // 消息处理（/etc/hosts 原则），但若与已安装技能同名，转成「用 skill 工具加载
+      // 该技能 + 用户参数」发给模型——正文由 skill 工具渐进加载，这里只表达意图。
+      val skillInvocation = parseSkillSlash(typed)
+      if (skillInvocation != null) {
+        inputBar.text = ""
+        // 附件语义与普通消息一致：非图片附件文本仍追加在请求后。
+        val request0 = skillInvocation
+        val imagePayload0 = inputFeatures.imageRawInputJson(request0)
+        val textAttachments0 =
+            if (imagePayload0 != null) inputFeatures.attachmentContextExcludingImage()
+            else inputFeatures.attachmentContext()
+        inputFeatures.clearAttachments()
+        execute(request0 + textAttachments0, inputFeatures.reasoningEffort(), imagePayload0)
+        return
+      }
     }
 
     val request = if (typed.isEmpty()) inputFeatures.attachmentNames() else typed
@@ -1384,6 +1568,39 @@ class FloatingAssistantView(
     // 推理强度随请求走：它在输入区可选，而每轮都可能被改，因此每次发送都重读一次，
     // 而不是在 attach 时读一次缓存。
     execute(request + textAttachments, inputFeatures.reasoningEffort(), imagePayload)
+  }
+
+  /** 已安装技能投影成菜单条目（slash 与 @ 菜单共用）。每次 attach 时重读——skill 目录可能被导入更新。 */
+  private fun skillSlashCommands(): List<com.tom.rv2ide.artificial.agent.compose.components.independent.InputSlashCommand> =
+      orchestrator.getSkillRegistry().all().map { skill ->
+        com.tom.rv2ide.artificial.agent.compose.components.independent.InputSlashCommand(
+            name = skill.getName(),
+            description = skill.getDescription(),
+            acceptsArgs = true,
+        )
+      }
+
+  /**
+   * 输入若是 {@code /技能名 参数} 且技能名与已安装技能同名，返回发送给模型的请求文本；否则 null。
+   *
+   * <p>cc-haha 的序列化语义：{@code /name args} → 指示模型用 skill 工具加载该技能并按参数执行。
+   */
+  private fun parseSkillSlash(typed: String): String? {
+    if (!typed.startsWith("/")) return null
+    val body = typed.substring(1)
+    val name = body.substringBefore(' ').trim()
+    if (name.isEmpty()) return null
+    val skill = orchestrator.getSkillRegistry().find(name) ?: return null
+    val args = body.substringAfter(' ', "").trim()
+    return buildString {
+      append("使用技能「")
+      append(skill.getName())
+      append("」：先用 skill 工具加载它的完整内容，再严格按其指示执行。")
+      if (args.isNotEmpty()) {
+        append("\n\n技能参数：")
+        append(args)
+      }
+    }
   }
 
   /** 执行一条斜杠命令。 */
@@ -1735,6 +1952,89 @@ class FloatingAssistantView(
     // 只显示「前面还有几条」，不显示总数：用户关心的是还要等多久（前面几条），
     // 总数对「什么时候轮到我」没有信息量。
     appendTrace(context.getString(string.ai_assistant_queued, ahead))
+    refreshQueueProjection()
+  }
+
+  /**
+   * 把当前显示会话的待发送队列投影到输入栏桥（驱动队列面板渲染）。
+   *
+   * <p>队列的真相在 orchestrator（三个入口共享），本方法只做「读 + 替换」。
+   * 小列表（通常 0-3 条）全量替换比差量更新简单，且没有「本地镜像与真相漂移」
+   * 的一致性风险。调用时机：入队 / 队列操作 / 切会话 / 运行状态切换。
+   */
+  private fun refreshQueueProjection() {
+    val target = inputBar.queuedRequests
+    val conversationId = displayedConversationId
+    if (conversationId.isNullOrEmpty()) {
+      target.clear()
+      return
+    }
+    val entries = orchestrator.queuedEntries(conversationId)
+    target.clear()
+    for (entry in entries) {
+      target.add(
+          com.tom.rv2ide.artificial.agent.compose.components.independent.QueuedRequest(
+              id = entry.id,
+              request = entry.text,
+              modelRequest = entry.text,
+              currentFile = null,
+              selectedCode = null,
+              projectRoot = workspace?.absolutePath ?: "",
+          ))
+    }
+  }
+
+  /**
+   * 立即插入：把队列里的一条消息投进**正在跑**的循环（不打断当前轮）。
+   *
+   * <p><b>顺序不变量：先摘队列、再投递</b>。反过来的话，摘除与 `drainQueued`（运行
+   * 收尾时取队首执行）存在竞态：若 drain 已把这条取走，注入又成功了，同一条消息
+   * 会被「下一轮执行」与「本轮注入」各处理一次。摘除失败即说明它已在被执行的路上，
+   * 直接收手。
+   *
+   * <p><b>插入成功不画气泡</b>：排队时 [enqueueSend] 已画过一条用户气泡、并登记了
+   * 回显标记；注入消息的 USER_MESSAGE 事件到达时会被那个标记消费。这里再画一条
+   * 就是同一句话两个气泡——用户实测反馈的「点击⚡重复触发」正是它。
+   *
+   * <p>投递失败（循环已过最后一个检查点）→ 放回**队首**（保持原顺序），由本轮
+   * 结束后的 drain 正常发出——不放回消息就丢了。
+   */
+  private fun interjectQueued(conversationId: String, requestId: String) {
+    if (conversationId.isEmpty()) {
+      return
+    }
+    val entry = orchestrator.queuedEntries(conversationId).firstOrNull { it.id == requestId }
+    if (entry == null) {
+      refreshQueueProjection()
+      return
+    }
+    if (!orchestrator.removeQueued(conversationId, requestId)) {
+      // 已被 drain 取走（正在作为下一轮执行）：不再投递，避免重复执行。
+      appendTrace(context.getString(string.ai_assistant_interject_fallback))
+      refreshQueueProjection()
+      return
+    }
+    val injected = orchestrator.injectIntoRun(conversationId, entry.text)
+    android.util.Log.i("ACSDebug", "interject: id=$requestId injected=$injected")
+    if (injected) {
+      appendTrace(context.getString(string.ai_assistant_interjected))
+    } else {
+      val agents = Agents(context)
+      val providerId = agents.getProvider()
+      val modelId =
+          AgentModelConfigs.modelIdFor(providerId, agents.getAgent(), inputFeatures.currentSlot())
+      orchestrator.enqueueFront(
+          conversationId,
+          providerId,
+          modelId,
+          entry.text,
+          AgentOrchestrator.customBaseUrlFor(context, providerId),
+          null,
+          inputFeatures.reasoningEffort(),
+      )
+      appendTrace(context.getString(string.ai_assistant_interject_fallback))
+    }
+    refreshQueueProjection()
   }
 
   /**
@@ -1789,7 +2089,13 @@ class FloatingAssistantView(
           ui.streamedThisRun = false
           // 工具组的自动折叠依赖「是否有运行在进行」：只有运行中且位于末尾的组默认展开。
           // 不置位的话，末组会在运行期间就折叠起来，用户看不到正在跑的工具。
-          adapter.isRunActive = true
+          //
+          // **必须限定「显示中的会话」**：isRunActive 是全局单标志（作用在当前列表上），
+          // 后台会话的 RUN_STARTED 不该让当前显示会话的末组变成活动态——否则 A 在后台
+          // 跑、B 静止时，B 的工具组会一直展开着不收（实测反馈的状态混乱之一）。
+          if (displayedConversationId == conversationId) {
+            adapter.isRunActive = true
+          }
           // 耗时计时起点。放在 RUN_STARTED 而不是 TURN_STARTED：「这一轮花了多久」指的是
           // 用户发出请求到收到最终回答，包含中间的每一次工具往返。
           ui.runStartedAtMs = android.os.SystemClock.elapsedRealtime()
@@ -1800,6 +2106,11 @@ class FloatingAssistantView(
             binding.assistantWorking.bind(isThinking = false)
             binding.assistantWorking.startWorking()
           }
+          // 队列可能刚被消化掉一条（drainQueued 在新运行启动前 poll）：重投影，
+          // 否则面板上还挂着那条已经被取走的请求。
+          refreshQueueProjection()
+          // 抽屉圆点：该会话进入运行态。
+          refreshDrawerAgentStates()
         }
       }
       com.tom.rv2ide.ai.agent.AgentEvent.Type.RUN_FINISHED -> {
@@ -1807,6 +2118,9 @@ class FloatingAssistantView(
         // 都能收到——本视图据此收掉停止键。少了它，别的入口发起并结束的运行会让
         // 本视图的停止键永久停在那里（点下去只会对已经不存在的运行发取消）。
         lifecycleScope.launch(Dispatchers.Main) {
+          // 抽屉圆点：该会话退出运行态。**放在 displayedConversationId 守卫之前**——
+          // 后台会话结束同样要收圆点（守卫之后的分支会 return，放那里就漏了后台会话）。
+          refreshDrawerAgentStates()
           if (displayedConversationId != conversationId) {
             // 后台会话的改动汇总无处可渲染（适配器只显示当前会话）：直接丢弃，
             // 否则这些条目会永远留在表里。与改动前的行为一致——那时 diff 卡片
@@ -1814,6 +2128,10 @@ class FloatingAssistantView(
             pendingDiffs.remove(conversationId)
             return@launch
           }
+          // 运行结束 = 队列状态可能刚变化（drainQueued 紧接着会消化下一条，
+          // 或回退的注入刚放回队列头）：重投影一次。放在守卫之后——后台会话
+          // 的队列变化不该重画当前会话的面板（切过去时 syncRunningUi 会做）。
+          refreshQueueProjection()
           // 若该会话仍有排队请求，orchestrator 会在同一 finally 里紧接着发起下一条，
           // 那时会再收到 RUN_STARTED。这里先按「已结束」收尾，由后续事件重新点亮。
           setRunningUi(false)
@@ -1830,6 +2148,24 @@ class FloatingAssistantView(
           // 位置必须在运行结束：运行中插的卡片会被后续消息推到上面去，
           // 用户下次看到它时已经不在「刚才那轮」的位置了。
           flushDiffSummary(conversationId)
+
+          // 完成通知：面板不在屏幕上（后台跑完）且用户 6s 无交互时提醒。
+          // 可见时用户就在屏幕前，通知纯属打扰。
+          val startMsForNotify = ui.runStartedAtMs
+          val overlay = binding.assistantOverlay
+          val hostVisibleNow = overlay.isAttachedToWindow &&
+              overlay.windowVisibility == android.view.View.VISIBLE
+          val durationForNotify =
+              if (startMsForNotify > 0L)
+                  android.os.SystemClock.elapsedRealtime() - startMsForNotify
+              else 0L
+          com.tom.rv2ide.artificial.agent.RunCompletionNotifier.maybeNotify(
+              context,
+              hostVisibleNow,
+              true,
+              durationForNotify,
+              conversationId,
+          )
 
           // 回填本轮耗时到收尾的助手消息上。耗时是展示信息，由视图侧自己记
           // （RUN_STARTED 起点、RUN_FINISHED 终点），不走协议层——协议层要补时间戳
@@ -1977,7 +2313,13 @@ class FloatingAssistantView(
                   input = call.arguments.orEmpty(),
               )
           ui.lastToolCardId = id
+          // 调用 id → 卡片 id：并行时 TOOL_FINISHED / PROGRESS 靠它归卡（见字段注释）。
+          if (call.id.isNotEmpty()) {
+            toolCardIdByCallId[call.id] = id
+          }
           // 浮动状态条的实时输出从这张卡片开始累积；键存在即「运行中」。
+          // runningToolCardId 只保留「最近一张」——串行场景（绝大多数）的快速路径；
+          // 并行场景下每张卡片在 runningToolOutput 里都有独立缓冲，状态条按 id 读取。
           runningToolCardId = id
           runningToolOutput[id] = StringBuilder()
           publishLiveToolOutput()
@@ -1999,9 +2341,15 @@ class FloatingAssistantView(
           return
         }
         lifecycleScope.launch(Dispatchers.Main) {
-          // 回填到最近的卡片。TOOL_STARTED / TOOL_FINISHED 成对出现，
-          // 用「最近一张仍在运行中的卡片」关联即可，无需在协议层传 id。
-          val cardId = ui.lastToolCardId ?: adapter.lastToolCallId()
+          // 回填目标卡片。**优先按调用 id 配对**（toolCardIdByCallId）——并行派遣时
+          // 多张卡片同时在跑、事件按各自完成顺序到达，「最近一张」会把先完成的子代理
+          // 的结果写进另一张仍在跑的卡片。串行场景（映射表里没有该 id，例如旧会话
+          // 回放或文本形态调用）回退到原有判据。
+          val callId = call?.id
+          val cardId =
+              (if (callId.isNullOrEmpty()) null else toolCardIdByCallId[callId])
+                  ?: ui.lastToolCardId
+                  ?: adapter.lastToolCallId()
           if (cardId != null) {
             // 带上结果里的图片：`phone_screenshot`、`image_generation` 这类工具的产出
             // 就是一张图，不带的话用户只能看到「工具跑完了」却看不到图。
@@ -2012,11 +2360,19 @@ class FloatingAssistantView(
                 if (result.hasImage()) result.imageBase64 else null,
                 result.imageMimeType,
             )
+            // 实时输出收尾按**实际回填的卡片**清理，而不是全局单键：
+            // 并行时多个缓冲并存，按 runningToolCardId 只能清掉最近一个，
+            // 其余卡片会永久停在「运行中」（状态条上表现为跑完不收）。
+            runningToolOutput.remove(cardId)
+            if (runningToolCardId == cardId) {
+              runningToolCardId = null
+            }
           }
-          ui.lastToolCardId = null
-          // 该工具的实时输出收尾：从映射里移除（键消失 = 不再运行），状态条随之切到完成态。
-          runningToolCardId?.let { runningToolOutput.remove(it) }
-          runningToolCardId = null
+          // 只有回填到「最近那张」时才清指针；并行场景下指针指向的可能
+          // 是另一张仍在跑的卡片，清了会让它的后续回填失去快速路径。
+          if (ui.lastToolCardId == cardId) {
+            ui.lastToolCardId = null
+          }
           publishLiveToolOutput()
 
           // 有 diffId 说明这次调用改了文件。**先记下来，不立刻插卡片**——
@@ -2087,13 +2443,19 @@ class FloatingAssistantView(
         if (line.isEmpty() || displayedConversationId != conversationId) {
           return
         }
+        val progressCallId = event.progressCallId
         lifecycleScope.launch(Dispatchers.Main) {
           showAction(line)
-          adapter.appendToolStep(line)
-          // 浮动状态条的实时输出：与卡片步骤区同源（都是 PROGRESS 行），
-          // 累积进当前运行中工具的缓冲；没有运行中工具时丢弃（状态条已无从显示）。
-          runningToolCardId?.let { id ->
-            runningToolOutput[id]?.appendLine(line)
+          // 步骤行按调用 id 归卡（并行派遣时多个子代理的进度交错到达）；
+          // 无 id（旧路径/文本形态调用）时回退到「最近一张运行中的卡片」。
+          val targetCardId =
+              (if (progressCallId.isEmpty()) null else toolCardIdByCallId[progressCallId])
+                  ?: runningToolCardId
+          if (targetCardId != null) {
+            adapter.appendToolStep(targetCardId, line)
+            // 浮动状态条的实时输出：与卡片步骤区同源（都是 PROGRESS 行），
+            // 累积进该工具的缓冲；没有运行中工具时丢弃（状态条已无从显示）。
+            runningToolOutput[targetCardId]?.appendLine(line)
             publishLiveToolOutput()
           }
         }
@@ -2211,6 +2573,8 @@ class FloatingAssistantView(
     } else {
       binding.assistantWorking.stopWorking()
     }
+    // 队列面板随会话切换重投影：切到别的会话时显示它的队列，而不是上一个会话的。
+    refreshQueueProjection()
   }
 
   /**
@@ -2652,6 +3016,51 @@ class FloatingAssistantView(
   private fun refreshGitBranchVisibilityOnly() {}
 
   /**
+   * 推理强度：UI 枚举（Aharou 7 档）← 协议字符串（ACS 6 档）。
+   *
+   * <p><b>为什么是两张表而不是一个 when</b>：两边的档位集合不同——UI 侧有
+   * DEFAULT/NONE（协议侧对应 auto/off），协议侧没有 XHIGH（归到 MAX）。映射是
+   * 双向的（读恢复/写落盘），写成两个方向明确的函数，漏档时编译不会报错但两个方向
+   * 的测试一眼能看出来。
+   */
+  private fun reasoningFromWire(
+      wire: String
+  ): com.tom.rv2ide.artificial.agent.compose.compat.ReasoningEffort =
+      when (wire) {
+        com.tom.rv2ide.ai.protocol.AiBehaviorSettings.REASONING_OFF ->
+            com.tom.rv2ide.artificial.agent.compose.compat.ReasoningEffort.NONE
+        com.tom.rv2ide.ai.protocol.AiBehaviorSettings.REASONING_AUTO ->
+            com.tom.rv2ide.artificial.agent.compose.compat.ReasoningEffort.DEFAULT
+        com.tom.rv2ide.ai.protocol.AiBehaviorSettings.REASONING_LOW ->
+            com.tom.rv2ide.artificial.agent.compose.compat.ReasoningEffort.LOW
+        com.tom.rv2ide.ai.protocol.AiBehaviorSettings.REASONING_HIGH ->
+            com.tom.rv2ide.artificial.agent.compose.compat.ReasoningEffort.HIGH
+        com.tom.rv2ide.ai.protocol.AiBehaviorSettings.REASONING_MAX ->
+            com.tom.rv2ide.artificial.agent.compose.compat.ReasoningEffort.MAX
+        else -> com.tom.rv2ide.artificial.agent.compose.compat.ReasoningEffort.MEDIUM
+      }
+
+  /** [reasoningFromWire] 的逆：UI 枚举 → 协议字符串。XHIGH 在协议侧无对应档，归入 MAX。 */
+  private fun reasoningToWire(
+      effort: com.tom.rv2ide.artificial.agent.compose.compat.ReasoningEffort
+  ): String =
+      when (effort) {
+        com.tom.rv2ide.artificial.agent.compose.compat.ReasoningEffort.DEFAULT ->
+            com.tom.rv2ide.ai.protocol.AiBehaviorSettings.REASONING_AUTO
+        com.tom.rv2ide.artificial.agent.compose.compat.ReasoningEffort.NONE ->
+            com.tom.rv2ide.ai.protocol.AiBehaviorSettings.REASONING_OFF
+        com.tom.rv2ide.artificial.agent.compose.compat.ReasoningEffort.LOW ->
+            com.tom.rv2ide.ai.protocol.AiBehaviorSettings.REASONING_LOW
+        com.tom.rv2ide.artificial.agent.compose.compat.ReasoningEffort.HIGH ->
+            com.tom.rv2ide.ai.protocol.AiBehaviorSettings.REASONING_HIGH
+        com.tom.rv2ide.artificial.agent.compose.compat.ReasoningEffort.XHIGH ->
+            com.tom.rv2ide.ai.protocol.AiBehaviorSettings.REASONING_MAX
+        com.tom.rv2ide.artificial.agent.compose.compat.ReasoningEffort.MAX ->
+            com.tom.rv2ide.ai.protocol.AiBehaviorSettings.REASONING_MAX
+        else -> com.tom.rv2ide.ai.protocol.AiBehaviorSettings.REASONING_MEDIUM
+      }
+
+  /**
    * 刷新工具条上的服务商与模型两个标签。
    *
    * <p>由选择器在每次选择后回调，以及面板 attach 时调用一次。不订阅偏好变更：
@@ -2666,6 +3075,17 @@ class FloatingAssistantView(
     val agents = Agents(context)
     val providerId = agents.getProvider()
     val providerLabel = com.tom.rv2ide.artificial.agent.ProviderPresets.labelFor(providerId)
+    // 推理强度：从持久化偏好恢复（重建视图时输入栏的初值）。与 onReasoningEffortChange
+    // 的落盘互为逆操作——少了这一读，用户的选择在每次点开/切全屏后回到默认档（实测）。
+    //
+    // **必须全档映射**：UI 是 Aharou 的 7 档枚举，协议层只认 6 个字符串。此前只映射
+    // LOW/HIGH、其余一律落到 MEDIUM——用户选「默认/关/极高/最大」后重建视图必然
+    // 显示成「中」（实测反馈「档位 ui 切换回默认」的直接原因）。见 [reasoningFromWire]。
+    val persistedEffort = inputFeatures.reasoningEffort()
+    inputBar.reasoningEffort = reasoningFromWire(persistedEffort)
+    android.util.Log.i(
+        "ACSDebug",
+        "reasoning read: $persistedEffort -> ${inputBar.reasoningEffort} (view=${System.identityHashCode(this)})")
     // 未配置密钥的服务商加「⚠」前缀：否则用户切过去、发一条消息、收到
     // 「未配置有效的 API 密钥」，要绕一圈才知道问题在哪。
     val usable =
@@ -2748,7 +3168,15 @@ class FloatingAssistantView(
           androidx.core.graphics.ColorUtils.calculateLuminance(bg) <= 0.5
         }
     binding.assistantInputBarCompose.setContent {
-      com.tom.rv2ide.artificial.agent.compose.theme.AIEditorTheme(darkTheme = darkTheme) {
+      com.tom.rv2ide.artificial.agent.compose.theme.AIEditorTheme(
+                darkTheme = darkTheme,
+                // UI 壳（顶栏/输入栏/状态条/会话抽屉）不随「消息配色方案」换色：
+                // 那个设置只染聊天消息渲染区（见 AssistantComposePanel 的主题），
+                // 壳保持与 ACS 主题一致，否则面板内咖啡色消息 + 蓝色壳会割裂
+                // （用户反馈：配色方案不要对 UI 壳生效）。
+                followHostFrame = mode != Mode.FULLSCREEN,
+                presetOverride = AppThemePreset.DEFAULT,
+            ) {
         val bridge = inputBar
         com.tom.rv2ide.artificial.agent.compose.components.independent.ChatInputBar(
             value = bridge.text,
@@ -2778,7 +3206,15 @@ class FloatingAssistantView(
               bridge.mode = next
             },
             reasoningEffort = bridge.reasoningEffort,
-            onReasoningEffortChange = { bridge.reasoningEffort = it },
+            onReasoningEffortChange = { next ->
+              bridge.reasoningEffort = next
+              // 落盘：推理强度是跨会话偏好，重建视图（点开/切全屏）后必须恢复。
+              // 此前只改内存状态，用户的选择在下次重建时静默丢失（实测反馈）。
+              // 全档映射见 [reasoningToWire]——曾经只认 LOW/HIGH，其余档坍缩成 medium。
+              val wire = reasoningToWire(next)
+              inputFeatures.setReasoningEffort(wire)
+              android.util.Log.i("ACSDebug", "reasoning write: $next -> $wire")
+            },
             pendingAttachments = bridge.pendingAttachments,
             onRemoveAttachment = { idx ->
               if (idx in bridge.pendingAttachments.indices) bridge.pendingAttachments.removeAt(idx)
@@ -2794,7 +3230,30 @@ class FloatingAssistantView(
             onUploadImage = { inputFeatures.pickImageAttachment() },
             onTakePhoto = { inputFeatures.pickImageAttachment() },
             slashCommands = bridge.slashCommands,
+            skills = bridge.skills,
             queuedRequests = bridge.queuedRequests,
+            // ── 待发送队列操作（面板上的删除/拖拽/编辑/立即插入）──
+            // 全部走 orchestrator（队列是它持有的全局真相，视图只是投影），
+            // 改完立刻 refreshQueueProjection() 让面板重组。
+            onRemoveQueued = { id ->
+              orchestrator.removeQueued(displayedConversationId ?: "", id)
+              refreshQueueProjection()
+            },
+            onMoveQueued = { from, to ->
+              orchestrator.moveQueued(displayedConversationId ?: "", from, to)
+              refreshQueueProjection()
+            },
+            onEditQueued = { queued ->
+              // 编辑 = 取回文本到输入框 + 从队列移除。用户改完再按发送，
+              // 走正常路径（排队或立即发）——不在这里原地改队列条目，
+              // 那会让「编辑」这个动作带隐式发送语义，与面板其它按钮不一致。
+              inputBar.text = queued.request
+              orchestrator.removeQueued(displayedConversationId ?: "", queued.id)
+              refreshQueueProjection()
+            },
+            onInterjectQueued = { id ->
+              interjectQueued(displayedConversationId ?: "", id)
+            },
             tokenProgress = bridge.tokenProgress,
             tokenEstimated = bridge.tokenEstimated,
             contextWindowSize = bridge.contextWindowSize,
@@ -2835,7 +3294,15 @@ class FloatingAssistantView(
         }
     applyToolStatusBarVisibility()
     binding.assistantToolStatusBarCompose.setContent {
-      com.tom.rv2ide.artificial.agent.compose.theme.AIEditorTheme(darkTheme = darkTheme) {
+      com.tom.rv2ide.artificial.agent.compose.theme.AIEditorTheme(
+                darkTheme = darkTheme,
+                // UI 壳（顶栏/输入栏/状态条/会话抽屉）不随「消息配色方案」换色：
+                // 那个设置只染聊天消息渲染区（见 AssistantComposePanel 的主题），
+                // 壳保持与 ACS 主题一致，否则面板内咖啡色消息 + 蓝色壳会割裂
+                // （用户反馈：配色方案不要对 UI 壳生效）。
+                followHostFrame = mode != Mode.FULLSCREEN,
+                presetOverride = AppThemePreset.DEFAULT,
+            ) {
         val bridge = inputBar
         // messages 是 mutableStateOf——这里直接读它，TOOL 消息随流式追加自然触发重组。
         // takeLast(8) 与 Aharou 一致：状态条只回看最近一串工具，不是完整历史。
@@ -2907,7 +3374,15 @@ class FloatingAssistantView(
           androidx.core.graphics.ColorUtils.calculateLuminance(bg) <= 0.5
         }
     binding.assistantHeaderCompose.setContent {
-      com.tom.rv2ide.artificial.agent.compose.theme.AIEditorTheme(darkTheme = darkTheme) {
+      com.tom.rv2ide.artificial.agent.compose.theme.AIEditorTheme(
+                darkTheme = darkTheme,
+                // UI 壳（顶栏/输入栏/状态条/会话抽屉）不随「消息配色方案」换色：
+                // 那个设置只染聊天消息渲染区（见 AssistantComposePanel 的主题），
+                // 壳保持与 ACS 主题一致，否则面板内咖啡色消息 + 蓝色壳会割裂
+                // （用户反馈：配色方案不要对 UI 壳生效）。
+                followHostFrame = mode != Mode.FULLSCREEN,
+                presetOverride = AppThemePreset.DEFAULT,
+            ) {
         com.tom.rv2ide.artificial.agent.compose.components.independent.ChatHeader(
             inputTokens = 0,
             outputTokens = 0,
@@ -2946,6 +3421,14 @@ class FloatingAssistantView(
                 // 用 finish 而不是 close()：宿主是 AssistantFullscreenActivity，
                 // 它的 onClosed 已接 finish（见 bindLayout），close() 会走到同一条路。
                 close()
+              } else if (host is com.tom.rv2ide.artificial.agent.host.OverlayHost) {
+                // 应用外悬浮：**禁用真全屏**。悬浮窗点全屏会拉起
+                // AssistantFullscreenActivity——它自己是个普通 Activity 窗口，
+                // 而 overlay 窗口仍悬在系统窗口层，两层窗口互相盖住，面板
+                // 「看起来全屏却缩不回去」，屏幕被占据只能杀后台（用户实测）。
+                // 全屏键在悬浮模式的语义改为**折叠**：收面板、露出 FAB 图标，
+                // 窗口随内容缩回图标大小（close() 对 overlay 的效果正是如此）。
+                close()
               } else {
                 launchTrueFullscreen()
               }
@@ -2976,12 +3459,20 @@ class FloatingAssistantView(
           androidx.core.graphics.ColorUtils.calculateLuminance(bg) <= 0.5
         }
     drawerView.setContent {
-      com.tom.rv2ide.artificial.agent.compose.theme.AIEditorTheme(darkTheme = darkTheme) {
+      com.tom.rv2ide.artificial.agent.compose.theme.AIEditorTheme(
+                darkTheme = darkTheme,
+                // UI 壳（顶栏/输入栏/状态条/会话抽屉）不随「消息配色方案」换色：
+                // 那个设置只染聊天消息渲染区（见 AssistantComposePanel 的主题），
+                // 壳保持与 ACS 主题一致，否则面板内咖啡色消息 + 蓝色壳会割裂
+                // （用户反馈：配色方案不要对 UI 壳生效）。
+                followHostFrame = mode != Mode.FULLSCREEN,
+                presetOverride = AppThemePreset.DEFAULT,
+            ) {
         com.tom.rv2ide.artificial.agent.compose.components.independent.ChatDrawerContent(
             sessions = drawerSessions.value,
             currentWorkspacePath = drawerCurrentCwd.value,
             currentSessionId = drawerActiveId.value,
-            agentStates = emptyMap(),
+            agentStates = drawerAgentStates.value,
             onSelect = { session ->
               toggleConversationPanel()
               openConversationById(session.id)
@@ -3099,6 +3590,8 @@ class FloatingAssistantView(
         drawerCurrentCwd.value = workspace?.absolutePath ?: ""
         drawerSessions.value = projectSessions(summaries)
         drawerActiveId.value = orchestrator.activeConversationId
+        // 列表换了一茬，运行态投影随新列表重算（打开抽屉/删会话/重命名都走这里）。
+        refreshDrawerAgentStates()
       }
     }
   }
@@ -3183,10 +3676,41 @@ class FloatingAssistantView(
       ui.lastThinkingId = null
       ui.lastToolCardId = null
     }
+    // 配对表随回放清空：旧会话的调用 id 不再指向任何卡片（卡片已随 clear 消失），
+    // 留着只会让迟到的事件找到过期 id。实时路径的条目由新的 TOOL_STARTED 重建。
+    toolCardIdByCallId.clear()
+    // 在途工具缓冲同理：它们的键是**上一个会话**的卡片 id，卡片已随 clear 消失，
+    // 留着会让浮动状态条显示另一个会话的运行中工具（实测反馈的状态混乱之一）。
+    // 若目标会话确有在途工具，restoreLiveRunState 会立刻重建卡片与新缓冲。
+    runningToolCardId = null
+    runningToolOutput.clear()
+    publishLiveToolOutput()
     throttle.reset()
+    replayMessagesRange(messages)
+    // 回放完成 = 用户刚打开/切换了这个会话：请求面板滚到底（用户要看的是最新内容）。
+    // 走面板代次而不是直接 scrollToItem：此刻列表尚未按新条目布局，直接读
+    // layoutInfo 只会拿到上一帧的旧值（两次修复都栽在这个时序上，见面板内注释）。
+    composePanel?.requestScrollToBottom("replay(${messages.size})")
+  }
+
+  /** 回放期的工具卡片配对队列；跨分帧 chunk 共享（见 [replayMessagesRange]）。 */
+  private val pendingReplayToolCards = java.util.ArrayDeque<Long>()
+
+  /**
+   * 把一段历史消息渲染进列表（不清表、不重置指针）。
+   *
+   * <p>从 [replayMessages] 抽出：分帧补帧需要按批调用同一段渲染逻辑，
+   * 而 clear/指针重置只属于首次回放。工具卡片配对队列（[pendingToolCards]）
+   * 是实例字段——尾部 chunk 与头部 chunk 之间连续使用，配对语义不受分帧影响。
+   */
+  private fun replayMessagesRange(messages: List<com.tom.rv2ide.ai.protocol.ModelMessage>) {
     // 待回填的工具卡片，按建立顺序排队。工具结果到达时取队首回填——
     // 与实时路径用 lastToolCardId 的语义一致（成对、按序）。
-    val pendingToolCards = java.util.ArrayDeque<Long>()
+    // 实例字段：分帧补帧时尾部 chunk 与头部 chunk 分开渲染，但配对队列
+    // 必须跨 chunk 连续（头部 chunk 的调用要等尾部 chunk 已排队的结果配对）。
+    // 首次回放（replayMessages）前清空。
+    pendingReplayToolCards.clear()
+    val pendingToolCards = pendingReplayToolCards
     for (message in messages) {
       when (message) {
         is com.tom.rv2ide.ai.protocol.UserModelMessage ->
@@ -3323,6 +3847,28 @@ class FloatingAssistantView(
     }
     if (snapshot.lastAction.isNotEmpty()) {
       showAction(snapshot.lastAction)
+    }
+    // 在途工具卡片重建：工具开始执行时不落盘（只有 TOOL_FINISHED 落盘），
+    // 切回一个「正在跑工具」的会话时回放的历史里没有那张卡片。不重建的话，
+    // 之后到达的 TOOL_FINISHED 只能回填到历史最后一张无关卡片（实测反馈的
+    // 「状态混乱」之一），PROGRESS 步骤也被静默丢弃。
+    //
+    // 卡片用运行中状态建出，并把调用 id 记进配对表——TOOL_FINISHED 靠它精确回填。
+    val pending = snapshot.pendingToolCall
+    if (pending != null) {
+      val id =
+          adapter.appendToolCall(
+              toolName = pending.name,
+              summary = summarizeArgs(pending.arguments),
+              input = pending.arguments.orEmpty(),
+          )
+      if (pending.id.isNotEmpty()) {
+        toolCardIdByCallId[pending.id] = id
+      }
+      ui.lastToolCardId = id
+      runningToolCardId = id
+      runningToolOutput[id] = StringBuilder()
+      publishLiveToolOutput()
     }
   }
 

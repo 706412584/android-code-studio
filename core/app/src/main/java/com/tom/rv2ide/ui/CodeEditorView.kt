@@ -25,6 +25,7 @@ import com.tom.rv2ide.editor.ui.initHoverTooltips
 import com.tom.rv2ide.editor.ui.updateEditorDiagnostics
 import com.tom.rv2ide.editor.utils.ContentReadWrite.readContent
 import com.tom.rv2ide.editor.utils.ContentReadWrite.writeTo
+import com.tom.rv2ide.eventbus.events.editor.DocumentExternalChangeEvent
 import com.tom.rv2ide.eventbus.events.preferences.PreferenceChangeEvent
 import com.tom.rv2ide.lsp.IDELanguageClientImpl
 import com.tom.rv2ide.lsp.api.ILanguageServer
@@ -107,6 +108,25 @@ class CodeEditorView(context: Context, file: File, selection: Range) :
   val isModified: Boolean
     get() = editor?.isModified ?: false
 
+  /**
+   * 磁盘上有比编辑器更新的内容（该文件被 AI 工具 / git checkout / archive 解压等
+   * **编辑器之外**的路径改写，且编辑器里还有用户未保存的改动，故未自动重载）。
+   *
+   * <p><b>为什么自动保存必须查这个标志</b>：自动保存的判据是「编辑器 buffer 与磁盘不同
+   * 就写回」，方向默认是「编辑器赢」。当磁盘的新内容来自外部写入时，这个方向就错了——
+   * 用户随手改一笔触发自动保存，会把 buffer（旧内容 + 那一笔）整段写回，**静默覆盖
+   * 外部的修改**。置位后自动保存对本次让路（先给用户一个「保存将覆盖外部改动」的机会，
+   * 而不是替他决定）。用户下一次编辑（[clearExternalConflict]）即视为已重新取得控制权。
+   */
+  @Volatile
+  var hasExternalDiskChange: Boolean = false
+    private set
+
+  /** 用户在编辑器里继续编辑（或手动保存）后，外部冲突视为已由用户接管。 */
+  fun clearExternalConflict() {
+    hasExternalDiskChange = false
+  }
+
   companion object {
     private val log = LoggerFactory.getLogger(CodeEditorView::class.java)
   }
@@ -167,11 +187,76 @@ class CodeEditorView(context: Context, file: File, selection: Range) :
     binding.editor.subscribeEvent(io.github.rosemoe.sora.event.ContentChangeEvent::class.java) {
         event: io.github.rosemoe.sora.event.ContentChangeEvent,
         _: Any? ->
+      // 用户继续编辑 = 重新取得控制权，外部冲突标记随之失效（见 hasExternalDiskChange）。
+      hasExternalDiskChange = false
       val editorFile = binding.editor.file
       if (editorFile != null && (editorFile.extension == "kt")) {
         startDiagnosticAnalysis(editorFile)
       }
     }
+  }
+
+  /**
+   * 该文件在编辑器之外被改写（AI 工具 / git checkout 等），刷新本编辑器。
+   *
+   * <p>两种处理：
+   * <ul>
+   *   <li>编辑器无未保存改动 → 直接从磁盘重载（保留光标位置），用户立即看到最新内容；
+   *   <li>编辑器有未保存改动 → **不**静默重载（会丢用户的编辑），只标记冲突，
+   *       由自动保存让路（见 [hasExternalDiskChange]）。
+   * </ul>
+   */
+  @Subscribe(threadMode = ThreadMode.MAIN)
+  @Suppress("unused")
+  fun onDocumentExternalChange(event: DocumentExternalChangeEvent) {
+    val current = file
+    log.info(
+        "DocumentExternalChange received: event={} current={}",
+        event.changedFile,
+        current?.absolutePath)
+    if (current == null) {
+      return
+    }
+    if (!sameFile(event.changedFile.toFile(), current)) {
+      return
+    }
+    if (isModified) {
+      hasExternalDiskChange = true
+      log.info("External change detected while modified, marked conflict: {}", current.name)
+      return
+    }
+    reloadFromDisk()
+  }
+
+  /** 路径等价判定：`/data/user/0/...` 与 `/data/data/...` 是同一目录但字符串不同。 */
+  private fun sameFile(a: File, b: File): Boolean {
+    if (a.absolutePath == b.absolutePath) {
+      return true
+    }
+    return try {
+      a.canonicalPath == b.canonicalPath
+    } catch (e: Throwable) {
+      false
+    }
+  }
+
+  /** 从磁盘重新读取内容并保留光标位置；无未保存改动时才应调用。 */
+  fun reloadFromDisk() {
+    val f = file ?: return
+    val editor = binding.editor
+    // 用当前光标位置构造一个零长度选区，重载后光标回到原处（而不是跳到文件头）。
+    val range = try {
+      val cursor = editor.cursor
+      if (cursor == null) com.tom.rv2ide.models.Range.NONE
+      else
+        com.tom.rv2ide.models.Range.pointRange(
+            com.tom.rv2ide.models.Position(cursor.leftLine, cursor.leftColumn))
+    } catch (e: Throwable) {
+      com.tom.rv2ide.models.Range.NONE
+    }
+    hasExternalDiskChange = false
+    readFileAndApplySelection(f, range)
+    log.info("Reloaded editor from disk: {}", f.name)
   }
 
   /** Get the file of this editor. Throws [IllegalStateException] if no file is available. */

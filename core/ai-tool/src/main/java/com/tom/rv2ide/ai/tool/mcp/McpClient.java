@@ -85,7 +85,9 @@ public final class McpClient {
     /** streamable HTTP（现行规范，单端点 POST）。 */
     HTTP("http"),
     /** SSE（旧规范，长连接推送）。 */
-    SSE("sse");
+    SSE("sse"),
+    /** stdio 子进程（Termux 起本地 server，newline-delimited JSON over stdin/stdout）。 */
+    STDIO("stdio");
 
     private final String id;
 
@@ -103,6 +105,9 @@ public final class McpClient {
         String value = raw.trim().toLowerCase(Locale.US);
         if (SSE.id.equals(value)) {
           return SSE;
+        }
+        if (STDIO.id.equals(value)) {
+          return STDIO;
         }
       }
       return HTTP;
@@ -146,8 +151,40 @@ public final class McpClient {
    */
   public McpClient(
       HttpPort http, String serverUrl, Map<String, String> extraHeaders, Transport transport) {
+    this(http, serverUrl, extraHeaders, transport, null, null, null, null);
+  }
+
+  /**
+   * @param http HTTP 端口；null 视作无网络
+   * @param serverUrl MCP server 的端点（HTTP 为消息端点，SSE 为事件流端点；
+   *     stdio 时不使用，可传命令名便于诊断）
+   * @param extraHeaders 附加请求头（例如鉴权）；stdio 时为附加环境变量（用户 env 优先）
+   * @param transport 传输类型
+   * @param stdioCommand stdio 启动命令；非 stdio 传输忽略
+   * @param stdioArgs stdio 命令参数
+   * @param stdioEnv stdio 附加环境变量（叠加在父环境之上）
+   * @param stdioCwd stdio 子进程工作目录；空则继承父进程
+   */
+  public McpClient(
+      HttpPort http,
+      String serverUrl,
+      Map<String, String> extraHeaders,
+      Transport transport,
+      String stdioCommand,
+      java.util.List<String> stdioArgs,
+      Map<String, String> stdioEnv,
+      String stdioCwd) {
     HttpPort port = http == null ? HttpPort.none() : http;
     Transport type = transport == null ? Transport.HTTP : transport;
+    if (type == Transport.STDIO) {
+      this.transport =
+          new StdioTransport(
+              stdioCommand == null || stdioCommand.isEmpty() ? serverUrl : stdioCommand,
+              stdioArgs,
+              stdioEnv == null ? extraHeaders : stdioEnv,
+              stdioCwd);
+      return;
+    }
     this.transport =
         type == Transport.SSE
             ? new HttpStreamTransport(port, serverUrl, extraHeaders)

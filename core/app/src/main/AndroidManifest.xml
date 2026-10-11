@@ -94,11 +94,17 @@
       Activity，避免「转个屏就把正在流式输出的界面重建一遍」。
       注意：这只能挡住配置变更类重建；系统内存回收仍会销毁 Activity（那种情况下
       靠 dispose 不取消运行 + 重建后回放来保证工作不丢）。
+
+      exported=true：供 adb `am start` 深链调起（开发期自动化：一条命令直达 AI 全屏并预填/直发
+      一次请求，省去手动点输入框 + 过中文输入法逐字输入）。该页是前台、用户可见、可返回的普通
+      界面，无特权动作；而「替用户发一条请求」的 ai_prompt/ai_autosend 深链参数**仅 Debug 构建
+      生效**（见 AssistantFullscreenActivity.maybePrefillFromIntent），Release 下用深链也只打开
+      空面板，不预填不发送。
     -->
     <activity
       android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden|density|uiMode"
       android:launchMode="singleTop"
-      android:exported="false"
+      android:exported="true"
       android:name=".activities.editor.AssistantFullscreenActivity"
       android:theme="@style/Theme.AndroidIDE" />
 

@@ -94,6 +94,7 @@
     <item name="colorOnErrorContainer">@color/_sunny_glow_light_colorOnErrorContainer</item>
 
     <item name="android:colorBackground">@color/_sunny_glow_light_colorBackground</item>
+    <item name="android:windowBackground">@color/_sunny_glow_light_colorBackground</item>
     <item name="colorOnBackground">@color/_sunny_glow_light_colorOnBackground</item>
 
     <item name="colorSurface">@color/_sunny_glow_light_colorSurface</item>
@@ -188,6 +189,7 @@
     <item name="colorOnErrorContainer">@color/_sunny_glow_dark_colorOnErrorContainer</item>
 
     <item name="android:colorBackground">@color/_sunny_glow_dark_colorBackground</item>
+    <item name="android:windowBackground">@color/_sunny_glow_dark_colorBackground</item>
     <item name="colorOnBackground">@color/_sunny_glow_dark_colorOnBackground</item>
 
     <item name="colorSurface">@color/_sunny_glow_dark_colorSurface</item>

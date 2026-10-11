@@ -221,6 +221,9 @@ public final class SubAgentRunnerImpl implements SubAgentRunner {
     registry.register(new FileReadTool());
     registry.register(new GlobTool());
     registry.register(new ListDirectoryTool());
+    // 按内容搜索。没有它时 explore/审查子代理只能 glob 出文件名、再逐个整文件读——
+    // 「哪里用了这个 API」这类问题会白读几十个文件，而主 agent 一直有 grep。
+    registry.register(new com.tom.rv2ide.ai.tool.GrepTool());
 
     if (mode == Mode.CODE) {
       registry.register(new FileWriteTool());

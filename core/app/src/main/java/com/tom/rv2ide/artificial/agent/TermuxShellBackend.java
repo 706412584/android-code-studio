@@ -163,7 +163,7 @@ public final class TermuxShellBackend implements ShellBackend {
         return ShellRequest.ShellResult.error("命令未能启动");
       }
 
-      return awaitResult(resultDir, request.getTimeoutMs(), shell, sink);
+      return awaitResult(resultDir, request.getTimeoutMs(), shell, sink, request);
     } catch (RuntimeException e) {
       log.error("Termux 命令执行失败", e);
       return ShellRequest.ShellResult.error("命令执行异常: " + e.getMessage());
@@ -175,12 +175,24 @@ public final class TermuxShellBackend implements ShellBackend {
 
   /** 轮询等待 {@code err} 文件出现，然后读取全部结果。 */
   private ShellRequest.ShellResult awaitResult(
-      File resultDir, long timeoutMs, AppShell shell, ShellRequest.ShellOutputSink sink) {
+      File resultDir, long timeoutMs, AppShell shell, ShellRequest.ShellOutputSink sink,
+      ShellRequest request) {
 
     File errFile = new File(resultDir, ShellCommandConstants.RESULT_SENDER.RESULT_FILE_ERR_PREFIX);
     long deadline = System.currentTimeMillis() + timeoutMs;
 
     while (System.currentTimeMillis() < deadline) {
+      // 后台任务被 task_stop 取消：终止进程并按「已停止」返回（timedOut=true 语义由调用方区分）。
+      if (request != null && request.isCancellationRequested()) {
+        try {
+          shell.killIfExecuting(appContext, false);
+        } catch (RuntimeException e) {
+          log.warn("取消后终止进程失败", e);
+        }
+        ShellRequest.ShellResult partial = readResult(resultDir, sink);
+        return new ShellRequest.ShellResult(
+            partial.getExitCode(), partial.getStdout(), partial.getStderr(), true, false);
+      }
       if (errFile.exists() && errFile.length() > 0) {
         return readResult(resultDir, sink);
       }

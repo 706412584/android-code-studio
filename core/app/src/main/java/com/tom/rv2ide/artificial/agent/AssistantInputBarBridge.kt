@@ -103,7 +103,13 @@ internal class AssistantInputBarBridge {
   /** 当前对话模式（Aharou 三档；ACS ChatMode 的投影由宿主换算）。 */
   var mode by mutableStateOf(AgentMode.BUILD)
 
-  /** 推理强度档位。 */
+  /**
+   * 推理强度档位。
+   *
+   * <p><b>初值从持久化偏好读</b>（不是硬编码 MEDIUM）：此前每次重建视图
+   * （点开/切全屏）都会回到默认档，用户改过的选择被静默重置（实测反馈）。
+   * 写回由宿主在 [onReasoningEffortChange] 里落盘（见 FloatingAssistantView）。
+   */
   var reasoningEffort by mutableStateOf(ReasoningEffort.MEDIUM)
 
   // ── 工具运行状态条（FloatingToolStatusBar） ──
@@ -131,6 +137,9 @@ internal class AssistantInputBarBridge {
 
   /** 斜杠菜单条目。宿主在 attach 时从 SlashCommandCatalog 投影一次。 */
   var slashCommands by mutableStateOf<List<com.tom.rv2ide.artificial.agent.compose.components.independent.InputSlashCommand>>(emptyList())
+
+  /** 已安装技能（@ 菜单数据源）。宿主在 attach 时从 SkillRegistry 投影。 */
+  var skills by mutableStateOf<List<com.tom.rv2ide.artificial.agent.compose.components.independent.InputSlashCommand>>(emptyList())
 
   // ── 抽屉会话（跨桥复用：ChatDrawer 已有 drawerSessions，这里不重复） ──
 

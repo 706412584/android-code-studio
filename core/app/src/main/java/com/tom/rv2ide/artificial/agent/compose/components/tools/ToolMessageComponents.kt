@@ -58,6 +58,7 @@ import androidx.compose.material.icons.outlined.Construction
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -90,6 +91,7 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import com.tom.rv2ide.artificial.agent.compose.compat.SessionUseCase
 import com.tom.rv2ide.artificial.agent.compose.components.bubbles.RippleText
+import com.tom.rv2ide.artificial.agent.compose.components.style.BotGlyph
 import com.tom.rv2ide.artificial.agent.compose.components.style.ChatCodeCard
 import com.tom.rv2ide.artificial.agent.compose.components.style.ChatMonoPanel
 import com.tom.rv2ide.artificial.agent.compose.components.style.ChatStyle
@@ -177,6 +179,8 @@ internal object ToolCardStrings {
   val FAILED: String @Composable get() = stringResource(R.string.compose_tool_card_failed)
   val TODO_COMPLETED: String @Composable get() = stringResource(R.string.compose_tool_card_todo_completed)
   val TODO_IN_PROGRESS: String @Composable get() = stringResource(R.string.compose_tool_card_todo_in_progress)
+  /** 子代理「查看结果」入口（cc-haha AgentCallCard 的按钮同文案）。 */
+  val VIEW_RESULT: String @Composable get() = stringResource(R.string.compose_tool_card_view_result)
   val WEB_SEARCH_TITLE: String @Composable get() = stringResource(R.string.compose_tool_card_web_search_title)
   val IMAGE_PREVIEW_LABEL: String @Composable get() = stringResource(R.string.compose_tool_card_image_preview)
   val TAP_TO_VIEW: String @Composable get() = stringResource(R.string.compose_tool_card_tap_to_view)
@@ -305,6 +309,11 @@ internal fun ToolMessageBody(
   // 因此滚出视口、切页返回都不会再丢。
   val effectiveExpanded = expandedOverride == true
 
+  // 「查看结果」弹窗开关（子代理卡片专属，cc-haha AgentCallCard 的「查看结果」Modal 同款）：
+  // 子代理的结论可能很长（调查结论/报告），内联渲染会把卡片撑得极高，独立弹窗里
+  // Markdown 渲染 + 滚动阅读才可读。remember(message.id)：条目被回收时弹窗随之关闭。
+  var showResultDialog by remember(message.id) { mutableStateOf(false) }
+
   val toolLabel = message.toolName ?: ToolCardStrings.TOOL
   // 文件相关工具：从结构化 diff 或工具参数里取路径，统一按「工具名 + 路径 + 文件名」展示
   val filePath = if (edit != null) edit.path else derived?.filePath
@@ -414,6 +423,30 @@ internal fun ToolMessageBody(
             }
           }
         }
+    // 子代理步骤的折叠态预览（cc-haha AgentCallCard 的 AgentProgressLine 语义，
+    // XML 路径 toolStepsHint 的 Compose 对应物）：有步骤时显示「N 步 · 最后一步」，
+    // 子代理折叠后与普通工具的区别必须可见——否则用户不知道它跑了多少步、最后在做什么。
+    // 运行中与结束态都显示（结束态是回看的唯一凭据）。
+    if (message.steps.isNotEmpty()) {
+      Spacer(Modifier.height(2.dp))
+      Text(
+          text = "${message.steps.size} 步 · ${message.steps.last()}",
+          color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.75f),
+          style = MaterialTheme.typography.labelSmall,
+          maxLines = 1,
+          overflow = TextOverflow.Ellipsis,
+          modifier = Modifier.padding(start = ChatStyle.rowIconSize + Spacing.sm))
+    }
+    // 生成图常显预览（cc-haha ImageGenerationBlock 语义）：图片是这条结果的主体，
+    // 折进卡片里用户看不到「查看图片功能回来了」。只在非 running 且磁盘有文件时显示；
+    // 折叠展开均常驻。expandedOverride 的旧分支里同样渲染一份，展开时是同一入口。
+    if (!running && !message.isError) {
+      val imagePaths = remember(message.content) { generatedImagePaths(message) }
+      if (imagePaths.isNotEmpty()) {
+        Spacer(Modifier.height(Spacing.xs))
+        ToolResultImageFromPaths(imagePaths)
+      }
+    }
     if (streaming) {
       // 展开态与落库卡片同构：先「指令」（工具参数），再「结果」（实时输出尾部）；
       // 折叠态只保留标题行。「还在跑」由标题行行尾的涟漪场景文案表达，不在这里重复一遍。
@@ -456,6 +489,14 @@ internal fun ToolMessageBody(
             // content 往往就是一大段 base64 或尺寸描述——正文与图重复且难看。
             Spacer(Modifier.height(Spacing.xs))
             ToolResultImage(message)
+          } else if (generatedImagePaths(message).isNotEmpty()) {
+            // 生成图的**路径引用**分支（cc-haha 同款协议/UI 分离）：图片文件不进模型
+            // 上下文（base64 会撑爆窗口并引发 GC 风暴），工具结果只写落盘路径；
+            // UI 从 content 里提取路径、从磁盘加载内联显示。用户看到的仍是图片，
+            // 模型看到的是几百字节文本。位置在 imageBase64 之后：旧会话里内联
+            // base64 的结果优先走原分支，不受影响。
+            Spacer(Modifier.height(Spacing.xs))
+            ToolResultImageFromPaths(generatedImagePaths(message))
           } else if (edit != null) {
             // 差异卡：头部给路径与「复制」，页脚给增删统计
             Spacer(Modifier.height(Spacing.xs))
@@ -471,9 +512,25 @@ internal fun ToolMessageBody(
                   }
                 }
           } else {
+            // 步骤区（子代理过程）：普通工具没有步骤，整块隐藏——空标题只是噪音。
+            // 放在「指令」之前：步骤是子代理的主体内容，指令（task 参数）只是它的输入。
+            if (message.steps.isNotEmpty()) {
+              Spacer(Modifier.height(Spacing.sm))
+              ToolStepsSection(steps = message.steps)
+            }
             if (!argsFull.isNullOrBlank()) {
               Spacer(Modifier.height(Spacing.sm))
               ToolSection(label = ToolCardStrings.INSTRUCTION, content = argsFull)
+            }
+            // 「查看结果」入口（cc-haha AgentCallCard 的 Modal 按钮同款）：子代理结论
+            // 可能很长，独立弹窗里 Markdown 渲染 + 滚动阅读才可读；内联结果区保留
+            // （快速扫读），弹窗给完整版。只给子代理类工具——普通工具的 resultText
+            // 就是短摘要，弹窗是多余的一跳。
+            if (isAgentToolName(message.toolName) && message.content.isNotBlank()) {
+              Spacer(Modifier.height(Spacing.xs))
+              TextButton(onClick = { showResultDialog = true }) {
+                Text(ToolCardStrings.VIEW_RESULT)
+              }
             }
             if (!resultText.isNullOrBlank()) {
               Spacer(Modifier.height(Spacing.sm))
@@ -491,6 +548,55 @@ internal fun ToolMessageBody(
     // 宿主（Aharou 的 LocalAttachmentOpener）未接时 onClick 传 null，行只剩展示语义。
     if (!running && message.attachments.isNotEmpty()) {
       MessageAttachmentList(attachments = message.attachments)
+    }
+    // 子代理「查看结果」弹窗（见上方按钮）。挂在本函数末尾而不是展开区里：
+    // 展开区随折叠动画进出组合，弹窗放里面会在折叠瞬间被连带 dispose。
+    if (showResultDialog) {
+      SubAgentResultDialog(
+          title = message.toolName ?: ToolCardStrings.TOOL,
+          content = message.content,
+          onDismiss = { showResultDialog = false })
+    }
+  }
+}
+
+/**
+ * 子代理结论弹窗（cc-haha AgentCallCard 的 900px Modal 对应物）。
+ *
+ * <p>内容用 [com.tom.rv2ide.artificial.agent.compose.components.markdown.MarkdownContent]
+ * 渲染：子代理的结论本身是模型写的 Markdown（含标题/列表/代码块），纯文本显示会
+ * 丢掉结构。限高 70% 屏高 + 内部滚动：结论可达数千字，不限高会顶出屏幕。
+ */
+@Composable
+private fun SubAgentResultDialog(title: String, content: String, onDismiss: () -> Unit) {
+  androidx.compose.ui.window.Dialog(onDismissRequest = onDismiss) {
+    Surface(
+        shape = RoundedCornerShape(Radius.lg),
+        color = MaterialTheme.colorScheme.surface,
+        modifier = Modifier.fillMaxWidth().heightIn(max = 560.dp),
+    ) {
+      Column(modifier = Modifier.fillMaxWidth()) {
+        Row(
+            modifier =
+                Modifier.fillMaxWidth().padding(horizontal = Spacing.md, vertical = Spacing.sm),
+            verticalAlignment = Alignment.CenterVertically) {
+          Text(
+              text = ToolCardStrings.VIEW_RESULT,
+              style = MaterialTheme.typography.titleSmall,
+              fontWeight = FontWeight.SemiBold,
+              color = MaterialTheme.colorScheme.onSurface,
+              modifier = Modifier.weight(1f))
+          TextButton(onClick = onDismiss) { Text(ToolCardStrings.BACK) }
+        }
+        androidx.compose.material3.HorizontalDivider(
+            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+        com.tom.rv2ide.artificial.agent.compose.components.markdown.MarkdownContent(
+            text = content,
+            color = MaterialTheme.colorScheme.onSurface,
+            modifier = Modifier.verticalScroll(rememberScrollState()).padding(Spacing.md),
+            cacheEnabled = false,
+        )
+      }
     }
   }
 }
@@ -647,22 +753,50 @@ internal fun ToolStatusIcon(running: Boolean, isError: Boolean, toolName: String
         else -> ToolCardStrings.SUCCEEDED
       }
   Row(verticalAlignment = Alignment.CenterVertically) {
-    Icon(
-        imageVector = toolIcon(toolName),
-        contentDescription = statusLabel,
-        tint = tint,
-        modifier =
-            Modifier
-                // 与思考行同一格宽：两行的图标中心与后续文字左边缘才对得齐
-                .size(ChatStyle.rowIconSize)
-                .graphicsLayer { alpha = pulseAlpha })
+    // 子代理类工具用机器人字形（cc-haha 的 Bot 图标，用户明确要求复刻）：
+    // 「agent」系列工具在 cc-haha 桌面端一律以 Bot 呈现，与普通工具（锤子/终端）
+    // 区分开——子代理是「另一个智能体在干活」，不是一个普通工具调用。
+    if (isAgentToolName(toolName)) {
+      BotGlyph(
+          tint = tint,
+          iconSize = ChatStyle.rowIconSize,
+          modifier = Modifier.graphicsLayer { alpha = pulseAlpha })
+    } else {
+      Icon(
+          imageVector = toolIcon(toolName),
+          contentDescription = statusLabel,
+          tint = tint,
+          modifier =
+              Modifier
+                  // 与思考行同一格宽：两行的图标中心与后续文字左边缘才对得齐
+                  .size(ChatStyle.rowIconSize)
+                  .graphicsLayer { alpha = pulseAlpha })
+    }
   }
 }
 
 /**
- * 工具名字形映射。键同时覆盖 Aharou 的工具注册名与 ACS 的工具名（比对时忽略大小写）：
- * ACS 用 snake_case（`read_file` / `edit_file` / `ask_user_question`），Aharou 用驼峰，
- * 两边都收，免得同一语义的工具在两组实现下显示成不同的字形。
+ * 该工具名是否属于「子代理」一族（用机器人字形呈现）。
+ *
+ * <p>覆盖三类：内置 `agent`（子代理）、`agentb_*`（内置角色 agent）、
+ * `agentx_*`（自定义 agent）。`agent_pipeline` / `agent_output` 是编排类工具，
+ * 语义上也是「派遣代理」，一并归入。
+ */
+internal fun isAgentToolName(toolName: String?): Boolean {
+  val name = toolName?.lowercase() ?: return false
+  return name == "agent" ||
+      name == "agent_pipeline" ||
+      name == "agent_output" ||
+      name == "task" ||
+      name.startsWith("agentb_") ||
+      name.startsWith("agentx_")
+}
+
+/**
+ * 工具名字形映射。键同时覆盖 Aharou 的工具注册名与 ACS 的规范名/别名（比对时忽略大小写）：
+ * ACS 用 snake_case（规范名 `file_read` / `file_edit`，别名 `read_file` / `edit_file`），
+ * Aharou 用驼峰，全部收——同一语义的工具必须显示同一字形，否则用户在子代理步骤里
+ * 认不出「这就是主对话里那个读文件工具」。
  */
 private fun toolIcon(toolName: String?): ImageVector =
     when (toolName?.lowercase()) {
@@ -670,6 +804,9 @@ private fun toolIcon(toolName: String?): ImageVector =
       "writefile",
       "edit_file",
       "write_file",
+      "file_edit",
+      "file_write",
+      "file_delete",
       "generateimage",
       "generate_image" -> FeatherIcons.Edit3
       "readfile",
@@ -677,19 +814,25 @@ private fun toolIcon(toolName: String?): ImageVector =
       "sendfile",
       "viewimage",
       "read_file",
-      "list_files" -> FeatherIcons.FileText
+      "file_read",
+      "list_files",
+      "list_dir",
+      "glob" -> FeatherIcons.FileText
       "search",
       "websearch",
       "webfetch",
       "browser",
       "web_search",
-      "web_fetch" -> FeatherIcons.Search
+      "web_fetch",
+      "grep" -> FeatherIcons.Search
       "bash",
       "terminal",
       "shell_execute" -> FeatherIcons.Terminal
-      "todo" -> FeatherIcons.Check
+      "todo",
+      "todo_update" -> FeatherIcons.Check
       "task" -> FeatherIcons.Cpu
-      "memory" -> FeatherIcons.Database
+      "memory",
+      "memory_update" -> FeatherIcons.Database
       else -> FeatherIcons.Tool
     }
 
@@ -865,10 +1008,190 @@ private fun ToolResultImage(message: AgentUIMessage) {
   }
 }
 
+/**
+ * 从工具结果的 content 里提取**本机存在的**图片绝对路径（cc-haha InlineImageGallery 的
+ * 提取语义）：匹配以图片扩展名结尾的绝对路径行，且磁盘上确有该文件。
+ *
+ * <p>纯内存正则 + 一次 exists 检查，缓存到 content 键上——LazyColumn 每次重组都会调用
+ * 本分支，不缓存的话每帧都跑正则与 IO。
+ */
+internal fun generatedImagePaths(message: AgentUIMessage): List<String> {
+  val content = message.content
+  if (content.length > 100_000) return emptyList() // 防御：异常大 content 不跑正则
+  val matcher = IMAGE_PATH_PATTERN.findAll(content)
+  val paths = ArrayList<String>(2)
+  for (m in matcher) {
+    val path = m.groupValues[1]
+    val file = java.io.File(path)
+    // 磁盘确认：会话可回放跨项目，历史里的路径可能已被清理——不存在的文件不渲染破图。
+    if (file.isFile) paths.add(path)
+  }
+  return paths
+}
+
+/** 绝对路径 + 图片扩展名（与 ImageGenerationTool 的落盘命名对应：.png/.jpg/.webp）。 */
+private val IMAGE_PATH_PATTERN =
+    Regex("""(/(?:[\w .-]+/)*[\w.-]+\.(?:png|jpe?g|webp))""", RegexOption.IGNORE_CASE)
+
+/**
+ * 生成图路径引用的内联预览（磁盘加载，不经过模型上下文）。
+ *
+ * <p>渲染形态与 [ToolResultImage] 一致（卡片 + 点击灯箱），数据源从 base64 换成
+ * [ImageSource.LocalFile]——查看器自己处理磁盘读取与降采样。
+ */
+@Composable
+private fun ToolResultImageFromPaths(paths: List<String>) {
+  val viewer = LocalImageViewer.current
+  val title = ToolCardStrings.IMAGE_PREVIEW_LABEL
+  Surface(
+      shape = RoundedCornerShape(ChatStyle.panelCorner),
+      color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
+      modifier =
+          Modifier.fillMaxWidth()
+              .clip(RoundedCornerShape(ChatStyle.panelCorner))
+              .clickable {
+                viewer.show(
+                    ImageViewerRequest(
+                        sources = paths.map { ImageSource.LocalFile(it) },
+                        title = title,
+                    ))
+              },
+  ) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(Spacing.sm),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+      Icon(
+          imageVector = FeatherIcons.Image,
+          contentDescription = null,
+          tint = Brand.IconGray,
+          modifier = Modifier.size(ChatStyle.rowIconSize))
+      Spacer(Modifier.width(Spacing.sm))
+      Column(modifier = Modifier.weight(1f)) {
+        Text(
+            text =
+                if (paths.size == 1) java.io.File(paths[0]).name
+                else stringResource(R.string.compose_tool_card_image_count, paths.size),
+            color = MaterialTheme.colorScheme.onSurface,
+            style = MaterialTheme.typography.labelLarge,
+        )
+        Text(
+            text = ToolCardStrings.TAP_TO_VIEW,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = MaterialTheme.typography.labelSmall,
+        )
+      }
+      Icon(
+          imageVector = FeatherIcons.ChevronRight,
+          contentDescription = null,
+          tint = Brand.IconGray,
+          modifier = Modifier.size(18.dp))
+    }
+  }
+}
+
+/**
+ * 子代理步骤区：每步一行，**按主 agent 工具行的样式渲染**（cc-haha AgentCallCard 的
+ * 「最近子工具调用」列表对应物）——图标 + 工具名 + 目标，与主对话里的工具行同构。
+ *
+ * <p>行文本由 [com.tom.rv2ide.artificial.agent.SubAgentStepReporter] 生成，形如
+ * `子 agent 步骤 3 · file_read: a.kt`；解析出工具名后复用主工具行的图标映射
+ * （[toolIcon]），用户在主对话里认得的字形，在子代理步骤里同样认得。
+ * 解析不出的行（「子 agent 思考中（第 2 轮）」等）保留原文单行显示。
+ */
+@Composable
+internal fun ToolStepsSection(steps: List<String>) {
+  Text(
+      text = "步骤（${steps.size}）",
+      color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+      style = MaterialTheme.typography.labelSmall,
+      fontWeight = FontWeight.SemiBold)
+  Spacer(Modifier.height(2.dp))
+  val scrollState = rememberScrollState()
+  ChatMonoPanel(
+      modifier =
+          Modifier.heightIn(max = ToolSectionMaxHeight)
+              .nestedScroll(rememberBoundNestedScrollConnection(scrollState))
+              .verticalScroll(scrollState)) {
+        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+          steps.forEach { step -> SubAgentStepRow(step) }
+        }
+      }
+}
+
+/** 子代理步骤的单行渲染：能解析出工具名时走「图标 + 工具名 + 目标」，否则原文显示。 */
+@Composable
+private fun SubAgentStepRow(step: String) {
+  val parsed = remember(step) { parseSubAgentStep(step) }
+  if (parsed == null) {
+    Text(
+        text = step,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+        maxLines = 2,
+        overflow = TextOverflow.Ellipsis)
+    return
+  }
+  val (name, target) = parsed
+  Row(verticalAlignment = Alignment.CenterVertically) {
+    // 与主工具行同一套字形（含子代理自己的机器人字形）：同一工具在主对话与
+    // 子代理步骤里显示同一个图标，扫读时不必重新建立联想。
+    if (isAgentToolName(name)) {
+      BotGlyph(
+          tint = MaterialTheme.colorScheme.onSurfaceVariant,
+          iconSize = ChatStyle.rowIconSize)
+    } else {
+      Icon(
+          imageVector = toolIcon(name),
+          contentDescription = null,
+          tint = MaterialTheme.colorScheme.onSurfaceVariant,
+          modifier = Modifier.size(ChatStyle.rowIconSize))
+    }
+    Spacer(Modifier.width(Spacing.sm))
+    Text(
+        text = name,
+        color = MaterialTheme.colorScheme.onSurface,
+        style = MaterialTheme.typography.labelMedium,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis)
+    if (target.isNotBlank()) {
+      Spacer(Modifier.width(Spacing.xs))
+      Text(
+          text = target,
+          color = MaterialTheme.colorScheme.onSurfaceVariant,
+          style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
+          maxLines = 1,
+          overflow = TextOverflow.Ellipsis,
+          modifier = Modifier.weight(1f, fill = false))
+    }
+  }
+}
+
+/**
+ * 解析 `子 agent 步骤 N · <toolName>: <target>` 格式的步骤行。
+ *
+ * <p>格式定义在 [com.tom.rv2ide.artificial.agent.SubAgentStepReporter]：前缀是
+ * `子 agent 步骤 N · `，之后是 `工具名: 目标`。目标里可能自带冒号（命令、URL），
+ * 因此只按**第一个**冒号切分。解析失败（思考中/完成/失败行）返回 null，由调用方
+ * 按原文渲染——这些行不是工具调用，套工具行样式会误导。
+ */
+internal fun parseSubAgentStep(step: String): Pair<String, String>? {
+  val prefix = "子 agent 步骤 "
+  if (!step.startsWith(prefix)) return null
+  val sep = step.indexOf(" · ")
+  if (sep < 0) return null
+  val rest = step.substring(sep + 3)
+  val colon = rest.indexOf(':')
+  if (colon <= 0) return null
+  val name = rest.substring(0, colon).trim()
+  val target = rest.substring(colon + 1).trim()
+  if (name.isEmpty()) return null
+  return name to target
+}
+
 /** 展开区的一段带小标题的内容块（如「指令」「结果」）：弱底等宽小面板，超出限高后在窗口内滚动。 */
 @Composable
-internal fun ToolSection(label: String, content: String, live: Boolean = false) {
-  Text(
+internal fun ToolSection(label: String, content: String, live: Boolean = false) {  Text(
       text = label,
       color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
       style = MaterialTheme.typography.labelSmall,

@@ -43,6 +43,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -62,6 +63,8 @@ import com.tom.rv2ide.artificial.agent.compose.components.bubbles.AgentMessageIt
 import com.tom.rv2ide.artificial.agent.compose.components.tools.AskUserQuestionPanel
 import com.tom.rv2ide.artificial.agent.compose.components.tools.ToolCallGroupHeader
 import com.tom.rv2ide.artificial.agent.compose.model.AgentUIMessage
+import com.tom.rv2ide.artificial.agent.compose.components.style.CHUNK_SPLIT_THRESHOLD_CHARS
+import com.tom.rv2ide.artificial.agent.compose.components.style.splitLongContent
 import com.tom.rv2ide.artificial.agent.compose.model.MessageRole
 import com.tom.rv2ide.artificial.agent.compose.model.ToolRunStatus
 import com.tom.rv2ide.artificial.agent.compose.theme.AIEditorTheme
@@ -71,6 +74,7 @@ import com.tom.rv2ide.resources.R
 import compose.icons.FeatherIcons
 import compose.icons.feathericons.ChevronDown
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 /**
@@ -181,6 +185,9 @@ internal fun AssistantComposePanel(
     callbacks: AssistantPanelCallbacks,
     darkTheme: Boolean,
     modifier: Modifier = Modifier,
+    /** 会话代次：变化时无条件滚底一次（打开面板/切会话/切全屏）。见 host 的同名字段。 */
+    conversationEpoch: androidx.compose.runtime.State<Int> =
+        androidx.compose.runtime.mutableIntStateOf(0),
     /** 容器路径解析用；透传给图像查看器（容器路径→本地文件需要它）。 */
     fileAccess: FileAccessProvider? = null,
     /** 待答的询问；非 null 时弹出对话框。由宿主驱动（见 [AssistantComposePanelHost.askQuestion]）。 */
@@ -203,7 +210,9 @@ internal fun AssistantComposePanel(
   //   - ProvideAcsToolOpeners：浏览器链接交给系统浏览器。不包则入口隐藏。
   // 两者都由 compat 写好，本层只决定「包不包」——这正是它们设计成可选接线的原因。
   ProvideAcsImageViewer(fileAccess = fileAccess) {
-    ProvideAcsToolOpeners { PanelContent(state, listState, callbacks, darkTheme, modifier, question, onQuestionDone) }
+    ProvideAcsToolOpeners {
+      PanelContent(state, listState, callbacks, darkTheme, modifier, conversationEpoch, question, onQuestionDone)
+    }
   }
 }
 
@@ -214,6 +223,7 @@ private fun PanelContent(
     callbacks: AssistantPanelCallbacks,
     darkTheme: Boolean,
     modifier: Modifier,
+    conversationEpoch: androidx.compose.runtime.State<Int>,
     question: PendingUserQuestion?,
     onQuestionDone: (UserQuestionAnswer?) -> Unit,
 ) {
@@ -249,14 +259,99 @@ private fun PanelContent(
       }
     }
 
-    // 条目数变化时决定是否跟随。用 renderItems.size 而不是 messages.size：
-    // 工具组会把多条折成一项，按 messages 判会在「组内新增一条」时漏掉跟随。
-    LaunchedEffect(renderItems.size) {
-      if (atBottom && renderItems.isNotEmpty()) {
-        // 瞬时定位而不是动画：流式期间每次追加都会触发，动画会被下一次调用打断
-        // 并排队，表现为「一直追不上底部」（与宿主 scrollToBottom 同一取舍）。
-        listState.scrollToItem(renderItems.lastIndex)
+    // 会话代次驱动的「一次性滚到底」。
+    //
+    // <p><b>为什么不能只靠 atBottom</b>：历史回放灌入条目后，首帧布局把列表放在
+    // 顶部，LaunchedEffect 首次执行时读到的 atBottom 已是 false（末项不可见）——
+    // 「决策提前」也救不了，因为 effect 本身就晚于首帧布局（实测复现两次）。
+    // 代次由宿主在「打开面板 / 切会话 / 切全屏」时递增，这里只置一个待办标记，
+    // 真正的滚动由下方 follow effect 在**新列表布局完成之后**执行（见那里的
+    // 「必须比对条目数」注释——只等 >0 会在切会话时于旧布局上滚动）。
+    var forceScrollPending by remember { mutableStateOf(false) }
+    LaunchedEffect(conversationEpoch.value) {
+      if (conversationEpoch.value > 0) {
+        android.util.Log.i(
+            "ACSDebug", "epoch observed: ${conversationEpoch.value}, pending scroll")
+        forceScrollPending = true
       }
+    }
+
+    // 跟随触发键：**末条消息的 id + 内容尺寸**，而不是条目数。
+    //
+    // <p><b>为什么条目数不够</b>：流式正文走 `adapter.appendTo`——增量写进**同一条**
+    // 消息，条目数不变。按 size 判会在最需要跟随的时候（正文一段段长出来）一次
+    // 都不触发，表现为「最新的回答不滚动、写满了还要手动往下拉」（实测）。
+    // 思考块同理（appendTo 进同一个 Thinking），工具步骤也是。加上末条内容的
+    // 长度做键，任何一条尾部内容的变化都会触发判定；条目**新增**（新气泡/新卡片）
+    // 时末条 id 变化，同样覆盖。取整百避免每个 token 都重算。
+    val followKey =
+        remember(renderItems, renderItems.size) {
+          val last = renderItems.lastOrNull()
+          when (last) {
+            is RenderItem.Single ->
+                Triple(
+                    last.message.id,
+                    (last.message.content.length + (last.message.reasoning?.length ?: 0)) / 100,
+                    renderItems.size)
+            is RenderItem.SingleChunk ->
+                Triple(
+                    last.message.id,
+                    last.slice.length / 100,
+                    renderItems.size)
+            is RenderItem.Group ->
+                Triple(
+                    last.id,
+                    (last.children.lastOrNull()?.content?.length ?: 0) / 100,
+                    renderItems.size)
+            is RenderItem.DiffGroup -> Triple(last.id, last.children.size, renderItems.size)
+            null -> Triple("", 0, 0)
+          }
+        }
+
+    // 条目尾部内容变化时决定是否跟随。
+    LaunchedEffect(followKey, forceScrollPending) {
+      if (renderItems.isEmpty()) return@LaunchedEffect
+      // ── 强制滚底（会话代次驱动）：无条件执行，不看 atBottom ──
+      //
+      // 语义是「打开/切换会话/切全屏」——用户要看最新内容，不该受上一个会话
+      // 滚动位置的影响。两个坑都在等待条件里：
+      //   1. 只等 `totalItemsCount > 0` 不够：切会话后的头一两帧，layoutInfo 还是
+      //      **上一个会话**的布局（count 本就 > 0），会在旧布局上放行。
+      //      必须等到条目数 == 当前 renderItems 的数量（新列表真的完成布局）。
+      //   2. 滚动下标必须取 renderItems.lastIndex（组合数据）而不是
+      //      layoutInfo.totalItemsCount - 1（上一帧布局）——后者在切会话时会
+      //      落到旧会话的下标上，这就是「切过去还停在上一会话位置」的机制。
+      if (forceScrollPending) {
+        val expected = renderItems.size
+        snapshotFlow { listState.layoutInfo.totalItemsCount }.first { it == expected }
+        forceScrollPending = false
+        val viewport = listState.layoutInfo.viewportEndOffset
+        android.util.Log.i(
+            "ACSDebug",
+            "force scroll-to-bottom: items=$expected epoch=${conversationEpoch.value}")
+        listState.scrollToItem(renderItems.lastIndex, scrollOffset = viewport)
+        return@LaunchedEffect
+      }
+      // **决策必须在等待布局之前做，等待之后不得重查 atBottom**。
+      //
+      // 时序：历史回放（打开面板/切全屏）灌入条目时，本 effect 读到的 layoutInfo
+      // 还是**上一帧**（0 条目 → atBottom 为 true，表达「用户没滚过、应该跟到底部」）。
+      // 若等布局就绪后再重查：列表此时已以「顶部」姿态完成布局，末项不可见 →
+      // atBottom 变 false → 滚动被跳过，回放停在顶部（实测复现的正是这条）。
+      // 等待期间用户上滑的窗口只有一两帧，代价可忽略。
+      val shouldFollow = atBottom
+      if (!shouldFollow) return@LaunchedEffect
+      snapshotFlow { listState.layoutInfo.totalItemsCount }.first { it > 0 }
+      // 瞬时定位而不是动画：流式期间每次追加都会触发，动画会被下一次调用打断
+      // 并排队，表现为「一直追不上底部」（与宿主 scrollToBottom 同一取舍）。
+      //
+      // **不能只 scrollToItem(lastIndex)**：末条是一条正在变长的长消息时，
+      // 它的顶部对齐视口顶、内容下半截全在屏幕外——「滚了但没滚到底」。
+      // 用「滚到末项 + 再滚一个视口高度」表达「把最后的内容顶到可视区」：
+      // LazyColumn 会把超出列表范围的偏移钳到最大滚动距离，即列表真正的底部。
+      val lastIndex = renderItems.lastIndex
+      val viewport = listState.layoutInfo.viewportEndOffset
+      listState.scrollToItem(lastIndex, scrollOffset = viewport)
     }
 
     // 刻意不铺背景色：面板底色由宿主的 MaterialCardView（?attr/colorSurface）提供，
@@ -280,12 +375,36 @@ private fun PanelContent(
           contentPadding =
               PaddingValues(horizontal = Spacing.lg, vertical = Spacing.sm),
       ) {
-        items(items = renderItems, key = { it.key }) { item ->
+        items(
+            items = renderItems,
+            key = { it.key },
+            // contentType：同类型条目在滚动进出视口时复用组合状态与测量缓存
+            // （Compose 的等价物即 cc-haha 的「条目级窗口复用」）。不分类时
+            // LazyColumn 把所有 item 当同一种处理，跨类型滚动的重组代价更高。
+            contentType = { item ->
+              when (item) {
+                is RenderItem.Single -> item.message.role
+                is RenderItem.SingleChunk -> item.message.role
+                is RenderItem.Group -> "group"
+                is RenderItem.DiffGroup -> "diff"
+              }
+            },
+        ) { item ->
           when (item) {
             is RenderItem.Single ->
                 MessageRow(
                     message = item.message,
                     showActions = item.message.id == lastId,
+                    callbacks = callbacks,
+                )
+            is RenderItem.SingleChunk ->
+                MessageRow(
+                    message = item.message,
+                    showActions = item.chunkIndex == item.chunkCount - 1 &&
+                        item.message.id == lastId,
+                    contentSlice = item.slice,
+                    isChunkHeader = item.chunkIndex == 0,
+                    isChunkFooter = item.chunkIndex == item.chunkCount - 1,
                     callbacks = callbacks,
                 )
             is RenderItem.Group -> ToolGroupRow(item, callbacks)
@@ -304,11 +423,15 @@ private fun PanelContent(
           enter = androidx.compose.animation.fadeIn(),
           exit = androidx.compose.animation.fadeOut(),
       ) {
-        val scope = rememberCoroutineScope()
+        val jumpScope = rememberCoroutineScope()
         Surface(
             onClick = {
-              scope.launch {
-                listState.animateScrollToItem(renderItems.lastIndex.coerceAtLeast(0))
+              // 瞬时定位到末尾（用户要求：直接显示最新消息，不要慢滚动画）。
+              // 与跟随路径同款写法：滚到末项 + 一个视口高度，偏移被钳到列表底部。
+              jumpScope.launch {
+                val lastIndex = renderItems.lastIndex.coerceAtLeast(0)
+                val viewport = listState.layoutInfo.viewportEndOffset
+                listState.scrollToItem(lastIndex, scrollOffset = viewport)
               }
             },
             shape = RoundedCornerShape(Radius.lg),
@@ -366,6 +489,23 @@ private sealed interface RenderItem {
 
   data class Single(val message: AgentUIMessage) : RenderItem {
     override val key: String get() = message.id
+  }
+
+  /**
+   * 超长正文的第 [chunkIndex] 块（0 起）。
+   *
+   * <p>为什么要拆：无界长度的 LazyColumn item 每次重组都要全量排版，
+   * 长消息（数万字符的工具输出/正文）会把主线程卡住上百毫秒（实测掉帧上百、
+   * 与 GC 风暴叠加成「重试期间巨卡」）。拆成有界 chunk 后每个 item 高度有界，
+   * LazyColumn 只排版视口内的块。同一条消息的块共享消息 id 作 key 前缀。
+   */
+  data class SingleChunk(
+      val message: AgentUIMessage,
+      val chunkIndex: Int,
+      val chunkCount: Int,
+      val slice: String,
+  ) : RenderItem {
+    override val key: String get() = "${message.id}#$chunkIndex"
   }
 
   data class Group(
@@ -456,7 +596,22 @@ private fun toRenderItems(messages: List<AgentUIMessage>): List<RenderItem> {
   while (i < messages.size) {
     val gid = messages[i].groupId
     if (gid == null) {
-      out += RenderItem.Single(messages[i])
+      val message = messages[i]
+      // 超长正文拆成有界 chunk（接线 ChatTextBound.splitLongContent——实现早已移植，
+      // 此前无调用点，超长消息作为无界单 item 全量排版，实测主线程 100% 掉帧上百）。
+      // 只拆助手正文；用户消息与思考块通常不长，不折腾。
+      val chunks =
+          if (message.role == MessageRole.ASSISTANT &&
+              message.content.length > CHUNK_SPLIT_THRESHOLD_CHARS) {
+            splitLongContent(message.content)
+          } else null
+      if (chunks != null && chunks.size > 1) {
+        chunks.forEachIndexed { idx, slice ->
+          out += RenderItem.SingleChunk(message, idx, chunks.size, slice)
+        }
+      } else {
+        out += RenderItem.Single(message)
+      }
       i++
       continue
     }
@@ -670,11 +825,17 @@ private fun MessageRow(
     message: AgentUIMessage,
     showActions: Boolean,
     callbacks: AssistantPanelCallbacks,
+    contentSlice: String? = null,
+    isChunkHeader: Boolean = true,
+    isChunkFooter: Boolean = true,
 ) {
   val id = message.id.toLongOrNull()
   AgentMessageItem(
       message = message,
       showActions = showActions,
+      contentSlice = contentSlice,
+      isChunkHeader = isChunkHeader,
+      isChunkFooter = isChunkFooter,
       // 展开态来自数据（见 AssistantPanelCallbacks.onToggleExpanded）；组件按
       // 「override == true 才展开」解释，false 与 null 在视觉上同为收起
       toolExpandedOverride = message.expanded,
@@ -742,6 +903,28 @@ internal class AssistantComposePanelHost(
 ) {
 
   /**
+   * 会话代次：每次切换会话 / 打开面板 / 切全屏时由宿主 +1。
+   *
+   * <p>面板监听它做「一次性滚到底」——打开会话时用户要看的是最新内容，
+   * 而首帧布局把列表放在顶部、`atBottom` 初读即 false（实测两次修复都栽在
+   * 这个时序上）。代次变化时无条件滚底一次，之后交给 atBottom 正常跟随。
+   */
+  val conversationEpoch = androidx.compose.runtime.mutableIntStateOf(0)
+
+  /**
+   * 请求面板「一次性滚到底」：会话代次 +1（见 [conversationEpoch]）。
+   *
+   * <p>宿主在「打开面板 / 切会话回放完成 / 切全屏」时调用。**必须主线程**（写 Compose 状态）。
+   * 幂等性不需要：连点两次只是多滚一次到底，代价可忽略。
+   *
+   * @param reason 仅用于日志定位（ACSDebug），无行为影响
+   */
+  fun requestScrollToBottom(reason: String) {
+    conversationEpoch.intValue = conversationEpoch.intValue + 1
+    android.util.Log.i("ACSDebug", "epoch bump -> ${conversationEpoch.intValue} ($reason)")
+  }
+
+  /**
    * 主题明暗在构造期解析一次。
    *
    * <p>**不能在 `setContent` 的 lambda 里现算**：那会在每次重组时重新解析主题属性；
@@ -799,6 +982,7 @@ internal class AssistantComposePanelHost(
               listState = listState,
               callbacks = callbacks,
               darkTheme = darkTheme,
+              conversationEpoch = conversationEpoch,
               fileAccess = fileAccess,
               question = pendingQuestion.value,
               onQuestionDone = { finishQuestion(it) },
@@ -822,7 +1006,12 @@ internal class AssistantComposePanelHost(
     if (count == 0) {
       return
     }
-    scope.launch { listState.scrollToItem(count - 1) }
+    scope.launch {
+      // 与面板内跟随同一写法（+一个视口高度再钳底）：末条是长消息时
+      // scrollToItem 只露出它的顶部，用户仍然看不到自己刚发的那条的回答。
+      val viewport = listState.layoutInfo.viewportEndOffset
+      listState.scrollToItem(count - 1, scrollOffset = viewport)
+    }
   }
 
   /**

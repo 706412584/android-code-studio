@@ -48,10 +48,11 @@ public final class BuiltinAgents {
   /** 内置 agent 工具名前缀，与 {@code ToolNames} 中扩展工具约定一致。 */
   public static final String TOOL_PREFIX = "agentb_";
 
-  /** 只读工具集：读文件、按模式找文件、列目录。 */
+  /** 只读工具集：读文件、按模式找文件、列目录、按内容搜索。 */
   private static final List<String> READ_ONLY_TOOLS =
       Collections.unmodifiableList(
-          Arrays.asList(ToolNames.FILE_READ, ToolNames.GLOB, ToolNames.LIST_DIR));
+          Arrays.asList(
+              ToolNames.FILE_READ, ToolNames.GLOB, ToolNames.LIST_DIR, ToolNames.GREP));
 
   /** 可写工具集：只读工具 + 写/编辑/删除。 */
   private static final List<String> WRITE_TOOLS =
@@ -60,6 +61,7 @@ public final class BuiltinAgents {
               ToolNames.FILE_READ,
               ToolNames.GLOB,
               ToolNames.LIST_DIR,
+              ToolNames.GREP,
               ToolNames.FILE_WRITE,
               ToolNames.FILE_EDIT,
               ToolNames.FILE_DELETE));

@@ -36,11 +36,31 @@ public final class ShellRequest {
   private final long timeoutMs;
   private final String stdin;
 
+  /**
+   * 外部取消信号；可为 null（大多数调用不需要取消）。
+   *
+   * <p><b>为什么需要它</b>：后台任务（{@code task_stop}）要能真的停掉一个正在跑的命令。
+   * 后端把进程句柄封在 {@code execute} 内部，外部拿不到；唯一能传递取消意图的方式
+   * 就是请求自带一个信号，由后端的等待循环定期检查。为 null 时行为与从前完全一致。
+   */
+  private final CancellationSignal cancellation;
+
   public ShellRequest(String command, String cwd, long timeoutMs, String stdin) {
+    this(command, cwd, timeoutMs, stdin, null);
+  }
+
+  public ShellRequest(
+      String command, String cwd, long timeoutMs, String stdin, CancellationSignal cancellation) {
     this.command = command == null ? "" : command;
     this.cwd = cwd == null ? "" : cwd;
     this.timeoutMs = timeoutMs <= 0 ? DEFAULT_TIMEOUT_MS : timeoutMs;
     this.stdin = stdin;
+    this.cancellation = cancellation;
+  }
+
+  /** 取消信号：后端在等待循环里定期查询，返回 true 时应尽快终止命令并返回。 */
+  public interface CancellationSignal {
+    boolean isCancelled();
   }
 
   public static ShellRequest of(String command) {
@@ -65,14 +85,24 @@ public final class ShellRequest {
     return stdin;
   }
 
+  /** 外部取消信号；可能为 null（无取消需求）。 */
+  public CancellationSignal getCancellation() {
+    return cancellation;
+  }
+
+  /** 是否已被请求取消。 */
+  public boolean isCancellationRequested() {
+    return cancellation != null && cancellation.isCancelled();
+  }
+
   /** 派生一个替换了命令的请求，其余字段保持不变。 */
   public ShellRequest withCommand(String newCommand) {
-    return new ShellRequest(newCommand, cwd, timeoutMs, stdin);
+    return new ShellRequest(newCommand, cwd, timeoutMs, stdin, cancellation);
   }
 
   /** 派生一个替换了工作目录的请求。 */
   public ShellRequest withCwd(String newCwd) {
-    return new ShellRequest(command, newCwd, timeoutMs, stdin);
+    return new ShellRequest(command, newCwd, timeoutMs, stdin, cancellation);
   }
 
   /** 一次 shell 执行的结果。 */
