@@ -106,7 +106,9 @@ run_case() {
   # 等它结束再发，否则断言会拿到上一轮的旧结果或等到超时。
   local w=0
   while [ $w -lt 60 ]; do
-    if adb_ shell dumpsys activity activities 2>/dev/null | grep -m1 mResumedActivity | grep -q "AssistantFullscreenActivity"; then
+    # 前台字段名跨版本不同：Android ≤14 是 mResumedActivity，15+ 改为
+    # topResumedActivity/ResumedActivity——只 grep 旧名在新设备上永远匹配不到。
+    if adb_ shell dumpsys activity activities 2>/dev/null | grep -E "mResumedActivity|topResumedActivity" | grep -q "AssistantFullscreenActivity"; then
       # 全屏助手在前台：可能正在运行，也可能只是停着。用「停止键是否存在」判断。
       local running
       running="$(/d/android/u2-venv/Scripts/python.exe -c "
@@ -274,10 +276,14 @@ fi
 # provider 健康预检：设备网络直连 provider 端点。2026-10-12 实测 agnes 端点
 # 返回 503，脚本干等 240s×N 才暴露——这里提前一次 curl，故障时立即退出。
 # 从 providers.json 取当前 provider 的 baseUrl（设备与主机同网络，主机 curl 可达）。
+# 用 exec-out（二进制安全）而不是 `adb shell cat`——后者的管道会把非 ASCII
+# （中文 provider 名）损坏成 surrogate，json.load 直接失败。
 say "provider 健康预检"
-PJSON="$(as_cat /data/data/$PKG/files/ai/providers.json)"
-BASEURL="$(echo "$PJSON" | "$PY" -c "
+BASEURL="$(adb_ exec-out run-as $PKG cat /data/data/$PKG/files/ai/providers.json 2>/dev/null | "$PY" -c "
 import json, sys
+# Windows 上 Python stdin 默认 cp936/GBK——UTF-8 的中文 provider 名会被错误解码
+# （'橙子' 的 UTF-8 字节按 GBK 读成 '姗欏瓙'），id 匹配永远失败。显式 UTF-8。
+sys.stdin.reconfigure(encoding='utf-8', errors='replace')
 try: records = json.load(sys.stdin)
 except Exception: sys.exit(0)
 name = '$PROVIDER'
@@ -340,7 +346,12 @@ sys.stdout.write(text)
 adb_ shell am force-stop $PKG
 set_prefs_for_run true
 adb_ logcat -c
-adb_ shell am start -n $PKG/.activities.MainActivity >/dev/null
+# 冷启动入口用 SplashActivity（LAUNCHER，exported=true）而不是 MainActivity：
+# Android 12+ 上 adb shell 无法启动未导出的 Activity（Permission Denial:
+# ... not exported），MainActivity 是 exported=false——黑鲨（Android 10）
+# 能跑、pja110（Android 16）直接 SecurityException。Splash 走完整启动链
+# （含 autoOpen），跨版本通用。
+adb_ shell am start -n $PKG/.activities.SplashActivity >/dev/null
 LSP_OK=0
 i=0
 while [ $i -lt 36 ]; do
