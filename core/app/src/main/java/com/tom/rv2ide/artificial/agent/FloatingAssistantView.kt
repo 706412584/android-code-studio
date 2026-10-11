@@ -1353,6 +1353,27 @@ class FloatingAssistantView(
    */
   private fun density(): Float = context.resources.displayMetrics.density
 
+  /**
+   * 预填输入框，可选立即发送。供外部入口（adb `am start` 深链调起真全屏）直达一条请求，
+   * 省去手动点输入框 + 逐字过输入法——实机测试时尤其有用（中文输入法会吞拉丁字母）。
+   *
+   * <p><b>必须在 [open] 之后调用</b>：[open] 负责装输入栏桥（[installInputBar]）、设好工作区
+   * 并恢复/新建会话；早于它时 [inputBar] 的文本写进去无处显示，发送也拿不到会话 cwd。
+   *
+   * @param text 预填文本；空串直接返回（不覆盖用户可能已输入的内容）
+   * @param autoSend 为 true 时立即走与点发送键完全相同的路径（[sendFromInput]），
+   *   因此斜杠命令、技能触发、附件、排队等语义全部一致——这是刻意复用而非另起一条发送路径
+   */
+  fun prefillAndSend(text: String, autoSend: Boolean) {
+    if (text.isEmpty()) {
+      return
+    }
+    inputBar.text = text
+    if (autoSend) {
+      sendFromInput()
+    }
+  }
+
   private fun sendFromInput() {
     val typed = inputBar.text.trim()
     val attachments = inputFeatures.attachmentContext()

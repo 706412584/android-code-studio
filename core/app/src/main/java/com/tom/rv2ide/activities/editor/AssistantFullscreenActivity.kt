@@ -28,6 +28,7 @@ import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.lifecycleScope
+import com.tom.rv2ide.BuildConfig
 import com.tom.rv2ide.app.EdgeToEdgeIDEActivity
 import com.tom.rv2ide.artificial.agent.AssistantOrchestratorProvider
 import com.tom.rv2ide.artificial.agent.FloatingAssistantView
@@ -177,7 +178,57 @@ class AssistantFullscreenActivity : EdgeToEdgeIDEActivity() {
     view.open()
     assistant = view
 
+    // 深链预填/直发：供 adb `am start -e ai_prompt "..." [-e ai_autosend true]` 一条命令直达
+    // 一次请求。必须在 open() 之后——open 装好输入栏桥、设好工作区并恢复/新建会话，
+    // 早于它写文本无处显示、发送也拿不到会话 cwd（见 prefillAndSend 的 KDoc）。
+    maybePrefillFromIntent(view)
+
     return container
+  }
+
+  /**
+   * 从启动 intent 读预填/直发参数。
+   *
+   * <p><b>只在 Debug 构建生效</b>：这是开发期自动化入口（adb 深链一条命令直达并发一次请求），
+   * 发布版一律忽略——Activity 虽导出，Release 下用深链也只会打开普通的 AI 面板，不预填、不发送。
+   * 这样导出带来的面是「任意应用能打开本应用的 AI 全屏页」（前台、用户可见、可返回，无特权动作、
+   * 不泄数据），而真正敏感的「替用户发一条请求」被关在 Debug 门后。
+   *
+   * <p><b>只认显式参数、从不臆测</b>：没有 `ai_prompt` 就什么都不做，保持原「打开空会话」行为。
+   * `ai_autosend` 仅当字面为 `"true"` 时才自动发送，其余（含缺省）只预填不发——避免深链
+   * 被误用时静默消耗模型额度。
+   *
+   * <p><b>读完即消费</b>：读到后清空 intent 里的两个 extra（并 setIntent 回去），否则
+   * singleTop 复用、配置变更重建都会拿着同一份 intent 再发一次——同一条请求被重复触发。
+   */
+  private fun maybePrefillFromIntent(view: FloatingAssistantView) {
+    if (!BuildConfig.DEBUG) {
+      return
+    }
+    val i = intent ?: return
+    val prompt = i.getStringExtra(EXTRA_AI_PROMPT) ?: return
+    // 消费掉：清键后写回，防止复用/重建时重复发送。
+    i.removeExtra(EXTRA_AI_PROMPT)
+    val autoSend = i.getStringExtra(EXTRA_AI_AUTOSEND) == "true"
+    i.removeExtra(EXTRA_AI_AUTOSEND)
+    setIntent(i)
+    if (prompt.isEmpty()) {
+      return
+    }
+    view.prefillAndSend(prompt, autoSend)
+  }
+
+  /**
+   * singleTop 复用时深链参数走这里（而非 onCreate）。
+   *
+   * <p>本 Activity 声明 `launchMode="singleTop"`：实例已在栈顶时再 `am start` 不会重建，
+   * 新 intent 经本回调到达。必须 `setIntent` 把它设为当前 intent，否则 [getIntent] 仍是旧的，
+   * [maybePrefillFromIntent] 读不到新参数。assistant 此刻已由首次 [bindLayout] 建好。
+   */
+  override fun onNewIntent(intent: android.content.Intent) {
+    super.onNewIntent(intent)
+    setIntent(intent)
+    assistant?.let { maybePrefillFromIntent(it) }
   }
 
   /**
@@ -214,5 +265,13 @@ class AssistantFullscreenActivity : EdgeToEdgeIDEActivity() {
     assistant?.dispose()
     assistant = null
     super.onDestroy()
+  }
+
+  companion object {
+    /** 深链预填文本：`am start -e ai_prompt "..."`。 */
+    const val EXTRA_AI_PROMPT = "ai_prompt"
+
+    /** 深链是否自动发送：仅字面 `"true"` 触发，其余只预填。 */
+    const val EXTRA_AI_AUTOSEND = "ai_autosend"
   }
 }
