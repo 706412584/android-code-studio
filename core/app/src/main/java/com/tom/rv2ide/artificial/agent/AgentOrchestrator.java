@@ -1946,6 +1946,8 @@ public final class AgentOrchestrator {
             // 子 agent 继承父会话 id：危险工具授权与父会话同桶，避免重复弹窗。
             conversationId);
     registry.register(new com.tom.rv2ide.ai.tool.AgentTool(subAgentRunner));
+    // 多子 agent 依赖编排（同层并行、上游输出注入下游）。
+    registry.register(new com.tom.rv2ide.ai.tool.AgentPipelineTool(subAgentRunner));
 
     // 内置子 agent：固定的角色提示词 + 受限工具集（审查/探索/定位/写测试/写文档）。
     // 模型可直接派遣它们，不必每次从零描述角色约束。
