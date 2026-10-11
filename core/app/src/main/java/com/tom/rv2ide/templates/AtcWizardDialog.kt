@@ -314,9 +314,14 @@ class AtcWizardDialog : BottomSheetDialogFragment() {
       // 不锁的话，下拉默认是 Kotlin，用户不动它就会显示「Kotlin」，
       // 而 createProject 里又强制 Java——UI 显示值与实际生成值不一致。
       val isQuickDevelop = selectedTemplate?.javaClass?.simpleName == "QuickDevelop"
-      binding.languageInput.isEnabled = !isQuickDevelop
+      // Flutter 的 Android 壳是 Kotlin（Dart 是主体语言，与向导的语言选项无关），
+      // 同理锁到 Kotlin 保证 UI 与实际一致。
+      val isFlutter = selectedTemplate?.javaClass?.simpleName == "Flutter"
+      binding.languageInput.isEnabled = !(isQuickDevelop || isFlutter)
       if (isQuickDevelop) {
         binding.languageInput.setText(ctx.getString(R.string.java), false)
+      } else if (isFlutter) {
+        binding.languageInput.setText(ctx.getString(R.string.kotlin), false)
       }
 
       val isNative = Options.OPT_IS_NATIVE_CPP
@@ -382,6 +387,9 @@ class AtcWizardDialog : BottomSheetDialogFragment() {
 
     selectedTemplate?.let { t ->
       if (t.javaClass.simpleName.contains("Compose", ignoreCase = true)) {
+        lang = LanguageType.KOTLIN
+      } else if (t.javaClass.simpleName == "Flutter") {
+        // Flutter 的 Android 壳（MainActivity）是 Kotlin，无论下拉显示什么都按 Kotlin 建。
         lang = LanguageType.KOTLIN
       } else if (t.javaClass.simpleName == "QuickDevelop") {
         // Quick Develop 的组件封装只生成 Java 源码，无论下拉显示什么都按 Java 建。

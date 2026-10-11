@@ -38,6 +38,7 @@ object TemplateRegistry {
     register(LibGdx())
     register(QuickDevelop())
     register(ComposeMultiplatform())
+    register(Flutter())
     // register(FullscreenActivity())
     // register(TabbedActivity())
     // register(ScrollingActivity())
