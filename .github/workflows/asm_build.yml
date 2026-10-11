@@ -84,9 +84,11 @@ jobs:
 
       - name: Assemble APK
         env:
-          # build.gradle.kts 的 signingConfigs.custom 读的是这四个环境变量
-          # （不是 local.properties——SigningConfigPlugin 并未被任何模块应用）。
-          SIGNING_STORE_FILE: signing/signing-key.jks
+          # build.gradle.kts 的 signingConfigs.custom 读这三个环境变量。
+          # **不要**设 SIGNING_STORE_FILE：build.gradle.kts 里 file() 是相对
+          # core/app 项目解析的，传相对路径会变成 core/app/signing/...（错）；
+          # 而默认值 keyStoreFile 已经用 ${rootProject.projectDir}/signing/...，
+          # 正是 Restore 步骤写入的绝对路径。
           SIGNING_STORE_PASSWORD: ${{ secrets.SIGNING_STORE_PASSWORD }}
           SIGNING_KEY_PASSWORD: ${{ secrets.SIGNING_KEY_PASSWORD }}
           SIGNING_KEY_ALIAS: androidcs
