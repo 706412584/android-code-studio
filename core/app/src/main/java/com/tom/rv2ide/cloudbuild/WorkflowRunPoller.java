@@ -38,9 +38,9 @@ import java.util.List;
  */
 public final class WorkflowRunPoller {
 
-  private final GitHubActionsClient client;
+  private final RunQueryPort client;
 
-  public WorkflowRunPoller(GitHubActionsClient client) {
+  public WorkflowRunPoller(RunQueryPort client) {
     this.client = client;
   }
 
@@ -87,6 +87,12 @@ public final class WorkflowRunPoller {
    * <p>触发前先记下「当前最新 run 的 id」，触发后轮询列表直到出现一个 id 更大的
    * run（或超时）。这是处理「dispatch 无响应体」的标准做法。
    *
+   * <p><b>为什么单次网络错误不能中断</b>：dispatch 已经成功发出，此时网络抖动
+   * （本项目实测中设备网络与开发机到 api.github.com 都出现过瞬时超时）若直接上抛，
+   * 用户会看到「触发失败」而实际上构建正在跑——状态与事实不符比慢几秒更糟。
+   * 因此瞬时错误只记入 {@code lastError} 并继续轮询，直到 deadline；deadline 到达
+   * 仍未见到新 run 时，若期间有过错误则把错误一并报告（说明可能是网络问题）。
+   *
    * @param previousRunId 触发前最新 run 的 id（没有历史 run 时传 0）
    * @param workflowFile workflow 文件（限定查询范围）
    * @param branch 分支（限定查询范围）
@@ -97,20 +103,33 @@ public final class WorkflowRunPoller {
   public WorkflowRun awaitNewRun(long previousRunId, String workflowFile, String branch,
                                  long timeoutMs, long sleepMs) throws Exception {
     long deadline = System.currentTimeMillis() + timeoutMs;
+    Exception lastError = null;
     while (System.currentTimeMillis() < deadline) {
-      WorkflowRun latest = client.getLatestRun(workflowFile, branch);
-      if (latest != null && latest.id > previousRunId) {
-        return latest;
+      try {
+        WorkflowRun latest = client.getLatestRun(workflowFile, branch);
+        if (latest != null && latest.id > previousRunId) {
+          return latest;
+        }
+      } catch (Exception e) {
+        // 瞬时网络错误：记录下来继续轮询，不中断。
+        lastError = e;
       }
       // 还没出现：等待一个间隔再查。这里用 Thread.sleep 是刻意的——调用方
       // 已经在后台线程上执行（UI 用协程的 IO 线程，AI 工具用线程池）。
       Thread.sleep(Math.max(1000, sleepMs));
+    }
+    if (lastError != null) {
+      throw new Exception("等待新运行记录时网络请求持续失败（最后一次：" + lastError.getMessage()
+          + "）。构建可能已触发，请到 GitHub 网页确认。", lastError);
     }
     return null;
   }
 
   /**
    * 阻塞等待 run 到终态（或超时），期间周期性回调进度。
+   *
+   * <p>与 {@link #awaitNewRun} 同理：轮询期间的瞬时网络错误不中断等待
+   * （构建在云端跑，本地网络抖一下不该让「等待结果」失败）。
    *
    * @param runId run id
    * @param timeoutMs 等待上限
@@ -124,15 +143,19 @@ public final class WorkflowRunPoller {
     long deadline = System.currentTimeMillis() + timeoutMs;
     Snapshot last = null;
     while (System.currentTimeMillis() < deadline) {
-      Snapshot snapshot = poll(runId, workflowFile, branch);
-      if (snapshot != null) {
-        last = snapshot;
-        if (listener != null) {
-          listener.onProgress(snapshot);
+      try {
+        Snapshot snapshot = poll(runId, workflowFile, branch);
+        if (snapshot != null) {
+          last = snapshot;
+          if (listener != null) {
+            listener.onProgress(snapshot);
+          }
+          if (snapshot.isFinished()) {
+            return snapshot;
+          }
         }
-        if (snapshot.isFinished()) {
-          return snapshot;
-        }
+      } catch (Exception e) {
+        // 瞬时网络错误：继续等待。已有快照时保留（超时返回它比抛异常更有用）。
       }
       Thread.sleep(Math.max(1000, sleepMs));
     }

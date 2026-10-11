@@ -42,7 +42,7 @@ import org.json.JSONObject;
  * <p><b>线程模型</b>：本类的所有方法都是同步阻塞的（网络调用）。调用方负责放到
  * 后台线程执行——Android 主线程不允许网络操作，这是调用方的责任而非本类。
  */
-public final class GitHubActionsClient {
+public final class GitHubActionsClient implements RunQueryPort {
 
   private static final String API_BASE = "https://api.github.com";
   private static final String API_VERSION = "2022-11-28";
@@ -148,6 +148,7 @@ public final class GitHubActionsClient {
    * @param branch 可选：限定分支
    * @return 最新 run；仓库从未运行过该 workflow 时返回 {@code null}
    */
+  @Override
   public WorkflowRun getLatestRun(String workflowFile, String branch) throws Exception {
     List<WorkflowRun> runs = listRuns(workflowFile, branch, 1);
     return runs.isEmpty() ? null : runs.get(0);
@@ -193,6 +194,7 @@ public final class GitHubActionsClient {
   }
 
   /** 按 id 查单个 run。 */
+  @Override
   public WorkflowRun getRun(long runId) throws Exception {
     String url = API_BASE + "/repos/" + owner + "/" + repo + "/actions/runs/" + runId;
     SimpleHttpClient.Response response = execute("GET", url, null);
@@ -205,6 +207,7 @@ public final class GitHubActionsClient {
    *
    * <p>这是「看到进度」的数据来源：run 级只有整体状态，job 级才有「哪个卡住了」。
    */
+  @Override
   public List<WorkflowJob> listJobs(long runId) throws Exception {
     String url = API_BASE + "/repos/" + owner + "/" + repo + "/actions/runs/" + runId + "/jobs";
     SimpleHttpClient.Response response = execute("GET", url, null);
