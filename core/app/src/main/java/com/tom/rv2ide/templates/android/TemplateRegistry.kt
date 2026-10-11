@@ -39,6 +39,7 @@ object TemplateRegistry {
     register(QuickDevelop())
     register(ComposeMultiplatform())
     register(ReactNative())
+    register(Flutter())
     // register(FullscreenActivity())
     // register(TabbedActivity())
     // register(ScrollingActivity())

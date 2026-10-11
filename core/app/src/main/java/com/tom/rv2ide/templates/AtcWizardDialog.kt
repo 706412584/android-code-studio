@@ -314,12 +314,14 @@ class AtcWizardDialog : BottomSheetDialogFragment() {
       // 不锁的话，下拉默认是 Kotlin，用户不动它就会显示「Kotlin」，
       // 而 createProject 里又强制 Java——UI 显示值与实际生成值不一致。
       val isQuickDevelop = selectedTemplate?.javaClass?.simpleName == "QuickDevelop"
-      // React Native 的 Android 壳全部是 Kotlin，同理锁到 Kotlin。
-      val isReactNative = selectedTemplate?.javaClass?.simpleName == "ReactNative"
-      binding.languageInput.isEnabled = !(isQuickDevelop || isReactNative)
+      // React Native / Flutter 的 Android 壳全部是 Kotlin（RN 生态与 Flutter
+      // 的 MainActivity 均如此），同理锁到 Kotlin 保证 UI 与实际一致。
+      val isKotlinOnly =
+          selectedTemplate?.javaClass?.simpleName in setOf("ReactNative", "Flutter")
+      binding.languageInput.isEnabled = !(isQuickDevelop || isKotlinOnly)
       if (isQuickDevelop) {
         binding.languageInput.setText(ctx.getString(R.string.java), false)
-      } else if (isReactNative) {
+      } else if (isKotlinOnly) {
         binding.languageInput.setText(ctx.getString(R.string.kotlin), false)
       }
 
@@ -387,9 +389,9 @@ class AtcWizardDialog : BottomSheetDialogFragment() {
     selectedTemplate?.let { t ->
       if (t.javaClass.simpleName.contains("Compose", ignoreCase = true)) {
         lang = LanguageType.KOTLIN
-      } else if (t.javaClass.simpleName == "ReactNative") {
-        // React Native 的 Android 壳源码（MainActivity/MainApplication）
-        // 与 RN 生态一致全部是 Kotlin，无论下拉显示什么都按 Kotlin 建。
+      } else if (t.javaClass.simpleName in setOf("ReactNative", "Flutter")) {
+        // React Native / Flutter 的 Android 壳源码（MainActivity 等）都是
+        // Kotlin，无论下拉显示什么都按 Kotlin 建。
         lang = LanguageType.KOTLIN
       } else if (t.javaClass.simpleName == "QuickDevelop") {
         // Quick Develop 的组件封装只生成 Java 源码，无论下拉显示什么都按 Java 建。
