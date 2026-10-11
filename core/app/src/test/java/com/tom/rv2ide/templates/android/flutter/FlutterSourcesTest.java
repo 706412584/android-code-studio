@@ -204,6 +204,16 @@ public class FlutterSourcesTest {
   }
 
   @Test
+  public void readme_documentsDartLsp() {
+    // README 必须说明 Dart LSP 需要先装 Dart SDK（设置里下载）
+    String r = FlutterSources.INSTANCE.projectReadme(PKG, PROJECT);
+    assertTrue(r.contains("Dart LSP"));
+    assertTrue(r.contains("设置"));
+    assertTrue(r.contains("下载"));
+    assertTrue(r.contains("pubspec.yaml"));
+  }
+
+  @Test
   public void metadata_hasStableChannel() {
     String m = FlutterSources.INSTANCE.metadata();
     assertTrue(m.contains("channel: \"stable\""));

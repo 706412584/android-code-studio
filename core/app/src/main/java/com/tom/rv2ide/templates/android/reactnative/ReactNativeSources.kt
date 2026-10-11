@@ -62,6 +62,23 @@ object ReactNativeSources {
   /** RN 版本。npm 包与 Maven 构件版本号一致（`react-native@X` ↔ `com.facebook.react:react-android:X`）。 */
   const val REACT_NATIVE_VERSION = "0.81.4"
 
+  /**
+   * TypeScript 版本。与 RN 0.81.4 官方模板的 devDependencies 一致（`^5.8.3`）。
+   * 锁 `5.8.3` 而不是 `^`：设备端 TSLS 加载工作区 TS 做分析，范围符会在不同
+   * 时间装出不同版本，诊断行为不可复现。
+   */
+  const val TYPESCRIPT_VERSION = "5.8.3"
+
+  /**
+   * typescript-language-server 版本。
+   *
+   * <p>实测决策（2026-10-12，黑鲨 Android 10 / node v24.7.0）：
+   * - 6.0.2（最新）要求 node>=22.22.2，设备满足；与 TS 5.8.3 组合握手成功，
+   *   日志确认 "Using Typescript version (workspace) 5.8.3"。
+   * - 5.3.0 是 node>=20 的最后一代；若设备 node 较旧可退回它。
+   */
+  const val TSLS_VERSION = "6.0.2"
+
   /** React 版本。RN 0.81 的 peerDependency 是 `react@^19.1.0`。 */
   const val REACT_VERSION = "19.1.0"
 
@@ -535,9 +552,12 @@ object ReactNativeSources {
    * 依赖版本与 RN 0.81.4 官方模板一致（react 19.1.0 / react-native 0.81.4）。
    * 刻意不带 `@react-native/new-app-screen` 与 `react-native-safe-area-context`
    * ——App.tsx 是本模板自写的计数器示例（见 [appTsx]），不依赖这两个包。
-   * devDependencies 也精简到运行必需（babel/metro 配置包），去掉了
-   * eslint/jest/typescript 工具链——设备端用户改代码为主，不跑测试/lint，
-   * 少装 200+ 个包可显著缩短 npm install。
+   *
+   * devDependencies 在「运行必需（babel/metro 配置包）」基础上只多了 TS LSP 的
+   * 两个包（`typescript` + `typescript-language-server`）：设备端编辑器打开
+   * .ts/.tsx 时的补全/诊断依赖它们（TypeScriptLanguageServer 优先从项目
+   * node_modules 加载，版本与项目锁定一致）。eslint/jest 等其余工具链仍不带
+   * ——不跑测试/lint，少装 200+ 个包显著缩短 npm install。
    */
   fun packageJson(projectName: String): String =
       """
@@ -560,7 +580,9 @@ object ReactNativeSources {
           "@react-native-community/cli": "20.0.0",
           "@react-native-community/cli-platform-android": "20.0.0",
           "@react-native/babel-preset": "@@RN@@",
-          "@react-native/metro-config": "@@RN@@"
+          "@react-native/metro-config": "@@RN@@",
+          "typescript": "@@TS@@",
+          "typescript-language-server": "@@TSLS@@"
         },
         "engines": {
           "node": ">=20"
@@ -570,7 +592,9 @@ object ReactNativeSources {
           .trimIndent()
           .replace("@@APPNAME@@", projectName)
           .replace("@@REACT@@", REACT_VERSION)
-          .replace("@@RN@@", REACT_NATIVE_VERSION) + "\n"
+          .replace("@@RN@@", REACT_NATIVE_VERSION)
+          .replace("@@TS@@", TYPESCRIPT_VERSION)
+          .replace("@@TSLS@@", TSLS_VERSION) + "\n"
 
   /** index.js——AppRegistry 入口。 */
   fun indexJs(): String =
@@ -814,6 +838,20 @@ object ReactNativeSources {
       运行时通过 Metro 连接开发服务器；直接装 APK 会白屏，这是 RN 的
       开发模式行为，发布版由 `assembleRelease` 打包离线 bundle）。
 
+      ## 代码补全与诊断（LSP）
+
+      `npm install` 完成后，在 IDE 里打开 `.ts/.tsx/.js` 文件即自动启用
+      代码补全、跳转定义与错误提示——语言服务器
+      （typescript-language-server + typescript）由上面的命令一并装入
+      项目 `node_modules`，**无需额外配置**。
+
+      - 补全/诊断基于项目内锁定的 TypeScript ${TYPESCRIPT_VERSION}，与
+        构建使用的版本一致；
+      - 若文件树里的 .ts 文件仍无补全，先确认 `npm install` 已成功执行
+        （`node_modules/typescript-language-server` 存在）；
+      - 从旧模板升级来的项目：手动执行一次
+        `npm install -D typescript typescript-language-server` 即可。
+
       ## 构建要求
 
       - **build-tools 36.0.0**：RN 0.81 要求，设备默认只有 35.0.x。
@@ -855,6 +893,7 @@ object ReactNativeSources {
       |---|---|
       | React Native | ${REACT_NATIVE_VERSION} |
       | React | ${REACT_VERSION} |
+      | TypeScript | ${TYPESCRIPT_VERSION} |
       | Kotlin | ${KOTLIN_VERSION} |
       | Gradle | ${GRADLE_VERSION} |
       | compileSdk / targetSdk | ${COMPILE_SDK} |

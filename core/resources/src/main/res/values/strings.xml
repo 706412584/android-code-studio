@@ -1102,6 +1102,26 @@
   <string name="lsp_options_kotlin_summary">Kotlin language server offering intelligent coding features including code completion, error highlighting, and more</string>
   <string name="kotlin_server_required">Kotlin language server must be installed to use this feature</string>
 
+  <!-- Dart / TypeScript (React Native & Flutter templates) -->
+  <string name="dart">Dart / Flutter</string>
+  <string name="dart_lsp_category_summary">Dart language server for Flutter projects</string>
+  <string name="lsp_options_dart_title">Dart SDK (Language Server)</string>
+  <string name="lsp_options_dart_summary">Dart SDK providing code completion, error highlighting, and navigation for Flutter projects. Downloaded on demand (~67 MB).</string>
+  <string name="dart_sdk_not_installed">Not installed — tap to download</string>
+  <string name="dart_sdk_installed">Installed</string>
+  <string name="typescript">TypeScript / JavaScript</string>
+  <string name="typescript_lsp_category_summary">TypeScript language server for React Native projects</string>
+  <string name="lsp_options_typescript_title">TypeScript Language Server</string>
+  <string name="lsp_options_typescript_summary">Code completion and diagnostics for .ts/.tsx/.js files. Installed via npm in the project (typescript-language-server + typescript).</string>
+  <string name="typescript_lsp_hint">Run in the project root: npm install -D typescript-language-server typescript --registry=https://registry.npmmirror.com</string>
+  <string name="dart_sdk_uninstall_message">Delete the Dart SDK (~169 MB)? Dart code completion and diagnostics will be unavailable until reinstalled.</string>
+  <string name="dart_sdk_install_success">Dart SDK installed successfully.</string>
+  <string name="dart_sdk_install_failed">Dart SDK installation failed:\n%s</string>
+  <string name="dart_sdk_downloading">Downloading Dart SDK</string>
+  <string name="dart_sdk_extracting">Extracting…</string>
+  <string name="dart_sdk_downloading_progress">Downloading… %d%%</string>
+  <string name="dart_sdk_size">%s installed</string>
+
   <string name="lsp_options_c_cpp_title">C &amp; C++ Language Server</string>
   <string name="lsp_options_c_cpp_summary">C and C++ language server providing intelligent development features such as code completion, error highlighting, and others</string>
 

@@ -33,6 +33,8 @@ import com.tom.rv2ide.lsp.api.ILanguageServerRegistry
 import com.tom.rv2ide.lsp.java.JavaLanguageServer
 import com.tom.rv2ide.lsp.kotlin.KotlinLanguageServer
 import com.tom.rv2ide.lsp.clang.ClangLanguageServer
+import com.tom.rv2ide.lsp.dart.DartLanguageServer
+import com.tom.rv2ide.lsp.typescript.TypeScriptLanguageServer
 import com.tom.rv2ide.lsp.models.DiagnosticResult
 import com.tom.rv2ide.lsp.xml.XMLLanguageServer
 import com.tom.rv2ide.models.Range
@@ -129,6 +131,9 @@ class CodeEditorView(context: Context, file: File, selection: Range) :
 
   companion object {
     private val log = LoggerFactory.getLogger(CodeEditorView::class.java)
+
+    /** TS/JS 扩展名（与 [createLanguageServer] 的路由保持一处定义）。 */
+    private val TS_JS_EXTENSIONS = setOf("js", "jsx", "ts", "tsx", "mjs", "cjs")
   }
 
   init {
@@ -457,6 +462,11 @@ class CodeEditorView(context: Context, file: File, selection: Range) :
       binding.editor.initDiagnosticHandling()
       startDiagnosticAnalysis(file)
     }
+    // TS/Dart：诊断由服务器主动推送（publishDiagnostics），只需初始化本地
+    // 诊断缓存供「光标处诊断提示」读取；无需主动拉取（analyze 返回 NO_UPDATE）。
+    if (file.extension in TS_JS_EXTENSIONS || file.extension == "dart") {
+      binding.editor.initDiagnosticHandling()
+    }
     binding.editor.initCompletionTooltips()
     binding.editor.initHoverTooltips()
 
@@ -475,6 +485,9 @@ class CodeEditorView(context: Context, file: File, selection: Range) :
           "xml" -> XMLLanguageServer.SERVER_ID
           "kt" -> KotlinLanguageServer.SERVER_ID
           "cpp", "c" -> ClangLanguageServer.SERVER_ID
+          // React Native（TS/JS）与 Flutter（Dart）模板的服务器
+          "js", "jsx", "ts", "tsx", "mjs", "cjs" -> TypeScriptLanguageServer.SERVER_ID
+          "dart" -> DartLanguageServer.SERVER_ID
           else -> return null
         }
     return ILanguageServerRegistry.getDefault().getServer(serverID)

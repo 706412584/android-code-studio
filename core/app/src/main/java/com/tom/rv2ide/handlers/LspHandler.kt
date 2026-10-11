@@ -6,7 +6,9 @@ import com.tom.rv2ide.lsp.api.ILanguageClient
 import com.tom.rv2ide.lsp.api.ILanguageServerRegistry
 import com.tom.rv2ide.lsp.java.JavaLanguageServer
 import com.tom.rv2ide.lsp.clang.ClangLanguageServer
+import com.tom.rv2ide.lsp.dart.DartLanguageServer
 import com.tom.rv2ide.lsp.kotlin.KotlinLanguageServer
+import com.tom.rv2ide.lsp.typescript.TypeScriptLanguageServer
 import com.tom.rv2ide.lsp.xml.XMLLanguageServer
 
 /** @author Akash Yadav */
@@ -18,6 +20,9 @@ object LspHandler {
       getServer(KotlinLanguageServer.SERVER_ID) ?: register(KotlinLanguageServer(context))
       getServer(ClangLanguageServer.SERVER_ID) ?: register(ClangLanguageServer(context))
       getServer(XMLLanguageServer.SERVER_ID) ?: register(XMLLanguageServer())
+      // 外部进程服务器（懒启动：首次打开对应类型文件才起进程）
+      getServer(TypeScriptLanguageServer.SERVER_ID) ?: register(TypeScriptLanguageServer())
+      getServer(DartLanguageServer.SERVER_ID) ?: register(DartLanguageServer())
     }
   }
 
