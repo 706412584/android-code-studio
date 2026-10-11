@@ -148,10 +148,13 @@ public final class CodeActionsTool extends BaseTool {
                         .put(
                             "description",
                             "动作的可选参数：add_import 传完全限定类名（如 java.util.List）；"
-                                + "add_throws 可传异常类名；其余动作不需要"))
-                .put(
-                    "required",
-                    new JSONArray().put("file_path").put("action")));
+                                + "add_throws 可传异常类名；其余动作不需要")))
+        // required 必须与 properties 同级，不能嵌进 properties 内部。
+        // 嵌进去会让它被当成一个名为 required 的**属性**（值却是数组），严格校验的
+        // provider 直接以 400 拒绝整个 tools 数组——**所有工具**（不止本工具）全部
+        // 不可用。真机实测 agnes provider 报 "Tool 11 function has invalid 'parameters'
+        // schema: ['file_path', 'action'] is not of type 'object', 'boolean'"。
+        .put("required", new JSONArray().put("file_path").put("action"));
   }
 
   @Override

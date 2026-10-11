@@ -122,6 +122,17 @@ public final class ToolNames {
     /** 执行一个动作并连拍多帧（动作级截图回归）。 */
     public static final String PHONE_ACTION_CAPTURE = "phone_action_capture";
 
+    // ---- 云构建（GitHub Actions；app 层工具，服务层在 cloudbuild 包）----
+    /**
+     * 触发 GitHub Actions 云构建并等待到终态（消耗 CI 资源，需确认）。
+     *
+     * <p>与 {@link #GITHUB_ACTIONS_STATUS} 拆开的原因同 {@link #GIT}/{@link #GIT_WRITE}：
+     * 权限层按工具分级，查询应当免确认、只读放行，而触发必须逐次确认。
+     */
+    public static final String GITHUB_ACTIONS_BUILD = "github_actions_build";
+    /** 查询最近一次 Actions 运行的状态（只读，免确认）。 */
+    public static final String GITHUB_ACTIONS_STATUS = "github_actions_status";
+
     /** CodeGraph 代码知识图谱：按符号查源码 / 调用关系 / 影响面（`acs-codegraph`）。 */
     public static final String CODEGRAPH = "codegraph";
     /** 两张截图逐像素对比并生成差异图。 */
