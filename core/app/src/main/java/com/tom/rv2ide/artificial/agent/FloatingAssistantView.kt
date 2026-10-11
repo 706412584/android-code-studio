@@ -2087,6 +2087,19 @@ class FloatingAssistantView(
           ui.lastThinkingId = null
           ui.lastToolCardId = null
           ui.streamedThisRun = false
+          // 新一轮开始：清掉上一轮留下的重试结论（计数 + 卡片固定标记）。
+          //
+          // **必须在这里清，不能只靠 startRun**：startRun 只在**发起运行的视图**里跑，
+          // 而运行可能由另一个入口发起（侧边栏 ↔ 全屏）。此前另一个视图发起新一轮时，
+          // 本视图的 retryCardPinned 仍是 true——RUN_FINISHED 又因「固定」刻意保留
+          // 卡片，于是上一轮的「重试 N 次仍失败，已停止」永久残留在屏幕上，
+          // 用户看到的正是「切回来后还挂着一条已停止的重试卡片」。
+          // RUN_STARTED 是每个订阅者都收到的起点事件，清理放这里才覆盖全部入口。
+          ui.retryCountThisRun = 0
+          ui.retryCardPinned = false
+          if (displayedConversationId == conversationId) {
+            hideRetryCard()
+          }
           // 工具组的自动折叠依赖「是否有运行在进行」：只有运行中且位于末尾的组默认展开。
           // 不置位的话，末组会在运行期间就折叠起来，用户看不到正在跑的工具。
           //
@@ -2136,6 +2149,8 @@ class FloatingAssistantView(
           // 那时会再收到 RUN_STARTED。这里先按「已结束」收尾，由后续事件重新点亮。
           setRunningUi(false)
           binding.assistantWorking.stopWorking()
+          // 运行真正结束：收尾窗口关闭，长按强制打断不再有意义（运行已不在）。
+          inputBar.canForceStop = false
           if (!ui.retryCardPinned) {
             hideRetryCard()
           }
@@ -2517,6 +2532,13 @@ class FloatingAssistantView(
     // 会有一段「点了没反应」的空窗。
     setRunningUi(false)
     binding.assistantWorking.stopWorking()
+    // 软打断后的收尾窗口：运行仍在（工具正被终止、或某个不支持取消的工具在等超时），
+    // 但 UI 已回到非忙碌。置 canForceStop 让长按强制打断保持可用——不置的话按钮
+    // 变回「发送」且空输入时整体禁用，用户在这个窗口里再点/长按都是死键
+    // （实测「停止要连点几次」的来源之一）。
+    if (isConversationRunning(displayed)) {
+      inputBar.canForceStop = true
+    }
   }
 
   /**
@@ -3675,6 +3697,12 @@ class FloatingAssistantView(
       ui.streamedThisRun = false
       ui.lastThinkingId = null
       ui.lastToolCardId = null
+      // 重试卡片是瞬时结论：重新打开一个会话时先收掉，由该会话后续的实时事件
+      // 重新点亮（新一轮失败会再置它）。不清的话，「上一轮固定住的失败结论」
+      // 会跨会话切换一直挂着——实测从全屏切回侧边栏后仍残留「重试 N 次仍失败，已停止」。
+      ui.retryCountThisRun = 0
+      ui.retryCardPinned = false
+      hideRetryCard()
     }
     // 配对表随回放清空：旧会话的调用 id 不再指向任何卡片（卡片已随 clear 消失），
     // 留着只会让迟到的事件找到过期 id。实时路径的条目由新的 TOOL_STARTED 重建。

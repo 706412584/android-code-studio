@@ -169,6 +169,13 @@ public final class SubAgentRunnerImpl implements SubAgentRunner {
             ? buildSubPrompt(request.getMode(), tools, nativeTools)
             : buildRolePrompt(request.getSystemPrompt(), tools, nativeTools);
 
+    // 取消要向下传播：父级被取消时子 agent 必须一起停，否则用户点了取消却仍在烧额度。
+    // 用一个受父级影响的独立令牌：子级取消不影响父级，父级取消连带子级。
+    ModelCancellationToken childCancellation = new ModelCancellationToken();
+    if (parentCancellation != null) {
+      parentCancellation.onCancel(childCancellation::cancel);
+    }
+
     ToolContext toolContext =
         ToolContext.builder()
             .homePath(workspacePath)
@@ -177,14 +184,11 @@ public final class SubAgentRunnerImpl implements SubAgentRunner {
             // 既不重复弹窗，也不会跨会话泄漏。
             .conversationId(conversationId)
             .imageDataProvider(AndroidImageDataProvider.INSTANCE)
+            // 子 agent 的长操作同样要能被停止：父级取消 → 子令牌取消 → 正在跑的
+            // shell 命令/构建在等待循环里看到它并终止。不接的话，主循环停了、
+            // 子 agent 还在烧额度，正是「停止要等很久才生效」的来源之一。
+            .cancellation(childCancellation::isCancelled)
             .build();
-
-    // 取消要向下传播：父级被取消时子 agent 必须一起停，否则用户点了取消却仍在烧额度。
-    // 用一个受父级影响的独立令牌：子级取消不影响父级，父级取消连带子级。
-    ModelCancellationToken childCancellation = new ModelCancellationToken();
-    if (parentCancellation != null) {
-      parentCancellation.onCancel(childCancellation::cancel);
-    }
 
     // 子会话事件折叠成步骤行回传父级（见 SubAgentStepReporter 的隔离原则）。
     // 请求未携带进度回调时不建监听器——没有观察者的事件翻译纯属浪费。

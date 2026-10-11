@@ -126,6 +126,15 @@ public final class ToolContext {
   /** 终端会话读取端口；未注入时为 null（终端工具明确报「未接入」）。 */
   private final TerminalPort terminal;
 
+  /**
+   * 本次运行的取消信号；未注入时为 null（不响应停止）。
+   *
+   * <p>长操作（shell 命令、Gradle 构建）在等待循环里定期查询它，用户点停止后
+   * 立刻终止底层进程，而不是等命令自己跑完或超时。此前工具层完全看不到取消——
+   * 「停止」只取消了循环令牌，正在跑的命令毫不知情，实测表现为「点了没停住」。
+   */
+  private final CancellationSignal cancellation;
+
   private ToolContext(Builder builder) {
     this.homePath = builder.homePath == null ? "" : builder.homePath;
     this.extraWriteRoots =
@@ -147,6 +156,7 @@ public final class ToolContext {
     this.backgroundShell = builder.backgroundShell;
     this.documentSync = builder.documentSync;
     this.terminal = builder.terminal;
+    this.cancellation = builder.cancellation;
   }
 
   public String getHomePath() {
@@ -233,6 +243,16 @@ public final class ToolContext {
     return terminal;
   }
 
+  /** 本次运行的取消信号；未注入时为 null。见字段注释。 */
+  public CancellationSignal getCancellation() {
+    return cancellation;
+  }
+
+  /** 取消信号：长操作在等待循环里查询它，返回 true 时应尽快终止并返回。 */
+  public interface CancellationSignal {
+    boolean isCancelled();
+  }
+
   /**
    * 返回一个仅替换 {@code toolCallId} 的副本。
    *
@@ -258,6 +278,7 @@ public final class ToolContext {
         .backgroundShell(this.backgroundShell)
         .documentSync(this.documentSync)
         .terminal(this.terminal)
+        .cancellation(this.cancellation)
         .build();
   }
 
@@ -287,6 +308,7 @@ public final class ToolContext {
         .backgroundShell(this.backgroundShell)
         .documentSync(this.documentSync)
         .terminal(this.terminal)
+        .cancellation(this.cancellation)
         .build();
   }
 
@@ -339,6 +361,7 @@ public final class ToolContext {
     private BackgroundShellPort backgroundShell;
     private DocumentSyncPort documentSync;
     private TerminalPort terminal;
+    private CancellationSignal cancellation;
 
     public Builder homePath(String value) {
       this.homePath = value;
@@ -430,6 +453,12 @@ public final class ToolContext {
     /** 注入终端会话读取端口。 */
     public Builder terminal(TerminalPort value) {
       this.terminal = value;
+      return this;
+    }
+
+    /** 注入本次运行的取消信号。长操作（shell/构建）据此在用户点停止后尽快终止。 */
+    public Builder cancellation(CancellationSignal value) {
+      this.cancellation = value;
       return this;
     }
 

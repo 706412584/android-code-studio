@@ -1934,6 +1934,8 @@ public final class AgentOrchestrator {
       cancellation = new ModelCancellationToken();
       activeCancellations.put(conversationId, cancellation);
     }
+    // final 引用供下面的 lambda 捕获（cancellation 有二次赋值，不是 effectively final）。
+    final ModelCancellationToken runToken = cancellation;
 
     SubAgentRunnerImpl subAgentRunner =
         new SubAgentRunnerImpl(
@@ -2063,6 +2065,9 @@ public final class AgentOrchestrator {
             .documentSync(new ReportedDocumentSyncPort())
             // 终端会话读取端口：读用户在内置终端里手动跑的命令的屏幕内容。
             .terminal(new ReportedTerminalPort())
+            // 运行取消信号：长操作（shell 命令、Gradle 构建）在等待循环里查询它，
+            // 用户点停止后立刻终止底层进程，而不是等命令跑完或超时。
+            .cancellation(runToken::isCancelled)
             .build();
 
     List<ConversationLog.EntryLocation> entries = loadEntries(conversationId);
