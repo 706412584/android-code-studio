@@ -253,9 +253,16 @@ class WorkspaceSymbolProvider(private val workspace: IWorkspace) {
     }
 
     val found = ArrayList<TreePath>()
-    FindSymbolsByName(
-            simpleName, kinds.any { it in TYPE_KINDS }, Kind.METHOD in kinds, Kind.FIELD in kinds)
-        .scan(parser.root, found)
+    try {
+      FindSymbolsByName(
+              simpleName, kinds.any { it in TYPE_KINDS }, Kind.METHOD in kinds, Kind.FIELD in kinds)
+          .scan(parser.root, found)
+    } catch (t: Throwable) {
+      // 单个文件的 AST 遍历失败（畸形 AST 等）只跳过该文件——不能让它掀翻整次搜索，
+      // 已收集的其他文件结果全部丢失（与「宁可少一条」的设计意图相悖）。
+      log.debug("AST 遍历失败，跳过 {}：{}", file, t.message)
+      return
+    }
     if (found.isEmpty()) {
       return
     }

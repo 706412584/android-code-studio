@@ -149,18 +149,31 @@ class ReportedCodeActionsPort(private val serverProvider: (String) -> ILanguageS
     if (outcome is Failure) {
       return CodeActionsPort.Result.failed(outcome.message)
     }
-    val edits = outcome as Map<Path, Array<TextEdit>>
+    val actionOutcome = outcome as ActionOutcome
 
-    return applyAndWrite(edits, file, action)
+    // 写盘用 rewrite 后捕获的文本（edits 的真实依据）再做一次冲突比对——
+    // 编译前那次比对与写盘之间隔着整个编译+rewrite（可达 30s），窗口内用户保存
+    // 就会错位。这里把窗口收窄到「rewrite 完成 → 写盘」的毫秒级。
+    return applyAndWrite(actionOutcome, actionOutcome.compilerText, file, action)
   }
 
   /** runAction 的失败载体（GatedAnalyzer 返回 Object，用这个类型携带文案）。 */
   private class Failure(val message: String)
 
   /**
+   * runAction 的成功载体：edits + **rewrite 之后**的编译器可见文本。
+   *
+   * <p>为什么带文本：edits 的坐标基于编译器看到的内容，而编译+rewrite 可能耗时数秒到
+   * 30s（首次编译）。冲突检测在编译前做过一次，但那个窗口内用户若在编辑器改动并保存，
+   * edits 与磁盘文本就会错位。写盘前用这份「edits 依据的文本」再比对一次磁盘，
+   * 把窗口收窄到「rewrite 完成 → 写盘」的毫秒级。
+   */
+  private class ActionOutcome(val edits: Map<Path, Array<TextEdit>>, val compilerText: String?)
+
+  /**
    * 装配并执行 rewrite。**在 GatedAnalyzer 工作线程内运行**。
    *
-   * @return Map<Path, TextEdit[]> 或 [Failure]
+   * @return [ActionOutcome] 或 [Failure]
    */
   private fun runAction(
       compiler: com.tom.rv2ide.lsp.java.compiler.JavaCompilerService,
@@ -197,16 +210,32 @@ class ReportedCodeActionsPort(private val serverProvider: (String) -> ILanguageS
               ImplementAbstractMethods(jcDiagnostic)
             }
             "add_throws", "remove_unused_throws", "suppress_unchecked" -> {
-              // 三个方法级动作共享 findMethod 路径（独立 acquire/release）。
-              val ptr = findMethod(compiler, file, line, column) ?: return Failure("光标处不在方法内")
+              // 三个方法级动作都是「诊断驱动」：先取离光标最近的同类诊断，再由
+              // 该诊断的 range 反推方法（与上游 SuppressUncheckedWarningAction /
+              // RemoveUnusedThrowsAction 同语义——它们用 diagnostic.range 调
+              // findMethod）。不能「方法取光标 + 诊断取文件第一条」：同一文件有
+              // 多条同类诊断时（常见），会把修改写到光标所在但诊断不属于它的方法上，
+              // 是静默的语义错误改动。
+              val code =
+                  when (action) {
+                    "add_throws" -> CODE_UNREPORTED_EXCEPTION
+                    "remove_unused_throws" -> CODE_UNUSED_THROWS
+                    else -> CODE_UNCHECKED
+                  }
+              // 一次 acquire/release 内完成：取最近诊断 + 由诊断定位方法。
+              val located = locateMethodForDiagnostic(compiler, file, code, line, column)
               when (action) {
                 "add_throws" -> {
+                  // 诊断驱动优先；无诊断但显式给了异常类名时回退到光标定位
+                  // （用户指名了「加什么」，光标指名了「加到哪个方法」）。
+                  val ptr =
+                      located?.first
+                          ?: findMethod(compiler, file, line, column)
+                          ?: return Failure("光标处不在方法内，且附近没有受检异常诊断。")
                   val exception =
                       argument.ifEmpty {
-                        // 从诊断 message 提取（诊断驱动）。找不到诊断时给出可操作指引。
-                        val diag = firstDiagnostic(compiler, file, CODE_UNREPORTED_EXCEPTION)
                         val name =
-                            diag?.getMessage(java.util.Locale.US)
+                            located?.second?.getMessage(java.util.Locale.US)
                                 ?.let { CodeActionUtils.extractExceptionName(it) }
                         if (name.isNullOrEmpty()) {
                           return Failure("未找到需要处理的受检异常诊断，也未提供 argument（异常类名）。" +
@@ -217,10 +246,13 @@ class ReportedCodeActionsPort(private val serverProvider: (String) -> ILanguageS
                   AddException(ptr.className, ptr.methodName, ptr.erasedParameterTypes, exception)
                 }
                 "remove_unused_throws" -> {
-                  val diag = firstDiagnostic(compiler, file, CODE_UNUSED_THROWS)
+                  val ptr =
+                      located?.first
+                          ?: return Failure("未找到未抛出的 throws 诊断（光标附近没有 unused throws）。" +
+                              "可显式传 argument（异常类名）或把光标移到该方法处。")
                   val exception =
                       argument.ifEmpty {
-                        diag?.getMessage(java.util.Locale.US)
+                        located.second?.getMessage(java.util.Locale.US)
                             ?.let { CodeActionUtils.extractNotThrownExceptionName(it) } ?: ""
                       }
                   if (exception.isEmpty()) {
@@ -229,11 +261,10 @@ class ReportedCodeActionsPort(private val serverProvider: (String) -> ILanguageS
                   RemoveException(ptr.className, ptr.methodName, ptr.erasedParameterTypes, exception)
                 }
                 else -> {
-                  // suppress_unchecked
-                  val diag = firstDiagnostic(compiler, file, CODE_UNCHECKED)
-                  if (diag == null) {
-                    return Failure("未找到 unchecked 相关警告（该位置没有可抑制的 unchecked 调用）。")
-                  }
+                  // suppress_unchecked：方法与诊断严格对应（避免抑制错方法）。
+                  val ptr =
+                      located?.first
+                          ?: return Failure("未找到 unchecked 相关警告（光标附近没有可抑制的 unchecked 调用）。")
                   AddSuppressWarningAnnotation(
                       ptr.className, ptr.methodName, ptr.erasedParameterTypes)
                 }
@@ -242,7 +273,16 @@ class ReportedCodeActionsPort(private val serverProvider: (String) -> ILanguageS
             else -> return Failure("未实现的 action：$action")
           }
       // 独立 acquire/release：rewrite 内部自己驱动编译。
-      rewrite.rewrite(compiler)
+      val edits = rewrite.rewrite(compiler)
+      // 捕获 edits 依据的文本（rewrite 后立即取，窗口最小）。失败不阻断——
+      // 写盘前还有一次磁盘比对，null 时退化为「不额外校验」。
+      val text =
+          try {
+            compiler.parse(file).root.sourceFile.getCharContent(true).toString()
+          } catch (e: Throwable) {
+            null
+          }
+      ActionOutcome(edits, text)
     } catch (e: Throwable) {
       log.debug("代码动作执行失败: {}", e.message, e)
       Failure("代码动作执行失败：${e.message}（可能光标处结构不支持该动作）。")
@@ -267,6 +307,66 @@ class ReportedCodeActionsPort(private val serverProvider: (String) -> ILanguageS
       result.firstOrNull { it.code == code }
     } catch (e: Throwable) {
       log.debug("编译取诊断失败: {}", e.message)
+      null
+    }
+  }
+
+  /**
+   * 取**离光标最近**的指定诊断，并由**该诊断的位置**反推所在方法（一次 acquire/release）。
+   *
+   * <p>为什么必须两者关联：方法级动作若是「方法取光标、诊断取文件第一条」，同一文件有
+   * 多条同类诊断（很常见：多个 unchecked 调用、多个未抛 throws）时，会把修改写到
+   * 光标所在但诊断并不属于它的方法上——静默的语义错误改动。上游 Action
+   * （`SuppressUncheckedWarningAction` / `RemoveUnusedThrowsAction`）用
+   * `diagnostic.range` 调 `findMethod`，这里等价：用诊断的 startPosition 走
+   * `FindMethodDeclarationAt`。
+   *
+   * <p>诊断按 source 文件过滤：`compile(file)` 的批次可能包含依赖文件的诊断，
+   * 不过滤会拿别的文件的诊断来定位本文件的方法。source 为 null 时无法归属，
+   * 按「可能属于本文件」纳入（单文件编译下多为本文件）。
+   *
+   * @return (方法指针, 诊断) 或 null（无同类诊断 / 位置不可用 / 无法定位方法）
+   */
+  private fun locateMethodForDiagnostic(
+      compiler: com.tom.rv2ide.lsp.java.compiler.JavaCompilerService,
+      file: Path,
+      code: String,
+      line: Int,
+      column: Int,
+  ): Pair<com.tom.rv2ide.lsp.java.utils.MethodPtr, jdkx.tools.Diagnostic<out jdkx.tools.JavaFileObject>>? {
+    return try {
+      compiler.compile(file).get { task ->
+        val cursorOffset = CodeActionUtils.findPosition(task, Position(line, column))
+        val candidates =
+            task.diagnostics.filter { d ->
+              d.code == code &&
+                  (d.getSource() == null || d.getSource().toUri() == file.toUri())
+            }
+        val diag =
+            if (cursorOffset < 0) {
+              // 光标越界：退化为「第一条」（与旧行为一致，但已按 source 过滤）。
+              candidates.firstOrNull()
+            } else {
+              candidates.minByOrNull { d ->
+                val p = d.getStartPosition()
+                if (p < 0) Long.MAX_VALUE else kotlin.math.abs(p - cursorOffset)
+              }
+            } ?: return@get null
+        val offset = diag.getStartPosition()
+        if (offset < 0) return@get null
+        val methodTree =
+            com.tom.rv2ide.lsp.java.visitors.FindMethodDeclarationAt(task.task)
+                .scan(task.root(), offset)
+                ?: return@get null
+        val trees = openjdk.source.util.Trees.instance(task.task)
+        val path = trees.getPath(task.root(), methodTree) ?: return@get null
+        val element =
+            trees.getElement(path) as? jdkx.lang.model.element.ExecutableElement
+                ?: return@get null
+        com.tom.rv2ide.lsp.java.utils.MethodPtr(task.task, element) to diag
+      }
+    } catch (e: Throwable) {
+      log.debug("定位诊断方法失败: {}", e.message)
       null
     }
   }
@@ -314,12 +414,31 @@ class ReportedCodeActionsPort(private val serverProvider: (String) -> ILanguageS
   // ---- 应用 edits 与写盘 ----
 
   private fun applyAndWrite(
-      edits: Map<Path, Array<TextEdit>>,
+      outcome: ActionOutcome,
+      compilerText: String?,
       inputFile: File,
       action: String,
   ): CodeActionsPort.Result {
+    val edits = outcome.edits
     if (edits.isEmpty()) {
       return CodeActionsPort.Result.done(false, 0, emptyList(), "未发生改动（该动作在当前状态下不需要执行）。")
+    }
+    // 写前最后一次冲突比对：edits 依据的文本（rewrite 后捕获）与目标文件当前磁盘
+    // 内容必须一致，否则说明编译期间文件被外部改过，edits 坐标会错位。
+    // 只对输入文件做（各 Rewrite 当前都写回同一文件）；compilerText 为 null
+    // （parse 失败）时跳过——与执行前比对同一策略。
+    if (compilerText != null) {
+      val diskNow =
+          try {
+            String(Files.readAllBytes(inputFile.toPath()), StandardCharsets.UTF_8)
+          } catch (e: Exception) {
+            null
+          }
+      if (diskNow != null && diskNow != compilerText) {
+        return CodeActionsPort.Result.failed(
+            "文件在编译期间被外部修改（编辑器保存或其他工具写入），为防错位已放弃本次写入。" +
+                "请重试。")
+      }
     }
     val changedFiles = mutableListOf<String>()
     var totalChanged = 0
@@ -344,7 +463,17 @@ class ReportedCodeActionsPort(private val serverProvider: (String) -> ILanguageS
         return CodeActionsPort.Result.failed("写回文件失败（${target.name}）：${e.message}")
       }
       changedFiles.add(displayPath(target))
-      totalChanged += kotlin.math.abs(updated.length - original.length)
+      // 改动量 = 被覆盖的原文长度 + 新文本长度（对「等长改写」不再报 0——
+      // 长度差 abs(new-old) 在 x++ → x-- 这类同长度改写上是 0，文案失真）。
+      for (e in textEdits) {
+        val s = indexOf(original, e.range.start.line, e.range.start.column)
+        val en = indexOf(original, e.range.end.line, e.range.end.column)
+        if (en > s) {
+          totalChanged += (en - s) + e.newText.length
+        } else {
+          totalChanged += e.newText.length
+        }
+      }
     }
     if (changedFiles.isEmpty()) {
       return CodeActionsPort.Result.done(false, 0, emptyList(), "未发生改动。")

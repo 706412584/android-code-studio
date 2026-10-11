@@ -69,7 +69,15 @@ class ReportedEditorSessionPort : EditorSessionPort {
   override fun snapshot(): EditorSessionPort.Snapshot {
     val handler = EditorSessionRegistry.get()
         ?: return EditorSessionPort.Snapshot.unavailable(unavailableReason())
-    return onMainAndWait(MAIN_THREAD_TIMEOUT_MS) { readSnapshot(handler) }
+    val snap =
+        try {
+          onMainAndWait(MAIN_THREAD_TIMEOUT_MS) { readSnapshot(handler) }
+        } catch (e: IllegalStateException) {
+          // 主线程执行失败（多为 Activity 在读取间隙被销毁）——如实报原因，不糊成「超时」。
+          return EditorSessionPort.Snapshot.unavailable(
+              "读取编辑器状态失败（编辑器可能已关闭）：${e.message}")
+        }
+    return snap
         ?: EditorSessionPort.Snapshot.unavailable("读取编辑器状态超时（主线程繁忙），请稍后重试。")
   }
 
@@ -93,12 +101,17 @@ class ReportedEditorSessionPort : EditorSessionPort {
             handler.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)
 
     val outcome =
-        onMainAndWait(MAIN_THREAD_TIMEOUT_MS) {
-          // 必须用 openFileAndSelect：openFile 对**已打开**的文件直接返回旧 index，
-          // 不会重新应用选区（见 EditorHandlerActivity.openFileAndGetIndex）。
-          handler.openFileAndSelect(
-              file, Range(Position(startLine, startColumn), Position(endLine, endColumn)))
-          true
+        try {
+          onMainAndWait(MAIN_THREAD_TIMEOUT_MS) {
+            // 必须用 openFileAndSelect：openFile 对**已打开**的文件直接返回旧 index，
+            // 不会重新应用选区（见 EditorHandlerActivity.openFileAndGetIndex）。
+            handler.openFileAndSelect(
+                file, Range(Position(startLine, startColumn), Position(endLine, endColumn)))
+            true
+          }
+        } catch (e: IllegalStateException) {
+          return EditorSessionPort.OpenResult.failed(
+              "打开文件失败（编辑器可能已关闭）：${e.message}")
         }
     if (outcome == null) {
       return EditorSessionPort.OpenResult.failed("打开文件超时（主线程繁忙），请稍后重试。")
@@ -122,15 +135,23 @@ class ReportedEditorSessionPort : EditorSessionPort {
     //    冲突判定复用 CodeEditorView.hasExternalDiskChange —— 与自动保存让路
     //    （BaseEditorActivity.performAutoSave）用的是同一个标志。
     val plan =
-        onMainAndWait(MAIN_THREAD_TIMEOUT_MS) {
-          activity.editorViewModel.getOpenedFiles().mapIndexedNotNull { index, file ->
-            val view = handler.getEditorForFile(file) ?: return@mapIndexedNotNull null
-            SaveItem(index, file.absolutePath, view.isModified, view.hasExternalDiskChange)
+        try {
+          onMainAndWait(MAIN_THREAD_TIMEOUT_MS) {
+            activity.editorViewModel.getOpenedFiles().mapIndexedNotNull { index, file ->
+              val view = handler.getEditorForFile(file) ?: return@mapIndexedNotNull null
+              SaveItem(index, file.absolutePath, view.isModified, view.hasExternalDiskChange)
+            }
           }
+        } catch (e: IllegalStateException) {
+          return EditorSessionPort.SaveReport.failed(
+              "读取编辑器状态失败（编辑器可能已关闭）：${e.message}")
         } ?: return EditorSessionPort.SaveReport.failed("读取编辑器状态超时，请稍后重试。")
 
-    val saved = mutableListOf<String>()
-    val skipped = mutableListOf<String>()
+    // 超时分支会在 worker 仍存活时读取这两个列表（GatedAnalyzer 超时即返回、
+    // interrupt 不保证停止），普通 ArrayList 的跨线程 add/read 无 happens-before。
+    // CopyOnWriteArrayList 的读永远一致、写不破坏迭代，成本可忽略（文件数个位数）。
+    val saved = java.util.concurrent.CopyOnWriteArrayList<String>()
+    val skipped = java.util.concurrent.CopyOnWriteArrayList<String>()
     // 累计 gradle/xml 标志（SaveResult 由 saveResultInternal 就地写入）。
     val saveResult = SaveResult()
 
@@ -152,14 +173,17 @@ class ReportedEditorSessionPort : EditorSessionPort {
                   }
                   handler.saveResult(item.index, saveResult)
                   // 成功判定：保存前 modified=true，保存后应变 false（markUnmodified 在 save() 内）。
-                  val stillModified =
+                  // 用 withContext 取三态：null（页签已被关闭/索引变化——无法证明写盘成功，
+                  // 计入 skipped 如实报告，不能默认成功）、true（仍修改）、false（已保存）。
+                  val stillModified: Boolean? =
                       withContext(Dispatchers.Main) {
-                        handler.getEditorForFile(File(item.path))?.isModified == true
+                        handler.getEditorForFile(File(item.path))?.isModified
                       }
-                  if (!stillModified) {
-                    saved.add(item.path)
+                  when (stillModified) {
+                    false -> saved.add(item.path)
+                    true -> Unit // 仍 modified：未保存，如实报告（不计入 saved）。
+                    null -> skipped.add(item.path) // 无法确认：不谎报成功。
                   }
-                  // 仍 modified 的文件计入未保存，但不列为冲突；结果里如实报告（不计入 saved）。
                 }
               }
               true
@@ -167,9 +191,14 @@ class ReportedEditorSessionPort : EditorSessionPort {
             timeoutMs)
 
     // 3) gradle 文件被保存时请求同步（与 saveAll(requestSync=true) 的既有行为一致，
-    //    否则后续构建可能用旧配置）。
+    //    否则后续构建可能用旧配置）。设置失败（超时/Activity 销毁）不翻转保存结果——
+    //    文件已经落盘，同步标志只是优化。
     if (saveResult.gradleSaved) {
-      onMainAndWait(MAIN_THREAD_TIMEOUT_MS) { activity.editorViewModel.isSyncNeeded = true }
+      try {
+        onMainAndWait(MAIN_THREAD_TIMEOUT_MS) { activity.editorViewModel.isSyncNeeded = true }
+      } catch (e: IllegalStateException) {
+        log.warn("请求 Gradle 同步失败: {}", e.message)
+      }
     }
 
     if (outcome === GatedAnalyzer.TIMED_OUT) {
@@ -225,25 +254,46 @@ class ReportedEditorSessionPort : EditorSessionPort {
         handler.areFilesModified())
   }
 
-  /** 在任意线程上跑到主线程执行并等待完成；已在主线程则直接执行。超时返回 null。 */
+  /**
+   * 在任意线程上跑到主线程执行并等待完成；已在主线程则直接执行。
+   *
+   * <p>返回 null 表示**超时**（主线程被占住）；主线程内抛出的异常会被重新抛出
+   * （包成 [IllegalStateException]）——两者语义不同，调用方要分开报，
+   * 「编辑器已销毁」不能糊成「超时」（排查方向会被带偏）。
+   */
   private fun <T> onMainAndWait(timeoutMs: Long, action: () -> T): T? {
     if (Looper.myLooper() == Looper.getMainLooper()) {
       // 已在主线程：直接跑。post 到主线程队列再等它执行会自锁。
       return action()
     }
     val result = AtomicReference<T>()
+    val error = AtomicReference<Throwable>()
     val latch = CountDownLatch(1)
     Handler(Looper.getMainLooper())
         .post {
           try {
             result.set(action())
           } catch (t: Throwable) {
-            log.warn("编辑器会话主线程操作失败", t)
+            error.set(t)
           } finally {
             latch.countDown()
           }
         }
-    return if (latch.await(timeoutMs, TimeUnit.MILLISECONDS)) result.get() else null
+    val finished =
+        try {
+          latch.await(timeoutMs, TimeUnit.MILLISECONDS)
+        } catch (e: InterruptedException) {
+          Thread.currentThread().interrupt()
+          throw IllegalStateException("等待主线程执行被中断", e)
+        }
+    if (!finished) {
+      return null
+    }
+    error.get()?.let { t ->
+      log.warn("编辑器会话主线程操作失败", t)
+      throw IllegalStateException("编辑器操作失败：${t.message ?: t.javaClass.simpleName}", t)
+    }
+    return result.get()
   }
 
   companion object {

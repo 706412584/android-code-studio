@@ -155,7 +155,9 @@ class ReportedBuildVariantPort : BuildVariantPort {
 
     // 7) 前置状态检查（主线程）：正在同步/构建时 initializeProject 会静默忽略
     val busy =
-        onMain { activity.editorViewModel.isInitializing || activity.editorViewModel.isBuildInProgress }
+        onMain(MAIN_THREAD_TIMEOUT_MS) {
+          activity.editorViewModel.isInitializing || activity.editorViewModel.isBuildInProgress
+        } ?: return BuildVariantPort.Result.failed("读取编辑器状态超时（主线程繁忙），请稍后重试。")
     if (busy) {
       return BuildVariantPort.Result.failed("项目正在同步或构建中，请等待结束后再切换变体。")
     }
@@ -166,7 +168,14 @@ class ReportedBuildVariantPort : BuildVariantPort {
     }
 
     // 8) 触发同步（主线程；与用户手动 Apply 同路径）
-    onMain { activity.initializeProject(selections) }
+    val started =
+        onMain(MAIN_THREAD_TIMEOUT_MS) {
+          activity.initializeProject(selections)
+          true
+        }
+    if (started == null) {
+      return BuildVariantPort.Result.failed("触发项目同步超时（主线程繁忙），请稍后重试。")
+    }
 
     // 9) 等待新变体在 workspace 中生效
     return awaitSwitch(activity, modulePath, variantName, timeoutMs, cancel)
@@ -195,6 +204,14 @@ class ReportedBuildVariantPort : BuildVariantPort {
             modulePath,
             variantName,
             "用户停止。已触发的项目同步不会因此中止，可能仍在后台进行。")
+      }
+
+      // Activity 被系统回收后 ProjectManagerImpl.destroy() 会清空 workspace，
+      // 判据永远不满足——不检查就会空转到 deadline（默认 10 分钟）。
+      if (activity.isDestroyed || activity.isFinishing) {
+        return BuildVariantPort.Result.failed(
+            "编辑器界面已关闭（可能被系统回收），切换结果无法确认。" +
+                "请重新打开项目后用 build_variant 的 list 确认当前变体。")
       }
 
       // 每轮重新取 workspace —— 同步成功会替换 WorkspaceImpl 实例，旧引用看不到新选择
@@ -298,8 +315,14 @@ class ReportedBuildVariantPort : BuildVariantPort {
         null
       }
 
-  /** 在主线程同步执行并返回结果；已在主线程时直接执行。 */
-  private fun <T> onMain(block: () -> T): T {
+  /**
+   * 在主线程同步执行并返回结果；已在主线程时直接执行。
+   *
+   * <p><b>必须有超时</b>：主线程被长任务占住时，无界 `latch.await()` 会让 agent 线程
+   * 永久挂起（「不报错但永远等」类问题），且取消信号也进不来。超时返回 null，
+   * 由调用方转成明确的失败结果。
+   */
+  private fun <T> onMain(timeoutMs: Long, block: () -> T): T? {
     if (Looper.myLooper() == Looper.getMainLooper()) {
       return block()
     }
@@ -315,13 +338,17 @@ class ReportedBuildVariantPort : BuildVariantPort {
         latch.countDown()
       }
     }
-    try {
-      latch.await()
-    } catch (e: InterruptedException) {
-      // 恢复中断标志并向上抛：调用方（switchTo）会以 RuntimeException 形式冒泡，
-      // 由工具层的 try/catch 转成错误结果（ToolExecutor 亦会 restoreInterrupt）。
-      Thread.currentThread().interrupt()
-      throw IllegalStateException("等待主线程执行被中断", e)
+    val finished =
+        try {
+          latch.await(timeoutMs, java.util.concurrent.TimeUnit.MILLISECONDS)
+        } catch (e: InterruptedException) {
+          // 恢复中断标志并向上抛：调用方（switchTo）会以 RuntimeException 形式冒泡，
+          // 由工具层的 try/catch 转成错误结果（ToolExecutor 亦会 restoreInterrupt）。
+          Thread.currentThread().interrupt()
+          throw IllegalStateException("等待主线程执行被中断", e)
+        }
+    if (!finished) {
+      return null
     }
     error.get()?.let { throw it }
     return result.get()
@@ -336,5 +363,8 @@ class ReportedBuildVariantPort : BuildVariantPort {
 
     /** 启动检测窗口：超过它仍未见「正在初始化」，判定同步未启动。 */
     private const val START_WINDOW_MS = 10_000L
+
+    /** 单次主线程操作的等待上限；主线程卡住时返回 null 转成明确失败（同编辑器会话端口）。 */
+    private const val MAIN_THREAD_TIMEOUT_MS = 10_000L
   }
 }
