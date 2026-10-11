@@ -290,7 +290,7 @@ public interface EditorSessionPort {
 
     /**
      * @param savedPaths 实际写盘的文件（绝对路径）
-     * @param skippedConflictPaths 因磁盘存在更新的外部改动而被跳过的文件
+     * @param skippedConflictPaths 未保存的文件：磁盘存在更新的外部改动而跳过，或保存未生效/无法确认
      */
     public static SaveReport of(List<String> savedPaths, List<String> skippedConflictPaths) {
       return new SaveReport(null, savedPaths, skippedConflictPaths);

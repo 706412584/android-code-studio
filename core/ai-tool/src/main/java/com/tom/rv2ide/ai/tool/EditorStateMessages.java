@@ -98,8 +98,9 @@ final class EditorStateMessages {
   /**
    * 把保存结果格式化成模型可读的文本。
    *
-   * <p>跳过的冲突文件必须单独成组并说明原因——只说「保存了 N 个」会让模型以为
-   * 全部落盘，而实际上有文件被刻意留下未保存（避免覆盖外部改动）。
+   * <p>未保存的文件必须单独成组并说明——只说「保存了 N 个」会让模型以为全部落盘。
+   * 未保存的原因有两种（磁盘存在更新的外部改动被跳过；保存动作未生效或无法确认），
+   * 报告不区分原因、统一列出并提示确认（SaveReport 契约没有原因维度）。
    */
   static String formatSaveReport(ToolContext context, EditorSessionPort.SaveReport report) {
     List<String> saved = report.getSavedPaths();
@@ -121,7 +122,7 @@ final class EditorStateMessages {
       }
       sb.append("以下 ")
           .append(skipped.size())
-          .append(" 个文件因磁盘存在更新的外部改动被跳过（未保存，请确认后手动处理）：\n");
+          .append(" 个文件未保存，已被跳过（磁盘存在更新的外部改动，或保存未生效；请确认后手动处理）：\n");
       for (String path : skipped) {
         sb.append("  - ").append(display(context, new File(path))).append('\n');
       }

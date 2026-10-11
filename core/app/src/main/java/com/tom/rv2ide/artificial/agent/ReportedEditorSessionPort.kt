@@ -38,6 +38,15 @@ import kotlinx.coroutines.withContext
 import org.slf4j.LoggerFactory
 
 /**
+ * 等待主线程执行期间被中断（用户点停止 / 取消运行）。
+ *
+ * 与 [IllegalStateException]（主线程执行失败，多为 Activity 销毁）分开，调用方
+ * 报「已取消」而不是「编辑器可能已关闭」——两者的用户行动完全不同。
+ */
+class WaitInterruptedException(cause: Throwable) :
+    IllegalStateException("等待主线程执行被中断", cause)
+
+/**
  * 把 IDE 编辑器会话（[IEditorHandler]）接到 AI 工具层的适配器。
  *
  * **为什么需要适配**：`core/ai-tool` 是纯 JVM、零 Android 依赖的模块，不能引用
@@ -52,7 +61,7 @@ import org.slf4j.LoggerFactory
  *   内部的主线程任务永远排不上 → 死锁。因此这里检测到主线程调用时直接返回失败。
  *
  * **会话按调用时现查**（[EditorSessionRegistry]）：端口实例无状态，用户可能在会话中途
- * 才打开项目编辑器，固化实例会永久拿到「不可用」。
+ *   才打开项目编辑器，固化实例会永久拿到「不可用」。
  */
 class ReportedEditorSessionPort : EditorSessionPort {
 
@@ -72,6 +81,8 @@ class ReportedEditorSessionPort : EditorSessionPort {
     val snap =
         try {
           onMainAndWait(MAIN_THREAD_TIMEOUT_MS) { readSnapshot(handler) }
+        } catch (e: WaitInterruptedException) {
+          return EditorSessionPort.Snapshot.unavailable("操作已取消。")
         } catch (e: IllegalStateException) {
           // 主线程执行失败（多为 Activity 在读取间隙被销毁）——如实报原因，不糊成「超时」。
           return EditorSessionPort.Snapshot.unavailable(
@@ -109,6 +120,8 @@ class ReportedEditorSessionPort : EditorSessionPort {
                 file, Range(Position(startLine, startColumn), Position(endLine, endColumn)))
             true
           }
+        } catch (e: WaitInterruptedException) {
+          return EditorSessionPort.OpenResult.failed("操作已取消。")
         } catch (e: IllegalStateException) {
           return EditorSessionPort.OpenResult.failed(
               "打开文件失败（编辑器可能已关闭）：${e.message}")
@@ -142,6 +155,8 @@ class ReportedEditorSessionPort : EditorSessionPort {
               SaveItem(index, file.absolutePath, view.isModified, view.hasExternalDiskChange)
             }
           }
+        } catch (e: WaitInterruptedException) {
+          return EditorSessionPort.SaveReport.failed("操作已取消。")
         } catch (e: IllegalStateException) {
           return EditorSessionPort.SaveReport.failed(
               "读取编辑器状态失败（编辑器可能已关闭）：${e.message}")
@@ -181,7 +196,9 @@ class ReportedEditorSessionPort : EditorSessionPort {
                       }
                   when (stillModified) {
                     false -> saved.add(item.path)
-                    true -> Unit // 仍 modified：未保存，如实报告（不计入 saved）。
+                    // 仍 modified：保存未生效。必须进 skipped——若丢弃，报告里
+                    // 完全没有它的踪迹，用户会以为全部落盘（复审 minor 修复）。
+                    true -> skipped.add(item.path)
                     null -> skipped.add(item.path) // 无法确认：不谎报成功。
                   }
                 }
@@ -204,7 +221,7 @@ class ReportedEditorSessionPort : EditorSessionPort {
     if (outcome === GatedAnalyzer.TIMED_OUT) {
       return EditorSessionPort.SaveReport.failed(
           "保存超时（超过 ${timeoutMs / 1000} 秒），可能仍有文件未保存" +
-              "（已保存 ${saved.size} 个，跳过 ${skipped.size} 个冲突文件），请稍后重试。")
+              "（已保存 ${saved.size} 个，未保存 ${skipped.size} 个），请稍后重试。")
     }
     return EditorSessionPort.SaveReport.of(saved, skipped)
   }
@@ -284,7 +301,9 @@ class ReportedEditorSessionPort : EditorSessionPort {
           latch.await(timeoutMs, TimeUnit.MILLISECONDS)
         } catch (e: InterruptedException) {
           Thread.currentThread().interrupt()
-          throw IllegalStateException("等待主线程执行被中断", e)
+          // 用独立类型：调用方要把它报成「已取消」，不能糊成「编辑器可能已关闭」
+          //（用户点停止时读到「编辑器已关闭」会把排查方向带偏）。
+          throw WaitInterruptedException(e)
         }
     if (!finished) {
       return null

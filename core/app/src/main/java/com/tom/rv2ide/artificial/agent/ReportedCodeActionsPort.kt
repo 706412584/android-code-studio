@@ -151,9 +151,11 @@ class ReportedCodeActionsPort(private val serverProvider: (String) -> ILanguageS
     }
     val actionOutcome = outcome as ActionOutcome
 
-    // 写盘用 rewrite 后捕获的文本（edits 的真实依据）再做一次冲突比对——
-    // 编译前那次比对与写盘之间隔着整个编译+rewrite（可达 30s），窗口内用户保存
-    // 就会错位。这里把窗口收窄到「rewrite 完成 → 写盘」的毫秒级。
+    // 写盘前用「rewrite 完成后立即采集的文本」再做一次冲突比对——编译前那次比对
+    // 与写盘之间隔着整个编译+rewrite（可达 30s），窗口内用户保存就会错位。这里把
+    // 窗口收窄到「采集 → 写盘」的毫秒级。（措辞注意：采集是一次新的 parse，不是
+    // rewrite 实际依据的严格快照——若文件恰在 rewrite→parse 之间落盘，两次读都
+    // 看到新文本，比对会通过。窗口毫秒级，接受此残留。）
     return applyAndWrite(actionOutcome, actionOutcome.compilerText, file, action)
   }
 
@@ -161,12 +163,12 @@ class ReportedCodeActionsPort(private val serverProvider: (String) -> ILanguageS
   private class Failure(val message: String)
 
   /**
-   * runAction 的成功载体：edits + **rewrite 之后**的编译器可见文本。
+   * runAction 的成功载体：edits + **rewrite 完成后立即采集**的编译器可见文本。
    *
    * <p>为什么带文本：edits 的坐标基于编译器看到的内容，而编译+rewrite 可能耗时数秒到
    * 30s（首次编译）。冲突检测在编译前做过一次，但那个窗口内用户若在编辑器改动并保存，
-   * edits 与磁盘文本就会错位。写盘前用这份「edits 依据的文本」再比对一次磁盘，
-   * 把窗口收窄到「rewrite 完成 → 写盘」的毫秒级。
+   * edits 与磁盘文本就会错位。写盘前用这份文本再比对一次磁盘，把窗口收窄到
+   * 「采集 → 写盘」的毫秒级。采集是一次新的 parse，不是严格快照（见 perform 的注释）。
    */
   private class ActionOutcome(val edits: Map<Path, Array<TextEdit>>, val compilerText: String?)
 
