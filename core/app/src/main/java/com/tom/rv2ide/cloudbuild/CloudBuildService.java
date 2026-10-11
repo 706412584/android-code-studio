@@ -35,6 +35,12 @@ import java.util.List;
  * UI 调用时须置于后台线程 / 协程 IO 调度器；AI 工具调用时置于工具执行线程。
  * 门面不替调用方管理线程——两边的生命周期管理方式不同（UI 随页面销毁取消、
  * AI 随工具调用超时取消），统一接管反而会互相牵制。
+ *
+ * <p><b>取消的正确姿势（协程调用方必读）</b>：{@code triggerAndAwaitRun} 内部用
+ * {@code Thread.sleep} 轮询（最长 60 秒），而 {@code withContext(Dispatchers.IO)}
+ * 的取消**不会中断 sleep**——用户关掉界面后协程仍会跑满超时并持续发请求。
+ * 协程侧必须用 {@code runInterruptible} 包裹调用（或使用可取消重载并自行检查
+ * {@link WorkflowRunPoller.CancelCheck}）；这一点在 UI 实现中被真机验证踩过。
  */
 public final class CloudBuildService {
 

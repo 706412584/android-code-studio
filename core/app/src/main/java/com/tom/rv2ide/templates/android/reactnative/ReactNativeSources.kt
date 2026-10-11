@@ -737,6 +737,10 @@ object ReactNativeSources {
       local.properties
       *.keystore
       !app/debug.keystore
+
+      # 云打包产物与缓存（ACS 云打包功能下载的 artifact / 日志 zip）
+      cloudbuild-output/
+      .cloudbuild-cache/
       """
           .trimIndent() + "\n"
 

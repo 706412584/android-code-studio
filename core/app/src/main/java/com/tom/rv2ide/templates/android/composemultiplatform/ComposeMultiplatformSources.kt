@@ -504,4 +504,27 @@ object ComposeMultiplatformSources {
       会与设备端构建冲突）。
       """
           .trimIndent() + "\n"
+
+  /**
+   * 根 `.gitignore`。
+   *
+   * <p>云打包产物目录（`cloudbuild-output/` 与 `.cloudbuild-cache/`）必须忽略：
+   * 下载的 APK 产物单个可达上百 MB，一次 `git add .` 就会把大文件误提交进仓库。
+   * 其余条目沿用 Gradle 项目的通行忽略集。
+   */
+  fun gitignore(): String =
+      """
+      .gradle/
+      build/
+      */build/
+      .idea/
+      *.iml
+      local.properties
+      .kotlin/
+
+      # 云打包产物与缓存（ACS 云打包功能下载的 artifact / 日志 zip）
+      cloudbuild-output/
+      .cloudbuild-cache/
+      """
+          .trimIndent() + "\n"
 }
