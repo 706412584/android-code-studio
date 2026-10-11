@@ -144,6 +144,14 @@ public final class ToolNames {
      * <p>让 AI 改完 UI 后能自己看一眼渲染结果（app 层工具，需 Android 与模块依赖）。
      */
     public static final String LAYOUT_PREVIEW = "layout_preview";
+    /**
+     * 内置浏览器：用系统 WebView 加载网页并读取内容/截图。
+     *
+     * <p>与 {@link #WEB_FETCH} 的差异：web_fetch 走 HTTP 客户端只拿 HTML 源文本
+     * （不含 JS 渲染结果），本工具执行真实渲染后可取 innerText、跑 JS、截图——
+     * 面向 SPA 与需要视觉确认的场景。只读浏览，不支持点击/表单交互。
+     */
+    public static final String BROWSER = "browser";
 
     private static final String CUSTOM_AGENT_PREFIX = "agentx_";
     private static final String CUSTOM_MCP_PREFIX = "mcpx_";

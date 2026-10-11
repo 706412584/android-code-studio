@@ -1245,7 +1245,7 @@ public final class AgentOrchestrator {
 
   /** 构建工具注册表：文件工具 + shell 执行 + 运行测试闭环四件套。 */
   public ToolRegistry buildRegistry() {
-    return buildRegistry(true, null);
+    return buildRegistry(true, null, null);
   }
 
   /**
@@ -1263,6 +1263,21 @@ public final class AgentOrchestrator {
    */
   public ToolRegistry buildRegistry(
       boolean includeMcp, java.util.List<com.tom.rv2ide.ai.tool.mcp.McpClient> mcpClientsOut) {
+    return buildRegistry(includeMcp, mcpClientsOut, null);
+  }
+
+  /**
+   * 构建工具注册表（完整参数版）。
+   *
+   * @param browserToolOut 非空时，本次新建的 {@link BrowserTool} 登记到这里，
+   *     由调用方在运行结束时调 {@code close()} 释放 WebView。**必须登记而不是让工具
+   *     持有全局单例**：WebView 有线程亲和性且持有 native 资源，每次运行建一个、
+   *     运行结束销毁，避免跨会话泄漏。UI 路径（只查分类色）传 null，不装配浏览器。
+   */
+  public ToolRegistry buildRegistry(
+      boolean includeMcp,
+      java.util.List<com.tom.rv2ide.ai.tool.mcp.McpClient> mcpClientsOut,
+      java.util.List<com.tom.rv2ide.artificial.agent.tool.BrowserTool> browserToolOut) {
     ToolRegistry registry = new ToolRegistry();
 
     // 文件操作
@@ -1441,6 +1456,20 @@ public final class AgentOrchestrator {
     // 供卡顿与 OOM 排查（用户实测的 Markdown 表格 OOM 之后加的诊断口）。
     registry.register(
         new com.tom.rv2ide.artificial.agent.tool.MemoryAnalysisTool(appContext));
+
+    // 内置浏览器：系统 WebView 加载网页 → 取渲染后正文 / 跑 JS / 截图。
+    // 与 web_fetch 的分工：web_fetch 只拿 HTTP 响应的 HTML 源文本（无 JS 渲染），
+    // 本工具面向 SPA 与需要视觉确认的场景（先 navigate，再 get_text 或 screenshot）。
+    //
+    // 只在真实运行路径（browserToolOut != null）装配：UI 的分类色查询路径传 null，
+    // 不该在 UI 线程创建 WebView。每次运行新建、运行结束由 executeRun 的 finally
+    // 调 close() 释放——WebView 持有 native 资源，跨会话复用会造成泄漏。
+    if (browserToolOut != null) {
+      com.tom.rv2ide.artificial.agent.tool.BrowserTool browserTool =
+          new com.tom.rv2ide.artificial.agent.tool.BrowserTool(appContext);
+      registry.register(browserTool);
+      browserToolOut.add(browserTool);
+    }
 
     // 外部 MCP server 提供的工具。只有 run() 路径（mcpClientsOut != null）才装配：
     // UI 的分类色查询不该触发网络请求，也不该创建无人释放的连接。
@@ -1803,7 +1832,10 @@ public final class AgentOrchestrator {
     // 共享字段——并发两个会话时，一个运行结束会把另一个仍在使用的长连接关掉。
     java.util.List<com.tom.rv2ide.ai.tool.mcp.McpClient> mcpClients =
         new java.util.ArrayList<>();
-    ToolRegistry registry = buildRegistry(true, mcpClients);
+    // 本次运行的浏览器工具实例（同理随运行建立/释放；WebView 持有 native 资源）。
+    java.util.List<com.tom.rv2ide.artificial.agent.tool.BrowserTool> browserTools =
+        new java.util.ArrayList<>();
+    ToolRegistry registry = buildRegistry(true, mcpClients, browserTools);
     ToolPermissionService permissions = new ToolPermissionService(settings, registry);
     ToolExecutor executor =
         new ToolExecutor(registry, permissions, diffStore == null ? null : newDiffRecorder());
@@ -2065,6 +2097,14 @@ public final class AgentOrchestrator {
       // 否则每跑一次对话就多一条悬挂的连接（以及一个守护读线程）。
       // 只释放本次运行建立的连接，不影响并发会话仍在使用的连接。
       closeMcpClients(mcpClients);
+      // 浏览器工具持有的 WebView 同理：销毁掉 native 资源，不留悬挂的渲染进程。
+      for (com.tom.rv2ide.artificial.agent.tool.BrowserTool browserTool : browserTools) {
+        try {
+          browserTool.close();
+        } catch (Throwable t) {
+          com.tom.rv2ide.ai.tool.api.ErrorLog.record("agent", "释放浏览器工具失败", t, null);
+        }
+      }
     }
   }
 
