@@ -87,6 +87,24 @@ final class BuiltinAgentsTest {
   }
 
   @Test
+  void readOnlyRolesCanSearchByContent() {
+    // explore/审查/定位子代理的核心工作是「找代码」。缺了 grep 就只能 glob 出文件名、
+    // 再逐个整文件读——「哪里用了这个 API」会白读几十个文件。主 agent 一直有 grep，
+    // 子代理没有是纯粹的配置遗漏，这里钉住防止再次丢失。
+    for (String id :
+        new String[] {
+          BuiltinAgents.CODE_REVIEWER, BuiltinAgents.EXPLORE, BuiltinAgents.DEBUGGER
+        }) {
+      BuiltinAgent agent = BuiltinAgents.find(id);
+      assertTrue(
+          agent.getTools().contains(ToolNames.GREP), id + " 的只读白名单应含 grep");
+    }
+    // 可写角色同样应能搜索。
+    assertTrue(
+        BuiltinAgents.find(BuiltinAgents.TEST_AUTHOR).getTools().contains(ToolNames.GREP));
+  }
+
+  @Test
   void writeRolesAreNotMarkedReadOnly() {
     for (String id : new String[] {BuiltinAgents.TEST_AUTHOR, BuiltinAgents.DOCS_WRITER}) {
       BuiltinAgent agent = BuiltinAgents.find(id);
