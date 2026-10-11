@@ -1363,6 +1363,21 @@ public final class AgentOrchestrator {
     registry.register(new com.tom.rv2ide.ai.tool.FormatCodeTool());
     // 项目结构查询：模块/变体/真实任务名（app 层工具，直接读 IWorkspace）。
     registry.register(new ProjectInfoTool());
+
+    // ---- 编辑器会话（与用户编辑器状态交互，通用编码 agent 无法获得）----
+    // 三个工具共享同一端口（EditorSessionPort）：读状态 / 打开定位 / 保存全部。
+    // 端口在 executeRun 注入。
+    registry.register(new com.tom.rv2ide.ai.tool.EditorStateTool());
+    registry.register(new com.tom.rv2ide.ai.tool.FileOpenTool());
+    registry.register(new com.tom.rv2ide.ai.tool.SaveAllTool());
+
+    // ---- IDE 原生能力（类型系统感知 / 项目模型）----
+    // 代码动作：类型系统感知的生成/重构（就地写回）。端口在 executeRun 注入。
+    registry.register(new com.tom.rv2ide.ai.tool.CodeActionsTool());
+    // 构建变体：列出/切换（切换触发完整重新同步）。端口在 executeRun 注入。
+    registry.register(new com.tom.rv2ide.ai.tool.BuildVariantTool());
+    // 工作区符号搜索：按名找符号声明（走 IDE 内建能力，与 codegraph CLI 互补）。
+    registry.register(new com.tom.rv2ide.ai.tool.WorkspaceSymbolTool());
     // 向用户提问（多选/单选）。阻塞式：调用方（FloatingAssistantView）切到主线程弹窗，
     // 用户作答后唤醒 agent 循环继续执行。
     registry.register(new com.tom.rv2ide.ai.tool.AskUserQuestionTool());
@@ -2023,6 +2038,18 @@ public final class AgentOrchestrator {
       systemPrompt = systemPrompt + "\n\n" + projectRules;
     }
 
+    // 文档同步端口：AI 写盘后通知编辑器刷新。既给 file_write/file_edit 用（builder 链上
+    // 注入），也给代码动作适配器用（它写盘后走同一路径通知）——因此先建实例再复用，
+    // 不重复 new（两个实例行为一致，但共享一个更省内存也少一处漂移点）。
+    com.tom.rv2ide.ai.tool.DocumentSyncPort documentSyncPort =
+        new ReportedDocumentSyncPort();
+    // 代码动作适配器：构造后把 documentSync 接上（写盘后通知编辑器）。
+    ReportedCodeActionsPort codeActionsPort =
+        new ReportedCodeActionsPort(
+            id ->
+                com.tom.rv2ide.lsp.api.ILanguageServerRegistry.getDefault().getServer(id));
+    codeActionsPort.setDocumentSync(documentSyncPort);
+
     ToolContext toolContext =
         ToolContext.builder()
             .homePath(runWorkspace.getAbsolutePath())
@@ -2057,12 +2084,23 @@ public final class AgentOrchestrator {
                     id ->
                         com.tom.rv2ide.lsp.api.ILanguageServerRegistry.getDefault()
                             .getServer(id)))
+            // 编辑器会话端口（editor_state / file_open / save_all 共享）。
+            // 状态源是进程级 EditorSessionRegistry 的存活编辑器 Activity。
+            .editorSession(new ReportedEditorSessionPort())
+            // Java 代码动作端口（生成/重构，就地写回）。与格式化同样按调用时现查语言服务器。
+            // documentSync 在构造后接线（写盘后通知编辑器刷新，与 documentSync 端口同一路径）。
+            .codeActions(codeActionsPort)
+            // 构建变体端口（列出/切换；切换触发完整项目重新同步）。
+            .buildVariant(new ReportedBuildVariantPort())
+            // 工作区符号搜索端口（按名找符号声明，走 IDE 内建能力）。
+            .workspaceSymbol(new ReportedWorkspaceSymbolPort())
             // 后台命令执行端口：shell_execute 的 run_in_background 走它。
             // 完成回调把通知投进本会话正在跑的循环（会话不在跑则退回状态栏通知）。
             .backgroundShell(backgroundShellRunner(conversationId))
             // 文档同步端口：file_write/file_edit 写盘后通知编辑器刷新，
             // 避免「编辑器显示旧内容」以及自动保存覆盖 AI 修改。
-            .documentSync(new ReportedDocumentSyncPort())
+            // 与代码动作适配器共享同一实例（见上方 documentSyncPort 的声明处）。
+            .documentSync(documentSyncPort)
             // 终端会话读取端口：读用户在内置终端里手动跑的命令的屏幕内容。
             .terminal(new ReportedTerminalPort())
             // 运行取消信号：长操作（shell 命令、Gradle 构建）在等待循环里查询它，

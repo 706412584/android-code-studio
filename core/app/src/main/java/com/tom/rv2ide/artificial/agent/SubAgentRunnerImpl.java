@@ -188,6 +188,14 @@ public final class SubAgentRunnerImpl implements SubAgentRunner {
             // shell 命令/构建在等待循环里看到它并终止。不接的话，主循环停了、
             // 子 agent 还在烧额度，正是「停止要等很久才生效」的来源之一。
             .cancellation(childCancellation::isCancelled)
+            // IDE 能力端口（编辑器会话/代码动作/构建变体/符号搜索）：当前
+            // buildSubRegistry 不注册这 4 类工具，所以今天用不到；但只要将来把
+            // 其中任一加入子 registry，没有端口就会「工具已注册但返回未接入」的
+            // 静默失败。适配器本身无状态、按调用现查，注入成本为零，这里一并接上。
+            .editorSession(new ReportedEditorSessionPort())
+            .codeActions(subCodeActionsPort())
+            .buildVariant(new ReportedBuildVariantPort())
+            .workspaceSymbol(new ReportedWorkspaceSymbolPort())
             .build();
 
     // 子会话事件折叠成步骤行回传父级（见 SubAgentStepReporter 的隔离原则）。
@@ -235,6 +243,15 @@ public final class SubAgentRunnerImpl implements SubAgentRunner {
       registry.register(new FileDeleteTool());
     }
     return registry.filtered(filter);
+  }
+
+  /** 子 agent 的代码动作端口：与主 agent 同构（写盘后经文档同步通知编辑器）。 */
+  private static ReportedCodeActionsPort subCodeActionsPort() {
+    ReportedCodeActionsPort port =
+        new ReportedCodeActionsPort(
+            id -> com.tom.rv2ide.lsp.api.ILanguageServerRegistry.getDefault().getServer(id));
+    port.setDocumentSync(new ReportedDocumentSyncPort());
+    return port;
   }
 
   /**

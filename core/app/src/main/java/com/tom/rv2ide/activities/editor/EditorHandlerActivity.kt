@@ -34,6 +34,7 @@ import com.tom.rv2ide.actions.ActionData
 import com.tom.rv2ide.actions.ActionItem.Location.EDITOR_TOOLBAR
 import com.tom.rv2ide.actions.ActionsRegistry.Companion.getInstance
 import com.tom.rv2ide.actions.FillMenuParams
+import com.tom.rv2ide.artificial.agent.EditorSessionRegistry
 import com.tom.rv2ide.editor.language.treesitter.JavaLanguage
 import com.tom.rv2ide.editor.language.treesitter.JsonLanguage
 import com.tom.rv2ide.editor.language.treesitter.KotlinLanguage
@@ -94,12 +95,14 @@ open class EditorHandlerActivity : ProjectHandlerActivity(), IEditorHandler {
 
   override fun preDestroy() {
     super.preDestroy()
+    EditorSessionRegistry.unbind(this)
     TSLanguageRegistry.instance.destroy()
     editorViewModel.removeAllFiles()
   }
 
   override fun onCreate(savedInstanceState: Bundle?) {
     mBuildEventListener.setActivity(this)
+    EditorSessionRegistry.bind(this)
     super.onCreate(savedInstanceState)
 
     editorViewModel._displayedFile.observe(this) {
