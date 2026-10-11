@@ -149,11 +149,12 @@ public final class CodeActionsTool extends BaseTool {
                             "description",
                             "动作的可选参数：add_import 传完全限定类名（如 java.util.List）；"
                                 + "add_throws 可传异常类名；其余动作不需要")))
-        // required 必须与 properties 同级，不能嵌进 properties 内部。
-        // 嵌进去会让它被当成一个名为 required 的**属性**（值却是数组），严格校验的
-        // provider 直接以 400 拒绝整个 tools 数组——**所有工具**（不止本工具）全部
-        // 不可用。真机实测 agnes provider 报 "Tool 11 function has invalid 'parameters'
-        // schema: ['file_path', 'action'] is not of type 'object', 'boolean'"。
+        // required 必须在**顶层**（与 properties 平级）。曾误嵌进 properties 内部，
+        // 生成非法 schema（properties 的每项必须是 schema 对象，数组不是）——严格
+        // 校验的服务商（agnes）直接 400 拒绝整个请求，且工具列表里只要有它就全挂：
+        // "Tool 11 function has invalid 'parameters' schema: ['file_path', 'action']
+        // is not of type 'object', 'boolean'"。假服务器不校验 schema，直到真模型
+        // 验证才暴露（2026-10-12，两处独立发现同一问题）。
         .put("required", new JSONArray().put("file_path").put("action"));
   }
 
