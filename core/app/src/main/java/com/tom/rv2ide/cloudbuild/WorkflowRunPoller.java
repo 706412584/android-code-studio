@@ -38,6 +38,20 @@ import java.util.List;
  */
 public final class WorkflowRunPoller {
 
+  /** 取消检查：长等待（等新 run / 等终态）据此提前退出。由调用方注入，可为 null。 */
+  public interface CancelCheck {
+    boolean isCancelled();
+  }
+
+  /**
+   * 取消检查的分片粒度（ms）。
+   *
+   * <p>等待循环里的 sleep 是 10 秒级，若整段睡完才检查取消，用户点「停止」后最坏要等
+   * 10 秒才响应。切成 250ms 分片后响应延迟与 gradle_build 同量级（见
+   * {@code GradleBuildTool.CANCEL_POLL_MS}）。
+   */
+  private static final long CANCEL_SLICE_MS = 250L;
+
   private final GitHubActionsClient client;
 
   public WorkflowRunPoller(GitHubActionsClient client) {
@@ -96,15 +110,30 @@ public final class WorkflowRunPoller {
    */
   public WorkflowRun awaitNewRun(long previousRunId, String workflowFile, String branch,
                                  long timeoutMs, long sleepMs) throws Exception {
+    return awaitNewRun(previousRunId, workflowFile, branch, timeoutMs, sleepMs, null);
+  }
+
+  /**
+   * 等待新 run 出现（可取消）。
+   *
+   * @param cancel 取消检查（可为 null）；为 null 时行为与四参重载一致
+   */
+  public WorkflowRun awaitNewRun(long previousRunId, String workflowFile, String branch,
+                                 long timeoutMs, long sleepMs, CancelCheck cancel) throws Exception {
     long deadline = System.currentTimeMillis() + timeoutMs;
     while (System.currentTimeMillis() < deadline) {
+      if (cancel != null && cancel.isCancelled()) {
+        return null;
+      }
       WorkflowRun latest = client.getLatestRun(workflowFile, branch);
       if (latest != null && latest.id > previousRunId) {
         return latest;
       }
-      // 还没出现：等待一个间隔再查。这里用 Thread.sleep 是刻意的——调用方
-      // 已经在后台线程上执行（UI 用协程的 IO 线程，AI 工具用线程池）。
-      Thread.sleep(Math.max(1000, sleepMs));
+      // 还没出现：等待一个间隔再查。分片睡眠而不是整段睡——整段睡 10 秒会让
+      // 取消最坏延迟 10 秒才被察觉（见 CANCEL_SLICE_MS）。
+      if (!sleepInterruptibly(Math.max(1000, sleepMs), cancel)) {
+        return null;
+      }
     }
     return null;
   }
@@ -121,9 +150,23 @@ public final class WorkflowRunPoller {
   public Snapshot awaitCompletion(long runId, String workflowFile, String branch,
                                   long timeoutMs, long sleepMs, ProgressListener listener)
       throws Exception {
+    return awaitCompletion(runId, workflowFile, branch, timeoutMs, sleepMs, listener, null);
+  }
+
+  /**
+   * 阻塞等待 run 到终态（可取消）。
+   *
+   * @param cancel 取消检查（可为 null）；为 null 时行为与六参重载一致
+   */
+  public Snapshot awaitCompletion(long runId, String workflowFile, String branch,
+                                  long timeoutMs, long sleepMs, ProgressListener listener,
+                                  CancelCheck cancel) throws Exception {
     long deadline = System.currentTimeMillis() + timeoutMs;
     Snapshot last = null;
     while (System.currentTimeMillis() < deadline) {
+      if (cancel != null && cancel.isCancelled()) {
+        return last;
+      }
       Snapshot snapshot = poll(runId, workflowFile, branch);
       if (snapshot != null) {
         last = snapshot;
@@ -134,9 +177,30 @@ public final class WorkflowRunPoller {
           return snapshot;
         }
       }
-      Thread.sleep(Math.max(1000, sleepMs));
+      if (!sleepInterruptibly(Math.max(1000, sleepMs), cancel)) {
+        return last;
+      }
     }
     return last;
+  }
+
+  /**
+   * 分片睡眠：每片 {@link #CANCEL_SLICE_MS} 检查一次取消。
+   *
+   * @return true 正常睡完；false 被取消（调用方应提前返回）
+   */
+  private static boolean sleepInterruptibly(long totalMs, CancelCheck cancel)
+      throws InterruptedException {
+    long remaining = totalMs;
+    while (remaining > 0) {
+      if (cancel != null && cancel.isCancelled()) {
+        return false;
+      }
+      long slice = Math.min(CANCEL_SLICE_MS, remaining);
+      Thread.sleep(slice);
+      remaining -= slice;
+    }
+    return true;
   }
 
   /** 进度回调。 */

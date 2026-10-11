@@ -38,6 +38,13 @@ import java.util.List;
  */
 public final class CloudBuildService {
 
+  /** 用户取消长等待时抛出（与「超时未出现」区分，两者给用户的处置不同）。 */
+  public static final class CancelledException extends Exception {
+    CancelledException() {
+      super("操作已被用户取消。");
+    }
+  }
+
   /** 触发前的默认等待：GitHub 出现新 run 通常需要几秒。 */
   private static final long DEFAULT_AWAIT_RUN_TIMEOUT_MS = 60_000;
 
@@ -160,6 +167,18 @@ public final class CloudBuildService {
   public BuildHandle triggerAndAwaitRun(String workflowFile, String branch,
                                         java.util.Map<String, String> inputs)
       throws Exception {
+    return triggerAndAwaitRun(workflowFile, branch, inputs, null);
+  }
+
+  /**
+   * 触发 workflow 并等待新 run 出现（可取消）。
+   *
+   * @param cancel 取消检查（可为 null）；取消时抛 {@link CancelledException}
+   */
+  public BuildHandle triggerAndAwaitRun(String workflowFile, String branch,
+                                        java.util.Map<String, String> inputs,
+                                        WorkflowRunPoller.CancelCheck cancel)
+      throws Exception {
     BuildHandle handle = new BuildHandle(workflowFile, branch);
 
     // 记录触发前的最新 run id（没有历史时为 0）。
@@ -170,8 +189,11 @@ public final class CloudBuildService {
 
     WorkflowRun newRun = new WorkflowRunPoller(client)
         .awaitNewRun(handle.previousRunId, workflowFile, branch,
-            DEFAULT_AWAIT_RUN_TIMEOUT_MS, DEFAULT_POLL_INTERVAL_MS);
+            DEFAULT_AWAIT_RUN_TIMEOUT_MS, DEFAULT_POLL_INTERVAL_MS, cancel);
     if (newRun == null) {
+      if (cancel != null && cancel.isCancelled()) {
+        throw new CancelledException();
+      }
       throw new Exception("已触发 workflow，但等待 " + (DEFAULT_AWAIT_RUN_TIMEOUT_MS / 1000)
           + " 秒后仍未看到新的运行记录。请到 GitHub 网页确认 workflow 是否真的被触发。");
     }
@@ -190,9 +212,22 @@ public final class CloudBuildService {
   public WorkflowRunPoller.Snapshot awaitCompletion(BuildHandle handle, long timeoutMs,
                                                     WorkflowRunPoller.ProgressListener listener)
       throws Exception {
+    return awaitCompletion(handle, timeoutMs, listener, null);
+  }
+
+  /**
+   * 等待 run 到终态（可取消）。
+   *
+   * @param cancel 取消检查（可为 null）；取消时返回最后一次快照（调用方据
+   *     {@code snapshot.isFinished()} 判断是否真的到终态）
+   */
+  public WorkflowRunPoller.Snapshot awaitCompletion(BuildHandle handle, long timeoutMs,
+                                                    WorkflowRunPoller.ProgressListener listener,
+                                                    WorkflowRunPoller.CancelCheck cancel)
+      throws Exception {
     return new WorkflowRunPoller(client).awaitCompletion(
         handle.run.id, handle.workflowFile, handle.branch,
-        timeoutMs, DEFAULT_POLL_INTERVAL_MS, listener);
+        timeoutMs, DEFAULT_POLL_INTERVAL_MS, listener, cancel);
   }
 
   /** 查一次进度（供 UI 刷新 / AI 查询状态）。 */
@@ -286,6 +321,24 @@ public final class CloudBuildService {
   public String describeLatestRun(String workflowFile, String branch) throws Exception {
     WorkflowRun run = client.getLatestRun(workflowFile, branch);
     if (run == null) {
+      return formatLatestRun(owner, repo, null, null);
+    }
+    List<WorkflowJob> jobs = run.isFinished() ? client.listJobs(run.id) : null;
+    return formatLatestRun(owner, repo, run, jobs);
+  }
+
+  /**
+   * 状态摘要的格式化（纯函数，供 UI 与 AI 工具共用，可 JVM 单测）。
+   *
+   * <p>与网络调用分离是刻意的：文案是「用户/模型看到的最终输出」，改错一个字
+   * 比改错一行逻辑更难被发现（同 {@code GradleBuildTool.describeFailure} 的教训）。
+   *
+   * @param run 最新 run；null 表示没有运行记录
+   * @param jobs job 列表（可为 null，表示未查询或没有）
+   */
+  static String formatLatestRun(String owner, String repo, WorkflowRun run,
+                                List<WorkflowJob> jobs) {
+    if (run == null) {
       return "仓库 " + owner + "/" + repo + " 没有运行记录。";
     }
     StringBuilder builder = new StringBuilder();
@@ -294,14 +347,11 @@ public final class CloudBuildService {
     builder.append("状态：").append(run.statusText()).append('\n');
     builder.append("分支：").append(run.headBranch).append('\n');
     builder.append("创建时间：").append(run.createdAt).append('\n');
-    if (run.isFinished()) {
-      List<WorkflowJob> jobs = client.listJobs(run.id);
-      if (!jobs.isEmpty()) {
-        builder.append("Jobs：\n");
-        for (WorkflowJob job : jobs) {
-          builder.append("  - ").append(job.name).append(": ").append(job.statusText())
-              .append('\n');
-        }
+    if (jobs != null && !jobs.isEmpty()) {
+      builder.append("Jobs：\n");
+      for (WorkflowJob job : jobs) {
+        builder.append("  - ").append(job.name).append(": ").append(job.statusText())
+            .append('\n');
       }
     }
     builder.append("链接：").append(run.htmlUrl);

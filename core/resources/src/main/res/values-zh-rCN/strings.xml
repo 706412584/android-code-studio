@@ -601,6 +601,8 @@
   <string name="ai_assistant_work_navigate">正在查找 %1$s</string>
   <string name="ai_assistant_work_formatting">正在格式化 %1$s</string>
   <string name="ai_assistant_work_project_info">正在读取项目结构</string>
+  <string name="ai_assistant_work_cloud_build">正在云构建 %1$s</string>
+  <string name="ai_assistant_work_cloud_status">正在查询云构建状态</string>
   <string name="ai_assistant_work_tool">正在执行 %1$s</string>
 
   <!-- 底部固定的重试小卡片 -->

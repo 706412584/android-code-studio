@@ -1471,6 +1471,19 @@ public final class AgentOrchestrator {
     // 运行测试闭环：构建 → 安装 → 启动 → 读日志
     registry.register(new GradleBuildTool(this::lookupBuildService));
     registry.register(new InstallApkTool(appContext));
+
+    // 云打包：GitHub Actions 触发（需确认）与状态查询（只读）分成两个工具，
+    // 权限分级才能各归其位（同 git / git_write 的拆分理由）。
+    // token 经 TokenProvider 注入而非直接传 CloudBuildTokenStore：store 构造会建
+    // EncryptedSharedPreferences（keystore I/O），而 buildRegistry 在 UI 线程被调用
+    // ——与 gitPrefs() 同样的懒加载顾虑，真正的读取发生在工具执行的 IO 线程上。
+    com.tom.rv2ide.artificial.agent.tool.GitHubActionsBuildTool.TokenProvider cloudToken =
+        () -> cloudBuildTokenStore().getToken();
+    // 失败日志 zip 的临时目录用 app 的 cacheDir（系统可清理、不进用户项目）。
+    registry.register(new com.tom.rv2ide.artificial.agent.tool.GitHubActionsBuildTool(
+        cloudToken, appContext.getCacheDir()));
+    registry.register(
+        new com.tom.rv2ide.artificial.agent.tool.GitHubActionsStatusTool(cloudToken));
     // 同 LogcatReadTool：必须传共享的 shellBackends。只传 context 会让它自建一个
     // registry（见 LaunchAppTool(Context) 构造），而自建的不知道用户选的后端——
     // 用户配好 Shizuku 时，启动应用仍会退化成「需要用户点确认」的 Intent 路径。
@@ -2746,6 +2759,31 @@ public final class AgentOrchestrator {
 
   /** git 凭据/身份的懒加载缓存。见 {@link #gitPrefs()}。 */
   private volatile com.tom.rv2ide.utils.PreferencesManager gitPrefsCache;
+
+  /** 云打包 token 存储的懒加载缓存。见 {@link #cloudBuildTokenStore()}。 */
+  private volatile com.tom.rv2ide.cloudbuild.CloudBuildTokenStore cloudBuildTokenStoreCache;
+
+  /**
+   * 云打包 token 存储的懒加载持有者（首次访问时构造并缓存）。
+   *
+   * <p><b>为什么懒加载</b>：与 {@link #gitPrefs()} 同一原因——构造时会创建
+   * {@code EncryptedSharedPreferences}（keystore I/O + 主密钥生成），而
+   * {@code buildRegistry} 在 UI 线程被调用，不该在那里做盘上操作；且大多数运行
+   * 不碰云打包。真正的读取发生在工具执行时（IO 线程）。
+   */
+  private com.tom.rv2ide.cloudbuild.CloudBuildTokenStore cloudBuildTokenStore() {
+    com.tom.rv2ide.cloudbuild.CloudBuildTokenStore cached = cloudBuildTokenStoreCache;
+    if (cached == null) {
+      synchronized (this) {
+        cached = cloudBuildTokenStoreCache;
+        if (cached == null) {
+          cached = new com.tom.rv2ide.cloudbuild.CloudBuildTokenStore(appContext);
+          cloudBuildTokenStoreCache = cached;
+        }
+      }
+    }
+    return cached;
+  }
 
   /**
    * git 凭据/身份的懒加载持有者（首次访问时构造并缓存）。
