@@ -83,8 +83,10 @@ class FileTreeFragment :
   override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
     super.onViewCreated(view, savedInstanceState)
     listProjectFiles()
-    
-    binding?.fileTreeLabel?.text = File(IProjectManager.getInstance().projectDirPath).name.toString()
+
+    // 无项目时 projectDirPath 会抛异常（本 fragment 挂载即崩）。无项目就不显示项目名。
+    binding?.fileTreeLabel?.text =
+        IProjectManager.getInstance().projectDirOrNull?.name?.toString().orEmpty()
     
     binding?.folderBrowser?.setOnClickListener {
         val intent = Intent(requireContext(), FileBrowserActivity::class.java)
@@ -229,8 +231,8 @@ class FileTreeFragment :
       // Fragment has been destroyed
       return
     }
-    val projectDirPath = IProjectManager.getInstance().projectDirPath
-    val projectDir = File(projectDirPath)
+    // 无项目时返回——projectDir 未设置会抛异常，此时没有文件树可展示。
+    val projectDir = IProjectManager.getInstance().projectDirOrNull ?: return
     val rootNode = TreeNode(File(""))
     rootNode.viewHolder = FileTreeViewHolder(requireContext())
 

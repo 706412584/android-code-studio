@@ -763,13 +763,21 @@ override fun onApplySystemBarInsets(insets: Insets) {
     
     SeasonalEffects.setSnowflakeCount(0)
     // Initialize lsp setup
-    val setup = Setup(this)
-    setup.scanProjectForLanguageServers(ProjectManagerImpl.getInstance().projectDir) { isSuccessfullyInstalled ->
-      if (isSuccessfullyInstalled) {
-        flashSuccess("Installation succeeded")
-        if (!editorViewModel.isInitializing) {
-          flashInfo("Reinitializing project...")
-          (this as? ProjectHandlerActivity)?.initializeProject()
+    //
+    // 无项目时跳过：此时 `projectDir` 的 getter 会抛 IllegalStateException
+    // （"Path has not been set."），直接把 Activity 启动搞崩——实测 force-stop 后直接
+    // 深链 EditorActivityKt（无项目）必崩在 onCreate。编辑器页本身仍要能打开（空状态），
+    // 所以这里只是跳过 LSP 扫描，不拦截启动。
+    val projectDirOrNull = runCatching { ProjectManagerImpl.getInstance().projectDir }.getOrNull()
+    if (projectDirOrNull != null) {
+      val setup = Setup(this)
+      setup.scanProjectForLanguageServers(projectDirOrNull) { isSuccessfullyInstalled ->
+        if (isSuccessfullyInstalled) {
+          flashSuccess("Installation succeeded")
+          if (!editorViewModel.isInitializing) {
+            flashInfo("Reinitializing project...")
+            (this as? ProjectHandlerActivity)?.initializeProject()
+          }
         }
       }
     }
@@ -807,7 +815,9 @@ override fun onApplySystemBarInsets(insets: Insets) {
 
   private fun setupDependencyUpdater() {
       if (BuildPreferences.isDependenciesUpdaterEnabled) {
-        val projectDir = ProjectManagerImpl.getInstance().projectDir
+        // 无项目时 projectDir 会抛异常（同 onCreate 的说明）。
+        val projectDir =
+            runCatching { ProjectManagerImpl.getInstance().projectDir }.getOrNull() ?: return
         
         val buildFile = findModuleBuildFile(projectDir)
         val tomlFile = findLibsVersionsToml(projectDir)
@@ -1098,7 +1108,11 @@ override fun onApplySystemBarInsets(insets: Insets) {
     // Save all pending files before saving instance state
     saveAllPendingFiles()
 
-    outState.putString(KEY_PROJECT_PATH, IProjectManager.getInstance().projectDirPath)
+    // 无项目时 projectDirPath 会抛异常（同 onCreate 的说明）——保存时跳过即可，
+    // 下次恢复时 KEY_PROJECT_PATH 缺省，走「无项目」路径。
+    runCatching { IProjectManager.getInstance().projectDirPath }
+        .getOrNull()
+        ?.let { outState.putString(KEY_PROJECT_PATH, it) }
     super.onSaveInstanceState(outState)
   }
 

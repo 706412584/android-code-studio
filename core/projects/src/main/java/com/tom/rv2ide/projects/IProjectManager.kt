@@ -53,6 +53,25 @@ interface IProjectManager {
   /** The project's root directory. */
   val projectDir: File
 
+  /**
+   * 项目根目录；**没有打开项目时返回 null，不抛异常**。
+   *
+   * <p>`projectDir` 在未设置时抛 `IllegalStateException`（"Path has not been set."），
+   * 这让「无项目状态」下任何顺带触碰它的 UI 路径（编辑器 Activity 的 onCreate/onStart、
+   * 文件树 fragment 挂载等）都会把整个进程搞崩。该类调用点只想知道「有没有项目」，
+   * 用本属性即可，无需 try/catch。
+   */
+  val projectDirOrNull: File?
+    get() = try {
+      projectDir
+    } catch (e: IllegalStateException) {
+      null
+    }
+
+  /** 当前是否有已打开的项目（[projectDirOrNull] 非 null）。 */
+  val hasProject: Boolean
+    get() = projectDirOrNull != null
+
   /** Issues that were encountered during project synchronization. */
   val projectSyncIssues: ProjectSyncIssues?
 
