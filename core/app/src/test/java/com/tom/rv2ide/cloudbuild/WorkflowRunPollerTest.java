@@ -103,6 +103,89 @@ public class WorkflowRunPollerTest {
     assertTrue("应实际重试了多次", port.latestCalls.get() >= 3);
   }
 
+  /**
+   * 取消（线程中断）时异常必须原样上抛，不能被当作「瞬时网络错误」吞掉。
+   *
+   * <p><b>为什么这条测试重要</b>：runInterruptible 的取消会**中断工作线程**，
+   * 网络读随即抛异常——若被 catch 成「瞬时错误」继续重试，用户关掉界面后循环仍会
+   * 跑满超时并持续发请求，且会触碰已销毁的 UI 导致崩溃（2026-07-12 实测：关闭
+   * 云编译弹窗崩溃链条的起点）。
+   *
+   * <p><b>检测语义是「线程中断位」而非异常类型</b>：SocketTimeoutException 是
+   * InterruptedIOException 的子类——若按异常类型判断取消，正常网络超时会被误伤
+   * （下面的 awaitNewRunSurvivesTransientErrors 正是钉这一点）。测试因此设置
+   * 中断位再抛普通超时异常，模拟 runInterruptible 取消时的真实形态。
+   */
+  @Test
+  public void awaitNewRunPropagatesInterruptInsteadOfRetrying() {
+    RunQueryPort interruptPort = new RunQueryPort() {
+      @Override
+      public WorkflowRun getLatestRun(String workflowFile, String branch) throws Exception {
+        // runInterruptible 取消时工作线程的中断位已被设置，网络读随即失败。
+        Thread.currentThread().interrupt();
+        throw new java.net.SocketTimeoutException("interrupted by cancel");
+      }
+
+      @Override
+      public WorkflowRun getRun(long runId) throws Exception {
+        Thread.currentThread().interrupt();
+        throw new java.net.SocketTimeoutException("interrupted by cancel");
+      }
+
+      @Override
+      public List<WorkflowJob> listJobs(long runId) {
+        return Collections.emptyList();
+      }
+    };
+
+    try {
+      // 超时给得很长：若实现把中断当成瞬时错误重试，这里会跑满 10 秒才返回——
+      // 原样上抛则立即抛出。
+      new WorkflowRunPoller(interruptPort).awaitNewRun(50, "build.yml", "dev", 10_000, 1000);
+      fail("中断信号应原样上抛，而不是重试到超时");
+    } catch (Exception e) {
+      assertTrue("应是中断异常本身：" + e.getClass().getName(),
+          e instanceof java.io.InterruptedIOException);
+    } finally {
+      // 清中断位，避免影响同一线程上的后续测试（JUnit 复用线程）。
+      Thread.interrupted();
+    }
+  }
+
+  /** 同样的语义覆盖 awaitCompletion（终态等待路径）。 */
+  @Test
+  public void awaitCompletionPropagatesInterrupt() {
+    RunQueryPort interruptPort = new RunQueryPort() {
+      @Override
+      public WorkflowRun getLatestRun(String workflowFile, String branch) throws Exception {
+        Thread.currentThread().interrupt();
+        throw new java.net.SocketTimeoutException("interrupted by cancel");
+      }
+
+      @Override
+      public WorkflowRun getRun(long runId) throws Exception {
+        Thread.currentThread().interrupt();
+        throw new java.net.SocketTimeoutException("interrupted by cancel");
+      }
+
+      @Override
+      public List<WorkflowJob> listJobs(long runId) {
+        return Collections.emptyList();
+      }
+    };
+
+    try {
+      new WorkflowRunPoller(interruptPort)
+          .awaitCompletion(100, "build.yml", "dev", 10_000, 1000, null);
+      fail("中断信号应原样上抛");
+    } catch (Exception e) {
+      assertTrue("应是中断异常本身：" + e.getClass().getName(),
+          e instanceof java.io.InterruptedIOException);
+    } finally {
+      Thread.interrupted();
+    }
+  }
+
   @Test
   public void awaitNewRunReportsNetworkProblemOnDeadline() {
     ScriptedPort port = new ScriptedPort();

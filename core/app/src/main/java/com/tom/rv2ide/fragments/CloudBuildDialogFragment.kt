@@ -64,6 +64,7 @@ import java.io.File
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -71,11 +72,11 @@ import kotlinx.coroutines.runInterruptible
 import kotlinx.coroutines.withContext
 
 /**
- * 云打包底部表单：识别仓库 → 选择 workflow / 分支 → 一键触发 → 看 job 进度 → 看失败原因 / 产物。
+ * 云编译底部表单：识别仓库 → 选择 workflow / 分支 → 一键触发 → 看 job 进度 → 看失败原因 / 产物。
  *
  * <p><b>为什么是底部表单而不是独立 Activity</b>：与现有的构建入口（`RunTasksDialogFragment`
  * 的 Gradle 任务选择、`DialogProjectSettings` 的项目备份）形态一致，用户不需要离开当前
- * 编辑器上下文；云打包的等待期通常长达数分钟，独立页面反而会把用户困在一个空转的界面上。
+ * 编辑器上下文；云编译的等待期通常长达数分钟，独立页面反而会把用户困在一个空转的界面上。
  *
  * <p><b>为什么不用 `awaitCompletion`</b>：那个方法阻塞到终态，期间界面无法响应取消。
  * 本表单改为「触发一次 + 自己按 [POLL_INTERVAL_MS] 轮询 [CloudBuildService.poll]」，
@@ -201,6 +202,10 @@ class CloudBuildDialogFragment : BottomSheetDialogFragment() {
       val slug = withContext(Dispatchers.IO) { CloudBuildService.detectRepository(projectDir.path) }
       val branch = withContext(Dispatchers.IO) { CloudBuildService.detectBranch(projectDir.path) }
 
+      // 挂起点之后先查活跃性：取消后不得触碰已 detach 的 UI（同 startTracking）。
+      if (!isActive) {
+        return@launch
+      }
       if (slug == null || !slug.isValid) {
         showError(buildNoRepoMessage(projectDir))
         return@launch
@@ -218,6 +223,10 @@ class CloudBuildDialogFragment : BottomSheetDialogFragment() {
       // 但公开仓库仍可读——因此先照常尝试，失败时再按 token 状态给提示。
       try {
         val workflows = withContext(Dispatchers.IO) { svc.client.listWorkflows() }
+        // 挂起点之后先查活跃性：取消后不得触碰已 detach 的 UI（同 startTracking）。
+        if (!isActive) {
+          return@launch
+        }
         if (workflows.isEmpty()) {
           showError(buildNoWorkflowMessage(projectDir))
           return@launch
@@ -226,6 +235,9 @@ class CloudBuildDialogFragment : BottomSheetDialogFragment() {
       } catch (t: Throwable) {
         if (t is CancellationException) {
           throw t
+        }
+        if (!isActive) {
+          return@launch
         }
         // 鉴权失败时把「配置 Token」按钮一并露出：只说「鉴权失败」而不给入口，
         // 用户还得自己去猜从哪里配。
@@ -310,12 +322,21 @@ class CloudBuildDialogFragment : BottomSheetDialogFragment() {
             runInterruptible(Dispatchers.IO) {
               svc.triggerAndAwaitRun(workflow, branch, emptyMap())
             }
+        // 挂起点之后先查活跃性：用户可能在等待期间关掉了表单。
+        if (!isActive) {
+          return@launch
+        }
         currentRun = handle.run
         showRunning(handle.run)
         startTracking(handle.run.id, workflow, branch)
       } catch (t: Throwable) {
         if (t is CancellationException) {
           throw t
+        }
+        // 同 startTracking：runInterruptible 中断网络读抛的 InterruptedIOException
+        // 会绕过取消重抛，取消后不得触碰已 detach 的 UI（实测崩溃点）。
+        if (!isActive) {
+          return@launch
         }
         showError(CloudBuildUiLogic.errorMessage(t))
       }
@@ -348,6 +369,13 @@ class CloudBuildDialogFragment : BottomSheetDialogFragment() {
             } catch (t: Throwable) {
               if (t is CancellationException) {
                 throw t
+              }
+              // runInterruptible 中断网络读时抛的是 InterruptedIOException（不是
+              // CancellationException），协程被取消时它会走到这里——此时 fragment
+              // 已 detach，触碰 UI 会抛「not attached to a context」崩溃（实测）。
+              // 因此先查协程是否仍活跃，被取消即静默退出，不做任何 UI 操作。
+              if (!isActive) {
+                return@launch
               }
               // 轮询失败不终止跟踪：网络抖动一次就放弃会让用户以为构建丢了。
               // 但要在界面上如实显示，而不是静默重试。
@@ -421,6 +449,11 @@ class CloudBuildDialogFragment : BottomSheetDialogFragment() {
   // ---------------------------------------------------------------------------
 
   private suspend fun onRunFinished(snapshot: WorkflowRunPoller.Snapshot) {
+    // 调用点紧跟轮询的挂起点：取消后（含 runInterruptible 的 InterruptedIOException
+    // 路径）不得进入 UI 渲染。
+    if (!currentCoroutineContext().isActive) {
+      return
+    }
     val run = snapshot.run
     currentRun = run
     if (run.isSuccess) {
@@ -453,6 +486,10 @@ class CloudBuildDialogFragment : BottomSheetDialogFragment() {
         if (t is CancellationException) {
           throw t
         }
+        // 同 startTracking：取消中断抛的 InterruptedIOException 绕过重抛，先查活跃性。
+        if (!isActive) {
+          return@launch
+        }
         binding.failureLog.text = CloudBuildUiLogic.errorMessage(t)
       }
     }
@@ -474,11 +511,20 @@ class CloudBuildDialogFragment : BottomSheetDialogFragment() {
             if (t is CancellationException) {
               throw t
             }
+            // 同 startTracking：取消中断抛的 InterruptedIOException 绕过重抛。
+            if (!isActive) {
+              return@launch
+            }
             binding.artifactContainer.addView(
                 newJobLine(getString(R.string.cloud_build_artifact_list_failed, CloudBuildUiLogic.errorMessage(t)))
             )
             return@launch
           }
+
+      // 挂起点之后可能已被取消（上面的 catch 只在异常路径检查；成功返回也要查）。
+      if (!isActive) {
+        return@launch
+      }
 
       if (artifacts.isEmpty()) {
         binding.artifactContainer.addView(newJobLine(getString(R.string.cloud_build_no_artifacts)))
@@ -545,6 +591,10 @@ class CloudBuildDialogFragment : BottomSheetDialogFragment() {
       } catch (t: Throwable) {
         if (t is CancellationException) {
           throw t
+        }
+        // 同 startTracking：取消中断抛的 InterruptedIOException 绕过重抛。
+        if (!isActive) {
+          return@launch
         }
         button.isEnabled = true
         button.setText(R.string.cloud_build_download)

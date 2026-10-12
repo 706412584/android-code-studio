@@ -22,7 +22,7 @@ package com.tom.rv2ide.cloudbuild;
  *
  * <p><b>为什么单独成类</b>：remote URL 的形态比想象中多——HTTPS 带/不带凭据、
  * SSH 的 {@code git@} 形式、{@code ssh://} 形式、带 {@code .git} 后缀与否。
- * 解析规则独立出来才能被 JVM 单测覆盖（不需要真仓库），而云打包入口的
+ * 解析规则独立出来才能被 JVM 单测覆盖（不需要真仓库），而云编译入口的
  * 「自动识别当前项目仓库」正是靠它。
  */
 public final class GitRemoteParser {
@@ -102,7 +102,7 @@ public final class GitRemoteParser {
     }
     String host = segments[0].toLowerCase(java.util.Locale.ROOT);
     if (!host.equals("github.com") && !host.endsWith(".github.com")) {
-      // 云打包只支持 GitHub Actions。Gitee 等其它平台不是本功能的覆盖面。
+      // 云编译只支持 GitHub Actions。Gitee 等其它平台不是本功能的覆盖面。
       return new RepoSlug("", "");
     }
     String owner = segments[1];

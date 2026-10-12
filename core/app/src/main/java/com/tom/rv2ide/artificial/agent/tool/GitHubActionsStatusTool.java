@@ -31,7 +31,7 @@ import org.json.JSONObject;
  *
  * <p><b>为什么与触发拆成两个工具</b>：权限层按**工具**分级——{@code needsConfirmation()}
  * 无参数、只读模式的放行也只看分类。查询不消耗 CI 资源，应当免确认、只读模式放行；
- * 而触发会真的起一次云构建（消耗 Actions 分钟数），必须逐次确认。混在一个工具里
+ * 而触发会真的起一次云编译（消耗 Actions 分钟数），必须逐次确认。混在一个工具里
  * 只能整包按触发处理（见 {@code ToolNames.GIT} 与 {@code GIT_WRITE} 同一拆分先例）。
  *
  * <p><b>数据来源</b>：{@link CloudBuildService#describeLatestRun} 返回的摘要文本
@@ -55,7 +55,7 @@ public final class GitHubActionsStatusTool extends BaseTool {
   public String getDescription() {
     return "查询当前项目 GitHub 仓库最近一次 Actions 运行的状态（排队/运行中/成功/失败），"
         + "含分支、创建时间与各 job 的状态。只读，不触发任何构建。"
-        + "用户问「云构建跑得怎么样」时用它；要触发新构建用 github_actions_build。";
+        + "用户问「云编译跑得怎么样」时用它；要触发新构建用 github_actions_build。";
   }
 
   @Override

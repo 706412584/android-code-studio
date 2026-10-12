@@ -28,7 +28,7 @@ import java.util.TreeSet;
 import org.json.JSONObject;
 
 /**
- * 云打包工具（github_actions_build / github_actions_status）的共用支撑。
+ * 云编译工具（github_actions_build / github_actions_status）的共用支撑。
  *
  * <p><b>为什么需要「前置校验」而不是直接调用服务层</b>：与 {@link GitRepoSupport}
  * 同一个教训——含糊的失败（光秃秃的「失败了」）会让模型反复试错。这里在每个前置
@@ -80,7 +80,7 @@ final class CloudBuildSupport {
     if (token == null || token.trim().isEmpty()) {
       return Setup.failed(err(toolName,
           "尚未配置 GitHub Personal Access Token，无法访问 GitHub Actions。"
-              + "请让用户配置云打包 token（需要 repo 与 workflow 权限）后重试。"));
+              + "请让用户配置云编译 token（需要 repo 与 workflow 权限）后重试。"));
     }
     String path = context == null ? "" : context.getHomePath();
     if (path == null || path.trim().isEmpty()) {

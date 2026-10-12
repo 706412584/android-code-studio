@@ -37,7 +37,7 @@ import org.junit.jupiter.api.io.TempDir;
 /**
  * {@link SimpleHttpClient#downloadToFile} 的回归测试。
  *
- * <p><b>为什么这组测试重要</b>：这个方法承载云打包的 artifact / 日志下载，
+ * <p><b>为什么这组测试重要</b>：这个方法承载云编译的 artifact / 日志下载，
  * 有两个只在真实跳转链里才会暴露的语义：
  * <ol>
  *   <li><b>重定向后必须剥离 Authorization</b>——GitHub 的下载端点 302 到对象存储的

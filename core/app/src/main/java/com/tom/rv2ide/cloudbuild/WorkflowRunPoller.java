@@ -138,6 +138,17 @@ public final class WorkflowRunPoller {
           return latest;
         }
       } catch (Exception e) {
+        // 取消信号不能当「瞬时网络错误」吞掉：runInterruptible 的取消会**中断本线程**，
+        // 网络读随即抛异常（InterruptedIOException 或 SocketException）。若继续重试，
+        // 用户关掉界面后循环仍会跑满超时并持续发请求（实测：关闭弹窗崩溃链条的起点）。
+        //
+        // 检测只用线程中断位，不能按异常类型判断：SocketTimeoutException 是
+        // InterruptedIOException 的**子类**，按类型判断会把正常网络超时也当成取消
+        // （测试 awaitNewRunSurvivesTransientErrors 钉住了这一点）。
+        // 本方法运行在 runInterruptible 的工作线程上，取消时中断位已被设置。
+        if (Thread.currentThread().isInterrupted()) {
+          throw e;
+        }
         // 瞬时网络错误：记录下来继续轮询，不中断。
         lastError = e;
       }
@@ -198,6 +209,11 @@ public final class WorkflowRunPoller {
           }
         }
       } catch (Exception e) {
+        // 同 awaitNewRun：取消只按**线程中断位**判断（SocketTimeoutException 是
+        // InterruptedIOException 的子类，按类型判断会误伤正常超时）。
+        if (Thread.currentThread().isInterrupted()) {
+          throw e;
+        }
         // 瞬时网络错误：继续等待。已有快照时保留（超时返回它比抛异常更有用）。
       }
       if (!sleepInterruptibly(Math.max(1000, sleepMs), cancel)) {

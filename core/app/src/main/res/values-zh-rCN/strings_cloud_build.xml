@@ -7,20 +7,20 @@
   ~  (at your option) any later version.
   -->
 <!--
-  云打包（GitHub Actions）文案（中文）。
+  云编译（GitHub Actions）文案（中文）。
   与 values/strings_cloud_build.xml 保持同序，便于对照维护。
 -->
 <resources>
 
   <!-- 入口与标题 -->
-  <string name="cloud_build_title">云打包</string>
-  <string name="cloud_build_action_label">云打包</string>
+  <string name="cloud_build_title">云编译</string>
+  <string name="cloud_build_action_label">云编译</string>
 
   <!-- 检测阶段 -->
   <string name="cloud_build_detecting_repo">正在识别项目仓库…</string>
   <string name="cloud_build_no_project">当前没有打开的项目，请先打开一个项目。</string>
   <string name="cloud_build_not_git_repo">这个项目还不是 git 仓库。请先初始化仓库并推送到 GitHub。</string>
-  <string name="cloud_build_no_github_remote">没有找到 GitHub 远程仓库。云打包目前只支持 GitHub Actions。</string>
+  <string name="cloud_build_no_github_remote">没有找到 GitHub 远程仓库。云编译目前只支持 GitHub Actions。</string>
   <string name="cloud_build_no_workflow_local">仓库里没有 workflow 文件。请先添加 .github/workflows/build.yml 并推送。</string>
   <string name="cloud_build_workflow_not_pushed">远程仓库上没有找到 workflow。本地这些文件还没有推送：%1$s。请先把代码推送到 GitHub。</string>
 

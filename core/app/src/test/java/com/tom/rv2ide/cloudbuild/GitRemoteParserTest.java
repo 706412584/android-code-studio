@@ -28,7 +28,7 @@ import org.junit.Test;
  *
  * <p><b>为什么这些用例值得逐条覆盖</b>：真实用户的 remote URL 形态五花八门
  * （HTTPS 带凭据、SSH 的两种写法、.git 后缀、非 GitHub 平台），解析错误的后果是
- * 「云打包按钮对用户的项目失效」而用户看不出原因。这里把已知形态固定下来。
+ * 「云编译按钮对用户的项目失效」而用户看不出原因。这里把已知形态固定下来。
  */
 public class GitRemoteParserTest {
 
@@ -83,7 +83,7 @@ public class GitRemoteParserTest {
 
   @Test
   public void rejectsNonGitHubHosts() {
-    // 云打包只支持 GitHub Actions——Gitee 等项目必须被拒绝而不是误报成功。
+    // 云编译只支持 GitHub Actions——Gitee 等项目必须被拒绝而不是误报成功。
     assertFalse(GitRemoteParser.parse("https://gitee.com/owner/repo.git").isValid());
     assertFalse(GitRemoteParser.parse("git@gitlab.com:owner/repo.git").isValid());
     assertFalse(GitRemoteParser.parse("https://bitbucket.org/owner/repo.git").isValid());

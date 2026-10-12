@@ -1472,7 +1472,7 @@ public final class AgentOrchestrator {
     registry.register(new GradleBuildTool(this::lookupBuildService));
     registry.register(new InstallApkTool(appContext));
 
-    // 云打包：GitHub Actions 触发（需确认）与状态查询（只读）分成两个工具，
+    // 云编译：GitHub Actions 触发（需确认）与状态查询（只读）分成两个工具，
     // 权限分级才能各归其位（同 git / git_write 的拆分理由）。
     // token 经 TokenProvider 注入而非直接传 CloudBuildTokenStore：store 构造会建
     // EncryptedSharedPreferences（keystore I/O），而 buildRegistry 在 UI 线程被调用
@@ -2760,16 +2760,16 @@ public final class AgentOrchestrator {
   /** git 凭据/身份的懒加载缓存。见 {@link #gitPrefs()}。 */
   private volatile com.tom.rv2ide.utils.PreferencesManager gitPrefsCache;
 
-  /** 云打包 token 存储的懒加载缓存。见 {@link #cloudBuildTokenStore()}。 */
+  /** 云编译 token 存储的懒加载缓存。见 {@link #cloudBuildTokenStore()}。 */
   private volatile com.tom.rv2ide.cloudbuild.CloudBuildTokenStore cloudBuildTokenStoreCache;
 
   /**
-   * 云打包 token 存储的懒加载持有者（首次访问时构造并缓存）。
+   * 云编译 token 存储的懒加载持有者（首次访问时构造并缓存）。
    *
    * <p><b>为什么懒加载</b>：与 {@link #gitPrefs()} 同一原因——构造时会创建
    * {@code EncryptedSharedPreferences}（keystore I/O + 主密钥生成），而
    * {@code buildRegistry} 在 UI 线程被调用，不该在那里做盘上操作；且大多数运行
-   * 不碰云打包。真正的读取发生在工具执行时（IO 线程）。
+   * 不碰云编译。真正的读取发生在工具执行时（IO 线程）。
    */
   private com.tom.rv2ide.cloudbuild.CloudBuildTokenStore cloudBuildTokenStore() {
     com.tom.rv2ide.cloudbuild.CloudBuildTokenStore cached = cloudBuildTokenStoreCache;

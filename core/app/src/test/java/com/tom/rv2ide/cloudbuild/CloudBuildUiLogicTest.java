@@ -35,7 +35,7 @@ import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
 
 /**
- * 云打包界面纯逻辑的回归测试。
+ * 云编译界面纯逻辑的回归测试。
  *
  * <p><b>为什么这些用例值得覆盖</b>：界面文案与 workflow 选择是「错了用户就看不懂、
  * 或选错目标」的地方——错误提示说错方向（例如把「没推」说成「没建」）会让用户

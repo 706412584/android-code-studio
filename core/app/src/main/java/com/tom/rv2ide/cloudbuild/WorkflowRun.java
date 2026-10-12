@@ -22,7 +22,7 @@ import org.json.JSONObject;
 /**
  * 一次 GitHub Actions workflow run 的只读快照。
  *
- * <p>字段只保留云打包界面与 AI 工具真正会用到的部分——GitHub 的 run 对象有 40+
+ * <p>字段只保留云编译界面与 AI 工具真正会用到的部分——GitHub 的 run 对象有 40+
  * 字段，全量映射只会带来维护负担。需要更多时按需再加。
  */
 public final class WorkflowRun {

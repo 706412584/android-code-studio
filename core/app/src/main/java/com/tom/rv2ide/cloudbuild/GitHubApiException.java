@@ -60,7 +60,7 @@ public class GitHubApiException extends Exception {
    */
   public String userMessage() {
     if (statusCode == 401) {
-      return "GitHub 鉴权失败：请在云打包设置中配置有效的 Personal Access Token。";
+      return "GitHub 鉴权失败：请在云编译设置中配置有效的 Personal Access Token。";
     }
     if (statusCode == 403) {
       return "GitHub 拒绝了请求：token 可能缺少 repo / workflow 权限，或触发了速率限制。";

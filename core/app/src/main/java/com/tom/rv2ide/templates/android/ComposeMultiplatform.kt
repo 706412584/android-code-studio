@@ -291,7 +291,7 @@ class ComposeMultiplatform : Template {
                       packageHelper.getPackageId(), options.projectName))
 
           // ---- .gitignore ----
-          // 必须含云打包产物目录：ACS 的云打包会把下载的 artifact（APK 可达上百 MB）
+          // 必须含云编译产物目录：ACS 的云编译会把下载的 artifact（APK 可达上百 MB）
           // 落到 cloudbuild-output/，没有忽略规则时一次 `git add .` 就会误提交大文件。
           File(projectRoot, ".gitignore")
               .writeText(ComposeMultiplatformSources.gitignore())

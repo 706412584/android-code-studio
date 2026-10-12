@@ -20,7 +20,7 @@ package com.tom.rv2ide.cloudbuild
 import java.io.File
 
 /**
- * 云打包界面的纯逻辑：异常翻译、状态文案、workflow 选择与本地文件检查。
+ * 云编译界面的纯逻辑：异常翻译、状态文案、workflow 选择与本地文件检查。
  *
  * <p><b>为什么单独成类</b>：这些函数不依赖 Android，可以在 JVM 上单测——
  * 「网络异常翻译成什么话」「默认选哪个 workflow」「本地有没有 workflow」

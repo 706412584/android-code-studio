@@ -81,7 +81,7 @@ class EditorActivityActions {
       registry.registerAction(PreviewLayoutAction(context, order++))
       registry.registerAction(FindActionMenu(context, order++))
       registry.registerAction(ProjectSyncAction(context, order++))
-      // 云打包（GitHub Actions）——与上面几个构建动作同类，用户找「打包」时的第一落点。
+      // 云编译（GitHub Actions）——与上面几个构建动作同类，用户找「打包」时的第一落点。
       registry.registerAction(CloudBuildAction(context, order++))
       
       // registry.registerAction(ReloadColorSchemesAction(context, order++))

@@ -586,7 +586,7 @@ object FlutterSources {
       # Web related
       lib/generated_plugin_registrant.dart
 
-      # 云打包产物与缓存（ACS 云打包功能下载的 artifact / 日志 zip）
+      # 云编译产物与缓存（ACS 云编译功能下载的 artifact / 日志 zip）
       cloudbuild-output/
       .cloudbuild-cache/
       """

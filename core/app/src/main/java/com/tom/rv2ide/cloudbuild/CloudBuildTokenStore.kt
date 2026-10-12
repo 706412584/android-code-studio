@@ -30,7 +30,7 @@ import androidx.security.crypto.MasterKey
  * git 凭据存储），复用同一方案而不是新引入加密库。
  *
  * <p><b>为什么不复用 PreferencesManager 的实例</b>：那个类存的是 git 用户名/密码，
- * 且带「记住凭据」开关。云打包的 token 是独立的生命周期（用户可能只为 CI 配置），
+ * 且带「记住凭据」开关。云编译的 token 是独立的生命周期（用户可能只为 CI 配置），
  * 用独立的 prefs 文件避免两处逻辑互相纠缠。
  *
  * <p><b>失败降级</b>：EncryptedSharedPreferences 在部分设备（Keystore 异常、

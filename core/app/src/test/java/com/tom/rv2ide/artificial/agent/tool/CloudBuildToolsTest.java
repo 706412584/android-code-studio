@@ -165,7 +165,7 @@ public final class CloudBuildToolsTest {
 
   @Test
   public void nonGitHubRemoteGivesActionableError() throws Exception {
-    // Gitee 等项目能识别出 remote 但不是 GitHub：云打包只支持 GitHub Actions，
+    // Gitee 等项目能识别出 remote 但不是 GitHub：云编译只支持 GitHub Actions，
     // 报「不是 GitHub 仓库」比报「找不到仓库」更能指导用户。
     File dir = tmp.newFolder();
     try (Git git = Git.init().setDirectory(dir).call()) {

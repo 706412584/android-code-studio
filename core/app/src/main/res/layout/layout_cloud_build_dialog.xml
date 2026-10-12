@@ -8,9 +8,9 @@
   ~  (at your option) any later version.
   -->
 <!--
-  云打包底部表单：识别仓库 → 选择 workflow/分支 → 触发 → 看 job 进度 → 看失败日志/产物。
+  云编译底部表单：识别仓库 → 选择 workflow/分支 → 触发 → 看 job 进度 → 看失败日志/产物。
 
-  为什么是单个布局 + section 显隐，而不是 ViewFlipper：云打包的状态切换有
+  为什么是单个布局 + section 显隐，而不是 ViewFlipper：云编译的状态切换有
   「结果页要同时展示日志与产物」这类组合，ViewFlipper 只能显示一个孩子，
   显隐控制更直接，也让每个 section 的 id 在 binding 里固定可查。
 

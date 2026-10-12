@@ -31,13 +31,13 @@ import java.util.List;
 import org.json.JSONObject;
 
 /**
- * 触发 GitHub Actions 云构建，等待到终态并报告结果。
+ * 触发 GitHub Actions 云编译，等待到终态并报告结果。
  *
  * <p><b>为什么需要它</b>：手机本地构建受限于性能与内存（大型项目动辄十几分钟甚至
- * 打不出来），而 GitHub Actions 是免费的云端构建。用户说「帮我云打包」时，AI 应当
+ * 打不出来），而 GitHub Actions 是免费的云端构建。用户说「帮我云编译」时，AI 应当
  * 能直接触发、跟踪、拿回结果，而不是让用户自己去网页点。
  *
- * <p><b>为什么 needsConfirmation=true</b>：触发会真的起一次云构建，消耗用户的
+ * <p><b>为什么 needsConfirmation=true</b>：触发会真的起一次云编译，消耗用户的
  * Actions 分钟数（私有仓库计费），与 {@code gradle_build} 同级的资源消耗动作。
  *
  * <p><b>为什么与状态查询拆成两个工具</b>：见 {@link GitHubActionsStatusTool}——
@@ -50,7 +50,7 @@ import org.json.JSONObject;
  */
 public final class GitHubActionsBuildTool extends BaseTool {
 
-  /** 默认等待上限：10 分钟。云构建通常 5-15 分钟，与 gradle_build 同值。 */
+  /** 默认等待上限：10 分钟。云编译通常 5-15 分钟，与 gradle_build 同值。 */
   private static final long DEFAULT_TIMEOUT_MS = 10 * 60 * 1000L;
 
   /** 等待上限的封顶：30 分钟。比这更久的多是卡住而非真在构建。 */
@@ -61,7 +61,7 @@ public final class GitHubActionsBuildTool extends BaseTool {
    *
    * <p>用接口注入而非直接依赖 {@code CloudBuildTokenStore}：store 的构造需要
    * {@code Context}（且会做 keystore I/O），而工具层保持纯逻辑才可 JVM 单测。
-   * 两个云打包工具共用同一个提供者实例（装配处一次构造）。
+   * 两个云编译工具共用同一个提供者实例（装配处一次构造）。
    */
   public interface TokenProvider {
     /** 当前 token；未配置时返回空串或 null。 */
@@ -92,9 +92,9 @@ public final class GitHubActionsBuildTool extends BaseTool {
 
   @Override
   public String getDescription() {
-    return "触发当前项目 GitHub 仓库的 Actions 云构建（workflow_dispatch），并等待到结束。"
+    return "触发当前项目 GitHub 仓库的 Actions 云编译（workflow_dispatch），并等待到结束。"
         + "成功时返回产物（artifact）列表；失败时返回日志里的错误片段。"
-        + "手机上本地构建慢/内存不足时，云构建是更快的替代路径。"
+        + "手机上本地构建慢/内存不足时，云编译是更快的替代路径。"
         + "注意：会消耗 GitHub Actions 分钟数，且等待可能长达数分钟。"
         + "只查最近一次运行的状态用 github_actions_status（更快、不消耗资源）。";
   }
@@ -109,7 +109,7 @@ public final class GitHubActionsBuildTool extends BaseTool {
     return ToolDisplayCategory.GENERIC;
   }
 
-  /** 触发真实云构建（消耗 CI 资源），与 gradle_build 同级，需用户确认。 */
+  /** 触发真实云编译（消耗 CI 资源），与 gradle_build 同级，需用户确认。 */
   @Override
   public boolean needsConfirmation() {
     return true;
@@ -187,7 +187,7 @@ public final class GitHubActionsBuildTool extends BaseTool {
       return error("操作已被用户停止。");
     }
     if (context != null) {
-      context.reportProgress("触发云构建: " + workflow + " @ " + branch);
+      context.reportProgress("触发云编译: " + workflow + " @ " + branch);
     }
 
     // ---- 触发并等待新 run 出现 ----
@@ -197,7 +197,7 @@ public final class GitHubActionsBuildTool extends BaseTool {
     } catch (CloudBuildService.CancelledException e) {
       return error("操作已被用户停止。");
     } catch (Exception e) {
-      return error("触发云构建失败：" + CloudBuildSupport.describeApiError(e));
+      return error("触发云编译失败：" + CloudBuildSupport.describeApiError(e));
     }
 
     if (cancel.isCancelled()) {
@@ -211,15 +211,15 @@ public final class GitHubActionsBuildTool extends BaseTool {
       snapshot = setup.service.awaitCompletion(handle, timeoutMs,
           s -> {
             if (context != null && s.run != null) {
-              context.reportProgress("云构建 " + s.run.statusText() + "…");
+              context.reportProgress("云编译 " + s.run.statusText() + "…");
             }
           },
           cancel);
     } catch (InterruptedException e) {
       Thread.currentThread().interrupt();
-      return error("云构建等待被中断。");
+      return error("云编译等待被中断。");
     } catch (Exception e) {
-      return error("等待云构建结果失败：" + CloudBuildSupport.describeApiError(e));
+      return error("等待云编译结果失败：" + CloudBuildSupport.describeApiError(e));
     }
 
     if (cancel.isCancelled()) {
@@ -229,13 +229,13 @@ public final class GitHubActionsBuildTool extends BaseTool {
 
     if (snapshot == null) {
       // 理论上不会发生（run id 已知，poll 至少返回一次）；兜底而不是 NPE。
-      return error("未能获取云构建状态。运行链接：" + handle.run.htmlUrl);
+      return error("未能获取云编译状态。运行链接：" + handle.run.htmlUrl);
     }
 
     // ---- 超时未到终态：如实报告「仍在跑」，不是失败 ----
     if (!snapshot.isFinished()) {
       StringBuilder sb = new StringBuilder();
-      sb.append("等待超时（").append(timeoutMs / 1000).append(" 秒），云构建仍在进行中。\n");
+      sb.append("等待超时（").append(timeoutMs / 1000).append(" 秒），云编译仍在进行中。\n");
       sb.append("当前状态：").append(snapshot.run.statusText()).append('\n');
       appendJobs(sb, snapshot);
       sb.append("链接：").append(snapshot.run.htmlUrl).append('\n');
@@ -254,7 +254,7 @@ public final class GitHubActionsBuildTool extends BaseTool {
   private String describeSuccess(WorkflowRunPoller.Snapshot snapshot, CloudBuildService service,
                                  String workflow) {
     StringBuilder sb = new StringBuilder();
-    sb.append("云构建成功。\n");
+    sb.append("云编译成功。\n");
     sb.append("workflow: ").append(workflow).append('\n');
     sb.append("分支: ").append(snapshot.run.headBranch).append('\n');
     appendJobs(sb, snapshot);
@@ -286,7 +286,7 @@ public final class GitHubActionsBuildTool extends BaseTool {
   private String describeFailure(WorkflowRunPoller.Snapshot snapshot, CloudBuildService service,
                                  ToolContext context, String workflow) {
     StringBuilder sb = new StringBuilder();
-    sb.append("云构建失败。\n");
+    sb.append("云编译失败。\n");
     sb.append("workflow: ").append(workflow).append('\n');
     sb.append("分支: ").append(snapshot.run.headBranch).append('\n');
     sb.append("状态: ").append(snapshot.run.statusText()).append('\n');

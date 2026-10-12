@@ -81,7 +81,7 @@ object AssistantActionText {
       ToolNames.LSP_NAVIGATE -> context.getString(string.ai_assistant_work_navigate, target)
       ToolNames.FORMAT_CODE -> context.getString(string.ai_assistant_work_formatting, target)
       ToolNames.PROJECT_INFO -> context.getString(string.ai_assistant_work_project_info)
-      // 云打包：触发要带上 workflow 名（用户可能配了多个 workflow，只说「正在云构建」
+      // 云编译：触发要带上 workflow 名（用户可能配了多个 workflow，只说「正在云编译」
       // 无法区分触发的是哪一个）；状态查询不带对象，与 gradle_build 同样处理。
       ToolNames.GITHUB_ACTIONS_BUILD ->
           context.getString(string.ai_assistant_work_cloud_build, target)
@@ -118,8 +118,8 @@ object AssistantActionText {
           ToolNames.WEB_SEARCH -> opt(arguments, "query")
           ToolNames.WEB_FETCH -> opt(arguments, "url")
           ToolNames.GIT, ToolNames.GIT_WRITE -> gitTarget(arguments)
-          // 云构建：workflow 是用户能一眼认出的对象名（如 build.yml）；
-          // 省略时退到 branch（「正在云构建 main」也比「正在云构建 …」有信息量）。
+          // 云编译：workflow 是用户能一眼认出的对象名（如 build.yml）；
+          // 省略时退到 branch（「正在云编译 main」也比「正在云编译 …」有信息量）。
           ToolNames.GITHUB_ACTIONS_BUILD ->
               opt(arguments, "workflow").ifEmpty { opt(arguments, "branch") }
           else -> opt(arguments, "file_path").ifEmpty { opt(arguments, "path") }

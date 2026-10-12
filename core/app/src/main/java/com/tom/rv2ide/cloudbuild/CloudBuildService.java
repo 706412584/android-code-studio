@@ -24,7 +24,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * 云打包门面：把「识别仓库 → 触发 → 跟踪 → 取失败日志 / 产物」串成可复用的流程。
+ * 云编译门面：把「识别仓库 → 触发 → 跟踪 → 取失败日志 / 产物」串成可复用的流程。
  *
  * <p>UI 与 AI 工具都通过本类操作，避免两处各自拼装
  * {@link GitHubActionsClient} + {@link WorkflowRunPoller} + {@link RunLogExtractor}
