@@ -76,7 +76,9 @@ public final class PhoneSwipeTool extends BaseTool {
         + MAX_DURATION_MS
         + "，省略时默认 "
         + DEFAULT_DURATION_MS
-        + "。需要 adb 级权限（Shizuku 后端）。";
+        + "。需要 adb 级权限（Shizuku 后端）。"
+        + "单指滑动优先用本工具（无 UiAutomation 依赖，最稳）；需要多点/曲线路径或双指手势时用 "
+        + "phone_uiautomator 的 swipePoints / gesture 动作。";
   }
 
   @Override

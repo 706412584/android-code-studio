@@ -200,6 +200,12 @@ public final class PhoneWaitForTool extends BaseTool {
       return error(probe.error);
     }
 
+    // 互斥门预检：u2 server 存活期间 dump 会被 SIGKILL，而轮询循环会把 dump 失败
+    // 当作「条件未成立」继续空转到超时（最长 120s）。入口查一次，命中即快速失败。
+    if (wantNode && PhoneUiSelector.isU2ServerListening(registry)) {
+      return error(PhoneUiSelector.u2ConflictHint());
+    }
+
     if (context != null) {
       context.reportProgress("等待条件: " + describeConditions(selector, activity, wantNode, wantActivity));
     }

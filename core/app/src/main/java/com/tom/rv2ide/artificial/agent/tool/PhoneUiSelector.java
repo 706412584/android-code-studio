@@ -109,6 +109,26 @@ public final class PhoneUiSelector {
   // 共享 shell 执行
   // =====================================================================================
 
+  /**
+   * u2 server 是否在监听 9008（用于互斥判定；只探测，不启动任何东西）。
+   *
+   * <p>背景（实测）：u2 server 持有 UiAutomation 的单客户端，server 存活期间
+   * 传统 {@code uiautomator dump} 会被系统 SIGKILL（rc=137）。这里用一条
+   * netstat 探测（~50ms）换取「可操作的指引」而不是一个 SIGKILL 的乱码。
+   */
+  public static boolean isU2ServerListening(ShellBackendRegistry registry) {
+    Exec exec = exec(registry, "netstat -ltn | grep -c ':9008'", 5_000L);
+    return exec.ok && exec.stdout.trim().startsWith("1");
+  }
+
+  /** u2 server 占用 UiAutomation 时的统一指引（phone_view_hierarchy / click_view / wait_for 共用）。 */
+  public static String u2ConflictHint() {
+    return "uiautomator2 server 正在运行（9008 端口），它独占了 UiAutomation，"
+        + "传统 uiautomator dump 会被系统杀掉。\n"
+        + "可选：① 用 phone_uiautomator 的 dump 动作（走 u2 server）；"
+        + "② 调用 phone_uiautomator 的 stop 动作停掉 server 后重试本工具。";
+  }
+
   /** 一次 shell 执行的结果，附带实际使用的后端名，便于错误信息说清「为什么没跑成」。 */
   public static final class Exec {
     /** 命令是否以 exit=0 成功结束。 */
@@ -459,6 +479,12 @@ public final class PhoneUiSelector {
       ShellBackendRegistry registry,
       boolean compressed,
       long timeoutMs) {
+    // 互斥门（实测）：u2 server 持有 UiAutomation 时 dump 会被 SIGKILL。
+    // 只提示、不自动停 server——自动停会破坏 u2 工具的会话状态（解除途径
+    // 是 phone_uiautomator 的 stop 动作，指引里已写明）。
+    if (isU2ServerListening(registry)) {
+      return Dump.failure(u2ConflictHint());
+    }
     String path =
         dumpDirPrefix(context)
             + System.currentTimeMillis()

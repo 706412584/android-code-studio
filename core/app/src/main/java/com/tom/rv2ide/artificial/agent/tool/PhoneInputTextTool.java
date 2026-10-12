@@ -74,7 +74,9 @@ public final class PhoneInputTextTool extends BaseTool {
         + "不会静默输入乱码）；空格会被自动转义为 %s，直接给正常文本即可；"
         + "不支持换行/制表符，换行请用 phone_global_action 的 ENTER，制表用 TAB。"
         + "输入前请先用 phone_click_view 点中目标输入框使其获得焦点。"
-        + "需要 adb 级权限（Shizuku 后端）。";
+        + "需要 adb 级权限（Shizuku 后端）。"
+        + "需要输入中文/emoji 等非 ASCII 文本时，用 phone_uiautomator 的 setText 动作"
+        + "（走 UiAutomation，支持任意 Unicode）。";
   }
 
   @Override

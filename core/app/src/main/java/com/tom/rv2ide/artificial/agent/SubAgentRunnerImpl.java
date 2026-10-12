@@ -236,6 +236,10 @@ public final class SubAgentRunnerImpl implements SubAgentRunner {
     // 按内容搜索。没有它时 explore/审查子代理只能 glob 出文件名、再逐个整文件读——
     // 「哪里用了这个 API」这类问题会白读几十个文件，而主 agent 一直有 grep。
     registry.register(new com.tom.rv2ide.ai.tool.GrepTool());
+    // 注意：phone_uiautomator（以及其它 phone_* 设备控制工具）**不注册**给子 agent——
+    // 它们是 SYSTEM 级设备控制能力，不属于「探索/审查/写码」的职责边界。
+    // 相应地，本类构造 ToolContext 时**不注入** u2Proxy 端口（注册与注入是一对：
+    // 只注册不注入会静默拿到 null，这里两者都刻意缺席，不是漏接）。
 
     if (mode == Mode.CODE) {
       registry.register(new FileWriteTool());

@@ -69,6 +69,9 @@ public final class AgentToolSettings implements ToolSettingsPort {
   /** 授权规则集合键。元素形如 {@code shell_execute\u0000git}。 */
   public static final String KEY_DANGEROUS_RULES = "dangerous_rules";
 
+  /** u2 server 用完即停键（默认 false=常驻）。 */
+  public static final String KEY_U2_STOP_AFTER_USE = "u2_stop_after_use";
+
   /** 危险工具的一次性确认闸门，由 UI 层注入（如 ChatFragment 弹窗）。 */
   public interface DangerousToolConfirmer {
     /**
@@ -342,5 +345,21 @@ public final class AgentToolSettings implements ToolSettingsPort {
     if (backendId != null && !backendId.isEmpty()) {
       prefs.edit().putString(KEY_SHELL_BACKEND, backendId).apply();
     }
+  }
+
+  /**
+   * u2 server 是否在工具调用结束后自动停止。
+   *
+   * <p>默认 false=常驻（避免每次调用付启动成本）。开启后每次 phone_uiautomator
+   * 调用结束即停 server——u2 server 监听全部网卡且 JSON-RPC 无鉴权（实测），
+   * 常驻意味着局域网内可触达设备控制接口；在不可信网络下建议开启。
+   */
+  public boolean getU2StopAfterUse() {
+    return prefs.getBoolean(KEY_U2_STOP_AFTER_USE, false);
+  }
+
+  /** 设置 u2 server 用完即停。 */
+  public void setU2StopAfterUse(boolean enabled) {
+    prefs.edit().putBoolean(KEY_U2_STOP_AFTER_USE, enabled).apply();
   }
 }

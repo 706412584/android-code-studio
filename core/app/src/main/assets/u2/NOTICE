@@ -1,0 +1,30 @@
+u2.jar 内嵌第三方组件的许可声明
+=====================================
+
+u2.jar 来自 uiautomator2 项目（https://github.com/openatx/uiautomator2），
+版本 3.7.0，其本体以 MIT 许可发布（见同目录 LICENSE，Copyright (c) 2017 openatx）。
+
+该 jar 内打包（或其运行依赖）以下组件：
+
+1. uiautomator2 / com.wetest.uia2
+   License: MIT (Copyright (c) 2017 openatx)
+
+2. androidx.test.uiautomator（AndroidX Test）
+   License: Apache License 2.0
+
+3. JUnit（jar 内 LICENSE-junit.txt）
+   License: Eclipse Public License 1.0
+
+4. NanoHTTPD（fi.iki.elonen）
+   License: BSD 3-Clause
+
+5. scrcpy（com.genymobile.scrcpy）
+   License: Apache License 2.0
+
+6. Jackson（com.fasterxml.jackson）
+   License: Apache License 2.0
+
+7. slf4j
+   License: MIT
+
+各许可全文见对应项目主页与发行物。

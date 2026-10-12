@@ -190,6 +190,18 @@ public final class AgentOrchestrator {
    */
   private final com.tom.rv2ide.ai.tool.skill.SkillRegistry skillRegistry;
 
+  /**
+   * u2 server 管理器（懒创建，跨工具调用复用）。
+   *
+   * <p><b>为什么不能每次 buildRegistry 新建</b>：u2 server 的生命周期（启动/常驻）
+   * 要跨多次工具调用保持——每次新建会让「上次调用启动的 server」失去跟踪，
+   * 下次调用重新付启动成本，stop 动作也停不掉之前启动的实例。
+   *
+   * <p>不是 JVM 级静态单例：实践中 AssistantOrchestratorProvider 是唯一来源，
+   * 效果等同；实例字段也便于测试注入。
+   */
+  private volatile com.tom.rv2ide.artificial.agent.tool.u2.U2ServerManager u2ServerManager;
+
   /** 当前工作区根目录，由 {@link #setWorkspace} 设置。 */
   private File workspace;
 
@@ -1507,6 +1519,10 @@ public final class AgentOrchestrator {
     // 清数据：不可逆，且作用于任意包名，因此额外按包名限定授权粒度（见 ToolPermissionRule）。
     registry.register(new PhoneClearDataTool(shellBackends));
 
+    // uiautomator2 代理（Unicode 输入 / 等待消失 / 多点触控 / 滚动到元素）。
+    // 端口在 executeRun 注入（.u2Proxy(...)）；server 生命周期由 U2ServerManager 跨调用管理。
+    registry.register(new com.tom.rv2ide.ai.tool.PhoneUiautomatorTool());
+
     // 动作级截图回归 / 基线 / 多步场景：内部会调用其它工具来驱动界面。
     //
     // 它们**不接收注册表**。早先的写法是构造时传入 registry、execute 时直接
@@ -1697,6 +1713,32 @@ public final class AgentOrchestrator {
     registry.register(new ShizukuShellBackend(appContext));
     registry.setActiveId(settings.getShellBackendId());
     return registry;
+  }
+
+  /**
+   * u2 server 管理器（懒创建，跨工具调用复用）。
+   *
+   * <p>自建 registry 与共享的 {@code shellBackends} 是两份实例；{@code ShizukuShellBackend}
+   * 无状态（每次调用现查 {@code Shizuku.pingBinder()}），因此两份实例行为一致。
+   * <b>不要</b>把 buildRegistry 里的 shellBackends 提升为字段——那会改变既有工具的
+   * 后端解析时机，风险大。
+   */
+  private com.tom.rv2ide.artificial.agent.tool.u2.U2ServerManager u2ServerManager() {
+    com.tom.rv2ide.artificial.agent.tool.u2.U2ServerManager existing = u2ServerManager;
+    if (existing != null) {
+      return existing;
+    }
+    synchronized (this) {
+      if (u2ServerManager == null) {
+        com.tom.rv2ide.artificial.agent.tool.u2.U2ServerManager manager =
+            new com.tom.rv2ide.artificial.agent.tool.u2.U2ServerManager(
+                appContext, buildShellBackends());
+        // 「用完即停」偏好：每次调用现查，用户改设置立即生效。
+        manager.setStopAfterUseProvider(settings::getU2StopAfterUse);
+        u2ServerManager = manager;
+      }
+      return u2ServerManager;
+    }
   }
 
   /** 通过 Lookup 取构建服务；不可用时返回 null。 */
@@ -2073,6 +2115,9 @@ public final class AgentOrchestrator {
             .imageProcessing(AndroidImageProcessor.INSTANCE)
             // OCR 端口：ML Kit bundled 中文（离线，无 GMS 设备可用）。进程级单例。
             .ocr(MlKitOcrPort.INSTANCE)
+            // uiautomator2 代理端口：server 生命周期由 U2ServerManager 跨调用管理
+            //（懒创建 + 复用——每次新建会丢失对已启动 server 的跟踪）。
+            .u2Proxy(new com.tom.rv2ide.artificial.agent.tool.u2.ShizukuU2Proxy(u2ServerManager()))
             // 编译诊断端口：经 IDE 语言服务器做静态分析。
             // 服务器**按调用时现查**（而不是这里固化实例）：用户可能在会话中途才打开
             // 项目编辑器（语言服务器随之启动），固化会永久拿到 null。
