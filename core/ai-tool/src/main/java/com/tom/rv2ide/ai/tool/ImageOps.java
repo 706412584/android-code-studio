@@ -262,9 +262,12 @@ public final class ImageOps {
       alpha[i] = (pixels[i] >>> 24) & 0xFF;
     }
 
-    // 水平趟
+    // 水平趟（窗口收缩，O(width·radius)；取消检查按行计——每行 65536 像素量级）
     int[] tmp = new int[n];
     for (int y = 0; y < height; y++) {
+      if ((y & 0xFF) == 0 && cancelled != null && cancelled.getAsBoolean()) {
+        return null; // 已取消
+      }
       int row = y * width;
       for (int x = 0; x < width; x++) {
         int lo = Math.max(0, x - radius);        // ← 收缩窗口（非 clamp）
@@ -280,8 +283,11 @@ public final class ImageOps {
       }
     }
     // 垂直趟
-    for (int x = 0; x < width; x++) {
-      for (int y = 0; y < height; y++) {
+    for (int y = 0; y < height; y++) {
+      if ((y & 0xFF) == 0 && cancelled != null && cancelled.getAsBoolean()) {
+        return null; // 已取消
+      }
+      for (int x = 0; x < width; x++) {
         int lo = Math.max(0, y - radius);
         int hi = Math.min(height - 1, y + radius);
         int min = 255;
@@ -296,6 +302,9 @@ public final class ImageOps {
     }
     int[] out = pixels.clone();
     for (int i = 0; i < n; i++) {
+      if ((i & 0xFFFF) == 0 && cancelled != null && cancelled.getAsBoolean()) {
+        return null; // 已取消
+      }
       out[i] = (alpha[i] << 24) | (out[i] & 0x00FFFFFF);
     }
     return out;

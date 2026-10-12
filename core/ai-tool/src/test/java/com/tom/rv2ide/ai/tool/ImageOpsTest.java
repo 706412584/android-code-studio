@@ -104,7 +104,11 @@ class ImageOpsTest {
     int g = (out[0] >> 8) & 0xFF;
     assertEquals(50, (out[0] >> 16) & 0xFF, "r 不变");
     assertEquals(50, out[0] & 0xFF, "b 不变");
-    assertTrue(g <= 120, "g 被 despill 降低（或不变），实际 " + g);
+    // 精确值（审查 #5：原为 g<=120 弱断言，被"降或不降"掩盖）：
+    // dist=√(50²+135²+50²)≈152.4 → alpha=int((152.4-10)/200×255)=181；
+    // maxRb=50, spill=70；closeness=1-152.4/210≈0.274，1-alpha/255≈0.290 取大；
+    // reduction=int(70×0.290)=20 → g=100。
+    assertEquals(100, g, "despill 精确值");
   }
 
   @Test
@@ -162,9 +166,32 @@ class ImageOpsTest {
     int[] input = {argb(255, 128, 128, 128)};
     int[] out = ImageOps.lumaKey(input, 1, 1, 300, 0, -5f, -3f, 0, 255, 0, 2f, null);
     assertNotNull(out);
-    // gamma/strength ≤0 回落 1.0（镜像上游 or 语义）；black 钳 254、white 抬到 255
-    // luma(128) = 128；normalized = (128-254)/(255-254) → clamp 0 → alpha 0
+    // black 钳 254、white 抬到 255；luma(128)=128 → normalized=(128-254)/1 → clamp 0 → alpha 0。
+    // 注意：本用例的 alpha=0 来自 black 钳制，**测不到** gamma/strength 钳制——
+    // 那两个行为由下面两个用例精确钉住（审查 #5）。
     assertEquals(0, alphaOf(out[0]), "black=254 时中灰全透明");
+  }
+
+  @Test
+  void lumaKeyGammaClampedToMinimum005() {
+    // 审查 #5：gamma=0.01 应钳到 0.05（上游 luma.py:23 max(0.05, gamma or 1.0)）。
+    // r=g=b=128, black=0, white=255 → normalized=128/255≈0.501961：
+    //   gamma=0.05（正确）：0.501961^0.05≈0.96613 → alpha=246
+    //   gamma=0.01（漏钳）：0.501961^0.01≈0.99313 → alpha=253
+    int[] input = {argb(255, 128, 128, 128)};
+    int[] out = ImageOps.lumaKey(input, 1, 1, 0, 255, 0.01f, 1f, 0, 0, 0, 0f, null);
+    assertNotNull(out);
+    assertEquals(246, alphaOf(out[0]), "gamma 钳到 0.05 的精确值（漏钳会得到 253）");
+  }
+
+  @Test
+  void lumaKeyNegativeStrengthClampsToZero() {
+    // 审查 #3/#5：strength=-3 不是「回落 1.0」，而是 clamp(0,2,-3)=0 → 全透明。
+    // （上游 `strength or 1.0` 只对恰好 0 回退；负数是 truthy 走 clamp。）
+    int[] input = {argb(255, 128, 128, 128)};
+    int[] out = ImageOps.lumaKey(input, 1, 1, 0, 255, 1f, -3f, 0, 0, 0, 0f, null);
+    assertNotNull(out);
+    assertEquals(0, alphaOf(out[0]), "负 strength 钳到 0 → 全透明（错误回落 1.0 会得到 128）");
   }
 
   @Test
