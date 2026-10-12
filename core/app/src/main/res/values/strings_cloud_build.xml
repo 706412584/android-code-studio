@@ -102,4 +102,13 @@
   <string name="cloud_build_create_repo_working">Creating repository and pushing…</string>
   <string name="cloud_build_create_repo_done">Pushed to %1$s, re-detecting…</string>
   <string name="cloud_build_create_repo_failed">Failed to create repository: %1$s</string>
+  <!-- GitHub login (Device Flow) -->
+  <string name="cloud_build_login_github">Sign in with GitHub</string>
+  <string name="cloud_build_login_title">GitHub sign in</string>
+  <string name="cloud_build_login_step1">Open in your browser:</string>
+  <string name="cloud_build_login_step2">Enter code: %1$s</string>
+  <string name="cloud_build_login_open_browser">Open browser</string>
+  <string name="cloud_build_login_waiting">Waiting for authorization… (continues automatically)</string>
+  <string name="cloud_build_login_success">Signed in to GitHub, token saved</string>
+  <string name="cloud_build_login_failed">Sign-in failed: %1$s</string>
 </resources>

@@ -98,5 +98,21 @@ class CloudBuildTokenStore(context: Context) {
   companion object {
     private const val PREFS_NAME = "cloud_build_credentials"
     private const val KEY_TOKEN = "github_pat"
+
+    /**
+     * OAuth App 的 client id（Device Flow 用）。
+     *
+     * <p><b>为什么 client id 可以硬编码</b>：它本就是公开标识（会出现在授权页
+     * URL 里），不是机密——Device Flow 的设计前提就是客户端无 secret。真正
+     * 需要保护的是 access_token（用户登录后获得，存加密存储）。
+     *
+     * <p>应用注册信息：GitHub → Settings → Developer settings → OAuth Apps
+     * （名称 "Android Code Studio"，owner 706412584）。Device Flow 不需要
+     * client secret，也不使用回调 URL。
+     */
+    const val GITHUB_OAUTH_CLIENT_ID = "Ov23ctm4BhhWs17BDw5F"
+
+    /** 申请 token 时的权限：repo（推代码/建仓）+ workflow（触发 Actions）。 */
+    const val GITHUB_OAUTH_SCOPE = "repo workflow"
   }
 }

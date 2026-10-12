@@ -97,4 +97,13 @@
   <string name="cloud_build_create_repo_working">正在创建仓库并推送…</string>
   <string name="cloud_build_create_repo_done">已推送到 %1$s，正在重新识别…</string>
   <string name="cloud_build_create_repo_failed">创建仓库失败：%1$s</string>
+  <!-- GitHub 登录（Device Flow） -->
+  <string name="cloud_build_login_github">用 GitHub 登录</string>
+  <string name="cloud_build_login_title">GitHub 登录</string>
+  <string name="cloud_build_login_step1">请在浏览器中打开：</string>
+  <string name="cloud_build_login_step2">输入代码：%1$s</string>
+  <string name="cloud_build_login_open_browser">打开浏览器</string>
+  <string name="cloud_build_login_waiting">等待授权中…（完成后自动继续）</string>
+  <string name="cloud_build_login_success">已登录 GitHub，Token 已保存</string>
+  <string name="cloud_build_login_failed">登录失败：%1$s</string>
 </resources>

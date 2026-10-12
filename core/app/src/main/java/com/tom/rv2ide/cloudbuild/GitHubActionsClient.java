@@ -76,6 +76,145 @@ public final class GitHubActionsClient implements RunQueryPort {
   }
 
   // ---------------------------------------------------------------------------
+  // OAuth Device Flow（浏览器登录，无需服务端）
+  // ---------------------------------------------------------------------------
+
+  /** Device Flow 第一步的响应。 */
+  public static final class DeviceCodeResponse {
+    public final String deviceCode;
+    public final String userCode;
+    public final String verificationUri;
+    /** 建议的轮询间隔（秒）。 */
+    public final int interval;
+
+    DeviceCodeResponse(String deviceCode, String userCode, String verificationUri, int interval) {
+      this.deviceCode = deviceCode;
+      this.userCode = userCode;
+      this.verificationUri = verificationUri;
+      this.interval = interval;
+    }
+  }
+
+  /**
+   * Device Flow 第一步：申请设备码与用户码。
+   *
+   * <p><b>为什么用 Device Flow 而不是标准 OAuth 回调</b>：标准流程换 token 需要
+   * {@code client_secret}，而 secret 放在 APK 里等于公开（反编译即得）；且回调
+   * 需要一个公网服务端。Device Flow 是 GitHub 为「无浏览器/无服务端环境」设计的
+   * 官方替代：用户码由用户在任意设备浏览器输入，换 token 无需 secret。
+   *
+   * <p>请求发到 {@code github.com}（不是 api.github.com），且**不需要认证头**。
+   *
+   * @param clientId OAuth App 的 client id（注册后获得，非机密）
+   * @param scope 权限范围（如 "repo workflow"）
+   */
+  public static DeviceCodeResponse requestDeviceCode(String clientId, String scope)
+      throws Exception {
+    String body = "client_id=" + encodeQueryParam(clientId)
+        + "&scope=" + encodeQueryParam(scope == null ? "" : scope);
+    SimpleHttpClient.Request request =
+        new SimpleHttpClient.Request(
+            "https://github.com/login/device/code", "POST", body);
+    request.connectTimeoutMs = CONNECT_TIMEOUT_MS;
+    request.readTimeoutMs = READ_TIMEOUT_MS;
+    // GitHub 要求 Accept: application/json 才回 JSON（否则 form-encoded）。
+    request.headers.put("Accept", "application/json");
+    request.headers.put("Content-Type", "application/x-www-form-urlencoded");
+    SimpleHttpClient.Response response = SimpleHttpClient.execute(request);
+    if (response.code < 200 || response.code >= 300) {
+      throw new GitHubApiException(response.code, "申请设备码失败", response.body);
+    }
+    JSONObject json = new JSONObject(response.body);
+    String deviceCode = json.optString("device_code", "");
+    String userCode = json.optString("user_code", "");
+    if (deviceCode.isEmpty() || userCode.isEmpty()) {
+      throw new GitHubApiException(0, "设备码响应缺少 device_code/user_code", response.body);
+    }
+    return new DeviceCodeResponse(
+        deviceCode,
+        userCode,
+        json.optString("verification_uri", "https://github.com/login/device"),
+        json.optInt("interval", 5));
+  }
+
+  /** Device Flow 轮询的一次结果。 */
+  public static final class DeviceTokenPoll {
+    /** 拿到 token 时非空。 */
+    public final String accessToken;
+    /** 还在等用户授权（pending / slow_down）时为 true。 */
+    public final boolean pending;
+    /** 出错时的可读消息（过期、拒绝等）。 */
+    public final String error;
+
+    private DeviceTokenPoll(String accessToken, boolean pending, String error) {
+      this.accessToken = accessToken;
+      this.pending = pending;
+      this.error = error;
+    }
+
+    static DeviceTokenPoll token(String accessToken) {
+      return new DeviceTokenPoll(accessToken, false, "");
+    }
+
+    static DeviceTokenPoll pending() {
+      return new DeviceTokenPoll("", true, "");
+    }
+
+    static DeviceTokenPoll error(String message) {
+      return new DeviceTokenPoll("", false, message);
+    }
+  }
+
+  /**
+   * Device Flow 第二步：轮询换 token。
+   *
+   * <p>GitHub 的语义（按官方文档）：
+   * <ul>
+   *   <li>{@code authorization_pending}——用户还没完成授权，继续轮询；</li>
+   *   <li>{@code slow_down}——轮询太快，间隔要加 5 秒；</li>
+   *   <li>{@code expired_token} / {@code access_denied}——终态错误，停止轮询。</li>
+   * </ul>
+   * 本方法只做「一次轮询」，间隔与停止由调用方控制（UI 要能取消）。
+   *
+   * @param clientId OAuth App 的 client id
+   * @param deviceCode 第一步拿到的 device_code
+   */
+  public static DeviceTokenPoll pollDeviceToken(String clientId, String deviceCode)
+      throws Exception {
+    String body = "client_id=" + encodeQueryParam(clientId)
+        + "&device_code=" + encodeQueryParam(deviceCode)
+        + "&grant_type=urn:ietf:params:oauth:grant-type:device_code";
+    SimpleHttpClient.Request request =
+        new SimpleHttpClient.Request(
+            "https://github.com/login/oauth/access_token", "POST", body);
+    request.connectTimeoutMs = CONNECT_TIMEOUT_MS;
+    request.readTimeoutMs = READ_TIMEOUT_MS;
+    request.headers.put("Accept", "application/json");
+    request.headers.put("Content-Type", "application/x-www-form-urlencoded");
+    SimpleHttpClient.Response response = SimpleHttpClient.execute(request);
+    if (response.code < 200 || response.code >= 300) {
+      throw new GitHubApiException(response.code, "换取 token 失败", response.body);
+    }
+    JSONObject json = new JSONObject(response.body);
+    String token = json.optString("access_token", "");
+    if (!token.isEmpty()) {
+      return DeviceTokenPoll.token(token);
+    }
+    String error = json.optString("error", "");
+    if ("authorization_pending".equals(error) || "slow_down".equals(error)) {
+      return DeviceTokenPoll.pending();
+    }
+    if ("expired_token".equals(error)) {
+      return DeviceTokenPoll.error("设备码已过期，请重新登录。");
+    }
+    if ("access_denied".equals(error)) {
+      return DeviceTokenPoll.error("你拒绝了授权。");
+    }
+    return DeviceTokenPoll.error(
+        error.isEmpty() ? "未知错误：" + response.body : "授权失败：" + error);
+  }
+
+  // ---------------------------------------------------------------------------
   // 仓库创建（一键建仓流程）
   // ---------------------------------------------------------------------------
 

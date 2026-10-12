@@ -51,6 +51,7 @@ import com.tom.rv2ide.R
 import com.tom.rv2ide.cloudbuild.CloudBuildService
 import com.tom.rv2ide.cloudbuild.CloudBuildTokenStore
 import com.tom.rv2ide.cloudbuild.CloudBuildUiLogic
+import com.tom.rv2ide.cloudbuild.GitHubActionsClient
 import com.tom.rv2ide.cloudbuild.GitHubApiException
 import com.tom.rv2ide.cloudbuild.WorkflowArtifact
 import com.tom.rv2ide.cloudbuild.WorkflowRun
@@ -970,6 +971,22 @@ class CloudBuildDialogFragment : BottomSheetDialogFragment() {
     help.setPadding(dp(24), dp(4), dp(24), 0)
     container.addView(help)
 
+    // 「用 GitHub 登录」：Device Flow，无需用户手动创建 PAT。
+    // 放在帮助文案之后、与手动粘贴并存——手动路径对「已有 PAT」的用户更快，
+    // 登录路径对首次用户更简单，两条路都留着。
+    val loginButton =
+        com.google.android.material.button.MaterialButton(
+            context,
+            null,
+            com.google.android.material.R.attr.materialButtonOutlinedStyle,
+        )
+            .apply {
+              setText(R.string.cloud_build_login_github)
+              setPadding(dp(24), dp(12), dp(24), 0)
+              setOnClickListener { showGithubLoginDialog() }
+            }
+    container.addView(loginButton)
+
     if (!tokenStore.isPersistent()) {
       val warn = MaterialTextView(context)
       warn.text = getString(R.string.cloud_build_token_not_persistent)
@@ -997,6 +1014,121 @@ class CloudBuildDialogFragment : BottomSheetDialogFragment() {
         }
         .setNegativeButton(android.R.string.cancel, null)
         .show()
+  }
+
+  // ---------------------------------------------------------------------------
+  // GitHub 登录（Device Flow）
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Device Flow 登录对话框。
+   *
+   * <p>流程：申请设备码 → 显示用户码与验证网址（可一键打开浏览器）→ 轮询换 token
+   * → 保存并刷新界面。全程无需用户创建/粘贴 PAT。
+   *
+   * <p><b>轮询的取消</b>：对话框关闭即取消轮询协程（`job` 的取消），避免用户
+   * 关掉对话框后仍在后台打 GitHub。轮询间隔用 GitHub 建议值（默认 5 秒）。
+   */
+  private fun showGithubLoginDialog() {
+    val context = requireContext()
+    val message = MaterialTextView(context).apply {
+      setPadding(dp(24), dp(8), dp(24), dp(8))
+      text = getString(R.string.cloud_build_login_waiting)
+    }
+
+    var pollJob: Job? = null
+    val dialog =
+        MaterialAlertDialogBuilder(context)
+            .setTitle(R.string.cloud_build_login_title)
+            .setView(message)
+            .setPositiveButton(R.string.cloud_build_login_open_browser, null)
+            .setNegativeButton(android.R.string.cancel, null)
+            .create()
+
+    dialog.setOnShowListener {
+      // 先申请设备码，拿到后再更新文案与浏览器按钮（申请是网络操作，放 IO）。
+      pollJob =
+          viewLifecycleOwner.lifecycleScope.launch {
+            val device =
+                try {
+                  runInterruptible(Dispatchers.IO) {
+                    GitHubActionsClient.requestDeviceCode(
+                        CloudBuildTokenStore.GITHUB_OAUTH_CLIENT_ID,
+                        CloudBuildTokenStore.GITHUB_OAUTH_SCOPE,
+                    )
+                  }
+                } catch (t: Throwable) {
+                  if (t is CancellationException) throw t
+                  if (!isActive) return@launch
+                  message.text = getString(
+                      R.string.cloud_build_login_failed,
+                      CloudBuildUiLogic.errorMessage(t),
+                  )
+                  return@launch
+                }
+            if (!isActive) return@launch
+
+            message.text =
+                getString(R.string.cloud_build_login_step1) + "\n" +
+                    device.verificationUri + "\n\n" +
+                    getString(R.string.cloud_build_login_step2, device.userCode) + "\n\n" +
+                    getString(R.string.cloud_build_login_waiting)
+
+            dialog.getButton(android.content.DialogInterface.BUTTON_POSITIVE)
+                .setOnClickListener {
+                  try {
+                    startActivity(
+                        Intent(Intent.ACTION_VIEW, Uri.parse(device.verificationUri))
+                    )
+                  } catch (t: Throwable) {
+                    // 没有浏览器可用：网址已在对话框里，用户可手动输入。
+                  }
+                }
+
+            // 轮询换 token（间隔取 GitHub 建议值；cancel 即停）。
+            val intervalMs = (if (device.interval > 0) device.interval else 5) * 1000L
+            while (isActive) {
+              delay(intervalMs)
+              val poll =
+                  try {
+                    runInterruptible(Dispatchers.IO) {
+                      GitHubActionsClient.pollDeviceToken(
+                          CloudBuildTokenStore.GITHUB_OAUTH_CLIENT_ID,
+                          device.deviceCode,
+                      )
+                    }
+                  } catch (t: Throwable) {
+                    if (t is CancellationException) throw t
+                    if (!isActive) return@launch
+                    // 单次轮询的网络错误不终止：用户可能还没完成授权，
+                    // 继续等（与云编译轮询同样的容错语义）。
+                    continue
+                  }
+              if (!isActive) return@launch
+              if (!poll.pending) {
+                if (poll.accessToken.isNotEmpty()) {
+                  val previous = tokenStore.getToken()
+                  tokenStore.saveToken(poll.accessToken)
+                  service = CloudBuildService(poll.accessToken, detectedOwner, detectedRepo)
+                  updateTokenStatus()
+                  dialog.dismiss()
+                  flashSuccess(getString(R.string.cloud_build_login_success))
+                  // 与手动配置 token 同样的「配好后自动重试」语义。
+                  if (poll.accessToken != previous && binding.sectionError.visibility == View.VISIBLE) {
+                    startDetection()
+                  }
+                } else {
+                  message.text =
+                      getString(R.string.cloud_build_login_failed, poll.error)
+                }
+                return@launch
+              }
+            }
+          }
+    }
+    // 对话框关闭 → 停轮询（用户取消或授权完成都走这里）。
+    dialog.setOnDismissListener { pollJob?.cancel() }
+    dialog.show()
   }
 
   private fun updateTokenStatus() {
