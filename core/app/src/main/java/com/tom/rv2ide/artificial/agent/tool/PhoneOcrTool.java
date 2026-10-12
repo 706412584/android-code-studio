@@ -153,7 +153,15 @@ public final class PhoneOcrTool extends BaseTool implements ToolInvokerAware {
     PhoneScreenshotSource.Shot shot = PhoneScreenshotSource.capture(
         toolInvoker, context, new JSONObject().put("maxDimension", 0));
     if (!shot.ok) {
-      return error("截图失败。\n" + shot.error);
+      // shot.error 多数路径已带「截图失败: 」前缀（PhoneScreenshotSource 契约），
+      // 只有少数不带——按需补前缀，避免出现「截图失败。\n截图失败: ...」的重复。
+      String reason = shot.error;
+      if (reason == null || reason.isEmpty()) {
+        reason = "截图失败（未提供原因）。";
+      } else if (!reason.startsWith("截图失败")) {
+        reason = "截图失败: " + reason;
+      }
+      return error(reason);
     }
     // 3) 解码
     Bitmap bmp = null;
@@ -207,14 +215,22 @@ public final class PhoneOcrTool extends BaseTool implements ToolInvokerAware {
         return error("OCR 失败。\n" + result.getError());
       }
       // 9) 坐标映射 + 格式化
+      // 映射原点用**实际裁剪原点**（regionBmp）而不是请求值（regionScreen）：
+      // regionToBitmap 以 (int) 截断得裁剪原点，k≠1 时两者差 ≤k 像素；
+      // 用实际原点保证「屏幕坐标 = 裁剪原点 + work 坐标/k」的往返自洽。
+      int originX = Math.round(regionBmp.x * k);
+      int originY = Math.round(regionBmp.y * k);
       List<OcrPort.Line> mapped = PhoneOcrText.mapLines(
-          result.getLines(), regionScreen.x, regionScreen.y, s, k, screenW, screenH);
+          result.getLines(), originX, originY, s, k, screenW, screenH);
       String text = PhoneOcrText.format(mapped, screenW, screenH, regionScreen,
           s, elapsedMs, result.getEngine(), maxLines, includeBoxes);
       return ok(ToolResult.truncateContent(text));
     } finally {
-      // 逐层回收（注意别重复回收同一对象：fullImage 时 work == bmp）
-      if (work2 != null) {
+      // 逐层回收（注意别重复回收同一对象）：
+      // - fullImage 时 work == bmp；
+      // - createScaledBitmap 在目标尺寸与源相同时**返回同一实例**（如 s≈1.002
+      //   且宽度小），此时 work2 == work。
+      if (work2 != null && work2 != work) {
         work2.recycle();
       }
       if (work != null && work != bmp) {

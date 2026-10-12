@@ -245,23 +245,34 @@ public final class ImageTool extends BaseTool {
             + MAX_INPUT_PIXELS + "——后者请先 resize 缩小）。");
       }
       java.util.function.BooleanSupplier cancelled = cancellationSignal(context);
-      // 4) action 分派
-      if (ACTION_DOMINANT_COLORS.equals(action)) {
-        return dominantColors(decoded, input, context);
+      // 4) action 分派。
+      // catch Throwable（不只 Exception）：像素处理段峰值可达 ~240MB，
+      // OutOfMemoryError 是 Error 不是 Exception——ToolExecutor 与 AgentSession
+      // 的兜底都只捕获 Exception/RuntimeException，漏出去的 OOM 会直接崩掉
+      // agent 循环。工具约定「失败返回 error 变体」覆盖 Error。
+      try {
+        if (ACTION_DOMINANT_COLORS.equals(action)) {
+          return dominantColors(decoded, input, context);
+        }
+        if (ACTION_CHROMA_KEY.equals(action)) {
+          return runChromaKey(decoded, input, context, cancelled);
+        }
+        if (ACTION_LUMA_KEY.equals(action)) {
+          return runLumaKey(decoded, input, context, cancelled);
+        }
+        if (ACTION_CROP.equals(action)) {
+          return runCrop(decoded, input, context);
+        }
+        if (ACTION_RESIZE.equals(action)) {
+          return runResize(decoded, input, context, cancelled);
+        }
+        return error("action 只能是 chroma_key / luma_key / crop / resize / dominant_colors，收到：" + action);
+      } catch (OutOfMemoryError e) {
+        return error("内存不足：图片过大（" + decoded.width + "x" + decoded.height
+            + "）。请先 resize 到更小尺寸再处理。");
+      } catch (Throwable e) {
+        return error("图像处理失败: " + e.getClass().getSimpleName() + ": " + e.getMessage());
       }
-      if (ACTION_CHROMA_KEY.equals(action)) {
-        return runChromaKey(decoded, input, context, cancelled);
-      }
-      if (ACTION_LUMA_KEY.equals(action)) {
-        return runLumaKey(decoded, input, context, cancelled);
-      }
-      if (ACTION_CROP.equals(action)) {
-        return runCrop(decoded, input, context);
-      }
-      if (ACTION_RESIZE.equals(action)) {
-        return runResize(decoded, input, context, cancelled);
-      }
-      return error("action 只能是 chroma_key / luma_key / crop / resize / dominant_colors，收到：" + action);
     } finally {
       PIXEL_LOCK.release();
     }

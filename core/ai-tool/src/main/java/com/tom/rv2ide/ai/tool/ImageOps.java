@@ -137,14 +137,16 @@ public final class ImageOps {
       int blackPoint, int whitePoint, float gamma, float strength,
       int keyR, int keyG, int keyB, float keySuppression,
       java.util.function.BooleanSupplier cancelled) {
-    // --- 钳制：对齐 luma.py:21-25（复审 m7：镜像上游 `or` 语义——显式 0/负值
-    //     回落默认 1.0，与 Python `float(gamma or 1.0)` 一致，避免 strength=0
-    //     造成整图全透明这种与上游不同的行为）---
+    // --- 钳制：对齐 luma.py:21-25 的**精确**语义（复审修正）---
+    // Python `float(gamma or 1.0)`：只有**恰好 0**（falsy）回退 1.0；负数是 truthy，
+    // 走外层 max(0.05, ...) → 钳到 0.05。写 `<=0 → 1.0` 会让 gamma∈(0,0.05) 与
+    // 负数两段行为偏离上游。
     int black = Math.max(0, Math.min(254, blackPoint));
     int white = Math.max(black + 1, Math.min(255, whitePoint));
-    float curveGamma = gamma <= 0f ? 1.0f : gamma;          // 上游 `gamma or 1.0`
-    float curveStrength = strength <= 0f ? 1.0f : strength; // 上游 `strength or 1.0`
-    curveStrength = Math.min(2f, curveStrength);            // 上游 clamp_float(strength, 0, 2)
+    float gammaOr = gamma == 0f ? 1.0f : gamma;             // 上游 `gamma or 1.0`
+    float curveGamma = Math.max(0.05f, gammaOr);            // 上游 max(0.05, ...)
+    float strengthOr = strength == 0f ? 1.0f : strength;    // 上游 `strength or 1.0`
+    float curveStrength = Math.max(0f, Math.min(2f, strengthOr)); // clamp(0, 2)
     float keyStrength = Math.max(0f, Math.min(1f, keySuppression));
     int scale = white - black;
 

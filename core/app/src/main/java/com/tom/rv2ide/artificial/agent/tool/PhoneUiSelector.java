@@ -118,7 +118,15 @@ public final class PhoneUiSelector {
    */
   public static boolean isU2ServerListening(ShellBackendRegistry registry) {
     Exec exec = exec(registry, "netstat -ltn | grep -c ':9008'", 5_000L);
-    return exec.ok && exec.stdout.trim().startsWith("1");
+    if (!exec.ok) {
+      return false;
+    }
+    try {
+      // grep -c 输出计数（IPv4+IPv6 双监听时为 2）；>0 即端口被监听。
+      return Integer.parseInt(exec.stdout.trim()) > 0;
+    } catch (NumberFormatException e) {
+      return false;
+    }
   }
 
   /** u2 server 占用 UiAutomation 时的统一指引（phone_view_hierarchy / click_view / wait_for 共用）。 */

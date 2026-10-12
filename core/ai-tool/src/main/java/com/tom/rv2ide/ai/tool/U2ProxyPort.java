@@ -88,6 +88,20 @@ public interface U2ProxyPort {
   /** 停掉 server（幂等；供 `stop` 动作与互斥门解除途径使用）。 */
   void stop();
 
-  /** 重启 server（stop + ensureRunning；供 `restart` 动作与卡死恢复使用）。 */
-  void restart();
+  /**
+   * 重启 server（stop + ensureRunning；供 `restart` 动作与卡死恢复使用）。
+   *
+   * @return null=成功；非 null=失败原因（供工具层如实报告，而不是无条件报「已重启」）
+   */
+  String restart();
+
+  /**
+   * 通知一次工具动作（action）已完成——**工具调用粒度**，与 {@link #call}（HTTP 调用粒度）
+   * 不同。一次动作可能含多次 call（如 click = objInfo + click），实现方的收尾逻辑
+   * （如「用完即停」偏好）必须挂在这里，否则多调用动作会在中途把 server 停掉、
+   * 下次调用又重启，中间态（如坐标）失效。
+   *
+   * <p>默认空实现（JVM 单测与无需收尾的实现不必覆写）。
+   */
+  default void onActionFinished() {}
 }

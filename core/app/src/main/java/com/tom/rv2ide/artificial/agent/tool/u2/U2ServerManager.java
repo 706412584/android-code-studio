@@ -226,7 +226,17 @@ public final class U2ServerManager {
   public synchronized U2ProxyPort.Result call(
       String method, String paramsJson, long timeoutMs,
       java.util.function.BooleanSupplier cancelled) {
-    U2ProxyPort.Result result = callInternal(method, paramsJson, timeoutMs, cancelled);
+    return callInternal(method, paramsJson, timeoutMs, cancelled);
+  }
+
+  /**
+   * 一次工具**动作**完成后的收尾（供「用完即停」偏好）。
+   *
+   * <p>必须挂在动作粒度而不是 {@link #call}（HTTP 调用粒度）：click 动作是
+   * objInfo + click 两次 call，若在 objInfo 后就停 server，click 会为一次
+   * 已失效的会话重启，中心坐标可能已变。
+   */
+  public synchronized void onActionFinished() {
     java.util.function.BooleanSupplier provider = stopAfterUseProvider;
     if (provider != null && provider.getAsBoolean()) {
       // 用完即停偏好（默认关）：u2 server 监听全部网卡且无鉴权，
@@ -234,7 +244,6 @@ public final class U2ServerManager {
       stopServer();
       state = State.IDLE;
     }
-    return result;
   }
 
   private U2ProxyPort.Result callInternal(
@@ -244,22 +253,34 @@ public final class U2ServerManager {
     if (ensureError != null) {
       return U2ProxyPort.Result.fail(ensureError, false, false);
     }
-    U2ProxyPort.Result first = httpCall(method, paramsJson, timeoutMs, cancelled, false);
-    if (first.isOk() || first.isTimedOut()) {
-      return first;
+    HttpOutcome first = httpCall(method, paramsJson, timeoutMs, cancelled, false);
+    if (first.result.isOk() || first.result.isTimedOut() || !first.retryable) {
+      // 只有**连接层**失败（连接拒绝等）才重试；JSON-RPC 业务错误
+      //（-32001 UiObjectNotFound / -32601 method not found）重试只会白白
+      // 重启 server（丢会话、翻倍延迟），且重启失败还会报误导性错误。
+      return first.result;
     }
-    // 非超时的失败 = 连接拒绝/协议错误 → server 可能已死，重启后重试一次。
     if (cancelled != null && cancelled.getAsBoolean()) {
-      return first; // 已取消的调用不触发重启重试
+      return first.result; // 已取消的调用不触发重启重试
     }
     String restartError = restart();
     if (restartError != null) {
       return U2ProxyPort.Result.fail(
-          "server 已断开且重启失败：" + restartError + "\n（原错误：" + first.getError() + "）",
+          "server 已断开且重启失败：" + restartError + "\n（原错误：" + first.result.getError() + "）",
           false, true);
     }
-    U2ProxyPort.Result second = httpCall(method, paramsJson, timeoutMs, cancelled, true);
-    return second;
+    return httpCall(method, paramsJson, timeoutMs, cancelled, true).result;
+  }
+
+  /** httpCall 的内部结果：result + 是否属于「连接层失败」（可重启重试）。 */
+  private static final class HttpOutcome {
+    final U2ProxyPort.Result result;
+    final boolean retryable;
+
+    HttpOutcome(U2ProxyPort.Result result, boolean retryable) {
+      this.result = result;
+      this.retryable = retryable;
+    }
   }
 
   /**
@@ -273,10 +294,11 @@ public final class U2ServerManager {
    *
    * @param restarted 本次调用前是否重启过（透传给 Result）
    */
-  private U2ProxyPort.Result httpCall(
+  private HttpOutcome httpCall(
       String method, String paramsJson, long timeoutMs,
       java.util.function.BooleanSupplier cancelled, boolean restarted) {
-    String body = "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"" + method + "\",\"params\":"
+    String body = "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"" + escapeJsonString(method)
+        + "\",\"params\":"
         + (paramsJson == null || paramsJson.trim().isEmpty() ? "[]" : paramsJson) + "}";
     final java.util.concurrent.atomic.AtomicReference<HttpURLConnection> connRef =
         new java.util.concurrent.atomic.AtomicReference<>();
@@ -287,7 +309,10 @@ public final class U2ServerManager {
         conn = (HttpURLConnection) url.openConnection();
         connRef.set(conn);
         conn.setConnectTimeout(2_000);
-        conn.setReadTimeout(0); // 无限：超时由控制线程按总预算裁决
+        // 读超时给总预算 + 30s 兜底：正常由控制线程按 deadline 裁决并 disconnect；
+        // 兜底防「控制线程 abort 时 connRef 尚为 null / disconnect 未打断阻塞读」
+        // 的窗口让 worker 永久占用唯一线程（后续调用全部只能超时）。
+        conn.setReadTimeout((int) Math.min(Integer.MAX_VALUE, timeoutMs + 30_000L));
         conn.setRequestMethod("POST");
         conn.setDoOutput(true);
         conn.setRequestProperty("Content-Type", "application/json");
@@ -317,30 +342,35 @@ public final class U2ServerManager {
     while (true) {
       try {
         String response = future.get(POLL_INTERVAL_MS, java.util.concurrent.TimeUnit.MILLISECONDS);
-        return parseJsonRpc(response, restarted);
+        return new HttpOutcome(parseJsonRpc(response, restarted), false);
       } catch (java.util.concurrent.TimeoutException slice) {
         if (cancelled != null && cancelled.getAsBoolean()) {
           abort(future, connRef);
-          return U2ProxyPort.Result.fail("已取消", false, restarted);
+          return new HttpOutcome(U2ProxyPort.Result.fail("已取消", false, restarted), false);
         }
         if (System.currentTimeMillis() > deadline) {
           abort(future, connRef);
-          return U2ProxyPort.Result.fail(
-              "读取超时（" + timeoutMs + "ms）。server 可能已卡死。", true, restarted);
+          return new HttpOutcome(
+              U2ProxyPort.Result.fail(
+                  "读取超时（" + timeoutMs + "ms）。server 可能已卡死。", true, restarted),
+              false);
         }
       } catch (java.util.concurrent.ExecutionException e) {
         Throwable cause = e.getCause() == null ? e : e.getCause();
         if (cause instanceof java.net.ConnectException) {
-          // 连接拒绝：server 已死——交由调用方重启重试（call() 里处理）。
-          return U2ProxyPort.Result.fail("连接失败: " + cause.getMessage(), false, restarted);
+          // 连接拒绝：server 已死——可重试（调用方重启后重发一次）。
+          return new HttpOutcome(
+              U2ProxyPort.Result.fail("连接失败: " + cause.getMessage(), false, restarted), true);
         }
-        return U2ProxyPort.Result.fail(
-            "调用异常: " + cause.getClass().getSimpleName() + ": " + cause.getMessage(),
-            false, restarted);
+        return new HttpOutcome(
+            U2ProxyPort.Result.fail(
+                "调用异常: " + cause.getClass().getSimpleName() + ": " + cause.getMessage(),
+                false, restarted),
+            false);
       } catch (InterruptedException e) {
         Thread.currentThread().interrupt();
         abort(future, connRef);
-        return U2ProxyPort.Result.fail("已中断", false, restarted);
+        return new HttpOutcome(U2ProxyPort.Result.fail("已中断", false, restarted), false);
       }
     }
   }
@@ -443,8 +473,10 @@ public final class U2ServerManager {
     String jarPath = new File(new File(base, "u2"), "u2.jar").getAbsolutePath();
     // 启动命令照计划 §5.3 原文：CLASSPATH 指向提取出的 jar，nohup 后台运行，
     // 日志与 pid 落 /data/local/tmp/u2/（shell 可写）。
+    // 单引号包裹路径：部分设备的外部目录是 /storage/emulated/0（含 / 无碍），
+    // 但保险起见按 shell 单引号转义，路径含空格/元字符时不会断链。
     String command = "mkdir -p " + TMP_DIR + "\n"
-        + "CLASSPATH=" + jarPath + " nohup app_process / com.wetest.uia2.Main -p " + PORT
+        + "CLASSPATH=" + shellQuote(jarPath) + " nohup app_process / com.wetest.uia2.Main -p " + PORT
         + " >" + LOG_PATH + " 2>&1 &\n"
         + "echo $! > " + PID_PATH;
     ShellRequest.ShellResult result = execShell(shizuku, command, LAUNCH_CMD_TIMEOUT_MS);
@@ -571,6 +603,46 @@ public final class U2ServerManager {
       return "外部存储不可用（getExternalFilesDir 为 null）。";
     }
     return "";
+  }
+
+  /** shell 单引号转义（POSIX：' → '\''）。 */
+  private static String shellQuote(String value) {
+    return "'" + (value == null ? "" : value.replace("'", "'\\''")) + "'";
+  }
+
+  /** 最小 JSON 字符串转义（method 名来自模型，含 " 会生成非法 JSON）。 */
+  private static String escapeJsonString(String value) {
+    if (value == null) {
+      return "";
+    }
+    StringBuilder sb = new StringBuilder(value.length() + 8);
+    for (int i = 0; i < value.length(); i++) {
+      char c = value.charAt(i);
+      switch (c) {
+        case '"':
+          sb.append("\\\"");
+          break;
+        case '\\':
+          sb.append("\\\\");
+          break;
+        case '\n':
+          sb.append("\\n");
+          break;
+        case '\r':
+          sb.append("\\r");
+          break;
+        case '\t':
+          sb.append("\\t");
+          break;
+        default:
+          if (c < 0x20) {
+            sb.append(String.format("\\u%04x", (int) c));
+          } else {
+            sb.append(c);
+          }
+      }
+    }
+    return sb.toString();
   }
 
   private static String abbreviate(String value) {

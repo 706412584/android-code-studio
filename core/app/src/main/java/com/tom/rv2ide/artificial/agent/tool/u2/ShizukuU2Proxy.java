@@ -55,7 +55,12 @@ public final class ShizukuU2Proxy implements U2ProxyPort {
   }
 
   @Override
-  public void restart() {
-    manager.restart();
+  public String restart() {
+    return manager.restart();
+  }
+
+  @Override
+  public void onActionFinished() {
+    manager.onActionFinished();
   }
 }

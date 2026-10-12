@@ -225,34 +225,51 @@ public final class PhoneUiautomatorTool extends BaseTool {
           + "现在传统 uiautomator dump（phone_view_hierarchy / phone_click_view / phone_wait_for）已恢复可用。");
     }
     if (ACTION_RESTART.equals(action)) {
-      port.restart();
-      String reason = port.isAvailable() ? "" : "（注意：端口当前不可用——" + port.unavailableReason() + "）";
-      return ok("u2 server 已重启。" + reason);
+      String restartError = port.restart();
+      if (restartError != null) {
+        return error("u2 server 重启失败：" + restartError);
+      }
+      return ok("u2 server 已重启。");
     }
     try {
       java.util.function.BooleanSupplier cancelled = cancellationSignal(context);
+      ToolResult result;
       switch (action) {
         case ACTION_SET_TEXT:
-          return runSetText(input, port, cancelled);
+          result = runSetText(input, port, cancelled);
+          break;
         case ACTION_WAIT_GONE:
-          return runWaitGone(input, port, cancelled);
+          result = runWaitGone(input, port, cancelled);
+          break;
         case ACTION_GESTURE:
-          return runGesture(input, port, cancelled);
+          result = runGesture(input, port, cancelled);
+          break;
         case ACTION_PINCH:
-          return runPinch(input, port, cancelled);
+          result = runPinch(input, port, cancelled);
+          break;
         case ACTION_SWIPE_POINTS:
-          return runSwipePoints(input, port, cancelled);
+          result = runSwipePoints(input, port, cancelled);
+          break;
         case ACTION_SCROLL_TO:
-          return runScrollTo(input, port, cancelled);
+          result = runScrollTo(input, port, cancelled);
+          break;
         case ACTION_CLICK:
-          return runClick(input, port, cancelled);
+          result = runClick(input, port, cancelled);
+          break;
         case ACTION_DUMP:
-          return runDump(input, port, cancelled);
+          result = runDump(input, port, cancelled);
+          break;
         case ACTION_CALL:
-          return runCall(input, port, cancelled);
+          result = runCall(input, port, cancelled);
+          break;
         default:
           return error("未知 action：" + action + "。可用动作：" + actionList());
       }
+      // 动作粒度收尾（供「用完即停」偏好）：必须在这里而不是每次 HTTP call 后——
+      // click 是 objInfo + click 两次 call，中途停 server 会让第二次调用为
+      // 失效会话重启。stop 动作本身不触发（已经停了）。
+      port.onActionFinished();
+      return result;
     } catch (org.json.JSONException e) {
       return error("参数 JSON 构造失败：" + e.getMessage());
     } catch (Throwable e) {
@@ -445,7 +462,9 @@ public final class PhoneUiautomatorTool extends BaseTool {
       sb.append("（u2 server 曾断开，本次调用已自动重启。）\n");
     }
     sb.append("节点树 XML（compressed=").append(compressed).append(", maxDepth=").append(maxDepth).append("）：\n");
-    sb.append(preview(xml));
+    // dump 的 XML 实测可达 54KB——用 ToolResult 的 50K 总上限，不走 8K 通用预览，
+    // 否则模型只能看到极小一部分、dump 失去意义。
+    sb.append(xml);
     return ok(ToolResult.truncateContent(sb.toString()));
   }
 

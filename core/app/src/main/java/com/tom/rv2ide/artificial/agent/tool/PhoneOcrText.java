@@ -203,7 +203,8 @@ final class PhoneOcrText {
     for (int i = 0; i < Math.min(lines.size(), maxLines); i++) {
       sb.append(lines.get(i).getText()).append('\n');
     }
-    if (lines.size() > maxLines) {
+    // 截断提示只在 box 段已给过时省略（避免同一条信息出现两次）。
+    if (lines.size() > maxLines && !includeBoxes) {
       sb.append("（其余 ").append(lines.size() - maxLines).append(" 行未显示）");
     }
     // 去尾部换行

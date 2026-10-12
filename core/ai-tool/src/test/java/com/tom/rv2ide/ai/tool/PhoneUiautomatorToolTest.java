@@ -50,8 +50,10 @@ class PhoneUiautomatorToolTest {
     boolean ok = true;
     boolean timedOut = false;
     boolean restarted = false;
+    String restartError = null;
     int stopCalls = 0;
     int restartCalls = 0;
+    int actionFinishedCalls = 0;
 
     @Override
     public Result call(String method, String paramsJson, long timeoutMs, BooleanSupplier cancelled) {
@@ -79,8 +81,14 @@ class PhoneUiautomatorToolTest {
     }
 
     @Override
-    public void restart() {
+    public String restart() {
       restartCalls++;
+      return restartError;
+    }
+
+    @Override
+    public void onActionFinished() {
+      actionFinishedCalls++;
     }
   }
 
@@ -446,6 +454,34 @@ class PhoneUiautomatorToolTest {
     assertFalse(r.isError(), r.getContent());
     assertEquals(1, port.restartCalls);
     assertTrue(port.methods.isEmpty());
+  }
+
+  @Test
+  void restartFailureIsReported() throws Exception {
+    FakePort port = new FakePort();
+    port.restartError = "Shizuku 服务未运行";
+    ToolResult r = new PhoneUiautomatorTool().execute(args("restart"), ctx(port));
+    assertTrue(r.isError(), "重启失败必须如实报错，而不是报「已重启」");
+    assertTrue(r.getContent().contains("Shizuku 服务未运行"), r.getContent());
+  }
+
+  @Test
+  void actionFinishedIsCalledOncePerAction() throws Exception {
+    FakePort port = new FakePort();
+    // click 是 objInfo + click 两次 call，但收尾只能有一次（动作粒度）。
+    port.resultJson = "{\"bounds\":{\"left\":0,\"top\":0,\"right\":10,\"bottom\":10}}";
+    new PhoneUiautomatorTool().execute(
+        args("click").put("selector", new JSONObject().put("text", "x")), ctx(port));
+    assertEquals(2, port.methods.size());
+    assertEquals(1, port.actionFinishedCalls, "收尾按动作粒度，不是每次 HTTP call");
+  }
+
+  @Test
+  void stopDoesNotTriggerActionFinished() throws Exception {
+    FakePort port = new FakePort();
+    new PhoneUiautomatorTool().execute(args("stop"), ctx(port));
+    assertEquals(1, port.stopCalls);
+    assertEquals(0, port.actionFinishedCalls, "stop 已停 server，不再触发收尾");
   }
 
   @Test
