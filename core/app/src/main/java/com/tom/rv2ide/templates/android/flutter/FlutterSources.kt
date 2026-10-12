@@ -642,6 +642,10 @@ object FlutterSources {
    *
    * 注意：**Flutter 的设备端构建不可行**（缺 SDK），所以这个 workflow
    * 是用户获取安装包的唯一路径——README 里要显著说明。
+   *
+   * <p><b>retention-days: 7</b>：Actions artifact 计入仓库存储配额，而 APK
+   * 单个上百 MB——仓库默认保留期 90 天时，几次构建就能把免费配额堆满，之后
+   * workflow 直接跑不起来（用户实测踩过）。7 天足够取回产物。
    */
   fun ciWorkflow(projectName: String): String =
       """
@@ -667,6 +671,7 @@ object FlutterSources {
             - uses: actions/upload-artifact@v4
               with:
                 name: ${projectName}-android-apk
+                retention-days: 7
                 path: build/app/outputs/flutter-apk/*.apk
 
         web:
@@ -683,6 +688,7 @@ object FlutterSources {
             - uses: actions/upload-artifact@v4
               with:
                 name: ${projectName}-web
+                retention-days: 7
                 path: build/web/**
       """
           .trimIndent() + "\n"

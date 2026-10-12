@@ -149,6 +149,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: apk-arm64-v8a-${{ env.BUILD_TYPE_LOWER }}
+          retention-days: 7
           path: core/app/build/outputs/apk/${{ env.BUILD_TYPE_LOWER }}/*arm64-v8a*.apk
         if: always()
 
@@ -156,6 +157,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: apk-armeabi-v7a-${{ env.BUILD_TYPE_LOWER }}
+          retention-days: 7
           path: core/app/build/outputs/apk/${{ env.BUILD_TYPE_LOWER }}/*armeabi-v7a*.apk
         if: always()
 
@@ -163,6 +165,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: apk-x86_64-${{ env.BUILD_TYPE_LOWER }}
+          retention-days: 7
           path: core/app/build/outputs/apk/${{ env.BUILD_TYPE_LOWER }}/*x86_64*.apk
         if: always()
 
@@ -170,6 +173,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: apk-universal-${{ env.BUILD_TYPE_LOWER }}
+          retention-days: 7
           path: core/app/build/outputs/apk/${{ env.BUILD_TYPE_LOWER }}/*universal*.apk
         if: always()
 

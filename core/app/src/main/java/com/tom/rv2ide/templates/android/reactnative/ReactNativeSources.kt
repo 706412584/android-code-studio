@@ -777,6 +777,10 @@ object ReactNativeSources {
    *
    * 与 CMP 模板的差异：RN 的构建前置是 `npm install`（ubuntu runner 直连
    * 官方源，无需镜像），且 debug APK 无需签名配置（用模板自带的 debug.keystore）。
+   *
+   * <p><b>retention-days: 7</b>：Actions artifact 计入仓库存储配额，而 APK
+   * 单个上百 MB——仓库默认保留期 90 天时，几次构建就能把免费配额堆满，之后
+   * workflow 直接跑不起来（用户实测踩过）。7 天足够取回产物。
    */
   fun ciWorkflow(projectName: String): String =
       """
@@ -809,6 +813,7 @@ object ReactNativeSources {
             - uses: actions/upload-artifact@v4
               with:
                 name: ${projectName}-android-debug
+                retention-days: 7
                 path: app/build/outputs/apk/debug/*.apk
       """
           .trimIndent() + "\n"

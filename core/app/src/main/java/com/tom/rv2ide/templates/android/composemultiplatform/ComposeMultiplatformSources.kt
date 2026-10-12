@@ -368,6 +368,11 @@ object ComposeMultiplatformSources {
    * （「Cannot find skiko-windows-x64.dll.sha256」），2026-10-10 远端实测踩中后修正。
    * Web 静态站（ubuntu）由推送自动触发。artifact 上传用宽松 glob 兜底两个产物目录。
    * iOS 需要 macos runner + 声明 iOS target，v1 未启用——注释里留了模板。
+   *
+   * <p><b>retention-days: 7</b>：Actions artifact 计入仓库存储配额，而 APK/fat jar
+   * 单个上百 MB——仓库默认保留期 90 天时，几次构建就能把免费配额堆满，之后
+   * workflow 直接跑不起来（用户实测踩过）。产物是「构建完就下载走」的一次性交付，
+   * 7 天足够取回；需要长期留存的产物应发 Release（不计入 Actions 配额）。
    */
   fun ciWorkflow(projectName: String): String =
       """
@@ -393,6 +398,7 @@ object ComposeMultiplatformSources {
             - uses: actions/upload-artifact@v4
               with:
                 name: ${projectName}-android-debug
+                retention-days: 7
                 path: app/build/outputs/apk/debug/*.apk
 
         desktop-jar:
@@ -415,6 +421,7 @@ object ComposeMultiplatformSources {
             - uses: actions/upload-artifact@v4
               with:
                 name: ${projectName}-desktop-${'$'}{{ matrix.os }}
+                retention-days: 7
                 path: |
                   desktop/build/compose/binaries/main/**/*.jar
                   desktop/build/compose/jars/*.jar
@@ -434,6 +441,7 @@ object ComposeMultiplatformSources {
             - uses: actions/upload-artifact@v4
               with:
                 name: ${projectName}-web
+                retention-days: 7
                 path: composeApp/build/dist/wasmJs/productionExecutable/**
 
         # iOS 需要 macos runner；v1 未声明 iOS target，在 composeApp 的 kotlin {}
