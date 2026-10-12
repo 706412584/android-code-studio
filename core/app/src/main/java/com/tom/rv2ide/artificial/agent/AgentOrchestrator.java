@@ -1540,6 +1540,9 @@ public final class AgentOrchestrator {
     registry.register(new ImageGenerationTool(http));
     // 文生视频：异步任务 + 轮询（cc-haha media-gen 协议）。同上经 ToolContext 注入。
     registry.register(new VideoGenerationTool(http));
+    // 图像处理（游戏素材）：色键/亮度键抠图、裁剪、缩放、主色提取。
+    // 像素算法在 core/ai-tool 的 ImageOps（纯函数）；编解码经 ImageProcessingPort 注入。
+    registry.register(new com.tom.rv2ide.ai.tool.ImageTool(AndroidImageProcessor.INSTANCE));
 
     // 内存分析：一次性拉取进程内存画像 + 助手各子系统规模（消息数/缓存/队列），
     // 供卡顿与 OOM 排查（用户实测的 Markdown 表格 OOM 之后加的诊断口）。
@@ -2062,6 +2065,8 @@ public final class AgentOrchestrator {
             .imageGeneration(new AgentImageToolSettings(appContext).resolveEndpoint())
             // 文生视频端点（同上）。
             .videoGeneration(new AgentImageToolSettings(appContext).resolveVideoEndpoint())
+            // 图像处理管线端口（image_tool）：解码/编码/缩放的 Android 实现。
+            .imageProcessing(AndroidImageProcessor.INSTANCE)
             // 编译诊断端口：经 IDE 语言服务器做静态分析。
             // 服务器**按调用时现查**（而不是这里固化实例）：用户可能在会话中途才打开
             // 项目编辑器（语言服务器随之启动），固化会永久拿到 null。
