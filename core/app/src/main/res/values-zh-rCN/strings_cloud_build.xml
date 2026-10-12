@@ -44,6 +44,26 @@
   <string name="cloud_build_tracking_stopped">已停止跟踪。构建仍在 GitHub 上继续。</string>
   <string name="cloud_build_poll_failed">进度刷新失败：%1$s</string>
 
+  <!-- 取消构建（远端不可逆操作，与「停止跟踪」区分） -->
+  <string name="cloud_build_cancel">取消构建</string>
+  <string name="cloud_build_cancel_confirm_title">取消这次构建？</string>
+  <string name="cloud_build_cancel_confirm_message">这会在 GitHub 上真正取消本次运行，已经跑过的步骤无法恢复。\n\n如果只是不想继续看进度、想让构建在云端继续跑完，请用「停止跟踪」。</string>
+  <string name="cloud_build_cancel_confirm_yes">取消构建</string>
+  <string name="cloud_build_cancel_confirm_no">不取消</string>
+  <string name="cloud_build_cancelling">正在请求取消…</string>
+  <string name="cloud_build_cancel_requested">已请求取消，等待 GitHub 处理…</string>
+  <string name="cloud_build_cancel_failed">取消失败：%1$s</string>
+  <string name="cloud_build_running_actions_hint">「取消构建」会在 GitHub 上终止运行；「停止跟踪」只停止显示进度，构建继续。</string>
+  <string name="cloud_build_cancelled_log_title">运行日志（已被取消）</string>
+
+  <!-- 历史构建 -->
+  <string name="cloud_build_history">历史构建</string>
+  <string name="cloud_build_history_refresh">刷新</string>
+  <string name="cloud_build_history_back">返回</string>
+  <string name="cloud_build_history_loading">正在加载历史…</string>
+  <string name="cloud_build_history_empty">没有历史运行记录。</string>
+  <string name="cloud_build_history_load_failed">无法加载历史：%1$s</string>
+
   <!-- 结果 -->
   <string name="cloud_build_failure_title">失败原因（日志片段）</string>
   <string name="cloud_build_fetching_log">正在获取日志…</string>

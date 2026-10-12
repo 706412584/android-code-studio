@@ -242,6 +242,30 @@ public final class CloudBuildService {
     return new WorkflowRunPoller(client).poll(runId, workflowFile, branch);
   }
 
+  /**
+   * 取消一次正在运行的 run（真正的远端取消，不可逆）。
+   *
+   * <p>与「停止跟踪」是两回事：停止跟踪只停本地轮询，构建在 GitHub 上继续；
+   * 本方法是让 GitHub 终止这次运行。接口返回 202 只是「请求已受理」，
+   * run 状态变为 {@code completed / cancelled} 有秒级延迟——调用方继续用
+   * {@link #poll} 观察即可，不需要额外等待。
+   */
+  public void cancelRun(long runId) throws Exception {
+    client.cancelRun(runId);
+  }
+
+  /**
+   * 列出历史 run（按创建时间倒序）。
+   *
+   * @param workflowFile 可选：限定 workflow 文件
+   * @param branch 可选：限定分支
+   * @param limit 最多返回条数
+   */
+  public List<WorkflowRun> listRuns(String workflowFile, String branch, int limit)
+      throws Exception {
+    return client.listRuns(workflowFile, branch, limit);
+  }
+
   // ---------------------------------------------------------------------------
   // 失败日志与产物
   // ---------------------------------------------------------------------------

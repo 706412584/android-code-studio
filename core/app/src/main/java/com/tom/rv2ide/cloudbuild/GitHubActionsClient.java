@@ -115,6 +115,24 @@ public final class GitHubActionsClient implements RunQueryPort {
   }
 
   /**
+   * 取消一次正在运行（或排队）的 run。
+   *
+   * <p>GitHub 的语义是「请求取消」：接口返回 202 表示请求已受理，run 会在一小段
+   * 时间后变为 {@code completed / cancelled}——因此调用方不需要在这里等状态变化，
+   * 交给既有的轮询即可。对已到终态的 run 调用会得到 409，调用方把错误如实呈现。
+   *
+   * <p>请求体传 {@code null}：cancel 接口不接受也不需要 body（与 dispatch 不同）。
+   *
+   * @param runId run id
+   * @throws GitHubApiException 失败时（含 409：run 已结束，无法取消）
+   */
+  public void cancelRun(long runId) throws Exception {
+    String url = API_BASE + "/repos/" + owner + "/" + repo + "/actions/runs/" + runId + "/cancel";
+    SimpleHttpClient.Response response = execute("POST", url, null);
+    checkSuccess(response);
+  }
+
+  /**
    * 列出仓库的 workflow（文件名与状态）。
    *
    * @return workflow 文件列表（如 {@code build.yml}）
