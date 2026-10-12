@@ -62,10 +62,19 @@ object TemplateRegistry {
    *
    * <p>稳定排序：跨平台组内与其余组内都保持注册顺序。
    */
-  fun getAllTemplates(): List<Template> =
-      templates.sortedByDescending { if (it.isCrossPlatform) 1 else 0 }
+  fun getAllTemplates(): List<Template> = sortForDisplay(templates)
 
   fun getTemplateByName(displayName: String): Template? {
     return templates.find { it.displayName == displayName }
   }
 }
+
+/**
+ * 向导列表的展示排序：跨平台模板置顶，其余保持原序（稳定）。
+ *
+ * <p>抽成顶层函数是为了可 JVM 单测——[TemplateRegistry] 是 object 且注册的模板
+ * 都依赖 Android Context 构造，测试无法直接驱动它；而排序规则本身是纯函数，
+ * 值得被钉住（它是用户可见的产品决策，不是实现细节）。
+ */
+internal fun sortForDisplay(templates: List<Template>): List<Template> =
+    templates.sortedByDescending { if (it.isCrossPlatform) 1 else 0 }

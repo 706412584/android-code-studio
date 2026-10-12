@@ -604,20 +604,6 @@ class TemplateAdapter(
           gravity = android.view.Gravity.CENTER
         }
 
-    // 「跨平台」徽标：只对 isCrossPlatform 的模板显示（标题下方一行小字）。
-    // 为什么不做成右上角贴图：卡片本身是垂直流式布局，绝对定位要引入
-    // FrameLayout 包一层，改动大且与现有卡片结构不一致；一行居中徽标
-    // 同样醒目，且对现有布局零侵入。
-    val crossPlatformBadge =
-        TextView(ctx).apply {
-          textSize = 10f
-          text = ctx.getString(com.tom.rv2ide.R.string.template_cross_platform_badge)
-          setPadding(12.dp, 0.dp, 12.dp, 4.dp)
-          gravity = android.view.Gravity.CENTER
-          setTextColor(0xFF2E7D32.toInt()) // Material 绿 800：与「跨平台」的正面语义一致
-          visibility = android.view.View.GONE
-        }
-
     // 模板的一句话中文描述：帮助用户理解模板适合做什么。无描述的模板此行隐藏。
     val description =
         TextView(ctx).apply {
@@ -632,22 +618,55 @@ class TemplateAdapter(
     val image =
         ImageView(ctx).apply {
           scaleType = ImageView.ScaleType.CENTER_CROP
+          // 图片填满外层 FrameLayout；尺寸由 FrameLayout 统一约束（见下）。
+          layoutParams =
+              android.widget.FrameLayout.LayoutParams(
+                  ViewGroup.LayoutParams.MATCH_PARENT,
+                  ViewGroup.LayoutParams.MATCH_PARENT,
+              )
+        }
 
+    // 「跨平台」徽章：叠在图标右上角（用户要求——不占独立一行，直接打在图上）。
+    // FrameLayout 包一层做角标定位：这是 Android 上叠加视图的标准做法，
+    // 比自绘或改图更轻（不用为每个跨平台模板重做预览图）。
+    val crossPlatformBadge =
+        TextView(ctx).apply {
+          textSize = 10f
+          text = ctx.getString(com.tom.rv2ide.R.string.template_cross_platform_badge)
+          setPadding(8.dp, 3.dp, 8.dp, 3.dp)
+          setTextColor(android.graphics.Color.WHITE)
+          setBackgroundColor(0xFF2E7D32.toInt()) // Material 绿 800：跨平台的正面语义
+          visibility = android.view.View.GONE
+          layoutParams =
+              android.widget.FrameLayout.LayoutParams(
+                      ViewGroup.LayoutParams.WRAP_CONTENT,
+                      ViewGroup.LayoutParams.WRAP_CONTENT,
+                  )
+                  .apply {
+                    gravity = android.view.Gravity.TOP or android.view.Gravity.END
+                    setMargins(0, 8.dp, 8.dp, 0)
+                  }
+        }
+
+    val imageContainer =
+        android.widget.FrameLayout(ctx).apply {
           if (screenWidthDp >= 600) {
             android.util.Log.d("TemplateAdapter", "Using small size for large screen")
-            layoutParams = LinearLayout.LayoutParams(100.dp, 100.dp).apply {
-              gravity = android.view.Gravity.CENTER
-            }
+            layoutParams =
+                LinearLayout.LayoutParams(100.dp, 100.dp).apply {
+                  gravity = android.view.Gravity.CENTER
+                }
           } else {
             android.util.Log.d("TemplateAdapter", "Using normal size")
             layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 160.dp)
           }
+          addView(image)
+          addView(crossPlatformBadge)
         }
 
     layout.addView(title)
-    layout.addView(crossPlatformBadge)
     layout.addView(description)
-    layout.addView(image)
+    layout.addView(imageContainer)
     card.addView(layout)
     return TemplateVH(card, title, image, description, crossPlatformBadge)
   }
