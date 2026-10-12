@@ -40,6 +40,8 @@ customizable-cardview = "v1.0"
 # modules need it on the compile classpath (declared compileOnly) so their unit tests
 # can run on the JVM without Robolectric.
 org-json = "20231013"
+# ML Kit 文字识别（bundled 中文：模型与推理库打进 APK，不依赖 GMS、运行时不下载）。
+mlkit-text-recognition = "16.0.1"
 
 
 
@@ -151,6 +153,7 @@ androidx-work-ktx = { module = "androidx.work:work-runtime-ktx", version.ref = "
 google-material = { module = "com.google.android.material:material", version = "1.13.0" }
 google-gson = { module = "com.google.code.gson:gson", version = "2.11.0" }
 google-guava = { module = "com.google.guava:guava", version = "32.1.3-android" }
+mlkit-text-recognition-chinese = { module = "com.google.mlkit:text-recognition-chinese", version.ref = "mlkit-text-recognition" }
 google-auto-value-annotations = { module = "com.google.auto.value:auto-value-annotations", version = "1.10.4" }
 google-auto-value-ap = { module = "com.google.auto.value:auto-value", version = "1.10.4" }
 google-auto-service-annotations = { module = "com.google.auto.service:auto-service-annotations", version = "1.1.1" }

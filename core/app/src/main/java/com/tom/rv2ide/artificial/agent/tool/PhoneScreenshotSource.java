@@ -47,11 +47,26 @@ final class PhoneScreenshotSource {
     final boolean ok;
     final File file;
     final String error;
+    /** 屏幕尺寸（物理像素）；解析不到时为 0。 */
+    final int screenWidth;
+    final int screenHeight;
+    /** 落盘图片尺寸；解析不到时为 0。maxDimension=0 且未触发内联体积收缩时与屏幕尺寸相同。 */
+    final int outputWidth;
+    final int outputHeight;
 
     Shot(boolean ok, File file, String error) {
+      this(ok, file, error, 0, 0, 0, 0);
+    }
+
+    Shot(boolean ok, File file, String error,
+        int screenWidth, int screenHeight, int outputWidth, int outputHeight) {
       this.ok = ok;
       this.file = file;
       this.error = error == null ? "" : error;
+      this.screenWidth = screenWidth;
+      this.screenHeight = screenHeight;
+      this.outputWidth = outputWidth;
+      this.outputHeight = outputHeight;
     }
   }
 
@@ -63,6 +78,14 @@ final class PhoneScreenshotSource {
    * @return 截图结果；调用入口缺失、工具未注册或调用失败时 {@code ok=false}
    */
   static Shot capture(ToolInvoker invoker, ToolContext context) {
+    return capture(invoker, context, null);
+  }
+
+  /**
+   * 同上，但可附加 {@code phone_screenshot} 的其它参数（如 {@code maxDimension:0} 要原分辨率）。
+   * 固定项 {@code inline=false} 不可被 extraArgs 覆盖。
+   */
+  static Shot capture(ToolInvoker invoker, ToolContext context, JSONObject extraArgs) {
     if (invoker == null) {
       return new Shot(
           false,
@@ -72,7 +95,19 @@ final class PhoneScreenshotSource {
     try {
       // inline=false：只要落盘路径，不要 base64 图片负载——
       // 连拍/对比只暂存文件，逐张内联的图片会被立刻丢弃，白白浪费编码开销。
-      JSONObject args = new JSONObject().put("inline", false);
+      // 先放 extraArgs 的非 inline 键，最后强制 inline=false（不允许调用方覆盖）。
+      JSONObject args = new JSONObject();
+      if (extraArgs != null) {
+        java.util.Iterator<String> keys = extraArgs.keys();
+        while (keys.hasNext()) {
+          String key = keys.next();
+          if ("inline".equals(key)) {
+            continue; // 固定项：由本方法强制
+          }
+          args.put(key, extraArgs.get(key));
+        }
+      }
+      args.put("inline", false);
       ToolResult result = invoker.invoke(ToolNames.PHONE_SCREENSHOT, args, context);
       if (result == null) {
         return new Shot(false, null, "截图工具返回为空");
@@ -88,7 +123,9 @@ final class PhoneScreenshotSource {
       if (file == null) {
         return new Shot(false, null, "截图工具未返回 PNG 路径: " + abbreviate(content));
       }
-      return new Shot(true, file, "");
+      int[] screen = PhoneOcrText.parseDims(content, "屏幕尺寸");
+      int[] output = PhoneOcrText.parseDims(content, "输出尺寸");
+      return new Shot(true, file, "", screen[0], screen[1], output[0], output[1]);
     } catch (Exception e) {
       log.warn("调用 phone_screenshot 失败", e);
       return new Shot(false, null, "截图失败: " + e.getMessage());

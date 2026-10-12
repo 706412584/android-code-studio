@@ -280,6 +280,9 @@ dependencies {
   implementation(libs.google.auto.service.annotations)
   implementation(libs.google.gson)
   implementation(libs.google.guava)
+  // 屏幕 OCR：ML Kit bundled 中文版——模型与推理库随 APK 分发（黑鲨无 GMS，实测），
+  // 运行时不联网、不依赖 Google Play 服务。经 OcrPort 注入工具层（见 MlKitOcrPort.kt）。
+  implementation(libs.mlkit.text.recognition.chinese)
 
   implementation("com.google.ai.client.generativeai:generativeai:0.9.0") {
     exclude(group = "org.slf4j", module = "slf4j-api")

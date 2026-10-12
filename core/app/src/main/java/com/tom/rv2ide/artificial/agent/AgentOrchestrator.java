@@ -91,6 +91,7 @@ import com.tom.rv2ide.artificial.agent.tool.PhoneGlobalActionTool;
 import com.tom.rv2ide.artificial.agent.tool.PhoneInputTextTool;
 import com.tom.rv2ide.artificial.agent.tool.PhoneLongPressTool;
 import com.tom.rv2ide.artificial.agent.tool.PhoneMemInfoTool;
+import com.tom.rv2ide.artificial.agent.tool.PhoneOcrTool;
 import com.tom.rv2ide.artificial.agent.tool.PhoneScreenshotCompareTool;
 import com.tom.rv2ide.artificial.agent.tool.PhoneScreenshotTool;
 import com.tom.rv2ide.artificial.agent.tool.PhoneSwipeTool;
@@ -1489,6 +1490,9 @@ public final class AgentOrchestrator {
     registry.register(new PhoneViewHierarchyTool(appContext, shellBackends));
     registry.register(new PhoneCurrentActivityTool(shellBackends));
     registry.register(new PhoneMemInfoTool(appContext, shellBackends));
+    // OCR：把屏幕上的文字读成文本 + 包围盒（Canvas/游戏/WebView 等取不到文本节点的场景）。
+    // 工具本身在 app 层（需要 Bitmap 裁剪/缩放），OCR 引擎经 ToolContext 的 OcrPort 注入。
+    registry.register(new PhoneOcrTool());
 
     // 交互类（SYSTEM；needsConfirmation=true，与 shell_execute 同级）。
     // 这些工具能驱动任意应用（点开终端、输入命令、回车执行），若免确认就是绕过
@@ -2067,6 +2071,8 @@ public final class AgentOrchestrator {
             .videoGeneration(new AgentImageToolSettings(appContext).resolveVideoEndpoint())
             // 图像处理管线端口（image_tool）：解码/编码/缩放的 Android 实现。
             .imageProcessing(AndroidImageProcessor.INSTANCE)
+            // OCR 端口：ML Kit bundled 中文（离线，无 GMS 设备可用）。进程级单例。
+            .ocr(MlKitOcrPort.INSTANCE)
             // 编译诊断端口：经 IDE 语言服务器做静态分析。
             // 服务器**按调用时现查**（而不是这里固化实例）：用户可能在会话中途才打开
             // 项目编辑器（语言服务器随之启动），固化会永久拿到 null。
