@@ -219,6 +219,67 @@ public class CloudBuildUiLogicTest {
   }
 
   // ---------------------------------------------------------------------------
+  // 历史列表：相对时间与行文案
+  // ---------------------------------------------------------------------------
+
+  private static final long NOW = 1_760_000_000_000L; // 固定基准，避免依赖真实时钟
+
+  @Test
+  public void formatsHistoryLine() {
+    WorkflowRun run = new WorkflowRun(1L, "Build", "dev", "abc", "completed", "success",
+        "https://github.com/o/r/actions/runs/1",
+        iso(NOW - 3 * 3600_000L), iso(NOW));
+    assertEquals("成功 · dev · 3 小时前", CloudBuildUiLogic.historyLine(run, NOW));
+  }
+
+  @Test
+  public void marksUnknownBranchInHistory() {
+    WorkflowRun run = new WorkflowRun(1L, "Build", "", "abc", "completed", "failure",
+        "", iso(NOW - 60_000L), "");
+    assertEquals("失败 · 未知 · 1 分钟前", CloudBuildUiLogic.historyLine(run, NOW));
+  }
+
+  @Test
+  public void relativeTimeJustNow() {
+    assertEquals("刚刚", CloudBuildUiLogic.relativeTime(iso(NOW - 30_000L), NOW));
+  }
+
+  /** 设备时钟可能快于 GitHub 的时间戳：负差值必须显示「刚刚」而不是「-1 分钟前」。 */
+  @Test
+  public void relativeTimeClampsFutureTimestamps() {
+    assertEquals("刚刚", CloudBuildUiLogic.relativeTime(iso(NOW + 60_000L), NOW));
+  }
+
+  @Test
+  public void relativeTimeMinutesHoursDays() {
+    assertEquals("5 分钟前", CloudBuildUiLogic.relativeTime(iso(NOW - 5 * 60_000L), NOW));
+    assertEquals("23 小时前", CloudBuildUiLogic.relativeTime(iso(NOW - 23 * 3600_000L), NOW));
+    assertEquals("6 天前", CloudBuildUiLogic.relativeTime(iso(NOW - 6 * 24 * 3600_000L), NOW));
+  }
+
+  /** 超过一周改用绝对日期：相对时间（「23 天前」）反而不直观。 */
+  @Test
+  public void relativeTimeFallsBackToDateAfterAWeek() {
+    String text = CloudBuildUiLogic.relativeTime(iso(NOW - 30L * 24 * 3600_000L), NOW);
+    assertTrue(text, text.matches("\\d{4}-\\d{2}-\\d{2}"));
+  }
+
+  /** 解析不了的时间戳原样返回：显示原始值好过空白或崩溃。 */
+  @Test
+  public void relativeTimeKeepsUnparsableInput() {
+    assertEquals("not-a-time", CloudBuildUiLogic.relativeTime("not-a-time", NOW));
+  }
+
+  @Test
+  public void relativeTimeHandlesEmptyInput() {
+    assertEquals("未知时间", CloudBuildUiLogic.relativeTime("", NOW));
+  }
+
+  // ---------------------------------------------------------------------------
+
+  private static String iso(long epochMillis) {
+    return java.time.Instant.ofEpochMilli(epochMillis).toString();
+  }
 
   private static WorkflowRun newRun(String name, String branch, String status, String conclusion) {
     return new WorkflowRun(1L, name, branch, "abc123", status, conclusion,

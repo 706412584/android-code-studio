@@ -49,6 +49,26 @@
   <string name="cloud_build_tracking_stopped">Tracking stopped. The build continues on GitHub.</string>
   <string name="cloud_build_poll_failed">Progress refresh failed: %1$s</string>
 
+  <!-- 取消构建（远端不可逆操作，与「停止跟踪」区分） -->
+  <string name="cloud_build_cancel">Cancel build</string>
+  <string name="cloud_build_cancel_confirm_title">Cancel this build?</string>
+  <string name="cloud_build_cancel_confirm_message">This cancels the run on GitHub. Steps that already ran cannot be restored.\n\nIf you only want to stop watching the progress and let the build finish in the cloud, use \"Stop tracking\" instead.</string>
+  <string name="cloud_build_cancel_confirm_yes">Cancel build</string>
+  <string name="cloud_build_cancel_confirm_no">Keep running</string>
+  <string name="cloud_build_cancelling">Requesting cancellation…</string>
+  <string name="cloud_build_cancel_requested">Cancellation requested, waiting for GitHub…</string>
+  <string name="cloud_build_cancel_failed">Could not cancel: %1$s</string>
+  <string name="cloud_build_running_actions_hint">\"Cancel build\" stops the run on GitHub; \"Stop tracking\" only stops showing progress here.</string>
+  <string name="cloud_build_cancelled_log_title">Run log (cancelled)</string>
+
+  <!-- 历史构建 -->
+  <string name="cloud_build_history">Build history</string>
+  <string name="cloud_build_history_refresh">Refresh</string>
+  <string name="cloud_build_history_back">Back</string>
+  <string name="cloud_build_history_loading">Loading history…</string>
+  <string name="cloud_build_history_empty">No past runs.</string>
+  <string name="cloud_build_history_load_failed">Could not load history: %1$s</string>
+
   <!-- 结果 -->
   <string name="cloud_build_failure_title">Failure reason (log excerpt)</string>
   <string name="cloud_build_fetching_log">Fetching logs…</string>

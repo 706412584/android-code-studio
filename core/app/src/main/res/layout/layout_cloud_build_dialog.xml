@@ -8,11 +8,15 @@
   ~  (at your option) any later version.
   -->
 <!--
-  云编译底部表单：识别仓库 → 选择 workflow/分支 → 触发 → 看 job 进度 → 看失败日志/产物。
+  云编译底部表单：识别仓库 → 选择 workflow/分支 → 触发 → 看 job 进度 → 看失败日志/产物
+  → 查看历史构建。
 
-  为什么是单个布局 + section 显隐，而不是 ViewFlipper：云编译的状态切换有
-  「结果页要同时展示日志与产物」这类组合，ViewFlipper 只能显示一个孩子，
-  显隐控制更直接，也让每个 section 的 id 在 binding 里固定可查。
+  为什么是单个布局 + section 显隐，而不是 ViewPager/Tab：云编译的状态切换有
+  「结果页要同时展示日志与产物」这类组合，ViewPager 只能显示一个孩子，
+  显隐控制更直接，也让每个 section 的 id 在 binding 里固定可查。历史页同理——
+  它必须复用「识别仓库」后才存在的服务实例，独立 Tab 要再维护一份识别状态；
+  而详情页（运行中/结果）在「刚触发」与「看历史」两条路径上是同一批控件，
+  分 Tab 就得复制或跨 Tab 跳转，显隐方案没有这个问题。
 
   文案硬编码中文：服务层（WorkflowRun.statusText / GitHubApiException.userMessage）
   返回的提示已经是中文，界面文案走同一来源可避免两套文案不一致；与 AI 助手模块
@@ -212,6 +216,14 @@
           android:layout_height="wrap_content"
           android:layout_marginTop="16dp"
           android:text="@string/cloud_build_start" />
+
+        <com.google.android.material.button.MaterialButton
+          android:id="@+id/open_history"
+          style="@style/Widget.Material3.Button.TextButton"
+          android:layout_width="match_parent"
+          android:layout_height="wrap_content"
+          android:layout_marginTop="4dp"
+          android:text="@string/cloud_build_history" />
       </LinearLayout>
 
       <!-- 4. 运行中（job 级进度） -->
@@ -242,14 +254,54 @@
           android:layout_marginTop="12dp"
           android:orientation="vertical" />
 
-        <com.google.android.material.button.MaterialButton
-          android:id="@+id/stop_tracking"
-          style="@style/Widget.Material3.Button.OutlinedButton"
-          android:layout_width="wrap_content"
+        <!--
+          「取消构建」与「停止跟踪」并排：语义差别大（前者终止 GitHub 上的运行，
+          后者只停本地进度显示），因此按钮分开 + 下方一行小字说明区别，
+          避免用户把「停止跟踪」当成「取消构建」。导航（历史）放左侧、
+          动作放右侧，跟 Material 的 dismissive/affirmative 位置惯例一致。
+        -->
+        <LinearLayout
+          android:layout_width="match_parent"
           android:layout_height="wrap_content"
-          android:layout_gravity="end"
           android:layout_marginTop="16dp"
-          android:text="@string/cloud_build_stop_tracking" />
+          android:gravity="center_vertical"
+          android:orientation="horizontal">
+
+          <com.google.android.material.button.MaterialButton
+            android:id="@+id/open_history_running"
+            style="@style/Widget.Material3.Button.TextButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/cloud_build_history" />
+
+          <Space
+            android:layout_width="0dp"
+            android:layout_height="1dp"
+            android:layout_weight="1" />
+
+          <com.google.android.material.button.MaterialButton
+            android:id="@+id/cancel_build"
+            style="@style/Widget.Material3.Button.OutlinedButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/cloud_build_cancel"
+            android:textColor="?attr/colorError" />
+
+          <com.google.android.material.button.MaterialButton
+            android:id="@+id/stop_tracking"
+            style="@style/Widget.Material3.Button.TextButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="8dp"
+            android:text="@string/cloud_build_stop_tracking" />
+        </LinearLayout>
+
+        <com.google.android.material.textview.MaterialTextView
+          android:layout_width="match_parent"
+          android:layout_height="wrap_content"
+          android:layout_marginTop="4dp"
+          android:text="@string/cloud_build_running_actions_hint"
+          android:textAppearance="@style/TextAppearance.Material3.BodySmall" />
       </LinearLayout>
 
       <!-- 5. 结果（失败日志 / 产物） -->
@@ -283,6 +335,7 @@
           android:visibility="gone">
 
           <com.google.android.material.textview.MaterialTextView
+            android:id="@+id/failure_title"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:text="@string/cloud_build_failure_title"
@@ -335,8 +388,20 @@
           android:layout_width="match_parent"
           android:layout_height="wrap_content"
           android:layout_marginTop="16dp"
-          android:gravity="end"
+          android:gravity="center_vertical"
           android:orientation="horizontal">
+
+          <com.google.android.material.button.MaterialButton
+            android:id="@+id/open_history_result"
+            style="@style/Widget.Material3.Button.TextButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/cloud_build_history" />
+
+          <Space
+            android:layout_width="0dp"
+            android:layout_height="1dp"
+            android:layout_weight="1" />
 
           <com.google.android.material.button.MaterialButton
             android:id="@+id/build_again"
@@ -353,6 +418,80 @@
             android:layout_marginStart="8dp"
             android:text="@string/cloud_build_open_run_page" />
         </LinearLayout>
+      </LinearLayout>
+
+      <!-- 6. 历史构建（最近的 runs 列表） -->
+      <LinearLayout
+        android:id="@+id/section_history"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:visibility="gone">
+
+        <LinearLayout
+          android:layout_width="match_parent"
+          android:layout_height="wrap_content"
+          android:gravity="center_vertical"
+          android:orientation="horizontal">
+
+          <com.google.android.material.button.MaterialButton
+            android:id="@+id/history_back"
+            style="@style/Widget.Material3.Button.IconButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:contentDescription="@string/cloud_build_history_back"
+            app:icon="@drawable/ic_arrow_back" />
+
+          <com.google.android.material.textview.MaterialTextView
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="4dp"
+            android:layout_weight="1"
+            android:text="@string/cloud_build_history"
+            android:textAppearance="@style/TextAppearance.Material3.TitleMedium" />
+
+          <com.google.android.material.button.MaterialButton
+            android:id="@+id/history_refresh"
+            style="@style/Widget.Material3.Button.TextButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/cloud_build_history_refresh" />
+        </LinearLayout>
+
+        <com.google.android.material.progressindicator.LinearProgressIndicator
+          android:id="@+id/history_loading"
+          android:layout_width="match_parent"
+          android:layout_height="wrap_content"
+          android:layout_marginTop="8dp"
+          android:indeterminate="true"
+          android:visibility="gone" />
+
+        <com.google.android.material.textview.MaterialTextView
+          android:id="@+id/history_error"
+          android:layout_width="match_parent"
+          android:layout_height="wrap_content"
+          android:layout_marginTop="8dp"
+          android:textAppearance="@style/TextAppearance.Material3.BodyMedium"
+          android:textColor="?attr/colorError"
+          android:visibility="gone" />
+
+        <!-- 每行一个 run（状态 · 分支 · 时间），点击进入详情 -->
+        <LinearLayout
+          android:id="@+id/history_container"
+          android:layout_width="match_parent"
+          android:layout_height="wrap_content"
+          android:layout_marginTop="4dp"
+          android:orientation="vertical" />
+
+        <com.google.android.material.textview.MaterialTextView
+          android:id="@+id/history_empty"
+          android:layout_width="match_parent"
+          android:layout_height="wrap_content"
+          android:layout_marginTop="16dp"
+          android:gravity="center"
+          android:text="@string/cloud_build_history_empty"
+          android:textAppearance="@style/TextAppearance.Material3.BodyMedium"
+          android:visibility="gone" />
       </LinearLayout>
     </LinearLayout>
   </androidx.core.widget.NestedScrollView>

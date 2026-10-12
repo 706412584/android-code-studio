@@ -18,6 +18,10 @@
 package com.tom.rv2ide.cloudbuild
 
 import java.io.File
+import java.time.Instant
+import java.time.ZoneId
+import java.time.format.DateTimeParseException
+import java.util.Locale
 
 /**
  * 云编译界面的纯逻辑：异常翻译、状态文案、workflow 选择与本地文件检查。
@@ -115,5 +119,64 @@ object CloudBuildUiLogic {
         .filter { it.isFile && (it.name.endsWith(".yml") || it.name.endsWith(".yaml")) }
         .map { it.name }
         .sorted()
+  }
+
+  // ---------------------------------------------------------------------------
+  // 历史列表
+  // ---------------------------------------------------------------------------
+
+  /** 超过一周的历史显示本地日期；`Locale.ROOT` 避免不同区域设置下格式漂移。 */
+  private val HISTORY_DATE_FORMAT =
+      java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd", Locale.ROOT)
+          .withZone(ZoneId.systemDefault())
+
+  /** 历史行文案：「状态 · 分支 · 时间」，例如「成功 · dev · 3 小时前」。 */
+  @JvmStatic
+  fun historyLine(run: WorkflowRun, nowMillis: Long): String {
+    val branch = if (run.headBranch.isEmpty()) "未知" else run.headBranch
+    return run.statusText() + " · " + branch + " · " + relativeTime(run.createdAt, nowMillis)
+  }
+
+  /**
+   * ISO 8601 时间 → 相对时间文案（「刚刚 / N 分钟前 / N 小时前 / N 天前」，
+   * 超过 7 天显示本地日期）。
+   *
+   * <p>`nowMillis` 由调用方传入而不是内部取 `System.currentTimeMillis()`：
+   * 时间文案是「错了用户就觉得列表坏了」的地方（例如显示「-3 分钟前」），
+   * 参数化才能把边界固定进测试。
+   *
+   * <p>解析失败（GitHub 理论上不会，但不能假设）时原样返回输入字符串——
+   * 显示一个原始时间戳好过显示空白或崩溃。
+   */
+  @JvmStatic
+  fun relativeTime(isoTime: String, nowMillis: Long): String {
+    if (isoTime.isBlank()) {
+      return "未知时间"
+    }
+    val createdMillis =
+        try {
+          Instant.parse(isoTime).toEpochMilli()
+        } catch (e: DateTimeParseException) {
+          return isoTime
+        }
+    val diffMs = nowMillis - createdMillis
+    // 设备时钟可能比 GitHub 快，导致 diff 为负——显示「-3 分钟前」比显示「刚刚」更糟。
+    if (diffMs < 60_000L) {
+      return "刚刚"
+    }
+    val minutes = diffMs / 60_000L
+    if (minutes < 60L) {
+      return minutes.toString() + " 分钟前"
+    }
+    val hours = minutes / 60L
+    if (hours < 24L) {
+      return hours.toString() + " 小时前"
+    }
+    val days = hours / 24L
+    if (days < 7L) {
+      return days.toString() + " 天前"
+    }
+    // 一周以上：相对时间不再直观（「23 天前」还要用户自己换算），改显示日期。
+    return HISTORY_DATE_FORMAT.format(Instant.ofEpochMilli(createdMillis))
   }
 }

@@ -86,6 +86,11 @@ import kotlinx.coroutines.withContext
  * <p><b>线程模型</b>：服务层全部方法都是同步阻塞的（含网络与 sleep），因此每次调用
  * 都包在 [withContext]`(Dispatchers.IO)` 里；协程作用域用 `viewLifecycleOwner.lifecycleScope`，
  * 视图销毁即自动取消（含正在进行中的网络请求所在协程）。
+ *
+ * <p><b>「取消构建」与「停止跟踪」是两回事</b>：前者调用 GitHub 的 cancel 接口
+ * 真正终止远端运行（不可逆，需要确认对话框）；后者只停本地的轮询，构建继续跑。
+ * 两者都在运行页，语义差别大，因此按钮分开、并在确认对话框里互相点名，
+ * 避免用户把「停止跟踪」当成「取消构建」。
  */
 class CloudBuildDialogFragment : BottomSheetDialogFragment() {
 
@@ -109,6 +114,18 @@ class CloudBuildDialogFragment : BottomSheetDialogFragment() {
   /** 上一次渲染的 job 行内容；用于跳过无变化的视图重建（见 renderSnapshot）。 */
   private var lastJobLines: List<String>? = null
 
+  /** 已拉到的历史 runs（详情页返回历史页时直接复用，不重复联网）。 */
+  private var historyRuns: List<WorkflowRun> = emptyList()
+
+  /** 当前所在页面（历史页返回时需要知道「从哪来」）。 */
+  private var currentSection: Section = Section.LOADING
+
+  /** 打开历史页之前的页面（「返回」回到这里，而不是重跑识别/触发流程）。 */
+  private var sectionBeforeHistory: Section = Section.SETUP
+
+  /** 是否已向 GitHub 发出取消请求（用于状态行反馈，避免被下一轮轮询盖掉）。 */
+  private var cancelRequested = false
+
   companion object {
 
     const val TAG = "cloud_build_dialog"
@@ -118,6 +135,9 @@ class CloudBuildDialogFragment : BottomSheetDialogFragment() {
      * 远低于限额；再密也不会更快看到状态变化——GitHub 的 job 状态本身有延迟。
      */
     private const val POLL_INTERVAL_MS = 12_000L
+
+    /** 历史列表一次拉取的条数：够翻几页，又不会让弹窗拉出一长串。 */
+    private const val HISTORY_LIMIT = 20
 
     /** 下载产物 / 拉日志的临时目录名（放项目内，用户可见、可清理）。 */
     private const val CACHE_DIR_NAME = ".cloudbuild-cache"
@@ -170,6 +190,12 @@ class CloudBuildDialogFragment : BottomSheetDialogFragment() {
     binding.buildAgain.setOnClickListener { backToSetup() }
     binding.openRunPage.setOnClickListener { openRunPage() }
     binding.copyLog.setOnClickListener { copyFailureLog() }
+    binding.cancelBuild.setOnClickListener { confirmCancelBuild() }
+    binding.openHistory.setOnClickListener { showHistory() }
+    binding.openHistoryRunning.setOnClickListener { showHistory() }
+    binding.openHistoryResult.setOnClickListener { showHistory() }
+    binding.historyBack.setOnClickListener { hideHistory() }
+    binding.historyRefresh.setOnClickListener { loadHistory() }
 
     startDetection()
   }
@@ -401,10 +427,223 @@ class CloudBuildDialogFragment : BottomSheetDialogFragment() {
     }
   }
 
+  // ---------------------------------------------------------------------------
+  // 流程：取消构建（远端不可逆操作）
+  // ---------------------------------------------------------------------------
+
+  /**
+   * 取消构建的确认对话框。
+   *
+   * <p>取消是不可逆的远端操作，必须二次确认；文案里点名「停止跟踪」的区别——
+   * 两个按钮挨着，用户点错一个就会误杀一次正在跑的构建（或者相反，
+   * 以为构建停了其实还在跑）。
+   */
+  private fun confirmCancelBuild() {
+    val run = currentRun ?: return
+    if (run.isFinished) {
+      // 运行已经结束（可能刚好在这几秒里跑完）：轮询会把界面切到结果页，
+      // 这里不需要再发取消请求。
+      showResult(run)
+      return
+    }
+    MaterialAlertDialogBuilder(requireContext())
+        .setTitle(R.string.cloud_build_cancel_confirm_title)
+        .setMessage(R.string.cloud_build_cancel_confirm_message)
+        .setPositiveButton(R.string.cloud_build_cancel_confirm_yes) { _, _ -> cancelBuild(run.id) }
+        .setNegativeButton(R.string.cloud_build_cancel_confirm_no, null)
+        .show()
+  }
+
+  private fun cancelBuild(runId: Long) {
+    val svc = service ?: return
+    // 立即给出反馈：cancel 接口是异步的，run 状态要过几秒才变 cancelled。
+    binding.cancelBuild.isEnabled = false
+    binding.runStatus.text = getString(R.string.cloud_build_cancelling)
+
+    viewLifecycleOwner.lifecycleScope.launch {
+      try {
+        runInterruptible(Dispatchers.IO) { svc.cancelRun(runId) }
+        // 挂起点之后先查活跃性：取消后不得触碰已 detach 的 UI（同 startTracking）。
+        if (!isActive) {
+          return@launch
+        }
+        cancelRequested = true
+        binding.runStatus.text = getString(R.string.cloud_build_cancel_requested)
+        // 若此前已「停止跟踪」，轮询已停——重启它来观察取消结果，否则状态会
+        // 永远停在「已请求取消」（取消是异步的，只能靠轮询等到终态）。
+        if (trackingJob?.isActive != true) {
+          val workflow = binding.workflowInput.text?.toString()?.trim().orEmpty()
+          val branch = binding.branchInput.text?.toString()?.trim().orEmpty()
+          startTracking(runId, workflow, branch)
+        }
+        // 不在这里停轮询：状态变化（completed / cancelled）由既有轮询观察，
+        // 到终态后走 showResult，逻辑与「构建自然结束」完全同路。
+      } catch (t: Throwable) {
+        if (t is CancellationException) {
+          throw t
+        }
+        // 同 startTracking：取消中断抛的 InterruptedIOException 绕过取消重抛。
+        if (!isActive) {
+          return@launch
+        }
+        binding.cancelBuild.isEnabled = true
+        flashError(getString(R.string.cloud_build_cancel_failed, CloudBuildUiLogic.errorMessage(t)))
+      }
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // 流程：历史构建
+  // ---------------------------------------------------------------------------
+
+  /**
+   * 打开历史页。已有缓存时先渲染再后台刷新（stale-while-revalidate）——
+   * 每次打开都转圈会让「看一眼上次跑成什么样」这种高频操作变慢，
+   * 但只信缓存又会显示过期的状态（刚结束的 run 还是「运行中」）。
+   */
+  private fun showHistory() {
+    if (currentSection != Section.HISTORY) {
+      sectionBeforeHistory = currentSection
+    }
+    showSection(Section.HISTORY)
+    if (historyRuns.isNotEmpty()) {
+      renderHistory()
+    }
+    loadHistory()
+  }
+
+  /** 从历史页返回：回到进入历史前的页面（通常是配置页或结果页）。 */
+  private fun hideHistory() {
+    // 跟踪中的 run 在用户翻历史期间结束了：onRunFinished 已经把结果内容填好
+    // （只是没切页），此时应落到结果页而不是过时的运行页。
+    val trackedFinished = currentRun?.isFinished == true
+    when (sectionBeforeHistory) {
+      Section.RUNNING -> showSection(if (trackedFinished) Section.RESULT else Section.RUNNING)
+      Section.RESULT -> showSection(Section.RESULT)
+      else -> showSection(Section.SETUP)
+    }
+  }
+
+  /**
+   * 拉历史 runs。
+   *
+   * <p>只按 workflow 过滤、不按分支：用户想看的是「这个 workflow 最近跑成什么样」，
+   * 加上分支过滤会让切到别的分支时历史变成空（而构建明明跑过）。每行自带分支列，
+   * 用户自己就能分辨。
+   */
+  private fun loadHistory() {
+    val svc = service ?: return
+    val workflow = binding.workflowInput.text?.toString()?.trim().orEmpty()
+
+    binding.historyLoading.visibility = View.VISIBLE
+    binding.historyError.visibility = View.GONE
+    binding.historyRefresh.isEnabled = false
+
+    viewLifecycleOwner.lifecycleScope.launch {
+      val runs =
+          try {
+            runInterruptible(Dispatchers.IO) {
+              svc.listRuns(workflow.ifEmpty { null }, null, HISTORY_LIMIT)
+            }
+          } catch (t: Throwable) {
+            if (t is CancellationException) {
+              throw t
+            }
+            // 同 startTracking：取消中断抛的 InterruptedIOException 绕过取消重抛。
+            if (!isActive) {
+              return@launch
+            }
+            binding.historyLoading.visibility = View.GONE
+            binding.historyRefresh.isEnabled = true
+            // 失败信息留在历史页内（而不是跳到错误页）：错误页会丢掉「返回」路径，
+            // 用户重试的上下文（当前 workflow/分支）全在历史页的入口上。
+            binding.historyError.text =
+                getString(R.string.cloud_build_history_load_failed, CloudBuildUiLogic.errorMessage(t))
+            binding.historyError.visibility = View.VISIBLE
+            return@launch
+          }
+
+      // 挂起点之后可能已被取消（上面的 catch 只在异常路径检查；成功返回也要查）。
+      if (!isActive) {
+        return@launch
+      }
+
+      historyRuns = runs
+      binding.historyLoading.visibility = View.GONE
+      binding.historyRefresh.isEnabled = true
+      renderHistory()
+    }
+  }
+
+  private fun renderHistory() {
+    val container = binding.historyContainer
+    container.removeAllViews()
+    binding.historyEmpty.visibility = if (historyRuns.isEmpty()) View.VISIBLE else View.GONE
+
+    val now = System.currentTimeMillis()
+    for (run in historyRuns) {
+      container.addView(newHistoryRow(run, now))
+    }
+  }
+
+  /** 一行历史：状态 · 分支 · 时间；点击进入该 run 的详情。 */
+  private fun newHistoryRow(run: WorkflowRun, nowMillis: Long): View {
+    val row = MaterialTextView(requireContext())
+    row.text = CloudBuildUiLogic.historyLine(run, nowMillis)
+    row.setTextAppearance(R.style.TextAppearance_Material3_BodyLarge)
+    row.setPadding(dp(8), dp(12), dp(8), dp(12))
+    // 点击行要有反馈：历史行是「可点的」，没有 ripple 用户会以为只是文字。
+    val outValue = android.util.TypedValue()
+    requireContext().theme.resolveAttribute(android.R.attr.selectableItemBackground, outValue, true)
+    row.setBackgroundResource(outValue.resourceId)
+    row.setOnClickListener { openHistoryRun(run) }
+    return row
+  }
+
+  /**
+   * 进入某个历史 run 的详情。
+   *
+   * <p>未结束的 run 重新开始轮询（用户可能关掉过界面，run 还在跑）；
+   * 已结束的直接展示结果并拉产物/失败日志——与「构建自然结束」走同一套
+   * [showResult] / [loadArtifacts] / [loadFailureLog]，不重复实现。
+   */
+  private fun openHistoryRun(run: WorkflowRun) {
+    // 打开的是另一个 run 的详情：旧的跟踪任务必须停掉，否则它会在后台继续
+    // 轮询、并在结束时把界面抢到它自己的结果页（用户在看 B，突然跳出 A 的结果）。
+    // 语义与「停止跟踪」一致：只停本地跟踪，A 的构建继续在 GitHub 上跑。
+    if (currentRun?.id != run.id) {
+      trackingJob?.cancel()
+      trackingJob = null
+    }
+    currentRun = run
+    val workflow = binding.workflowInput.text?.toString()?.trim().orEmpty()
+    val branch = binding.branchInput.text?.toString()?.trim().orEmpty()
+    cancelRequested = false
+    if (run.isFinished()) {
+      showResult(run)
+      if (run.isSuccess) {
+        loadArtifacts(run.id)
+      } else {
+        loadFailureLog(run.id, isCancelledRun = run.conclusion == WorkflowRun.CONCLUSION_CANCELLED)
+      }
+    } else {
+      showRunning(run)
+      startTracking(run.id, workflow, branch)
+    }
+  }
+
   private fun renderSnapshot(snapshot: WorkflowRunPoller.Snapshot) {
     currentRun = snapshot.run
     binding.runTitle.text = CloudBuildUiLogic.runTitle(snapshot.run)
-    binding.runStatus.text = CloudBuildUiLogic.runStatusLine(snapshot.run)
+    binding.runStatus.text =
+        if (cancelRequested && !snapshot.run.isFinished()) {
+          // GitHub 处理取消有秒级到十几秒的延迟，期间 run 仍是「运行中」——
+          // 不带上「已请求取消」的话，用户会以为取消没生效又去点一次。
+          CloudBuildUiLogic.runStatusLine(snapshot.run) + " · " +
+              getString(R.string.cloud_build_cancel_requested)
+        } else {
+          CloudBuildUiLogic.runStatusLine(snapshot.run)
+        }
 
     val container = binding.jobContainer
     val lines =
@@ -456,21 +695,32 @@ class CloudBuildDialogFragment : BottomSheetDialogFragment() {
     }
     val run = snapshot.run
     currentRun = run
+    // 用户在历史页时不要把界面拽走：结果内容照常准备好（下面照常调用），
+    // 但保持历史页可见；返回时 hideHistory 会按 run 的终态落到结果页。
+    val switchSection = currentSection != Section.HISTORY
     if (run.isSuccess) {
-      showResult(run)
+      showResult(run, switchToSection = switchSection)
       loadArtifacts(run.id)
     } else {
       // 失败 / 取消：先展示结果骨架，再异步补上失败日志。
-      showResult(run)
-      loadFailureLog(run.id)
+      showResult(run, switchToSection = switchSection)
+      loadFailureLog(run.id, isCancelledRun = run.conclusion == WorkflowRun.CONCLUSION_CANCELLED)
     }
   }
 
-  /** 拉失败日志（可能下载几十 MB 的日志 zip，慢，必须在 IO 上且允许取消）。 */
-  private fun loadFailureLog(runId: Long) {
+  /**
+   * 拉失败日志（可能下载几十 MB 的日志 zip，慢，必须在 IO 上且允许取消）。
+   *
+   * <p>[isCancelledRun] 为 true 时标题改成「运行日志」：被取消的 run 没有
+   * 「失败原因」可言，套用失败标题会让用户去找一个不存在的错误。
+   */
+  private fun loadFailureLog(runId: Long, isCancelledRun: Boolean = false) {
     val svc = service ?: return
     val projectDir = IProjectManager.getInstance().projectDirOrNull ?: return
 
+    binding.failureTitle.setText(
+        if (isCancelledRun) R.string.cloud_build_cancelled_log_title else R.string.cloud_build_failure_title
+    )
     binding.failureGroup.visibility = View.VISIBLE
     binding.failureLog.text = getString(R.string.cloud_build_fetching_log)
 
@@ -689,9 +939,11 @@ class CloudBuildDialogFragment : BottomSheetDialogFragment() {
     SETUP,
     RUNNING,
     RESULT,
+    HISTORY,
   }
 
   private fun showSection(section: Section) {
+    currentSection = section
     TransitionManager.beginDelayedTransition(
         binding.root,
         MaterialSharedAxis(MaterialSharedAxis.Y, true),
@@ -701,6 +953,7 @@ class CloudBuildDialogFragment : BottomSheetDialogFragment() {
     binding.sectionSetup.visibility = if (section == Section.SETUP) View.VISIBLE else View.GONE
     binding.sectionRunning.visibility = if (section == Section.RUNNING) View.VISIBLE else View.GONE
     binding.sectionResult.visibility = if (section == Section.RESULT) View.VISIBLE else View.GONE
+    binding.sectionHistory.visibility = if (section == Section.HISTORY) View.VISIBLE else View.GONE
   }
 
   /**
@@ -742,6 +995,10 @@ class CloudBuildDialogFragment : BottomSheetDialogFragment() {
 
   private fun showRunning(run: WorkflowRun) {
     currentRun = run
+    // 每次进入运行页都重置按钮与取消标记：上一轮的取消状态不能带到这一轮
+    // （例如取消失败后按钮要恢复可点；历史页点进另一个 run 时同样如此）。
+    cancelRequested = false
+    binding.cancelBuild.isEnabled = true
     binding.runTitle.text = CloudBuildUiLogic.runTitle(run)
     binding.runStatus.text = CloudBuildUiLogic.runStatusLine(run)
     // 记下这个占位行，让首轮「job 尚未出现」的快照不会重复渲染同一内容。
@@ -752,7 +1009,7 @@ class CloudBuildDialogFragment : BottomSheetDialogFragment() {
     showSection(Section.RUNNING)
   }
 
-  private fun showResult(run: WorkflowRun) {
+  private fun showResult(run: WorkflowRun, switchToSection: Boolean = true) {
     binding.resultTitle.text = CloudBuildUiLogic.runTitle(run)
     binding.resultStatus.text = CloudBuildUiLogic.runStatusLine(run)
     // 每次进入结果页先清掉上一次的失败日志 / 产物，避免「上次的日志」被误读成本次的。
@@ -760,7 +1017,9 @@ class CloudBuildDialogFragment : BottomSheetDialogFragment() {
     binding.artifactGroup.visibility = View.GONE
     binding.failureLog.text = ""
     binding.artifactContainer.removeAllViews()
-    showSection(Section.RESULT)
+    if (switchToSection) {
+      showSection(Section.RESULT)
+    }
   }
 
   // ---------------------------------------------------------------------------
