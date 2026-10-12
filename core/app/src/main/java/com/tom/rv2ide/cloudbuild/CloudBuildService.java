@@ -286,8 +286,27 @@ public final class CloudBuildService {
     }
     PushResult push = git.push("origin", branch, login, token);
     if (!push.getSuccess()) {
-      throw new Exception("推送到 GitHub 失败：" + push.getMessage()
-          + "。若提示认证失败，请检查 Token 是否有 repo 权限。");
+      // 区分「网络不通」与「认证失败」——两者的修复动作完全不同，而 JGit 的
+      // 原始消息都是英文异常（"connection failed" / "not authorized"），
+      // 笼统提示「检查 Token」会把网络问题误导成权限问题（实测踩过：
+      // 设备网络连不上 github.com，用户按提示反复检查 token 却无从解决）。
+      String raw = push.getMessage() == null ? "" : push.getMessage();
+      String lower = raw.toLowerCase(java.util.Locale.ROOT);
+      boolean looksLikeNetwork =
+          lower.contains("connection failed")
+              || lower.contains("connection refused")
+              || lower.contains("unknownhost")
+              || lower.contains("timed out")
+              || lower.contains("timeout")
+              || lower.contains("unreachable");
+      String hint =
+          looksLikeNetwork
+              ? "这看起来是网络问题：设备无法连接 github.com（git 推送端点）。"
+                  + "仓库已创建成功（" + slug.owner + "/" + slug.repo + "），"
+                  + "网络恢复后重试即可完成推送。"
+                  + "（注意：api.github.com 可达不代表 github.com 可达，两者域名不同。）"
+              : "若提示认证失败，请检查 Token 是否有 repo 权限。";
+      throw new Exception("推送到 GitHub 失败：" + raw + "。" + hint);
     }
 
     return new CreateAndPushResult(slug, branch, true);
