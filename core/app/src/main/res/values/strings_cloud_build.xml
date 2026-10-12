@@ -95,4 +95,11 @@
   <string name="cloud_build_token_not_persistent">Encrypted storage is unavailable on this device — the token will only be kept for this session.</string>
   <string name="cloud_build_token_save">Save</string>
   <string name="cloud_build_token_saved">Token saved</string>
+  <!-- One-click repo creation -->
+  <string name="cloud_build_create_repo">Create repo and push</string>
+  <string name="cloud_build_create_repo_confirm_title">Create GitHub repository</string>
+  <string name="cloud_build_create_repo_confirm_message">A private repository named "%1$s" will be created under your GitHub account and this project will be pushed to it. Private repositories do not expose your code.</string>
+  <string name="cloud_build_create_repo_working">Creating repository and pushing…</string>
+  <string name="cloud_build_create_repo_done">Pushed to %1$s, re-detecting…</string>
+  <string name="cloud_build_create_repo_failed">Failed to create repository: %1$s</string>
 </resources>

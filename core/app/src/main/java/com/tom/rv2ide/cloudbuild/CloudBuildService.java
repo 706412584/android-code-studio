@@ -18,6 +18,7 @@
 package com.tom.rv2ide.cloudbuild;
 
 import com.tom.rv2ide.git.GitManager;
+import com.tom.rv2ide.git.PushResult;
 import com.tom.rv2ide.git.RemoteInfo;
 import java.io.File;
 import java.util.ArrayList;
@@ -139,6 +140,157 @@ public final class CloudBuildService {
     } catch (Throwable e) {
       return null;
     }
+  }
+
+  // ---------------------------------------------------------------------------
+  // 一键建仓并推送（方案 A：让「没有 remote 的项目」零手动步骤用上云编译）
+  // ---------------------------------------------------------------------------
+
+  /** 建仓推送的结果。 */
+  public static final class CreateAndPushResult {
+    public final GitRemoteParser.RepoSlug repo;
+    public final String branch;
+    public final boolean pushed;
+
+    CreateAndPushResult(GitRemoteParser.RepoSlug repo, String branch, boolean pushed) {
+      this.repo = repo;
+      this.branch = branch;
+      this.pushed = pushed;
+    }
+  }
+
+  /**
+   * 从项目名派生一个合法的仓库名。
+   *
+   * <p>GitHub 的仓库名规则：字母数字与 {@code . _ -}，不能以点开头。驼峰转小写连字符
+   * （{@code MyFlutter} → {@code myflutter}）——用户看到的名字与项目名对应，
+   * 又符合社区惯例。
+   *
+   * <p>空结果兜底为 {@code acs-project}（项目名全是非法字符时）。
+   */
+  public static String deriveRepoName(String projectName) {
+    if (projectName == null) {
+      return "acs-project";
+    }
+    String name =
+        projectName
+            .trim()
+            .replaceAll("([a-z0-9])([A-Z])", "$1-$2")
+            .toLowerCase(java.util.Locale.ROOT)
+            .replaceAll("[^a-z0-9._-]", "-")
+            .replaceAll("-{2,}", "-")
+            .replaceAll("^[.-]+", "")
+            .replaceAll("[.-]+$", "");
+    return name.isEmpty() ? "acs-project" : name;
+  }
+
+  /**
+   * 一键建仓并推送当前项目。
+   *
+   * <p>完整流程（每步失败都给可读错误）：
+   * <ol>
+   *   <li>创建 GitHub 仓库（默认私有——这是用户源码，不该默认公开）</li>
+   *   <li>本地仓库：没初始化就初始化；有未提交内容就全部提交</li>
+   *   <li>配置 origin remote（已存在则更新 URL）</li>
+   *   <li>推送当前分支（用 token 认证）</li>
+   * </ol>
+   *
+   * <p><b>为什么推送用 JGit 而不是 GitHub API</b>：GitHub 的 Git Data API 要逐
+   * 对象上传（blob → tree → commit → ref），大项目下请求数爆炸；而 JGit 的
+   * {@code push} 走标准 smart HTTP 协议，一次推完。GitManager 已封装好推送与认证。
+   *
+   * <p><b>不做「重名自动改名」</b>：用户可能故意想用同名（删了旧的重建）。
+   * 重名时 GitHub 返回 422，把错误如实呈现，让用户改个名字再来——自动改名会让
+   * 用户找不到自己的仓库。
+   *
+   * @param projectPath 本地项目路径
+   * @param repoName 仓库名（null 时从目录名派生）
+   * @param isPrivate 是否私有
+   * @return 结果（含 owner/repo 与分支）
+   * @throws Exception 任一步失败（消息面向用户可读）
+   */
+  public CreateAndPushResult createRepositoryAndPush(
+      String projectPath, String repoName, boolean isPrivate) throws Exception {
+    if (!client.hasToken()) {
+      throw new GitHubApiException(401, "未配置 GitHub Token，无法创建仓库", "");
+    }
+    if (projectPath == null || projectPath.trim().isEmpty()) {
+      throw new Exception("项目路径为空，无法推送。");
+    }
+    File projectDir = new File(projectPath);
+    if (!projectDir.isDirectory()) {
+      throw new Exception("项目目录不存在：" + projectPath);
+    }
+
+    String name = repoName;
+    if (name == null || name.trim().isEmpty()) {
+      name = deriveRepoName(projectDir.getName());
+    }
+
+    // ---- 1. 建远端仓库 ----
+    GitRemoteParser.RepoSlug slug =
+        client.createRepository(name, isPrivate, "由 Android Code Studio 创建");
+
+    // ---- 2. 本地仓库：初始化 + 提交 ----
+    GitManager git = new GitManager(projectPath);
+    boolean opened = git.openRepository();
+    if (!opened) {
+      if (!git.initRepository("main")) {
+        throw new Exception("无法初始化本地 git 仓库（目录可能不可写）。");
+      }
+      // initRepository 不建初始提交；下面 stageAll + commit 会建。
+    }
+    String branch = git.getCurrentBranch();
+    if (branch == null || branch.isEmpty()) {
+      branch = "main";
+    }
+
+    // 有未提交内容才提交：空提交会失败（Nothing to commit），而全部已提交时
+    // 直接进推送才是正确行为。用 JGit 的 Status 判断——它同时覆盖未跟踪文件
+    // （新增项目全是未跟踪文件，此时 isClean() 为 false，正确）。
+    org.eclipse.jgit.api.Status status = git.getStatus();
+    boolean hasChanges =
+        status != null && !status.isClean();
+    if (hasChanges) {
+      if (!git.stageAllFiles()) {
+        throw new Exception("无法暂存文件（git add 失败）。");
+      }
+      if (!git.commit("由 Android Code Studio 创建的初始提交", "Android Code Studio", "acs@localhost")) {
+        // 没有可提交内容时 JGit 的 commit 也会失败，此时不是错误——继续推送。
+        // 真正的问题（无用户身份等）会在推送阶段以更明确的错误暴露。
+      }
+    }
+
+    // ---- 3. 配置 remote ----
+    String remoteUrl = "https://github.com/" + slug.owner + "/" + slug.repo + ".git";
+    boolean hasOrigin = false;
+    for (RemoteInfo remote : git.getRemotes()) {
+      if ("origin".equals(remote.getName())) {
+        hasOrigin = true;
+        break;
+      }
+    }
+    if (hasOrigin) {
+      git.removeRemote("origin");
+    }
+    if (!git.addRemote("origin", remoteUrl)) {
+      throw new Exception("无法配置 origin remote。");
+    }
+
+    // ---- 4. 推送 ----
+    // 认证：GitHub 的 HTTPS 推送用「用户名 + PAT」——用户名任意非空（token 才是凭证），
+    // 用 token 持有者的登录名最不容易被服务端策略误判。
+    String login = client.getAuthenticatedLogin();
+    if (login == null || login.isEmpty()) {
+      login = slug.owner;
+    }
+    PushResult push = git.push("origin", branch, login, token);
+    if (!push.getSuccess()) {
+      throw new Exception("推送到 GitHub 失败：" + push.getMessage()
+          + "。若提示认证失败，请检查 Token 是否有 repo 权限。");
+    }
+
+    return new CreateAndPushResult(slug, branch, true);
   }
 
   // ---------------------------------------------------------------------------

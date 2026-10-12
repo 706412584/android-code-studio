@@ -184,6 +184,7 @@ class CloudBuildDialogFragment : BottomSheetDialogFragment() {
     binding.close.setOnClickListener { dismiss() }
     binding.errorRetry.setOnClickListener { startDetection() }
     binding.errorConfigureToken.setOnClickListener { showTokenDialog() }
+    binding.errorCreateRepo.setOnClickListener { confirmCreateRepo() }
     binding.configureToken.setOnClickListener { showTokenDialog() }
     binding.startBuild.setOnClickListener { startBuild() }
     binding.stopTracking.setOnClickListener { stopTracking(showResult = true) }
@@ -233,7 +234,13 @@ class CloudBuildDialogFragment : BottomSheetDialogFragment() {
         return@launch
       }
       if (slug == null || !slug.isValid) {
-        showError(buildNoRepoMessage(projectDir))
+        // 建仓需要 token（创建仓库是写操作）。没 token 时只提示配置 token——
+        // 露出一个点下去必然失败的按钮比不露更糟。
+        showError(
+            buildNoRepoMessage(projectDir),
+            showTokenEntry = !tokenStore.hasToken(),
+            showCreateRepo = tokenStore.hasToken(),
+        )
         return@launch
       }
 
@@ -854,6 +861,78 @@ class CloudBuildDialogFragment : BottomSheetDialogFragment() {
   }
 
   // ---------------------------------------------------------------------------
+  // 一键建仓并推送（方案 A）
+  // ---------------------------------------------------------------------------
+
+  /**
+   * 建仓前的确认对话框。
+   *
+   * <p>建仓是**写操作**（在用户账号下创建仓库、推送源码），必须确认。文案说清
+   * 「私有」——用户对「推到 GitHub」的第一反应往往是「我的代码要被公开了？」，
+   * 明确私有能消除这个顾虑（真要公开是显式选择，本流程不提供）。
+   */
+  private fun confirmCreateRepo() {
+    val projectDir = IProjectManager.getInstance().projectDirOrNull ?: return
+    val repoName = CloudBuildService.deriveRepoName(projectDir.name)
+    MaterialAlertDialogBuilder(requireContext())
+        .setTitle(R.string.cloud_build_create_repo_confirm_title)
+        .setMessage(getString(R.string.cloud_build_create_repo_confirm_message, repoName))
+        .setPositiveButton(R.string.cloud_build_create_repo) { _, _ -> createRepoAndPush() }
+        .setNegativeButton(android.R.string.cancel, null)
+        .show()
+  }
+
+  /** 执行建仓 + 提交 + 推送，完成后重新走识别流程。 */
+  private fun createRepoAndPush() {
+    val projectDir = IProjectManager.getInstance().projectDirOrNull ?: return
+    val token = tokenStore.getToken()
+
+    showSection(Section.LOADING)
+    binding.loadingText.setText(R.string.cloud_build_create_repo_working)
+
+    viewLifecycleOwner.lifecycleScope.launch {
+      try {
+        // 建仓 + 推送是长操作（网络 + JGit），必须 runInterruptible——
+        // withContext 的取消要等 block 结束，用户关掉表单后会继续跑。
+        val result =
+            runInterruptible(Dispatchers.IO) {
+              // owner/repo 未定（这正是「没有 remote」的情形）：用一个占位
+              // 服务实例走建仓——createRepositoryAndPush 只用 client 的
+              // token/API 能力，owner 由响应决定。
+              val svc = CloudBuildService(token, "", "")
+              svc.createRepositoryAndPush(projectDir.path, null, true)
+            }
+        // 挂起点之后先查活跃性（同 startTracking）。
+        if (!isActive) {
+          return@launch
+        }
+        flashSuccess(
+            getString(
+                R.string.cloud_build_create_repo_done,
+                result.repo.owner + "/" + result.repo.repo,
+            )
+        )
+        // 推送完成：重新识别（此时 remote 已在，识别会成功并进入配置页）。
+        startDetection()
+      } catch (t: Throwable) {
+        if (t is CancellationException) {
+          throw t
+        }
+        if (!isActive) {
+          return@launch
+        }
+        val message =
+            if (t is GitHubApiException) t.userMessage() else CloudBuildUiLogic.errorMessage(t)
+        showError(
+            getString(R.string.cloud_build_create_repo_failed, message),
+            showTokenEntry = t is GitHubApiException && t.isAuthProblem,
+            showCreateRepo = true,
+        )
+      }
+    }
+  }
+
+  // ---------------------------------------------------------------------------
   // Token 配置
   // ---------------------------------------------------------------------------
 
@@ -960,9 +1039,16 @@ class CloudBuildDialogFragment : BottomSheetDialogFragment() {
    * 错误页。`showTokenEntry` 为 true 时额外露出「配置 Token」按钮——
    * 鉴权类失败只有配 token 才能解决，把入口放在错误信息旁边是最短的修复路径。
    */
-  private fun showError(message: String, showTokenEntry: Boolean = false) {
+  private fun showError(
+      message: String,
+      showTokenEntry: Boolean = false,
+      showCreateRepo: Boolean = false,
+  ) {
     binding.errorText.text = message
     binding.errorConfigureToken.visibility = if (showTokenEntry) View.VISIBLE else View.GONE
+    // 「没有 GitHub 远程仓库」时提供一键建仓——重试改变不了没有 remote 的事实，
+    // 建仓推送才是用户真正的下一步。
+    binding.errorCreateRepo.visibility = if (showCreateRepo) View.VISIBLE else View.GONE
     showSection(Section.ERROR)
   }
 

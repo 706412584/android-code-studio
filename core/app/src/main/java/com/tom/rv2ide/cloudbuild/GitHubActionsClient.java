@@ -76,6 +76,67 @@ public final class GitHubActionsClient implements RunQueryPort {
   }
 
   // ---------------------------------------------------------------------------
+  // 仓库创建（一键建仓流程）
+  // ---------------------------------------------------------------------------
+
+  /**
+   * 在当前 token 的账号下创建一个新仓库。
+   *
+   * <p><b>为什么默认私有</b>：这是「用户的项目源码」——建公开仓库会把源码发布出去，
+   * 而用户点「创建仓库」时想的是「让云编译能跑」，不是「开源我的项目」。
+   * 要公开是显式选项。
+   *
+   * <p>注意 owner 参数不参与：GitHub 的 {@code POST /user/repos} 只能建在
+   * **token 持有者**名下（组织仓库要另走 {@code POST /orgs/{org}/repos}，
+   * 且需要 org 权限）。本流程面向个人账号。
+   *
+   * @param repoName 仓库名（会校验合法性）
+   * @param isPrivate true 建私有仓库
+   * @param description 仓库描述（可为空）
+   * @return 创建后的 owner/repo
+   * @throws GitHubApiException 失败时（含 422：重名、名字非法）
+   */
+  public GitRemoteParser.RepoSlug createRepository(
+      String repoName, boolean isPrivate, String description) throws Exception {
+    if (repoName == null || repoName.trim().isEmpty()) {
+      throw new GitHubApiException(0, "仓库名不能为空", "");
+    }
+    JSONObject body = new JSONObject();
+    body.put("name", repoName.trim());
+    body.put("private", isPrivate);
+    if (description != null && !description.trim().isEmpty()) {
+      body.put("description", description.trim());
+    }
+    // 自动初始化关闭：本地项目已有完整内容，云端初始化 README 会造成推送冲突。
+    body.put("auto_init", false);
+
+    SimpleHttpClient.Response response =
+        execute("POST", API_BASE + "/user/repos", body.toString());
+    checkSuccess(response);
+
+    JSONObject json = new JSONObject(response.body);
+    String owner = json.optJSONObject("owner") == null
+        ? ""
+        : json.optJSONObject("owner").optString("login", "");
+    String name = json.optString("name", "");
+    if (owner.isEmpty() || name.isEmpty()) {
+      throw new GitHubApiException(0, "仓库已创建但响应缺少 owner/name", response.body);
+    }
+    return GitRemoteParser.parse("https://github.com/" + owner + "/" + name + ".git");
+  }
+
+  /**
+   * 查当前 token 的身份（用于建仓前显示「将建在哪个账号下」）。
+   *
+   * @return 登录名；失败时抛异常（调用方据此提示 token 无效）
+   */
+  public String getAuthenticatedLogin() throws Exception {
+    SimpleHttpClient.Response response = execute("GET", API_BASE + "/user", null);
+    checkSuccess(response);
+    return new JSONObject(response.body).optString("login", "");
+  }
+
+  // ---------------------------------------------------------------------------
   // workflow 触发与查询
   // ---------------------------------------------------------------------------
 

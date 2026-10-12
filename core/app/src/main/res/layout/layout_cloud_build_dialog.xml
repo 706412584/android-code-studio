@@ -124,12 +124,23 @@
           android:gravity="end"
           android:orientation="horizontal">
 
+          <!-- 「没有 GitHub 远程仓库」时显示：一键建私有仓库并推送（方案 A）。
+               比「重试」更接近用户的下一步——重试改变不了没有 remote 的事实。 -->
+          <com.google.android.material.button.MaterialButton
+            android:id="@+id/error_create_repo"
+            style="@style/Widget.Material3.Button.TonalButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/cloud_build_create_repo"
+            android:visibility="gone" />
+
           <!-- 鉴权类失败才显示：修复动作是配 token，不是重试。 -->
           <com.google.android.material.button.MaterialButton
             android:id="@+id/error_configure_token"
             style="@style/Widget.Material3.Button.TextButton"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
+            android:layout_marginStart="8dp"
             android:text="@string/cloud_build_configure_token"
             android:visibility="gone" />
 

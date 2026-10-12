@@ -90,4 +90,11 @@
   <string name="cloud_build_token_not_persistent">本机加密存储不可用——Token 只在本次会话内有效。</string>
   <string name="cloud_build_token_save">保存</string>
   <string name="cloud_build_token_saved">Token 已保存</string>
+  <!-- 一键建仓（方案 A：无 remote 的项目直接建私有仓库并推送） -->
+  <string name="cloud_build_create_repo">创建仓库并推送</string>
+  <string name="cloud_build_create_repo_confirm_title">创建 GitHub 仓库</string>
+  <string name="cloud_build_create_repo_confirm_message">将在你的 GitHub 账号下创建私有仓库「%1$s」，并把当前项目推送上去。私有仓库不会公开你的代码。</string>
+  <string name="cloud_build_create_repo_working">正在创建仓库并推送…</string>
+  <string name="cloud_build_create_repo_done">已推送到 %1$s，正在重新识别…</string>
+  <string name="cloud_build_create_repo_failed">创建仓库失败：%1$s</string>
 </resources>
