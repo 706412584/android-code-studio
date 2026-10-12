@@ -190,6 +190,71 @@ jobs:
           [ "$SHA1" = "$EXPECTED" ] || { echo "证书不匹配！期望 $EXPECTED"; exit 1; }
           echo "证书校验通过"
 
+      # ---- 热更新补丁生成 ----
+      # 用上一版本 APK 作为 base、本次构建的 APK 作为 new，生成增量补丁，作为 Release 资产上传。
+      #
+      # 四个关键点：
+      # 1. patch-cli 从 Maven Central 取 -all 分类器（自包含依赖），不提交 16MB 二进制进仓库。
+      # 2. **必须规范化 dex 名**：patch-cli 沿用 base 的 dex 名（ACS 是 classes8/classes12），
+      #    而 ART 只按连续的 classes.dex → classes2.dex … 查找，跳号即补丁静默失效。
+      #    见 tools/hotupdate-normalize-patch.py 的说明。
+      # 3. 输出 baseVersionCode：App 端要求「补丁 base == 当前安装版本」才应用，
+      #    这个值写进 updater.json 的 patch 块。
+      # 4. **补丁生成失败绝不能让发布失败**：补丁是可选能力，整包更新始终可用。
+      #    任何一步出错都走 `generated=false` 分支——步骤内不 `set -e`，
+      #    并对 patch-cli / 规范化显式判错。
+      - name: Generate hot-update patch
+        if: env.PUBLISH == 'true'
+        id: patch
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          fail() { echo "跳过补丁生成：$1"; echo "generated=false" >> "$GITHUB_OUTPUT"; exit 0; }
+
+          PATCH_CLI_URL="https://repo1.maven.org/maven2/io/github/706412584/patch-cli/1.4.0/patch-cli-1.4.0-all.jar"
+          curl -fsSL -o patch-cli.jar "$PATCH_CLI_URL" || fail "patch-cli 下载失败"
+
+          NEW_APK="core/app/build/outputs/apk/release/android-code-studio-arm64-v8a-$VERSION_NAME.apk"
+          [ -f "$NEW_APK" ] || fail "找不到本次构建的 APK: $NEW_APK"
+
+          # 上一版本 = 当前最新 Release（本次 Release 还没建）。
+          PREV_TAG=$(gh release view --json tagName -q .tagName 2>/dev/null || true)
+          [ -n "$PREV_TAG" ] || fail "没有上一个 Release"
+
+          mkdir -p patch-work
+          gh release download "$PREV_TAG" \
+            --pattern "android-code-studio-arm64-v8a-*.apk" \
+            --dir patch-work 2>/dev/null || fail "上一版本 $PREV_TAG 无 arm64 APK 资产"
+
+          BASE_APK=$(ls patch-work/android-code-studio-arm64-v8a-*.apk 2>/dev/null | head -1)
+          [ -n "$BASE_APK" ] || fail "上一版本资产为空"
+          echo "base=$BASE_APK  new=$NEW_APK"
+
+          # 从 base APK 读 versionCode —— App 端就是拿这个值和当前安装版本比对的，
+          # 不能靠猜（tag 名与 versionCode 没有可推导关系）。
+          AAPT2=$(find "$ANDROID_HOME/build-tools" -name aapt2 -type f | sort -V | tail -1)
+          BASE_VC=$("$AAPT2" dump badging "$BASE_APK" 2>/dev/null | grep -oE "versionCode='[0-9]+'" | head -1 | grep -oE "[0-9]+")
+          [ -n "$BASE_VC" ] || fail "无法从 base APK 读取 versionCode"
+          echo "base versionCode=$BASE_VC"
+
+          # 不签名：ACS 发布包用公开 debug 密钥，签名校验无防护价值（见 CLAUDE.md）。
+          java -jar patch-cli.jar -b "$BASE_APK" -n "$NEW_APK" -o patch-work/raw-patch.zip \
+            || fail "patch-cli 生成失败"
+
+          python3 tools/hotupdate-normalize-patch.py \
+            patch-work/raw-patch.zip "patch-work/acs-hotupdate-$VERSION_NAME.zip" \
+            || fail "dex 规范化失败"
+
+          PATCH_FILE="patch-work/acs-hotupdate-$VERSION_NAME.zip"
+          SHA=$(sha256sum "$PATCH_FILE" | cut -d' ' -f1)
+          SIZE=$(stat -c%s "$PATCH_FILE")
+          echo "补丁: $PATCH_FILE ($SIZE bytes, sha256=$SHA)"
+          echo "generated=true" >> "$GITHUB_OUTPUT"
+          echo "path=$PATCH_FILE" >> "$GITHUB_OUTPUT"
+          echo "sha256=$SHA" >> "$GITHUB_OUTPUT"
+          echo "base_version_code=$BASE_VC" >> "$GITHUB_OUTPUT"
+
       - name: Create GitHub Release
         if: env.PUBLISH == 'true'
         env:
@@ -205,20 +270,32 @@ jobs:
             echo "警告：$NOTES_FILE 不存在，使用占位说明"
             NOTES_ARGS=(--notes "Release $VERSION_NAME")
           fi
+          # 补丁资产按条件附加。用数组而不是内联三元：条件为空时会多传一个空参数，
+          # gh 会把它当成不存在的文件报错。
+          ASSET_ARGS=()
+          if [ "${{ steps.patch.outputs.generated }}" = "true" ]; then
+            ASSET_ARGS+=("${{ steps.patch.outputs.path }}")
+          fi
+
           gh release create "$RELEASE_TAG" \
             --target "${{ github.ref_name }}" \
             --title "$RELEASE_TAG" \
             "${NOTES_ARGS[@]}" \
             "$APK_DIR/android-code-studio-arm64-v8a-$VERSION_NAME.apk" \
-            "$APK_DIR/android-code-studio-armeabi-v7a-$VERSION_NAME.apk"
+            "$APK_DIR/android-code-studio-armeabi-v7a-$VERSION_NAME.apk" \
+            "${ASSET_ARGS[@]}"
 
       - name: Sync updater.json
         if: env.PUBLISH == 'true'
+        env:
+          PATCH_GENERATED: ${{ steps.patch.outputs.generated }}
+          PATCH_SHA256: ${{ steps.patch.outputs.sha256 }}
+          PATCH_BASE_VERSION_CODE: ${{ steps.patch.outputs.base_version_code }}
         run: |
           # 应用内更新（TomIDEUpdater）读 updater.json 的 baseUrl/apkUrl 拼下载地址，
           # 因此 baseVersionCode 必须等于 APK 的 versionCode，否则用户每次启动都误报更新。
           python3 - "$VERSION_NAME" "$VERSION_CODE" "$GITHUB_REPOSITORY" <<'PY'
-          import json, sys
+          import json, os, sys
           version_name, version_code, repo = sys.argv[1], int(sys.argv[2]), sys.argv[3]
           p = 'updater.json'
           with open(p, encoding='utf-8-sig') as f:
@@ -229,6 +306,26 @@ jobs:
               data['variants'][abi]['versionCode'] = version_code
               data['variants'][abi]['versionName'] = version_name
           data['changelog'] = f"https://raw.githubusercontent.com/{repo}/refs/heads/dev/whatsnew/{version_name}.md"
+
+          # patch 块：App 端 TomIDEUpdater 用它判断补丁是否适用于当前安装。
+          # - versionCode：装了补丁后达到的版本（与整包同一坐标系）。
+          # - baseVersionCode：生成补丁时使用的 base 版本（即上一个 Release 的版本）。
+          #   App 端要求它 == 当前安装版本才应用——补丁是「上一版 → 本版」的增量，
+          #   装到别的版本上会静默注入错误 dex。这个字段是必需的。
+          # 没生成补丁时**移除**该块，避免旧补丁信息残留导致反复提示同一个补丁。
+          if os.environ.get('PATCH_GENERATED') == 'true':
+              data['patch'] = {
+                  'versionCode': version_code,
+                  'versionName': version_name,
+                  'baseVersionCode': int(os.environ.get('PATCH_BASE_VERSION_CODE', '0')),
+                  'patchUrl': f"https://github.com/{repo}/releases/download/v{version_name}/acs-hotupdate-{version_name}.zip",
+                  'sha256': os.environ.get('PATCH_SHA256', ''),
+              }
+              print(f"patch -> {version_name} (base={data['patch']['baseVersionCode']})")
+          else:
+              data.pop('patch', None)
+              print("无补丁，已移除 patch 块")
+
           with open(p, 'w', encoding='utf-8') as f:
               json.dump(data, f, ensure_ascii=False, indent=4)
           print(f"updater.json -> {version_name} / {version_code}")
