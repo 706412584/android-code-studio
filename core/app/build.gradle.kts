@@ -210,6 +210,15 @@ dependencies {
   implementation("org.tukaani:xz:1.9")
   implementation("org.apache.commons:commons-compress:1.21")
 
+  // ---- 热更新 SDK（OrangeUpdate，本地 AAR）----
+  // 预编译产物 update-release.aar（2026-02-06，含 b5f43b5「Android 10+ 可写目录 DEX 加载限制」
+  // 修复：注入前先把补丁 dex 复制到 code_cache 只读目录）。更早的产物直接从 filesDir 可写目录
+  // 加载 DEX，Android 10 会静默失败，故必须用这个版本。
+  implementation(files("libs/hotupdate-1.4.0.aar"))
+  // AAR 的运行时依赖：ZIP 密码支持（PatchStorage/ZipPasswordManager 用）。
+  // 该 artifact 不在本项目版本目录中，靠本机 Gradle 缓存离线解析。
+  implementation("net.lingala.zip4j:zip4j:2.11.5")
+
   // ---- Jetpack Compose（仅 AI 助手消息渲染层用，见 buildFeatures.compose 的说明）----
   // 不引 BOM：BOM 只做版本对齐，而这里依赖面窄（6 个 artifact），
   // 显式写版本更可控，也避免多一个需要联网解析的平台约束。

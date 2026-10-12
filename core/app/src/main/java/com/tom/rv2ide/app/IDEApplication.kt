@@ -95,6 +95,19 @@ class IDEApplication : TermuxApplication() {
   override fun attachBaseContext(base: Context) {
     super.attachBaseContext(base)
 
+    // 热更新：必须在 attachBaseContext 里加载已应用的补丁——DEX 要在任何业务类被加载前
+    // 注入到 ClassLoader，资源要在 Activity 创建前挂到 AssetManager。放到 onCreate 就晚了
+    // （此时主线程已开始加载应用类）。
+    //
+    // 未应用过补丁时内部会立即返回，不产生任何副作用；异常全部被 SDK 吞进日志，
+    // 不会因补丁损坏而拦住应用启动。
+    try {
+      com.orange.update.HotUpdateHelper.init(this)
+      com.orange.update.HotUpdateHelper.getInstance().loadPatchIfNeeded()
+    } catch (e: Throwable) {
+      log.error("Failed to load hot-update patch", e)
+    }
+
     SilentInstaller.init(this)
     // Load native libraries after base context is attached
     TreeSitter.loadLibrary()

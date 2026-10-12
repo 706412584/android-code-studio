@@ -62,11 +62,32 @@ class TomIDEUpdater(private val context: Context) {
 
   data class ArchVariant(val versionCode: Int, val versionName: String, val apkUrl: String)
 
+  /**
+   * 热更新补丁信息（`updater.json` 的可选 `patch` 块）。
+   *
+   * <p><b>[baseVersionCode] 是判定补丁能否应用的关键</b>：补丁是「上一版本 → 本版本」的
+   * 增量，只能装在生成它时所用的那个版本上。SDK 的 `validatePatchFormat` 只校验包名、
+   * **不校验 base 版本**，装了不匹配的补丁会静默注入错误 dex（补丁里的类替换掉当前版本
+   * 的同名类，行为不可预期）。因此 [isPatchApplicable] 要求 `baseVersionCode == 当前安装版本`。
+   *
+   * <p>[versionCode] 是「装了这个补丁后达到的版本」，与整包版本同一坐标系。
+   */
+  data class PatchInfo(
+      val versionCode: Int,
+      val versionName: String,
+      val baseVersionCode: Int,
+      val patchUrl: String,
+      val patchMd5: String?,
+      val patchSha256: String?,
+      val description: String?,
+  )
+
   data class UpdateInfo(
       val baseVersionCode: Int,
       val baseVersionName: String,
       val variants: Map<String, ArchVariant>,
       val changelogUrl: String,
+      val patch: PatchInfo?,
   )
 
   private var downloadJob: Job? = null
@@ -77,8 +98,19 @@ class TomIDEUpdater(private val context: Context) {
   fun checkForUpdates() {
     CoroutineScope(Dispatchers.IO).launch {
       try {
-        val updateInfo = fetchUpdateInfo()
-        if (updateInfo != null && isUpdateAvailable(updateInfo)) {
+        val updateInfo = fetchUpdateInfo() ?: return@launch
+
+        // 补丁优先：热更新是小体积增量，能打补丁就不必让用户下 150MB 整包。
+        // 但补丁只对**生成它时所用的那个版本**有效，所以 isPatchApplicable 要求
+        // 补丁的 baseVersionCode == 当前安装版本。不满足就落回整包分支——
+        // 否则落后多个版本的用户会被反复推一个 base 不匹配的补丁，永远装不上也升不了级。
+        val patch = updateInfo.patch
+        if (patch != null && isPatchApplicable(patch)) {
+          withContext(Dispatchers.Main) { showPatchDialog(patch) }
+          return@launch
+        }
+
+        if (isUpdateAvailable(updateInfo)) {
           val changelog = fetchChangelog(updateInfo.changelogUrl)
           withContext(Dispatchers.Main) { showUpdateDialog(updateInfo, changelog) }
         }
@@ -86,6 +118,105 @@ class TomIDEUpdater(private val context: Context) {
         Log.e(TAG, "Error checking for updates", e)
       }
     }
+  }
+
+  /**
+   * 补丁是否适用于当前安装。
+   *
+   * <p>两个条件缺一不可：
+   * 1. **base 版本匹配**：`patch.baseVersionCode == 当前 versionCode`。补丁是「上一版本 →
+   *    本版本」的增量，base 不匹配时装上去会静默注入错误 dex（SDK 不校验这项）。
+   * 2. **补丁版本更高**：`patch.versionCode > 当前 versionCode`，否则说明已经打过这个补丁。
+   *
+   * <p>清单未声明 `baseVersionCode`（旧清单）时判为不适用，落回整包更新——宁可多下整包，
+   * 也不要赌一个 base 未知的补丁。
+   */
+  private fun isPatchApplicable(patch: PatchInfo): Boolean {
+    if (patch.versionCode <= 0 || patch.baseVersionCode <= 0) return false
+    val current =
+        try {
+          context.packageManager.getPackageInfo(context.packageName, 0).versionCode
+        } catch (e: PackageManager.NameNotFoundException) {
+          return false
+        }
+    if (patch.versionCode == skippedVersionCode()) return false
+    return patch.baseVersionCode == current && patch.versionCode > current
+  }
+
+  /** 提示有热更新补丁可用。 */
+  private fun showPatchDialog(patch: PatchInfo) {
+    val message =
+        buildString {
+          append(context.getString(R.string.updater_new_version_available, patch.versionName))
+          append("\n")
+          if (!patch.description.isNullOrBlank()) {
+            append("\n")
+            append(patch.description)
+          }
+          append("\n\n")
+          append("热更新：下载后无需重装 APK，重启应用即可生效。")
+        }
+
+    MaterialAlertDialogBuilder(context)
+        .setTitle("发现热更新补丁")
+        .setMessage(message)
+        .setPositiveButton("下载并应用") { _, _ -> applyPatch(patch) }
+        .setNegativeButton(context.getString(R.string.updater_skip_version)) { _, _ ->
+          rememberSkippedVersion(patch.versionCode)
+        }
+        .setCancelable(true)
+        .show()
+  }
+
+  /** 下载补丁并交给 [HotUpdateManager] 应用。 */
+  private fun applyPatch(patch: PatchInfo) {
+    showProgressDialog()
+    CoroutineScope(Dispatchers.IO).launch {
+      com.tom.rv2ide.hotupdate.HotUpdateManager.downloadAndApply(
+          context,
+          patch.patchUrl,
+          patch.patchSha256,
+          patch.baseVersionCode,
+      ) { ok, detail ->
+        CoroutineScope(Dispatchers.Main).launch {
+          hideProgressDialog()
+          if (ok) {
+            MaterialAlertDialogBuilder(context)
+                .setTitle("热更新已应用")
+                .setMessage("补丁版本：$detail\n\n重启应用后生效。")
+                .setPositiveButton("立即重启") { _, _ -> restartApp() }
+                .setNegativeButton("稍后", null)
+                .setCancelable(false)
+                .show()
+          } else {
+            MaterialAlertDialogBuilder(context)
+                .setTitle("热更新失败")
+                .setMessage(detail)
+                .setPositiveButton("确定", null)
+                .show()
+          }
+        }
+      }
+    }
+  }
+
+  /**
+   * 重启应用。
+   *
+   * <p>补丁的 DEX 注入发生在 `Application.attachBaseContext`，只有新进程才会加载它，
+   * 因此必须真正重启进程而不是回到某个 Activity。
+   *
+   * <p>先启动再杀进程：用 `killProcess` 而不是 `System.exit(0)`——后者会走 Runtime 的
+   * 关闭钩子，在 Android 上可能拖住甚至挂死主线程；`killProcess` 直接终止进程，
+   * 与用户从最近任务划掉应用等价。
+   */
+  private fun restartApp() {
+    val intent = context.packageManager.getLaunchIntentForPackage(context.packageName)
+    if (intent != null) {
+      intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_NEW_TASK)
+      context.startActivity(intent)
+    }
+    android.os.Process.killProcess(android.os.Process.myPid())
   }
 
   private suspend fun fetchUpdateInfo(): UpdateInfo? {
@@ -162,11 +293,39 @@ class TomIDEUpdater(private val context: Context) {
           baseVersionName = baseVersionName,
           variants = variants,
           changelogUrl = jsonObject.getString("changelog"),
+          patch = parsePatch(jsonObject, baseUrl, baseVersionName),
       )
     } catch (e: Exception) {
       Log.e(TAG, context.getString(R.string.updater_parse_error), e)
       null
     }
+  }
+
+  /**
+   * 解析可选的 `patch` 块。
+   *
+   * <p>缺字段或块不存在时返回 null——补丁是**可选**能力，旧清单（没有 patch 块）
+   * 必须继续可用，否则一旦清单漏写补丁字段，整个更新检查都会失效。
+   */
+  private fun parsePatch(
+      jsonObject: JSONObject,
+      baseUrl: String,
+      baseVersionName: String,
+  ): PatchInfo? {
+    val p = jsonObject.optJSONObject("patch") ?: return null
+    val patchVersionName = p.optString("versionName", baseVersionName)
+    val rawUrl = p.optString("patchUrl", "")
+    if (rawUrl.isEmpty()) return null
+
+    return PatchInfo(
+        versionCode = p.optInt("versionCode", -1),
+        versionName = patchVersionName,
+        baseVersionCode = p.optInt("baseVersionCode", -1),
+        patchUrl = expandUrl(rawUrl, baseUrl, patchVersionName),
+        patchMd5 = p.optString("md5", null),
+        patchSha256 = p.optString("sha256", null),
+        description = p.optString("description", null),
+    )
   }
 
   private suspend fun fetchChangelog(changelogUrl: String): String {

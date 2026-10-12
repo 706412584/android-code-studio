@@ -15,6 +15,10 @@ src/x86_64/assets/data/arm64-v8a/aapt2
 *.ap_
 *.aab
 
+# 例外：热更新 SDK 是 vendored 依赖（预编译 AAR，来源见 libs/README.md）。
+# 不加这条会被上面的 *.aar 排除，CI 构建时找不到文件。
+!libs/hotupdate-1.4.0.aar
+
 # Files for the ART/Dalvik VM
 *.dex
 
