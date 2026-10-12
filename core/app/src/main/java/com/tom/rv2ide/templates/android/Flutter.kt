@@ -67,8 +67,9 @@ import kotlinx.coroutines.withContext
 class Flutter : Template {
   override val displayName = "Flutter"
   override val description =
-      "用 Dart 写一份代码同时出 Android 与网页；手机上编辑代码，" +
-          "推送 GitHub 后由云端 Actions 打包 APK 与网页"
+      "跨平台：一份 Dart 代码出 Android、iOS、网页。编辑器内置 Dart 补全，" +
+          "APK 与网页产物由「云编译」云端出包"
+  override val isCrossPlatform = true
   override val templateType = Template.TemplateType.OTHER
 
   // assets/Flutter/ 由 flutter create 3.47.7 的真实产物固化而来

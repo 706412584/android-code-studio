@@ -53,7 +53,17 @@ object TemplateRegistry {
     templates.add(template)
   }
 
-  fun getAllTemplates(): List<Template> = templates.toList()
+  /**
+   * 全部模板，**跨平台模板排最前**。
+   *
+   * <p>排序放在这里而不是注册处：注册顺序表达的是「代码组织顺序」，而展示顺序是
+   * 产品决策（跨平台是 ACS 的差异化能力，值得优先曝光）。两者分开后，将来调整
+   * 展示顺序不必动注册表。
+   *
+   * <p>稳定排序：跨平台组内与其余组内都保持注册顺序。
+   */
+  fun getAllTemplates(): List<Template> =
+      templates.sortedByDescending { if (it.isCrossPlatform) 1 else 0 }
 
   fun getTemplateByName(displayName: String): Template? {
     return templates.find { it.displayName == displayName }

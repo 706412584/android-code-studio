@@ -21,6 +21,7 @@ import com.tom.rv2ide.actions.sidebar.AssistantSidebarAction
 import com.tom.rv2ide.actions.sidebar.AssetStudioSidebarAction
 import com.tom.rv2ide.actions.sidebar.BuildVariantsSidebarAction
 import com.tom.rv2ide.actions.sidebar.CloseProjectSidebarAction
+import com.tom.rv2ide.actions.sidebar.CloudBuildSidebarAction
 import com.tom.rv2ide.actions.sidebar.FileTreeSidebarAction
 import com.tom.rv2ide.actions.sidebar.PreferencesSidebarAction
 import com.tom.rv2ide.actions.sidebar.SubModuleSidebarAction
@@ -91,6 +92,9 @@ internal object EditorSidebarActions {
     // 因此不存在重复问题；且侧栏内跑的是新的 Compose 渲染路径，不是当年的旧路径。
     registry.registerAction(AssistantSidebarAction(context, ++order))
     registry.registerAction(BuildVariantsSidebarAction(context, ++order))
+    // 云编译紧跟构建变体：用户找「构建相关」功能时先看到构建变体，再看到云编译。
+    // 它是动作项（fragmentClass == null），点击直接弹表单，不占侧栏页面。
+    registry.registerAction(CloudBuildSidebarAction(context, ++order))
     registry.registerAction(GitClientAction(context, ++order))
     registry.registerAction(AssetStudioSidebarAction(context, ++order))
     registry.registerAction(SubModuleSidebarAction(context, ++order))

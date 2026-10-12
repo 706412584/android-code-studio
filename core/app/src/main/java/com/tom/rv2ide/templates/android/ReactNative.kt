@@ -75,8 +75,9 @@ import kotlinx.coroutines.withContext
 class ReactNative : Template {
   override val displayName = "React Native"
   override val description =
-      "用 JavaScript / TypeScript 写界面与逻辑，原生渲染到 Android；" +
-          "首次使用需在终端执行 npm install 安装 JS 依赖"
+      "跨平台：用 JavaScript / TypeScript 写界面，同一套代码可出 Android 与 iOS。" +
+          "编辑器内置 TS 补全；首次使用需在终端执行 npm install"
+  override val isCrossPlatform = true
   override val templateType = Template.TemplateType.OTHER
 
   private val projectStructBuilder = ProjectStructBuilder()

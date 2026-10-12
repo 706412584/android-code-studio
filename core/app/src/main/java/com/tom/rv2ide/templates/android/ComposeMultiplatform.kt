@@ -93,8 +93,9 @@ import kotlinx.coroutines.withContext
 class ComposeMultiplatform : Template {
   override val displayName = "Compose Multiplatform"
   override val description =
-      "一份 Compose UI 代码同时跑 Android、桌面、网页三个平台；" +
-          "手机上出安卓 APK，桌面与网页安装包由 GitHub Actions 云端打包"
+      "跨平台首选：一份 Kotlin + Compose 代码出 Android、桌面、网页三个平台。" +
+          "手机直接构建安卓 APK；桌面与网页产物由「云编译」一键出包"
+  override val isCrossPlatform = true
   override val templateType = Template.TemplateType.COMPOSE
 
   private val projectStructBuilder = ProjectStructBuilder()
