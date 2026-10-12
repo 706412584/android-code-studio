@@ -88,6 +88,14 @@ public final class ToolNames {
     // 但 ACS 从未实现该工具——图片理解走的是「主模型直接接收 image block」（file_read 图片、
     // phone_screenshot、浏览器截图都经 ToolResult.withImage），不需要独立工具。已删除该死声明。
     public static final String IMAGE_GENERATION = "image_generation";
+    /**
+     * 图像处理（游戏素材制作）：色键/亮度键抠图、裁剪、缩放、主色提取。
+     *
+     * <p>单工具 + action 分派（对齐 archive 的形态）：五个 action 共用一条
+     * 「读图 → 像素处理 → 写 PNG → 回传」通路，拆成多个工具会各占一个工具位、
+     * 且模型在「该用哪个」上徒增歧义。
+     */
+    public static final String IMAGE = "image_tool";
     /** 文生视频（异步任务 + 轮询，协议照 cc-haha media-gen）。 */
     public static final String VIDEO_GENERATION = "video_generation";
     // ---- 手机控制（真机测试闭环，经 Shizuku 走 adb 级权限，不依赖无障碍服务） ----
@@ -121,6 +129,10 @@ public final class ToolNames {
     public static final String PHONE_BASELINE = "phone_baseline";
     /** 执行一个动作并连拍多帧（动作级截图回归）。 */
     public static final String PHONE_ACTION_CAPTURE = "phone_action_capture";
+    /** 对屏幕截图做 OCR，返回文字与屏幕像素包围盒（Canvas/游戏/WebView 等取不到文本节点的场景）。 */
+    public static final String PHONE_OCR = "phone_ocr";
+    /** uiautomator2 代理：Unicode 输入 / 等待消失 / 多点触控 / 滚动到元素 / 通用 jsonrpc 逃生舱。 */
+    public static final String PHONE_UIAUTOMATOR = "phone_uiautomator";
 
     /** CodeGraph 代码知识图谱：按符号查源码 / 调用关系 / 影响面（`acs-codegraph`）。 */
     public static final String CODEGRAPH = "codegraph";

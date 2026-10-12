@@ -152,6 +152,15 @@ public final class ToolContext {
   /** 工作区符号搜索端口；未注入时为 null。 */
   private final WorkspaceSymbolPort workspaceSymbol;
 
+  /** 图像处理管线端口（解码/编码/缩放）；未注入时为 null（image_tool 明确报「未接入」）。 */
+  private final ImageProcessingPort imageProcessing;
+
+  /** OCR 端口；未注入时为 null（phone_ocr 明确报「未接入」）。 */
+  private final OcrPort ocr;
+
+  /** uiautomator2 代理端口；未注入时为 null（phone_uiautomator 明确报「未接入」）。 */
+  private final U2ProxyPort u2Proxy;
+
   private ToolContext(Builder builder) {
     this.homePath = builder.homePath == null ? "" : builder.homePath;
     this.extraWriteRoots =
@@ -178,6 +187,9 @@ public final class ToolContext {
     this.codeActions = builder.codeActions;
     this.buildVariant = builder.buildVariant;
     this.workspaceSymbol = builder.workspaceSymbol;
+    this.imageProcessing = builder.imageProcessing;
+    this.ocr = builder.ocr;
+    this.u2Proxy = builder.u2Proxy;
   }
 
   public String getHomePath() {
@@ -289,6 +301,21 @@ public final class ToolContext {
     return workspaceSymbol;
   }
 
+  /** 图像处理管线端口；未注入时为 null（image_tool 明确报「未接入」）。 */
+  public ImageProcessingPort getImageProcessing() {
+    return imageProcessing;
+  }
+
+  /** OCR 端口；未注入时为 null（phone_ocr 明确报「未接入」）。 */
+  public OcrPort getOcr() {
+    return ocr;
+  }
+
+  /** uiautomator2 代理端口；未注入时为 null（phone_uiautomator 明确报「未接入」）。 */
+  public U2ProxyPort getU2Proxy() {
+    return u2Proxy;
+  }
+
   /**
    * 返回一个仅替换 {@code toolCallId} 的副本。
    *
@@ -319,6 +346,9 @@ public final class ToolContext {
         .codeActions(this.codeActions)
         .buildVariant(this.buildVariant)
         .workspaceSymbol(this.workspaceSymbol)
+        .imageProcessing(this.imageProcessing)
+        .ocr(this.ocr)
+        .u2Proxy(this.u2Proxy)
         .build();
   }
 
@@ -353,6 +383,9 @@ public final class ToolContext {
         .codeActions(this.codeActions)
         .buildVariant(this.buildVariant)
         .workspaceSymbol(this.workspaceSymbol)
+        .imageProcessing(this.imageProcessing)
+        .ocr(this.ocr)
+        .u2Proxy(this.u2Proxy)
         .build();
   }
 
@@ -410,6 +443,9 @@ public final class ToolContext {
     private CodeActionsPort codeActions;
     private BuildVariantPort buildVariant;
     private WorkspaceSymbolPort workspaceSymbol;
+    private ImageProcessingPort imageProcessing;
+    private OcrPort ocr;
+    private U2ProxyPort u2Proxy;
 
     public Builder homePath(String value) {
       this.homePath = value;
@@ -531,6 +567,24 @@ public final class ToolContext {
     /** 注入工作区符号搜索端口（workspace_symbol）。 */
     public Builder workspaceSymbol(WorkspaceSymbolPort value) {
       this.workspaceSymbol = value;
+      return this;
+    }
+
+    /** 注入图像处理管线端口（image_tool）。 */
+    public Builder imageProcessing(ImageProcessingPort value) {
+      this.imageProcessing = value;
+      return this;
+    }
+
+    /** 注入 OCR 端口（phone_ocr 使用）。 */
+    public Builder ocr(OcrPort value) {
+      this.ocr = value;
+      return this;
+    }
+
+    /** 注入 uiautomator2 代理端口（phone_uiautomator 使用）。 */
+    public Builder u2Proxy(U2ProxyPort value) {
+      this.u2Proxy = value;
       return this;
     }
 
