@@ -497,6 +497,30 @@ class PhoneUiautomatorToolTest {
   }
 
   @Test
+  void cancelledCallSurfacesAsError() throws Exception {
+    // FakePort 按端口契约模拟「取消命中 → fail("已取消")」，钉住工具层对该失败的呈现。
+    FakePort port = new FakePort();
+    port.ok = false;
+    port.error = "已取消";
+    ToolResult r = new PhoneUiautomatorTool().execute(
+        args("dump"), ToolContext.builder().u2Proxy(port).cancellation(() -> true).build());
+    assertTrue(r.isError());
+    assertTrue(r.getContent().contains("已取消"), r.getContent());
+  }
+
+  @Test
+  void scrollToRejectsEmptyScrollableSelector() throws Exception {
+    FakePort port = new FakePort();
+    ToolResult r = new PhoneUiautomatorTool().execute(
+        args("scrollTo")
+            .put("selector", new JSONObject().put("text", "版本号"))
+            .put("scrollableSelector", new JSONObject()),
+        ctx(port));
+    assertTrue(r.isError(), "空 scrollableSelector 会挂起 server，必须本地拒绝");
+    assertTrue(port.methods.isEmpty(), "拒绝时不得下发调用");
+  }
+
+  @Test
   void serverRestartedFlagSurfacesInResult() throws Exception {
     FakePort port = new FakePort();
     port.restarted = true;
