@@ -45,10 +45,6 @@ public final class PhoneOcrTool extends BaseTool implements ToolInvokerAware {
 
   /** OCR 超时（首次识别要加载模型，给足裕量）。 */
   private static final long OCR_TIMEOUT_MS = 20_000L;
-  /** 自动放大的触发阈值：识别区域长边小于该值时默认放大 2 倍。 */
-  static final int AUTO_UPSCALE_THRESHOLD_PX = 1200;
-  /** 放大后工作图长边上限（内存与耗时保护）。 */
-  static final int MAX_WORK_LONG_SIDE_PX = 2560;
   /** 默认返回行数上限。 */
   private static final int DEFAULT_MAX_LINES = 200;
   private static final int MAX_LINES_LIMIT = 500;
@@ -224,6 +220,15 @@ public final class PhoneOcrTool extends BaseTool implements ToolInvokerAware {
           result.getLines(), originX, originY, s, k, screenW, screenH);
       String text = PhoneOcrText.format(mapped, screenW, screenH, regionScreen,
           s, elapsedMs, result.getEngine(), maxLines, includeBoxes);
+      // 纵向比例校验（计划 §4.3 step7）：k 只按宽度算；若落盘图高宽比与屏幕
+      // 差异 >2%，说明发生了非等比收缩（内联体积收缩不该出现，但防御性告知），
+      // 此时纵向坐标是近似的——必须明说，否则模型会当作精确值使用。
+      if (bmp.getHeight() > 0 && screenH > 0) {
+        float verticalK = (float) screenH / bmp.getHeight();
+        if (Math.abs(verticalK - k) / k > 0.02f) {
+          text = text + "\n（注意：截图纵向比例与屏幕不一致，坐标按宽度等比映射，纵向为近似值。）";
+        }
+      }
       return ok(ToolResult.truncateContent(text));
     } finally {
       // 逐层回收（注意别重复回收同一对象）：

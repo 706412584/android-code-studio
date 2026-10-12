@@ -33,6 +33,14 @@ import org.json.JSONObject;
  */
 final class PhoneOcrText {
 
+  /** 自动放大的触发阈值：识别区域长边小于该值时默认放大 2 倍。 */
+  static final int AUTO_UPSCALE_THRESHOLD_PX = 1200;
+  /** 放大后工作图长边上限（内存与耗时保护）。 */
+  static final int MAX_WORK_LONG_SIDE_PX = 2560;
+  /** 显式 scale 的钳制范围。 */
+  static final double MIN_SCALE = 0.25;
+  static final double MAX_SCALE = 4.0;
+
   private PhoneOcrText() {}
 
   /** 屏幕上的矩形区域（物理像素）。 */
@@ -53,20 +61,21 @@ final class PhoneOcrText {
   /**
    * 计算实际缩放系数（规则见计划 §4.4，顺序固定）：
    * <ol>
-   *   <li>显式请求钳到 [0.25, 4.0]；未显式请求时：区域长边 < 1200px 取 2.0，否则 1.0
-   *   <li>只对放大（&gt;1）施加上限：s = min(s, max(1, 2560 / longSide))。
+   *   <li>显式请求钳到 [{@link #MIN_SCALE}, {@link #MAX_SCALE}]；未显式请求时：
+   *       区域长边 &lt; {@link #AUTO_UPSCALE_THRESHOLD_PX} 取 2.0，否则 1.0
+   *   <li>只对放大（&gt;1）施加上限：s = min(s, max(1, {@link #MAX_WORK_LONG_SIDE_PX} / longSide))。
    *       默认 1.0 永远保持 1.0（不做隐式缩小），显式缩小（&lt;1）不受上限约束。
    * </ol>
    */
   static float effectiveScale(int longSide, boolean explicit, double requested) {
     float s;
     if (explicit) {
-      s = (float) Math.min(Math.max(requested, 0.25), 4.0);
+      s = (float) Math.min(Math.max(requested, MIN_SCALE), MAX_SCALE);
     } else {
-      s = longSide < 1200 ? 2.0f : 1.0f;
+      s = longSide < AUTO_UPSCALE_THRESHOLD_PX ? 2.0f : 1.0f;
     }
     // 上限只对放大生效（max(1, ...) 保证不会把 s 压到 1 以下）
-    s = Math.min(s, Math.max(1.0f, 2560f / longSide));
+    s = Math.min(s, Math.max(1.0f, MAX_WORK_LONG_SIDE_PX / (float) longSide));
     return s;
   }
 
