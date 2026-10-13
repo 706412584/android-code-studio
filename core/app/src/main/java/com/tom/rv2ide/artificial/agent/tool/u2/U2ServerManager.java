@@ -297,9 +297,10 @@ public final class U2ServerManager {
   private HttpOutcome httpCall(
       String method, String paramsJson, long timeoutMs,
       java.util.function.BooleanSupplier cancelled, boolean restarted) {
-    String body = "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"" + escapeJsonString(method)
-        + "\",\"params\":"
-        + (paramsJson == null || paramsJson.trim().isEmpty() ? "[]" : paramsJson) + "}";
+    // 请求体必须纯 ASCII（U2JsonRpc 会把非 ASCII 转义为 &#92;u 形式）——u2 server
+    // 的解码路径处理不了原始 UTF-8 请求体：实测中文 setText 发原始 UTF-8 会
+    // 逐字节变替换符，发转义形式则完全正确（见 U2JsonRpc 类注释）。
+    String body = com.tom.rv2ide.ai.tool.U2JsonRpc.buildBody(method, paramsJson);
     final java.util.concurrent.atomic.AtomicReference<HttpURLConnection> connRef =
         new java.util.concurrent.atomic.AtomicReference<>();
     java.util.concurrent.Future<String> future = HTTP_EXECUTOR.submit(() -> {
@@ -608,41 +609,6 @@ public final class U2ServerManager {
   /** shell 单引号转义（POSIX：' → '\''）。 */
   private static String shellQuote(String value) {
     return "'" + (value == null ? "" : value.replace("'", "'\\''")) + "'";
-  }
-
-  /** 最小 JSON 字符串转义（method 名来自模型，含 " 会生成非法 JSON）。 */
-  private static String escapeJsonString(String value) {
-    if (value == null) {
-      return "";
-    }
-    StringBuilder sb = new StringBuilder(value.length() + 8);
-    for (int i = 0; i < value.length(); i++) {
-      char c = value.charAt(i);
-      switch (c) {
-        case '"':
-          sb.append("\\\"");
-          break;
-        case '\\':
-          sb.append("\\\\");
-          break;
-        case '\n':
-          sb.append("\\n");
-          break;
-        case '\r':
-          sb.append("\\r");
-          break;
-        case '\t':
-          sb.append("\\t");
-          break;
-        default:
-          if (c < 0x20) {
-            sb.append(String.format("\\u%04x", (int) c));
-          } else {
-            sb.append(c);
-          }
-      }
-    }
-    return sb.toString();
   }
 
   private static String abbreviate(String value) {
