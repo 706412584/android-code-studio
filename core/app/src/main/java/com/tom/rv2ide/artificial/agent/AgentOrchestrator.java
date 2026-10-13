@@ -2354,11 +2354,18 @@ public final class AgentOrchestrator {
     }
     // 手动压缩压到「最小保留预算」：保留最近的若干轮以便对话能续上，其余全部摘要。
     //
-    // 取自动压缩预算的 1/4：自动压缩只需压到刚好低于阈值（否则每次都要重压），
-    // 而用户点手动压缩是明确要腾空间，压得越干净越好；但不能压到 0——
-    // 完全不留最近上下文会让模型立刻丢失用户正在做的事。
+    // **2026-10-13 修正**：原实现取 autoBudget/4，而 autoBudget 与窗口线性相关——
+    // 200K 窗口保留 33K token、1M 窗口保留 193K token（19.3%）。实测反馈「手动压缩
+    // 感觉没压多少」就是这个放大效应：大窗口下压完仍留一大截。
+    // 改为**固定上限**（对齐 cc-haha 的 /compact 语义——那是全量压缩，只保留摘要 +
+    // 最近少量上下文）：保留 min(autoBudget/4, MANUAL_KEEP_TOKENS)。
+    // 仍留一个下限意义：完全不留最近上下文会让模型立刻丢失用户正在做的事。
+    final int MANUAL_KEEP_TOKENS = 8192;
     int autoBudget = ConversationCompaction.historyBudget(config, 0);
-    int keepBudget = autoBudget == Integer.MAX_VALUE ? Integer.MAX_VALUE : Math.max(1, autoBudget / 4);
+    int keepBudget =
+        autoBudget == Integer.MAX_VALUE
+            ? MANUAL_KEEP_TOKENS
+            : Math.max(1, Math.min(autoBudget / 4, MANUAL_KEEP_TOKENS));
     ConversationCompaction.Selection selection =
         ConversationCompaction.select(entries, keepBudget);
     if (selection.isEmpty()) {
@@ -2381,7 +2388,39 @@ public final class AgentOrchestrator {
       ErrorLog.record("agent", "手动压缩写入失败", e, null);
       return null;
     }
-    return selection.getMessages().size() + " 条消息 → 摘要 " + TokenEstimator.estimate(summary) + " token";
+    // 结果提示带上压缩前后对比：此前只写「X 条消息 → 摘要 Y token」，用户不知道
+    // 总共压掉了多少、还剩多少——「感觉没压多少」有一部分就是无从判断。
+    int beforeTokens = TokenEstimator.estimate(history);
+    int afterTokens;
+    try {
+      afterTokens =
+          TokenEstimator.estimate(summary)
+              + TokenEstimator.estimate(
+                  ConversationHistory.fold(conversationStore.read(conversationId)));
+    } catch (IOException | RuntimeException e) {
+      // 对比只是提示信息，读不出来就退回旧格式，不影响压缩本身已成功的事实。
+      afterTokens = -1;
+    }
+    if (afterTokens < 0) {
+      return selection.getMessages().size()
+          + " 条消息 → 摘要 "
+          + TokenEstimator.estimate(summary)
+          + " token";
+    }
+    int savedPercent =
+        beforeTokens > 0
+            ? (int) Math.round((1.0 - (double) afterTokens / beforeTokens) * 100)
+            : 0;
+    return selection.getMessages().size()
+        + " 条消息 → 摘要 "
+        + TokenEstimator.estimate(summary)
+        + " token（约 "
+        + beforeTokens
+        + " → "
+        + afterTokens
+        + " token，-"
+        + Math.max(0, savedPercent)
+        + "%）";
   }
 
   /** 取压缩用的模型配置；拿不到时返回 null（调用方据此提示失败）。 */
