@@ -104,6 +104,8 @@ class AssistantSidebarFragment : Fragment() {
         )
     assistantView.attach()
     assistantView.setWorkspace(currentWorkspace())
+    // 打开面板与发消息时都重求工作区：项目初始化是异步的（见 workspaceProvider 注释）。
+    assistantView.workspaceProvider = { currentWorkspace() }
     // 侧栏页没有 FAB，视图创建后直接展开。
     // open() 还会回放本工作区上次的会话、刷新模型/权限标签与上下文圆环。
     assistantView.open()

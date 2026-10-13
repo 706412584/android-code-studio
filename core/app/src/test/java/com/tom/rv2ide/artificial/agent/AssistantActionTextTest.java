@@ -183,12 +183,11 @@ public final class AssistantActionTextTest {
   // ---- 重试卡片 ----
 
   @Test
-  public void retryCardStaysHiddenForTheFirstFewAttempts() {
-    // 偶发的一两次重连是常态（切网、DNS 抖动），每次都弹红底卡片会让人以为出了大问题。
-    assertFalse(AssistantActionText.INSTANCE.shouldShowRetry(1));
-    assertFalse(AssistantActionText.INSTANCE.shouldShowRetry(2));
-    assertFalse(AssistantActionText.INSTANCE.shouldShowRetry(3));
-    assertTrue("第 4 次起应显示", AssistantActionText.INSTANCE.shouldShowRetry(4));
+  public void retryCardShowsFromTheFirstAttempt() {
+    // 2026-10-13 改：原阈值 4 造成「重试期间界面无提示、看起来像卡死」的实测反馈
+    // （前三次重试合计可能静默几十秒）。重试是用户需要知道的状态，从第一次就显示。
+    assertTrue("第 1 次起应显示", AssistantActionText.INSTANCE.shouldShowRetry(1));
+    assertTrue(AssistantActionText.INSTANCE.shouldShowRetry(2));
     assertTrue(AssistantActionText.INSTANCE.shouldShowRetry(10));
   }
 

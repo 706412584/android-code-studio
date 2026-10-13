@@ -936,6 +936,17 @@ class FloatingAssistantView(
     inputBar.tokenEstimated = false
   }
 
+  /**
+   * 工作区求值回调：由宿主注入（读 `GeneralPreferences.lastOpenedProject`）。
+   *
+   * <p><b>为什么需要它</b>：`setWorkspace` 只在宿主创建视图时调用一次，而项目打开是
+   * **异步**的——`ProjectHandlerActivity.initialSetup()` 要等 Gradle 分析完成后才写
+   * `lastOpenedProject`。用户在建项目/项目初始化期间切到助手页，那一刻求值为 null，
+   * 之后初始化完成也不会再刷新，发消息永远报「尚未打开项目」。
+   * [open] 时用本回调重新求值即可闭合这个时序窗口。
+   */
+  var workspaceProvider: (() -> java.io.File?)? = null
+
   /** 设置工作区。主屏上用户可能先选项目，因此每次打开面板前都更新。 */
   fun setWorkspace(workspace: java.io.File?) {
     this.workspace = workspace
@@ -1120,6 +1131,15 @@ class FloatingAssistantView(
   }
 
   fun open() {
+    // 重求工作区：项目打开是异步的（Gradle 分析完成后才写 lastOpenedProject），
+    // 而 setWorkspace 只在视图创建时调用一次。不在这里重求，用户在项目初始化
+    // 期间打开面板会一直持有 null，发消息报「尚未打开项目」——即使项目随后就绪。
+    // 仅当求值结果变化时才应用（setWorkspace 会读会话列表、刷新分支，有实际开销）。
+    workspaceProvider?.invoke()?.let { fresh ->
+      if (fresh != workspace) {
+        setWorkspace(fresh)
+      }
+    }
     // INLINE 没有 FAB 可藏（见 attach）。
     if (defaultMode != Mode.INLINE && defaultMode != Mode.EMBEDDED) {
       fabBinding.assistantFab.isVisible = false
@@ -1770,6 +1790,13 @@ class FloatingAssistantView(
       reasoningEffort: String? = null,
       imagePayload: String? = null,
   ) {
+    // 发消息前重求一次工作区：项目打开是异步的，面板可能在初始化完成前就打开了。
+    // 只在求值出非空且与当前不同时更新——避免把「确实没有项目」的情况也当成可恢复。
+    workspaceProvider?.invoke()?.let { fresh ->
+      if (fresh != workspace) {
+        setWorkspace(fresh)
+      }
+    }
     val currentWorkspace = workspace
     if (currentWorkspace == null || !currentWorkspace.exists()) {
       appendTrace(context.getString(string.ai_assistant_no_workspace))

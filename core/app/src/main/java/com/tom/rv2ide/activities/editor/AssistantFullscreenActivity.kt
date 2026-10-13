@@ -171,6 +171,8 @@ class AssistantFullscreenActivity : EdgeToEdgeIDEActivity() {
     view.attach()
     // 绑定当前项目。解析走 resolveWorkspace()，见其 KDoc——不能只问 IProjectManager。
     view.setWorkspace(resolveWorkspace())
+    // 打开面板与发消息时都重求工作区：项目初始化是异步的（见 workspaceProvider 注释）。
+    view.workspaceProvider = { resolveWorkspace() }
     // 展开面板。**不可省略**：`assistantOverlay` 在 XML 里是 `visibility="gone"`，
     // 只有 open() 会把它设为可见。本 Activity 没有可点开的 FAB（它自己就是全屏宿主），
     // 漏掉这一步的结果是一个空容器铺满屏幕——实测就是整片纯白。

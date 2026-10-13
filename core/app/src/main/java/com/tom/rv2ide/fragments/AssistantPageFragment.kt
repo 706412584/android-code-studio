@@ -113,6 +113,8 @@ class AssistantPageFragment : Fragment() {
         )
     assistantView.attach()
     assistantView.setWorkspace(currentWorkspace())
+    // 打开面板与发消息时都重求工作区：项目初始化是异步的（见 workspaceProvider 注释）。
+    assistantView.workspaceProvider = { currentWorkspace() }
     // INLINE 是页面形态，没有可收起的宿主：直接展开面板。
     // open() 还会回放本工作区上次的会话、刷新模型/权限标签与上下文圆环。
     assistantView.open()

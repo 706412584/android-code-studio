@@ -306,6 +306,8 @@ class AssistantOverlayService :
         )
     view.attach()
     view.setWorkspace(currentWorkspace())
+    // 打开面板与发消息时都重求工作区：项目初始化是异步的（见 workspaceProvider 注释）。
+    view.workspaceProvider = { currentWorkspace() }
     assistant = view
     isShowing = true
 
