@@ -133,6 +133,65 @@ final class PromptTemplateTest {
     assertEquals("TODO_LIST", missing.get(0));
   }
 
+  // ---- {{DEFAULT}} 引用 ----
+
+  @Test
+  void expandDefaultReplacesReferenceAndKeepsOtherPlaceholders() {
+    // 展开只处理 {{DEFAULT}}，其余占位符原样保留（由外层渲染统一替换）。
+    String result = PromptRenderer.expandDefault("{{DEFAULT}}\n\n额外：{{TODO_LIST}}", "默认内容");
+
+    assertEquals("默认内容\n\n额外：{{TODO_LIST}}", result);
+  }
+
+  @Test
+  void expandDefaultIsSinglePassAndNonRecursive() {
+    // 默认内容里若含 {{DEFAULT}}（理论上不会，但要防注入），不得被二次展开。
+    String result = PromptRenderer.expandDefault("{{DEFAULT}}", "含 {{DEFAULT}} 的默认内容");
+
+    assertEquals("含 {{DEFAULT}} 的默认内容", result);
+  }
+
+  @Test
+  void expandDefaultReturnsTemplateUnchangedWhenNoReference() {
+    String template = "只有 {{TODO_LIST}}，没有引用";
+    assertEquals(template, PromptRenderer.expandDefault(template, "默认内容"));
+    assertEquals("", PromptRenderer.expandDefault(null, "x"));
+    assertEquals("", PromptRenderer.expandDefault("", "x"));
+  }
+
+  @Test
+  void expandDefaultHandlesNullDefaultContent() {
+    assertEquals("前后", PromptRenderer.expandDefault("前{{DEFAULT}}后", null));
+  }
+
+  @Test
+  void resolveExpandsDefaultReferenceInCustomTemplate() {
+    // 用户写「{{DEFAULT}} + 补充」，resolve 应展开为当前默认内容 + 补充。
+    PromptTemplateStore store = PromptTemplateStore.inMemory();
+    store.write(PromptTemplates.NOTES, "{{DEFAULT}}\n- 额外要求：回复用英文。");
+
+    String resolved = store.resolve(PromptTemplates.NOTES);
+    assertTrue(resolved.startsWith(PromptTemplates.defaultNotes()));
+    assertTrue(resolved.endsWith("- 额外要求：回复用英文。"));
+    assertFalse(resolved.contains("{{DEFAULT}}"));
+  }
+
+  @Test
+  void resolveKeepsPlainCustomTemplateIntact() {
+    // 不含引用的自定义模板行为不变。
+    PromptTemplateStore store = PromptTemplateStore.inMemory();
+    store.write(PromptTemplates.NOTES, "完全自定义");
+
+    assertEquals("完全自定义", store.resolve(PromptTemplates.NOTES));
+  }
+
+  @Test
+  void defaultPlaceholderIsRegisteredAndDescribed() {
+    // 未注册会让设置界面把它当拼写错误；无说明会在占位符清单里显示为空。
+    assertTrue(PromptPlaceholders.isKnown(PromptPlaceholders.DEFAULT));
+    assertFalse(PromptPlaceholders.describe(PromptPlaceholders.DEFAULT).isEmpty());
+  }
+
   @Test
   void tidyRemovesTrailingWhitespaceAndCollapsesBlankLines() {
     // 连续空行压成一个：段落之间保留一个空行，多出来的去掉。

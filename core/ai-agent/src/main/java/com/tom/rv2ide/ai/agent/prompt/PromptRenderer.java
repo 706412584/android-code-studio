@@ -82,6 +82,47 @@ public final class PromptRenderer {
   }
 
   /**
+   * 展开 {@code {{DEFAULT}}} 引用：替换为给定的默认内容，**其余占位符原样保留**。
+   *
+   * <p>用途：用户自定义模板时用 {@code {{DEFAULT}}} 引用当前默认文本（在其后追加补充），
+   * 而不是复制一份——复制会在默认模板更新后永久停留在旧版本。展开放在
+   * {@link PromptTemplateStore#resolve}，其余占位符（{@code {{TODO_LIST}}} 等）留给
+   * 外层 {@link #render} 统一替换。
+   *
+   * <p>单层展开、非递归：正则只扫描原始模板，替换进来的默认内容不会被再次扫描。
+   *
+   * @param template 用户模板；null 或空返回空串
+   * @param defaultContent 当前默认模板内容；null 视作空串
+   */
+  public static String expandDefault(String template, String defaultContent) {
+    if (template == null || template.isEmpty()) {
+      return "";
+    }
+    if (template.indexOf("{{") < 0) {
+      return template;
+    }
+    String replacement = defaultContent == null ? "" : defaultContent;
+    Matcher matcher = PLACEHOLDER.matcher(template);
+    StringBuffer sb = new StringBuffer(template.length());
+    boolean replaced = false;
+    while (matcher.find()) {
+      String name = matcher.group(1) == null ? "" : matcher.group(1).trim();
+      if (PromptPlaceholders.DEFAULT.equals(name)) {
+        replaced = true;
+        matcher.appendReplacement(sb, Matcher.quoteReplacement(replacement));
+      } else {
+        // 原样回填：其余占位符不在这里处理（外层渲染负责）。
+        matcher.appendReplacement(sb, Matcher.quoteReplacement(matcher.group(0)));
+      }
+    }
+    if (!replaced) {
+      return template;
+    }
+    matcher.appendTail(sb);
+    return sb.toString();
+  }
+
+  /**
    * 渲染并整理空白。
    *
    * <p>占位符替换为空串后会留下空行与行尾空格（例如某个可选段落的标题还在、内容没了）。

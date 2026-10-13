@@ -1165,7 +1165,12 @@ private class PromptTemplatePreference(
       templateId: String,
       preference: Preference,
   ) {
-    val current = store.resolve(templateId)
+    // 预填**原始**内容：有自定义用自定义原文（保留 {{DEFAULT}} 引用不被展开），
+    // 无自定义才用默认文本。用 resolve 会展开 {{DEFAULT}}——用户看到的是一份
+    // 固化副本，一保存引用就丢失，后续默认更新再也流不进来。
+    val current =
+        store.read(templateId)?.takeIf { it.isNotBlank() }
+            ?: com.tom.rv2ide.ai.agent.prompt.PromptTemplates.defaultFor(templateId)
     val unknown = com.tom.rv2ide.ai.agent.prompt.PromptRenderer.unknownPlaceholders(current)
     val dp = { value: Int -> (value * context.resources.displayMetrics.density).toInt() }
 

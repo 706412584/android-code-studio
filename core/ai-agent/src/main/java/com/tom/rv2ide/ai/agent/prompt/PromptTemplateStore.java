@@ -61,11 +61,17 @@ public interface PromptTemplateStore {
    *
    * <p>这是调用方应当使用的入口——把「回退到默认」的判断收在一处，避免每个调用点
    * 各写一遍判空。
+   *
+   * <p><b>{@code {{DEFAULT}}} 引用（2026-10-14）</b>：自定义模板里写
+   * {@code {{DEFAULT}}} 会被展开为**当前**默认模板的完整内容（见
+   * {@link PromptRenderer#expandDefault}）。这让用户可以在默认文本之上追加自己的
+   * 要求而不复制一份——复制会在默认模板更新后永久停留在旧版本。展开是单层的，
+   * 其余占位符（{@code {{TODO_LIST}}} 等）由外层渲染统一处理。
    */
   default String resolve(String templateId) {
     String custom = read(templateId);
     if (custom != null && !custom.trim().isEmpty()) {
-      return custom;
+      return PromptRenderer.expandDefault(custom, PromptTemplates.defaultFor(templateId));
     }
     return PromptTemplates.defaultFor(templateId);
   }

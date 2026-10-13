@@ -87,6 +87,18 @@ public final class PromptPlaceholders {
   public static final String ROLE_PROMPT = "ROLE_PROMPT";
   public static final String TONE_CONTEXT = "TONE_CONTEXT";
 
+  /**
+   * 默认模板内容的引用（2026-10-14）。
+   *
+   * <p>用户在自定义模板里写 {@code {{DEFAULT}}}，渲染时展开为**当前**默认模板的完整内容。
+   * 用途：用户只想在默认文本上补充自己的要求（如「{{DEFAULT}}\n\n额外要求：……」）时，
+   * 不再复制粘贴整段默认文本——后者会在默认模板更新后永远停留在旧版本。
+   *
+   * <p>语义：单层展开、非递归（展开进来的默认内容里的占位符由外层渲染统一处理），
+   * 展开结果不参与本占位符自身的二次展开。
+   */
+  public static final String DEFAULT = "DEFAULT";
+
   /** 全部占位符，按逻辑分组顺序。 */
   private static final List<String> ALL =
       Collections.unmodifiableList(
@@ -110,7 +122,8 @@ public final class PromptPlaceholders {
               ROLE_PROMPT,
               TONE_CONTEXT,
               GUIDANCE_SECTION,
-              NOTES));
+              NOTES,
+              DEFAULT));
 
   private PromptPlaceholders() {}
 
@@ -170,6 +183,8 @@ public final class PromptPlaceholders {
         return "收尾注意事项段落";
       case GUIDANCE_SECTION:
         return "工作准则段落（构建/验证纪律、安全边界、何时问用户、失败上报、子代理时机）";
+      case DEFAULT:
+        return "当前默认模板的完整内容（自定义时可写它来保留默认文本并追加补充，默认更新后自动流入）";
       default:
         return "";
     }
