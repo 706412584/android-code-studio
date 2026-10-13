@@ -605,12 +605,18 @@ class TemplateAdapter(
         }
 
     // 模板的一句话中文描述：帮助用户理解模板适合做什么。无描述的模板此行隐藏。
+    //
+    // minLines = maxLines = 3：描述行数直接决定卡片高度（图片区固定 160dp，
+    // 标题单行），不同模板描述长短不一时卡片会高矮不齐、图片底边错位——
+    // 实测用户反馈「React 卡片和其他两个视觉不同步」。占满固定 3 行后，
+    // 无论文案长短所有卡片高度一致。
     val description =
         TextView(ctx).apply {
           textSize = 11f
           setPadding(12.dp, 0.dp, 12.dp, 4.dp)
           gravity = android.view.Gravity.CENTER
           setTextColor(android.graphics.Color.GRAY)
+          minLines = 3
           maxLines = 3
           visibility = android.view.View.GONE
         }

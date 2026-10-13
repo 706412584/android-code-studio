@@ -295,8 +295,14 @@ internal fun ToolMessageBody(
   // 执行中也可折叠/展开（如 bash 刷屏时可收起只看标题行），无论当前是否有输出；无输出时折叠态无内容，但保持可点击与箭头一致
   val hasLiveOutput = !liveOutput.isNullOrBlank()
   // derived == null（解析中）时保持可展开，避免箭头先缺失后补上。
+  //
+  // steps.isNotEmpty() 必须计入：子代理运行中（running=true、streaming=false、尚无结果
+  // 文本）时，此前四个条件全不满足 → 箭头不显示，用户**看不到展开步骤的入口**，
+  // 直到工具结束/失败（有结果文本）箭头才出现——实测反馈「失败后才显示展开图标」
+  // 就是这个判据缺了 steps 造成的。运行中的子代理恰恰是最需要看步骤的时刻。
   val expandable =
       streaming ||
+          message.steps.isNotEmpty() ||
           (!running &&
               (derived == null ||
                   edit != null ||

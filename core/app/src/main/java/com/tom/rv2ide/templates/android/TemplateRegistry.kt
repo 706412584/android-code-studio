@@ -54,11 +54,10 @@ object TemplateRegistry {
   }
 
   /**
-   * 全部模板，**跨平台模板排最前**。
+   * 全部模板，**跨平台模板排最后**。
    *
    * <p>排序放在这里而不是注册处：注册顺序表达的是「代码组织顺序」，而展示顺序是
-   * 产品决策（跨平台是 ACS 的差异化能力，值得优先曝光）。两者分开后，将来调整
-   * 展示顺序不必动注册表。
+   * 产品决策。两者分开后，将来调整展示顺序不必动注册表。
    *
    * <p>稳定排序：跨平台组内与其余组内都保持注册顺序。
    */
@@ -70,11 +69,11 @@ object TemplateRegistry {
 }
 
 /**
- * 向导列表的展示排序：跨平台模板置顶，其余保持原序（稳定）。
+ * 向导列表的展示排序：跨平台模板置底，其余保持原序（稳定）。
  *
  * <p>抽成顶层函数是为了可 JVM 单测——[TemplateRegistry] 是 object 且注册的模板
  * 都依赖 Android Context 构造，测试无法直接驱动它；而排序规则本身是纯函数，
  * 值得被钉住（它是用户可见的产品决策，不是实现细节）。
  */
 internal fun sortForDisplay(templates: List<Template>): List<Template> =
-    templates.sortedByDescending { if (it.isCrossPlatform) 1 else 0 }
+    templates.sortedBy { if (it.isCrossPlatform) 1 else 0 }

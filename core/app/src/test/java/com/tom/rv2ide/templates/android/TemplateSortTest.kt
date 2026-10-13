@@ -25,9 +25,9 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * 向导列表排序（跨平台置顶）的回归测试。
+ * 向导列表排序（跨平台置底）的回归测试。
  *
- * 排序是**用户可见的产品决策**（用户明确要求跨平台模板优先展示），不是实现细节
+ * 排序是**用户可见的产品决策**（用户明确要求跨平台模板排在列表最后），不是实现细节
  * ——它值得被测试钉住，否则将来重构注册表时很容易被顺手改掉而没人发现。
  *
  * 用最小假实现驱动纯函数 [sortForDisplay]，不依赖 Android Context（真实模板都要
@@ -55,7 +55,7 @@ class TemplateSortTest {
   }
 
   @Test
-  fun `跨平台模板排最前`() {
+  fun `跨平台模板排最后`() {
     val sorted =
         sortForDisplay(
             listOf(
@@ -66,10 +66,10 @@ class TemplateSortTest {
             )
         )
 
-    assertEquals("Cross1", sorted[0].displayName)
-    assertEquals("Cross2", sorted[1].displayName)
-    assertEquals("A", sorted[2].displayName)
-    assertEquals("B", sorted[3].displayName)
+    assertEquals("A", sorted[0].displayName)
+    assertEquals("B", sorted[1].displayName)
+    assertEquals("Cross1", sorted[2].displayName)
+    assertEquals("Cross2", sorted[3].displayName)
   }
 
   @Test
@@ -86,7 +86,7 @@ class TemplateSortTest {
             )
         )
 
-    assertEquals(listOf("X", "Y", "A", "B", "C"), sorted.map { it.displayName })
+    assertEquals(listOf("A", "B", "C", "X", "Y"), sorted.map { it.displayName })
   }
 
   @Test
