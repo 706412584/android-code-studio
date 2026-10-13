@@ -171,7 +171,8 @@ object AcsCommandInterface {
     private fun executeListVersions(): AcsResult {
       return runBlocking {
         try {
-          val jsonContent = acsLibProvider.downloadJson(manifestUrl!!, silent = true)
+          // 镜像优先，失败回退上游（见 AcsProvider.MIRROR_MANIFEST_URL）
+          val jsonContent = downloadManifestWithFallback(manifestUrl!!, silent = true)
           val versions =
               acsLibProvider.listAvailableVersions(jsonContent, architecture!!.value, packageId)
 
@@ -203,6 +204,27 @@ object AcsCommandInterface {
       }
     }
 
+    /**
+     * 下载 manifest：镜像失败回退上游。
+     *
+     * <p>传入的 [url] 是镜像地址时，首次失败后改试 [AcsProvider.getUpstreamManifestUrl]；
+     * 已经是上游地址（或自定义地址）则直接抛错。回退仅覆盖「manifest 拉取」一步——
+     * 包体下载（downloadPackage 内部）仍按 manifest 里写的 URL 走。
+     */
+    private suspend fun downloadManifestWithFallback(url: String, silent: Boolean): String {
+      return try {
+        acsLibProvider.downloadJson(url, silent = silent)
+      } catch (e: Exception) {
+        val upstream = AcsProvider.getUpstreamManifestUrl
+        if (url == AcsProvider.MIRROR_MANIFEST_URL && url != upstream) {
+          Log.w(TAG, "镜像 manifest 拉取失败，回退上游: $url -> $upstream", e)
+          acsLibProvider.downloadJson(upstream, silent = silent)
+        } else {
+          throw e
+        }
+      }
+    }
+
     private fun executeDownload(): AcsResult {
       return runBlocking {
         try {
@@ -214,6 +236,10 @@ object AcsCommandInterface {
                   version = version,
                   directUrl = directUrl,
                   shouldDownload = true,
+                  fallbackJsonUrl =
+                      if (manifestUrl == AcsProvider.MIRROR_MANIFEST_URL)
+                          AcsProvider.getUpstreamManifestUrl
+                      else null,
               )
 
           val file =
@@ -260,6 +286,10 @@ object AcsCommandInterface {
                   packageId = packageId,
                   version = version,
                   getField = field!!.value,
+                  fallbackJsonUrl =
+                      if (manifestUrl == AcsProvider.MIRROR_MANIFEST_URL)
+                          AcsProvider.getUpstreamManifestUrl
+                      else null,
               )
 
           val fieldValue = acsLibProvider.getField(config)
@@ -398,8 +428,36 @@ object AcsProvider {
   const val ACS_BUILD_SYSTEM_REPONAME = "acs-build-system"
   const val ACS_BUILD_SYSTEM_REPOURL = "https://$REPO_HOST/$REPO_OWNER/$ACS_BUILD_SYSTEM_REPONAME"
 
-  /** Manifest url getter function */
-  val getManifestUrl: String = "${ACS_BUILD_SYSTEM_REPOURL}/raw/refs/heads/main/acs-manifest.json"
+  /**
+   * 镜像 manifest（Gitee）。
+   *
+   * <p><b>为什么默认走 Gitee</b>：上游 manifest 与其指向的包全部托管在
+   * `github.com/AndroidCSOfficial/acs-build-system/releases`——国内设备实测
+   * `github.com` 主站与 Release 下载域均超时（NDK ~180MB 根本下不动），
+   * 这是「首次安装卡在 SDK/NDK 下载」的根因。Gitee 镜像实测 700KB/s+。
+   *
+   * <p>镜像由 `wu-yongchengsvip_admin/acs-mirror` 仓库的 release 承载：
+   * - manifest 本体：raw 文件（跟随 master 更新）
+   * - 大包（>100MB，Gitee 单文件上限）切成 95MB 分卷，manifest 里以
+   *   `parts` 数组给出各分卷 URL（客户端顺序下载→拼接→sha256 校验）
+   * - 小包原样单 URL
+   *
+   * <p>sha256 与上游完全一致（转存不重打包），校验逻辑不变。
+   */
+  const val MIRROR_MANIFEST_URL =
+      "https://gitee.com/wu-yongchengsvip_admin/acs-mirror/raw/master/acs-manifest.json"
+
+  /**
+   * 上游 manifest（GitHub）——镜像不可用时的回退。
+   *
+   * <p>选择顺序：先镜像后上游。镜像的 raw 请求失败（离线/被墙/仓库异常）时
+   * 回退到 GitHub 原源——GitHub 通的环境（海外用户）不受影响。
+   */
+  val getManifestUrl: String = MIRROR_MANIFEST_URL
+
+  /** 上游 manifest 地址（回退用）。 */
+  val getUpstreamManifestUrl: String =
+      "${ACS_BUILD_SYSTEM_REPOURL}/raw/refs/heads/main/acs-manifest.json"
 
   /** Enhanced ACS runner with proper command interface */
   fun acsRunner(

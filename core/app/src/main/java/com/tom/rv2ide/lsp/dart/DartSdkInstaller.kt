@@ -60,23 +60,28 @@ object DartSdkInstaller {
   private const val SNAPSHOT_RELATIVE_PATH = "bin/snapshots/analysis_server.dart.snapshot"
 
   /**
-   * 包下载地址。
+   * 包下载地址（Gitee 镜像，国内加速）。
    *
-   * <p><b>为什么用 GitHub Release 而不是 Gitee</b>（2026-10-12 实测决策）：
-   * CodeGraph 组件包走 Gitee 是因为「设备直连 GitHub 超时」——但实测复验发现，
-   * 该结论对**下载链路**不成立：`github.com` 主站确实超时，但 Release 附件下载
-   * 会 302 到 `objects.githubusercontent.com`（实测 0.4s 可达），设备上以
-   * 3.7MB/s 在 18 秒内下载完整 67MB 包且 sha256 一致。真正不可用的只是主站页面，
-   * 而应用内下载不经过页面。
+   * <p><b>2026-10-13 换源决策</b>：此前用 GitHub Release 并验证过「302 到
+   * objects.githubusercontent.com 可达」，但**设备实测复验推翻了该结论**：
+   * 黑鲨上完整跟随 302 的下载在 20 秒内 0 字节超时（`github.com` 主站与
+   * release 重定向链路均不可达），即国内设备根本无法完成 67MB 下载。
+   * Gitee 实测 700KB/s+，故默认改走 Gitee 镜像（`acs-mirror` 仓库）。
    *
-   * <p>同时 Gitee 侧的硬约束：仓库附件配额 1GB 已被 apt-mirror 备份分片占满
-   * （2026-10-12 上传返回「文件大小已超出仓库附件配额」）。GitHub Release
-   * 单文件上限 2GB、总配额宽松，是当前唯一可用的自动分发通道。
-   *
-   * <p>换版本时改这里的 tag/文件名，并用
-   * `tools/publish-dart-sdk-package.ps1 -Channel github` 上传。
+   * <p>Gitee 单文件上限 100MB——67MB 包未超限，单文件直传。
+   * 换版本时改这里的 tag/文件名，上传到 `wu-yongchengsvip_admin/acs-mirror`
+   * 的 release（见 tools/ 下的发布脚本）。
    */
   const val PACKAGE_URL =
+      "https://gitee.com/wu-yongchengsvip_admin/acs-mirror/releases/download/dart-sdk-v3.7.2/dart-sdk-3.7.2-aarch64.tar.gz"
+
+  /**
+   * 回退地址（GitHub 上游）。
+   *
+   * <p>Gitee 不可用时（仓库异常/海外网络反而不通 Gitee 的场景）回退原源。
+   * 下载逻辑：先试 [PACKAGE_URL]，失败后改试本地址。
+   */
+  const val PACKAGE_URL_FALLBACK =
       "https://github.com/706412584/android-code-studio/releases/download/dart-sdk-v3.7.2/dart-sdk-3.7.2-aarch64.tar.gz"
 
   /** 包大小（用于下载进度显示与完整性预检）。 */
@@ -143,7 +148,20 @@ object DartSdkInstaller {
           listener?.onStage("下载 Dart SDK（67MB）…")
           val archive = File(context.cacheDir, "dart-sdk-download.tar.gz")
           try {
-            download(packageUrl, archive) { fraction -> listener?.onProgress(fraction) }
+            try {
+              download(packageUrl, archive) { fraction -> listener?.onProgress(fraction) }
+            } catch (primary: Exception) {
+              // 镜像失败回退上游（默认 Gitee → GitHub，见 PACKAGE_URL 注释）。
+              // 显式传入自定义 URL 时（测试/换源）不触发回退。
+              if (packageUrl == PACKAGE_URL && PACKAGE_URL_FALLBACK != PACKAGE_URL) {
+                listener?.onStage("镜像下载失败，尝试上游源…")
+                download(PACKAGE_URL_FALLBACK, archive) { fraction ->
+                  listener?.onProgress(fraction)
+                }
+              } else {
+                throw primary
+              }
+            }
             listener?.onStage("解包…")
             extract(archive)
           } finally {

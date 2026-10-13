@@ -27,4 +27,12 @@ data class PackageEntry(
     val filename: String,
     val url: String,
     val sha256: String?,
+    /**
+     * 分卷下载地址（可选）。
+     *
+     * <p>镜像源（Gitee）单文件上限 100MB，超过的包（NDK ~180MB）被切成
+     * 95MB 分卷上传。非空时按顺序下载各分卷、拼接为 [filename] 后做 sha256 校验；
+     * 为空则走原有的单 URL 下载。两者最终产物完全一致（sha256 相同）。
+     */
+    val parts: List<String> = emptyList(),
 )
