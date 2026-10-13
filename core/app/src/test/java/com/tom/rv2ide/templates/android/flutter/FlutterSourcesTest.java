@@ -184,8 +184,9 @@ public class FlutterSourcesTest {
     String w = FlutterSources.INSTANCE.ciWorkflow(PROJECT);
     assertTrue(w.contains("subosito/flutter-action@v2"));
     assertTrue(w.contains("flutter-version: '" + FlutterSources.FLUTTER_VERSION + "'"));
-    assertTrue(w.contains("flutter build apk --release"));
-    assertTrue(w.contains("flutter build web --release"));
+    // 构建模式经 build_mode input 传入，默认 release（targets 改动引入）。
+    assertTrue(w.contains("flutter build apk --${{ github.event.inputs.build_mode || 'release' }}"));
+    assertTrue(w.contains("flutter build web --${{ github.event.inputs.build_mode || 'release' }}"));
     assertTrue(w.contains("flutter pub get"));
     // artifact 上传
     assertTrue(w.contains("actions/upload-artifact@v4"));
@@ -211,6 +212,19 @@ public class FlutterSourcesTest {
     assertTrue(r.contains("设置"));
     assertTrue(r.contains("下载"));
     assertTrue(r.contains("pubspec.yaml"));
+  }
+
+  @Test
+  public void readme_explainsUnresolvedImportSquiggles() {
+    // 方案 A（用户选定）：满屏红波浪线保留 + README 显著说明「预期行为」。
+    // 用户实测截图确认过：缺 package_config.json 时 package:flutter 全部未解析，
+    // 连锁报错满屏。这段说明是用户理解「不是我的代码坏了」的唯一依据，必须存在。
+    String r = FlutterSources.INSTANCE.projectReadme(PKG, PROJECT);
+    assertTrue("必须说明波浪线是预期行为", r.contains("预期行为"));
+    assertTrue("必须解释根因（package_config.json）", r.contains("package_config.json"));
+    assertTrue("必须说明云端构建不受影响", r.contains("云端"));
+    // 指向关闭 LSP 的降噪手段
+    assertTrue("必须给出降噪手段（关 LSP）", r.contains("关闭 Dart LSP"));
   }
 
   @Test

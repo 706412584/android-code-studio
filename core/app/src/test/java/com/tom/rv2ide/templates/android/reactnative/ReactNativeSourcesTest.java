@@ -341,9 +341,10 @@ public class ReactNativeSourcesTest {
     String w = ReactNativeSources.INSTANCE.ciWorkflow(PROJECT);
     // npm install 必须先于 gradle 构建（node_modules 是硬前置）
     int npmIdx = w.indexOf("npm install");
-    int gradleIdx = w.indexOf(":app:assembleDebug");
+    // build_mode input 控制 Debug/Release 变体（targets 改动引入）
+    int gradleIdx = w.indexOf(":app:assemble${{ github.event.inputs.build_mode == 'release' && 'Release' || 'Debug' }}");
     assertTrue("缺 npm install", npmIdx > 0);
-    assertTrue("缺 assembleDebug", gradleIdx > 0);
+    assertTrue("缺 assemble 步骤", gradleIdx > 0);
     assertTrue("npm install 必须在构建前", npmIdx < gradleIdx);
     assertTrue(w.contains("actions/setup-node@v4"));
     assertTrue(w.contains("actions/setup-java@v4"));

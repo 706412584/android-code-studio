@@ -865,10 +865,21 @@ object FlutterSources {
       3. 重新打开本项目的 `.dart` 文件，补全与诊断即生效
 
       安装后打开 `lib/main.dart` 即可看到：输入 `setState` / `Widget` 等
-      标识符时的补全、未定义变量的红线提示、`Ctrl+点击` 跳转定义。
-      分析基于项目内的 `pubspec.yaml`——Flutter SDK 自身的包
-      （`package:flutter/...`）在设备上未安装，因此对它们的引用会提示
-      未解析，这是预期行为（云端 CI 构建不受影响）。
+      标识符时的补全、`Ctrl+点击` 跳转定义。
+
+      ### 满屏红色波浪线是预期行为（不是代码错误）
+
+      打开 Flutter 项目时会看到大量红色波浪线（`package:flutter/material.dart`
+      未解析、类型未知等），**这是设备端缺 Flutter 工具链的必然结果，不是你的
+      代码有问题**：
+
+      - Dart 分析器依赖项目内的 `.dart_tool/package_config.json` 做包解析
+      - 该文件由 `flutter pub get` 生成——设备上装不了 Flutter SDK，跑不了
+      - 结果：`package:flutter/...` 全部「未解析」→ 连锁导致所有 Flutter 类型报错
+
+      **云端 CI 构建不受影响**（runner 上有完整 Flutter SDK，会先跑 `pub get`）。
+      判断代码是否真有错：以云端构建结果为准，或本地装了 Flutter 后 `flutter analyze`。
+      如需减少设备端噪声，可临时关闭 Dart LSP（设置 → 语言服务器）。
 
       ## 项目结构
 

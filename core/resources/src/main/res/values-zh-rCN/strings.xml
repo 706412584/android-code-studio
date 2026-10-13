@@ -1060,7 +1060,7 @@
   <string name="dart">Dart / Flutter</string>
   <string name="dart_lsp_category_summary">Flutter 项目使用的 Dart 语言服务器</string>
   <string name="lsp_options_dart_title">Dart SDK（语言服务器）</string>
-  <string name="lsp_options_dart_summary">为 Flutter 项目提供代码补全、错误提示与跳转的 Dart SDK。按需下载（约 67 MB）。</string>
+  <string name="lsp_options_dart_summary">为 Flutter 项目提供代码补全、错误提示与跳转的 Dart SDK。按需下载（约 67 MB）。设备端缺 Flutter SDK 时，package:flutter 引用会报未解析（满屏红波浪线）——预期行为，云端构建不受影响。</string>
   <string name="dart_sdk_not_installed">未安装 — 点击下载</string>
   <string name="dart_sdk_installed">已安装</string>
   <string name="typescript">TypeScript / JavaScript</string>

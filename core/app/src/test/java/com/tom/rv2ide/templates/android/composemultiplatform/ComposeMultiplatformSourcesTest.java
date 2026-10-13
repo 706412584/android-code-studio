@@ -68,12 +68,12 @@ public class ComposeMultiplatformSourcesTest {
   }
 
   @Test
-  public void sharedModuleGradle_noIosTargets() {
-    // v1 明确不带 iOS：设备（linux-aarch64）上 iOS 编译不被支持，
-    // 无 Xcode 环境触发 iOS 任务直接 MissingXcodeException。
+  public void sharedModuleGradle_declaresIosTargets() {
+    // targets 改动后 iOS targets 已声明（macos runner 构建未签名 framework）。
+    // 声明不影响本地构建：KMP 按平台惰性编译，设备端不会触发 iOS 任务。
     String g = ComposeMultiplatformSources.INSTANCE.sharedModuleGradle(PKG, 36, 24);
-    assertFalse(g.contains("iosArm64"));
-    assertFalse(g.contains("iosSimulatorArm64"));
+    assertTrue(g.contains("iosArm64"));
+    assertTrue(g.contains("iosSimulatorArm64"));
   }
 
   @Test
@@ -157,8 +157,12 @@ public class ComposeMultiplatformSourcesTest {
     assertTrue("缺 android job", w.contains(":app:assembleDebug"));
     assertTrue("缺 desktop fat jar job", w.contains(":desktop:packageUberJarForCurrentOS"));
     assertTrue("缺 web wasm job", w.contains(":composeApp:wasmJsBrowserDistribution"));
-    // iOS 注释掉（v1 未声明 target，启用会直接失败）
-    assertTrue(w.contains("# ios-simulator:"));
+    // iOS 已启用（targets 改动）：macos runner 出未签名 framework
+    assertTrue("缺 ios job", w.contains(":composeApp:linkDebugFrameworkIosArm64"));
+    assertTrue("缺 ios runner", w.contains("runs-on: macos-latest"));
+    // 每个 job 都受 targets input 控制
+    assertTrue(w.contains("github.event.inputs.targets == 'all'"));
+    assertTrue(w.contains("contains(github.event.inputs.targets, 'android')"));
   }
 
   @Test

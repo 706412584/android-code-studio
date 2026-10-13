@@ -1108,7 +1108,7 @@
   <string name="dart">Dart / Flutter</string>
   <string name="dart_lsp_category_summary">Dart language server for Flutter projects</string>
   <string name="lsp_options_dart_title">Dart SDK (Language Server)</string>
-  <string name="lsp_options_dart_summary">Dart SDK providing code completion, error highlighting, and navigation for Flutter projects. Downloaded on demand (~67 MB).</string>
+  <string name="lsp_options_dart_summary">Dart SDK providing code completion, error highlighting, and navigation for Flutter projects. Downloaded on demand (~67 MB). Without a Flutter SDK on the device, package:flutter imports report as unresolved (a screenful of red squiggles) — expected; cloud builds are unaffected.</string>
   <string name="dart_sdk_not_installed">Not installed — tap to download</string>
   <string name="dart_sdk_installed">Installed</string>
   <string name="typescript">TypeScript / JavaScript</string>
