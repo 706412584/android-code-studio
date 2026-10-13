@@ -63,6 +63,22 @@ class IdeSetupConfigurationFragment : OnboardingFragment(), SlidePolicy {
 
   companion object {
 
+    /**
+     * 镜像 manifest 地址（Gitee）。
+     *
+     * <p>上游 manifest（`AndroidIDE-Rv2Official/androidide-rv2-tools` 的
+     * `manifest.json`）中 build-tools 的 aarch64/arm 包托管在 GitHub——
+     * 国内设备实测连接 `github.com` 超时（3 次重试均 15s 0 字节），首装卡在
+     * build-tools 步骤。镜像 manifest 仅把这两个 URL 指向 Gitee Release
+     * （实测 1.6MB/s），其余条目保持上游（SDK 主体与 cmdline-tools 的
+     * GitHub 下载实测可用）。
+     *
+     * <p>更新方式：修改 `wu-yongchengsvip_admin/acs-mirror` 仓库根目录的
+     * `androidide-manifest.json`（raw 文件，无需发版）。
+     */
+    const val IDE_SETUP_MANIFEST_URL =
+        "https://gitee.com/wu-yongchengsvip_admin/acs-mirror/raw/master/androidide-manifest.json"
+
     @JvmStatic
     fun newInstance(context: Context): IdeSetupConfigurationFragment {
       return IdeSetupConfigurationFragment().also {
@@ -158,6 +174,9 @@ class IdeSetupConfigurationFragment : OnboardingFragment(), SlidePolicy {
         IdeSetupArgument.NDK_VERSION,
         NdkVersion.fromDisplayName(content.ndkVersion.text).version,
     )
+    // 镜像 manifest：build-tools 的下载 URL 指向 Gitee（上游 GitHub 国内实测超时，
+    // 首装卡死；镜像实测 1.6MB/s）。其余条目保持上游（SDK/cmdline-tools 可用）。
+    args.setArgument(IdeSetupArgument.MANIFEST, IDE_SETUP_MANIFEST_URL)
     args.setArgument(IdeSetupArgument.ASSUME_YES)
     if (content.installGit.isChecked) {
       args.setArgument(IdeSetupArgument.WITH_GIT)

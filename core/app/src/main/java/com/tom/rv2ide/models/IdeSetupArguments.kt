@@ -32,4 +32,17 @@ enum class IdeSetupArgument(val argumentName: String, val requiresValue: Boolean
   SDK_VERSION("--sdk", true),
   JDK_VERSION("--jdk", true),
   NDK_VERSION("--ndk", false),
+
+  /**
+   * manifest 文件地址（工具链下载源清单）。
+   *
+   * <p>默认 manifest 与各包全部托管在 GitHub（`AndroidIDE-Rv2Official` 与
+   * `AndroidIDEOfficial` 两个仓库）——国内设备实测 build-tools 包下载连接
+   * `github.com` 超时（3 次重试全部 15s 0 字节），首装卡死。Gitee 镜像
+   * manifest 把 build-tools 的 aarch64/arm URL 指向 Gitee Release（实测
+   * 1.6MB/s），其余条目保持上游（SDK/cmdline-tools 的 GitHub 下载实测可用）。
+   *
+   * <p>idesetup 的 `-m`/`--manifest` 参数实测均生效（见设备验证记录）。
+   */
+  MANIFEST("--manifest", true),
 }
