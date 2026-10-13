@@ -216,7 +216,9 @@ jobs:
         run: |
           fail() { echo "跳过补丁生成：$1"; echo "generated=false" >> "$GITHUB_OUTPUT"; exit 0; }
 
-          PATCH_CLI_URL="https://repo1.maven.org/maven2/io/github/706412584/patch-cli/1.4.0/patch-cli-1.4.0-all.jar"
+          # 1.5.2 起支持 dex 版本 038（INVOKE_POLYMORPHIC 解析与写入）——
+          # 1.4.0/1.5.1 对 ACS 的 Kotlin 2.1 产物必报 truncated，不能降级。
+          PATCH_CLI_URL="https://repo1.maven.org/maven2/io/github/706412584/patch-cli/1.5.2/patch-cli-1.5.2-all.jar"
           curl -fsSL -o patch-cli.jar "$PATCH_CLI_URL" || fail "patch-cli 下载失败"
 
           NEW_APK="core/app/build/outputs/apk/release/android-code-studio-arm64-v8a-$VERSION_NAME.apk"
