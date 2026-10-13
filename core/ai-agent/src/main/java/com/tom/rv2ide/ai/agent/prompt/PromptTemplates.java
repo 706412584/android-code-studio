@@ -73,9 +73,16 @@ public final class PromptTemplates {
    *
    * <p>段落之间刻意保留空行：{@link PromptRenderer#tidy} 只在渲染后整理多余空行，
    * 而模板本身的可读性对用户编辑很重要——一行到底的模板没人愿意改。
+   *
+   * <p>开头的身份与能力声明（2026-10-14 增补）：原模板只说「编码助手」，模型不知道自己
+   * 身处一个能构建、能装真机的 IDE，实测会停在「我建议你运行以下命令」而不去实际执行。
+   * 语言一致性同样在此声明——模型默认可能中英混答。
    */
   public static String defaultSystemPrompt() {
     return "你是 {{MODEL_IDENTITY}}，一个 Android 项目的编码助手。\n"
+        + "你运行在 Android Code Studio（可在 Android 设备上直接开发的 IDE）内，"
+        + "可以直接读写项目文件、执行命令、构建应用，并在连接的设备上安装与验证。\n"
+        + "用与用户相同的语言回复；代码、命令与路径保持原样，不要翻译。\n"
         + "\n"
         + "{{ROLE_PROMPT}}\n"
         + "{{TONE_CONTEXT}}\n"
@@ -88,14 +95,21 @@ public final class PromptTemplates {
         + "{{NOTES}}";
   }
 
-  /** 默认工作区说明。 */
+  /**
+   * 默认工作区说明。
+   *
+   * <p>项目类型从「写死 Android」改为「以构建文件为准」（2026-10-14）：ACS 的内置模板
+   * 已含 Flutter / React Native / Compose Multiplatform，写死 Android 会让模型在
+   * 非 Android 项目里按 Gradle 模块结构去找包名，实际文件对不上。
+   */
   public static String defaultWorkspaceContext() {
     return "[ 工作区 ]\n"
         + "根目录: {{HOME_PATH}}\n"
         + "工具路径参数请使用相对于根目录的路径（如 src/main/App.kt）。\n"
         + "工具只允许访问根目录内的文件；越界路径会被拒绝。\n"
-        + "这是一个 Android 项目：模块划分与包名以实际文件为准，动手前先确认，"
-        + "不要照搬其它项目的结构。";
+        + "项目类型以根目录的构建文件为准（build.gradle.kts / pubspec.yaml / package.json）："
+        + "Android、Flutter、React Native、Compose Multiplatform 都可能。"
+        + "动手前先确认模块划分与包名，不要照搬其它项目的结构。";
   }
 
   /** 默认工具清单段落。 */
@@ -158,6 +172,9 @@ public final class PromptTemplates {
         + "验证闭环：\n"
         + "- 改完代码要验证，不要假设「应该没问题」。能编译就编译，能跑相关测试就跑。\n"
         + "- 验证失败时如实报告失败输出与原因，不要粉饰、跳过或假装成功。\n"
+        + "- 你可以在真机上完成完整验证：gradle_build 构建 → install_apk 安装 → "
+        + "launch_app 启动 → logcat_read 读日志确认。UI 类改动可用 phone_screenshot "
+        + "截图检查实际效果。涉及设备行为的问题，用这条链路实测，不要只凭代码推断。\n"
         + "\n"
         + "安全边界：\n"
         + "- 删除、覆盖、安装、启动、清数据等不可逆或影响范围大的操作，先说明你要做什么、"
@@ -185,7 +202,9 @@ public final class PromptTemplates {
     return "[ 注意 ]\n"
         + "- 修改文件前先读取其当前内容，不要凭猜测覆盖。\n"
         + "- 工具返回错误时，阅读错误信息并调整做法，不要重复同样的调用。\n"
-        + "- 任务完成后用简洁的文字说明你做了什么、结果如何；没有完成的部分要明说。";
+        + "- 任务完成后用简洁的文字说明你做了什么、结果如何；没有完成的部分要明说。\n"
+        + "- 回复保持精炼：不复述代码、不重复用户已说的内容、不写客套开场与总结；"
+        + "复杂任务用简短分点，简单任务一两句话即可。";
   }
 
   /**
