@@ -25,6 +25,7 @@ import com.termux.terminal.TerminalSession
 import com.tom.rv2ide.app.configuration.CpuArch
 import com.tom.rv2ide.app.configuration.IDEBuildConfigProvider
 import com.tom.rv2ide.managers.ToolsManager
+import com.tom.rv2ide.utils.Environment
 import java.io.File
 import java.io.FileOutputStream
 import org.slf4j.LoggerFactory
@@ -87,10 +88,39 @@ private constructor(
           ->
           FileOutputStream(script).use { outputStream -> inputStream.copyTo(outputStream) }
         }
+
+        // 同步新版 idesetup 到 $PREFIX/bin（覆盖 apt 包 androidide-tools 内的旧版）。
+        //
+        // temp/idesetup 是 wrapper：内部 `exec idesetup` 走 PATH，命中
+        // $PREFIX/bin/idesetup——那是 apt 包 androidide-tools_1.1-idetools-0 装的
+        // **旧版**（32-bit ARM、不支持 --ndk/--manifest 等新参数），64 位设备上
+        // 首装必报 `Invalid option: --ndk` 卡死（真机实测）。
+        // 这里把 assets 内同架构的新版覆盖过去，保证 wrapper 执行到正确版本。
+        syncIdesetupToPrefix(context, folderName)
         true
       } catch (e: Exception) {
         log.error("Failed to write idesetup script: {}", e.message, e)
         false
+      }
+    }
+
+    /** 把 assets 的 idesetup（按 CPU 架构）覆盖到 `$PREFIX/bin/idesetup`。 */
+    private fun syncIdesetupToPrefix(context: Context, folderName: String) {
+      val prefixBin = File(Environment.PREFIX, "bin")
+      if (!prefixBin.isDirectory) {
+        // prefix 未初始化（bootstrap 还没装）——此时 apt 包也不存在，跳过。
+        return
+      }
+      val target = File(prefixBin, "idesetup")
+      try {
+        context.assets.open(ToolsManager.getCommonAsset("${folderName}/idesetup")).use { inputStream
+          ->
+          FileOutputStream(target).use { outputStream -> inputStream.copyTo(outputStream) }
+        }
+        // 保留可执行位（FileOutputStream 创建的文件默认 rw-rw-rw-）
+        target.setExecutable(true, false)
+      } catch (e: Exception) {
+        log.error("Failed to sync idesetup to prefix: {}", e.message, e)
       }
     }
   }
