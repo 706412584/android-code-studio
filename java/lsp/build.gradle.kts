@@ -94,4 +94,5 @@ dependencies {
   implementation(libs.org.eclipse.lsp4j.lsp4j)
   implementation(libs.org.eclipse.lsp4j.jsonrpc)
 
+  testImplementation(libs.tests.junit)
 }

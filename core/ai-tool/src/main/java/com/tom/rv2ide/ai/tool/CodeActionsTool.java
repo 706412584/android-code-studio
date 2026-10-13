@@ -151,8 +151,10 @@ public final class CodeActionsTool extends BaseTool {
                                 + "add_throws 可传异常类名；其余动作不需要")))
         // required 必须在**顶层**（与 properties 平级）。曾误嵌进 properties 内部，
         // 生成非法 schema（properties 的每项必须是 schema 对象，数组不是）——严格
-        // 校验的服务商（agnes）直接 400 拒绝整个请求，且工具列表里只要有它就全挂。
-        // 假服务器不校验 schema，直到真模型验证才暴露（2026-10-12）。
+        // 校验的服务商（agnes）直接 400 拒绝整个请求，且工具列表里只要有它就全挂：
+        // "Tool 11 function has invalid 'parameters' schema: ['file_path', 'action']
+        // is not of type 'object', 'boolean'"。假服务器不校验 schema，直到真模型
+        // 验证才暴露（2026-10-12，两处独立发现同一问题）。
         .put("required", new JSONArray().put("file_path").put("action"));
   }
 

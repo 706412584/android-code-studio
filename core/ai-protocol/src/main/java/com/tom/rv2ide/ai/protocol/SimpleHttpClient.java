@@ -126,6 +126,22 @@ public final class SimpleHttpClient {
         throw new Exception("Too many redirects (>" + MAX_REDIRECTS + ")");
     }
 
+    /** 重定向后剥离鉴权类头：Authorization / Cookie 不跨源传递（curl/浏览器语义）。 */
+    private static Map<String, String> stripSensitiveHeaders(Map<String, String> headers) {
+        if (headers == null || headers.isEmpty()) {
+            return null;
+        }
+        LinkedHashMap<String, String> kept = new LinkedHashMap<>();
+        for (Map.Entry<String, String> entry : headers.entrySet()) {
+            String name = entry.getKey() == null ? "" : entry.getKey().toLowerCase(java.util.Locale.ROOT);
+            if (name.equals("authorization") || name.equals("cookie") || name.equals("proxy-authorization")) {
+                continue;
+            }
+            kept.put(entry.getKey(), entry.getValue());
+        }
+        return kept;
+    }
+
     public static String postJson(String url, String jsonBody, int connectTimeoutMs, int readTimeoutMs) throws Exception {
         return postJson(url, jsonBody, connectTimeoutMs, readTimeoutMs, Collections.<String, String>emptyMap());
     }
@@ -245,6 +261,81 @@ public final class SimpleHttpClient {
                 connection.disconnect();
             }
         }
+    }
+
+    /**
+     * 带自定义请求头、**流式写入目标文件**的下载（内存占用与文件大小无关）。
+     *
+     * <p><b>为什么需要它</b>：GitHub Actions 的 artifact 可达数百 MB，
+     * {@link DownloadResult} 会把整个文件读进 {@code byte[]}，在手机上直接 OOM；
+     * 且私有仓库的下载要求 {@code Authorization} 头，既有的 {@code download}
+     * 系列不接受请求头。这里直接落盘。
+     *
+     * <p><b>重定向与鉴权头的约束</b>：GitHub 的下载端点（日志 zip / artifact zip）
+     * 都会 302 到对象存储（{@code objects.githubusercontent.com}）的预签名 URL，
+     * 而预签名 URL **不能携带 Authorization 头**（带了会被 400 拒绝）。因此本方法
+     * 在发生重定向时**剥离鉴权类头**（Authorization / Cookie），其余头保留——
+     * 与 curl / 浏览器的跨源重定向语义一致，不需要调用方拆两跳。
+     *
+     * @return 实际写入的字节数
+     */
+    public static long downloadToFile(String url, Map<String, String> headers,
+                                      int connectTimeoutMs, int readTimeoutMs,
+                                      java.io.File target) throws Exception {
+        String currentUrl = url;
+        Map<String, String> currentHeaders = headers;
+        for (int hop = 0; hop <= MAX_REDIRECTS; hop++) {
+            String safeUrl = UrlPolicy.requireHttpOrLocalCleartextUrl(currentUrl, "URL");
+            java.net.URL target_ = new java.net.URL(safeUrl);
+            HttpURLConnection connection = null;
+            try {
+                connection = (HttpURLConnection) target_.openConnection(AppProxy.proxyFor(target_.getHost()));
+                connection.setRequestMethod("GET");
+                connection.setConnectTimeout(connectTimeoutMs);
+                connection.setReadTimeout(readTimeoutMs);
+                connection.setInstanceFollowRedirects(false);
+                connection.setRequestProperty("User-Agent", "LineCode/1.0");
+                if (currentHeaders != null) {
+                    for (Map.Entry<String, String> entry : currentHeaders.entrySet()) {
+                        connection.setRequestProperty(entry.getKey(), entry.getValue());
+                    }
+                }
+                int code = connection.getResponseCode();
+                if (code >= 300 && code < 400) {
+                    String location = connection.getHeaderField("Location");
+                    if (location == null || location.trim().isEmpty()) {
+                        throw new Exception("HTTP " + code + " without Location");
+                    }
+                    if (hop == MAX_REDIRECTS) {
+                        throw new Exception("Too many redirects (>" + MAX_REDIRECTS + ")");
+                    }
+                    currentUrl = new java.net.URL(target_, location.trim()).toString();
+                    // 预签名 URL 拒绝鉴权头：重定向后剥离 Authorization / Cookie。
+                    currentHeaders = stripSensitiveHeaders(currentHeaders);
+                    continue;
+                }
+                if (code < 200 || code >= 300) {
+                    throw new Exception("HTTP download failed: " + code);
+                }
+                long written = 0;
+                try (InputStream input = connection.getInputStream();
+                     java.io.OutputStream out = new java.io.BufferedOutputStream(
+                             new java.io.FileOutputStream(target))) {
+                    byte[] chunk = new byte[65536];
+                    int n;
+                    while ((n = input.read(chunk)) > 0) {
+                        out.write(chunk, 0, n);
+                        written += n;
+                    }
+                }
+                return written;
+            } finally {
+                if (connection != null) {
+                    connection.disconnect();
+                }
+            }
+        }
+        throw new Exception("Too many redirects (>" + MAX_REDIRECTS + ")");
     }
 
     public static Response execute(Request request) throws Exception {

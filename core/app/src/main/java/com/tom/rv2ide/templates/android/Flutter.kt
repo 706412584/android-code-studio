@@ -67,8 +67,9 @@ import kotlinx.coroutines.withContext
 class Flutter : Template {
   override val displayName = "Flutter"
   override val description =
-      "用 Dart 写一份代码同时出 Android 与网页；手机上编辑代码，" +
-          "推送 GitHub 后由云端 Actions 打包 APK 与网页"
+      "跨平台：一份 Dart 代码出 Android、iOS、网页。编辑器内置 Dart 补全，" +
+          "APK 与网页产物由「云编译」云端出包"
+  override val isCrossPlatform = true
   override val templateType = Template.TemplateType.OTHER
 
   // assets/Flutter/ 由 flutter create 3.47.7 的真实产物固化而来
@@ -236,15 +237,19 @@ class Flutter : Template {
 
   /** Dart 侧：lib/main.dart、pubspec.yaml、analysis_options、test。 */
   private fun writeDartFiles(projectRoot: File, projectName: String) {
+    // pubspec 的 name 与自引用导入必须是合法 Dart 包名（小写）——
+    // 项目名（如 MyFlutter）直接写进去会让 CI 的 flutter create 失败。
+    val dartPackage = FlutterSources.dartPackageName(projectName)
+
     val libDir = File(projectRoot, "lib")
     libDir.mkdirs()
     File(libDir, "main.dart").writeText(FlutterSources.mainDart(projectName))
 
     val testDir = File(projectRoot, "test")
     testDir.mkdirs()
-    File(testDir, "widget_test.dart").writeText(FlutterSources.widgetTest(projectName))
+    File(testDir, "widget_test.dart").writeText(FlutterSources.widgetTest(dartPackage))
 
-    File(projectRoot, "pubspec.yaml").writeText(FlutterSources.pubspecYaml(projectName))
+    File(projectRoot, "pubspec.yaml").writeText(FlutterSources.pubspecYaml(dartPackage))
     File(projectRoot, "analysis_options.yaml")
         .writeText(FlutterSources.analysisOptionsYaml())
   }

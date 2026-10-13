@@ -676,6 +676,10 @@ constructor(
         when (FileUtils.getFileExtension(file)) {
           "gradle" -> GroovyLanguage()
           // "c", "h", "cc", "cpp", "cxx" -> CppLanguage()
+          // 4 -> TS/Dart 现在由 tree-sitter 处理（见 EditorHandlerActivity 的注册与
+          //      TypeScriptLanguage/DartLanguage 的类注释）：高亮来自内置语法库，
+          //      补全/诊断来自 LSP。这里不再需要 LspOnlyLanguage——第 2 步的
+          //      hasTsLanguage 会先拦截这些扩展名。
           else -> EmptyLanguage()
         }
 

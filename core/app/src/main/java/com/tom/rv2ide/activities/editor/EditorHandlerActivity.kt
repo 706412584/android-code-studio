@@ -35,13 +35,15 @@ import com.tom.rv2ide.actions.ActionItem.Location.EDITOR_TOOLBAR
 import com.tom.rv2ide.actions.ActionsRegistry.Companion.getInstance
 import com.tom.rv2ide.actions.FillMenuParams
 import com.tom.rv2ide.artificial.agent.EditorSessionRegistry
+import com.tom.rv2ide.editor.language.treesitter.CppLang
+import com.tom.rv2ide.editor.language.treesitter.DartLanguage
 import com.tom.rv2ide.editor.language.treesitter.JavaLanguage
 import com.tom.rv2ide.editor.language.treesitter.JsonLanguage
 import com.tom.rv2ide.editor.language.treesitter.KotlinLanguage
 import com.tom.rv2ide.editor.language.treesitter.LogLanguage
 import com.tom.rv2ide.editor.language.treesitter.TSLanguageRegistry
+import com.tom.rv2ide.editor.language.treesitter.TypeScriptLanguage
 import com.tom.rv2ide.editor.language.treesitter.XMLLanguage
-import com.tom.rv2ide.editor.language.treesitter.CppLang
 import com.tom.rv2ide.editor.schemes.IDEColorSchemeProvider
 import com.tom.rv2ide.editor.ui.IDEEditor
 import com.tom.rv2ide.eventbus.events.editor.DocumentChangeEvent
@@ -144,6 +146,13 @@ open class EditorHandlerActivity : ProjectHandlerActivity(), IEditorHandler {
       TSLanguageRegistry.instance.register(LogLanguage.TS_TYPE, LogLanguage.FACTORY)
       TSLanguageRegistry.instance.register(JsonLanguage.TS_TYPE, JsonLanguage.FACTORY)
       TSLanguageRegistry.instance.register(XMLLanguage.TS_TYPE, XMLLanguage.FACTORY)
+      // Dart（Flutter）与 TypeScript/JavaScript（RN）——语法库随 APK 打包，
+      // 见 DartLanguage / TypeScriptLanguage 的类注释（Maven 上没有这两个语法包）。
+      TSLanguageRegistry.instance.register(DartLanguage.TS_TYPE, DartLanguage.FACTORY)
+      for (extension in TypeScriptLanguage.TS_EXTENSIONS + TypeScriptLanguage.TSX_EXTENSIONS) {
+        val factory = TypeScriptLanguage.factoryFor(extension) ?: continue
+        TSLanguageRegistry.instance.register(extension, factory)
+      }
       IDEColorSchemeProvider.initIfNeeded()
     }
   }

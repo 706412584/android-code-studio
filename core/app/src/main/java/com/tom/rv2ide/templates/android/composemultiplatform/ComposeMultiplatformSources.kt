@@ -36,7 +36,8 @@ package com.tom.rv2ide.templates.android.composemultiplatform
  * CMP 1.10.3 × Kotlin 2.2.20 × AGP 8.13.0。CMP 1.12+ 实测要求 compileSdk 37 /
  * AGP 9.1+（aar-metadata），与设备端 AGP 8.13 硬冲突，禁止顺手升级；Kotlin
  * 2.2.20 的 AGP fully-tested 上限是 8.11.1，超限只是官方未测（warning），不是硬错。
- * v1 不生成 iOS targets：无 Xcode 的环境触发 iOS 任务直接 MissingXcodeException。
+ * iOS targets（iosArm64/iosSimulatorArm64）已声明：本地无 Xcode 时这些 target
+ * 不参与构建（KMP 按平台惰性编译），CI 的 macos runner 才实际出 iOS 产物。
  */
 object ComposeMultiplatformSources {
 
@@ -108,6 +109,21 @@ object ComposeMultiplatformSources {
                   }
               }
               binaries.executable()
+          }
+
+          // iOS targets：由 macos runner 构建（见 workflow 的 ios job）。
+          // 声明 targets 不影响 Android/桌面构建——KMP 只编译对应平台的产物。
+          iosArm64 {
+              binaries.framework {
+                  baseName = "shared"
+                  isStatic = true
+              }
+          }
+          iosSimulatorArm64 {
+              binaries.framework {
+                  baseName = "shared"
+                  isStatic = true
+              }
           }
 
           sourceSets {
@@ -367,7 +383,16 @@ object ComposeMultiplatformSources {
    * fat jar 里的 skiko 渲染库按构建机 OS 打包，单 runner 出的 jar 换 OS 跑不起来
    * （「Cannot find skiko-windows-x64.dll.sha256」），2026-10-10 远端实测踩中后修正。
    * Web 静态站（ubuntu）由推送自动触发。artifact 上传用宽松 glob 兜底两个产物目录。
-   * iOS 需要 macos runner + 声明 iOS target，v1 未启用——注释里留了模板。
+   * iOS 用 macos runner 出未签名 framework（composeApp 已声明 iosArm64 targets）。
+   *
+   * <p><b>出包目标可选</b>：workflow_dispatch 的 `targets` 输入（逗号分隔，
+   * 默认 all）控制哪些 job 执行——只出安卓时其余平台 job 直接跳过，
+   * 省 CI 时间与额度。push 触发时仍出全部平台。
+   *
+   * <p><b>retention-days: 7</b>：Actions artifact 计入仓库存储配额，而 APK/fat jar
+   * 单个上百 MB——仓库默认保留期 90 天时，几次构建就能把免费配额堆满，之后
+   * workflow 直接跑不起来（用户实测踩过）。产物是「构建完就下载走」的一次性交付，
+   * 7 天足够取回；需要长期留存的产物应发 Release（不计入 Actions 配额）。
    */
   fun ciWorkflow(projectName: String): String =
       """
@@ -377,9 +402,24 @@ object ComposeMultiplatformSources {
         push:
           branches: [ main, master ]
         workflow_dispatch:
+          inputs:
+            targets:
+              description: '出包目标：all=全部（默认）/ 逗号分隔的 android,desktop,web,ios'
+              required: false
+              default: 'all'
+              type: string
+            build_mode:
+              description: '构建模式'
+              required: false
+              default: 'debug'
+              type: choice
+              options:
+                - debug
+                - release
 
       jobs:
-        android-apk:
+        android:
+          if: ${'$'}{{ github.event_name == 'push' || github.event.inputs.targets == 'all' || contains(github.event.inputs.targets, 'android') }}
           runs-on: ubuntu-latest
           steps:
             - uses: actions/checkout@v4
@@ -393,9 +433,11 @@ object ComposeMultiplatformSources {
             - uses: actions/upload-artifact@v4
               with:
                 name: ${projectName}-android-debug
+                retention-days: 7
                 path: app/build/outputs/apk/debug/*.apk
 
-        desktop-jar:
+        desktop:
+          if: ${'$'}{{ github.event_name == 'push' || github.event.inputs.targets == 'all' || contains(github.event.inputs.targets, 'desktop') }}
           strategy:
             matrix:
               os: [ubuntu-latest, windows-latest, macos-latest]
@@ -415,11 +457,13 @@ object ComposeMultiplatformSources {
             - uses: actions/upload-artifact@v4
               with:
                 name: ${projectName}-desktop-${'$'}{{ matrix.os }}
+                retention-days: 7
                 path: |
                   desktop/build/compose/binaries/main/**/*.jar
                   desktop/build/compose/jars/*.jar
 
         web:
+          if: ${'$'}{{ github.event_name == 'push' || github.event.inputs.targets == 'all' || contains(github.event.inputs.targets, 'web') }}
           runs-on: ubuntu-latest
           steps:
             - uses: actions/checkout@v4
@@ -434,24 +478,30 @@ object ComposeMultiplatformSources {
             - uses: actions/upload-artifact@v4
               with:
                 name: ${projectName}-web
+                retention-days: 7
                 path: composeApp/build/dist/wasmJs/productionExecutable/**
 
-        # iOS 需要 macos runner；v1 未声明 iOS target，在 composeApp 的 kotlin {}
-        # 里加上 iosArm64()/iosSimulatorArm64() target 后取消注释：
-        # ios-simulator:
-        #   runs-on: macos-latest
-        #   steps:
-        #     - uses: actions/checkout@v4
-        #     - uses: actions/setup-java@v4
-        #       with:
-        #         distribution: 'temurin'
-        #         java-version: '17'
-        #     - uses: gradle/actions/setup-gradle@v4
-        #     - run: ./gradlew :composeApp:iosSimulatorArm64Binaries
-        #     - uses: actions/upload-artifact@v4
-        #       with:
-        #         name: ${projectName}-ios-sim
-        #         path: composeApp/build/bin/iosSimulatorArm64/**
+        # iOS：composeApp 已声明 iosArm64/iosSimulatorArm64 targets（见
+        # composeApp/build.gradle.kts）。产物是未签名 .framework；完整 .app
+        # 需要 Xcode 工程（iosApp/），本模板暂不含——framework 可直接集成到
+        # 已有 Xcode 工程。真机分发需 Apple 开发者账号签名。
+        ios:
+          if: ${'$'}{{ github.event_name == 'push' || github.event.inputs.targets == 'all' || contains(github.event.inputs.targets, 'ios') }}
+          runs-on: macos-latest
+          steps:
+            - uses: actions/checkout@v4
+            - uses: actions/setup-java@v4
+              with:
+                distribution: 'temurin'
+                java-version: '17'
+            - uses: gradle/actions/setup-gradle@v4
+            - run: chmod +x ./gradlew
+            - run: ./gradlew :composeApp:linkDebugFrameworkIosArm64
+            - uses: actions/upload-artifact@v4
+              with:
+                name: ${projectName}-ios-framework
+                retention-days: 7
+                path: composeApp/build/bin/iosArm64/debugFramework/**
       """
           .trimIndent() + "\n"
 
@@ -485,7 +535,14 @@ object ComposeMultiplatformSources {
       | Android | **设备上（本 IDE）** | 构建按钮 / `./gradlew :app:assembleDebug` | APK |
       | Desktop | GitHub Actions | 推送自动触发 | fat jar（`java -jar` 可跑） |
       | Web | GitHub Actions | 推送自动触发 | 静态站点（可部署到任意静态托管） |
-      | iOS | GitHub Actions | 模板未启用，见 workflow 注释 | 模拟器二进制 |
+      | iOS | GitHub Actions（macOS） | 推送自动触发 | 未签名 .framework |
+
+      手动触发时在 **Run workflow** 表单里填 `targets`：留空或 `all` 出全部
+      平台，填 `android` 只出安卓，填 `android,desktop` 出两个（逗号分隔）。
+
+      > iOS 产物是 Kotlin framework（`composeApp/build/bin/iosArm64/...`），
+      > 可直接集成进已有 Xcode 工程；完整的 .app 需要 iosApp/ Xcode 工程
+      > （本模板暂不含）。真机分发需 Apple 开发者账号签名。
 
       ## 改界面
 
@@ -502,6 +559,29 @@ object ComposeMultiplatformSources {
 
       升级 CMP 前先查它的 aar-metadata 要求（1.12+ 需要 compileSdk 37 / AGP 9.1+，
       会与设备端构建冲突）。
+      """
+          .trimIndent() + "\n"
+
+  /**
+   * 根 `.gitignore`。
+   *
+   * <p>云编译产物目录（`cloudbuild-output/` 与 `.cloudbuild-cache/`）必须忽略：
+   * 下载的 APK 产物单个可达上百 MB，一次 `git add .` 就会把大文件误提交进仓库。
+   * 其余条目沿用 Gradle 项目的通行忽略集。
+   */
+  fun gitignore(): String =
+      """
+      .gradle/
+      build/
+      */build/
+      .idea/
+      *.iml
+      local.properties
+      .kotlin/
+
+      # 云编译产物与缓存（ACS 云编译功能下载的 artifact / 日志 zip）
+      cloudbuild-output/
+      .cloudbuild-cache/
       """
           .trimIndent() + "\n"
 }

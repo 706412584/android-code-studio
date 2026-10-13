@@ -18,15 +18,22 @@
 package com.tom.rv2ide.preferences
 
 import androidx.preference.Preference
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
+import com.google.android.material.textview.MaterialTextView
+import com.tom.rv2ide.lsp.dart.DartSdkInstaller
 import com.tom.rv2ide.lsp.kotlin.etc.LspFeatures
 import com.tom.rv2ide.preferences.internal.LSPPreferences
 import com.tom.rv2ide.preferences.internal.LSPPreferences.ACS_KOTLIN_LSP_CURSOR_HOVER
 import com.tom.rv2ide.preferences.internal.LSPPreferences.ACS_KOTLIN_LSP_DIAGNOSTICS
 import com.tom.rv2ide.preferences.internal.LSPPreferences.ACS_KOTLIN_LSP_FORMAT_STYLE
+import com.tom.rv2ide.preferences.observers.LSPStateObserver
 import com.tom.rv2ide.resources.R.drawable
 import com.tom.rv2ide.resources.R.string
 import com.tom.rv2ide.utils.Environment
 import java.io.File
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.parcelize.IgnoredOnParcel
 import kotlinx.parcelize.Parcelize
 
@@ -56,6 +63,162 @@ private class LSPOptions(
 
   init {
     addPreference(KotlinCategory())
+    addPreference(TypeScriptCategory())
+    addPreference(DartCategory())
+  }
+}
+
+/**
+ * TypeScript / JavaScript（React Native 模板）。
+ *
+ * 无下载按钮：TSLS 走 npm 装进**项目内** node_modules（与项目锁定的 TS 版本
+ * 配套），不适合应用级安装。条目只展示状态与安装命令。
+ */
+@Parcelize
+private class TypeScriptCategory(
+    override val key: String = "lsp_typescript_category",
+    override val title: Int = string.typescript,
+    override val summary: Int? = string.typescript_lsp_category_summary,
+    override val children: List<IPreference> = mutableListOf(),
+) : IPreferenceScreen() {
+
+  init {
+    addPreference(TypeScriptLSP())
+  }
+}
+
+@Parcelize
+private class TypeScriptLSP(
+    override val key: String = "lsp_typescript_server",
+    override val title: Int = string.lsp_options_typescript_title,
+    override val summary: Int? = string.lsp_options_typescript_summary,
+) : DialogPreference() {
+
+  override fun onConfigureDialog(preference: Preference, dialog: MaterialAlertDialogBuilder) {
+    super.onConfigureDialog(preference, dialog)
+    dialog.setMessage(preference.context.getString(string.typescript_lsp_hint))
+    dialog.setPositiveButton(android.R.string.ok) { d, _ -> d.dismiss() }
+  }
+}
+
+/**
+ * Dart（Flutter 模板）。
+ *
+ * 走独立下载通道（[DartSdkInstaller]）而不是 LSPPreference 的 manifest 模式：
+ * Dart SDK 不是「语言服务器 zip」而是完整 SDK（67MB），分发地址与校验逻辑都在
+ * DartSdkInstaller 里，复用它比把 SDK 塞进 manifest 更直接。
+ */
+@Parcelize
+private class DartCategory(
+    override val key: String = "lsp_dart_category",
+    override val title: Int = string.dart,
+    override val summary: Int? = string.dart_lsp_category_summary,
+    override val children: List<IPreference> = mutableListOf(),
+) : IPreferenceScreen() {
+
+  init {
+    addPreference(DartLSP())
+  }
+}
+
+@Parcelize
+private class DartLSP(
+    override val key: String = "lsp_dart_server",
+    override val title: Int = string.lsp_options_dart_title,
+    override val summary: Int? = string.lsp_options_dart_summary,
+) : DialogPreference() {
+
+  override fun onConfigureDialog(preference: Preference, dialog: MaterialAlertDialogBuilder) {
+    super.onConfigureDialog(preference, dialog)
+    val ctx = preference.context
+    val installed = DartSdkInstaller.isInstalled()
+    dialog.setMessage(
+        if (installed) {
+          ctx.getString(
+              string.dart_sdk_size,
+              android.text.format.Formatter.formatShortFileSize(
+                  ctx, DartSdkInstaller.installedSizeBytes()))
+        } else {
+          ctx.getString(string.dart_sdk_not_installed)
+        })
+
+    if (installed) {
+      dialog.setNeutralButton(string.lsp_server_uninstall) { _, _ ->
+        MaterialAlertDialogBuilder(ctx)
+            .setTitle(string.lsp_server_uninstall_title)
+            .setMessage(string.dart_sdk_uninstall_message)
+            .setPositiveButton(string.lsp_server_uninstall) { _, _ ->
+              DartSdkInstaller.uninstall()
+              LSPStateObserver.notifyServerStateChanged()
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+      }
+    } else {
+      dialog.setNeutralButton(string.updater_download) { _, _ -> downloadDartSdk(ctx) }
+    }
+
+    dialog.setPositiveButton(android.R.string.ok) { d, _ -> d.dismiss() }
+  }
+
+  private fun downloadDartSdk(ctx: android.content.Context) {
+    val progressLayout =
+        android.widget.LinearLayout(ctx).apply {
+          orientation = android.widget.LinearLayout.VERTICAL
+          setPadding(48, 32, 48, 16)
+        }
+    val progressText =
+        MaterialTextView(ctx).apply {
+          text = ctx.getString(string.dart_sdk_downloading)
+          textSize = 15f
+        }
+    val progressBar =
+        android.widget.ProgressBar(ctx, null, android.R.attr.progressBarStyleHorizontal).apply {
+          isIndeterminate = false
+          max = 100
+        }
+    progressLayout.addView(progressText)
+    progressLayout.addView(progressBar)
+
+    val progressDialog =
+        MaterialAlertDialogBuilder(ctx)
+            .setTitle(string.lsp_options_dart_title)
+            .setView(progressLayout)
+            .setCancelable(false)
+            .create()
+    progressDialog.show()
+
+    CoroutineScope(Dispatchers.Main).launch {
+      val result =
+          DartSdkInstaller.install(
+              ctx.applicationContext,
+              object : DartSdkInstaller.ProgressListener {
+                override fun onStage(message: String) {
+                  progressText.text = message
+                }
+
+                override fun onProgress(fraction: Float?) {
+                  progressBar.progress = ((fraction ?: 0f) * 100).toInt()
+                }
+              })
+      progressDialog.dismiss()
+      result
+          .onSuccess {
+            MaterialAlertDialogBuilder(ctx)
+                .setTitle(string.lsp_server_success_title)
+                .setMessage(string.dart_sdk_install_success)
+                .setPositiveButton(android.R.string.ok, null)
+                .show()
+            LSPStateObserver.notifyServerStateChanged()
+          }
+          .onFailure { e ->
+            MaterialAlertDialogBuilder(ctx)
+                .setTitle(string.lsp_server_error_title)
+                .setMessage(ctx.getString(string.dart_sdk_install_failed, e.message ?: ""))
+                .setPositiveButton(android.R.string.ok, null)
+                .show()
+          }
+    }
   }
 }
 

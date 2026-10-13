@@ -1,0 +1,116 @@
+<?xml version="1.0" encoding="utf-8"?><!--
+  ~  This file is part of AndroidCodeStudio.
+  ~
+  ~  AndroidCodeStudio is free software: you can redistribute it and/or modify
+  ~  it under the terms of the GNU General Public License as published by
+  ~  the Free Software Foundation, either version 3 of the License, or
+  ~  (at your option) any later version.
+  -->
+<!--
+  Cloud build (GitHub Actions) strings.
+  Chinese translation lives in values-zh-rCN/strings_cloud_build.xml — keep both
+  files in the same order.
+
+  文案集中在此而不是硬编码：服务层（WorkflowRun.statusText / GitHubApiException
+  .userMessage）已返回中文，但界面自身的标签（按钮、标题、提示）仍需本地化——
+  与 strings_git_client.xml / strings_asset_studio.xml 的做法一致。
+-->
+<resources>
+
+  <!-- 入口与标题 -->
+  <string name="cloud_build_title">Cloud build</string>
+  <string name="cloud_build_action_label">Cloud build</string>
+
+  <!-- 检测阶段 -->
+  <string name="cloud_build_detecting_repo">Detecting project repository…</string>
+  <string name="cloud_build_no_project">No project is open. Open a project first.</string>
+  <string name="cloud_build_not_git_repo">This project is not a git repository yet. Initialize a repository and push it to GitHub first.</string>
+  <string name="cloud_build_no_github_remote">No GitHub remote found for this project. Cloud build only supports GitHub Actions.</string>
+  <string name="cloud_build_no_workflow_local">The repository has no workflow file. Add .github/workflows/build.yml and push it first.</string>
+  <string name="cloud_build_workflow_not_pushed">No workflow found on the remote. Local workflow file(s) not pushed yet: %1$s. Push your code to GitHub first.</string>
+
+  <!-- 配置 -->
+  <string name="cloud_build_repo">Repository: %1$s</string>
+  <string name="cloud_build_workflow_hint">Workflow</string>
+  <string name="cloud_build_branch_hint">Branch</string>
+  <string name="cloud_build_token_configured">GitHub token configured</string>
+  <string name="cloud_build_token_missing">No GitHub token configured — required to trigger a build.</string>
+  <string name="cloud_build_configure_token">Configure token</string>
+  <string name="cloud_build_select_workflow">Please select a workflow.</string>
+  <string name="cloud_build_input_branch">Please enter a branch.</string>
+  <string name="cloud_build_start">Start build</string>
+  <string name="cloud_build_retry">Retry</string>
+  <string name="cloud_build_close">Close</string>
+
+  <!-- 触发与进度 -->
+  <string name="cloud_build_triggering">Triggering workflow and waiting for the run to appear…</string>
+  <string name="cloud_build_jobs_pending">Waiting for jobs to appear…</string>
+  <string name="cloud_build_stop_tracking">Stop tracking</string>
+  <string name="cloud_build_tracking_stopped">Tracking stopped. The build continues on GitHub.</string>
+  <string name="cloud_build_poll_failed">Progress refresh failed: %1$s</string>
+
+  <!-- 取消构建（远端不可逆操作，与「停止跟踪」区分） -->
+  <string name="cloud_build_cancel">Cancel build</string>
+  <string name="cloud_build_cancel_confirm_title">Cancel this build?</string>
+  <string name="cloud_build_cancel_confirm_message">This cancels the run on GitHub. Steps that already ran cannot be restored.\n\nIf you only want to stop watching the progress and let the build finish in the cloud, use \"Stop tracking\" instead.</string>
+  <string name="cloud_build_cancel_confirm_yes">Cancel build</string>
+  <string name="cloud_build_cancel_confirm_no">Keep running</string>
+  <string name="cloud_build_cancelling">Requesting cancellation…</string>
+  <string name="cloud_build_cancel_requested">Cancellation requested, waiting for GitHub…</string>
+  <string name="cloud_build_cancel_failed">Could not cancel: %1$s</string>
+  <string name="cloud_build_running_actions_hint">\"Cancel build\" stops the run on GitHub; \"Stop tracking\" only stops showing progress here.</string>
+  <string name="cloud_build_cancelled_log_title">Run log (cancelled)</string>
+
+  <!-- 历史构建 -->
+  <string name="cloud_build_history">Build history</string>
+  <string name="cloud_build_history_refresh">Refresh</string>
+  <string name="cloud_build_history_back">Back</string>
+  <string name="cloud_build_history_loading">Loading history…</string>
+  <string name="cloud_build_history_empty">No past runs.</string>
+  <string name="cloud_build_history_load_failed">Could not load history: %1$s</string>
+
+  <!-- 结果 -->
+  <string name="cloud_build_failure_title">Failure reason (log excerpt)</string>
+  <string name="cloud_build_fetching_log">Fetching logs…</string>
+  <string name="cloud_build_copy_log">Copy log</string>
+  <string name="cloud_build_log_copied">Log copied to clipboard</string>
+  <string name="cloud_build_artifacts_title">Build artifacts</string>
+  <string name="cloud_build_no_artifacts">This run has no artifacts.</string>
+  <string name="cloud_build_artifact_list_failed">Could not list artifacts: %1$s</string>
+  <string name="cloud_build_artifact_expired">%1$s (expired)</string>
+  <string name="cloud_build_artifact_size">%1$s (%2$s)</string>
+  <string name="cloud_build_download">Download</string>
+  <string name="cloud_build_downloading">Downloading…</string>
+  <string name="cloud_build_downloaded">Downloaded</string>
+  <string name="cloud_build_downloaded_to">Saved to: %1$s</string>
+  <string name="cloud_build_build_again">Build again</string>
+  <string name="cloud_build_open_run_page">Open in browser</string>
+  <string name="cloud_build_no_run_page">This run has no page link.</string>
+  <string name="cloud_build_open_page_failed">Could not open the run page.</string>
+
+  <!-- Token 配置 -->
+  <string name="cloud_build_token_title">GitHub token</string>
+  <string name="cloud_build_token_hint">Personal Access Token</string>
+  <string name="cloud_build_token_help">Create a Personal Access Token (classic) with the repo and workflow scopes on GitHub, then paste it here. It is stored encrypted on this device and only used to trigger and track builds.</string>
+  <string name="cloud_build_token_not_persistent">Encrypted storage is unavailable on this device — the token will only be kept for this session.</string>
+  <string name="cloud_build_token_save">Save</string>
+  <string name="cloud_build_token_saved">Token saved</string>
+  <!-- One-click repo creation -->
+  <string name="cloud_build_create_repo">Create repo and push</string>
+  <string name="cloud_build_create_repo_confirm_title">Create GitHub repository</string>
+  <string name="cloud_build_create_repo_confirm_message">A private repository named "%1$s" will be created under your GitHub account and this project will be pushed to it. Private repositories do not expose your code.</string>
+  <string name="cloud_build_create_repo_working">Creating repository and pushing…</string>
+  <string name="cloud_build_create_repo_done">Pushed to %1$s, re-detecting…</string>
+  <string name="cloud_build_create_repo_failed">Failed to create repository: %1$s</string>
+  <!-- GitHub login (Device Flow) -->
+  <string name="cloud_build_login_github">Sign in with GitHub</string>
+  <string name="cloud_build_login_title">GitHub sign in</string>
+  <string name="cloud_build_login_step1">Open in your browser:</string>
+  <string name="cloud_build_login_step2">Enter code: %1$s</string>
+  <string name="cloud_build_login_open_browser">Open browser</string>
+  <string name="cloud_build_login_waiting">Waiting for authorization… (continues automatically)</string>
+  <string name="cloud_build_login_success">Signed in to GitHub, token saved</string>
+  <string name="cloud_build_login_failed">Sign-in failed: %1$s</string>
+  <!-- Build targets (template workflows) -->
+  <string name="cloud_build_targets_label">Build targets (none selected = all)</string>
+</resources>

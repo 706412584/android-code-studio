@@ -62,6 +62,23 @@ object ReactNativeSources {
   /** RN 版本。npm 包与 Maven 构件版本号一致（`react-native@X` ↔ `com.facebook.react:react-android:X`）。 */
   const val REACT_NATIVE_VERSION = "0.81.4"
 
+  /**
+   * TypeScript 版本。与 RN 0.81.4 官方模板的 devDependencies 一致（`^5.8.3`）。
+   * 锁 `5.8.3` 而不是 `^`：设备端 TSLS 加载工作区 TS 做分析，范围符会在不同
+   * 时间装出不同版本，诊断行为不可复现。
+   */
+  const val TYPESCRIPT_VERSION = "5.8.3"
+
+  /**
+   * typescript-language-server 版本。
+   *
+   * <p>实测决策（2026-10-12，黑鲨 Android 10 / node v24.7.0）：
+   * - 6.0.2（最新）要求 node>=22.22.2，设备满足；与 TS 5.8.3 组合握手成功，
+   *   日志确认 "Using Typescript version (workspace) 5.8.3"。
+   * - 5.3.0 是 node>=20 的最后一代；若设备 node 较旧可退回它。
+   */
+  const val TSLS_VERSION = "6.0.2"
+
   /** React 版本。RN 0.81 的 peerDependency 是 `react@^19.1.0`。 */
   const val REACT_VERSION = "19.1.0"
 
@@ -535,9 +552,12 @@ object ReactNativeSources {
    * 依赖版本与 RN 0.81.4 官方模板一致（react 19.1.0 / react-native 0.81.4）。
    * 刻意不带 `@react-native/new-app-screen` 与 `react-native-safe-area-context`
    * ——App.tsx 是本模板自写的计数器示例（见 [appTsx]），不依赖这两个包。
-   * devDependencies 也精简到运行必需（babel/metro 配置包），去掉了
-   * eslint/jest/typescript 工具链——设备端用户改代码为主，不跑测试/lint，
-   * 少装 200+ 个包可显著缩短 npm install。
+   *
+   * devDependencies 在「运行必需（babel/metro 配置包）」基础上只多了 TS LSP 的
+   * 两个包（`typescript` + `typescript-language-server`）：设备端编辑器打开
+   * .ts/.tsx 时的补全/诊断依赖它们（TypeScriptLanguageServer 优先从项目
+   * node_modules 加载，版本与项目锁定一致）。eslint/jest 等其余工具链仍不带
+   * ——不跑测试/lint，少装 200+ 个包显著缩短 npm install。
    */
   fun packageJson(projectName: String): String =
       """
@@ -551,16 +571,25 @@ object ReactNativeSources {
         },
         "dependencies": {
           "react": "@@REACT@@",
-          "react-native": "@@RN@@"
+          "react-dom": "@@REACT@@",
+          "react-native": "@@RN@@",
+          "react-native-web": "^0.21.0"
         },
         "devDependencies": {
           "@babel/core": "^7.25.2",
           "@babel/preset-env": "^7.25.3",
+          "@babel/preset-react": "^7.25.9",
+          "@babel/preset-typescript": "^7.25.9",
           "@babel/runtime": "^7.25.0",
           "@react-native-community/cli": "20.0.0",
           "@react-native-community/cli-platform-android": "20.0.0",
           "@react-native/babel-preset": "@@RN@@",
-          "@react-native/metro-config": "@@RN@@"
+          "@react-native/metro-config": "@@RN@@",
+          "babel-loader": "^9.2.1",
+          "typescript": "@@TS@@",
+          "typescript-language-server": "@@TSLS@@",
+          "webpack": "^5.95.0",
+          "webpack-cli": "^6.0.1"
         },
         "engines": {
           "node": ">=20"
@@ -570,7 +599,9 @@ object ReactNativeSources {
           .trimIndent()
           .replace("@@APPNAME@@", projectName)
           .replace("@@REACT@@", REACT_VERSION)
-          .replace("@@RN@@", REACT_NATIVE_VERSION) + "\n"
+          .replace("@@RN@@", REACT_NATIVE_VERSION)
+          .replace("@@TS@@", TYPESCRIPT_VERSION)
+          .replace("@@TSLS@@", TSLS_VERSION) + "\n"
 
   /** index.js——AppRegistry 入口。 */
   fun indexJs(): String =
@@ -737,6 +768,17 @@ object ReactNativeSources {
       local.properties
       *.keystore
       !app/debug.keystore
+
+      # Web 目标构建产物（CI 生成，不入库）
+      dist/
+
+      # iOS 脚手架与 Pods（CI 现场生成）
+      ios/Pods/
+      ios/build/
+
+      # 云编译产物与缓存（ACS 云编译功能下载的 artifact / 日志 zip）
+      cloudbuild-output/
+      .cloudbuild-cache/
       """
           .trimIndent() + "\n"
 
@@ -749,18 +791,37 @@ object ReactNativeSources {
    *
    * 与 CMP 模板的差异：RN 的构建前置是 `npm install`（ubuntu runner 直连
    * 官方源，无需镜像），且 debug APK 无需签名配置（用模板自带的 debug.keystore）。
+   *
+   * <p><b>retention-days: 7</b>：Actions artifact 计入仓库存储配额，而 APK
+   * 单个上百 MB——仓库默认保留期 90 天时，几次构建就能把免费配额堆满，之后
+   * workflow 直接跑不起来（用户实测踩过）。7 天足够取回产物。
    */
   fun ciWorkflow(projectName: String): String =
       """
-      name: Build React Native APK
+      name: Build React Native App
 
       on:
         push:
           branches: [ main, master ]
         workflow_dispatch:
+          inputs:
+            targets:
+              description: '出包目标：all=全部（默认）/ 逗号分隔的 android,ios,web'
+              required: false
+              default: 'all'
+              type: string
+            build_mode:
+              description: '构建模式'
+              required: false
+              default: 'debug'
+              type: choice
+              options:
+                - debug
+                - release
 
       jobs:
-        android-apk:
+        android:
+          if: ${'$'}{{ github.event_name == 'push' || github.event.inputs.targets == 'all' || contains(github.event.inputs.targets, 'android') }}
           runs-on: ubuntu-latest
           steps:
             - uses: actions/checkout@v4
@@ -776,12 +837,165 @@ object ReactNativeSources {
               run: chmod +x ./gradlew
             - name: Install JS dependencies
               run: npm install --no-audit --no-fund
-            - name: Build debug APK
-              run: ./gradlew :app:assembleDebug
+            - name: Build APK
+              run: ./gradlew :app:assemble${'$'}{{ github.event.inputs.build_mode == 'release' && 'Release' || 'Debug' }}
             - uses: actions/upload-artifact@v4
               with:
-                name: ${projectName}-android-debug
-                path: app/build/outputs/apk/debug/*.apk
+                name: ${projectName}-android-${'$'}{{ github.event.inputs.build_mode || 'debug' }}
+                retention-days: 7
+                path: app/build/outputs/apk/${'$'}{{ github.event.inputs.build_mode || 'debug' }}/*.apk
+
+        # iOS：ios/ 目录由 CI 现场用 RN CLI 生成（模板不带 iOS 脚手架——
+        # 设备端用不到，且 Podfile 在手机上无法 pod install）。
+        # 产物是未签名 .app；真机分发需 Apple 开发者账号签名导出 ipa。
+        ios:
+          if: ${'$'}{{ github.event_name == 'push' || github.event.inputs.targets == 'all' || contains(github.event.inputs.targets, 'ios') }}
+          runs-on: macos-latest
+          steps:
+            - uses: actions/checkout@v4
+            - uses: actions/setup-node@v4
+              with:
+                node-version: '20'
+            - name: Install JS dependencies
+              run: npm install --no-audit --no-fund
+            - name: Generate iOS scaffolding
+              # RN CLI 没有单独的 ios 生成命令；在临时目录 init 同名工程后
+              # 只拷回 ios/ 目录（--skip-install 避免重复装依赖，
+              # --install-pods false 让 pod install 由下一步显式执行）。
+              run: |
+                npx @react-native-community/cli init ${projectName} --directory /tmp/rn-ios-scaffold --skip-install --install-pods false
+                cp -r /tmp/rn-ios-scaffold/ios ./ios
+            - name: Install CocoaPods dependencies
+              run: |
+                cd ios
+                pod install
+            - name: Build iOS app
+              run: |
+                cd ios
+                xcodebuild -workspace ${projectName}.xcworkspace \
+                  -scheme ${projectName} \
+                  -configuration ${'$'}{{ github.event.inputs.build_mode == 'release' && 'Release' || 'Debug' }} \
+                  -sdk iphoneos \
+                  -derivedDataPath build \
+                  CODE_SIGNING_ALLOWED=NO
+            - name: Package .app
+              run: |
+                cd ios/build/Build/Products/${'$'}{{ github.event.inputs.build_mode == 'release' && 'Release-iphoneos' || 'Debug-iphoneos' }}
+                zip -r "${projectName}-ios-app.zip" *.app
+            - uses: actions/upload-artifact@v4
+              with:
+                name: ${projectName}-ios
+                retention-days: 7
+                path: ios/build/Build/Products/*-iphoneos/${projectName}-ios-app.zip
+
+        # Web：react-native-web + webpack 出静态站点。模板已带 web/ 脚手架
+        # （web/index.html、web/index.js、webpack.config.js、src/App.tsx）。
+        web:
+          if: ${'$'}{{ github.event_name == 'push' || github.event.inputs.targets == 'all' || contains(github.event.inputs.targets, 'web') }}
+          runs-on: ubuntu-latest
+          steps:
+            - uses: actions/checkout@v4
+            - uses: actions/setup-node@v4
+              with:
+                node-version: '20'
+            - name: Install JS dependencies
+              run: npm install --no-audit --no-fund
+            - name: Build web bundle
+              run: npx webpack --config webpack.config.js
+            - name: Assemble static site
+              run: cp web/index.html dist/index.html
+            - uses: actions/upload-artifact@v4
+              with:
+                name: ${projectName}-web
+                retention-days: 7
+                path: dist/**
+      """
+          .trimIndent() + "\n"
+
+  // ---------------------------------------------------------------------------
+  // Web 目标（react-native-web）脚手架
+  // ---------------------------------------------------------------------------
+
+  /**
+   * webpack 配置——把 App.tsx 通过 react-native-web 打成浏览器可运行的 bundle。
+   *
+   * <p><b>`'react-native$': 'react-native-web'` 别名是关键</b>：RN 组件源码里
+   * 全是 `import ... from 'react-native'`，别名把它们重定向到 web 实现，
+   * 业务代码一行不用改。`$` 是 webpack 精确匹配语法（只匹配裸导入）。
+   *
+   * <p>构建产物（dist/bundle.js + index.html）可直接部署到任意静态托管。
+   */
+  fun webpackConfigJs(): String =
+      """
+      const path = require('path');
+
+      module.exports = {
+        mode: 'production',
+        entry: './web/index.js',
+        output: {
+          path: path.resolve(__dirname, 'dist'),
+          filename: 'bundle.js',
+        },
+        resolve: {
+          extensions: ['.tsx', '.ts', '.js'],
+          alias: {
+            'react-native${'$'}': 'react-native-web',
+          },
+        },
+        module: {
+          rules: [
+            {
+              test: /\.[jt]sx?${'$'}/,
+              exclude: /node_modules/,
+              use: {
+                loader: 'babel-loader',
+                options: {
+                  presets: [
+                    '@babel/preset-env',
+                    ['@babel/preset-react', { runtime: 'automatic' }],
+                    '@babel/preset-typescript',
+                  ],
+                },
+              },
+            },
+          ],
+        },
+      };
+      """
+          .trimIndent() + "\n"
+
+  /** Web 入口——AppRegistry.runApplication 挂载到 index.html 的 #root。 */
+  fun webIndexJs(): String =
+      """
+      import { AppRegistry } from 'react-native';
+      import App from '../App';
+      import { name as appName } from '../app.json';
+
+      AppRegistry.registerComponent(appName, () => App);
+      AppRegistry.runApplication(appName, {
+        rootTag: document.getElementById('root'),
+      });
+      """
+          .trimIndent() + "\n"
+
+  /** Web 宿主页面。 */
+  fun webIndexHtml(projectName: String): String =
+      """
+      <!DOCTYPE html>
+      <html lang="en">
+        <head>
+          <meta charset="utf-8" />
+          <meta name="viewport" content="width=device-width, initial-scale=1" />
+          <title>$projectName</title>
+          <style>
+            html, body, #root { height: 100%; margin: 0; }
+          </style>
+        </head>
+        <body>
+          <div id="root"></div>
+          <script src="./bundle.js"></script>
+        </body>
+      </html>
       """
           .trimIndent() + "\n"
 
@@ -813,6 +1027,20 @@ object ReactNativeSources {
       安装完成后回到 IDE 点构建即可（debug 构建不打包 JS bundle，
       运行时通过 Metro 连接开发服务器；直接装 APK 会白屏，这是 RN 的
       开发模式行为，发布版由 `assembleRelease` 打包离线 bundle）。
+
+      ## 代码补全与诊断（LSP）
+
+      `npm install` 完成后，在 IDE 里打开 `.ts/.tsx/.js` 文件即自动启用
+      代码补全、跳转定义与错误提示——语言服务器
+      （typescript-language-server + typescript）由上面的命令一并装入
+      项目 `node_modules`，**无需额外配置**。
+
+      - 补全/诊断基于项目内锁定的 TypeScript ${TYPESCRIPT_VERSION}，与
+        构建使用的版本一致；
+      - 若文件树里的 .ts 文件仍无补全，先确认 `npm install` 已成功执行
+        （`node_modules/typescript-language-server` 存在）；
+      - 从旧模板升级来的项目：手动执行一次
+        `npm install -D typescript typescript-language-server` 即可。
 
       ## 构建要求
 
@@ -846,8 +1074,30 @@ object ReactNativeSources {
 
       ## 云端打包
 
-      推送到 GitHub 后，`.github/workflows/` 会自动构建 debug APK
-      并从 Actions 页面提供下载（无需本机环境）。
+      推送到 GitHub 后，`.github/workflows/` 会自动构建并从 Actions 页面
+      提供下载（无需本机环境）。**默认出全部平台**，也可只出指定平台：
+
+      | 目标 | 产物 | runner |
+      |---|---|---|
+      | android | APK（debug/release） | ubuntu |
+      | ios | 未签名 .app（zip） | macOS |
+      | web | 静态站点（react-native-web + webpack） | ubuntu |
+
+      手动触发时在 **Run workflow** 表单里填 `targets`：留空或 `all` 出全部，
+      填 `android` 只出安卓，填 `android,web` 出两个（逗号分隔）。
+      `build_mode` 选 debug/release。
+
+      **Web 目标**：模板已带 `web/` 脚手架（`web/index.html`、`web/index.js`、
+      根目录 `webpack.config.js`），构建命令与 CI 一致，本地也可验证：
+
+      ```bash
+      npm install
+      npx webpack --config webpack.config.js
+      # 产物在 dist/（bundle.js + index.html），可直接部署静态托管
+      ```
+
+      **iOS 目标**：`ios/` 目录由 CI 现场生成（RN CLI init 后拷贝），
+      产物是未签名 .app；真机分发需 Apple 开发者账号签名导出 ipa。
 
       ## 版本组合
 
@@ -855,6 +1105,7 @@ object ReactNativeSources {
       |---|---|
       | React Native | ${REACT_NATIVE_VERSION} |
       | React | ${REACT_VERSION} |
+      | TypeScript | ${TYPESCRIPT_VERSION} |
       | Kotlin | ${KOTLIN_VERSION} |
       | Gradle | ${GRADLE_VERSION} |
       | compileSdk / targetSdk | ${COMPILE_SDK} |

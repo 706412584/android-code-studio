@@ -1854,6 +1854,23 @@ class FloatingAssistantView(
 
     val job =
         lifecycleScope.launch(Dispatchers.IO) {
+          // 确保本会话有事件订阅。
+          //
+          // **这是「默认对话发送后按钮卡在运行态」的修复**：本视图的事件（含
+          // RUN_FINISHED——它负责 setRunningUi(false) 收掉运行态）只从**订阅**送达
+          // （见 handleEvent 的调用方）。而订阅原本只在 open()→restoreConversationIfNeeded
+          // 建立，那条路径要求 orchestrator 已有 activeConversationId：
+          // 用户没点「+」、面板打开时还没有任何会话 → 该函数直接 return，**从未订阅**；
+          // 随后 sendFromInput → resolveTargetConversation 才 newConversation()，
+          // startRun 拿着新 id 就跑。运行结束的 RUN_FINISHED 广播因此无人接收，
+          // 按钮永远停在「AI 正在处理中」（全屏视图有自己的订阅，所以全屏正常）。
+          //
+          // 放在这里（IO 线程、run 之前）而不是 startRun 的同步段：订阅会读盘
+          // （subscribeWithHistory 取历史快照），主线程调用会卡输入框。订阅内容本身
+          // 不需要渲染——本视图刚在 startRun 里画过用户气泡，回放反而会重复。
+          if (subscribedConversationId != conversationId) {
+            subscribeToConversation(conversationId)
+          }
           val agents = Agents(context)
           val providerId = agents.getProvider()
           // 注意：不要在启动前 cancel 本会话的旧 job。这里已确认本会话没有活跃 job

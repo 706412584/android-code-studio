@@ -279,6 +279,26 @@ public class ReactNativeSourcesTest {
   }
 
   @Test
+  public void packageJson_hasTsLspDeps() {
+    // TS LSP 的两个包必须在 devDependencies：设备端打开 .ts 时的补全/诊断
+    // 依赖项目内 node_modules（TypeScriptLanguageServer 优先从项目加载）
+    String p = ReactNativeSources.INSTANCE.packageJson(PROJECT);
+    assertTrue(p.contains("\"typescript\": \"" + ReactNativeSources.TYPESCRIPT_VERSION + "\""));
+    assertTrue(
+        p.contains(
+            "\"typescript-language-server\": \"" + ReactNativeSources.TSLS_VERSION + "\""));
+  }
+
+  @Test
+  public void readme_documentsTsLsp() {
+    String r = ReactNativeSources.INSTANCE.projectReadme(PKG, PROJECT);
+    // README 必须说明 LSP 在 npm install 后生效
+    assertTrue(r.contains("typescript-language-server"));
+    assertTrue(r.contains("npm install"));
+    assertTrue(r.contains("代码补全与诊断"));
+  }
+
+  @Test
   public void appJson_nameMatchesProject() {
     String a = ReactNativeSources.INSTANCE.appJson(PROJECT);
     assertTrue(a.contains("\"name\": \"" + PROJECT + "\""));

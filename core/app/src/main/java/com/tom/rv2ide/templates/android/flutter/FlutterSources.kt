@@ -347,9 +347,39 @@ object FlutterSources {
    * dependencies/flutter 节；`flutter_lints` 与注释全部保留（lint 配置
    * 影响 IDE 诊断，去掉会让 analysis_options.yaml 的 include 失效）。
    */
-  fun pubspecYaml(projectName: String): String =
+  /**
+   * 项目名 → 合法 Dart 包名（pubspec 的 name:）。
+   *
+   * <p><b>为什么必须转</b>：`flutter create` 校验包名必须是
+   * 「小写字母/数字/下划线、以字母开头」——`MyFlutter` 会被直接拒绝
+   * （「is not a valid Dart package name」），CI 里任何用到 `flutter create`
+   * 的步骤（iOS/桌面平台脚手架生成）都会失败。设备端只出 android/web 时
+   * 不跑 flutter create，因此这个约束此前未暴露（2026-10-12 云端实测踩中）。
+   *
+   * <p>规则与 [CloudBuildService.deriveRepoName] 同思路但更严格：
+   * 大写转小写、非 [a-z0-9_] 转下划线、去首尾下划线、数字开头补前缀、
+   * 空结果兜底 `app`。Dart 保留字（如 `class`）不做穷举——项目名撞上保留字
+   * 的概率极低，且 flutter create 会给出明确报错。
+   */
+  @JvmStatic
+  fun dartPackageName(projectName: String): String {
+    val name =
+        projectName
+            .trim()
+            .lowercase(java.util.Locale.ROOT)
+            .replace(Regex("[^a-z0-9_]"), "_")
+            .replace(Regex("_+"), "_")
+            .trim('_')
+    if (name.isEmpty()) {
+      return "app"
+    }
+    // 不能以数字开头（Dart 标识符规则）。
+    return if (name[0].isDigit()) "app_$name" else name
+  }
+
+  fun pubspecYaml(dartPackageName: String): String =
       """
-      name: $projectName
+      name: $dartPackageName
       description: "A new Flutter project created by Android Code Studio."
       publish_to: 'none'
 
@@ -395,14 +425,14 @@ object FlutterSources {
           .trimIndent() + "\n"
 
   /** `test/widget_test.dart`——与 main.dart 的计数器示例对应的冒烟测试。 */
-  fun widgetTest(projectName: String): String =
+  fun widgetTest(dartPackageName: String): String =
       """
       // 计数器冒烟测试：与 lib/main.dart 的示例对应。
 
       import 'package:flutter/material.dart';
       import 'package:flutter_test/flutter_test.dart';
 
-      import 'package:$projectName/main.dart';
+      import 'package:$dartPackageName/main.dart';
 
       void main() {
         testWidgets('Counter increments smoke test', (WidgetTester tester) async {
@@ -585,6 +615,10 @@ object FlutterSources {
 
       # Web related
       lib/generated_plugin_registrant.dart
+
+      # 云编译产物与缓存（ACS 云编译功能下载的 artifact / 日志 zip）
+      cloudbuild-output/
+      .cloudbuild-cache/
       """
           .trimIndent() + "\n"
 
@@ -638,6 +672,10 @@ object FlutterSources {
    *
    * 注意：**Flutter 的设备端构建不可行**（缺 SDK），所以这个 workflow
    * 是用户获取安装包的唯一路径——README 里要显著说明。
+   *
+   * <p><b>retention-days: 7</b>：Actions artifact 计入仓库存储配额，而 APK
+   * 单个上百 MB——仓库默认保留期 90 天时，几次构建就能把免费配额堆满，之后
+   * workflow 直接跑不起来（用户实测踩过）。7 天足够取回产物。
    */
   fun ciWorkflow(projectName: String): String =
       """
@@ -647,9 +685,24 @@ object FlutterSources {
         push:
           branches: [ main, master ]
         workflow_dispatch:
+          inputs:
+            targets:
+              description: '出包目标：all=全部（默认）/ 逗号分隔的 android,ios,web,windows,macos,linux'
+              required: false
+              default: 'all'
+              type: string
+            build_mode:
+              description: '构建模式'
+              required: false
+              default: 'release'
+              type: choice
+              options:
+                - release
+                - debug
 
       jobs:
-        android-apk:
+        android:
+          if: ${'$'}{{ github.event_name == 'push' || github.event.inputs.targets == 'all' || contains(github.event.inputs.targets, 'android') }}
           runs-on: ubuntu-latest
           steps:
             - uses: actions/checkout@v4
@@ -659,13 +712,15 @@ object FlutterSources {
                 channel: 'stable'
                 cache: true
             - run: flutter pub get
-            - run: flutter build apk --release
+            - run: flutter build apk --${'$'}{{ github.event.inputs.build_mode || 'release' }}
             - uses: actions/upload-artifact@v4
               with:
                 name: ${projectName}-android-apk
+                retention-days: 7
                 path: build/app/outputs/flutter-apk/*.apk
 
         web:
+          if: ${'$'}{{ github.event_name == 'push' || github.event.inputs.targets == 'all' || contains(github.event.inputs.targets, 'web') }}
           runs-on: ubuntu-latest
           steps:
             - uses: actions/checkout@v4
@@ -675,11 +730,100 @@ object FlutterSources {
                 channel: 'stable'
                 cache: true
             - run: flutter pub get
-            - run: flutter build web --release
+            - run: flutter build web --${'$'}{{ github.event.inputs.build_mode || 'release' }}
             - uses: actions/upload-artifact@v4
               with:
                 name: ${projectName}-web
+                retention-days: 7
                 path: build/web/**
+
+        # iOS 产物是 .app（未签名，模拟器可装）；真机分发需 Apple 开发者账号
+        # 签名后导出 ipa，见下方 README 的「iOS」一节。
+        ios:
+          if: ${'$'}{{ github.event_name == 'push' || github.event.inputs.targets == 'all' || contains(github.event.inputs.targets, 'ios') }}
+          runs-on: macos-latest
+          steps:
+            - uses: actions/checkout@v4
+            - uses: subosito/flutter-action@v2
+              with:
+                flutter-version: '$FLUTTER_VERSION'
+                channel: 'stable'
+                cache: true
+            - run: flutter pub get
+            # 模板只带 android/web 平台目录；iOS 脚手架在 CI 现场生成
+            # （flutter create 不会覆盖已有文件，仅补缺失的平台目录）。
+            - run: flutter create --platforms=ios .
+            - run: flutter build ios --${'$'}{{ github.event.inputs.build_mode || 'release' }} --no-codesign
+            - name: Package .app
+              run: |
+                cd build/ios/iphoneos
+                zip -r "${projectName}-ios-app.zip" Runner.app
+            - uses: actions/upload-artifact@v4
+              with:
+                name: ${projectName}-ios
+                retention-days: 7
+                path: build/ios/iphoneos/${projectName}-ios-app.zip
+
+        windows:
+          if: ${'$'}{{ github.event_name == 'push' || github.event.inputs.targets == 'all' || contains(github.event.inputs.targets, 'windows') }}
+          runs-on: windows-latest
+          steps:
+            - uses: actions/checkout@v4
+            - uses: subosito/flutter-action@v2
+              with:
+                flutter-version: '$FLUTTER_VERSION'
+                channel: 'stable'
+                cache: true
+            - run: flutter pub get
+            - run: flutter create --platforms=windows .
+            - run: flutter build windows --${'$'}{{ github.event.inputs.build_mode || 'release' }}
+            - uses: actions/upload-artifact@v4
+              with:
+                name: ${projectName}-windows
+                retention-days: 7
+                path: build/windows/x64/runner/Release/**
+
+        macos:
+          if: ${'$'}{{ github.event_name == 'push' || github.event.inputs.targets == 'all' || contains(github.event.inputs.targets, 'macos') }}
+          runs-on: macos-latest
+          steps:
+            - uses: actions/checkout@v4
+            - uses: subosito/flutter-action@v2
+              with:
+                flutter-version: '$FLUTTER_VERSION'
+                channel: 'stable'
+                cache: true
+            - run: flutter pub get
+            - run: flutter create --platforms=macos .
+            - run: flutter build macos --${'$'}{{ github.event.inputs.build_mode || 'release' }}
+            - uses: actions/upload-artifact@v4
+              with:
+                name: ${projectName}-macos
+                retention-days: 7
+                path: build/macos/Build/Products/Release/*.app/**
+
+        linux:
+          if: ${'$'}{{ github.event_name == 'push' || github.event.inputs.targets == 'all' || contains(github.event.inputs.targets, 'linux') }}
+          runs-on: ubuntu-latest
+          steps:
+            - uses: actions/checkout@v4
+            - uses: subosito/flutter-action@v2
+              with:
+                flutter-version: '$FLUTTER_VERSION'
+                channel: 'stable'
+                cache: true
+            - name: Install Linux desktop dependencies
+              run: |
+                sudo apt-get update
+                sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev
+            - run: flutter pub get
+            - run: flutter create --platforms=linux .
+            - run: flutter build linux --${'$'}{{ github.event.inputs.build_mode || 'release' }}
+            - uses: actions/upload-artifact@v4
+              with:
+                name: ${projectName}-linux
+                retention-days: 7
+                path: build/linux/x64/release/bundle/**
       """
           .trimIndent() + "\n"
 
@@ -702,14 +846,29 @@ object FlutterSources {
       Flutter 的构建**必须依赖完整的 Flutter SDK**（Dart 编译器 + 引擎工具链，
       官方不支持 Android 宿主机）——手机上无法安装。因此：
 
-      - **在 ACS 里编辑 `lib/main.dart`**（当前以纯文本打开——ACS 的编辑器
-        尚未内置 Dart 语言支持；代码补全与诊断请借助云端 IDE 或本地 Flutter 环境）
+      - **在 ACS 里编辑 `lib/main.dart`**
       - **推送到 GitHub**，`.github/workflows/flutter.yml` 自动构建
       - **在 Actions 页面下载产物**：`$projectName-android-apk`（APK）与
         `$projectName-web`（网页站点，可直接部署到任意静态托管）
 
       > 在手机上点「构建」会报 `flutter.sdk not set in local.properties`
       > ——这是预期行为，不是配置错误。
+
+      ## 代码补全与诊断（Dart LSP）
+
+      ACS 支持 Dart 语言服务器（基于官方 Dart SDK 的分析服务器，
+      提供补全/诊断/跳转/格式化）。**需要先安装 Dart SDK**（约 67MB，
+      解压后约 169MB）——它不是 APK 内置组件：
+
+      1. 打开 **设置 → 编辑器 → 语言服务器 → Dart / Flutter**
+      2. 点击「下载」等待完成（安装在应用私有目录，不占用项目空间）
+      3. 重新打开本项目的 `.dart` 文件，补全与诊断即生效
+
+      安装后打开 `lib/main.dart` 即可看到：输入 `setState` / `Widget` 等
+      标识符时的补全、未定义变量的红线提示、`Ctrl+点击` 跳转定义。
+      分析基于项目内的 `pubspec.yaml`——Flutter SDK 自身的包
+      （`package:flutter/...`）在设备上未安装，因此对它们的引用会提示
+      未解析，这是预期行为（云端 CI 构建不受影响）。
 
       ## 项目结构
 
@@ -727,12 +886,28 @@ object FlutterSources {
       ## 云端构建说明
 
       workflow 使用 `subosito/flutter-action@v2` 安装 Flutter
-      $FLUTTER_VERSION（与本地工程一致），跑 `flutter build apk --release`
-      与 `flutter build web --release`。
+      $FLUTTER_VERSION（与本地工程一致）。**默认出全部平台**，也可以只出
+      指定平台（省时间省额度）：
+
+      | 目标 | 产物 | runner |
+      |---|---|---|
+      | android | APK（release/debug） | ubuntu |
+      | web | 静态站点 | ubuntu |
+      | ios | 未签名 .app（zip） | macOS |
+      | windows | 桌面可执行目录 | windows |
+      | macos | 桌面 .app | macOS |
+      | linux | 桌面 bundle | ubuntu |
+
+      手动触发时在 **Run workflow** 表单里填 `targets`：
+      留空或填 `all` 出全部；填 `android` 只出安卓；填 `android,web`
+      出两个（逗号分隔）。`build_mode` 选 release/debug。
 
       - 公共仓库 Actions 免费（含 artifact 存储）
-      - 首次构建约 5–10 分钟（含 Flutter SDK 下载缓存）
-      - 如需 iOS：需要 macOS runner + Apple 开发者账号（workflow 里可扩展）
+      - 首次构建约 5–10 分钟（含 Flutter SDK 下载缓存）；全平台约 20 分钟
+      - iOS/桌面平台目录（`ios/`、`windows/` 等）由 CI 现场用
+        `flutter create --platforms=...` 生成——模板只带 android/web，
+        设备端用不到其它平台目录
+      - iOS 产物为**未签名** .app：真机分发需 Apple 开发者账号签名导出 ipa
 
       ## 版本组合
 

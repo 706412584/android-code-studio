@@ -618,28 +618,64 @@ class TemplateAdapter(
     val image =
         ImageView(ctx).apply {
           scaleType = ImageView.ScaleType.CENTER_CROP
+          // 图片填满外层 FrameLayout；尺寸由 FrameLayout 统一约束（见下）。
+          layoutParams =
+              android.widget.FrameLayout.LayoutParams(
+                  ViewGroup.LayoutParams.MATCH_PARENT,
+                  ViewGroup.LayoutParams.MATCH_PARENT,
+              )
+        }
 
+    // 「跨平台」徽章：叠在图标右上角（用户要求——不占独立一行，直接打在图上）。
+    // FrameLayout 包一层做角标定位：这是 Android 上叠加视图的标准做法，
+    // 比自绘或改图更轻（不用为每个跨平台模板重做预览图）。
+    val crossPlatformBadge =
+        TextView(ctx).apply {
+          textSize = 10f
+          text = ctx.getString(com.tom.rv2ide.R.string.template_cross_platform_badge)
+          setPadding(8.dp, 3.dp, 8.dp, 3.dp)
+          setTextColor(android.graphics.Color.WHITE)
+          setBackgroundColor(0xFF2E7D32.toInt()) // Material 绿 800：跨平台的正面语义
+          visibility = android.view.View.GONE
+          layoutParams =
+              android.widget.FrameLayout.LayoutParams(
+                      ViewGroup.LayoutParams.WRAP_CONTENT,
+                      ViewGroup.LayoutParams.WRAP_CONTENT,
+                  )
+                  .apply {
+                    gravity = android.view.Gravity.TOP or android.view.Gravity.END
+                    setMargins(0, 8.dp, 8.dp, 0)
+                  }
+        }
+
+    val imageContainer =
+        android.widget.FrameLayout(ctx).apply {
           if (screenWidthDp >= 600) {
             android.util.Log.d("TemplateAdapter", "Using small size for large screen")
-            layoutParams = LinearLayout.LayoutParams(100.dp, 100.dp).apply {
-              gravity = android.view.Gravity.CENTER
-            }
+            layoutParams =
+                LinearLayout.LayoutParams(100.dp, 100.dp).apply {
+                  gravity = android.view.Gravity.CENTER
+                }
           } else {
             android.util.Log.d("TemplateAdapter", "Using normal size")
             layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 160.dp)
           }
+          addView(image)
+          addView(crossPlatformBadge)
         }
 
     layout.addView(title)
     layout.addView(description)
-    layout.addView(image)
+    layout.addView(imageContainer)
     card.addView(layout)
-    return TemplateVH(card, title, image, description)
+    return TemplateVH(card, title, image, description, crossPlatformBadge)
   }
 
   override fun onBindViewHolder(holder: TemplateVH, position: Int) {
     val template = templates[position]
     holder.title.text = template.displayName
+    holder.crossPlatformBadge.visibility =
+        if (template.isCrossPlatform) android.view.View.VISIBLE else android.view.View.GONE
 
     val desc = template.description
     if (desc.isNotBlank()) {
@@ -667,6 +703,7 @@ class TemplateVH(
     val title: TextView,
     val image: ImageView,
     val description: TextView,
+    val crossPlatformBadge: TextView,
 ) : RecyclerView.ViewHolder(card)
 
 class SimpleTextWatcher(private val afterChanged: (CharSequence?) -> Unit) :

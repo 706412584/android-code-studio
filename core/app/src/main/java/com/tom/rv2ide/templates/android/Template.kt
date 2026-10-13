@@ -37,6 +37,19 @@ interface Template {
   val description: String
     get() = ""
 
+  /**
+   * 是否是跨平台模板（一份代码出多个平台的产物）。
+   *
+   * <p>用于在向导里把这类模板**排到最前**并在卡片上打「跨平台」角标——它们是本 IDE
+   * 相对其它 Android 工具链的差异化能力，值得优先被用户看到。当前为 true 的：
+   * Compose Multiplatform / React Native / Flutter。
+   *
+   * <p>注意：跨平台指的是**产物/代码**跨平台，不是「这个模板生成的项目能在别的平台跑」
+   * ——三个模板的编辑与构建入口都在 ACS 里，桌面与网页产物由 GitHub Actions 云端出。
+   */
+  val isCrossPlatform: Boolean
+    get() = false
+
   val templateType: TemplateType
 
   /**
