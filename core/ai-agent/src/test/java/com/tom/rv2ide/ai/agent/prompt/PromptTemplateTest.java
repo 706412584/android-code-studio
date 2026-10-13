@@ -507,6 +507,66 @@ final class PromptTemplateTest {
     assertFalse(prompt.contains("{{HOME_PATH}}"));
   }
 
+  // ---- {{DEFAULT}} 端到端（主场景） ----
+
+  @Test
+  void defaultReferenceInCustomSystemPromptExpandsEndToEnd() {
+    // 主场景：用户在系统提示词模板写「{{DEFAULT}} + 补充」，构建出的最终提示词
+    // 应包含默认文本的全部填充结果（身份/路径/工具清单），且无任何占位符残留。
+    PromptTemplateStore store = PromptTemplateStore.inMemory();
+    store.write(
+        PromptTemplates.SYSTEM_PROMPT, "{{DEFAULT}}\n\n[ 我的补充 ]\n- 额外要求：用英文回复。");
+
+    AgentPromptBuilder builder = new AgentPromptBuilder("MyBot", store);
+    String prompt = builder.build("/ws", tools("file_read"), true);
+
+    // 默认文本展开并被渲染：身份、路径、工具都在
+    assertTrue(prompt.contains("MyBot"));
+    assertTrue(prompt.contains("/ws"));
+    assertTrue(prompt.contains("file_read"));
+    // 用户的追加段落在
+    assertTrue(prompt.contains("额外要求：用英文回复。"));
+    // 引用已展开、无残留
+    assertFalse(prompt.contains("{{DEFAULT}}"));
+    // 展开进来的默认文本里的占位符也全部被外层渲染填充，不留字面量
+    assertFalse(prompt.contains("{{MODEL_IDENTITY}}"));
+    assertFalse(prompt.contains("{{GUIDANCE_SECTION}}"));
+    assertFalse(prompt.contains("{{TOOLS_CONTEXT}}"));
+  }
+
+  @Test
+  void sectionTemplatesCanReferenceLaterAssignedAtomicValues() {
+    // 顺序依赖回归（2026-10-14 修复）：两阶段构建后，工作区段引用 CHAT_MODE
+    // （赋值顺序在它之后的原子值）不再静默变空串。此前 WORKSPACE_CONTEXT 渲染
+    // 发生在 CHAT_MODE put 之前，同一种写法在不同段落有的生效有的不生效。
+    PromptTemplateStore store = PromptTemplateStore.inMemory();
+    store.write(
+        PromptTemplates.WORKSPACE_CONTEXT,
+        "WS[{{CHAT_MODE}}] tools[{{TOOL_LIST}}] todo[{{TODO_LIST}}]");
+
+    AgentPromptBuilder builder = new AgentPromptBuilder("A", store);
+    String prompt =
+        builder.build(
+            "/w",
+            tools("file_read"),
+            true,
+            "[ ] step",
+            ChatMode.AGENT,
+            new AgentPromptBuilder.ModelInfo("p", "m", "t"));
+
+    assertTrue(prompt.contains("WS[agent]"), "CHAT_MODE 应可被工作区段引用");
+    assertTrue(prompt.contains("tools[- file_read"), "TOOL_LIST 应可被工作区段引用");
+    assertTrue(prompt.contains("todo[[ ] step]"), "TODO_LIST 应可被工作区段引用");
+  }
+
+  @Test
+  void expandDefaultEscapesRegexSpecialCharacters() {
+    // 默认内容（或其中间产物）含 $ 与 \ 时，appendReplacement 的引用语义
+    // 必须经 quoteReplacement 转义——否则 $ 会被当成分组引用抛异常或吞字符。
+    String result = PromptRenderer.expandDefault("前{{DEFAULT}}后", "价格 $5 \\ 完成");
+    assertEquals("前价格 $5 \\ 完成后", result);
+  }
+
   @Test
   void fullyCustomSystemPromptIsUsed() {
     PromptTemplateStore store = PromptTemplateStore.inMemory();

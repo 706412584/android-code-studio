@@ -105,6 +105,17 @@ public final class AgentPromptBuilder {
   /**
    * 生成系统提示词（完整参数）。
    *
+   * <p><b>两阶段构建（2026-10-14 修复顺序依赖）</b>：先算齐全部**原子值**
+   * （模型信息、路径、模式、工具清单、待办清单），再渲染各**组合段落**
+   * （工作区/模式/工具/待办/准则/注意）。此前各段落边算边渲染，自定义段落若引用
+   * 赋值位置在其后的占位符（如 WORKSPACE_CONTEXT 引用 {@code {{CHAT_MODE}}}），
+   * 会静默渲染为空串——同一种写法在不同段落有的生效有的不生效，用户无法从
+   * 结果里看出原因。两阶段后，每个组合段落都能引用全部原子占位符。
+   *
+   * <p>组合段落之间的互相引用仍按渲染顺序（工作区 → 模式 → 工具 → 格式 → 待办 →
+   * 准则 → 注意），这是有意的：全量依赖解析会引入循环引用检测的复杂度，而默认
+   * 模板的引用只指向原子值。
+   *
    * @param homePath 工作区根目录
    * @param tools 可用工具列表
    * @param nativeTools 协议是否支持原生工具调用
@@ -123,6 +134,8 @@ public final class AgentPromptBuilder {
     ChatMode mode = chatMode == null ? ChatMode.DEFAULT : chatMode;
     Map<String, String> values = new HashMap<>();
 
+    // ---- 阶段一：原子值（不依赖其它占位符） ----
+
     // 身份与模型
     values.put("MODEL_IDENTITY", identity);
     values.put("MODEL_PROVIDER", modelInfo == null ? "" : modelInfo.providerId);
@@ -131,23 +144,40 @@ public final class AgentPromptBuilder {
 
     // 环境
     values.put("HOME_PATH", homePath == null ? "" : homePath);
+
+    // 模式
+    values.put("CHAT_MODE", mode.getId());
+
+    // 工具
+    // 空列表时仍给出「当前没有可用工具」，比整段消失更有信息量——
+    // 模型能据此知道「不是我不该用工具，而是确实没有」。
+    values.put("TOOL_LIST", renderToolList(tools));
+
+    // 任务状态：清单正文与「标题 + 清单 + 提示」的完整段落是两个不同的占位符。
+    // 若两者同名，段落模板里的 {{TODO_LIST}} 会解析到段落自身，清单永远注入不进去。
+    values.put("TODO_LIST", todoState == null ? "" : todoState.trim());
+
+    // 当前未使用的占位符（角色、语气、历史、摘要、任务描述）显式置空：
+    // 模板里若引用了它们，渲染结果为空串而不是留下字面量。
+    values.put("ROLE_PROMPT", "");
+    values.put("TONE_CONTEXT", "");
+    values.put("HISTORY_SECTION", "");
+    values.put("SUMMARY", "");
+    values.put("TASK_DESCRIPTION", "");
+
+    // ---- 阶段二：组合段落（可引用全部原子值） ----
+
     values.put(
         "WORKSPACE_CONTEXT",
         homePath == null || homePath.isEmpty()
             ? ""
             : PromptRenderer.render(templates.resolve(PromptTemplates.WORKSPACE_CONTEXT), values));
 
-    // 模式
-    values.put("CHAT_MODE", mode.getId());
     values.put(
         "CHAT_MODE_CONTEXT",
         PromptRenderer.render(
             templates.resolve(PromptTemplates.chatModeTemplateId(mode)), values));
 
-    // 工具
-    // 空列表时仍渲染该段落：{@code renderToolList} 会给出「当前没有可用工具」，
-    // 这比整段消失更有信息量——模型能据此知道「不是我不该用工具，而是确实没有」。
-    values.put("TOOL_LIST", renderToolList(tools));
     // CHAT 模式明确不给工具清单：模型看不到工具名，就不会去「顺手调用」。
     values.put(
         "TOOLS_CONTEXT",
@@ -163,9 +193,6 @@ public final class AgentPromptBuilder {
             ? PromptRenderer.render(templates.resolve(PromptTemplates.TOOL_CALL_FORMAT), values)
             : "");
 
-    // 任务状态：清单正文与「标题 + 清单 + 提示」的完整段落是两个不同的占位符。
-    // 若两者同名，段落模板里的 {{TODO_LIST}} 会解析到段落自身，清单永远注入不进去。
-    values.put("TODO_LIST", todoState == null ? "" : todoState.trim());
     values.put(
         "TODO_SECTION",
         todoState == null || todoState.trim().isEmpty()
@@ -182,14 +209,7 @@ public final class AgentPromptBuilder {
     values.put(
         "NOTES", PromptRenderer.render(templates.resolve(PromptTemplates.NOTES), values));
 
-    // 当前未使用的占位符（角色、语气、历史、摘要、任务描述）显式置空：
-    // 模板里若引用了它们，渲染结果为空串而不是留下字面量。
-    values.put("ROLE_PROMPT", "");
-    values.put("TONE_CONTEXT", "");
-    values.put("HISTORY_SECTION", "");
-    values.put("SUMMARY", "");
-    values.put("TASK_DESCRIPTION", "");
-
+    // ---- 阶段三：主模板 ----
     String template = templates.resolve(PromptTemplates.SYSTEM_PROMPT);
     return PromptRenderer.renderAndTidy(template, values);
   }

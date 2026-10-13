@@ -1187,7 +1187,7 @@ private class PromptTemplatePreference(
           setHorizontallyScrolling(false)
         }
 
-    // 完整占位符清单（19 个）挂到输入框的长按上，**不能放进对话框正文**：
+    // 完整占位符清单挂到输入框的长按上，**不能放进对话框正文**：
     // 正文里那十几行会把 AlertDialog 顶到满屏，底部按钮栏被挤出窗口——
     // 用户看到的就是「能编辑，但找不到保存按钮」。
     val placeholders = com.tom.rv2ide.ai.agent.prompt.PromptPlaceholders.all()
