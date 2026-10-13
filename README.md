@@ -109,20 +109,35 @@ AI 助手可以直接操作手机做 UI 测试与调试：
 
 ### 7. 中文开发者体验
 
-- **中文优先的界面与文档**（本 README 即为中文）
-- 国内镜像仓库配置（阿里云 / 腾讯镜像）已内置到项目模板与构建配置
-- 项目模板向导使用中文描述，跨平台模板带「跨平台」徽标与置顶
-- 适配国内网络：Gitee 镜像分发、CodeGraph 组件走 Gitee Release
+- **中文优先**：界面文案、模板描述、本 README 均为中文
+- **新建项目向导**：每个模板都带中文描述（如「跨平台：一份 Kotlin + Compose 代码
+  出 Android、桌面、网页三个平台」），跨平台模板显示**「跨平台」徽标并置顶**，
+  一眼区分
+- **国内镜像源内置**：三个跨平台模板生成的工程已配好阿里云 / 腾讯镜像仓库
+  （settings.gradle 仓库与 wrapper 下载地址），设备上创建项目即可构建，
+  不必手动改源
+- **网络适配**：Gitee 镜像分发、CodeGraph 组件走 Gitee Release（国内直连）
+- 全部内置模板：Empty、Basic Activity、Bottom Navigation、Navigation Drawer、
+  Responsive、Compose、Native C++、Game (LibGDX)、Quick Develop、
+  Compose Multiplatform、React Native、Flutter
 
-### 8. 跨平台项目模板
+### 8. 跨平台项目模板（本 fork 新增）
 
-除原有 Android 模板外，新增：
+上游只有 Android 模板。本 fork 新增三个跨平台模板，均由**真实工程骨架固化**而成，
+生成后可直接构建（非占位文件）：
 
-- **Compose Multiplatform**——一套代码出 Android / 桌面 / Web，含三 OS 矩阵云端 workflow
-- **React Native**——含 TS 语言服务器接入（补全 + 诊断）
-- **Flutter**——含 Dart 分析服务器接入
-- 三个模板均支持云端出包（见「云编译」）、出包目标选择与语法高亮
-  （Dart / TypeScript 已集成 tree-sitter 语言包）
+| 模板 | 技术栈 | 出包 | 编辑器支持 |
+|---|---|---|---|
+| **Compose Multiplatform** | CMP 1.10.3 / Kotlin 2.2.20 / AGP 8.13.0 | Android 本地构建 + 桌面/Web 云端出包（三 OS 矩阵） | Kotlin 补全（原生） |
+| **React Native** | RN 0.81.4 / Kotlin 2.1.20 / Gradle 8.14.3 / compileSdk 36 | Android 本地 + iOS/Web 云端 | **TS 语言服务器**（补全 + 诊断）+ TS/TSX 语法高亮 |
+| **Flutter** | Flutter 3.47.7 / Dart 3.13.5 | Android 本地 + iOS/Web/桌面 云端 | **Dart 分析服务器**（补全 + 诊断）+ Dart 语法高亮 |
+
+- **云端出包**：三个模板的 workflow 均支持「云编译」一键触发（见上），
+  并支持**出包目标选择**（勾选平台，未选中的 job 跳过）
+- **编辑器语言支持**：本 fork 为 RN/Flutter 模板接入了 TS / Dart 语言服务器
+  与 tree-sitter 语法高亮（上游编辑器对这两种语言只有纯文本）
+- **零配置构建**：模板生成的工程自带 Gradle wrapper、图标、主题与镜像源，
+  在设备上 `npm install` / `flutter` 工具链就绪后即可构建 APK
 
 ### 9. 其他增强
 
