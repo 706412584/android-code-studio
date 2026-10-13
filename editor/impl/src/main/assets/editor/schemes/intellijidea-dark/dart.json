@@ -1,0 +1,127 @@
+{
+  "types": [
+    "dart"
+  ],
+  "local.scopes": [
+    "local.scope"
+  ],
+  "local.definitions": [
+    "local.definition",
+    "local.definition.var",
+    "local.definition.function",
+    "local.definition.parameter",
+    "local.definition.import"
+  ],
+  "local.references": [
+    "local.reference"
+  ],
+  "styles": {
+    "comment": {
+      "fg": "@comment",
+      "italic": true
+    },
+    "comment.documentation": {
+      "fg": "@comment",
+      "italic": true
+    },
+    "keyword": {
+      "fg": "@keyword",
+      "bold": true
+    },
+    "keyword.conditional": {
+      "fg": "@keyword",
+      "bold": true
+    },
+    "keyword.conditional.ternary": {
+      "fg": "@keyword",
+      "bold": true
+    },
+    "keyword.coroutine": {
+      "fg": "@keyword",
+      "bold": true
+    },
+    "keyword.exception": {
+      "fg": "@keyword",
+      "bold": true
+    },
+    "keyword.import": {
+      "fg": "@keyword",
+      "bold": true
+    },
+    "keyword.modifier": {
+      "fg": "@keyword",
+      "bold": true
+    },
+    "keyword.repeat": {
+      "fg": "@keyword",
+      "bold": true
+    },
+    "keyword.return": {
+      "fg": "@keyword",
+      "bold": true
+    },
+    "keyword.type": {
+      "fg": "@keyword",
+      "bold": true
+    },
+    "variable.builtin": {
+      "fg": "@keyword",
+      "bold": true
+    },
+    "constant.builtin": {
+      "fg": "@keyword",
+      "bold": true
+    },
+    "type.builtin": {
+      "fg": "@keyword",
+      "bold": true
+    },
+    "string": {
+      "fg": "@string",
+      "completion": false
+    },
+    "string.escape": {
+      "fg": "@string",
+      "italic": true
+    },
+    "string.regexp": {
+      "fg": "@string",
+      "italic": true
+    },
+    "string.special.symbol": {
+      "fg": "@string"
+    },
+    "string.special.url": {
+      "fg": "@string"
+    },
+    "number": "@number",
+    "constant": {
+      "fg": "@constant",
+      "bold": true
+    },
+    "boolean": {
+      "fg": "@constant",
+      "bold": true
+    },
+    "operator": "@operator",
+    "type": "@type",
+    "type.definition": "@type",
+    "function": "@func.decl",
+    "function.call": "@func.call",
+    "function.method": "@func.call",
+    "function.method.call": "@func.call",
+    "variable": "@variable",
+    "variable.parameter": "@variable",
+    "property": "@field",
+    "attribute": "@attribute",
+    "punctuation.bracket": "@onSurface",
+    "punctuation.delimiter": "@onSurface",
+    "punctuation.special": "@onSurface",
+    "label": {
+      "fg": "@keyword",
+      "bold": true
+    },
+    "none": "@onSurface",
+    "spell": "@onSurface"
+  }
+}
