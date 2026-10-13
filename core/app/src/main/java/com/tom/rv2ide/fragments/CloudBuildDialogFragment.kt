@@ -42,6 +42,7 @@ import androidx.transition.TransitionManager
 import com.google.android.material.bottomsheet.BottomSheetDialog
 import com.google.android.material.bottomsheet.BottomSheetDialogFragment
 import com.google.android.material.button.MaterialButton
+import com.google.android.material.chip.Chip
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.textfield.TextInputEditText
 import com.google.android.material.textfield.TextInputLayout
@@ -111,6 +112,21 @@ class CloudBuildDialogFragment : BottomSheetDialogFragment() {
 
   /** 已拉到的 workflow 列表；「再次构建」回到配置页时直接复用，不重复联网。 */
   private var availableWorkflows: List<String> = emptyList()
+
+  /** 当前 workflow 的出包目标候选（空 = 用户自定义 workflow，不显示选择器）。 */
+  private var availableTargets: List<String> = emptyList()
+
+  /**
+   * 用户已勾选的目标。
+   *
+   * <p><b>为什么单独存一份而不是读 chips</b>：重试/回到配置页会重建 chips，
+   * 若每次重建都全选，用户「只出 android」的意图会在一次失败重试后静默丢失
+   * （实测踩中：重试后触发又出了全部 6 个平台）。集合只在 workflow 变化时重置。
+   */
+  private var selectedTargets: MutableSet<String> = mutableSetOf()
+
+  /** workflow 输入框的 TextWatcher 只注册一次（showSetup 可能被多次调用）。 */
+  private var workflowWatcher: android.text.TextWatcher? = null
 
   /** 上一次渲染的 job 行内容；用于跳过无变化的视图重建（见 renderSnapshot）。 */
   private var lastJobLines: List<String>? = null
@@ -352,9 +368,10 @@ class CloudBuildDialogFragment : BottomSheetDialogFragment() {
         // 「最长 60 秒的 Thread.sleep 轮询」，withContext 的取消要等 block 自然
         // 结束才生效——用户关掉表单后仍会跑满 60 秒并持续发请求。runInterruptible
         // 会在取消时中断线程，Thread.sleep 立即抛出，真正停掉等待。
+        val inputs = buildDispatchInputs()
         val handle =
             runInterruptible(Dispatchers.IO) {
-              svc.triggerAndAwaitRun(workflow, branch, emptyMap())
+              svc.triggerAndAwaitRun(workflow, branch, inputs)
             }
         // 挂起点之后先查活跃性：用户可能在等待期间关掉了表单。
         if (!isActive) {
@@ -1194,7 +1211,70 @@ class CloudBuildDialogFragment : BottomSheetDialogFragment() {
     val defaultWorkflow = CloudBuildUiLogic.pickDefaultWorkflow(workflows)
     binding.workflowInput.setText(defaultWorkflow, false)
 
+    // 切换 workflow 时刷新出包目标（不同模板的 job 集合不同）。
+    // 只注册一次：showSetup 会被重试/回到配置页重复调用，重复注册会让
+    // 一次输入触发多次 renderTargets。
+    if (workflowWatcher == null) {
+      workflowWatcher =
+          object : android.text.TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) = Unit
+            override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) = Unit
+            override fun afterTextChanged(s: android.text.Editable?) {
+              renderTargets(s?.toString()?.trim().orEmpty())
+            }
+          }.also { binding.workflowInput.addTextChangedListener(it) }
+    }
+    renderTargets(defaultWorkflow)
+
     showSection(Section.SETUP)
+  }
+
+  /**
+   * 渲染出包目标 chips。
+   *
+   * <p>只有模板生成的 workflow（flutter.yml / reactnative.yml / multiplatform.yml）
+   * 有目标概念；用户自定义 workflow 整组隐藏，触发时发空 inputs。
+   *
+   * <p>默认全选（= all）：用户不做任何操作时行为与旧版一致（出全部平台），
+   * 主动取消勾选某个平台才是「只想出这个子集」的表达。
+   */
+  private fun renderTargets(workflow: String) {
+    val newTargets = CloudBuildUiLogic.targetsForWorkflow(workflow)
+    binding.targetsChips.removeAllViews()
+    if (newTargets.isEmpty()) {
+      availableTargets = emptyList()
+      selectedTargets.clear()
+      binding.targetsGroup.visibility = View.GONE
+      return
+    }
+    // workflow 变了 → 用户的选择失效，重置为全选；同一 workflow → 保留原勾选
+    // （重试一次就丢失「只出 android」的意图是实测踩过的坑）。
+    if (newTargets != availableTargets) {
+      selectedTargets = newTargets.toMutableSet()
+    }
+    availableTargets = newTargets
+    binding.targetsGroup.visibility = View.VISIBLE
+    for (target in newTargets) {
+      val chip =
+          Chip(requireContext()).apply {
+            text = target
+            isCheckable = true
+            isChecked = target in selectedTargets
+            setOnCheckedChangeListener { _, checked ->
+              if (checked) selectedTargets.add(target) else selectedTargets.remove(target)
+            }
+          }
+      binding.targetsChips.addView(chip)
+    }
+  }
+
+  /** 当前勾选的出包目标 → workflow_dispatch inputs。 */
+  private fun buildDispatchInputs(): Map<String, String> {
+    if (availableTargets.isEmpty()) {
+      // 用户自定义 workflow：不发 targets（未定义的 input 会被 GitHub 忽略）。
+      return emptyMap()
+    }
+    return mapOf("targets" to CloudBuildUiLogic.targetsInputValue(availableTargets, selectedTargets))
   }
 
   /**

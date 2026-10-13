@@ -122,6 +122,57 @@ object CloudBuildUiLogic {
   }
 
   // ---------------------------------------------------------------------------
+  // 出包目标
+  // ---------------------------------------------------------------------------
+
+  /**
+   * workflow 文件名 → 出包目标候选（界面上让用户勾选）。
+   *
+   * <p>ACS 的三个跨平台模板各生成一个 workflow，其 job 名即目标名：
+   * `flutter.yml` → android/web/ios/windows/macos/linux；`reactnative.yml`
+   * 或 RN 模板的 workflow → android/ios/web；`multiplatform.yml` →
+   * android/desktop/web/ios。识别不出来（用户自己写的 workflow）时返回
+   * 空列表——此时不显示目标选择，照旧发空 inputs（`targets` 未定义时
+   * GitHub 会忽略它，旧 workflow 不受影响）。
+   *
+   * <p>按文件名而不是解析 YAML：设备端解析 YAML 需要引入解析库，而这三个
+   * 文件名是模板生成时固定的（README 与 workflow 的 name: 都对应）。
+   */
+  @JvmStatic
+  fun targetsForWorkflow(workflowFile: String): List<String> {
+    val name = workflowFile.lowercase(Locale.ROOT)
+    return when {
+      name == "flutter.yml" || name == "flutter.yaml" ->
+          listOf("android", "web", "ios", "windows", "macos", "linux")
+      name == "reactnative.yml" || name == "reactnative.yaml" || name == "react-native.yml" ->
+          listOf("android", "ios", "web")
+      name == "multiplatform.yml" || name == "multiplatform.yaml" ->
+          listOf("android", "desktop", "web", "ios")
+      else -> emptyList()
+    }
+  }
+
+  /**
+   * 勾选状态 → `targets` input 值。
+   *
+   * <p>全选（或一个都没勾）→ `all`：不勾选时发 `all` 而不是空串，
+   * 因为空串在 `contains(targets, 'android')` 判断下**什么都不出**——
+   * 用户忘了勾选却拿到「全部跳过」的空运行是最费解的结果。
+   * 全选发 `all` 同样走 `targets == 'all'` 分支，语义最明确。
+   */
+  @JvmStatic
+  fun targetsInputValue(available: List<String>, selected: Collection<String>): String {
+    if (available.isEmpty()) {
+      return ""
+    }
+    val picked = available.filter { selected.contains(it) }
+    if (picked.isEmpty() || picked.size == available.size) {
+      return "all"
+    }
+    return picked.joinToString(",")
+  }
+
+  // ---------------------------------------------------------------------------
   // 历史列表
   // ---------------------------------------------------------------------------
 

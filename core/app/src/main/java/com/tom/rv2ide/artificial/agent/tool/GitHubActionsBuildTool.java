@@ -24,6 +24,7 @@ import com.tom.rv2ide.ai.tool.api.ToolDisplayCategory;
 import com.tom.rv2ide.ai.tool.api.ToolNames;
 import com.tom.rv2ide.ai.tool.api.ToolResult;
 import com.tom.rv2ide.cloudbuild.CloudBuildService;
+import com.tom.rv2ide.cloudbuild.CloudBuildUiLogic;
 import com.tom.rv2ide.cloudbuild.RunLogExtractor;
 import com.tom.rv2ide.cloudbuild.WorkflowArtifact;
 import com.tom.rv2ide.cloudbuild.WorkflowRunPoller;
@@ -135,6 +136,16 @@ public final class GitHubActionsBuildTool extends BaseTool {
                         .put("type", "string")
                         .put("description", "分支名，默认当前分支"))
                 .put(
+                    "targets",
+                    new JSONObject()
+                        .put("type", "string")
+                        .put("description",
+                            "出包目标（仅模板 workflow 有效）：逗号分隔的平台列表，"
+                                + "如 android 或 android,web。可选值因 workflow 而异："
+                                + "flutter.yml=android,web,ios,windows,macos,linux；"
+                                + "reactnative.yml=android,ios,web；multiplatform.yml=android,desktop,web,ios。"
+                                + "省略或 all=全部平台"))
+                .put(
                     "timeoutMs",
                     new JSONObject()
                         .put("type", "number")
@@ -190,10 +201,20 @@ public final class GitHubActionsBuildTool extends BaseTool {
       context.reportProgress("触发云编译: " + workflow + " @ " + branch);
     }
 
+    // ---- 出包目标 → workflow_dispatch inputs ----
+    // 空串/all 都发 all（与界面一致）；未识别的 workflow 不发 targets
+    // （未定义的 input 会被 GitHub 忽略，用户自定义 workflow 不受影响）。
+    String targets = input.optString("targets", "").trim();
+    java.util.Map<String, String> inputs = null;
+    if (!CloudBuildUiLogic.targetsForWorkflow(workflow).isEmpty()) {
+      inputs = new java.util.HashMap<>();
+      inputs.put("targets", targets.isEmpty() ? "all" : targets);
+    }
+
     // ---- 触发并等待新 run 出现 ----
     CloudBuildService.BuildHandle handle;
     try {
-      handle = setup.service.triggerAndAwaitRun(workflow, branch, null, cancel);
+      handle = setup.service.triggerAndAwaitRun(workflow, branch, inputs, cancel);
     } catch (CloudBuildService.CancelledException e) {
       return error("操作已被用户停止。");
     } catch (Exception e) {

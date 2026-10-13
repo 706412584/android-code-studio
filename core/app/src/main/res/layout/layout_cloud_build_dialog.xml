@@ -221,6 +221,33 @@
             android:maxLines="1" />
         </com.google.android.material.textfield.TextInputLayout>
 
+        <!-- 出包目标（仅模板 workflow 显示；用户自定义 workflow 时整组隐藏）。
+             ChipGroup 单行多选，全不选等同全选（见 CloudBuildUiLogic.targetsInputValue）。 -->
+        <LinearLayout
+          android:id="@+id/targets_group"
+          android:layout_width="match_parent"
+          android:layout_height="wrap_content"
+          android:layout_marginTop="12dp"
+          android:orientation="vertical"
+          android:visibility="gone">
+
+          <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/cloud_build_targets_label"
+            android:textAppearance="?attr/textAppearanceLabelLarge"
+            android:textColor="?attr/colorOnSurfaceVariant" />
+
+          <com.google.android.material.chip.ChipGroup
+            android:id="@+id/targets_chips"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            app:singleLine="false"
+            app:chipSpacingHorizontal="6dp"
+            app:chipSpacingVertical="2dp" />
+        </LinearLayout>
+
         <com.google.android.material.button.MaterialButton
           android:id="@+id/start_build"
           android:layout_width="match_parent"

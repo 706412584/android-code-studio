@@ -276,7 +276,7 @@ class ReactNative : Template {
     copyAssetFile(context, "$ASSETS_APP_PATH/debug.keystore", File(appDir, "debug.keystore"))
   }
 
-  /** JS 侧文件（扁平化：全部放项目根）。 */
+  /** JS 侧文件（扁平化：全部放项目根，web/ 子目录只放 Web 目标脚手架）。 */
   private fun writeJsFiles(projectRoot: File, projectName: String) {
     File(projectRoot, "package.json").writeText(ReactNativeSources.packageJson(projectName))
     File(projectRoot, "index.js").writeText(ReactNativeSources.indexJs())
@@ -284,6 +284,13 @@ class ReactNative : Template {
     File(projectRoot, "app.json").writeText(ReactNativeSources.appJson(projectName))
     File(projectRoot, "metro.config.js").writeText(ReactNativeSources.metroConfigJs())
     File(projectRoot, "babel.config.js").writeText(ReactNativeSources.babelConfigJs())
+
+    // Web 目标（react-native-web + webpack）：webpack 配置放根（构建命令在根跑），
+    // 宿主页面与入口放 web/。构建产物 dist/ 由 CI 生成，gitignore 已忽略。
+    File(projectRoot, "webpack.config.js").writeText(ReactNativeSources.webpackConfigJs())
+    val webDir = File(projectRoot, "web").also { it.mkdirs() }
+    File(webDir, "index.js").writeText(ReactNativeSources.webIndexJs())
+    File(webDir, "index.html").writeText(ReactNativeSources.webIndexHtml(projectName))
   }
 
   /**

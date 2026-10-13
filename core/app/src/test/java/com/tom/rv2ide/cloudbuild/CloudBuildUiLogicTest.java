@@ -276,6 +276,61 @@ public class CloudBuildUiLogicTest {
   }
 
   // ---------------------------------------------------------------------------
+  // targetsForWorkflow / targetsInputValue
+  // ---------------------------------------------------------------------------
+
+  @Test
+  public void recognizesFlutterTargets() {
+    List<String> t = CloudBuildUiLogic.targetsForWorkflow("flutter.yml");
+    assertTrue(t.toString(), t.contains("android") && t.contains("ios") && t.contains("linux"));
+  }
+
+  @Test
+  public void recognizesReactNativeTargets() {
+    List<String> t = CloudBuildUiLogic.targetsForWorkflow("reactnative.yml");
+    assertEquals(Arrays.asList("android", "ios", "web"), t);
+  }
+
+  @Test
+  public void recognizesMultiplatformTargets() {
+    List<String> t = CloudBuildUiLogic.targetsForWorkflow("multiplatform.yml");
+    assertTrue(t.toString(), t.contains("desktop") && t.contains("ios"));
+  }
+
+  @Test
+  public void unknownWorkflowHasNoTargets() {
+    assertTrue(CloudBuildUiLogic.targetsForWorkflow("build.yml").isEmpty());
+    assertTrue(CloudBuildUiLogic.targetsForWorkflow("custom.yaml").isEmpty());
+  }
+
+  /** 全选 → all（而不是逐个列出）。 */
+  @Test
+  public void allSelectedBecomesAll() {
+    List<String> avail = Arrays.asList("android", "ios", "web");
+    assertEquals("all", CloudBuildUiLogic.targetsInputValue(avail, avail));
+  }
+
+  /** 一个都没勾 → all（空串会让所有 job 跳过，是最费解的结果）。 */
+  @Test
+  public void emptySelectionBecomesAll() {
+    List<String> avail = Arrays.asList("android", "ios", "web");
+    assertEquals("all", CloudBuildUiLogic.targetsInputValue(avail, Collections.emptyList()));
+  }
+
+  /** 部分勾选 → 逗号分隔，且按 available 的顺序（界面展示顺序）。 */
+  @Test
+  public void partialSelectionIsCommaSeparatedInAvailableOrder() {
+    List<String> avail = Arrays.asList("android", "web", "ios", "windows", "macos", "linux");
+    assertEquals("android,web", CloudBuildUiLogic.targetsInputValue(avail, Arrays.asList("web", "android")));
+  }
+
+  /** 用户自己写的 workflow（无目标概念）→ 空串，不发 targets input。 */
+  @Test
+  public void noAvailableTargetsYieldsEmptyString() {
+    assertEquals("", CloudBuildUiLogic.targetsInputValue(Collections.emptyList(), Collections.emptyList()));
+  }
+
+  // ---------------------------------------------------------------------------
 
   private static String iso(long epochMillis) {
     return java.time.Instant.ofEpochMilli(epochMillis).toString();

@@ -111,4 +111,6 @@
   <string name="cloud_build_login_waiting">Waiting for authorization… (continues automatically)</string>
   <string name="cloud_build_login_success">Signed in to GitHub, token saved</string>
   <string name="cloud_build_login_failed">Sign-in failed: %1$s</string>
+  <!-- Build targets (template workflows) -->
+  <string name="cloud_build_targets_label">Build targets (none selected = all)</string>
 </resources>

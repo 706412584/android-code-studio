@@ -106,4 +106,6 @@
   <string name="cloud_build_login_waiting">等待授权中…（完成后自动继续）</string>
   <string name="cloud_build_login_success">已登录 GitHub，Token 已保存</string>
   <string name="cloud_build_login_failed">登录失败：%1$s</string>
+  <!-- 出包目标（模板 workflow 专用） -->
+  <string name="cloud_build_targets_label">出包目标（全不选 = 全部）</string>
 </resources>

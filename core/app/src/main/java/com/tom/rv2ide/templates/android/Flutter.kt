@@ -237,15 +237,19 @@ class Flutter : Template {
 
   /** Dart 侧：lib/main.dart、pubspec.yaml、analysis_options、test。 */
   private fun writeDartFiles(projectRoot: File, projectName: String) {
+    // pubspec 的 name 与自引用导入必须是合法 Dart 包名（小写）——
+    // 项目名（如 MyFlutter）直接写进去会让 CI 的 flutter create 失败。
+    val dartPackage = FlutterSources.dartPackageName(projectName)
+
     val libDir = File(projectRoot, "lib")
     libDir.mkdirs()
     File(libDir, "main.dart").writeText(FlutterSources.mainDart(projectName))
 
     val testDir = File(projectRoot, "test")
     testDir.mkdirs()
-    File(testDir, "widget_test.dart").writeText(FlutterSources.widgetTest(projectName))
+    File(testDir, "widget_test.dart").writeText(FlutterSources.widgetTest(dartPackage))
 
-    File(projectRoot, "pubspec.yaml").writeText(FlutterSources.pubspecYaml(projectName))
+    File(projectRoot, "pubspec.yaml").writeText(FlutterSources.pubspecYaml(dartPackage))
     File(projectRoot, "analysis_options.yaml")
         .writeText(FlutterSources.analysisOptionsYaml())
   }
