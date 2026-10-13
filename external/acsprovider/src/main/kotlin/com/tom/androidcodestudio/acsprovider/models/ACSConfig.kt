@@ -29,4 +29,11 @@ data class ACSConfig(
     val getField: String? = null,
     val directUrl: String? = null,
     val shouldDownload: Boolean = false,
+    /**
+     * manifest 拉取失败时的回退地址（可选）。
+     *
+     * <p>默认 jsonUrl 为 Gitee 镜像；镜像不可用时回退 GitHub 上游（见
+     * AcsProvider.MIRROR_MANIFEST_URL 的说明）。为空则不回退。
+     */
+    val fallbackJsonUrl: String? = null,
 )

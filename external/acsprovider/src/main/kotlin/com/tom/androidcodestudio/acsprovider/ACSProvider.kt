@@ -177,6 +177,12 @@ class ACSProvider(
         filename = jsonObject.get("filename").asString,
         url = jsonObject.get("url").asString,
         sha256 = if (jsonObject.has("sha256")) jsonObject.get("sha256").asString else null,
+        parts =
+            if (jsonObject.has("parts") && jsonObject.get("parts").isJsonArray) {
+              jsonObject.getAsJsonArray("parts").map { it.asString }
+            } else {
+              emptyList()
+            },
     )
   }
 
@@ -223,7 +229,23 @@ class ACSProvider(
           throw IllegalArgumentException("Field name is required")
         }
 
-        val jsonContent = downloadJson(config.jsonUrl, silent = true)
+        val jsonContent =
+            try {
+              downloadJson(config.jsonUrl, silent = true)
+            } catch (e: Exception) {
+              val fallback = config.fallbackJsonUrl
+              if (!fallback.isNullOrEmpty() && fallback != config.jsonUrl) {
+                logger.warn(
+                    "Manifest download failed from {}, falling back to {}",
+                    config.jsonUrl,
+                    fallback,
+                    e,
+                )
+                downloadJson(fallback, silent = true)
+              } else {
+                throw e
+              }
+            }
         val entry = findPackageEntry(jsonContent, config)
 
         when (config.getField) {
@@ -305,16 +327,37 @@ class ACSProvider(
           return@withContext outputFile
         }
 
-        // JSON manifest download
+        // JSON manifest download（镜像优先，失败回退上游）
         if (config.jsonUrl.isNullOrEmpty()) {
           throw IllegalArgumentException("JSON URL is required")
         }
 
-        val jsonContent = downloadJson(config.jsonUrl, silent = false)
+        val jsonContent =
+            try {
+              downloadJson(config.jsonUrl, silent = false)
+            } catch (e: Exception) {
+              val fallback = config.fallbackJsonUrl
+              if (!fallback.isNullOrEmpty() && fallback != config.jsonUrl) {
+                logger.warn(
+                    "Manifest download failed from {}, falling back to {}",
+                    config.jsonUrl,
+                    fallback,
+                    e,
+                )
+                downloadJson(fallback, silent = false)
+              } else {
+                throw e
+              }
+            }
         val entry = findPackageEntry(jsonContent, config)
 
         val outputFile = File(downloadDir, entry.filename)
-        downloadFile(entry.url, outputFile, callback)
+        if (entry.parts.isNotEmpty()) {
+          // 镜像分卷：顺序下载 → 拼接 → 交后续 sha256 校验（与单文件路径同一校验）
+          downloadParts(entry.parts, outputFile, callback)
+        } else {
+          downloadFile(entry.url, outputFile, callback)
+        }
 
         // Verify SHA256 if provided
         if (entry.sha256 != null) {
@@ -334,6 +377,59 @@ class ACSProvider(
 
         outputFile
       }
+
+  /**
+   * 下载分卷并拼接为 [outputFile]。
+   *
+   * <p>镜像源单文件上限（Gitee 100MB）把大包切成 95MB 分卷。各分卷按
+   * [partUrls] 顺序逐字节追加写入同一输出文件——顺序错乱会导致拼接结果
+   * 与 sha256 不符，由调用方（downloadPackage）的统一校验兜底。
+   *
+   * <p>失败清理：任一分卷失败时删除半成品输出文件，避免残留被当成完整包。
+   */
+  private suspend fun downloadParts(
+      partUrls: List<String>,
+      outputFile: File,
+      callback: DownloadCallback?,
+  ) {
+    logger.info("Downloading {} parts into {}", partUrls.size, outputFile.absolutePath)
+
+    // 分卷写临时目录，全部成功后再拼接（避免失败时半成品占着最终文件名）
+    val partsDir = File(downloadDir, "${outputFile.name}.parts")
+    partsDir.deleteRecursively()
+    if (!partsDir.mkdirs()) {
+      throw IOException("Cannot create parts directory: ${partsDir.absolutePath}")
+    }
+
+    try {
+      partUrls.forEachIndexed { index, url ->
+        val partFile = File(partsDir, String.format("%03d", index))
+        logger.info("Part {}/{}: {}", index + 1, partUrls.size, url)
+        downloadFile(url, partFile, null)
+      }
+
+      // 顺序拼接
+      FileOutputStream(outputFile).use { output ->
+        partUrls.indices.forEach { index ->
+          val partFile = File(partsDir, String.format("%03d", index))
+          partFile.inputStream().use { input -> input.copyTo(output) }
+        }
+      }
+
+      if (!outputFile.exists() || outputFile.length() == 0L) {
+        outputFile.delete()
+        throw IOException("Merged file is empty: ${outputFile.absolutePath}")
+      }
+      callback?.onComplete(outputFile)
+    } catch (e: Exception) {
+      if (outputFile.exists()) {
+        outputFile.delete()
+      }
+      throw e
+    } finally {
+      partsDir.deleteRecursively()
+    }
+  }
 
   /** Execute operation based on config */
   suspend fun execute(config: ACSConfig, callback: DownloadCallback? = null): Any =
