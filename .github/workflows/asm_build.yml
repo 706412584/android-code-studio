@@ -218,9 +218,19 @@ jobs:
           NEW_APK="core/app/build/outputs/apk/release/android-code-studio-arm64-v8a-$VERSION_NAME.apk"
           [ -f "$NEW_APK" ] || fail "找不到本次构建的 APK: $NEW_APK"
 
-          # 上一版本 = 当前最新 Release（本次 Release 还没建）。
-          PREV_TAG=$(gh release view --json tagName -q .tagName 2>/dev/null || true)
-          [ -n "$PREV_TAG" ] || fail "没有上一个 Release"
+          # 上一版本 = 修订号最大的 `v1.0.0+gh.rNN` Release（本次 Release 还没建）。
+          #
+          # **不能用 `gh release view`（无参数）**：它返回仓库「最新」Release，而本仓库
+          # 还有 dart-sdk / apt-mirror-backup 等非版本 Release（无 APK 资产），
+          # 会拿到 dart-sdk 直接导致补丁生成静默跳过（实测踩过）。
+          # 改为按 tag 模式过滤 + 修订号排序取最大，只认真正的版本发布。
+          PREV_REV=$(gh release list --limit 100 --json tagName -q '.[].tagName' 2>/dev/null \
+            | grep -E '^v1\.0\.0\+gh\.r[0-9]+$' \
+            | sed -E 's/^v1\.0\.0\+gh\.r0*([0-9]+)$/\1/' \
+            | sort -n | tail -1)
+          [ -n "$PREV_REV" ] || fail "没有上一个版本 Release"
+          PREV_TAG="v1.0.0+gh.r$(printf '%02d' "$PREV_REV")"
+          echo "上一版本：$PREV_TAG"
 
           mkdir -p patch-work
           gh release download "$PREV_TAG" \
