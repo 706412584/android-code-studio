@@ -1123,6 +1123,8 @@ NoSuchMethodError: No virtual method appendReplacement(Ljava/lang/StringBuilder;
 | **LCP UI 层依赖自定义主题** | `ui-theme/LineTheme.java` 被工具卡片依赖，做 #20 时绕不开 |
 | **`buildStartedAtMs` 被赋值但未读取** | `GradleBuildService.kt` 里该字段目前是死代码，`lastBuildOutcome` 走的是 `BuildOutcome` 记录的时间戳。提交前应清理或统一 |
 | `.codegraph/` 390MB 未忽略 | 一旦误提交会污染仓库 |
+| **主 agent 工具调用上限 100 轮** | 子 agent 已取消限制（`SubAgentRunnerImpl`，r10），但主 agent 的 `DEFAULT_TOOL_CALL_LIMIT = 100`（`AgentOrchestrator.java:123`）仍在——长任务可能触发同样的「强制关闭」抱怨。取消前需评估额度消耗（子 agent 有 30 分钟时长预算兜底，主 agent 无该预算） |
+| **旧路径 6 个 provider 不走 UrlPolicy** | `artificial/agents/` 下 openai/anthropic/deepseek/grok/local 直连（OkHttp / openConnection）。r10 明文放行后这些路径无应用层兜底（已在 `network_security_config.xml` 注释如实说明）。暴露面限于「用户自配的明文端点」，判定可接受 |
 
 ---
 

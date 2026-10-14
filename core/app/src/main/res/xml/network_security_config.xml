@@ -8,10 +8,18 @@
   手填模型名也没用」（请求被系统在 socket 层拦截，应用层看不到任何响应）。
   用户的局域网 IP 无法穷举，白名单方案在此场景不成立。
 
-  <p><b>安全性由应用层承担</b>：UrlPolicy（core/ai-protocol）对 http:// 请求做
-  私网判定——仅允许 loopback、10/8、172.16/12、192.168/16 等 RFC1918 地址
-  与显式白名单主机；公网地址必须走 https。系统层放开明文是为了让局域网服务
-  （本地 LLM、局域网网关）可达，不改变应用层的限制。
+  <p><b>安全性由应用层部分承担，覆盖面如实说明</b>：UrlPolicy（core/ai-protocol）
+  对 http:// 请求做私网判定——仅允许 loopback、10/8、172.16/12、192.168/16 等
+  RFC1918 地址与显式白名单主机；公网地址必须走 https。**但该策略只覆盖新 agent
+  路径**（AbstractHttpModelProtocol / SimpleHttpClient / AppHttpPort / ModelCatalogFetcher）；
+  旧路径的 6 个 provider（artificial/agents/ 下的 openai/anthropic/deepseek/grok 等，
+  用 OkHttp 或 openConnection 直连）以及更新检查等直连调用**不走 UrlPolicy**——
+  系统层放开后这些路径的明文 HTTP 不再被拦截，没有应用层兜底。
+
+  <p>净变化评估：旧路径的 base URL 来自用户自己的服务商配置（非模型可控），
+  `http_request` 工具发任意 URL 但走 AppHttpPort 有 UrlPolicy 校验，更新检查用
+  硬编码 https 清单。真实暴露面是「用户把端点配成任意明文 http 地址」时不再被
+  系统拦——这是局域网 LLM 场景的必要代价，判定为可接受。
 -->
 <network-security-config>
     <base-config cleartextTrafficPermitted="true" />

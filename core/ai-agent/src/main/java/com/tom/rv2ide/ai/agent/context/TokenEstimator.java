@@ -114,9 +114,19 @@ public final class TokenEstimator {
    * 该 rawInputJson 是否携带会被序列化为 image block 的图片数据。
    *
    * <p>解析失败或非图片 kind 时返回 false：估算宁可走普通文本路径，也不误加 2000。
+   *
+   * <p><b>先做廉价子串判定再解析</b>：rawInputJson 可能内嵌 MB 级 base64，而
+   * {@code fit} 每次请求前会对全量消息逐条调用本方法——每次都整串 JSON 解析
+   * 在长会话里是可观的浪费（2MB 串解析 10-30ms/次 × 每轮几十次）。两种图片
+   * kind 的常量都含下划线（{@code linecode_image_understanding} /
+   * {@code linecode_tool_result_image}），而 base64 字母表不含下划线——
+   * 子串不命中时解析必然返回 null，直接否定安全且省去解析。
    */
   private static boolean hasImagePayload(String rawInputJson) {
     if (rawInputJson == null || rawInputJson.isEmpty()) {
+      return false;
+    }
+    if (rawInputJson.indexOf("linecode_") < 0) {
       return false;
     }
     try {
