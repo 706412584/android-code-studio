@@ -1,10 +1,18 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+  明文 HTTP 策略。
+
+  <p><b>为什么全局放开而不是按域名白名单</b>：原白名单写的是 `192.168.0.0` 与
+  `192.168.1.0`，而 Android 的 `<domain>` 是**主机名精确匹配**（不支持 CIDR 网段），
+  `192.168.1.5` 这类真实局域网地址根本不匹配——表现为「局域网 LLM 死活拉不到模型，
+  手填模型名也没用」（请求被系统在 socket 层拦截，应用层看不到任何响应）。
+  用户的局域网 IP 无法穷举，白名单方案在此场景不成立。
+
+  <p><b>安全性由应用层承担</b>：UrlPolicy（core/ai-protocol）对 http:// 请求做
+  私网判定——仅允许 loopback、10/8、172.16/12、192.168/16 等 RFC1918 地址
+  与显式白名单主机；公网地址必须走 https。系统层放开明文是为了让局域网服务
+  （本地 LLM、局域网网关）可达，不改变应用层的限制。
+-->
 <network-security-config>
-    <domain-config cleartextTrafficPermitted="true">
-        <domain includeSubdomains="true">localhost</domain>
-        <domain includeSubdomains="true">127.0.0.1</domain>
-        <domain includeSubdomains="true">10.0.2.2</domain>
-        <domain includeSubdomains="true">192.168.0.0</domain>
-        <domain includeSubdomains="true">192.168.1.0</domain>
-    </domain-config>
+    <base-config cleartextTrafficPermitted="true" />
 </network-security-config>

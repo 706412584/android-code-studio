@@ -89,11 +89,14 @@ import org.intellij.markdown.flavours.gfm.GFMElementTypes
 import com.mikepenz.markdown.compose.elements.material.MarkdownBasicText
 import com.mikepenz.markdown.m3.markdownColor
 import com.mikepenz.markdown.m3.markdownTypography
+import com.mikepenz.markdown.model.ReferenceLinkHandlerImpl
 import com.mikepenz.markdown.model.markdownAnimations
 import com.mikepenz.markdown.model.markdownDimens
 import com.mikepenz.markdown.model.markdownPadding
 import com.mikepenz.markdown.model.rememberMarkdownState
 import com.mikepenz.markdown.model.State as MarkdownParseState
+import org.intellij.markdown.flavours.gfm.GFMFlavourDescriptor
+import org.intellij.markdown.parser.MarkdownParser
 import com.tom.rv2ide.artificial.agent.compose.components.style.MarkdownPreprocessor
 import com.tom.rv2ide.artificial.agent.compose.theme.semanticColors
 import compose.icons.FeatherIcons
@@ -313,8 +316,33 @@ internal fun MarkdownContent(
         // 因此这里只传 content，其余走库默认值。**保留语义并未丢失**：Aharou 真正用来防止流式闪烁的
         // 是下面自己那套逻辑 —— key(...) 的重建开关、lastSuccessState、以及 renderState 的
         // prefixFallback 兜底 —— 这些全部逐字保留在本函数内，不依赖库参数。
+        // ── 无限重组修复（0.33.0 库缺陷，上游 0.35.0 已修，本项目在调用点复刻）──
+        //
+        // 0.33.0 的 rememberMarkdownState 内部：
+        //   val input = Input(content, lookupLinks, flavour = GFMFlavourDescriptor(),
+        //                     parser = MarkdownParser(flavour), referenceLinkHandler = ReferenceLinkHandlerImpl())
+        //   val state = remember(input) { MarkdownState(input) }
+        // 三个默认参数**每次调用都新建实例**，且这三个类都没有 equals——Input（data class）
+        // 的结构比较因此永远「不相等」→ 每次重组都重建 MarkdownState → LaunchedEffect 重启解析
+        // → 解析完成写 StateFlow → collectAsState 触发重组 → 再重建……**无限自激循环**。
+        // 真机实测（含表格的会话）：主线程 80-100% CPU、每 2.6s GC 回收 26MB、10 秒 421 帧
+        // 其中 92% 掉帧；连续 6 次 kill -3 采样全部落在这条链上（Recomposer / MarkdownState.parse
+        // / StateFlow collect / MarkdownTable subcompose）。
+        //
+        // 上游修复方式（0.35.0 把 Input 包进 remember；0.41.0 把默认参数也 remember 掉）——
+        // 本项目被 Compose 1.8 ABI 钉死在 0.33.0（见 build.gradle.kts 的三条天花板注释），
+        // 升不了级，只能在调用点复刻：把三个默认参数换成 remember 的稳定实例，
+        // 让 Input 的结构相等在重组间成立，内部 remember(input) 即稳定、不再重建解析状态。
+        val mdFlavour = remember { GFMFlavourDescriptor() }
+        val mdParser = remember(mdFlavour) { MarkdownParser(mdFlavour) }
+        val mdReferenceLinks = remember { ReferenceLinkHandlerImpl() }
         val mdState = key(if (retainState) null else processed) {
-            rememberMarkdownState(content = processed)
+            rememberMarkdownState(
+                content = processed,
+                flavour = mdFlavour,
+                parser = mdParser,
+                referenceLinkHandler = mdReferenceLinks,
+            )
         }
         val parseState by mdState.state.collectAsState()
         val cachedState = if (cacheEnabled) cache?.get(processed) else null

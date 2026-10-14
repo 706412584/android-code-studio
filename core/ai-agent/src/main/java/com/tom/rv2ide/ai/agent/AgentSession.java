@@ -339,6 +339,9 @@ public final class AgentSession {
     int turnIndex = 0;
     String lastOutput = "";
     long startedAt = System.currentTimeMillis();
+    // 反应式压缩重试只允许一次（见下方 catch 块）。放在循环外：整个运行共享，
+    // 收缩后仍超限说明问题不在体积，重试更多次只会反复烧请求。
+    boolean overflowRetried = false;
 
     while (true) {
       // 终止条件一：外部取消
@@ -393,6 +396,24 @@ public final class AgentSession {
         response =
             requestModel(config, messages, tools, cancellationToken, listener, reasoningEffort);
       } catch (ModelCompletionException e) {
+        // ── 反应式压缩重试（cc-haha reactive compact 同款语义）──
+        //
+        // 服务端报上下文超限（400 context_length / "prompt is too long" / "maximum
+        // context length" 等）时，本地估算显然低估了实际用量（图片按张固定估算、
+        // 各服务商分词差异都可能造成）。此时不能把 400 原样抛给用户——cc-haha 的
+        // 语义是「检测 → 摘要/收缩替换 → 重试」，绝不裸抛。
+        //
+        // 本地无模型调用可做摘要（那需要网络与用户等待），退而求其次做**激进裁剪**：
+        // 把消息列表收缩到当前估算的一半，然后重试一次。只重试一次：
+        // 收缩后仍超限说明问题不在体积（或窗口配置本身有误），重试更多次只会
+        // 反复烧请求。裁剪保留系统提示词、本次请求与最近轮次（见 shrinkForOverflow）。
+        if (isContextOverflowError(e) && contextManager != null && !overflowRetried) {
+          overflowRetried = true;
+          if (contextManager.shrinkForOverflow(messages, historyEnd)) {
+            emit(listener, AgentEvent.progress("上下文超出服务端限制，已压缩历史后重试"));
+            continue;
+          }
+        }
         String reason = "模型请求失败: " + e.getMessage();
         return finish(listener, AgentEvent.failed(reason), lastOutput, toolCallCount, turnIndex);
       }
@@ -719,6 +740,34 @@ public final class AgentSession {
     if (listener != null) {
       listener.onEvent(event);
     }
+  }
+
+  /**
+   * 该请求失败是否为「上下文超出服务端限制」。
+   *
+   * <p>匹配各服务商的实际报错措辞（对齐 cc-haha {@code errors.ts} 的归一化关键词表）：
+   * <ul>
+   *   <li>OpenAI 系：{@code context_length_exceeded}、{@code maximum context length}</li>
+   *   <li>Anthropic 系：{@code prompt is too long}、{@code input length and `max_tokens` exceed}</li>
+   *   <li>通用兜底：{@code too many tokens}、{@code reduce the length}、{@code context window}</li>
+   * </ul>
+   *
+   * <p>全部小写后包含匹配。宁可少匹配（漏判只是回到原来的失败路径）也不要多匹配——
+   * 把其他 400（参数错误等）误判成超限会让裁剪白白丢弃历史，问题依旧。
+   */
+  static boolean isContextOverflowError(ModelCompletionException e) {
+    if (e == null || e.getMessage() == null) {
+      return false;
+    }
+    String message = e.getMessage().toLowerCase(java.util.Locale.ROOT);
+    return message.contains("context_length_exceeded")
+        || message.contains("maximum context length")
+        || message.contains("context length")
+        || message.contains("prompt is too long")
+        || message.contains("input length and")
+        || message.contains("too many tokens")
+        || message.contains("reduce the length")
+        || message.contains("context window");
   }
 
   private AgentRunResult finish(

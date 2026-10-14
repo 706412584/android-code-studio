@@ -125,6 +125,42 @@ public final class RunContextManager {
       return new ArrayList<>(messages);
     }
 
+    return fitToBudget(messages, historyEnd, budget);
+  }
+
+  /**
+   * 反应式收缩：服务端已报上下文超限（400 context_length 等）后的激进裁剪。
+   *
+   * <p><b>与 {@link #fit} 的分工</b>：fit 是事前预防（按预算裁到阈值内），本方法是事后
+   * 补救——请求已经被服务端拒绝，说明实际用量超出（常见于本地估算低估：图片按张固定
+   * 估算、各服务商分词差异）。此时按**当前估算的一半**重建消息列表，给重试留出余量。
+   *
+   * <p>保留规则与 fit 一致：系统提示词、本次用户请求与最近轮次优先保留；
+   * 裁剪以工具调用组为单位（见 {@link ContextTrimmer}）。
+   *
+   * <p><b>就地修改传入列表</b>：调用方（{@code AgentSession}）持有的就是这条列表，
+   * 收缩后直接用它重试——不换对象，避免调用方还要替换引用。
+   *
+   * @return 是否发生了实际收缩（无变化时调用方不应重试）
+   */
+  public boolean shrinkForOverflow(List<ModelMessage> messages, int historyEnd) {
+    if (messages == null || messages.size() <= 1) {
+      return false;
+    }
+    int current = TokenEstimator.estimate(messages) + overheadTokens;
+    int target = Math.max(1, current / 2);
+    List<ModelMessage> shrunk = fitToBudget(messages, historyEnd, target);
+    if (shrunk.size() >= messages.size()) {
+      return false;
+    }
+    messages.clear();
+    messages.addAll(shrunk);
+    notifyUsage();
+    return true;
+  }
+
+  private List<ModelMessage> fitToBudget(
+      List<ModelMessage> messages, int historyEnd, int budget) {
     ModelMessage system = messages.get(0);
     if (messages.size() == 1) {
       tracker.record(TokenEstimator.estimate(system) + overheadTokens, 0);

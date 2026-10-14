@@ -22,6 +22,9 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.tom.rv2ide.ai.agent.context.RunContextManager;
+import com.tom.rv2ide.ai.agent.context.TokenUsageTracker;
+import com.tom.rv2ide.ai.protocol.AssistantModelMessage;
 import com.tom.rv2ide.ai.protocol.ModelCancellationToken;
 import com.tom.rv2ide.ai.protocol.ModelClient;
 import com.tom.rv2ide.ai.protocol.ModelCompletionException;
@@ -33,6 +36,7 @@ import com.tom.rv2ide.ai.protocol.ModelProtocolFactory;
 import com.tom.rv2ide.ai.protocol.ModelProtocolType;
 import com.tom.rv2ide.ai.protocol.ModelRequestOptions;
 import com.tom.rv2ide.ai.protocol.ModelStreamCallback;
+import com.tom.rv2ide.ai.protocol.UserModelMessage;
 import com.tom.rv2ide.ai.tool.ToolContext;
 import com.tom.rv2ide.ai.tool.ToolExecutor;
 import com.tom.rv2ide.ai.tool.ToolRegistry;
@@ -333,6 +337,169 @@ final class AgentSessionTest {
 
     assertTrue(result.isFailed(), "模型异常应转为失败结果而非抛出");
     assertTrue(result.getOutput().contains("boom"), result.getOutput());
+  }
+
+  @Test
+  void contextOverflowErrorTriggersShrinkAndRetry(@TempDir Path workspace) {
+    // 第一次请求抛 400 context_length，第二次（收缩后）成功——验证反应式压缩重试。
+    // 没有这条路径时 400 会原样抛给用户，长会话直接卡死（实测 bug）。
+    java.util.concurrent.atomic.AtomicInteger attempts =
+        new java.util.concurrent.atomic.AtomicInteger();
+    ScriptedProtocol protocol =
+        new ScriptedProtocol(true) {
+          @Override
+          public ModelCompletionResponse stream(
+              ModelConfig config,
+              List<ModelMessage> messages,
+              ModelStreamCallback callback,
+              ModelCancellationToken cancellationToken,
+              ModelRequestOptions options)
+              throws ModelCompletionException {
+            if (attempts.incrementAndGet() == 1) {
+              throw new ModelCompletionException(
+                  "HTTP 400: {\"error\":{\"code\":\"context_length_exceeded\"}}");
+            }
+            return new ModelCompletionResponse("已恢复", "", List.of(), 0, 0);
+          }
+        };
+    ToolRegistry registry = fileRegistry();
+
+    // 造一段可被收缩的长历史：若干用户/助手消息，远超“保留最近两条”的下限。
+    List<ModelMessage> history = new ArrayList<>();
+    for (int i = 0; i < 30; i++) {
+      history.add(new UserModelMessage("历史问题 " + i + " " + "x".repeat(200)));
+      history.add(new AssistantModelMessage("历史回答 " + i + " " + "y".repeat(200), "", List.of()));
+    }
+
+    RunContextManager contextManager =
+        new RunContextManager(new TokenUsageTracker(100000), 0);
+
+    AgentSession session =
+        new AgentSession(clientWith(protocol), registry, new ToolExecutor(registry, null, null));
+
+    AgentRunResult result =
+        session.run(
+            config(10),
+            "sys",
+            "req",
+            history,
+            ToolContext.builder().homePath(workspace.toString()).build(),
+            null,
+            null,
+            contextManager);
+
+    assertEquals(2, attempts.get(), "超限后应收缩并重试一次");
+    assertFalse(result.isFailed(), "收缩重试成功后不应标记失败");
+    assertEquals("已恢复", result.getOutput());
+  }
+
+  @Test
+  void contextOverflowIsNotRetriedTwice(@TempDir Path workspace) {
+    // 收缩后仍超限：只重试一次，第二次失败直接返回失败结果（防止无限烧请求）。
+    java.util.concurrent.atomic.AtomicInteger attempts =
+        new java.util.concurrent.atomic.AtomicInteger();
+    ScriptedProtocol protocol =
+        new ScriptedProtocol(true) {
+          @Override
+          public ModelCompletionResponse stream(
+              ModelConfig config,
+              List<ModelMessage> messages,
+              ModelStreamCallback callback,
+              ModelCancellationToken cancellationToken,
+              ModelRequestOptions options)
+              throws ModelCompletionException {
+            attempts.incrementAndGet();
+            throw new ModelCompletionException(
+                "HTTP 400: {\"error\":{\"message\":\"prompt is too long\"}}");
+          }
+        };
+    ToolRegistry registry = fileRegistry();
+    List<ModelMessage> history = new ArrayList<>();
+    for (int i = 0; i < 30; i++) {
+      history.add(new UserModelMessage("历史问题 " + i + " " + "x".repeat(200)));
+      history.add(new AssistantModelMessage("历史回答 " + i + " " + "y".repeat(200), "", List.of()));
+    }
+    RunContextManager contextManager =
+        new RunContextManager(new TokenUsageTracker(100000), 0);
+
+    AgentSession session =
+        new AgentSession(clientWith(protocol), registry, new ToolExecutor(registry, null, null));
+
+    AgentRunResult result =
+        session.run(
+            config(10),
+            "sys",
+            "req",
+            history,
+            ToolContext.builder().homePath(workspace.toString()).build(),
+            null,
+            null,
+            contextManager);
+
+    assertEquals(2, attempts.get(), "超限最多重试一次");
+    assertTrue(result.isFailed(), "重试仍失败时应返回失败结果");
+  }
+
+  @Test
+  void nonOverflowClientErrorIsNotRetried(@TempDir Path workspace) {
+    // 其他 400（参数错误等）不应触发收缩重试——裁剪历史会白丢上下文且问题依旧。
+    java.util.concurrent.atomic.AtomicInteger attempts =
+        new java.util.concurrent.atomic.AtomicInteger();
+    ScriptedProtocol protocol =
+        new ScriptedProtocol(true) {
+          @Override
+          public ModelCompletionResponse stream(
+              ModelConfig config,
+              List<ModelMessage> messages,
+              ModelStreamCallback callback,
+              ModelCancellationToken cancellationToken,
+              ModelRequestOptions options)
+              throws ModelCompletionException {
+            attempts.incrementAndGet();
+            throw new ModelCompletionException("HTTP 400: invalid request format");
+          }
+        };
+    ToolRegistry registry = fileRegistry();
+    List<ModelMessage> history = new ArrayList<>();
+    for (int i = 0; i < 30; i++) {
+      history.add(new UserModelMessage("历史问题 " + i + " " + "x".repeat(200)));
+    }
+    RunContextManager contextManager =
+        new RunContextManager(new TokenUsageTracker(100000), 0);
+
+    AgentSession session =
+        new AgentSession(clientWith(protocol), registry, new ToolExecutor(registry, null, null));
+
+    AgentRunResult result =
+        session.run(
+            config(10),
+            "sys",
+            "req",
+            history,
+            ToolContext.builder().homePath(workspace.toString()).build(),
+            null,
+            null,
+            contextManager);
+
+    assertEquals(1, attempts.get(), "非超限 400 不应重试");
+    assertTrue(result.isFailed());
+  }
+
+  @Test
+  void contextOverflowKeywordsAreMatched() {
+    assertTrue(
+        AgentSession.isContextOverflowError(
+            new ModelCompletionException("HTTP 400: context_length_exceeded")));
+    assertTrue(
+        AgentSession.isContextOverflowError(
+            new ModelCompletionException("HTTP 400: prompt is too long")));
+    assertTrue(
+        AgentSession.isContextOverflowError(
+            new ModelCompletionException("HTTP 400: This model's maximum context length is 8192")));
+    assertFalse(
+        AgentSession.isContextOverflowError(
+            new ModelCompletionException("HTTP 400: invalid request format")));
+    assertFalse(AgentSession.isContextOverflowError(new ModelCompletionException("boom")));
   }
 
   @Test

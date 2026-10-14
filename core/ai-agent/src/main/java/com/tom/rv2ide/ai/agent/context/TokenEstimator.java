@@ -49,6 +49,21 @@ public final class TokenEstimator {
   /** 每条消息的固定开销（角色标记、分隔符等）。 */
   private static final int PER_MESSAGE_OVERHEAD = 4;
 
+  /**
+   * 图片负载的固定估算值（token/张）。
+   *
+   * <p><b>为什么按张固定而不是按 base64 字符数</b>：base64 字符串长度与模型实际计费
+   * token 无关——图片按视觉块计费，主流服务商对单图大致落在几百到 ~2000 token。
+   * 对齐参考项目（cc-haha `tokenEstimation.ts` 对 image block 固定 2000），
+   * 也避免把 2MB base64 按 4 字符/token 估成 50 万 token 的离谱数字。
+   *
+   * <p><b>为什么必须算进来</b>：工具结果图片（image_generation 等）以 data URL 随
+   * 请求体发出，实测一个 12 张图的会话历史约 18MB。此前估算完全不计它们，
+   * 硬压缩阈值永不触发——请求带着全部图片发出被服务端 400 context_length 拒绝，
+   * 而本地一直以为用量很低。这是「400 超限却没触发自动压缩」的直接根因。
+   */
+  private static final int IMAGE_TOKENS = 2000;
+
   private TokenEstimator() {}
 
   /** 估算一段文本的 token 数。 */
@@ -69,7 +84,7 @@ public final class TokenEstimator {
     return cjk + (int) Math.ceil(other / CHARS_PER_TOKEN);
   }
 
-  /** 估算一条消息的 token 数，含工具调用与固定开销。 */
+  /** 估算一条消息的 token 数，含工具调用、图片负载与固定开销。 */
   public static int estimate(ModelMessage message) {
     if (message == null) {
       return 0;
@@ -79,6 +94,13 @@ public final class TokenEstimator {
     total += estimate(message.getReasoningContent());
     total += estimate(message.getToolCallId());
     total += estimate(message.getToolName());
+    // 图片负载（rawInputJson 里的 data_base64）按张固定估算。
+    // 用 ImageInputPayload 解析而不是字符串匹配：只有它认得的两种 kind
+    // （用户附件 / 工具结果图片）才是真正会序列化成 image block 的数据，
+    // 其余 rawInputJson 原样进请求、按普通文本走上面的字符估算——重复计入会双重收费。
+    if (hasImagePayload(message.getRawInputJson())) {
+      total += IMAGE_TOKENS;
+    }
     if (message instanceof AssistantModelMessage) {
       for (ToolCall call : message.getToolCalls()) {
         total += estimate(call.getName());
@@ -86,6 +108,23 @@ public final class TokenEstimator {
       }
     }
     return total;
+  }
+
+  /**
+   * 该 rawInputJson 是否携带会被序列化为 image block 的图片数据。
+   *
+   * <p>解析失败或非图片 kind 时返回 false：估算宁可走普通文本路径，也不误加 2000。
+   */
+  private static boolean hasImagePayload(String rawInputJson) {
+    if (rawInputJson == null || rawInputJson.isEmpty()) {
+      return false;
+    }
+    try {
+      return com.tom.rv2ide.ai.protocol.ImageInputPayload.fromRawInputJson(rawInputJson) != null
+          || com.tom.rv2ide.ai.protocol.ImageInputPayload.fromImageResult(rawInputJson) != null;
+    } catch (RuntimeException e) {
+      return false;
+    }
   }
 
   /** 估算一组消息的总 token 数。 */

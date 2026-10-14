@@ -58,8 +58,17 @@ import java.util.List;
  */
 public final class SubAgentRunnerImpl implements SubAgentRunner {
 
-  /** 子 agent 的单次工具调用上限。比主 agent 小：子任务应当聚焦。 */
-  private static final int SUB_AGENT_TOOL_CALL_LIMIT = 40;
+  /**
+   * 子 agent 的单次工具调用上限。
+   *
+   * <p><b>2026-10-15 由 40 改为不限制</b>：40 轮的上限对「读几十个文件」的调查类任务
+   * 明显偏小——实测用户在复杂排查任务里被强制中断（「40 轮就强制关闭」）。
+   * 子任务是否"聚焦"由任务描述与提示词约束，而不是靠一个数字硬切。
+   *
+   * <p>仍有的兜底：{@link com.tom.rv2ide.ai.agent.AgentSession} 的 30 分钟总时长预算
+   * （DEFAULT_TIME_BUDGET_MS），以及父级取消传播——不会出现失控燃烧。
+   */
+  private static final int SUB_AGENT_TOOL_CALL_LIMIT = -1;
 
   private final AgentModelConfigs.ProviderEndpoint endpoint;
   private final String modelId;

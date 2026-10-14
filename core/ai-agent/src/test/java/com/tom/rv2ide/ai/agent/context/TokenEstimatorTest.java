@@ -137,4 +137,30 @@ final class TokenEstimatorTest {
     assertFalse(TokenEstimator.isToolMessage(new UserModelMessage("x")));
     assertFalse(TokenEstimator.isToolMessage(new AssistantModelMessage("x")));
   }
+
+  @Test
+  void toolResultImagePayloadIsCountedAsFixedCost() throws Exception {
+    // 工具结果图片（image_generation 等）以 data URL 随请求发出，此前完全不计——
+    // 12 张图的会话历史约 18MB，本地估算却接近零，硬压缩阈值永不触发。
+    // 回归断言：带图片负载的消息必须比同文本不带图的消息至少多出固定图片成本。
+    String tinyBase64 = "iVBORw0KGgo=";
+    String imageJson =
+        com.tom.rv2ide.ai.protocol.ImageInputPayload.imageResultJson("image/png", tinyBase64);
+
+    ToolModelMessage plain = new ToolModelMessage("abcd", "c1", "t");
+    ToolModelMessage withImage = new ToolModelMessage("abcd", "c1", "t", false, imageJson);
+
+    assertTrue(
+        TokenEstimator.estimate(withImage) >= TokenEstimator.estimate(plain) + 2000,
+        "图片负载应按固定成本计入估算");
+  }
+
+  @Test
+  void nonImageRawInputJsonIsNotChargedAsImage() {
+    // 非图片 kind 的 rawInputJson 原样进请求、按普通文本估算；误加 2000 会双重收费。
+    ToolModelMessage nonImage =
+        new ToolModelMessage("abcd", "c1", "t", false, "{\"kind\":\"other\",\"x\":1}");
+    ToolModelMessage plain = new ToolModelMessage("abcd", "c1", "t");
+    assertEquals(TokenEstimator.estimate(plain), TokenEstimator.estimate(nonImage));
+  }
 }

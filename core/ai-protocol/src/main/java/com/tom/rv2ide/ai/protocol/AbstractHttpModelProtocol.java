@@ -363,14 +363,31 @@ abstract class AbstractHttpModelProtocol implements ModelProtocol {
         return builder.toString();
     }
 
+    /** 错误日志里请求体与响应体的最大字符数。 */
+    private static final int MAX_LOGGED_BODY_CHARS = 4000;
+
     private void logHttpError(String type, String url, Map<String, String> headers, JSONObject body, int code, String response, Throwable throwable) {
         StringBuilder builder = new StringBuilder();
         builder.append("URL: ").append(url == null ? "" : url).append('\n');
         builder.append("Status: ").append(code).append("\n\n");
         builder.append("Request headers:\n").append(headers == null ? "{}" : headers.toString()).append("\n\n");
-        builder.append("Request body:\n").append(body == null ? "" : body.toString()).append("\n\n");
-        builder.append("Response:\n").append(response == null ? "" : response);
+        // **请求体必须截断**：多模态请求的 body 含全部历史与图片 base64，可达几十 MB
+        // 且是**单行**文本。原样写进日志会把这一行送进 IDE 日志视图的编辑器测量——
+        // 实测单行 MB 级文本的 sora 文本测量耗时 1.4 秒（主线程完全卡死），而重试路径
+        // 每次失败都写一条：连续重试 = 主线程被反复冻结（「错误重试卡死应用」的根因）。
+        // 诊断价值集中在 URL/状态码/响应上，请求体保留头部即可。
+        builder.append("Request body (truncated):\n").append(truncateForLog(body == null ? "" : body.toString())).append("\n\n");
+        builder.append("Response:\n").append(truncateForLog(response == null ? "" : response));
         ErrorLog.record(type, throwable == null ? type : throwable.getMessage(), throwable, builder.toString());
+    }
+
+    /** 截断超长文本用于日志；超限时附标记说明被截掉多少字符。 */
+    private static String truncateForLog(String text) {
+        if (text == null || text.length() <= MAX_LOGGED_BODY_CHARS) {
+            return text == null ? "" : text;
+        }
+        return text.substring(0, MAX_LOGGED_BODY_CHARS)
+                + "\n…（已截断 " + (text.length() - MAX_LOGGED_BODY_CHARS) + " 字符）";
     }
 
     protected void logParseError(String type, String rawResponse, Throwable throwable) {

@@ -81,6 +81,18 @@ abstract class LogViewFragment :
      * [TRIM_ON_LINE_COUNT] by a difference of [LOG_FREQUENCY] or preferably, more.
      */
     const val MAX_LINE_COUNT = TRIM_ON_LINE_COUNT - 300
+
+    /**
+     * 单行日志的最大字符数；超长截断。
+     *
+     * <p><b>为什么必须限长</b>：sora 编辑器在插入文本后对**受影响的行**做全量文本测量
+     * （{@code CodeEditor.afterInsert → buildMeasureCacheForLines}），单次耗时与行长成正比。
+     * 实测一条 MB 级的单行文本（协议层曾把含图片 base64 的请求体写进日志）让主线程
+     * 单次测量耗时 1.4 秒——网络重试期间每次失败写一条，主线程被反复冻结，
+     * 界面表现为「错误重试时应用卡死」。协议层已截断请求体（治本），这里再设一道
+     * 视图层防线：任何来源的单行日志都不允许超过此长度。
+     */
+    const val MAX_LINE_LENGTH = 4000
   }
 
   private var lastLog = -1L
@@ -139,6 +151,12 @@ abstract class LogViewFragment :
 
   protected fun appendLine(line: String) {
     var lineStr = line
+    // 单行限长：sora 编辑器的插入后测量与行长成正比，MB 级单行会让主线程单次卡 1.4 秒
+    // （见 MAX_LINE_LENGTH 注释——错误重试卡死的直接机制）。
+    if (lineStr.length > MAX_LINE_LENGTH) {
+      lineStr =
+          lineStr.substring(0, MAX_LINE_LENGTH) + "…（已截断 " + (lineStr.length - MAX_LINE_LENGTH) + " 字符）"
+    }
     if (!lineStr.endsWith("\n")) {
       lineStr += "\n"
     }
