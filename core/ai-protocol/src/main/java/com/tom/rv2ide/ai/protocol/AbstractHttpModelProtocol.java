@@ -160,7 +160,11 @@ abstract class AbstractHttpModelProtocol implements ModelProtocol {
             }
             response = readAll(code >= 200 && code < 300 ? connection.getInputStream() : connection.getErrorStream());
             if (code < 200 || code >= 300) {
-                ModelCompletionException exception = new ModelCompletionException("HTTP " + code + ": " + response);
+                // 异常 message 也必须截断：它与日志同源（服务端错误体可能回显整个请求），
+                // 不截断会让超大字符串经 ModelCompletionException 一路上浮到 UI
+                // （日志侧已截断，这是同一根因的另一半）。
+                ModelCompletionException exception =
+                        new ModelCompletionException("HTTP " + code + ": " + truncateForLog(response));
                 logHttpError("http", url, headers, body, code, response, exception);
                 throw exception;
             }
@@ -208,7 +212,9 @@ abstract class AbstractHttpModelProtocol implements ModelProtocol {
             if (code < 200 || code >= 300) {
                 response = readAll(connection.getErrorStream());
                 String retryAfter = connection.getHeaderField("Retry-After");
-                ModelCompletionException exception = new ModelCompletionException("HTTP " + code + ": " + response)
+                // 异常 message 截断与日志截断一致（见 postJson 的同类注释）。
+                String truncated = truncateForLog(response);
+                ModelCompletionException exception = new ModelCompletionException("HTTP " + code + ": " + truncated)
                         .withHttpStatus(code)
                         .withKind(com.tom.rv2ide.ai.protocol.ModelApiError.fromThrowable(
                                 new Exception("HTTP " + code + ": " + response)).kind())

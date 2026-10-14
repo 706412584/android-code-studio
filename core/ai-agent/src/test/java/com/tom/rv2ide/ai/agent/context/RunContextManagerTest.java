@@ -189,4 +189,59 @@ final class RunContextManagerTest {
     messages.add(new SystemModelMessage("sys"));
     assertEquals(1, manager(100, 0).fit(messages, 0).size());
   }
+
+  // ── 反应式收缩（shrinkForOverflow，服务端报超限后的补救路径）──
+
+  @Test
+  void shrinkForOverflowShrinksInPlaceAndKeepsAnchors() {
+    // 造一段可收缩历史：若干用户消息，每条约 25 tokens（100 ASCII 字符）。
+    List<ModelMessage> history = new ArrayList<>();
+    for (int i = 0; i < 20; i++) {
+      history.add(user(("msg-" + i + "-").concat("x".repeat(100))));
+    }
+    List<ModelMessage> messages = messages(history, user("request"));
+    int requestIndex = messages.size() - 1;
+    int before = messages.size();
+
+    // 窗口 1000：绝对预算 = 1000 - 0 - RESERVE_OUTPUT_TOKENS。
+    // 目标取 min(current/2, absolute/2)，必然远小于当前量 → 应发生实际收缩。
+    RunContextManager mgr = manager(1_000, 0);
+    assertTrue(mgr.shrinkForOverflow(messages, requestIndex), "应发生实际收缩");
+
+    // 就地修改：同一个列表对象变小。
+    assertTrue(messages.size() < before, "消息数应减少");
+    // 首条仍是系统提示词、末条仍是本次请求（两条锚点不可丢）。
+    assertInstanceOf(SystemModelMessage.class, messages.get(0));
+    assertEquals("request", messages.get(messages.size() - 1).getContent());
+  }
+
+  @Test
+  void shrinkForOverflowReturnsFalseWhenNothingToShrink() {
+    // 只有系统提示词 + 请求两条：无可收缩空间，必须返回 false（调用方据此不重试）。
+    List<ModelMessage> messages = messages(List.of(), user("req"));
+    assertFalse(manager(1_000, 0).shrinkForOverflow(messages, 1), "无可收缩空间应返回 false");
+    assertFalse(manager(1_000, 0).shrinkForOverflow(null, 0), "null 输入应返回 false");
+  }
+
+  @Test
+  void shrinkForOverflowUsesAbsoluteBudgetWhenEstimateIsLow() {
+    // 模拟「本地估算低估」：窗口很小（绝对预算小），历史很长但每条 token 少——
+    // current/2 可能仍大于绝对预算。修复后 target 取 min(current/2, absolute/2)，
+    // 保证收缩幅度以「窗口的一半」为下界，不会出现空操作。
+    List<ModelMessage> history = new ArrayList<>();
+    for (int i = 0; i < 50; i++) {
+      history.add(user("aaaa")); // 每条 5 tokens，总量 250
+    }
+    List<ModelMessage> messages = messages(history, user("req"));
+    int requestIndex = messages.size() - 1;
+
+    // 窗口 100：绝对预算 = 100 - 0 - RESERVE_OUTPUT_TOKENS（远小于估算总量 250+），
+    // current/2 ≈ 130 但 absolute/2 更小 → 收缩到保底集。
+    // 保底 = 系统提示词 + 本次请求 + ContextTrimmer.MIN_KEEP_MESSAGES(2) 条最近历史 = 4 条。
+    RunContextManager mgr = manager(100, 0);
+    assertTrue(mgr.shrinkForOverflow(messages, requestIndex), "小窗口下应发生收缩");
+    assertTrue(
+        messages.size() <= 4,
+        "应收缩到锚点 + MIN_KEEP_MESSAGES 条历史（实际 " + messages.size() + "）");
+  }
 }

@@ -148,7 +148,15 @@ public final class RunContextManager {
       return false;
     }
     int current = TokenEstimator.estimate(messages) + overheadTokens;
-    int target = Math.max(1, current / 2);
+    // 目标取「当前估算的一半」与「绝对预算的一半」的较小者。
+    //
+    // 只用 current/2 的漏洞：本地估算低估（正是超限的常见成因——图片按张固定估算、
+    // 分词差异）时 current 远小于 contextSize，current/2 可能仍大于 historyBudget，
+    // fitToBudget 返回的列表与上一次循环裁过的结果相同 → 判定「未收缩」→ 不重试。
+    // 那恰是最需要重试的场景。取绝对预算兜底后，收缩幅度以「窗口的一半」为下界保证。
+    int absolute = historyBudget();
+    int target = absolute == UNLIMITED ? Math.max(1, current / 2)
+            : Math.max(1, Math.min(current / 2, absolute / 2));
     List<ModelMessage> shrunk = fitToBudget(messages, historyEnd, target);
     if (shrunk.size() >= messages.size()) {
       return false;

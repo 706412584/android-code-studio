@@ -762,7 +762,9 @@ public final class AgentSession {
     String message = e.getMessage().toLowerCase(java.util.Locale.ROOT);
     return message.contains("context_length_exceeded")
         || message.contains("maximum context length")
-        || message.contains("context length")
+        // 刻意不匹配裸 "context length"：它会让 "invalid context length" /
+        // "context length must be positive" 这类参数错误被误判成超限，
+        // 白白裁掉一半历史再重试一次（用户代价：丢上下文 + 多一次请求）。
         || message.contains("prompt is too long")
         || message.contains("input length and")
         || message.contains("too many tokens")
