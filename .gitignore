@@ -133,3 +133,8 @@ core/ai-protocol/build/
 
 # Python 字节码缓存
 tools/jieba-translate/__pycache__/
+
+# CI/发布流程的中间产物（补丁生成、APK staging）
+patch-cli.jar
+patch-work*/
+apk-staging/
