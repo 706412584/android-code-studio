@@ -91,6 +91,11 @@ abstract class LogViewFragment :
      * 单次测量耗时 1.4 秒——网络重试期间每次失败写一条，主线程被反复冻结，
      * 界面表现为「错误重试时应用卡死」。协议层已截断请求体（治本），这里再设一道
      * 视图层防线：任何来源的单行日志都不允许超过此长度。
+     *
+     * <p><b>防线覆盖范围</b>：仅覆盖本类（{@link IDELogFragment} 是唯一子类）——
+     * 即 logback 应用日志链路（{@code LifecycleAwareAppender → appendLine}）。
+     * [AppLogFragment] 与 BuildOutputFragment 有各自独立的 append 实现、不走本类；
+     * 若未来有超长单行从那些入口写入，需要各自设防（当前无此来源）。
      */
     const val MAX_LINE_LENGTH = 4000
   }
