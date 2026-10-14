@@ -89,6 +89,9 @@ class ProviderConfigStore(private val context: Context) {
         file.delete()
         tmp.renameTo(file)
       }
+      // 写盘成功后广播变更：服务商管理页新增/删除服务商后，已打开的助手视图
+      // 需要重读清单才能在选择器里看到它（此前要重启应用——实测反馈）。
+      notifyChanged()
     } catch (e: Throwable) {
       ErrorLog.record("provider", "写入服务商配置失败", e, null)
       tmp.delete()
@@ -198,5 +201,49 @@ class ProviderConfigStore(private val context: Context) {
             apiKey.orEmpty(),
             preset.getSlotModels(),
         )
+
+    private val listeners = java.util.concurrent.CopyOnWriteArrayList<OnProviderConfigChanged>()
+
+    /** 注册变更监听。注册方负责在销毁时反注册（见 [unregisterOnChanged]）。 */
+    @JvmStatic
+    fun registerOnChanged(listener: OnProviderConfigChanged) {
+      listeners.addIfAbsent(listener)
+    }
+
+    /** 反注册。与 [registerOnChanged] 对称——不反注册会让监听表持有已销毁的视图。 */
+    @JvmStatic
+    fun unregisterOnChanged(listener: OnProviderConfigChanged) {
+      listeners.remove(listener)
+    }
+
+    /** 广播一次变更。任何写入路径（[save]）落盘后调用。 */
+    private fun notifyChanged() {
+      for (listener in listeners) {
+        try {
+          listener.onProviderConfigChanged()
+        } catch (e: Throwable) {
+          // 单个监听器抛错不能中断其余监听器，也不能把异常带回写入方——
+          // 写盘已经成功，通知失败只是界面不刷新，不该让保存操作看起来失败。
+          ErrorLog.record("provider", "服务商变更通知失败", e, null)
+        }
+      }
+    }
   }
+}
+
+/**
+ * 服务商配置变更监听器（进程内，不跨进程）。
+ *
+ * <p><b>为什么需要它</b>：`FloatingAssistantView` 的服务商选择列表（`inputBar.providers`）
+ * 只在面板 attach / open 时构建一次。用户在设置页新增服务商后回到对话面板——
+ * 面板不重建（侧栏 Fragment 不重走 onViewCreated），列表还是旧的，**必须重启应用
+ * 才能看到新服务商**（实测反馈）。有了这条通知，写入方（设置页）落盘即广播，
+ * 已打开的视图就地刷新。
+ *
+ * <p>顶层声明（不在 [ProviderConfigStore] 的 companion 里）：嵌套在 companion 中的
+ * `fun interface` 在被其它文件以 `ProviderConfigStore.OnChanged` 引用时解析不到
+ * （实测编译报 Unresolved reference，清缓存无效），顶层接口没有这个问题。
+ */
+fun interface OnProviderConfigChanged {
+  fun onProviderConfigChanged()
 }

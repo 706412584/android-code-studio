@@ -260,6 +260,19 @@ class FloatingAssistantView(
       }
 
   /**
+   * 服务商配置变更监听：设置页新增/删除服务商后，就地重建选择列表。
+   *
+   * <p>刷新动作走主线程 post：`save()` 的调用线程不作假设（当前设置页在主线程
+   * 保存，但存储类不应把线程约束泄漏给监听方）。
+   *
+   * <p>只调 `refreshModelLabel()`（它重建 `inputBar.providers`）——不动当前选中的
+   * 服务商与模型：用户可能正在用旧服务商对话，新服务商只是「多了个可选项」，
+   * 不该顺手把当前选择切走。
+   */
+  private val providerConfigListener =
+      OnProviderConfigChanged { binding.root.post { refreshModelLabel() } }
+
+  /**
    * 跨视图重建存活的渲染槽位（见 [ChatRenderStore]）。
    *
    * <p>适配器与全部按会话的渲染指针都放在这里，因此视图重建（配置变更 / 系统回收）后
@@ -802,6 +815,12 @@ class FloatingAssistantView(
     // 内存画像注册：`memory_analysis` 工具经它读本视图的规模数据（消息数/缓存/队列）。
     // 与 uiStyleListener 同一生命周期纪律——attach 注册、dispose 注销。
     com.tom.rv2ide.artificial.agent.tool.MemoryStatsRegistry.register(memoryStatsProvider)
+
+    // 服务商配置变更监听：设置页新增/删除服务商后，就地刷新选择列表。
+    // 不注册时列表只在 open() 构建一次，侧栏宿主不重建 → 必须重启应用才能看到
+    // 新服务商（实测反馈）。回调切主线程——save() 可能来自任意线程（设置页的
+    // 保存动作当前在主线程，但不作此假设）。
+    ProviderConfigStore.registerOnChanged(providerConfigListener)
 
     binding.assistantMessages.layoutManager = LinearLayoutManager(context)
     binding.assistantMessages.adapter = adapter
@@ -1387,6 +1406,9 @@ class FloatingAssistantView(
     // 注销内存画像：与注册对称。不注销会让 registry 持有本视图（及其 binding），
     // 表现为 memory_analysis 报告里的视图数只增不减（泄漏）。
     com.tom.rv2ide.artificial.agent.tool.MemoryStatsRegistry.unregister(memoryStatsProvider)
+    // 注销服务商变更监听：与 attach 的注册对称。不注销会让静态监听表持有
+    // 已销毁的视图（及其 binding）。
+    ProviderConfigStore.unregisterOnChanged(providerConfigListener)
     // **不清 pendingDiffs**：它现在归 [renderSlot]（跨重建存活），清掉会让重建后
     // 汇总不出本轮改动。真正该清的是「会话被删除」与「本轮结束已汇总」两处，各在那里清。
     //
@@ -2345,6 +2367,9 @@ class FloatingAssistantView(
           return
         }
         lifecycleScope.launch(Dispatchers.Main) {
+          // 流恢复（重试成功）后的首个增量：收掉瞬时重试卡片
+          // （见 hideRetryCardOnStreamResume）。
+          hideRetryCardOnStreamResume(ui)
           // 返回 -1 表示「纯空白、没建块」——不能把它存进 lastThinkingId，
           // 否则后续增量会去找一个不存在的 id。
           val id = adapter.appendThinking(delta, ui.lastThinkingId)
@@ -2373,6 +2398,9 @@ class FloatingAssistantView(
         }
         // 累积始终发生在数据层（不能丢内容），只有界面刷新被节流。
         lifecycleScope.launch(Dispatchers.Main) {
+          // 流恢复（重试成功）后的首个正文增量：收掉瞬时重试卡片
+          // （见 hideRetryCardOnStreamResume）。
+          hideRetryCardOnStreamResume(ui)
           val id = ui.streamingMessageId
           if (id == null) {
             // 还没有气泡时，纯空白增量不建气泡。模型「只调用工具、不写正文」的轮次
@@ -2441,6 +2469,9 @@ class FloatingAssistantView(
           return
         }
         lifecycleScope.launch(Dispatchers.Main) {
+          // 重试成功后的工具轮次（无正文输出）：卡片同样该收
+          // （见 hideRetryCardOnStreamResume）。
+          hideRetryCardOnStreamResume(ui)
           // 卡片替代原来的纯文本过程行：折叠态给摘要，展开看完整输入输出。
           // 展开时展示**原始**参数 JSON 而不做美化：参数里可能有含换行的长内容
           // （例如要写入的文件正文），重新序列化会改变转义形式，用户拿它对照文件
@@ -2700,6 +2731,33 @@ class FloatingAssistantView(
   /** 隐藏重试卡片。 */
   private fun hideRetryCard() {
     binding.assistantRetryCard.isVisible = false
+  }
+
+  /**
+   * 流恢复（重试成功）时收掉瞬时重试卡片。
+   *
+   * <p><b>修复的实测 bug</b>：重试卡片原本只在「新一轮开始 / 运行结束 / 切会话」时
+   * 被收掉，而**重试成功没有任何事件**——协议层只在失败时发 STREAM_RETRYING，
+   * 成功后流直接继续（TEXT_DELTA / REASONING_DELTA）。于是卡片从失败那一刻一直挂到
+   * 整轮运行结束：长任务（多轮工具往返）期间用户全程看着过期的「连接中断，1 秒后
+   * 重试（第 1/10 次）」——明明早就恢复了。
+   *
+   * <p>判定「恢复」用首个后续增量（正文或推理）：它们只在流重新产出数据时到达。
+   * 不能用 TOOL_FINISHED / TURN_FINISHED——工具在重试前后都可能跑，会误收
+   * 「重试用尽」的固定结论（retryCardPinned 态由 FAILED 设置，这里必须尊重）。
+   */
+  private fun hideRetryCardOnStreamResume(ui: SessionUiState) {
+    // 固定态（重试用尽结论）保留——那条信息必须留到用户看到。
+    if (ui.retryCardPinned) {
+      return
+    }
+    // 仅当本轮确实发生过重试时才处理（避免无谓的 isVisible 写入）。
+    if (ui.retryCountThisRun <= 0) {
+      return
+    }
+    if (binding.assistantRetryCard.isVisible) {
+      hideRetryCard()
+    }
   }
 
   /**
