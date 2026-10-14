@@ -216,6 +216,8 @@ AI 助手可以直接操作手机做 UI 测试与调试：
 ## 联系我们
 
 - 本 fork Issues：https://github.com/706412584/android-code-studio/issues
+- 🐧 706412584（作者 QQ）
+- 🐧 交流群 634288136
 - 上游社区：[Telegram](https://t.me/rv2ide) / [官网](https://m.androidide.com)
 
 ## 许可证
