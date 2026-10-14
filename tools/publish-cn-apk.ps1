@@ -113,22 +113,26 @@ Write-Host "versionCode: $versionCode"
 Write-Host ''
 
 # ---------- 补丁定位 ----------
+# **只认与当前发布版本匹配的补丁**（acs-hotupdate-cn-<versionName>.zip）。
+# 不能用「patch-work-cn 下最新的 zip」：该目录会留存历史版本的补丁，
+# 发布 r09（首个 CN Release，无补丁）时会捡到 r07 的旧补丁传上去，
+# 且清单会带上错误的 patch 块（实测踩到）。
 if ([string]::IsNullOrWhiteSpace($PatchFile)) {
-    $candidate = Get-ChildItem -Path (Join-Path $repoRoot 'patch-work-cn') -Filter 'acs-hotupdate-cn-*.zip' -ErrorAction SilentlyContinue |
-        Sort-Object LastWriteTime -Descending | Select-Object -First 1
-    if ($candidate) {
-        $PatchFile = $candidate.FullName
+    $expectedName = "acs-hotupdate-cn-$versionName.zip"
+    $candidate = Join-Path $repoRoot "patch-work-cn/$expectedName"
+    if (Test-Path $candidate) {
+        $PatchFile = $candidate
     }
     else {
-        Write-Host "本地无 CN 补丁，尝试从 GitHub Release v$versionName 下载…"
+        Write-Host "本地无 $expectedName，尝试从 GitHub Release v$versionName 下载…"
         $tmpDir = Join-Path $env:TEMP "cn-patch-dl-$versionName"
-        $tmpPatch = Join-Path $tmpDir "acs-hotupdate-cn-$versionName.zip"
+        $tmpPatch = Join-Path $tmpDir $expectedName
         # gh 在 dubious-ownership 仓库里会往 stderr 打警告，PS 5.1 下原生命令的
         # stderr 在 ErrorActionPreference=Stop 时会变成终止错误——临时放宽。
         $prevEap = $ErrorActionPreference
         $ErrorActionPreference = 'Continue'
         try {
-            & gh release download "v$versionName" --pattern 'acs-hotupdate-cn-*.zip' --dir $tmpDir --clobber 2>&1 | Out-Null
+            & gh release download "v$versionName" --pattern $expectedName --dir $tmpDir --clobber 2>&1 | Out-Null
             if ($LASTEXITCODE -eq 0 -and (Test-Path $tmpPatch)) { $PatchFile = $tmpPatch }
             else { Write-Warning "GitHub Release 无 CN 补丁（首个 CN 版本属正常），跳过补丁上传。" }
         }
