@@ -142,15 +142,42 @@ jobs:
           # Debug 不受影响（-x 对不存在的任务是无害的）。
           ./gradlew assemble${{ env.BUILD_TYPE }} -x lintVitalRelease
 
+      # 立即把本次（常规版）产物复制到 staging：随后 CN 构建会复用同一
+      # build/outputs 目录，是否清理异名旧产物取决于 AGP 内部行为（不可依赖）。
+      # staging 让后续验签/发布/补丁都有确定输入。
+      - name: Stage APKs
+        run: |
+          mkdir -p apk-staging
+          cp core/app/build/outputs/apk/${{ env.BUILD_TYPE_LOWER }}/*.apk apk-staging/
+
+      # CN 版：Gitee 源（国内首装全链路可达），产物带 -cn 后缀，与常规版共存。
+      # 开关走 -P（gradle property）而不是环境变量：同一 job 内第二次 gradle
+      # 调用复用 daemon，daemon 的 env 是首次启动时的快照，getenv 会读到旧值。
+      - name: Assemble CN APK
+        env:
+          SIGNING_STORE_PASSWORD: ${{ secrets.SIGNING_STORE_PASSWORD }}
+          SIGNING_KEY_PASSWORD: ${{ secrets.SIGNING_KEY_PASSWORD }}
+          SIGNING_KEY_ALIAS: androidcs
+          MAIN_VERSION: "1.0.0"
+          REVISION_NUM: ${{ env.REVISION_NUM }}
+          PROJECT_CONFIG_KT_BASE_VERSION_CODE: ${{ env.VERSION_CODE }}
+        run: |
+          ./gradlew assemble${{ env.BUILD_TYPE }} -x lintVitalRelease -PcnMirror=true
+
+      - name: Stage CN APKs
+        run: cp core/app/build/outputs/apk/${{ env.BUILD_TYPE_LOWER }}/*-cn-*.apk apk-staging/
+
       - name: List APK files
-        run: ls -la core/app/build/outputs/apk/${{ env.BUILD_TYPE_LOWER }}/ || echo "Directory not found"
+        run: ls -la apk-staging/ || echo "Directory not found"
 
       - name: Upload arm64-v8a APK
         uses: actions/upload-artifact@v4
         with:
           name: apk-arm64-v8a-${{ env.BUILD_TYPE_LOWER }}
           retention-days: 7
-          path: core/app/build/outputs/apk/${{ env.BUILD_TYPE_LOWER }}/*arm64-v8a*.apk
+          path: |
+            apk-staging/*arm64-v8a*.apk
+            !apk-staging/*-cn-*.apk
         if: always()
 
       - name: Upload armeabi-v7a APK
@@ -158,7 +185,9 @@ jobs:
         with:
           name: apk-armeabi-v7a-${{ env.BUILD_TYPE_LOWER }}
           retention-days: 7
-          path: core/app/build/outputs/apk/${{ env.BUILD_TYPE_LOWER }}/*armeabi-v7a*.apk
+          path: |
+            apk-staging/*armeabi-v7a*.apk
+            !apk-staging/*-cn-*.apk
         if: always()
 
       - name: Upload x86_64 APK
@@ -166,7 +195,9 @@ jobs:
         with:
           name: apk-x86_64-${{ env.BUILD_TYPE_LOWER }}
           retention-days: 7
-          path: core/app/build/outputs/apk/${{ env.BUILD_TYPE_LOWER }}/*x86_64*.apk
+          path: |
+            apk-staging/*x86_64*.apk
+            !apk-staging/*-cn-*.apk
         if: always()
 
       - name: Upload universal APK
@@ -174,7 +205,26 @@ jobs:
         with:
           name: apk-universal-${{ env.BUILD_TYPE_LOWER }}
           retention-days: 7
-          path: core/app/build/outputs/apk/${{ env.BUILD_TYPE_LOWER }}/*universal*.apk
+          path: |
+            apk-staging/*universal*.apk
+            !apk-staging/*-cn-*.apk
+        if: always()
+
+      # ---- CN 版产物（Gitee 源）----
+      - name: Upload CN arm64-v8a APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: apk-arm64-v8a-cn-${{ env.BUILD_TYPE_LOWER }}
+          retention-days: 7
+          path: apk-staging/*arm64-v8a-cn*.apk
+        if: always()
+
+      - name: Upload CN armeabi-v7a APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: apk-armeabi-v7a-cn-${{ env.BUILD_TYPE_LOWER }}
+          retention-days: 7
+          path: apk-staging/*armeabi-v7a-cn*.apk
         if: always()
 
       # ---- 发布（仅 Release + 给了 revision 时）----
@@ -184,15 +234,17 @@ jobs:
       - name: Verify APK signature cert
         if: env.PUBLISH == 'true'
         run: |
-          APK="core/app/build/outputs/apk/release/android-code-studio-arm64-v8a-$VERSION_NAME.apk"
-          test -f "$APK" || { echo "缺少产物: $APK"; exit 1; }
-          # 用 apksigner 核对证书指纹——用错证书的包用户无法覆盖安装。
+          # 常规版 + CN 版（4 个包）全部验签：任一个用错证书用户都无法覆盖安装。
+          # 用 apksigner 核对证书指纹。
           APKSIGNER=$(find "$ANDROID_HOME/build-tools" -name apksigner -type f | sort -V | tail -1)
-          SHA1=$("$APKSIGNER" verify --print-certs "$APK" | grep -oiE 'SHA-1 digest: [0-9a-f]{40}' | head -1 | grep -oE '[0-9a-f]{40}' | tr 'a-f' 'A-F')
           EXPECTED="83ABB7381685A06DBDAE877DED4A207F4919C1DA"
-          echo "证书 SHA-1: $SHA1"
-          [ "$SHA1" = "$EXPECTED" ] || { echo "证书不匹配！期望 $EXPECTED"; exit 1; }
-          echo "证书校验通过"
+          for APK in apk-staging/*.apk; do
+            test -f "$APK" || { echo "缺少产物: $APK"; exit 1; }
+            SHA1=$("$APKSIGNER" verify --print-certs "$APK" | grep -oiE 'SHA-1 digest: [0-9a-f]{40}' | head -1 | grep -oE '[0-9a-f]{40}' | tr 'a-f' 'A-F')
+            echo "$APK 证书 SHA-1: $SHA1"
+            [ "$SHA1" = "$EXPECTED" ] || { echo "证书不匹配！期望 $EXPECTED"; exit 1; }
+          done
+          echo "全部证书校验通过"
 
       # ---- 热更新补丁生成 ----
       # 用上一版本 APK 作为 base、本次构建的 APK 作为 new，生成增量补丁，作为 Release 资产上传。
@@ -221,7 +273,9 @@ jobs:
           PATCH_CLI_URL="https://repo1.maven.org/maven2/io/github/706412584/patch-cli/1.5.2/patch-cli-1.5.2-all.jar"
           curl -fsSL -o patch-cli.jar "$PATCH_CLI_URL" || fail "patch-cli 下载失败"
 
-          NEW_APK="core/app/build/outputs/apk/release/android-code-studio-arm64-v8a-$VERSION_NAME.apk"
+          # 从 staging 取常规版（不带 -cn）——补丁只对常规版生成；CN 版跳过
+          # 应用内更新检查，不需要补丁。
+          NEW_APK="apk-staging/android-code-studio-arm64-v8a-$VERSION_NAME.apk"
           [ -f "$NEW_APK" ] || fail "找不到本次构建的 APK: $NEW_APK"
 
           # 上一版本 = 修订号最大的 `v1.0.0+gh.rNN` Release（本次 Release 还没建）。
@@ -243,7 +297,9 @@ jobs:
             --pattern "android-code-studio-arm64-v8a-*.apk" \
             --dir patch-work 2>/dev/null || fail "上一版本 $PREV_TAG 无 arm64 APK 资产"
 
-          BASE_APK=$(ls patch-work/android-code-studio-arm64-v8a-*.apk 2>/dev/null | head -1)
+          # 显式排除 -cn 资产：发布含两版 APK 后，通配会同时命中 CN 包，
+          # 补丁的 base 必须是常规包（CN 版内容不同，差分结果会错）。
+          BASE_APK=$(ls patch-work/android-code-studio-arm64-v8a-*.apk 2>/dev/null | grep -v -- '-cn-' | head -1)
           [ -n "$BASE_APK" ] || fail "上一版本资产为空"
           echo "base=$BASE_APK  new=$NEW_APK"
 
@@ -271,12 +327,74 @@ jobs:
           echo "sha256=$SHA" >> "$GITHUB_OUTPUT"
           echo "base_version_code=$BASE_VC" >> "$GITHUB_OUTPUT"
 
+      # ---- CN 版热更新补丁 ----
+      # CN 版与常规版的 dex 不同（CN_MIRROR 常量内联差异），**不能**共用补丁——
+      # 常规补丁打到 CN 包上会把 CN 语义的 dex 换成常规语义（静默注入错误 dex）。
+      # 因此单独生成：base = 上一版的 CN APK，new = 本次 CN APK。
+      # 首个含 CN 包的 Release（r09）没有上一版 CN APK，此时跳过（generated=false），
+      # 从 r09 → r10 起补丁链成立。
+      - name: Generate CN hot-update patch
+        if: env.PUBLISH == 'true'
+        id: cn_patch
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          fail() { echo "跳过 CN 补丁生成：$1"; echo "generated=false" >> "$GITHUB_OUTPUT"; exit 0; }
+
+          # 复用常规补丁步骤下载的 jar（同 workspace）；缺失时重下。
+          PATCH_CLI_URL="https://repo1.maven.org/maven2/io/github/706412584/patch-cli/1.5.2/patch-cli-1.5.2-all.jar"
+          [ -f patch-cli.jar ] || curl -fsSL -o patch-cli.jar "$PATCH_CLI_URL" || fail "patch-cli 下载失败"
+
+          NEW_APK="apk-staging/android-code-studio-arm64-v8a-cn-$VERSION_NAME.apk"
+          [ -f "$NEW_APK" ] || fail "找不到本次构建的 CN APK: $NEW_APK"
+
+          # 上一版本（与常规补丁同一查找逻辑）。
+          PREV_REV=$(gh release list --limit 100 --json tagName -q '.[].tagName' 2>/dev/null \
+            | grep -E '^v1\.0\.0\+gh\.r[0-9]+$' \
+            | sed -E 's/^v1\.0\.0\+gh\.r0*([0-9]+)$/\1/' \
+            | sort -n | tail -1)
+          [ -n "$PREV_REV" ] || fail "没有上一个版本 Release"
+          PREV_TAG="v1.0.0+gh.r$(printf '%02d' "$PREV_REV")"
+
+          mkdir -p patch-work-cn
+          # 上一版没有 CN APK（首个 CN Release）→ 无 base，跳过。下载失败即此情形。
+          gh release download "$PREV_TAG" \
+            --pattern "android-code-studio-arm64-v8a-cn-*.apk" \
+            --dir patch-work-cn 2>/dev/null || fail "上一版本 $PREV_TAG 无 CN APK（首个 CN Release，跳过）"
+
+          BASE_APK=$(ls patch-work-cn/android-code-studio-arm64-v8a-cn-*.apk 2>/dev/null | head -1)
+          [ -n "$BASE_APK" ] || fail "上一版本 CN 资产为空"
+          echo "CN base=$BASE_APK  new=$NEW_APK"
+
+          AAPT2=$(find "$ANDROID_HOME/build-tools" -name aapt2 -type f | sort -V | tail -1)
+          BASE_VC=$("$AAPT2" dump badging "$BASE_APK" 2>/dev/null | grep -oE "versionCode='[0-9]+'" | head -1 | grep -oE "[0-9]+")
+          [ -n "$BASE_VC" ] || fail "无法从 CN base APK 读取 versionCode"
+          echo "CN base versionCode=$BASE_VC"
+
+          java -jar patch-cli.jar -b "$BASE_APK" -n "$NEW_APK" -o patch-work-cn/raw-patch.zip \
+            || fail "patch-cli 生成失败"
+
+          python3 tools/hotupdate-normalize-patch.py \
+            patch-work-cn/raw-patch.zip "patch-work-cn/acs-hotupdate-cn-$VERSION_NAME.zip" \
+            || fail "dex 规范化失败"
+
+          PATCH_FILE="patch-work-cn/acs-hotupdate-cn-$VERSION_NAME.zip"
+          SHA=$(sha256sum "$PATCH_FILE" | cut -d' ' -f1)
+          SIZE=$(stat -c%s "$PATCH_FILE")
+          echo "CN 补丁: $PATCH_FILE ($SIZE bytes, sha256=$SHA)"
+          echo "generated=true" >> "$GITHUB_OUTPUT"
+          echo "path=$PATCH_FILE" >> "$GITHUB_OUTPUT"
+          echo "sha256=$SHA" >> "$GITHUB_OUTPUT"
+          echo "base_version_code=$BASE_VC" >> "$GITHUB_OUTPUT"
+
       - name: Create GitHub Release
         if: env.PUBLISH == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          APK_DIR="core/app/build/outputs/apk/release"
+          # 从 staging 取资产（常规版 + CN 版；build/outputs 可能被 CN 构建清理）。
+          APK_DIR="apk-staging"
           # 有 whatsnew/<versionName>.md 就用它作 Release notes（updater.json 的
           # changelog 也指向同一文件）；没有则退回占位说明。
           NOTES_FILE="whatsnew/$VERSION_NAME.md"
@@ -292,13 +410,20 @@ jobs:
           if [ "${{ steps.patch.outputs.generated }}" = "true" ]; then
             ASSET_ARGS+=("${{ steps.patch.outputs.path }}")
           fi
+          if [ "${{ steps.cn_patch.outputs.generated }}" = "true" ]; then
+            ASSET_ARGS+=("${{ steps.cn_patch.outputs.path }}")
+          fi
 
+          # CN 包由前置的 Assemble CN APK 步骤产出（必需步骤，失败会中断 job），
+          # 此处直接作为资产传入。
           gh release create "$RELEASE_TAG" \
             --target "${{ github.ref_name }}" \
             --title "$RELEASE_TAG" \
             "${NOTES_ARGS[@]}" \
             "$APK_DIR/android-code-studio-arm64-v8a-$VERSION_NAME.apk" \
             "$APK_DIR/android-code-studio-armeabi-v7a-$VERSION_NAME.apk" \
+            "$APK_DIR/android-code-studio-arm64-v8a-cn-$VERSION_NAME.apk" \
+            "$APK_DIR/android-code-studio-armeabi-v7a-cn-$VERSION_NAME.apk" \
             "${ASSET_ARGS[@]}"
 
       - name: Sync updater.json
