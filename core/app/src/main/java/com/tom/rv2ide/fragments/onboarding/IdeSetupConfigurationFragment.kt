@@ -38,6 +38,7 @@ import android.widget.ArrayAdapter
 import androidx.core.content.getSystemService
 import androidx.core.view.isVisible
 import com.github.appintro.SlidePolicy
+import com.tom.rv2ide.BuildConfig
 import com.tom.rv2ide.R
 import com.tom.rv2ide.databinding.LayoutOnboardngSetupConfigBinding
 import com.tom.rv2ide.models.IdeSetupArgument
@@ -174,9 +175,12 @@ class IdeSetupConfigurationFragment : OnboardingFragment(), SlidePolicy {
         IdeSetupArgument.NDK_VERSION,
         NdkVersion.fromDisplayName(content.ndkVersion.text).version,
     )
-    // 镜像 manifest：build-tools 的下载 URL 指向 Gitee（上游 GitHub 国内实测超时，
-    // 首装卡死；镜像实测 1.6MB/s）。其余条目保持上游（SDK/cmdline-tools 可用）。
-    args.setArgument(IdeSetupArgument.MANIFEST, IDE_SETUP_MANIFEST_URL)
+    // CN 版传 Gitee manifest：build-tools 的下载 URL 指向 Gitee（上游 GitHub 国内
+    // 实测超时，首装卡死；镜像实测 1.6MB/s）。其余条目保持上游。
+    // 常规版不传 —— idesetup 走内建默认源（= 已发布 r08 行为）。
+    if (BuildConfig.CN_MIRROR) {
+      args.setArgument(IdeSetupArgument.MANIFEST, IDE_SETUP_MANIFEST_URL)
+    }
     args.setArgument(IdeSetupArgument.ASSUME_YES)
     if (content.installGit.isChecked) {
       args.setArgument(IdeSetupArgument.WITH_GIT)

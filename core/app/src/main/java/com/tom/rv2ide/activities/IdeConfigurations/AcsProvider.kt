@@ -21,6 +21,7 @@ import android.util.Log
 import com.tom.androidcodestudio.acsprovider.ACSProvider as ACSLibProvider
 import com.tom.androidcodestudio.acsprovider.models.ACSConfig
 import com.tom.androidcodestudio.acsprovider.utils.DownloadCallback
+import com.tom.rv2ide.BuildConfig
 import com.tom.rv2ide.utils.Environment
 import java.io.File
 import kotlinx.coroutines.runBlocking
@@ -205,20 +206,23 @@ object AcsCommandInterface {
     }
 
     /**
-     * 下载 manifest：镜像失败回退上游。
+     * 下载 manifest：主源失败回退备用源（双向）。
      *
-     * <p>传入的 [url] 是镜像地址时，首次失败后改试 [AcsProvider.getUpstreamManifestUrl]；
-     * 已经是上游地址（或自定义地址）则直接抛错。回退仅覆盖「manifest 拉取」一步——
-     * 包体下载（downloadPackage 内部）仍按 manifest 里写的 URL 走。
+     * <p>传入的 [url] 是镜像或上游地址时，首次失败后改试另一侧
+     * （见 [AcsProvider.otherManifestUrl]）；自定义地址直接抛错。
+     * 回退仅覆盖「manifest 拉取」一步——包体下载（downloadPackage 内部）
+     * 仍按 manifest 里写的 URL 走。
      */
     private suspend fun downloadManifestWithFallback(url: String, silent: Boolean): String {
       return try {
         acsLibProvider.downloadJson(url, silent = silent)
       } catch (e: Exception) {
-        val upstream = AcsProvider.getUpstreamManifestUrl
-        if (url == AcsProvider.MIRROR_MANIFEST_URL && url != upstream) {
-          Log.w(TAG, "镜像 manifest 拉取失败，回退上游: $url -> $upstream", e)
-          acsLibProvider.downloadJson(upstream, silent = silent)
+        // 双向回退：Gitee 主源失败试 GitHub，GitHub 主源失败试 Gitee（主源由
+        // CN_MIRROR 决定，见 AcsProvider.getManifestUrl）。自定义 URL 不回退。
+        val other = AcsProvider.otherManifestUrl(url)
+        if (other != null && other != url) {
+          Log.w(TAG, "manifest 拉取失败，回退备用源: $url -> $other", e)
+          acsLibProvider.downloadJson(other, silent = silent)
         } else {
           throw e
         }
@@ -236,10 +240,8 @@ object AcsCommandInterface {
                   version = version,
                   directUrl = directUrl,
                   shouldDownload = true,
-                  fallbackJsonUrl =
-                      if (manifestUrl == AcsProvider.MIRROR_MANIFEST_URL)
-                          AcsProvider.getUpstreamManifestUrl
-                      else null,
+                  // 双向回退：主源为镜像或上游时，备用源各取另一侧；自定义 URL 不回退。
+                  fallbackJsonUrl = manifestUrl?.let { AcsProvider.otherManifestUrl(it) },
               )
 
           val file =
@@ -286,10 +288,8 @@ object AcsCommandInterface {
                   packageId = packageId,
                   version = version,
                   getField = field!!.value,
-                  fallbackJsonUrl =
-                      if (manifestUrl == AcsProvider.MIRROR_MANIFEST_URL)
-                          AcsProvider.getUpstreamManifestUrl
-                      else null,
+                  // 同 executeDownload：双向回退。
+                  fallbackJsonUrl = AcsProvider.otherManifestUrl(manifestUrl!!),
               )
 
           val fieldValue = acsLibProvider.getField(config)
@@ -431,7 +431,7 @@ object AcsProvider {
   /**
    * 镜像 manifest（Gitee）。
    *
-   * <p><b>为什么默认走 Gitee</b>：上游 manifest 与其指向的包全部托管在
+   * <p><b>为什么有 Gitee 镜像</b>：上游 manifest 与其指向的包全部托管在
    * `github.com/AndroidCSOfficial/acs-build-system/releases`——国内设备实测
    * `github.com` 主站与 Release 下载域均超时（NDK ~180MB 根本下不动），
    * 这是「首次安装卡在 SDK/NDK 下载」的根因。Gitee 镜像实测 700KB/s+。
@@ -447,17 +447,34 @@ object AcsProvider {
   const val MIRROR_MANIFEST_URL =
       "https://gitee.com/wu-yongchengsvip_admin/acs-mirror/raw/master/acs-manifest.json"
 
-  /**
-   * 上游 manifest（GitHub）——镜像不可用时的回退。
-   *
-   * <p>选择顺序：先镜像后上游。镜像的 raw 请求失败（离线/被墙/仓库异常）时
-   * 回退到 GitHub 原源——GitHub 通的环境（海外用户）不受影响。
-   */
-  val getManifestUrl: String = MIRROR_MANIFEST_URL
-
-  /** 上游 manifest 地址（回退用）。 */
+  /** 上游 manifest 地址（GitHub）。 */
   val getUpstreamManifestUrl: String =
       "${ACS_BUILD_SYSTEM_REPOURL}/raw/refs/heads/main/acs-manifest.json"
+
+  /**
+   * 当前构建的主 manifest 源。
+   *
+   * <p>CN 版（`-PcnMirror=true`）以 Gitee 为主源（国内直达）；常规版以 GitHub
+   * 上游为主源（与已发布 r08 主行为一致）。两者都有对方作回退
+   * （[otherManifestUrl]），任一源不可用时自动切换。
+   *
+   * <p>声明在 [getUpstreamManifestUrl] 之后：object 属性按声明顺序初始化。
+   */
+  val getManifestUrl: String =
+      if (BuildConfig.CN_MIRROR) MIRROR_MANIFEST_URL else getUpstreamManifestUrl
+
+  /**
+   * 与 [url] 互为备用的另一 manifest 源；自定义 URL 返回 null（不回退）。
+   *
+   * <p>供拉取回退（downloadManifestWithFallback）与包下载回退
+   * （ACSConfig.fallbackJsonUrl）共用，保证两条路径的回退方向一致。
+   */
+  fun otherManifestUrl(url: String): String? =
+      when (url) {
+        MIRROR_MANIFEST_URL -> getUpstreamManifestUrl
+        getUpstreamManifestUrl -> MIRROR_MANIFEST_URL
+        else -> null
+      }
 
   /** Enhanced ACS runner with proper command interface */
   fun acsRunner(

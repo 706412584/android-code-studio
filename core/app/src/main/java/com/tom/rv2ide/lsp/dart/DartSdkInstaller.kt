@@ -19,6 +19,7 @@ package com.tom.rv2ide.lsp.dart
 
 import android.content.Context
 import com.termux.shared.termux.TermuxConstants
+import com.tom.rv2ide.BuildConfig
 import com.tom.rv2ide.utils.Environment
 import java.io.File
 import java.io.FileInputStream
@@ -60,29 +61,37 @@ object DartSdkInstaller {
   private const val SNAPSHOT_RELATIVE_PATH = "bin/snapshots/analysis_server.dart.snapshot"
 
   /**
-   * 包下载地址（Gitee 镜像，国内加速）。
+   * GitHub 源（上游）。
    *
-   * <p><b>2026-10-13 换源决策</b>：此前用 GitHub Release 并验证过「302 到
-   * objects.githubusercontent.com 可达」，但**设备实测复验推翻了该结论**：
-   * 黑鲨上完整跟随 302 的下载在 20 秒内 0 字节超时（`github.com` 主站与
-   * release 重定向链路均不可达），即国内设备根本无法完成 67MB 下载。
-   * Gitee 实测 700KB/s+，故默认改走 Gitee 镜像（`acs-mirror` 仓库）。
+   * <p><b>2026-10-13 换源记录</b>：此前 GitHub 是唯一源，但**设备实测**表明国内
+   * 设备无法完成 67MB 下载（黑鲨上完整跟随 302 的下载在 20 秒内 0 字节超时，
+   * `github.com` 主站与 release 重定向链路均不可达）。Gitee 实测 700KB/s+。
+   * 现两源并存，由 CN_MIRROR 决定主/备（见 [PACKAGE_URL]）。
+   */
+  const val GITHUB_PACKAGE_URL =
+      "https://github.com/706412584/android-code-studio/releases/download/dart-sdk-v3.7.2/dart-sdk-3.7.2-aarch64.tar.gz"
+
+  /**
+   * Gitee 镜像源（国内加速）。
    *
    * <p>Gitee 单文件上限 100MB——67MB 包未超限，单文件直传。
    * 换版本时改这里的 tag/文件名，上传到 `wu-yongchengsvip_admin/acs-mirror`
    * 的 release（见 tools/ 下的发布脚本）。
    */
-  const val PACKAGE_URL =
+  const val GITEE_PACKAGE_URL =
       "https://gitee.com/wu-yongchengsvip_admin/acs-mirror/releases/download/dart-sdk-v3.7.2/dart-sdk-3.7.2-aarch64.tar.gz"
 
   /**
-   * 回退地址（GitHub 上游）。
+   * 主下载地址：常规版 GitHub，CN 版（`-PcnMirror=true`）Gitee。
    *
-   * <p>Gitee 不可用时（仓库异常/海外网络反而不通 Gitee 的场景）回退原源。
-   * 下载逻辑：先试 [PACKAGE_URL]，失败后改试本地址。
+   * <p>下载逻辑：先试本地址，失败后改试 [PACKAGE_URL_FALLBACK]（另一侧）。
    */
-  const val PACKAGE_URL_FALLBACK =
-      "https://github.com/706412584/android-code-studio/releases/download/dart-sdk-v3.7.2/dart-sdk-3.7.2-aarch64.tar.gz"
+  val PACKAGE_URL: String =
+      if (BuildConfig.CN_MIRROR) GITEE_PACKAGE_URL else GITHUB_PACKAGE_URL
+
+  /** 回退地址（主源的另一侧）。 */
+  val PACKAGE_URL_FALLBACK: String =
+      if (BuildConfig.CN_MIRROR) GITHUB_PACKAGE_URL else GITEE_PACKAGE_URL
 
   /** 包大小（用于下载进度显示与完整性预检）。 */
   const val PACKAGE_SIZE_BYTES = 67_532_974L
@@ -151,10 +160,10 @@ object DartSdkInstaller {
             try {
               download(packageUrl, archive) { fraction -> listener?.onProgress(fraction) }
             } catch (primary: Exception) {
-              // 镜像失败回退上游（默认 Gitee → GitHub，见 PACKAGE_URL 注释）。
-              // 显式传入自定义 URL 时（测试/换源）不触发回退。
+              // 主源失败回退备用源（CN 版 Gitee → GitHub，常规版 GitHub → Gitee，
+              // 见 PACKAGE_URL 注释）。显式传入自定义 URL 时（测试/换源）不触发回退。
               if (packageUrl == PACKAGE_URL && PACKAGE_URL_FALLBACK != PACKAGE_URL) {
-                listener?.onStage("镜像下载失败，尝试上游源…")
+                listener?.onStage("主源下载失败，尝试备用源…")
                 download(PACKAGE_URL_FALLBACK, archive) { fraction ->
                   listener?.onProgress(fraction)
                 }

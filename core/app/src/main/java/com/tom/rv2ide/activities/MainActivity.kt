@@ -29,6 +29,7 @@ import androidx.core.view.isVisible
 import androidx.transition.TransitionManager
 import androidx.transition.doOnEnd
 import com.google.android.material.transition.MaterialSharedAxis
+import com.tom.rv2ide.BuildConfig
 import com.tom.rv2ide.activities.editor.EditorActivityKt
 import com.tom.rv2ide.app.EdgeToEdgeIDEActivity
 import com.tom.rv2ide.databinding.ActivityMainBinding
@@ -106,10 +107,15 @@ class MainActivity : EdgeToEdgeIDEActivity() {
     }
     
     onBackPressedDispatcher.addCallback(this, onBackPressedCallback)
-    val updater = KotlinLspUpdater(this)
-    updater.checkForUpdates(LSPProperties.kotlinLspVersion)
-    
-            
+    // KotlinLspUpdater 的清单也在 GitHub raw（国内不可达），CN 版跳过检查
+    // （与 TomIDEUpdater 同理；它在 lsp-setup 模块读不到 core/app 的 BuildConfig，
+    // 因此在调用点判断）。
+    if (!BuildConfig.CN_MIRROR) {
+      val updater = KotlinLspUpdater(this)
+      updater.checkForUpdates(LSPProperties.kotlinLspVersion)
+    }
+
+
   }
 
   override fun onApplySystemBarInsets(insets: Insets) {

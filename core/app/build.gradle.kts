@@ -74,12 +74,25 @@ configurations.all {
   }
 }
 
+// CN 版开关：`-PcnMirror=true` 产出 Gitee 源版本（国内首装全链路可达）。
+//
+// 为什么用 gradle property 而不是环境变量：CI 同一 job 内会连续调用两次 Gradle
+// （常规版 → CN 版），而 Gradle daemon 进程的环境变量是首次启动时的快照——
+// 第二次调用的 `System.getenv("CN_MIRROR")` 会读到旧值。`-P` 参数随每次调用
+// 显式传递，无此缓存问题。
+//
+// 默认 false = 常规版：GitHub 主源 + Gitee 回退，与已发布 r08 的主行为一致。
+val cnMirror = providers.gradleProperty("cnMirror").orNull == "true"
+
 android {
   namespace = BuildConfig.packageName
 
   defaultConfig {
     applicationId = BuildConfig.packageName
     vectorDrawables.useSupportLibrary = true
+    // 运行时下载源开关（见文件顶部 cnMirror 的说明）。
+    // 消费点：AcsProvider / IdeSetupConfigurationFragment / DartSdkInstaller / TomIDEUpdater。
+    buildConfigField("boolean", "CN_MIRROR", cnMirror.toString())
   }
   
   experimentalProperties["android.experimental.enableGlobalSynthetics"] = true
@@ -175,11 +188,13 @@ android {
       }
 
       val appName = "android-code-studio"
+      // CN 版加 -cn 后缀，与常规版产物共存不冲突（CI 两次构建的发布资产靠它区分）。
+      val cnSuffix = if (cnMirror) "-cn" else ""
       val fileName =
           if (buildType == "release") {
-            "${appName}-${archSuffix}-${versionName}.apk"
+            "${appName}-${archSuffix}${cnSuffix}-${versionName}.apk"
           } else {
-            "${appName}-${archSuffix}-${buildType}-${versionName}.apk"
+            "${appName}-${archSuffix}${cnSuffix}-${buildType}-${versionName}.apk"
           }
 
       output.outputFileName = fileName
