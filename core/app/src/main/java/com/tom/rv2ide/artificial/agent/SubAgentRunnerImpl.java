@@ -65,8 +65,9 @@ public final class SubAgentRunnerImpl implements SubAgentRunner {
    * 明显偏小——实测用户在复杂排查任务里被强制中断（「40 轮就强制关闭」）。
    * 子任务是否"聚焦"由任务描述与提示词约束，而不是靠一个数字硬切。
    *
-   * <p>仍有的兜底：{@link com.tom.rv2ide.ai.agent.AgentSession} 的 30 分钟总时长预算
-   * （DEFAULT_TIME_BUDGET_MS），以及父级取消传播——不会出现失控燃烧。
+   * <p>仍有的兜底：父级取消传播（用户在父会话点停止会连带取消子 agent），以及
+   * 每次工具调用自身的超时——不会出现失控燃烧。（2026-10-15 起 AgentSession
+   * 的默认总时长预算已关闭，见 {@code DEFAULT_TIME_BUDGET_MS}。）
    */
   private static final int SUB_AGENT_TOOL_CALL_LIMIT = -1;
 

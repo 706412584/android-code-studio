@@ -60,7 +60,8 @@ import java.util.Set;
  * <ul>
  *   <li>所有对外通知走 {@link AgentEvent} 事件流，不引用任何 UI 类型
  *   <li>工具调用与结果合并逻辑内联（上游在 Controller 里另有 {@code mergeToolCalls}）
- *   <li>保留上游的三重终止条件：取消、工具调用次数上限、总时长预算
+ *   <li>保留上游的终止条件：取消、工具调用次数上限、总时长预算（默认关闭，见
+ *       {@link #DEFAULT_TIME_BUDGET_MS}）
  * </ul>
  *
  * <p>本类不做重试——重试由协议层负责（{@code AbstractHttpModelProtocol} 内含退避重试）。
@@ -68,8 +69,18 @@ import java.util.Set;
  */
 public final class AgentSession {
 
-  /** 默认的总时长预算：30 分钟，与上游一致。 */
-  public static final long DEFAULT_TIME_BUDGET_MS = 30L * 60L * 1000L;
+  /**
+   * 默认的总时长预算：0 表示**不限制**。
+   *
+   * <p><b>2026-10-15 由 30 分钟改为不限制</b>：30 分钟对长任务（大型重构、
+   * 构建/测试循环）是硬切——用户只看到「已达到总时长预算」而任务半途而废，
+   * 且往往恰好在接近完成时被切断。是否继续交由用户决定（随时可取消），
+   * 单次工具超时与工具调用次数上限仍然各自生效。
+   *
+   * <p>保留该字段与构造参数：子类/测试可显式传入预算（&gt;0 时生效），
+   * 循环的终止检查按 {@code timeBudgetMs > 0} 判断是否启用。
+   */
+  public static final long DEFAULT_TIME_BUDGET_MS = 0L;
 
   private final ModelClient modelClient;
   private final ToolRegistry registry;
@@ -353,8 +364,8 @@ public final class AgentSession {
         String message = "已达到工具调用次数上限 " + toolCallLimit + "。\n" + lastOutput;
         return finish(listener, AgentEvent.failed(message), lastOutput, toolCallCount, turnIndex);
       }
-      // 终止条件三：总时长预算
-      if (System.currentTimeMillis() - startedAt > timeBudgetMs) {
+      // 终止条件三：总时长预算（0 = 不限制，见 DEFAULT_TIME_BUDGET_MS）
+      if (timeBudgetMs > 0 && System.currentTimeMillis() - startedAt > timeBudgetMs) {
         String message =
             "已达到总时长预算 " + (timeBudgetMs / 60000L) + " 分钟。\n" + lastOutput;
         return finish(listener, AgentEvent.failed(message), lastOutput, toolCallCount, turnIndex);
