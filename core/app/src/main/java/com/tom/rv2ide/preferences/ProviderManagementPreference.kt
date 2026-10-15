@@ -214,7 +214,10 @@ internal class ProviderManagementPreference(
       binding.presetLayout.visibility = View.GONE
     }
 
-    binding.providerName.setText(seed.getId())
+    // 编辑时名称框回填 **label**（用户可见名）而不是 id：回填 id 会让「不改名直接保存」
+    // 把 label 覆盖成 id（抹掉用户此前改的名字），且用户看到的是内部 id 而非自己起的名字。
+    // 新建时仍回填预设 id——保存时 id=name 的既有数据形态保持不变（见 readDraft 的注释）。
+    binding.providerName.setText(if (isNew) seed.getId() else seed.getLabel())
     binding.providerBaseUrl.setText(seed.getBaseUrl())
     if (!isNew) {
       binding.providerApiKey.hint = context.getString(R.string.ai_agent_provider_api_key_keep)
@@ -230,7 +233,16 @@ internal class ProviderManagementPreference(
     fun readDraft(): ProviderConfig {
       val typedKey = binding.providerApiKey.text?.toString()?.trim().orEmpty()
       val key = if (typedKey.isEmpty()) seed.getApiKey() else typedKey
-      val id = binding.providerName.text?.toString()?.trim().orEmpty()
+      val name = binding.providerName.text?.toString()?.trim().orEmpty()
+      // **编辑时 id 必须沿用原记录，改名只写 label**。
+      //
+      // 此前 id 与 label 都取名称框的值：改名 → id 变 → `upsert` 按 id 匹配不到原记录
+      // → 追加为新记录，原记录保留——列表出现两个同配置的服务商（用户报的 bug）。
+      // id 是记录的主键（upsert/delete 的匹配键、`Agents` 偏好的引用值），
+      // 而名称是用户可见的展示字段（列表与标题都渲染 `getLabel()`），两者职责不同。
+      // 顺带修掉一个隐性 bug：id 变化会让 `syncCurrentSelection` 的
+      // `getProvider() != saved.getId()` 失配，改名后模型同步静默失效。
+      val id = existing?.getId() ?: name
       val selectedProtocol =
           protocolTypes.getOrElse(protocolTypes.indexOfFirst { it.getLabel() == binding.providerProtocol.text.toString() }) {
             ModelProtocolType.OPENAI_COMPATIBLE
@@ -246,7 +258,7 @@ internal class ProviderManagementPreference(
       // ProviderConfig 是 Java 类，只能按位置传参。
       return ProviderConfig(
           id,
-          id,
+          name,
           selectedProtocol,
           binding.providerBaseUrl.text?.toString()?.trim().orEmpty(),
           key,
