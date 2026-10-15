@@ -35,13 +35,16 @@ import org.json.JSONObject;
  * 是用户在「能力」页配置的全局偏好，不该让模型每轮猜，也不该出现在模型可见的
  * 参数 schema 里（密钥泄露面）。模型只给 prompt / size / n。
  *
- * <p><b>结果回传</b>：图片以 base64 经 {@link ToolResult#withImage} 直接给模型
- * （多模态回传链路与 {@code phone_screenshot} 相同），同时落盘到应用外部文件目录，
- * 结果文本里给出路径——模型可用 {@code file_read} 或告知用户位置。
+ * <p><b>结果回传</b>：图片落盘到工作区（或能力页指定的目录），结果文本里给出路径——
+ * 模型可用 {@code file_read} 或告知用户位置。**图片字节不进上下文**（见
+ * {@code renderResults} 内的说明）。
  *
- * <p>协议语义参照 Aharou 的 GenerateImageTool：强制 {@code response_format=b64_json}
- * （默认 url 形式返回的临时链接对本场景无意义——模型无法访问外链）。
- * 纯 Java + {@link HttpRequestPort}，可在 JVM 上单测。
+ * <p><b>结果形态三种都要认</b>：请求里强制 {@code response_format=b64_json}，
+ * 但不少网关忽略它——实测 loomy2api 只回普通 https 外链，返回 data URL 的也有。
+ * 只认 b64_json 会让这些网关的生成被报成「服务商未返回图片数据」。三种形态的
+ * 处理见 {@link #renderResults}。
+ *
+ * <p>纯 Java + {@link HttpRequestPort}，可在 JVM 上单测。
  */
 public final class ImageGenerationTool extends BaseTool {
 
@@ -59,8 +62,23 @@ public final class ImageGenerationTool extends BaseTool {
 
   private final HttpRequestPort http;
 
+  /**
+   * 结果图片 URL 的下载口子。
+   *
+   * <p>与 {@link #http} 分开：那个的响应体是 String，二进制经字符集转换会损坏，
+   * 因此下载走返回原始字节的 {@link HttpPort#getBytes}（实现见 app 层
+   * {@code AppHttpPort}，内部仍走 {@code SimpleHttpClient} 的 UrlPolicy 与代理）。
+   * 可为 null（部分装配场景只注入请求口），此时 URL 形式的结果只能报告不可用。
+   */
+  private final HttpPort binaryHttp;
+
   public ImageGenerationTool(HttpRequestPort http) {
+    this(http, null);
+  }
+
+  public ImageGenerationTool(HttpRequestPort http, HttpPort binaryHttp) {
     this.http = http;
+    this.binaryHttp = binaryHttp;
   }
 
   @Override
@@ -191,8 +209,15 @@ public final class ImageGenerationTool extends BaseTool {
   /**
    * 解析响应并把图片落盘、回传。
    *
-   * <p>兼容两种返回形态：标准 OpenAI 的 {@code data[].b64_json}，以及部分网关的
-   * {@code data[].url}（data URL 内嵌 base64 的形式）。
+   * <p>兼容三种返回形态（按出现频率）：
+   * <ol>
+   *   <li>标准 OpenAI 的 {@code data[].b64_json}；
+   *   <li>{@code data[].url} 为 data URL（内嵌 base64）；
+   *   <li>{@code data[].url} 为**普通 http(s) URL**——不少网关（实测 loomy2api）
+   *       无视 {@code response_format=b64_json}，只回外链。此时下载该 URL 取字节
+   *       （见 {@link #downloadResultImage}）。此前只认前两种，第三种会被报成
+   *       「服务商未返回图片数据」，用户看到的是生图失败。
+   * </ol>
    */
   private ToolResult renderResults(
       ToolContext context, ImageGenerationEndpoint endpoint, String responseBody) {
@@ -216,8 +241,10 @@ public final class ImageGenerationTool extends BaseTool {
       }
       String base64 = item.optString("b64_json", "");
       String mime = "image/png";
+      String remoteUrl = "";
       if (base64.isEmpty()) {
-        // 部分网关无视 response_format，返回 data URL（data:image/png;base64,....）。
+        // 部分网关无视 response_format，返回 data URL（data:image/png;base64,....）
+        // 或普通外链。
         String url = item.optString("url", "");
         if (url.startsWith("data:")) {
           int comma = url.indexOf(',');
@@ -225,18 +252,35 @@ public final class ImageGenerationTool extends BaseTool {
             mime = url.substring(5, comma).split(";")[0];
             base64 = url.substring(comma + 1);
           }
+        } else if (url.startsWith("http://") || url.startsWith("https://")) {
+          remoteUrl = url;
         }
       }
-      if (base64.isEmpty()) {
-        note.append("第 ").append(i + 1).append(" 张：服务商未返回图片数据\n");
-        continue;
+
+      byte[] bytes = null;
+      if (!base64.isEmpty()) {
+        try {
+          bytes = Base64.getDecoder().decode(base64);
+        } catch (IllegalArgumentException e) {
+          note.append("第 ").append(i + 1).append(" 张：base64 解码失败\n");
+          continue;
+        }
+      } else if (!remoteUrl.isEmpty()) {
+        try {
+          HttpPort.BinaryResponse downloaded = downloadResultImage(remoteUrl);
+          bytes = downloaded.getBytes();
+          if (downloaded.getMimeType() != null && downloaded.getMimeType().startsWith("image/")) {
+            mime = downloaded.getMimeType();
+          }
+        } catch (Exception e) {
+          note.append("第 ").append(i + 1).append(" 张：下载结果图片失败（")
+              .append(describeException(e)).append("）\n");
+          continue;
+        }
       }
 
-      byte[] bytes;
-      try {
-        bytes = Base64.getDecoder().decode(base64);
-      } catch (IllegalArgumentException e) {
-        note.append("第 ").append(i + 1).append(" 张：base64 解码失败\n");
+      if (bytes == null || bytes.length == 0) {
+        note.append("第 ").append(i + 1).append(" 张：服务商未返回图片数据\n");
         continue;
       }
 
@@ -258,13 +302,37 @@ public final class ImageGenerationTool extends BaseTool {
     }
 
     if (saved == 0) {
-      return error("图片生成响应无法解析出有效图片。\n" + abbreviate(responseBody, 400));
+      // 把逐条原因带上：否则「下载失败」「base64 解码失败」这类真正有用的信息
+      // 会被丢掉，用户只看到「无法解析出有效图片」，无从判断该改什么。
+      return error(
+          "图片生成响应无法解析出有效图片。\n"
+              + note
+              + "原始响应: "
+              + abbreviate(responseBody, 400));
     }
 
     note.insert(0, "生成成功（" + endpoint.getModel() + "）。\n");
     note.append("共 ").append(saved).append('/').append(data.length()).append(" 张已保存。\n");
     note.append("图片文件已在上方路径，任务完成，无需再次生成。\n");
     return ok(note.toString());
+  }
+
+  /**
+   * 下载 URL 形式的结果图片。
+   *
+   * <p>走 {@link HttpPort#getBytes} 而不是自己开 {@code HttpURLConnection}：
+   * 那条路径由 app 层 {@code AppHttpPort} 委托给 {@code SimpleHttpClient}，
+   * 其中内建逐跳的 {@code UrlPolicy} 校验与代理——自己再建一条连接就等于复制出
+   * 第二处安全边界（与 {@code VideoGenerationTool} 直连的做法不同，那条是历史遗留）。
+   *
+   * <p>未注入下载口（{@code binaryHttp == null}，如单测只给了请求口）时明确失败，
+   * 不静默降级——否则用户会看到「未返回图片数据」而不知道是装配缺了口子。
+   */
+  private HttpPort.BinaryResponse downloadResultImage(String url) throws Exception {
+    if (binaryHttp == null) {
+      throw new IOException("未配置二进制下载通道，无法获取 URL 形式的结果图片");
+    }
+    return binaryHttp.getBytes(url, null);
   }
 
   /** 尺寸规范化：宽x高，每边 16-4096；无效返回 null。 */

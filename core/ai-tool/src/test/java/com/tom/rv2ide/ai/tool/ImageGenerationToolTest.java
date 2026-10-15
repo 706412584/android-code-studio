@@ -159,6 +159,76 @@ class ImageGenerationToolTest {
     assertTrue(result.getContent().contains("bad model"));
   }
 
+  /**
+   * 普通 https 外链结果要下载后落盘。
+   *
+   * <p>回归背景：loomy2api 等网关忽略 {@code response_format=b64_json}，只回外链。
+   * 此前只认 b64_json / data URL，这类网关的生成会被报成「服务商未返回图片数据」。
+   */
+  @Test
+  public void plainHttpUrlResultIsDownloaded() throws Exception {
+    byte[] png = java.util.Base64.getDecoder().decode(PNG_BASE64);
+    HttpPort downloader =
+        new HttpPort() {
+          @Override
+          public String getText(String url, Map<String, String> headers) {
+            throw new UnsupportedOperationException();
+          }
+
+          @Override
+          public BinaryResponse getBytes(String url, Map<String, String> headers) {
+            return new BinaryResponse("image/png", png);
+          }
+
+          @Override
+          public TextResponse postJson(String url, String jsonBody, Map<String, String> headers) {
+            throw new UnsupportedOperationException();
+          }
+
+          @Override
+          public StreamHandle openStream(String url, Map<String, String> headers) {
+            throw new UnsupportedOperationException();
+          }
+        };
+    FakePort port =
+        new FakePort(
+            ok(new JSONObject()
+                .put(
+                    "data",
+                    new org.json.JSONArray()
+                        .put(new JSONObject().put("url", "https://cdn.example.com/a.png?x=1")))
+                .toString()));
+    ImageGenerationTool tool = new ImageGenerationTool(port, downloader);
+
+    ToolResult result = tool.execute(input("cat"), context());
+
+    assertFalse(result.isError(), result.getContent());
+    assertTrue(result.getContent().contains("生成成功"));
+    Path dir = tmpDir.resolve("ai-generated");
+    try (java.util.stream.Stream<Path> files = Files.list(dir)) {
+      assertEquals(1, files.count());
+    }
+  }
+
+  /** 只给了请求口（无下载口）时，外链结果要明确报错而不是静默算作「没有数据」。 */
+  @Test
+  public void plainUrlWithoutDownloadChannelFailsClearly() throws Exception {
+    FakePort port =
+        new FakePort(
+            ok(new JSONObject()
+                .put(
+                    "data",
+                    new org.json.JSONArray()
+                        .put(new JSONObject().put("url", "https://cdn.example.com/a.png")))
+                .toString()));
+    ImageGenerationTool tool = new ImageGenerationTool(port);
+
+    ToolResult result = tool.execute(input("cat"), context());
+
+    assertTrue(result.isError());
+    assertTrue(result.getContent().contains("下载"));
+  }
+
   @Test
   public void unconfiguredEndpointExplains() {
     FakePort port = new FakePort(ok("{}"));

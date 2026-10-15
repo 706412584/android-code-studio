@@ -807,9 +807,16 @@ private abstract class MediaGenerationPreference(
     Toast.makeText(context, R.string.ai_agent_image_gen_fetching, Toast.LENGTH_SHORT).show()
     CoroutineScope(Dispatchers.IO).launch {
       val result = ModelCatalogFetcher.fetchDetailed(record)
-      // 模型按关键词过滤：agnes 的目录里文本/图片/视频混在一起，
-      // 全列出来会把该能力不可用的模型也塞给用户。
-      val models = result.models.filter { it.contains(modelKeyword, ignoreCase = true) }
+      // 模型过滤：agnes 的目录里文本/图片/视频混在一起，全列出来会把该能力
+      // 不可用的模型也塞给用户。
+      //
+      // **优先按网关声明的模态筛**（`type` / `capabilities.output_modalities`），
+      // 声明不可用时才退回名字关键词。只按名字会漏掉真模型：实测 loomy2api 的
+      // `doubao-seedream-5-lite` 是生图模型但名字不含 "image"。
+      val declared = result.entries.filter { it.declaresOutputModality(modelKeyword) }
+      val models =
+          if (declared.isNotEmpty()) declared.map { it.id }
+          else result.models.filter { it.contains(modelKeyword, ignoreCase = true) }
       withContext(Dispatchers.Main) {
         if (models.isEmpty()) {
           // 网络拉不到与目录里没有匹配模型是两种问题，文案必须分开——

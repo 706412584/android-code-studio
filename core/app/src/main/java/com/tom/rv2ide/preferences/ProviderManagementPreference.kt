@@ -115,12 +115,26 @@ internal class ProviderManagementPreference(
         .show()
   }
 
+  /**
+   * 服务商状态文案。
+   *
+   * <p>**空密钥不一定是问题**：本地网关（Ollama、loomy2api 这类跑在局域网里的）
+   * 通常不鉴权，空密钥就是正常配置。此前一律标「缺密钥」，用户会以为配置没生效
+   * 而去找一个根本不存在的密钥（实测：loomy2api 网关无需密钥，用户却报「没有密钥」）。
+   * 用 [UrlPolicy.isAllowedCleartextHttpUrl] 判定「本地端点」——它认 loopback 与
+   * RFC1918 私网地址，正是这类网关的地址形态。
+   */
   private fun stateText(context: Context, record: ProviderConfig): String =
       when {
         !record.isUsable() -> context.getString(R.string.ai_agent_provider_incomplete)
-        record.needsApiKey() -> context.getString(R.string.ai_agent_provider_no_key)
+        record.needsApiKey() && !isLocalEndpoint(record) ->
+            context.getString(R.string.ai_agent_provider_no_key)
         else -> context.getString(R.string.ai_agent_provider_ready)
       }
+
+  /** 端点是否指向本地/局域网（这类网关通常不鉴权，空密钥属正常）。 */
+  private fun isLocalEndpoint(record: ProviderConfig): Boolean =
+      com.tom.rv2ide.ai.protocol.UrlPolicy.isAllowedCleartextHttpUrl(record.getBaseUrl())
 
   private fun showActions(context: Context, record: ProviderConfig, onChanged: () -> Unit) {
     val options =

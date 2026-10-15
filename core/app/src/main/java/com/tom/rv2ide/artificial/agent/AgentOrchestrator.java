@@ -1570,7 +1570,9 @@ public final class AgentOrchestrator {
     // 非 2xx 当失败）。支持 POST/PUT/DELETE 等可变方法，故为 SYSTEM 且需确认。
     registry.register(new HttpRequestTool(http));
     // 文生图：端点经 ToolContext 注入（能力页配置），未配置时工具明确报错引导用户去配置。
-    registry.register(new ImageGenerationTool(http));
+    // 第二个口子用于下载 URL 形式的结果图——部分网关（实测 loomy2api）无视
+    // response_format=b64_json，只回外链，必须下载才能拿到字节。
+    registry.register(new ImageGenerationTool(http, http));
     // 文生视频：异步任务 + 轮询（cc-haha media-gen 协议）。同上经 ToolContext 注入。
     registry.register(new VideoGenerationTool(http));
     // 图像处理（游戏素材）：色键/亮度键抠图、裁剪、缩放、主色提取。

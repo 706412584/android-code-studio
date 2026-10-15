@@ -51,13 +51,53 @@ object ModelCatalogFetcher {
   }
 
   /**
+   * 模型条目的**模态**信息（来自 `/models` 的声明）。
+   *
+   * <p>存在的理由：网关常在条目里声明能力（实测 loomy2api 给
+   * `{"type":"image","capabilities":{"output_modalities":["image"]}}`），
+   * 而模型**名字**未必含关键词——`doubao-seedream-5-lite` 是生图模型却不含
+   * "image"，只按名字筛会把它从候选里漏掉。有声明时以声明为准，
+   * 没声明时调用方退回关键词匹配（见 [ModelCatalogEntry.matchesOutputModality]）。
+   */
+  data class ModelCatalogEntry(
+      val id: String,
+      /** `type` 字段（如 `image`/`chat`/`video`）；空串表示未声明。 */
+      val type: String,
+      /** `capabilities.output_modalities`（如 `["image"]`）；空表示未声明。 */
+      val outputModalities: List<String>,
+  ) {
+    /**
+     * 该模型是否产出指定模态。
+     *
+     * <p>判定顺序：先看 [outputModalities] 声明，再看 [type] 声明；两者都没有时
+     * 返回 false——调用方据此退回关键词匹配（用 [id] 判断），
+     * 这样「有声明」的网关用声明、「没声明」的网关行为与从前一致。
+     */
+    fun declaresOutputModality(modality: String): Boolean {
+      if (outputModalities.isNotEmpty()) {
+        return outputModalities.any { it.equals(modality, ignoreCase = true) }
+      }
+      return type.equals(modality, ignoreCase = true)
+    }
+  }
+
+  /**
    * 拉取并把**失败原因**一并带回。
    *
    * <p>旧版失败只回空列表，调用方无法区分「服务商目录里确实没有这类模型」和
    * 「网络根本拉不到」（实测踩过：设备直连海外端点 100% 丢包，提示却一样是
    * 「没有找到模型」，用户被误导成模型名问题）。UI 据此给不同文案。
    */
-  data class FetchResult(val models: List<String>, val error: String)
+  data class FetchResult(
+      val models: List<String>,
+      val error: String,
+      /**
+       * 逐条目的模态声明；解析不到时为空列表。
+       *
+       * <p>默认空列表：所有旧调用点（只关心 [models]）行为不变。
+       */
+      val entries: List<ModelCatalogEntry> = emptyList(),
+  )
 
   fun fetchDetailed(config: ProviderConfig): FetchResult {
     val baseUrl = config.getBaseUrl().trimEnd('/')
@@ -84,7 +124,8 @@ object ModelCatalogFetcher {
       if (response.code !in 200..299) {
         FetchResult(emptyList(), "HTTP ${response.code}（密钥或端点有误）")
       } else {
-        FetchResult(parseModelIds(response.body), "")
+        val entries = parseEntries(response.body)
+        FetchResult(entries.map { it.id }, "", entries)
       }
     } catch (e: Throwable) {
       FetchResult(emptyList(), describe(e))
@@ -142,6 +183,63 @@ object ModelCatalogFetcher {
         }
       }
       ids.sorted()
+    } catch (e: Throwable) {
+      emptyList()
+    }
+  }
+
+  /**
+   * 解析模型条目（含模态声明），是 [parseModelIds] 的超集。
+   *
+   * <p>复用 [parseModelIds] 的容错策略（四种列表形态），额外读两个可选字段：
+   * {@code type} 与 {@code capabilities.output_modalities}。缺失时留空，
+   * 由调用方决定退回关键词匹配。
+   */
+  @JvmStatic
+  fun parseEntries(body: String?): List<ModelCatalogEntry> {
+    if (body.isNullOrBlank()) {
+      return emptyList()
+    }
+    return try {
+      val trimmed = body.trim()
+      val array =
+          when {
+            trimmed.startsWith("[") -> JSONArray(trimmed)
+            else -> {
+              val root = JSONObject(trimmed)
+              root.optJSONArray("data")
+                  ?: root.optJSONArray("models")
+                  ?: root.optJSONObject("result")?.optJSONArray("data")
+                  ?: JSONArray()
+            }
+          }
+      val entries = mutableListOf<ModelCatalogEntry>()
+      for (i in 0 until array.length()) {
+        val item = array.opt(i)
+        if (item !is JSONObject) {
+          val id = item as? String ?: continue
+          if (id.isNotBlank() && entries.none { it.id == id }) {
+            entries.add(ModelCatalogEntry(id, "", emptyList()))
+          }
+          continue
+        }
+        val id = item.optString("id").ifBlank { item.optString("name") }
+        if (id.isBlank() || entries.any { it.id == id }) {
+          continue
+        }
+        val type = item.optString("type", "")
+        val modalities = mutableListOf<String>()
+        item.optJSONObject("capabilities")?.optJSONArray("output_modalities")?.let { arr ->
+          for (j in 0 until arr.length()) {
+            val m = arr.optString(j, "")
+            if (m.isNotBlank()) {
+              modalities.add(m)
+            }
+          }
+        }
+        entries.add(ModelCatalogEntry(id, type, modalities))
+      }
+      entries.sortedBy { it.id }
     } catch (e: Throwable) {
       emptyList()
     }

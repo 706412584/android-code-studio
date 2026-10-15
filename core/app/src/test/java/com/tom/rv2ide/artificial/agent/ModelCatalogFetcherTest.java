@@ -113,4 +113,80 @@ public class ModelCatalogFetcherTest {
     assertTrue(parse(null).isEmpty());
     assertTrue(parse("null").isEmpty());
   }
+
+  // ─── 模态声明解析（parseEntries）────────────────────────────────────────────
+
+  private static List<ModelCatalogFetcher.ModelCatalogEntry> entries(String body) {
+    return ModelCatalogFetcher.parseEntries(body);
+  }
+
+  /**
+   * 声明了 {@code type: image} 的模型要能被识别为生图模型——即使名字不含 "image"。
+   *
+   * <p>回归背景：loomy2api 的 `doubao-seedream-5-lite` 是生图模型但名字不含关键词，
+   * 只按名字筛会把它从候选里漏掉（用户实测）。
+   */
+  @Test
+  public void entriesReadTypeDeclaration() {
+    String body =
+        "{\"data\":[{\"id\":\"doubao-seedream-5-lite\",\"type\":\"image\"},"
+            + "{\"id\":\"DeepSeek-V4.1-Flash\",\"type\":\"chat\"}]}";
+    List<ModelCatalogFetcher.ModelCatalogEntry> list = entries(body);
+    assertEquals(2, list.size());
+
+    ModelCatalogFetcher.ModelCatalogEntry seedream =
+        list.stream().filter(e -> e.getId().equals("doubao-seedream-5-lite")).findFirst().get();
+    assertTrue(seedream.declaresOutputModality("image"));
+    // 名字不含关键词——正是关键词过滤会漏掉它的原因
+    assertTrue(!seedream.getId().contains("image"));
+
+    ModelCatalogFetcher.ModelCatalogEntry chat =
+        list.stream().filter(e -> e.getId().equals("DeepSeek-V4.1-Flash")).findFirst().get();
+    assertTrue(!chat.declaresOutputModality("image"));
+  }
+
+  /** capabilities.output_modalities 优先于 type；两者冲突时以更具体的 capabilities 为准。 */
+  @Test
+  public void outputModalitiesTakePrecedence() {
+    String body =
+        "{\"data\":[{\"id\":\"m\",\"type\":\"chat\","
+            + "\"capabilities\":{\"output_modalities\":[\"image\"]}}]}";
+    List<ModelCatalogFetcher.ModelCatalogEntry> list = entries(body);
+    assertEquals(1, list.size());
+    assertTrue(list.get(0).declaresOutputModality("image"));
+  }
+
+  /** 未声明任何模态时判定不成立——调用方据此退回关键词匹配。 */
+  @Test
+  public void undeclaredModalityIsFalseSoCallerFallsBack() {
+    List<ModelCatalogFetcher.ModelCatalogEntry> list =
+        entries("{\"data\":[{\"id\":\"some-image-model\"}]}");
+    assertEquals(1, list.size());
+    assertTrue(!list.get(0).declaresOutputModality("image"));
+  }
+
+  /** 纯字符串数组形态下没有模态声明，但 id 仍要解析出来。 */
+  @Test
+  public void entriesHandlePlainStringArray() {
+    List<ModelCatalogFetcher.ModelCatalogEntry> list = entries("[\"a\",\"b\"]");
+    assertEquals(2, list.size());
+    assertEquals("a", list.get(0).getId());
+    assertTrue(!list.get(0).declaresOutputModality("image"));
+  }
+
+  @Test
+  public void entriesMatchIdsFromParseModelIds() {
+    String body = "{\"data\":[{\"id\":\"z\",\"type\":\"image\"},{\"id\":\"a\"},{\"id\":\"z\"}]}";
+    List<ModelCatalogFetcher.ModelCatalogEntry> list = entries(body);
+    assertEquals(parse(body), Arrays.asList("a", "z"));
+    assertEquals(2, list.size());
+    assertEquals("a", list.get(0).getId());
+    assertEquals("z", list.get(1).getId());
+  }
+
+  @Test
+  public void entriesMalformedYieldsEmpty() {
+    assertTrue(entries("{not json").isEmpty());
+    assertTrue(entries(null).isEmpty());
+  }
 }
