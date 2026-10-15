@@ -342,6 +342,17 @@
   <string name="ai_agent_overlay_off">已获授权——点击开启悬浮</string>
   <string name="ai_agent_overlay_on">悬浮中——点击关闭</string>
   <string name="ai_agent_overlay_no_settings">本设备没有「显示在其他应用上层」设置页</string>
+
+  <!-- AI 运行期保活（前台服务 + wakelock，设置 → AI 助手 → 高级） -->
+  <string name="ai_agent_run_channel">AI 运行中</string>
+  <string name="ai_agent_run_channel_desc">息屏后保持 AI 助手继续工作</string>
+  <string name="ai_agent_run_notification">AI 正在工作——点「停止」可中断</string>
+  <string name="ai_agent_run_stop">停止</string>
+  <string name="ai_agent_battery_title">息屏后继续运行</string>
+  <string name="ai_agent_battery_summary">把本应用加入电池优化白名单，息屏后 AI 助手仍能继续工作</string>
+  <string name="ai_agent_battery_disabled">已加入白名单——息屏后 AI 可继续运行</string>
+  <string name="ai_agent_battery_off">未加入白名单——点击去设置</string>
+  <string name="ai_agent_battery_no_settings">本设备没有电池优化设置页</string>
   <string name="ai_agent_codegraph_state_installed">已安装 · v%1$s · 占用 %2$s</string>
   <string name="ai_agent_codegraph_state_partial">安装不完整——缺少 %1$s</string>
   <string name="ai_agent_codegraph_state_missing">未安装</string>

@@ -417,6 +417,65 @@ private class AssistantOverlayPreference(
 }
 
 /**
+ * 电池优化白名单入口（设置 → AI 助手 → 高级）。
+ *
+ * <p><b>为什么需要它</b>：应用内已有前台服务 + wakelock 保活（见
+ * [com.tom.rv2ide.services.AgentRunService]），但 wakelock **不豁免 Doze 的网络限制**
+ * ——长时间息屏后系统会把网络访问推迟到 maintenance window，LLM 请求会挂起或超时。
+ * 加入电池优化白名单是让息屏长任务真正可用的必要一步。
+ *
+ * <p>三态摘要与 [AssistantOverlayPreference] 同一模式：已加白 / 未加白（点击去授权）/
+ * 设备无该设置页。判态与发起都复用 termux 的 [PermissionUtils]，不自己拼 Intent。
+ */
+@Parcelize
+private class IgnoreBatteryOptimizationPreference(
+    override val key: String = "ai_agent_ignore_battery_optimization",
+    override val title: Int = R.string.ai_agent_battery_title,
+    override val summary: Int? = R.string.ai_agent_battery_summary,
+) : BasePreference() {
+
+  override fun onCreatePreference(context: Context): Preference =
+      androidx.preference.Preference(context).apply {
+        key = "ai_agent_ignore_battery_optimization"
+      }
+
+  override fun onCreateView(context: Context): Preference {
+    val pref = super.onCreateView(context)
+    // super 之后：此时静态 summary 已写完，动态状态才不会被盖掉
+    // （与 AssistantOverlayPreference 同一个坑）。
+    pref.summary = describe(context)
+    return pref
+  }
+
+  /** 状态 → 一行摘要。 */
+  private fun describe(context: Context): String =
+      if (com.termux.shared.android.PermissionUtils.checkIfBatteryOptimizationsDisabled(
+          context)) {
+        context.getString(R.string.ai_agent_battery_disabled)
+      } else {
+        context.getString(R.string.ai_agent_battery_off)
+      }
+
+  override fun onPreferenceClick(preference: Preference): Boolean {
+    val context = preference.context
+    // 已加白：无需再跳系统页（该 Intent 在部分 ROM 上对已加白应用是空操作，
+    // 跳过去反而让用户困惑）。给一次提示性反馈即可。
+    if (com.termux.shared.android.PermissionUtils.checkIfBatteryOptimizationsDisabled(
+        context)) {
+      Toast.makeText(context, R.string.ai_agent_battery_disabled, Toast.LENGTH_SHORT).show()
+      return true
+    }
+    val error =
+        com.termux.shared.android.PermissionUtils.requestDisableBatteryOptimizations(context)
+    if (error != null) {
+      // 拉不起系统页（极少数 ROM 没有该 Activity）：给出可操作的提示而不是静默。
+      Toast.makeText(context, R.string.ai_agent_battery_no_settings, Toast.LENGTH_LONG).show()
+    }
+    return true
+  }
+}
+
+/**
  * 助手聊天字号。
  *
  * <p>滑块而非列表选择：字号是连续量，用户想「再小一点点」时不该被迫接受整档跳变。
@@ -676,6 +735,9 @@ private class AdvancedPage(
     addPreference(ThinkingCollapseSwitch())
     addPreference(PromptTemplatePreference())
     addPreference(AutoSwitchProviderSwitch())
+    // 保活的系统侧配合放最后：它是「息屏长任务」这一能力的权限补充，
+    // 与前两项（提示词/服务商自动切换）无关，用户按需来找。
+    addPreference(IgnoreBatteryOptimizationPreference())
   }
 }
 
