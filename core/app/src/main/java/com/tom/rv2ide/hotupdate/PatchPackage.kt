@@ -55,15 +55,13 @@ object PatchPackage {
    * @throws IllegalArgumentException 补丁含资源条目，或无 dex 条目
    */
   fun normalizeDexNames(src: File, dest: File): List<String> {
+    // 先做资源检查（两个判据都查），再做 dex 重命名——见 containsResources。
+    require(!containsResources(src)) {
+      "补丁含资源变更，拒绝应用：补丁会整体替换 resources.arsc，而资源 ID 跨版本会漂移，" +
+          "未被差分 dex 覆盖的代码会引用到错误的资源。请改用整包更新。"
+    }
     ZipFile(src).use { zin ->
       val all = zin.entries().toList()
-      val resourceEntries =
-          all.filter { it.name == "resources.arsc" || it.name.startsWith("res/") }
-      require(resourceEntries.isEmpty()) {
-        "补丁含资源变更（${resourceEntries.size} 个条目），拒绝应用：" +
-            "补丁会整体替换 resources.arsc，而资源 ID 跨版本会漂移，" +
-            "未被差分 dex 覆盖的代码会引用到错误的资源。请改用整包更新。"
-      }
       val dexEntries = all.filter { it.name.endsWith(".dex") }.sortedBy { it.name }
       require(dexEntries.isNotEmpty()) { "补丁包内没有 .dex 条目：${src.name}" }
 
@@ -100,8 +98,21 @@ object PatchPackage {
    * <p>资源 ID 漂移对**整包更新**无害（代码与资源一起换），只对补丁致命。
    * CI 侧已拒绝生成这类补丁（见 `tools/hotupdate-normalize-patch.py`），
    * 这里再查一次是双保险：清单可能残留旧补丁，或用户设备上有历史下载的补丁文件。
+   *
+   * <p><b>两个判据都查</b>：补丁包内的实际文件（[containsResourceEntries]），
+   * 以及 `patch.json` 里 `changes.resources` 的声明。后者是生成工具自己的记录，
+   * 比翻文件更直接——两者在 r11/r12 实测一致（r11 都为 false、r12 都为 true），
+   * 但保留双判据以防某天工具改了打包方式而漏检。
    */
   fun containsResources(patch: File): Boolean {
+    if (containsResourceEntries(patch)) {
+      return true
+    }
+    return declaresResourceChanges(patch)
+  }
+
+  /** 补丁包内是否实际含资源条目（`resources.arsc` 或 `res/` 下的文件）。 */
+  fun containsResourceEntries(patch: File): Boolean {
     return try {
       ZipFile(patch).use { zip ->
         zip.entries().asSequence().any { e ->
@@ -110,6 +121,32 @@ object PatchPackage {
       }
     } catch (e: Exception) {
       // 读不出来交给后续流程报错；这里不把「打不开」当成「含资源」。
+      false
+    }
+  }
+
+  /**
+   * `patch.json` 是否声明了资源变更（`changes.resources` 的 modified/added/deleted 非空）。
+   *
+   * <p>patch-cli 在清单里逐条列出改动的资源类（实测 r12：`modified: 98`）。
+   * 这是生成侧的自我记录，不依赖打包细节。
+   */
+  fun declaresResourceChanges(patch: File): Boolean {
+    return try {
+      ZipFile(patch).use { zip ->
+        val entry = zip.getEntry(MANIFEST) ?: return false
+        val json = zip.getInputStream(entry).use { it.readBytes().toString(Charsets.UTF_8) }
+        val resources = JSONObject(json).optJSONObject("changes")?.optJSONObject("resources")
+            ?: return false
+        for (kind in arrayOf("modified", "added", "deleted")) {
+          val arr = resources.optJSONArray(kind)
+          if (arr != null && arr.length() > 0) {
+            return true
+          }
+        }
+        false
+      }
+    } catch (e: Exception) {
       false
     }
   }

@@ -276,4 +276,66 @@ public class PatchPackageTest {
     List<String> out = PatchPackage.INSTANCE.normalizeDexNames(src, File.createTempFile("out", ".zip"));
     assertEquals(Arrays.asList("classes.dex", "classes2.dex"), out);
   }
+
+  /**
+   * 判据二：`patch.json` 声明了资源变更即拒绝——即使包内没有实际的资源文件。
+   *
+   * <p>这是生成侧的自我记录（patch-cli 实测在 r12 里写 `changes.resources.modified: 98`）。
+   * 留着这个判据是为了防「打包方式变了但文件判据漏检」——两个信号互为补充。
+   */
+  @Test
+  public void declaredResourceChangesAreRejected() throws IOException {
+    String manifest =
+        "{\"changes\":{\"resources\":{\"modified\":[\"res/a.xml\",\"res/b.xml\"],"
+            + "\"added\":[],\"deleted\":[]}}}";
+    File src =
+        newTempZip(
+            "patch",
+            Arrays.asList(
+                new String[] {"patch.json", manifest},
+                new String[] {"classes.dex", "D"}));
+
+    // 包内没有 resources.arsc / res/，文件判据为 false……
+    assertFalse(PatchPackage.INSTANCE.containsResourceEntries(src));
+    // ……但声明判据为 true，整体仍拒绝
+    assertTrue(PatchPackage.INSTANCE.declaresResourceChanges(src));
+    assertTrue(PatchPackage.INSTANCE.containsResources(src));
+    try {
+      PatchPackage.INSTANCE.normalizeDexNames(src, File.createTempFile("out", ".zip"));
+      fail("声明了资源变更的补丁应被拒绝");
+    } catch (IllegalArgumentException expected) {
+      assertTrue(expected.getMessage().contains("资源"));
+    }
+  }
+
+  /** 声明为空数组时不算资源变更（patch-cli 对无资源改动的补丁会这样写）。 */
+  @Test
+  public void emptyResourceDeclarationIsNotAChange() throws IOException {
+    String manifest = "{\"changes\":{\"resources\":{\"modified\":[],\"added\":[],\"deleted\":[]}}}";
+    File src =
+        newTempZip(
+            "patch",
+            Arrays.asList(
+                new String[] {"patch.json", manifest},
+                new String[] {"classes.dex", "D"}));
+
+    assertFalse(PatchPackage.INSTANCE.declaresResourceChanges(src));
+    assertFalse(PatchPackage.INSTANCE.containsResources(src));
+  }
+
+  /** 清单缺失或损坏时不因判据二误判（文件判据仍会兜底）。 */
+  @Test
+  public void malformedManifestDoesNotFalselyTriggerDeclaration() throws IOException {
+    File noManifest =
+        newTempZip("patch", Collections.singletonList(new String[] {"classes.dex", "D"}));
+    assertFalse(PatchPackage.INSTANCE.declaresResourceChanges(noManifest));
+
+    File badJson =
+        newTempZip(
+            "patch",
+            Arrays.asList(
+                new String[] {"patch.json", "not json"},
+                new String[] {"classes.dex", "D"}));
+    assertFalse(PatchPackage.INSTANCE.declaresResourceChanges(badJson));
+  }
 }

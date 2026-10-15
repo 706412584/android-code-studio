@@ -28,18 +28,37 @@
     python3 tools/hotupdate-normalize-patch.py in.zip out.zip
 """
 
+import json
 import sys
 import zipfile
 
 
-def assert_no_resources(names) -> None:
-    """补丁含资源条目即拒绝——见模块文档「背景二」。"""
+def assert_no_resources(zin) -> None:
+    """补丁含资源变更即拒绝——见模块文档「背景二」。
+
+    两个判据都查：包内的实际文件，以及 patch.json 里 changes.resources 的声明。
+    后者是 patch-cli 自己的记录（实测 r12 为 modified: 98），不依赖打包细节。
+    """
+    names = zin.namelist()
     arsc = [n for n in names if n == "resources.arsc"]
     res = [n for n in names if n.startswith("res/")]
-    if arsc or res:
+
+    declared = 0
+    if "patch.json" in names:
+        try:
+            meta = json.loads(zin.read("patch.json").decode("utf-8"))
+            resources = (meta.get("changes") or {}).get("resources") or {}
+            for kind in ("modified", "added", "deleted"):
+                declared += len(resources.get(kind) or [])
+        except Exception:
+            # 清单读不动时不阻断——文件判据仍会兜底。
+            pass
+
+    if arsc or res or declared > 0:
         raise SystemExit(
             "拒绝生成：补丁包含资源变更（"
-            f"resources.arsc={len(arsc)} 个, res/ 下 {len(res)} 个文件）。\n"
+            f"resources.arsc={len(arsc)} 个, res/ 下 {len(res)} 个文件, "
+            f"patch.json 声明 {declared} 项）。\n"
             "  原因：补丁会整体替换 resources.arsc，而资源 ID 跨版本会漂移；\n"
             "  未被差分 dex 覆盖的代码仍引用旧 ID，界面会显示错乱的文字。\n"
             "  处理：本次不发布热更新补丁，用户走整包更新（updater.json 的 patch\n"
@@ -50,7 +69,7 @@ def assert_no_resources(names) -> None:
 def normalize(src_path: str, dst_path: str) -> int:
     with zipfile.ZipFile(src_path) as zin:
         names = zin.namelist()
-        assert_no_resources(names)
+        assert_no_resources(zin)
         dex_names = sorted(n for n in names if n.endswith(".dex"))
         other_names = [n for n in names if not n.endswith(".dex")]
 
