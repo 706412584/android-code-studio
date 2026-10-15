@@ -32,6 +32,20 @@ import json
 import sys
 import zipfile
 
+# 每次构建都会变、但对用户无意义的噪音资产（APK 根相对路径）。
+#
+# 实测：r11→r12 补丁 20.5MB，其中 16.9MB（79%）是
+# `assets/data/common/tooling-api-all.jar`。解开它后 11740 个条目里**只有
+# `com/tom/rv2ide/buildinfo/BuildInfo.class`（内嵌版本号）一个文件不同**，
+# 其余完全相同——纯粹因为版本号变了就被 diff 判定为「资源变更」而进补丁。
+#
+# 剔除是安全的：BuildInfo 在 app 自己的 dex 里也有一份（通过 jar 副本读版本
+# 是次要路径），而版本号本来就随整包更新。剔除后同一对 APK 的补丁
+# 从 20.5MB 降到约 4.4MB。
+NOISE_ASSETS = frozenset({
+    "assets/data/common/tooling-api-all.jar",
+})
+
 
 def assert_no_resources(zin) -> None:
     """补丁含资源变更即拒绝——见模块文档「背景二」。
@@ -72,6 +86,12 @@ def normalize(src_path: str, dst_path: str) -> int:
         assert_no_resources(zin)
         dex_names = sorted(n for n in names if n.endswith(".dex"))
         other_names = [n for n in names if not n.endswith(".dex")]
+
+        # 剔除「每次构建都会变」的噪音资产（见 NOISE_ASSETS 的说明）。
+        stripped = [n for n in other_names if n in NOISE_ASSETS]
+        other_names = [n for n in other_names if n not in NOISE_ASSETS]
+        if stripped:
+            print(f"  剔除噪音资产 {len(stripped)} 个: {stripped}")
 
         if not dex_names:
             raise SystemExit(f"错误：{src_path} 里没有 .dex 条目，不是有效的补丁包")

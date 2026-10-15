@@ -317,6 +317,12 @@ jobs:
           echo "base versionCode=$BASE_VC"
 
           # 不签名：ACS 发布包用公开 debug 密钥，签名校验无防护价值（见 CLAUDE.md）。
+          #
+          # 噪音资产（tooling-api-all.jar，16.9MB，每次构建只差内嵌版本号）由
+          # hotupdate-normalize-patch.py 在下一步剔除——**这里不传 --exclude**：
+          # CI 用的是 Maven Central 上的 patch-cli，当前 1.5.2 尚无该参数，传了会
+          # 报 "Unrecognized option" 导致补丁生成整体失败。等新版本发布后再切换
+          # （届时可省一次解包重打包）。
           java -jar patch-cli.jar -b "$BASE_APK" -n "$NEW_APK" -o patch-work/raw-patch.zip \
             || fail "patch-cli 生成失败"
 
