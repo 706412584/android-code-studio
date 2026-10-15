@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ACS 无障碍服务配置（移植自 Aharou 的同名配置）。
+
+  canRetrieveWindowContent: 读窗口/节点树（dump/find 的基础）
+  canPerformGestures:       dispatchGesture（点击/滑动）
+  canTakeScreenshot:        系统截图（API 30+ 的 takeScreenshot）
+  flagReportViewIds:        让节点带 viewIdResourceName（dump 能给出资源 id）
+  flagRetrieveInteractiveWindows: 拿全部交互窗口（不只活动窗口）
+
+  **刻意不声明 flagRequestTouchExplorationMode**：该 flag 会让系统在服务开启期间
+  进入触摸探索模式（单指滑动变鼠标悬停），**改变整个设备的触控行为**——用户会
+  归咎于本应用。本服务只需要读节点与派发手势，不需要探索模式
+  （Aharou 原版带了此 flag，那是应当偏离的地方）。
+
+  notificationTimeout 100ms：事件回调节流，避免高频界面变化刷爆事件环。
+-->
+<accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
+    android:accessibilityEventTypes="typeAllMask"
+    android:accessibilityFeedbackType="feedbackGeneric"
+    android:accessibilityFlags="flagDefault|flagRetrieveInteractiveWindows|flagReportViewIds"
+    android:canPerformGestures="true"
+    android:canRetrieveWindowContent="true"
+    android:canTakeScreenshot="true"
+    android:canRequestEnhancedWebAccessibility="false"
+    android:canRequestFilterKeyEvents="false"
+    android:description="@string/acs_a11y_service_description"
+    android:summary="@string/acs_a11y_service_summary"
+    android:notificationTimeout="100" />

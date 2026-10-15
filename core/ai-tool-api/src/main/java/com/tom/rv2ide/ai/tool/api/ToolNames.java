@@ -134,6 +134,26 @@ public final class ToolNames {
     /** uiautomator2 代理：Unicode 输入 / 等待消失 / 多点触控 / 滚动到元素 / 通用 jsonrpc 逃生舱。 */
     public static final String PHONE_UIAUTOMATOR = "phone_uiautomator";
 
+    // ---- 无障碍（免 Shizuku/adb 的屏幕读取与操作）----
+    /**
+     * 用无障碍服务读取屏幕（元素树 / 找节点 / 截图 / 窗口 / 前台应用）。
+     *
+     * <p>与 `phone_screenshot` / `phone_view_hierarchy` 等的分工：那些经 shell 后端执行
+     * （`screencap`、`uiautomator dump`），**需要 Shizuku**；本工具走无障碍服务，
+     * **不需要任何 adb 级权限**，只需用户在系统设置里开启服务。
+     * 能力取舍：shell 系覆盖任意应用且输出完整 XML；本工具受无障碍 API 限制
+     * （如系统截图需 Android 11+）。两者都能用时优先 shell 系。
+     */
+    public static final String PHONE_A11Y = "phone_a11y";
+    /**
+     * 用无障碍服务操作屏幕（点击 / 滑动 / 系统键 / 输入文字）。
+     *
+     * <p>与只读的 {@link #PHONE_A11Y} 拆开的原因同 {@link #GIT}/{@link #GIT_WRITE}：
+     * 权限层按工具分级，混在一起会让每次读屏都弹确认框。
+     * 写动作会改变设备状态，需逐次确认。
+     */
+    public static final String PHONE_A11Y_WRITE = "phone_a11y_write";
+
     // ---- LogWire（被构建应用主动上报的日志通道，无 adb 权限也能读）----
     /**
      * 读取 LogWire 通道的日志（被构建应用经 AIDL 主动上报）。

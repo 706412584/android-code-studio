@@ -80,6 +80,8 @@ import com.tom.rv2ide.artificial.agent.tool.InstallApkTool;
 import com.tom.rv2ide.artificial.agent.tool.LayoutPreviewTool;
 import com.tom.rv2ide.artificial.agent.tool.LaunchAppTool;
 import com.tom.rv2ide.artificial.agent.tool.LogcatReadTool;
+import com.tom.rv2ide.artificial.agent.tool.PhoneA11yTool;
+import com.tom.rv2ide.artificial.agent.tool.PhoneA11yWriteTool;
 import com.tom.rv2ide.artificial.agent.tool.LogWireReadTool;
 import com.tom.rv2ide.artificial.agent.tool.LogWireSetEnabledTool;
 import com.tom.rv2ide.artificial.agent.tool.LogWireStatusTool;
@@ -1515,6 +1517,13 @@ public final class AgentOrchestrator {
     registry.register(new LogWireReadTool(appContext));
     registry.register(new LogWireStatusTool(appContext, shellBackends));
     registry.register(new LogWireSetEnabledTool());
+
+    // ---- 无障碍通道（免 Shizuku/adb，需用户在系统设置开启服务）----
+    // 与下面的 shell 系 phone_* 工具互补：那些需要 Shizuku，这两个不需要。
+    // 拆成读/写两个工具的理由同 git/git_write：权限层按工具分级，
+    // 混在一起会让每次读屏都弹确认框。
+    registry.register(new PhoneA11yTool());
+    registry.register(new PhoneA11yWriteTool());
 
     // ---- 真机测试工具集（经 Shizuku 走 adb 级权限，不需要无障碍服务）----
     // 全部复用上面那一份 shell 后端注册表，与 shell_execute 看到同一个 active 后端。
