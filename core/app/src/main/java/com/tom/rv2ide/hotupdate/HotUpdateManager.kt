@@ -130,15 +130,25 @@ object HotUpdateManager {
       }
 
       onStage?.invoke(0.7f, "准备应用…")
-      // 含资源的补丁直接拒绝：它会整体替换 resources.arsc，而资源 ID 跨版本会漂移，
-      // 未被差分 dex 覆盖的代码会引用到错误资源（实测：界面出现大量无关文字）。
-      // CI 侧已拒绝生成这类补丁，这里再查一次是双保险——清单可能残留旧补丁，
-      // 或设备上有历史下载的补丁文件。详见 PatchPackage.containsResources 的说明。
-      if (PatchPackage.containsResources(raw)) {
+      // 含资源的补丁：**必须有生成侧的 ID 对齐标记**才放行。
+      //
+      // 补丁整体替换 resources.arsc，而资源 ID 跨版本会漂移——未被差分 dex 覆盖的
+      // 代码会引用到错误资源（实测：界面出现大量无关文字，且完全静默）。
+      //
+      // 构建注入 aapt2 --stable-ids 后 ID 保持稳定，这类补丁变得安全。但 App 端
+      // **无法自己验证**（要解析 arsc，代价与风险都高），因此由 CI 校验通过后
+      // 在 patch.json 写入 resourceIdsStable=true（见 hotupdate-normalize-patch.py
+      // 的 stamp_alignment）。补丁本身受 updater.json 的 sha256 保护，
+      // 所以「有标记」等价于「生成时校验通过」。
+      //
+      // 无标记 + 含资源 → 拒绝：覆盖「清单残留旧补丁」「设备上有历史下载文件」
+      // 「稳定化未生效」三种情形。
+      if (PatchPackage.containsResources(raw) && !PatchPackage.hasStableResourceIds(raw)) {
         cleanup(raw, normalized)
         onResult(
             false,
-            "该补丁包含资源变更，不适用于热更新（会导致界面文字错乱）。请更新完整 APK。",
+            "该补丁包含资源变更且未通过 ID 对齐校验，不适用于热更新（会导致界面文字错乱）。" +
+                "请更新完整 APK。",
         )
         return
       }

@@ -121,6 +121,64 @@ jobs:
       - name: Restore signing keystore
         run: echo "${{ secrets.SIGNING_KEYSTORE_BASE64 }}" | base64 -d > signing/signing-key.jks
 
+      # 资源 ID 稳定化：从**上一发布版本**的 APK 提取 ID 映射，注入本次构建。
+      #
+      # 为什么必需：R.string.foo 编译后是内联进调用点的字面量。热更新补丁只带
+      # 差分 dex——未变更的类仍内联旧 ID。若本版新增资源，AAPT2 会把后面的 ID
+      # 整体后移（实测 r11→r12 漂移 981 个），旧类请求的 ID 就指向别的资源，
+      # 界面文字错乱且**完全静默**。
+      #
+      # 注入后 aapt2 复用映射里的旧 ID、新资源分配新 ID（实测 0 漂移 vs
+      # 不注入时 1147 个漂移）。映射自动提取，**零人工维护**。
+      #
+      # 首次发布 / 找不到上一版 APK 时跳过——保持现状（ID 自由分配），
+      # 不会因为空映射打乱正常分配。
+      - name: Extract stable resource IDs from previous release
+        id: stable_ids
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -e
+          # 与补丁生成同一套「上一版本」查找逻辑：只认 v1.0.0+gh.rNN，
+          # 避免拿到 dart-sdk 等非版本 Release。
+          PREV_REV=$(gh release list --limit 100 --json tagName -q '.[].tagName' 2>/dev/null \
+            | grep -E '^v1\.0\.0\+gh\.r[0-9]+$' \
+            | sed -E 's/^v1\.0\.0\+gh\.r0*([0-9]+)$/\1/' \
+            | sort -n | tail -1 || true)
+          if [ -z "$PREV_REV" ]; then
+            echo "没有上一版本 Release，跳过 ID 稳定化（首次 bootstrap）"
+            echo "file=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          PREV_TAG="v1.0.0+gh.r$(printf '%02d' "$PREV_REV")"
+          echo "上一版本：$PREV_TAG"
+
+          mkdir -p stable-ids-work
+          # 用**常规版**（不带 -cn）——两版共享同一套资源 ID，任取其一即可。
+          if ! gh release download "$PREV_TAG" \
+              --pattern "android-code-studio-arm64-v8a-*.apk" \
+              --dir stable-ids-work 2>/dev/null; then
+            echo "下载失败，跳过 ID 稳定化"
+            echo "file=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          BASE_APK=$(ls stable-ids-work/android-code-studio-arm64-v8a-*.apk 2>/dev/null | grep -v -- '-cn-' | head -1)
+          if [ -z "$BASE_APK" ]; then
+            echo "上一版本无常规 arm64 APK，跳过 ID 稳定化"
+            echo "file=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if python3 tools/hotupdate-extract-stable-ids.py "$BASE_APK" stable-ids.txt; then
+            echo "已提取 $(wc -l < stable-ids.txt) 条映射"
+            echo "file=$PWD/stable-ids.txt" >> "$GITHUB_OUTPUT"
+          else
+            # 提取失败不阻断发布——只是失去 ID 稳定化（回到 ID 自由分配），
+            # 补丁侧的资源守卫仍会拦住不安全的补丁。
+            echo "提取失败，跳过 ID 稳定化"
+            echo "file=" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Assemble APK
         env:
           # build.gradle.kts 的 signingConfigs.custom 读这三个环境变量。
@@ -138,9 +196,14 @@ jobs:
           REVISION_NUM: ${{ env.REVISION_NUM }}
           PROJECT_CONFIG_KT_BASE_VERSION_CODE: ${{ env.VERSION_CODE }}
         run: |
+          # 资源 ID 稳定化（上一步提取；为空则不加参数，行为与从前一致）。
+          STABLE_ARG=""
+          if [ -n "${{ steps.stable_ids.outputs.file }}" ]; then
+            STABLE_ARG="-PstableIdsFile=${{ steps.stable_ids.outputs.file }}"
+          fi
           # Release 排除 lintVitalRelease：与本地 publish-release.ps1 一致。
           # Debug 不受影响（-x 对不存在的任务是无害的）。
-          ./gradlew assemble${{ env.BUILD_TYPE }} -x lintVitalRelease
+          ./gradlew assemble${{ env.BUILD_TYPE }} -x lintVitalRelease $STABLE_ARG
 
       # 立即把本次（常规版）产物复制到 staging：随后 CN 构建会复用同一
       # build/outputs 目录，是否清理异名旧产物取决于 AGP 内部行为（不可依赖）。
@@ -162,7 +225,13 @@ jobs:
           REVISION_NUM: ${{ env.REVISION_NUM }}
           PROJECT_CONFIG_KT_BASE_VERSION_CODE: ${{ env.VERSION_CODE }}
         run: |
-          ./gradlew assemble${{ env.BUILD_TYPE }} -x lintVitalRelease -PcnMirror=true
+          # **必须与常规版用同一份 stable-ids**：CN 版与常规版只是常量内联不同，
+          # 资源 ID 必须一致——否则两版的补丁不通用（CN 补丁打到常规包上会错位）。
+          STABLE_ARG=""
+          if [ -n "${{ steps.stable_ids.outputs.file }}" ]; then
+            STABLE_ARG="-PstableIdsFile=${{ steps.stable_ids.outputs.file }}"
+          fi
+          ./gradlew assemble${{ env.BUILD_TYPE }} -x lintVitalRelease -PcnMirror=true $STABLE_ARG
 
       - name: Stage CN APKs
         run: cp core/app/build/outputs/apk/${{ env.BUILD_TYPE_LOWER }}/*-cn-*.apk apk-staging/
@@ -316,6 +385,20 @@ jobs:
           [ -n "$BASE_VC" ] || fail "无法从 base APK 读取 versionCode"
           echo "base versionCode=$BASE_VC"
 
+          # 资源 ID 对齐校验：决定带资源的补丁能否放行。
+          #
+          # 构建时已注入 aapt2 --stable-ids（见 Extract stable resource IDs 步骤），
+          # 但**不能因此假定生效**——参数可能没透传、映射可能丢失。这里独立比对
+          # 两个 APK 的实际 ID：对齐才加 --allow-resources。
+          # 校验失败按「不对齐」处理（宁可回退整包，也不要静默损坏界面）。
+          RESOURCE_ARG=""
+          if python3 tools/hotupdate-check-resource-alignment.py "$BASE_APK" "$NEW_APK"; then
+            RESOURCE_ARG="--allow-resources"
+            echo "资源 ID 对齐，允许补丁携带资源变更"
+          else
+            echo "资源 ID 不对齐（或无法判定），带资源的补丁将被拒绝"
+          fi
+
           # 不签名：ACS 发布包用公开 debug 密钥，签名校验无防护价值（见 CLAUDE.md）。
           #
           # 噪音资产（tooling-api-all.jar，16.9MB，每次构建只差内嵌版本号）由
@@ -327,7 +410,7 @@ jobs:
             || fail "patch-cli 生成失败"
 
           python3 tools/hotupdate-normalize-patch.py \
-            patch-work/raw-patch.zip "patch-work/acs-hotupdate-$VERSION_NAME.zip" \
+            patch-work/raw-patch.zip "patch-work/acs-hotupdate-$VERSION_NAME.zip" $RESOURCE_ARG \
             || fail "dex 规范化失败"
 
           PATCH_FILE="patch-work/acs-hotupdate-$VERSION_NAME.zip"
@@ -384,11 +467,22 @@ jobs:
           [ -n "$BASE_VC" ] || fail "无法从 CN base APK 读取 versionCode"
           echo "CN base versionCode=$BASE_VC"
 
+          # 资源 ID 对齐校验（与常规补丁同一判据）。
+          # CN 版与常规版用同一份 stable-ids 构建，理论上 ID 一致；这里仍独立校验，
+          # 因为「两版用同一映射」本身也是需要保证的前提。
+          RESOURCE_ARG=""
+          if python3 tools/hotupdate-check-resource-alignment.py "$BASE_APK" "$NEW_APK"; then
+            RESOURCE_ARG="--allow-resources"
+            echo "CN 资源 ID 对齐，允许补丁携带资源变更"
+          else
+            echo "CN 资源 ID 不对齐（或无法判定），带资源的补丁将被拒绝"
+          fi
+
           java -jar patch-cli.jar -b "$BASE_APK" -n "$NEW_APK" -o patch-work-cn/raw-patch.zip \
             || fail "patch-cli 生成失败"
 
           python3 tools/hotupdate-normalize-patch.py \
-            patch-work-cn/raw-patch.zip "patch-work-cn/acs-hotupdate-cn-$VERSION_NAME.zip" \
+            patch-work-cn/raw-patch.zip "patch-work-cn/acs-hotupdate-cn-$VERSION_NAME.zip" $RESOURCE_ARG \
             || fail "dex 规范化失败"
 
           PATCH_FILE="patch-work-cn/acs-hotupdate-cn-$VERSION_NAME.zip"

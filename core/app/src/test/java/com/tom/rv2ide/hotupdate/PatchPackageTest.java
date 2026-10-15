@@ -261,6 +261,71 @@ public class PatchPackageTest {
     }
   }
 
+  // ---- resourceIdsStable 标记（启用 aapt2 --stable-ids 后的放行路径）----
+
+  /**
+   * 含资源但带 {@code resourceIdsStable: true} 的补丁应放行。
+   *
+   * <p>这是启用资源 ID 稳定化（aapt2 --stable-ids）后的正常路径：CI 校验两个 APK
+   * 的 ID 对齐后写入该标记，App 端据此放行。实测稳定化生效时 0 漂移
+   * （不启用时 1147 个漂移）。
+   */
+  @Test
+  public void patchWithResourcesAndStableIdsIsAccepted() throws IOException {
+    File src =
+        newTempZip(
+            "patch",
+            Arrays.asList(
+                new String[] {"patch.json", "{\"resourceIdsStable\":true}"},
+                new String[] {"classes.dex", "D"},
+                new String[] {"resources.arsc", "ARSC"},
+                new String[] {"res/layout/foo.xml", "<x/>"}));
+
+    assertTrue(PatchPackage.INSTANCE.containsResources(src));
+    assertTrue(PatchPackage.INSTANCE.hasStableResourceIds(src));
+    // 不抛异常 = 放行
+    List<String> out =
+        PatchPackage.INSTANCE.normalizeDexNames(src, File.createTempFile("out", ".zip"));
+    assertEquals(Collections.singletonList("classes.dex"), out);
+  }
+
+  /** 标记为 false 或缺失时仍拒绝——标记必须显式为 true。 */
+  @Test
+  public void patchWithResourcesAndFalseOrMissingFlagIsRejected() throws IOException {
+    for (String manifest : new String[] {"{}", "{\"resourceIdsStable\":false}"}) {
+      File src =
+          newTempZip(
+              "patch",
+              Arrays.asList(
+                  new String[] {"patch.json", manifest},
+                  new String[] {"classes.dex", "D"},
+                  new String[] {"resources.arsc", "ARSC"}));
+
+      assertFalse(PatchPackage.INSTANCE.hasStableResourceIds(src));
+      try {
+        PatchPackage.INSTANCE.normalizeDexNames(src, File.createTempFile("out", ".zip"));
+        fail("标记非 true 时含资源的补丁应被拒绝：" + manifest);
+      } catch (IllegalArgumentException expected) {
+        assertTrue(expected.getMessage().contains("资源"));
+      }
+    }
+  }
+
+  /** 纯 dex 补丁即使没有标记也放行——标记只对含资源的补丁有意义。 */
+  @Test
+  public void pureDexPatchNeedsNoStableIdsFlag() throws IOException {
+    File src =
+        newTempZip(
+            "patch",
+            Arrays.asList(
+                new String[] {"patch.json", "{}"},
+                new String[] {"classes.dex", "D"}));
+
+    assertFalse(PatchPackage.INSTANCE.hasStableResourceIds(src));
+    assertFalse(PatchPackage.INSTANCE.containsResources(src));
+    PatchPackage.INSTANCE.normalizeDexNames(src, File.createTempFile("out", ".zip"));
+  }
+
   /** 纯 dex 补丁（历史正常形态）必须照常通过——守卫不能误伤。 */
   @Test
   public void pureDexPatchStillAccepted() throws IOException {

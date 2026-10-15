@@ -121,7 +121,35 @@ android {
       }
   }
 
-  androidResources { generateLocaleConfig = true }
+  androidResources {
+    generateLocaleConfig = true
+
+    // 资源 ID 稳定化（热更新的前提，见 tools/hotupdate-extract-stable-ids.py）。
+    //
+    // 不注入时：新增资源会把后面的 ID 整体后移（实测 r11→r12 漂移 981 个），
+    // 而热更新补丁只带差分 dex——未变更的类仍内联旧 ID，指向错误的资源，
+    // 界面文字错乱且**完全静默**（补丁应用成功、日志无异常）。
+    //
+    // 注入后 aapt2 复用映射里的旧 ID，新资源分配新 ID，旧类内联的 ID 永远
+    // 指向同一资源。映射由 CI 从上一发布 APK 自动提取（零人工维护）。
+    //
+    // 未提供 -PstableIdsFile 时保持现状（ID 自由分配）——首次 bootstrap 或
+    // 本地开发不传即可，不会因为空映射打乱正常分配。
+    val stableIdsFile = providers.gradleProperty("stableIdsFile").orNull
+    if (!stableIdsFile.isNullOrBlank()) {
+      val f = file(stableIdsFile)
+      if (f.isFile) {
+        // Kotlin DSL 把 additionalParameters 暴露为只读的 MutableList——
+        // 赋值会报 "Val cannot be reassigned"，可变参数重载又会撞上
+        // Collection.addAll(index, elements)。就地向列表里加。
+        additionalParameters.add("--stable-ids")
+        additionalParameters.add(f.absolutePath)
+        logger.lifecycle("资源 ID 稳定化已启用：$stableIdsFile")
+      } else {
+        logger.warn("stableIdsFile 指向的文件不存在，已忽略：$stableIdsFile")
+      }
+    }
+  }
 
   buildFeatures {
     aidl = true

@@ -55,9 +55,12 @@ object PatchPackage {
    * @throws IllegalArgumentException 补丁含资源条目，或无 dex 条目
    */
   fun normalizeDexNames(src: File, dest: File): List<String> {
-    // 先做资源检查（两个判据都查），再做 dex 重命名——见 containsResources。
-    require(!containsResources(src)) {
-      "补丁含资源变更，拒绝应用：补丁会整体替换 resources.arsc，而资源 ID 跨版本会漂移，" +
+    // 含资源且无「ID 已对齐」标记时拒绝——见 hasStableResourceIds 与
+    // HotUpdateManager 里同一判据的说明。调用方（HotUpdateManager）已查过一遍，
+    // 这里再查是为了让本函数单独使用时也安全（它是对外公开的）。
+    require(!containsResources(src) || hasStableResourceIds(src)) {
+      "补丁含资源变更且未通过 ID 对齐校验，拒绝应用：" +
+          "补丁会整体替换 resources.arsc，而资源 ID 跨版本会漂移，" +
           "未被差分 dex 覆盖的代码会引用到错误的资源。请改用整包更新。"
     }
     ZipFile(src).use { zin ->
@@ -145,6 +148,31 @@ object PatchPackage {
           }
         }
         false
+      }
+    } catch (e: Exception) {
+      false
+    }
+  }
+
+  /**
+   * 补丁是否声明「资源 ID 已校验对齐」（`patch.json` 的 `resourceIdsStable`）。
+   *
+   * <p><b>为什么由生成侧声明而不是 App 自己判断</b>：App 端要验证对齐必须解析
+   * `resources.arsc` 并与当前安装版本的 ID 比对——代价与风险都高（arsc 二进制
+   * 格式复杂，解析失败会误判）。而生成侧（CI）已有 aapt2，校验是现成的。
+   *
+   * <p><b>标记的可信度</b>：补丁本身经 `updater.json` 的 SHA-256 校验
+   * （见 [com.tom.rv2ide.hotupdate.HotUpdateManager.downloadAndApply]），标记随
+   * 补丁一起被保护——「有标记」等价于「生成时校验通过」，且内容未被篡改。
+   *
+   * <p>仅当补丁**确实含资源**时这个标记才有意义（无资源的补丁不需要它）。
+   */
+  fun hasStableResourceIds(patch: File): Boolean {
+    return try {
+      ZipFile(patch).use { zip ->
+        val entry = zip.getEntry(MANIFEST) ?: return false
+        val json = zip.getInputStream(entry).use { it.readBytes().toString(Charsets.UTF_8) }
+        JSONObject(json).optBoolean("resourceIdsStable", false)
       }
     } catch (e: Exception) {
       false
