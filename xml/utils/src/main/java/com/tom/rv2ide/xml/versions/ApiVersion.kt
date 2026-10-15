@@ -23,15 +23,41 @@ package com.tom.rv2ide.xml.versions
  * **Dev Note**: This class must be immutable as the instances of this class are reused for multiple
  * symbols.
  *
+ * Recent Android SDKs express API levels as `major.minor` (for example `36.1` or `37.2`) while
+ * older ones use a plain integer. The `*Minor` properties carry the fractional part; they are
+ * [NONE] when the SDK only specified an integer, or when the minor component is zero.
+ *
  * @property since The API in which the symbol was added.
  * @property deprecatedIn The API in which the symbol was deprecated.
  * @property removedIn The API in which the symbol was removed.
+ * @property sinceMinor The minor component of [since], e.g. `1` for API `36.1`.
+ * @property deprecatedMinor The minor component of [deprecatedIn].
+ * @property removedMinor The minor component of [removedIn].
  * @author Akash Yadav
  */
-data class ApiVersion(val since: Int, val deprecatedIn: Int = NONE, val removedIn: Int = NONE) {
+data class ApiVersion(
+    val since: Int,
+    val deprecatedIn: Int = NONE,
+    val removedIn: Int = NONE,
+    val sinceMinor: Int = NONE,
+    val deprecatedMinor: Int = NONE,
+    val removedMinor: Int = NONE,
+) {
 
   /** Returns `true` if [since] is 1 and [deprecatedIn] and [removedIn] is [ApiVersion.NONE]. */
   fun isSinceInception(): Boolean = since == 1 && deprecatedIn == NONE && removedIn == NONE
+
+  /** Formats [since] for display, e.g. `36` or `36.1`. */
+  fun formatSince(): String = formatLevel(since, sinceMinor)
+
+  /** Formats [deprecatedIn] for display, e.g. `36` or `36.1`. */
+  fun formatDeprecatedIn(): String = formatLevel(deprecatedIn, deprecatedMinor)
+
+  /** Formats [removedIn] for display, e.g. `36` or `36.1`. */
+  fun formatRemovedIn(): String = formatLevel(removedIn, removedMinor)
+
+  private fun formatLevel(major: Int, minor: Int): String =
+      if (minor > NONE) "$major.$minor" else major.toString()
 
   companion object {
     internal const val NONE = 0

@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  A trimmed excerpt of a real api-versions.xml, taken from android-37.2.
+
+  It exists to keep the `major.minor` regression locked down on machines without an
+  Android SDK installed. Every decimal attribute value here is copied verbatim from
+  the SDK file (android/Manifest$permission is the real owning class).
+
+  Do not "normalise" the decimal values to integers: they are the point of the fixture.
+-->
+<api version="4">
+	<sdk id="37" shortname="Baklava-ext" name="Baklava Extensions" reference="android/os/Build$VERSION_CODES$BAKLAVA"/>
+	<class name="android/Manifest$permission" since="1">
+		<field name="ACCESS_BIOMETRIC_SENSOR_STRENGTHS" since="37.0"/>
+		<field name="ACCESS_HID" since="37.1"/>
+		<field name="ACCESS_LAUNCHER_DATA" since="36.1"/>
+		<field name="ACCESS_LOCAL_NETWORK" since="37.0"/>
+		<field name="BIND_ALTERNATIVE_MESSAGE_TRANSPORT_SERVICE" since="37.0"/>
+		<field name="BIND_CONTENT_RESTRICTION_SERVICE" since="37.2"/>
+		<field name="BIND_CONTENT_SAFETY_SERVICE" since="37.2"/>
+		<field name="BIND_DATA_MIGRATION_FOR_PRIVATECOMPUTE" since="37.0"/>
+		<field name="LEGACY_INTEGER_FIELD" since="34" deprecated="36.1" removed="37.2"/>
+	</class>
+	<class name="android/app/Activity" since="1">
+		<method name="onCreate(Landroid/os/Bundle;)V" since="1"/>
+		<method name="setRecentsScreenshotEnabled(Z)V" since="37.1"/>
+	</class>
+</api>
