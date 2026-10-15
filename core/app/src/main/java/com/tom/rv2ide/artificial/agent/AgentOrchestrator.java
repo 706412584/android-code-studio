@@ -1911,6 +1911,9 @@ public final class AgentOrchestrator {
     // 会话历史。前置校验的窗口虽短，但「配置有问题时用户连发几条」正是最容易撞上的场景。
     ModelCancellationToken runCancellation = new ModelCancellationToken();
     activeCancellations.put(conversationId, runCancellation);
+    // 保活申请：与 activeCancellations 同一区间——覆盖包括前置校验在内的整个运行。
+    // 息屏后 CPU 不 suspend、进程有前台服务保护，循环得以继续（见 AgentKeepAlive）。
+    AgentKeepAlive.acquire();
     try {
       return executeRun(
           conversationId,
@@ -1922,21 +1925,31 @@ public final class AgentOrchestrator {
           rawInputJson,
           reasoningEffort);
     } finally {
-      // 本轮结束：注销实时态持有者。放在广播**之前**——广播会唤醒视图去收尾，
-      // 那些视图不该再查到一份属于已结束运行的快照。
-      activeListeners.remove(conversationId);
-      // 通知所有订阅者「本会话这次运行结束了」。必须广播而不是只靠调用方自己的
-      // 协程收尾：运行可能是另一个入口发起的，那些视图没有对应的 job，只有这个
-      // 事件能让它们把停止键与状态条收掉（见 AgentEvent.Type.RUN_FINISHED）。
-      //
-      // 顺序：先广播终点、再取队列。这样订阅者看到的是「结束 → （若有）新的开始」，
-      // 而不是两条运行的状态交错。
-      broadcastExcept(conversationId, AgentEvent.runFinished(), null);
-      // 无论本次运行因何结束（正常 / 失败 / 取消 / 前置校验不通过），都要消化本会话
-      // 排队的下一条请求。**必须在这里而不是 executeRun 的 finally**：前置校验
-      // （未设工作区、服务商未配置）是直接 return 的，不会进入那边的 try，
-      // 队列就会永久卡住——而「配置有问题」恰恰是用户最容易连着发几条的场景。
-      drainQueued(conversationId);
+      // 保活释放必须无条件执行：嵌套 try/finally 保证下面的收尾（广播、取队列）
+      // 即使抛异常也不会跳过它——否则计数永远停在 1，前台服务与 wakelock 会
+      // 一直挂着（用户看到一条停不掉的通知）。
+      try {
+        // 本轮结束：注销实时态持有者。放在广播**之前**——广播会唤醒视图去收尾，
+        // 那些视图不该再查到一份属于已结束运行的快照。
+        activeListeners.remove(conversationId);
+        // 通知所有订阅者「本会话这次运行结束了」。必须广播而不是只靠调用方自己的
+        // 协程收尾：运行可能是另一个入口发起的，那些视图没有对应的 job，只有这个
+        // 事件能让它们把停止键与状态条收掉（见 AgentEvent.Type.RUN_FINISHED）。
+        //
+        // 顺序：先广播终点、再取队列。这样订阅者看到的是「结束 → （若有）新的开始」，
+        // 而不是两条运行的状态交错。
+        broadcastExcept(conversationId, AgentEvent.runFinished(), null);
+        // 无论本次运行因何结束（正常 / 失败 / 取消 / 前置校验不通过），都要消化本会话
+        // 排队的下一条请求。**必须在这里而不是 executeRun 的 finally**：前置校验
+        // （未设工作区、服务商未配置）是直接 return 的，不会进入那边的 try，
+        // 队列就会永久卡住——而「配置有问题」恰恰是用户最容易连着发几条的场景。
+        drainQueued(conversationId);
+      } finally {
+        // 排队请求会在 drainQueued 里另起线程跑下一次运行，那次 acquire 与本次
+        // release 之间由 AgentKeepAlive 的延迟停止窗口兜住，不会出现
+        // 「停服务→立刻再启」的闪烁。
+        AgentKeepAlive.release();
+      }
     }
   }
 
@@ -2800,6 +2813,36 @@ public final class AgentOrchestrator {
   /** 取消当前活动会话的循环。等价于 {@code cancel(activeConversationId)}。 */
   public void cancel() {
     cancel(activeConversationId);
+  }
+
+  /**
+   * 取消**所有**正在运行的会话。
+   *
+   * <p>用途：息屏后用户从保活通知点「停止」——此时界面不可见，用户看不到当前是哪个
+   * 会话在跑，也没有「切换会话」的入口，因此停止必须是全局的（与界面内「停止」按钮
+   * 按会话精确取消不同，见 {@link #cancel(String)}）。
+   *
+   * <p>遍历键的快照而非直接迭代 map：{@code cancel} 会让运行线程走到 finally 并
+   * 移除自己的键，直接迭代 ConcurrentHashMap 的实时视图虽不抛异常，但可能漏掉
+   * 遍历期间新登记的运行。快照语义下「点停止那一刻正在跑的都停掉」是明确且足够的。
+   */
+  public void cancelAll() {
+    for (String id : new java.util.ArrayList<>(activeCancellations.keySet())) {
+      cancel(id);
+    }
+  }
+
+  /**
+   * 停止所有后台 shell 任务（{@code shell_execute run_in_background}）。
+   *
+   * <p>与 {@link #cancelAll} 一起由保活通知的「停止」按钮调用：用户要的是「别再跑了」，
+   * 而后台任务能独立于 agent 运行存活（正是它们需要单独的保活名额的原因），
+   * 只取消运行会让这些任务继续跑下去。
+   */
+  public void stopAllBackgroundTasks() {
+    for (BackgroundShellRunner runner : backgroundRunners.values()) {
+      runner.stopAll();
+    }
   }
 
   /**

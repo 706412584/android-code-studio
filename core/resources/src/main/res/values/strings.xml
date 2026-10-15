@@ -347,6 +347,17 @@
   <string name="ai_agent_overlay_off">Permission granted — tap to start floating</string>
   <string name="ai_agent_overlay_on">Floating — tap to stop</string>
   <string name="ai_agent_overlay_no_settings">This device has no "Display over other apps" settings page</string>
+
+  <!-- AI 运行期保活（前台服务 + wakelock，设置 → AI 助手 → 高级） -->
+  <string name="ai_agent_run_channel">AI running</string>
+  <string name="ai_agent_run_channel_desc">Keeps the AI agent running while the screen is off</string>
+  <string name="ai_agent_run_notification">AI is working — tap Stop to cancel</string>
+  <string name="ai_agent_run_stop">Stop</string>
+  <string name="ai_agent_battery_title">Keep running when screen is off</string>
+  <string name="ai_agent_battery_summary">Allow the AI agent to keep working after the screen turns off (battery optimization whitelist)</string>
+  <string name="ai_agent_battery_disabled">Whitelisted — AI keeps running when the screen is off</string>
+  <string name="ai_agent_battery_off">Not whitelisted — tap to allow background work</string>
+  <string name="ai_agent_battery_no_settings">This device has no battery optimization settings page</string>
   <string name="ai_agent_codegraph_state_installed">Installed · v%1$s · %2$s on disk</string>
   <string name="ai_agent_codegraph_state_partial">Incomplete install — %1$s missing</string>
   <string name="ai_agent_codegraph_state_missing">Not installed</string>
