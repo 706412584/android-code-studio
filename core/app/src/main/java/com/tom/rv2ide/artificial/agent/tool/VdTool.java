@@ -374,7 +374,12 @@ public final class VdTool extends BaseTool {
         keyboard);
   }
 
-  /** 影子屏上的前台包名与 Activity（best-effort：拿不到返回 null，不让截图因此失败）。 */
+  /**
+   * 影子屏上的前台包名与 Activity（best-effort：拿不到返回 null，不让截图因此失败）。
+   *
+   * <p>resumed 行的字段名随版本变（Android 10 {@code ResumedActivity}、13+ {@code topResumedActivity}），
+   * 匹配公共子串；退出条件带 {@code ActivityStackSupervisor} 防读到全局段（最后一块屏没有下一段头）。
+   */
   private String[] shadowForeground(int displayId) {
     try {
       String out =
@@ -382,7 +387,8 @@ public final class VdTool extends BaseTool {
                   shellBackendsForCaption(),
                   "dumpsys activity activities | awk '/Display #" + displayId
                       + " \\(activities from top to bottom\\)/{f=1;next}"
-                      + " f&&/Display #/{exit} f&&/topResumedActivity/{print;exit}'",
+                      + " f&&/Display #/{exit} f&&/ActivityStackSupervisor/{exit}"
+                      + " f&&/ResumedActivity/{print;exit}'",
                   15_000L)
               .stdout;
       java.util.regex.Matcher m =

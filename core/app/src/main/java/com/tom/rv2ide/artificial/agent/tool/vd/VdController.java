@@ -52,6 +52,13 @@ import org.slf4j.LoggerFactory;
  *
  * <p><b>线程</b>：所有公开方法都是阻塞调用（shell 命令同步等待），调用方负责放到
  * 后台线程——工具执行本来就在后台执行器上。
+ *
+ * <p><b>Android 10 实测差异</b>（黑鲨 SKW-A0 / JOYUI 12）：SurfaceFlinger 输出里虚拟屏
+ * 没有数字 id（只有 {@code + DisplayDevice{virtual, "acs-vd"}}），{@code sfDisplayId}
+ * 为空是常态——截图走 runner 自己出图、不依赖它；{@code dumpsys activity} 的 resumed 行
+ * 叫 {@code ResumedActivity}/{@code mResumedActivity}（13+ 才叫 {@code topResumedActivity}），
+ * 落屏校验按公共子串匹配。触控注入（{@code input -d}）实测可用，即使该屏不是
+ * top-focused display 也能送达（前提：目标窗口可见；任务若被系统挪回主屏，注入会静默丢弃）。
  */
 public final class VdController {
 
@@ -271,12 +278,41 @@ public final class VdController {
   public VdInfo refresh() {
     // 逻辑 display id / 尺寸 / density 都从 DisplayManager 侧取：runner 报的 VD_READY 是创建
     // 瞬间的编号，之后系统会重排（实测 runner 报 5、AM 实际是 8），拿它去 am/input 会打偏。
-    // mViewports 的字段随 Android 版本变（14+ 有 densityDpi，13 没有，density 只在
-    // DisplayDeviceInfo 行里），别把某一版的字段当成必需项。
     String displayDump;
     try {
       displayDump = exec("dumpsys display | grep -E 'mViewports|\"" + DISPLAY_NAME + "\":'", 20_000L).output;
     } catch (RuntimeException e) {
+      return null;
+    }
+    VdInfo parsed = parseDisplayDump(displayDump);
+    if (parsed == null) {
+      return null;
+    }
+    // 截图要的是 SurfaceFlinger 的 display token。Android 14+ 的 --display-id 会列出虚拟屏，
+    // Android 13 只列物理屏，得从 DisplayDevice 行（Display <id> (virtual, "acs-vd")）里捞；
+    // Android 10 两处都没有数字 id——空串是常态，截图不依赖它（见 screenshot()）。
+    String sfOut;
+    try {
+      sfOut =
+          exec(
+                  "dumpsys SurfaceFlinger --display-id; dumpsys SurfaceFlinger | grep -F '\""
+                      + DISPLAY_NAME + "\")'",
+                  20_000L)
+              .output;
+    } catch (RuntimeException e) {
+      sfOut = "";
+    }
+    String sfId = parseSfDisplayId(sfOut);
+    return new VdInfo(parsed.displayId, sfId, parsed.width, parsed.height, parsed.dpi);
+  }
+
+  /**
+   * 从 {@code dumpsys display} 输出里解析影子屏信息（mViewports 行 + DisplayDeviceInfo 行）；
+   * 找不到返回 null。mViewports 的字段随 Android 版本变（14+ 有 densityDpi，13 没有，
+   * density 只在 DisplayDeviceInfo 行里），别把某一版的字段当成必需项。测试可见。
+   */
+  static VdInfo parseDisplayDump(String displayDump) {
+    if (displayDump == null) {
       return null;
     }
     Matcher vp =
@@ -299,35 +335,25 @@ public final class VdController {
       Matcher dm2 = Pattern.compile("densityDpi=(\\d+)").matcher(displayDump);
       dpi = dm2.find() ? Integer.parseInt(dm2.group(1)) : DEFAULT_DPI;
     }
-    // 截图要的是 SurfaceFlinger 的 display token。Android 14+ 的 --display-id 会列出虚拟屏，
-    // Android 13 只列物理屏，得从 DisplayDevice 行（Display <id> (virtual, "acs-vd")）里捞。
-    String sfOut;
-    try {
-      sfOut =
-          exec(
-                  "dumpsys SurfaceFlinger --display-id; dumpsys SurfaceFlinger | grep -F '\""
-                      + DISPLAY_NAME + "\")'",
-                  20_000L)
-              .output;
-    } catch (RuntimeException e) {
-      sfOut = "";
+    return new VdInfo(id, "", w, h, dpi);
+  }
+
+  /** 从 SurfaceFlinger 输出里解析 display token；取不到返回空串（Android 10 常态）。测试可见。 */
+  static String parseSfDisplayId(String sfOut) {
+    if (sfOut == null) {
+      return "";
     }
     Matcher sf =
         Pattern.compile(
                 "Display (\\d+) \\(Virtual display\\): displayName=\"" + Pattern.quote(DISPLAY_NAME) + "\"")
             .matcher(sfOut);
-    String sfId = null;
     if (sf.find()) {
-      sfId = sf.group(1);
-    } else {
-      Matcher sf2 =
-          Pattern.compile("Display (\\d+) \\(virtual, \"" + Pattern.quote(DISPLAY_NAME) + "\"\\)")
-              .matcher(sfOut);
-      if (sf2.find()) {
-        sfId = sf2.group(1);
-      }
+      return sf.group(1);
     }
-    return new VdInfo(id, sfId == null ? "" : sfId, w, h, dpi);
+    Matcher sf2 =
+        Pattern.compile("Display (\\d+) \\(virtual, \"" + Pattern.quote(DISPLAY_NAME) + "\"\\)")
+            .matcher(sfOut);
+    return sf2.find() ? sf2.group(1) : "";
   }
 
   // component / keycode 会被拼进 Shizuku（adb shell, uid 2000）执行的命令，
@@ -387,15 +413,23 @@ public final class VdController {
             + "先在那边退出它再试（不做 move-stack 搬家，以免动到用户当前屏幕）。");
   }
 
-  /** 目标包是否已是 {@code displayId} 那块屏的栈顶（每块屏只有一条 topResumedActivity，用作落屏校验）。 */
+  /**
+   * 目标包是否已是 {@code displayId} 那块屏的栈顶（每块屏只有一条 resumed 记录，用作落屏校验）。
+   *
+   * <p>字段名随版本变：Android 10 是 {@code ResumedActivity:}，13+ 是 {@code topResumedActivity=}；
+   * 用公共子串 {@code ResumedActivity} 匹配，两代都能命中。
+   */
   private boolean hasTaskOnDisplay(String pkg, int displayId) {
     try {
       // 不能改用「整段 section 里 grep 包名」：屏幕段之后还跟着全局区域，会把别的屏上的包一起数进来。
+      // 退出条件除了下一块屏的段头，还要防「本段是最后一块屏」时读进全局段（那里也有一条
+      // ResumedActivity，属于别的屏）。
       String out =
           exec(
                   "dumpsys activity activities | awk '/Display #" + displayId
                       + " \\(activities from top to bottom\\)/{f=1;next}"
-                      + " f&&/Display #/{exit} f&&/topResumedActivity/{print;exit}'",
+                      + " f&&/Display #/{exit} f&&/ActivityStackSupervisor/{exit}"
+                      + " f&&/ResumedActivity/{print;exit}'",
                   15_000L)
               .output;
       return out.contains(pkg + "/");
@@ -409,14 +443,14 @@ public final class VdController {
    *
    * <p>走 runner 自己出图：Android 13 的 {@code screencap} 只认物理屏 token，对虚拟屏会
    * 静默写出 0 字节文件（14+ 才支持），所以改成「touch 请求文件 → runner 写 PNG → 直接读结果」。
+   * 这条链路不经过 SurfaceFlinger 的 display token——Android 10 的 SF 输出里虚拟屏没有数字
+   * id（只有 {@code + DisplayDevice{virtual, "acs-vd"}}），{@code sfDisplayId} 为空属正常，
+   * 不能据此拒绝截图（Aharou 原版有这个检查，是因为它只在 13/14 上验证过）。
    */
   public File screenshot(VdInfo known) {
     VdInfo info = known == null ? refresh() : known;
     if (info == null) {
       throw new IllegalStateException("影子屏未运行，请先 start");
-    }
-    if (info.sfDisplayId.isEmpty()) {
-      throw new IllegalStateException("拿不到影子屏的显示 token（SurfaceFlinger 里没列出这块屏），暂时无法截图");
     }
     File shot = new File(resolveRunnerShotPath());
     File parent = shot.getParentFile();
