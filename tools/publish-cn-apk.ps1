@@ -37,12 +37,23 @@
     存放 updater-cn.json 与 changelog 的仓库，默认 wu-yongchengsvip_admin/acs-mirror
     （该仓库 raw 已用于镜像 manifest，国内可匿名访问）。
 
+.PARAMETER KeepReleases
+    保留最近 N 个版本的 Gitee 资产（含本次要发的版本），更早的资产在上传前删除。
+    默认 2。Gitee 仓库附件配额是 1GB，而每个版本约 296MB（两个 ABI 各 2 卷 +
+    补丁），3 个版本就撑满——实测 r12 发布时被拒「文件大小已超出仓库附件配额 1 GB」，
+    手工删了 r09 才通过。设 0 表示不清理（自己盯配额）。
+
+    删除是安全的：GitHub Release 保留全部 CN 整包（不分卷），CN 补丁生成时
+    的 base 也是从 GitHub 取的（见 asm_build.yml 的 gh release download），
+    Gitee 上的历史资产没有任何引用方。
+
 .PARAMETER DryRun
-    只打印将要做什么，不实际上传/推送。
+    只打印将要做什么，不实际上传/推送（含清理计划）。
 
 .EXAMPLE
     .\tools\publish-cn-apk.ps1 -DryRun
     .\tools\publish-cn-apk.ps1 -ApkDir apk-staging -PatchFile patch-work-cn/acs-hotupdate-cn-1.0.0+gh.r09.zip
+    .\tools\publish-cn-apk.ps1 -KeepReleases 3
 
 .NOTES
     令牌：优先环境变量 GITEE_KEY，否则读 %USERPROFILE%\.gitee_token。
@@ -63,6 +74,9 @@ param(
     [string]$Branch = 'master',
 
     [int]$PartSizeMb = 95,
+
+    # 保留最近 N 个版本的资产（含本次）；更早的删除。见 .PARAMETER KeepReleases。
+    [int]$KeepReleases = 2,
 
     [switch]$DryRun
 )
@@ -180,17 +194,6 @@ else {
 }
 $changelogPath = "whatsnew-cn/$versionName.md"
 
-# ---------- DryRun ----------
-if ($DryRun) {
-    Write-Host '[DryRun] 计划：'
-    Write-Host "  1. 切卷上传 $($arm64Apk.Name) → $Repo release $tag"
-    if ($armv7Apk) { Write-Host "  2. 切卷上传 $($armv7Apk.Name)" }
-    if ($patchSha) { Write-Host "  3. 上传 CN 补丁 → $Repo release $tag" }
-    Write-Host "  4. 推送 changelog → $ManifestRepo/$changelogPath"
-    Write-Host "  5. 生成并推送 updater-cn.json → $ManifestRepo（versionCode=$versionCode, patch=$([bool]$patchSha)）"
-    return
-}
-
 # ---------- 令牌 ----------
 function Get-GiteeToken {
     if ($env:GITEE_KEY) { return $env:GITEE_KEY.Trim() }
@@ -205,6 +208,114 @@ function Get-GiteeToken {
 
 $token = Get-GiteeToken
 $headers = @{ Authorization = "token $token" }
+
+# ---------- 清理旧版本资产（腾 Gitee 附件配额） ----------
+# Gitee 仓库附件配额 1GB，而每个 CN 版本约占 296MB（两个 ABI 各 2 卷 + 补丁），
+# 3 个版本就撑满——实测 r12 发布时上传被拒「文件大小已超出仓库附件配额 1 GB」，
+# 手工删掉 r09 才通过。这里按 KeepReleases 自动保留最近 N 个版本。
+#
+# 删除是安全的：GitHub Release 保留全部 CN 整包（不分卷），CN 补丁生成时的 base
+# 也从 GitHub 取（见 asm_build.yml 的 gh release download），Gitee 历史资产无引用方。
+function Get-GiteeReleases([string]$repo) {
+    $base = "https://gitee.com/api/v5/repos/$repo/releases"
+    $all = @()
+    for ($page = 1; $page -le 10; $page++) {
+        $batch = @(Invoke-RestMethod -Uri "$base`?access_token=$token&per_page=100&page=$page" -Method Get)
+        if ($batch.Count -eq 0) { break }
+        $all += $batch
+        if ($batch.Count -lt 100) { break }
+    }
+    return $all
+}
+
+function Get-GiteeAttachments([string]$repo, $releaseId) {
+    return @(Invoke-RestMethod -Uri "https://gitee.com/api/v5/repos/$repo/releases/$releaseId/attach_files?access_token=$token" -Method Get)
+}
+
+function Remove-OldCnAssets([string]$repo, [string]$currentTag, [int]$keep, [bool]$dryRun) {
+    if ($keep -le 0) {
+        Write-Host '  KeepReleases=0：跳过清理（配额需自行盯）。'
+        return
+    }
+    $releases = Get-GiteeReleases $repo
+    # 只认版本发布（cn-v1.0.0+gh.rNN）。仓库里若混入别的 tag，一律不碰。
+    $versioned = @()
+    foreach ($r in $releases) {
+        $m = [regex]::Match([string]$r.tag_name, '^cn-v1\.0\.0\+gh\.r(\d+)$')
+        if ($m.Success) {
+            $versioned += [pscustomobject]@{
+                Tag = [string]$r.tag_name
+                Rev = [int]$m.Groups[1].Value
+                Id  = $r.id
+            }
+        }
+    }
+    $versioned = @($versioned | Sort-Object Rev -Descending)
+
+    $curMatch = [regex]::Match($currentTag, '^cn-v1\.0\.0\+gh\.r(\d+)$')
+    $curRev = if ($curMatch.Success) { [int]$curMatch.Groups[1].Value } else { -1 }
+
+    # **比本次要发的版本更新的，一律不动**。
+    #
+    # 这条防线是必需的：脚本的 APK 来源有两个（apk-staging 优先，缺失时退回
+    # build/outputs/apk/release），而后者可能残留旧版本的产物。实测 DryRun 时
+    # 选中的是 r07（staging 已清、回退目录里留着 r07 的包），若无此防线，
+    # 清理逻辑会把已经发布过的 r10/r11 当成「旧版本」删掉。
+    $newer = @($versioned | Where-Object { $_.Rev -gt $curRev })
+    if ($newer.Count -gt 0) {
+        Write-Warning ("现有版本 $($newer.Tag -join '、') 比本次要发布的 $currentTag 更新——" +
+            '确认 APK 来源是否正确（apk-staging 缺失时会回退到 build/outputs/apk/release，' +
+            '该目录可能残留旧产物）。已跳过清理以免误删。')
+        return
+    }
+
+    # 保留集合：本次版本 + 次新的若干个，凑够 $keep 个。
+    $keepTags = @($currentTag)
+    foreach ($v in $versioned) {
+        if ($keepTags.Count -ge $keep) { break }
+        if ($keepTags -notcontains $v.Tag) { $keepTags += $v.Tag }
+    }
+
+    $toDelete = @($versioned | Where-Object { $keepTags -notcontains $_.Tag })
+    if ($toDelete.Count -eq 0) {
+        Write-Host "  无需清理（现有 $($versioned.Count) 个版本，保留：$($keepTags -join '、')）"
+        return
+    }
+    foreach ($v in $toDelete) {
+        $assets = Get-GiteeAttachments $repo $v.Id
+        $sum = 0
+        foreach ($a in $assets) { $sum += [int64]($a.size) }
+        Write-Host "  清理旧版本 $($v.Tag)：$($assets.Count) 个附件，$([math]::Round($sum / 1MB, 1)) MB"
+        foreach ($a in $assets) {
+            if ($dryRun) {
+                Write-Host "    [DryRun] 将删除 $($a.name)"
+            }
+            else {
+                Invoke-RestMethod -Uri "https://gitee.com/api/v5/repos/$repo/releases/$($v.Id)/attach_files/$($a.id)?access_token=$token" `
+                    -Method Delete | Out-Null
+                Write-Host "    已删除 $($a.name)"
+            }
+        }
+    }
+}
+
+# ---------- DryRun ----------
+if ($DryRun) {
+    Write-Host '[DryRun] 计划：'
+    Write-Host "  0. 清理旧版本资产（保留最近 $KeepReleases 个版本）"
+    # 仓库不存在时（首次发布）列不出 release，属正常，不阻断 DryRun。
+    $prevEap = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try { Remove-OldCnAssets $Repo $tag $KeepReleases $true }
+    catch { Write-Host "  （无法读取现有版本，跳过清理预览：$($_.Exception.Message)）" }
+    finally { $ErrorActionPreference = $prevEap }
+    Write-Host "  1. 切卷上传 $($arm64Apk.Name) → $Repo release $tag"
+    if ($armv7Apk) { Write-Host "  2. 切卷上传 $($armv7Apk.Name)" }
+    if ($patchSha) { Write-Host "  3. 上传 CN 补丁 → $Repo release $tag" }
+    Write-Host "  4. 推送 changelog → $ManifestRepo/$changelogPath"
+    Write-Host "  5. 生成并推送 updater-cn.json → $ManifestRepo（versionCode=$versionCode, patch=$([bool]$patchSha)）"
+    return
+}
 
 # ---------- 确保仓库存在 ----------
 # Gitee 的建仓/改仓 API 有个坑：**建仓时 `private=false` 参数被忽略**（建出来仍是
@@ -244,6 +355,10 @@ function Ensure-GiteeRepo([string]$repo) {
 
 Write-Host '检查仓库…'
 Ensure-GiteeRepo $Repo
+
+# 配额清理必须在上传前做：不清就可能在传第二卷时被拒，留下半个版本的残局。
+Write-Host "清理旧版本资产（保留最近 $KeepReleases 个版本）…"
+Remove-OldCnAssets $Repo $tag $KeepReleases $false
 
 # ---------- 确保 Release 存在 ----------
 $api = "https://gitee.com/api/v5/repos/$Repo"
