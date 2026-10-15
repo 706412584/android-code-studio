@@ -22,6 +22,7 @@ import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.textview.MaterialTextView
 import com.tom.rv2ide.lsp.dart.DartSdkInstaller
 import com.tom.rv2ide.lsp.kotlin.etc.LspFeatures
+import com.tom.rv2ide.lsp.typescript.TypeScriptServerInstaller
 import com.tom.rv2ide.preferences.internal.LSPPreferences
 import com.tom.rv2ide.preferences.internal.LSPPreferences.ACS_KOTLIN_LSP_CURSOR_HOVER
 import com.tom.rv2ide.preferences.internal.LSPPreferences.ACS_KOTLIN_LSP_DIAGNOSTICS
@@ -71,8 +72,8 @@ private class LSPOptions(
 /**
  * TypeScript / JavaScript（React Native 模板）。
  *
- * 无下载按钮：TSLS 走 npm 装进**项目内** node_modules（与项目锁定的 TS 版本
- * 配套），不适合应用级安装。条目只展示状态与安装命令。
+ * TSLS 走 npm 装进**项目内** node_modules（与项目锁定的 TS 版本配套），因此安装
+ * 入口在条目弹窗里：一键对当前项目根执行 npm install（见 [TypeScriptLSP]）。
  */
 @Parcelize
 private class TypeScriptCategory(
@@ -96,8 +97,70 @@ private class TypeScriptLSP(
 
   override fun onConfigureDialog(preference: Preference, dialog: MaterialAlertDialogBuilder) {
     super.onConfigureDialog(preference, dialog)
-    dialog.setMessage(preference.context.getString(string.typescript_lsp_hint))
+    val ctx = preference.context
+    val projectDir = com.tom.rv2ide.projects.IProjectManager.getInstance().projectDirOrNull
+    val installed = projectDir != null && TypeScriptServerInstaller.isInstalled(projectDir)
+
+    // 装好后只需展示状态；未装则给一键安装按钮。
+    dialog.setMessage(
+        if (installed) {
+          ctx.getString(string.typescript_lsp_install_success)
+        } else {
+          ctx.getString(string.typescript_lsp_hint)
+        })
+
+    if (!installed) {
+      dialog.setNeutralButton(string.lsp_install_str) { _, _ -> installTypeScriptServer(ctx) }
+    }
     dialog.setPositiveButton(android.R.string.ok) { d, _ -> d.dismiss() }
+  }
+
+  /**
+   * 一键安装：在内置 Termux 里对**当前项目根**执行 npm install。
+   *
+   * <p>此前该条目只能提示「在项目根执行 npm install」，用户要求在设置里直接安装
+   * （用户报的「点击 TS 提示在项目执行安装，没有可直接下载的吗」）。这里复用内置
+   * node/npm，命令与提示里给出的完全一致（npmmirror 源）。
+   */
+  private fun installTypeScriptServer(ctx: android.content.Context) {
+    val projectDir = com.tom.rv2ide.projects.IProjectManager.getInstance().projectDirOrNull
+    if (projectDir == null) {
+      MaterialAlertDialogBuilder(ctx)
+          .setTitle(string.lsp_options_typescript_title)
+          .setMessage(string.typescript_lsp_no_project)
+          .setPositiveButton(android.R.string.ok, null)
+          .show()
+      return
+    }
+
+    val progressDialog =
+        MaterialAlertDialogBuilder(ctx)
+            .setTitle(string.lsp_options_typescript_title)
+            .setMessage(string.typescript_lsp_install_running)
+            .setCancelable(false)
+            .create()
+    progressDialog.show()
+
+    CoroutineScope(Dispatchers.Main).launch {
+      val result = TypeScriptServerInstaller.install(projectDir)
+      progressDialog.dismiss()
+      result
+          .onSuccess {
+            MaterialAlertDialogBuilder(ctx)
+                .setTitle(string.lsp_server_success_title)
+                .setMessage(string.typescript_lsp_install_success)
+                .setPositiveButton(android.R.string.ok, null)
+                .show()
+            LSPStateObserver.notifyServerStateChanged()
+          }
+          .onFailure { e ->
+            MaterialAlertDialogBuilder(ctx)
+                .setTitle(string.lsp_server_error_title)
+                .setMessage(ctx.getString(string.typescript_lsp_install_failed, e.message ?: ""))
+                .setPositiveButton(android.R.string.ok, null)
+                .show()
+          }
+    }
   }
 }
 

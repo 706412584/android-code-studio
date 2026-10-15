@@ -931,6 +931,7 @@
   <string name="msg_tab_size">Specify number of spaces for TAB</string>
   <string name="msg_preferences">Preferences</string>
   <string name="pref_changelog">Changelog</string>
+  <string name="pref_check_update">Check for updates</string>
   <string name="msg_editor_font_size">Please choose default font size of editor :</string>
   <string name="msg_clear_cache">This will delete caches directory created by Gradle. If you delete it, the next build may take a bit longer than normal as Gradle will download required files again.\n\nAre you sure you want to delete caches?</string>
 
@@ -1043,6 +1044,7 @@
   <string name="idepref_group_summary">Discuss featues, bugs and improvements here.</string>
   <string name="idepref_changelog_summary">What\'s new in this version?</string>
   <string name="idepref_about_summary">More about Android Code Studio.</string>
+  <string name="idepref_check_update_summary">Check whether a newer version is available.</string>
   <string name="idepref_general_summary">General IDE configuration.</string>
   <string name="idepref_editor_summary">Configure the editor.</string>
   <string
@@ -1116,6 +1118,10 @@
   <string name="lsp_options_typescript_title">TypeScript Language Server</string>
   <string name="lsp_options_typescript_summary">Code completion and diagnostics for .ts/.tsx/.js files. Installed via npm in the project (typescript-language-server + typescript).</string>
   <string name="typescript_lsp_hint">Run in the project root: npm install -D typescript-language-server typescript --registry=https://registry.npmmirror.com</string>
+  <string name="typescript_lsp_install_running">Installing TypeScript language server…</string>
+  <string name="typescript_lsp_install_success">TypeScript language server installed. Reopen the project to activate it.</string>
+  <string name="typescript_lsp_install_failed">Installation failed:\n%s</string>
+  <string name="typescript_lsp_no_project">Open a project first, then install the server into it.</string>
   <string name="dart_sdk_uninstall_message">Delete the Dart SDK (~169 MB)? Dart code completion and diagnostics will be unavailable until reinstalled.</string>
   <string name="dart_sdk_install_success">Dart SDK installed successfully.</string>
   <string name="dart_sdk_install_failed">Dart SDK installation failed:\n%s</string>

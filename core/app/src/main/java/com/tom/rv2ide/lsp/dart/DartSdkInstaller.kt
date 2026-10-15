@@ -222,9 +222,16 @@ object DartSdkInstaller {
   /**
    * 解包 dart-sdk tar.gz。
    *
+   * <p><b>必须剥掉顶层 `dart-sdk/` 前缀</b>：包内所有条目都带这一层（官方
+   * `dart-sdk/bin/dart` 等），而 [installDir] 本身已是 SDK 根，直接拼会把内容
+   * 解到 `<安装目录>/dart-sdk/…`，比 [isInstalled] 检查的 `<安装目录>/bin/dart`
+   * 深一层——每次应用内安装都报「解包完成但 SDK 校验未通过（dart 或分析器快照
+   * 缺失）」，用户看不出原因（实测：设备上能用的 SDK 是手动解压到正确位置的）。
+   *
    * <p>与 CodeGraphInstaller.extract 同一套安全规则：解包前清空目标目录
-   * （避免旧版本残留与新版本混合）、防目录穿越、按 tar 记录的 mode 恢复
-   * 可执行位（dart 二进制需要 +x，否则服务器起不来）。
+   * （避免旧版本残留与新版本混合）、防目录穿越、恢复可执行位（dart 二进制需要
+   * +x，否则服务器起不来）。可执行位不能只信 tar 记录——发布包在 Windows 上重打包
+   * 时 `bin/dart` 的 mode 会丢成 0644（实测），因此对 `bin/` 下的文件强制 +x。
    */
   private fun extract(archive: File): Int {
     val target = installDir()
@@ -236,7 +243,12 @@ object DartSdkInstaller {
     TarArchiveInputStream(GZIPInputStream(FileInputStream(archive))).use { tar ->
       var entry = tar.nextTarEntry
       while (entry != null) {
-        val name = entry.name.removePrefix("./")
+        val name = stripPackagePrefix(entry.name)
+        // 顶层目录条目（`dart-sdk`）剥掉前缀后为空，它对应的就是 target 本身
+        if (name.isEmpty()) {
+          entry = tar.nextTarEntry
+          continue
+        }
         val outFile = File(target, name)
         if (!isInside(target, outFile)) {
           // 目录穿越防护：归档里的 ../ 能写到目标之外
@@ -248,7 +260,15 @@ object DartSdkInstaller {
         } else {
           outFile.parentFile?.mkdirs()
           FileOutputStream(outFile).use { out -> tar.copyTo(out) }
-          if ((entry.mode and 0b001_000_000) != 0) {
+          // 可执行位：tar 里记录了 mode 就用它；否则按「是否在 bin/ 下」兜底。
+          //
+          // 兜底是必要的：分发包在 Windows 上重新打包时，tar 会把 `bin/dart`
+          // 这类 ELF 的 mode 记成 0644（实测当前发布包即如此），只信 tar 的话
+          // 解出来的 dart 没有 +x，LSP 一启动就 `can't execute: Permission denied`。
+          // bin/ 下的内容（dart / dartaotruntime / snapshots 里的脚本）本就该可执行，
+          // 对它们一律补 +x。
+          val inBinDir = name == "bin" || name.startsWith("bin/")
+          if (inBinDir || (entry.mode and 0b001_000_000) != 0) {
             outFile.setExecutable(true, false)
           }
           count++
@@ -257,6 +277,23 @@ object DartSdkInstaller {
       }
     }
     return count
+  }
+
+  /**
+   * 剥掉归档条目的顶层 `dart-sdk/` 前缀。
+   *
+   * <p>兼容两种打包方式：带前缀（官方包）与不带（若将来重新打包）。不带前缀时
+   * 原样返回，因此对已是裸根的归档也成立。
+   */
+  private fun stripPackagePrefix(rawName: String): String {
+    var name = rawName.removePrefix("./")
+    if (name == PACKAGE_DIR_NAME) {
+      return ""
+    }
+    if (name.startsWith("$PACKAGE_DIR_NAME/")) {
+      name = name.removePrefix("$PACKAGE_DIR_NAME/")
+    }
+    return name
   }
 
   /** 路径是否落在根目录内（防目录穿越）。 */
