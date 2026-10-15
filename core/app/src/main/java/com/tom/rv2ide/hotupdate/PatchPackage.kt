@@ -45,14 +45,25 @@ object PatchPackage {
    * `classes12.dex`），补丁里没有 `classes.dex`，于是 ART 找不到补丁中的任何类——
    * 表现为「补丁应用成功、DEX 注入 ✓、日志无异常，但代码毫无变化」的**静默失败**。
    *
-   * <p>其余条目（[MANIFEST]、资源、so）原样保留；[MANIFEST] 排在输出最前，便于人工排查。
+   * <p><b>含资源条目的补丁会被拒绝</b>（见 [containsResources]）——这类补丁会整体替换
+   * `resources.arsc`，而资源 ID 跨版本会漂移，未被差分 dex 覆盖的代码会引用到错误的资源。
+   *
+   * <p>其余条目（[MANIFEST]、so）原样保留；[MANIFEST] 排在输出最前，便于人工排查。
    * dex 内容逐字节原样复制（dex 不引用自身文件名，改名安全）。
    *
    * @return 重命名后的 dex 文件名列表（按新名）
+   * @throws IllegalArgumentException 补丁含资源条目，或无 dex 条目
    */
   fun normalizeDexNames(src: File, dest: File): List<String> {
     ZipFile(src).use { zin ->
       val all = zin.entries().toList()
+      val resourceEntries =
+          all.filter { it.name == "resources.arsc" || it.name.startsWith("res/") }
+      require(resourceEntries.isEmpty()) {
+        "补丁含资源变更（${resourceEntries.size} 个条目），拒绝应用：" +
+            "补丁会整体替换 resources.arsc，而资源 ID 跨版本会漂移，" +
+            "未被差分 dex 覆盖的代码会引用到错误的资源。请改用整包更新。"
+      }
       val dexEntries = all.filter { it.name.endsWith(".dex") }.sortedBy { it.name }
       require(dexEntries.isNotEmpty()) { "补丁包内没有 .dex 条目：${src.name}" }
 
@@ -75,6 +86,31 @@ object PatchPackage {
         }
       }
       return outNames
+    }
+  }
+
+  /**
+   * 补丁是否含资源条目（`resources.arsc` 或 `res/` 下的文件）。
+   *
+   * <p><b>含资源的补丁一律不能用</b>：补丁里的 `resources.arsc` 是**整体替换**，而资源 ID
+   * 跨版本会漂移（r11→r12 实测：10308 个共有资源里 981 个 ID 变了）。补丁只带差分 dex，
+   * 未被覆盖的那些 dex 仍引用旧 ID，在新表里指向别的资源——界面出现大量无关文字
+   * （实测：主页「打开项目」显示成「找不到未解析的类名」）。
+   *
+   * <p>资源 ID 漂移对**整包更新**无害（代码与资源一起换），只对补丁致命。
+   * CI 侧已拒绝生成这类补丁（见 `tools/hotupdate-normalize-patch.py`），
+   * 这里再查一次是双保险：清单可能残留旧补丁，或用户设备上有历史下载的补丁文件。
+   */
+  fun containsResources(patch: File): Boolean {
+    return try {
+      ZipFile(patch).use { zip ->
+        zip.entries().asSequence().any { e ->
+          e.name == "resources.arsc" || e.name.startsWith("res/")
+        }
+      }
+    } catch (e: Exception) {
+      // 读不出来交给后续流程报错；这里不把「打不开」当成「含资源」。
+      false
     }
   }
 

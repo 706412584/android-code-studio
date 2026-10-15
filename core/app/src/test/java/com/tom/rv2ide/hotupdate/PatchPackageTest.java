@@ -19,7 +19,9 @@ package com.tom.rv2ide.hotupdate;
 
 import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
 
 import java.io.File;
 import java.io.FileOutputStream;
@@ -209,5 +211,69 @@ public class PatchPackageTest {
     File src = newTempZip("patch", Collections.singletonList(new String[] {"classes.dex", "D"}));
 
     assertEquals(-1, PatchPackage.INSTANCE.readBaseVersionCode(src));
+  }
+
+  // ---- 资源变更拒绝（r12 线上事故的回归保护）----
+
+  /**
+   * 含 {@code resources.arsc} 的补丁必须被拒绝。
+   *
+   * <p>回归背景（r12 线上事故）：补丁里的 resources.arsc 是整体替换，而资源 ID 跨版本
+   * 会漂移（r11→r12 有 981 个 ID 变了）。补丁只带差分 dex，未被覆盖的代码仍引用旧 ID，
+   * 在新表里指向别的资源——实测主页「打开项目」显示成「找不到未解析的类名」。
+   */
+  @Test
+  public void patchWithArscIsRejected() throws IOException {
+    File src =
+        newTempZip(
+            "patch",
+            Arrays.asList(
+                new String[] {"patch.json", "{}"},
+                new String[] {"classes.dex", "D"},
+                new String[] {"resources.arsc", "ARSC"}));
+
+    assertTrue(PatchPackage.INSTANCE.containsResources(src));
+    try {
+      PatchPackage.INSTANCE.normalizeDexNames(src, File.createTempFile("out", ".zip"));
+      fail("含 resources.arsc 的补丁应被拒绝");
+    } catch (IllegalArgumentException expected) {
+      assertTrue(expected.getMessage().contains("资源"));
+    }
+  }
+
+  /** {@code res/} 下的资源文件同样触发拒绝。 */
+  @Test
+  public void patchWithResEntriesIsRejected() throws IOException {
+    File src =
+        newTempZip(
+            "patch",
+            Arrays.asList(
+                new String[] {"patch.json", "{}"},
+                new String[] {"classes.dex", "D"},
+                new String[] {"res/layout/foo.xml", "<x/>"}));
+
+    assertTrue(PatchPackage.INSTANCE.containsResources(src));
+    try {
+      PatchPackage.INSTANCE.normalizeDexNames(src, File.createTempFile("out", ".zip"));
+      fail("含 res/ 条目的补丁应被拒绝");
+    } catch (IllegalArgumentException expected) {
+      assertTrue(expected.getMessage().contains("资源"));
+    }
+  }
+
+  /** 纯 dex 补丁（历史正常形态）必须照常通过——守卫不能误伤。 */
+  @Test
+  public void pureDexPatchStillAccepted() throws IOException {
+    File src =
+        newTempZip(
+            "patch",
+            Arrays.asList(
+                new String[] {"patch.json", "{}"},
+                new String[] {"classes8.dex", "D8"},
+                new String[] {"classes12.dex", "D12"}));
+
+    assertFalse(PatchPackage.INSTANCE.containsResources(src));
+    List<String> out = PatchPackage.INSTANCE.normalizeDexNames(src, File.createTempFile("out", ".zip"));
+    assertEquals(Arrays.asList("classes.dex", "classes2.dex"), out);
   }
 }

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""规范化热更新补丁包里的 dex 文件名。
+"""规范化热更新补丁包里的 dex 文件名，并拒绝含资源变更的补丁。
 
-背景（必须理解，否则补丁会静默失效）：
+背景一（dex 跳号，必须理解否则补丁静默失效）：
     patch-cli 生成补丁时，会沿用 base APK 里的 dex 名（例如 classes8.dex、classes12.dex）。
     而 Android 的 DexPathList 只按 **连续** 的 classes.dex → classes2.dex → classes3.dex …
     顺序查找 dex；一旦跳号，从缺口开始的所有 dex 都不可见。
@@ -11,8 +11,18 @@
         补丁「应用成功」、DEX 注入 ✓、日志无异常，但代码毫无变化。
     这是静默失败，比报错危险得多，所以生成侧与 App 侧都做规范化（双保险）。
 
+背景二（含资源变更的补丁会打乱资源 ID，必须拒绝）：
+    补丁里的 resources.arsc 是**整体替换**，而资源 ID 在不同版本间会漂移
+    （r11→r12 实测：10308 个共有资源里 981 个 ID 变了）。补丁只带差分 dex，
+    未被覆盖的那些 dex 仍引用旧 ID，在新表里指向别的资源——界面出现大量
+    无关文字（实测：主页「打开项目」显示成「找不到未解析的类名」）。
+
+    资源 ID 漂移对**整包更新**无害（代码与资源一起换），只对补丁致命。
+    因此：补丁内出现 resources.arsc 或 res/ 条目即判定为不安全，直接拒绝生成。
+    回退路径是整包更新（始终可用），不会让用户卡住。
+
 本脚本把补丁 zip 内的 *.dex 按原文件名排序，重命名为连续的 classes.dex / classes2.dex …，
-其余条目（patch.json、资源、so）原样保留。dex 内容不改（dex 不引用自身文件名，改名安全）。
+其余条目（patch.json、so）原样保留。dex 内容不改（dex 不引用自身文件名，改名安全）。
 
 用法：
     python3 tools/hotupdate-normalize-patch.py in.zip out.zip
@@ -22,9 +32,25 @@ import sys
 import zipfile
 
 
+def assert_no_resources(names) -> None:
+    """补丁含资源条目即拒绝——见模块文档「背景二」。"""
+    arsc = [n for n in names if n == "resources.arsc"]
+    res = [n for n in names if n.startswith("res/")]
+    if arsc or res:
+        raise SystemExit(
+            "拒绝生成：补丁包含资源变更（"
+            f"resources.arsc={len(arsc)} 个, res/ 下 {len(res)} 个文件）。\n"
+            "  原因：补丁会整体替换 resources.arsc，而资源 ID 跨版本会漂移；\n"
+            "  未被差分 dex 覆盖的代码仍引用旧 ID，界面会显示错乱的文字。\n"
+            "  处理：本次不发布热更新补丁，用户走整包更新（updater.json 的 patch\n"
+            "  块会被 CI 移除，应用端自动回退到整包分支）。"
+        )
+
+
 def normalize(src_path: str, dst_path: str) -> int:
     with zipfile.ZipFile(src_path) as zin:
         names = zin.namelist()
+        assert_no_resources(names)
         dex_names = sorted(n for n in names if n.endswith(".dex"))
         other_names = [n for n in names if not n.endswith(".dex")]
 

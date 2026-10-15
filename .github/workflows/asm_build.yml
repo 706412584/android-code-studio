@@ -268,6 +268,12 @@ jobs:
         run: |
           fail() { echo "跳过补丁生成：$1"; echo "generated=false" >> "$GITHUB_OUTPUT"; exit 0; }
 
+          # 含资源变更的补丁会被 hotupdate-normalize-patch.py 拒绝（exit 1 → fail()），
+          # 此时 generated=false：Create Release 不带补丁资产、Sync updater.json 移除
+          # patch 块，用户自动回退到整包更新。原因见该脚本的模块文档：补丁整体替换
+          # resources.arsc，而资源 ID 跨版本会漂移（r11→r12 实测 981 个 ID 变化），
+          # 未被差分 dex 覆盖的代码会引用到错误资源，界面文字错乱。
+
           # 1.5.2 起支持 dex 版本 038（INVOKE_POLYMORPHIC 解析与写入）——
           # 1.4.0/1.5.1 对 ACS 的 Kotlin 2.1 产物必报 truncated，不能降级。
           PATCH_CLI_URL="https://repo1.maven.org/maven2/io/github/706412584/patch-cli/1.5.2/patch-cli-1.5.2-all.jar"

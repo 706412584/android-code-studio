@@ -130,6 +130,18 @@ object HotUpdateManager {
       }
 
       onStage?.invoke(0.7f, "准备应用…")
+      // 含资源的补丁直接拒绝：它会整体替换 resources.arsc，而资源 ID 跨版本会漂移，
+      // 未被差分 dex 覆盖的代码会引用到错误资源（实测：界面出现大量无关文字）。
+      // CI 侧已拒绝生成这类补丁，这里再查一次是双保险——清单可能残留旧补丁，
+      // 或设备上有历史下载的补丁文件。详见 PatchPackage.containsResources 的说明。
+      if (PatchPackage.containsResources(raw)) {
+        cleanup(raw, normalized)
+        onResult(
+            false,
+            "该补丁包含资源变更，不适用于热更新（会导致界面文字错乱）。请更新完整 APK。",
+        )
+        return
+      }
       // 关键修复：把补丁内的 dex 重命名为连续的 classes*.dex。
       //
       // Android 的 DexPathList 只按 classes.dex → classes2.dex → classes3.dex … 顺序查找，
