@@ -158,6 +158,32 @@ $patchSha = $null
 $patchBaseVc = $null
 if (-not [string]::IsNullOrWhiteSpace($PatchFile) -and (Test-Path $PatchFile)) {
     $patchItem = Get-Item $PatchFile
+    # **含资源变更的补丁必须拒绝**：补丁整体替换 resources.arsc，而资源 ID 跨版本会漂移
+    # （r11→r12 实测 981 个 ID 变化）。补丁只带差分 dex，未被覆盖的代码仍引用旧 ID，
+    # 在新表里指向别的资源——实测主页「打开项目」显示成「找不到未解析的类名」。
+    #
+    # 这条检查与 CI 的 hotupdate-normalize-patch.py、应用侧的
+    # PatchPackage.containsResources 是同一判据的三道防线。此处是**独立路径**：
+    # 补丁可从 GitHub Release 下载（CI 已拒绝生成，但历史资产仍在），
+    # 若不在这里拦住，清单会带上 patch 块把用户推向损坏的补丁。
+    Add-Type -AssemblyName System.IO.Compression.FileSystem
+    $zip = [System.IO.Compression.ZipFile]::OpenRead($PatchFile)
+    try {
+        $resourceEntries = @($zip.Entries | Where-Object {
+            $_.FullName -eq 'resources.arsc' -or $_.FullName.StartsWith('res/')
+        })
+        if ($resourceEntries.Count -gt 0) {
+            Write-Warning ("补丁含资源变更（$($resourceEntries.Count) 个条目），已拒绝使用：" +
+                '补丁会整体替换 resources.arsc 而资源 ID 跨版本会漂移，' +
+                '会导致界面文字错乱。清单将不带 patch 块，用户走整包更新。')
+            $PatchFile = ''
+        }
+    }
+    finally { $zip.Dispose() }
+}
+
+if (-not [string]::IsNullOrWhiteSpace($PatchFile) -and (Test-Path $PatchFile)) {
+    $patchItem = Get-Item $PatchFile
     $patchSha = (Get-FileHash $PatchFile -Algorithm SHA256).Hash.ToLower()
     Write-Host "CN 补丁   : $($patchItem.Name)（$([math]::Round($patchItem.Length / 1MB, 1)) MB, sha256=$($patchSha.Substring(0,12))…）"
     # 读补丁内 patch.json 的 baseVersionCode（App 端据此判定补丁适用性）
