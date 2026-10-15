@@ -24,6 +24,7 @@ import com.blankj.utilcode.util.ResourceUtils;
 import com.tom.rv2ide.app.BaseApplication;
 import com.tom.rv2ide.app.configuration.IDEBuildConfigProvider;
 import com.tom.rv2ide.app.configuration.IJdkDistributionProvider;
+import com.tom.rv2ide.utils.ElfArch;
 import com.tom.rv2ide.utils.Environment;
 
 import org.jetbrains.annotations.Contract;
@@ -180,20 +181,70 @@ public class ToolsManager {
   }
 
   private static void extractAapt2() {
-    if (!Environment.AAPT2.exists()) {
-      final var context = BaseApplication.getBaseInstance();
-      final var nativeLibraryDir = context.getApplicationInfo().nativeLibraryDir;
-      final var sourceAapt2 = new File(nativeLibraryDir, "libaapt2.so");
-      if (sourceAapt2.exists() && sourceAapt2.isFile()) {
-        FilesKt.copyTo(sourceAapt2, Environment.AAPT2, true, ConstantsKt.DEFAULT_BUFFER_SIZE);
-      } else {
-        LOG.error("{} file does not exist! This can be problematic.", sourceAapt2);
+    final var context = BaseApplication.getBaseInstance();
+    final var nativeLibraryDir = context.getApplicationInfo().nativeLibraryDir;
+    final var sourceAapt2 = new File(nativeLibraryDir, "libaapt2.so");
+
+    // Re-extract when the installed binary is missing, empty, not executable, or built for
+    // a CPU architecture this device cannot run. Without the architecture check a wrong-ABI
+    // binary (e.g. x86_64 left on an ARM device) would survive forever and fail with
+    // "Exec format error" on every build. See upstream issue #370.
+    //
+    // The source must be usable too, otherwise a device that cannot run its own packaged
+    // binary (e.g. a translated host) would delete and re-copy it on every launch for nothing.
+    final var installed = Environment.AAPT2;
+    final var sourceUsable =
+        sourceAapt2.exists()
+            && sourceAapt2.isFile()
+            && sourceAapt2.length() > 0
+            && isCompatibleAapt2(sourceAapt2);
+
+    final var needsExtract = !installed.exists()
+                                 || installed.length() == 0
+                                 || !installed.canExecute()
+                                 || !isCompatibleAapt2(installed);
+
+    if (needsExtract && sourceUsable) {
+      try {
+        if (installed.exists() && !installed.delete()) {
+          LOG.warn("Unable to delete outdated AAPT2 binary: {}", installed);
+        }
+        FilesKt.copyTo(sourceAapt2, installed, true, ConstantsKt.DEFAULT_BUFFER_SIZE);
+        LOG.info(
+            "Installed AAPT2 from {} ({} bytes, compatible={})",
+            sourceAapt2,
+            installed.length(),
+            isCompatibleAapt2(installed));
+      } catch (Throwable err) {
+        LOG.error("Failed to copy AAPT2 from {}", sourceAapt2, err);
       }
+    } else if (needsExtract) {
+      LOG.error(
+          "AAPT2 is unusable and {} cannot replace it (exists={}, compatible={})."
+              + " processDebugResources may fail.",
+          sourceAapt2,
+          sourceAapt2.exists(),
+          isCompatibleAapt2(sourceAapt2));
     }
 
-    if (!Environment.AAPT2.canExecute() && !Environment.AAPT2.setExecutable(true)) {
+    if (installed.exists() && !installed.canExecute() && !installed.setExecutable(true)) {
       LOG.error("Cannot set executable permissions to AAPT2 binary");
     }
+  }
+
+  /**
+   * Checks whether the given AAPT2 binary was built for a CPU architecture the device supports.
+   *
+   * <p>Note: this deliberately reads {@link android.os.Build#SUPPORTED_ABIS} (what this device
+   * can execute) rather than {@link IDEBuildConfigProvider#getSupportedAbis()} (which is a fixed
+   * list of ABIs the IDE can target). Using the latter would make the check ineffective.
+   *
+   * @param aapt2 The AAPT2 binary to inspect.
+   * @return {@code true} if the binary is compatible. Missing, unreadable, or non-ELF files are
+   *     reported as incompatible so that callers replace them.
+   */
+  private static boolean isCompatibleAapt2(@NonNull File aapt2) {
+    return ElfArch.isCompatibleWith(ElfArch.machineOf(aapt2), android.os.Build.SUPPORTED_ABIS);
   }
 
   private static void extractToolingApi() {
