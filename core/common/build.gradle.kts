@@ -52,4 +52,6 @@ dependencies {
     api(projects.utilities.buildInfo)
     api(projects.utilities.flashbar)
     api(projects.utilities.shared)
+
+    testImplementation(libs.tests.junit)
 }

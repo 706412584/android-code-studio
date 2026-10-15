@@ -17,7 +17,6 @@
 
 package com.tom.rv2ide.xml.internal.versions
 
-import androidx.collection.mutableIntObjectMapOf
 import com.tom.rv2ide.xml.versions.ApiVersion
 import java.io.InputStream
 import jaxp.xml.namespace.QName
@@ -39,11 +38,11 @@ open class ApiVersionsParser {
   // 'removed' and 'deprecated', then the same ApiVersion instance
   // will be used for the two classes. To prevent value corruption, ApiVersion instances are
   // immutable.
-  // The keys in this map are the packed (bitwise ORed) values of the three version integers.
-  // The first 8 bits are 0, the next 8 bits represent 'since', the next 8 bits represent
-  // 'deprecated'
-  // and the last 8 bits represent 'removed'.
-  private val apiInfosCache = mutableIntObjectMapOf<ApiVersion>()
+  //
+  // Note: the key is the parsed [ApiLevels] rather than a packed int. The packed-int key used
+  // previously could not represent the `major.minor` API levels (e.g. 36.1, 37.2) that recent
+  // SDKs write, so distinct levels would have collided.
+  private val apiInfosCache = HashMap<ApiLevels, ApiVersion>()
 
   private var apiVersion: Int? = null
   private var currentClass: String? = null
@@ -58,6 +57,31 @@ open class ApiVersionsParser {
     internal const val ATTR_REM = "removed"
     internal const val ATTR_SIN = "since"
     private val log = LoggerFactory.getLogger(ApiVersionsParser::class.java)
+
+    private val NO_LEVEL = ApiLevel(ApiVersion.NONE, ApiVersion.NONE)
+    private val MAJOR_INCEPTION = ApiLevel(1, ApiVersion.NONE)
+
+    /**
+     * Parses an API level from an `api-versions.xml` attribute value.
+     *
+     * Recent SDKs write these as `major.minor` (for example `36.1` or `37.2`) instead of a plain
+     * integer. Parsing such a value with `toInt()` throws [NumberFormatException], which
+     * propagates out of [parse] and aborts project setup. The minor component is preserved so
+     * callers can tell `37.0` and `37.2` apart.
+     *
+     * @param value The raw attribute value, either `major` or `major.minor`.
+     */
+    private fun parseApiLevel(value: String): ApiLevel {
+      val dot = value.indexOf('.')
+      if (dot < 0) {
+        return ApiLevel(major = value.toInt(), minor = ApiVersion.NONE)
+      }
+
+      val major = value.substring(0, dot).toInt()
+      // Treat an unparsable fractional part as zero rather than failing the whole parse.
+      val minor = value.substring(dot + 1).toIntOrNull() ?: ApiVersion.NONE
+      return ApiLevel(major = major, minor = minor)
+    }
   }
 
   fun parse(apiVersionsXml: InputStream) {
@@ -89,7 +113,11 @@ open class ApiVersionsParser {
 
   private fun consumeStartElement(event: StartElement) {
     when (event.name.localPart) {
-      TAG_API -> apiVersion = event.getAttributeByName(QName("version")).value.toInt()
+      // Only the major component matters here; parse defensively so a future `version="4.1"`
+      // cannot abort project setup the way `since="36.1"` used to.
+      TAG_API ->
+          apiVersion =
+              event.getAttributeByName(QName("version")).value.substringBefore('.').toInt()
       TAG_CLASS -> consumeClass(event)
       TAG_FIELD -> consumeMember(event, TAG_FIELD)
       TAG_METHOD -> consumeMember(event, TAG_METHOD)
@@ -161,38 +189,56 @@ open class ApiVersionsParser {
     }
   }
 
-  private fun StartElement.parseAttrs(): Pair<String, Int> {
+  private fun StartElement.parseAttrs(): Pair<String, ApiLevels> {
     var name: String? = null
-    var since = 1
-    var deprecated = ApiVersion.NONE
-    var removed = ApiVersion.NONE
+    var since = MAJOR_INCEPTION
+    var deprecated = NO_LEVEL
+    var removed = NO_LEVEL
 
     attributes.forEach { attribute ->
       attribute as Attribute
 
       when (attribute.name.localPart) {
         ATTR_NAME -> name = attribute.value
-        ATTR_SIN -> since = attribute.value.toInt()
-        ATTR_DEPR -> deprecated = attribute.value.toInt()
-        ATTR_REM -> removed = attribute.value.toInt()
+        ATTR_SIN -> since = parseApiLevel(attribute.value)
+        ATTR_DEPR -> deprecated = parseApiLevel(attribute.value)
+        ATTR_REM -> removed = parseApiLevel(attribute.value)
       }
     }
 
     checkNotNull(name) { "Missing name attribute" }
 
     // Android API versions would not exceed 255, right?
-    check(since in 1..255 && deprecated in 0..255 && removed in 0..255) {
+    check(since.major in 1..255 && deprecated.major in 0..255 && removed.major in 0..255) {
       "Invalid version: $since, $deprecated, $removed"
     }
 
-    val version = (since shl 16) or (deprecated shl 8) or removed
-    return name!! to version
+    return name!! to ApiLevels(since, deprecated, removed)
   }
 
-  private fun createApiInfo(versions: Int): ApiVersion {
-    val since = (versions shr 16) and 0x000000FF
-    val deprecated = (versions shr 8) and 0x000000FF
-    val removed = versions and 0x000000FF
-    return ApiVersion(since = since, deprecatedIn = deprecated, removedIn = removed)
+  private fun createApiInfo(levels: ApiLevels): ApiVersion {
+    return ApiVersion(
+        since = levels.since.major,
+        deprecatedIn = levels.deprecated.major,
+        removedIn = levels.removed.major,
+        sinceMinor = levels.since.minor,
+        deprecatedMinor = levels.deprecated.minor,
+        removedMinor = levels.removed.minor,
+    )
   }
+
+  /**
+   * A single API level, split into its major and minor components.
+   *
+   * The minor component is zero when the SDK file wrote a plain integer, or when the minor
+   * component of a `major.minor` value is zero.
+   */
+  private data class ApiLevel(val major: Int, val minor: Int)
+
+  /** The three API levels of one `api-versions.xml` element. */
+  private data class ApiLevels(
+      val since: ApiLevel,
+      val deprecated: ApiLevel,
+      val removed: ApiLevel,
+  )
 }

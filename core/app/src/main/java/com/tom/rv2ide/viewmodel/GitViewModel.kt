@@ -288,11 +288,18 @@ class GitViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             _progressMessage.postValue(str(R.string.git_client_progress_deleting_branch))
             withContext(Dispatchers.IO) {
-                val success = gitManager?.deleteBranch(branchName) ?: false
+                // 分支列表含远程跟踪分支，而删除只作用于本地 ref。对仅远程存在的分支
+                // 直接给出明确提示，避免底层失败后只报一句笼统的“删除失败”。
+                val isLocal = gitManager?.getLocalBranches()?.contains(branchName) ?: false
+                val success = isLocal && (gitManager?.deleteBranch(branchName) ?: false)
                 _operationResult.postValue(
                     OperationResult(
                         success = success,
-                        message = if (success) str(R.string.git_client_branch_deleted) else str(R.string.git_client_branch_delete_failed)
+                        message = when {
+                            success -> str(R.string.git_client_branch_deleted)
+                            !isLocal -> str(R.string.git_client_branch_delete_remote_only, branchName)
+                            else -> str(R.string.git_client_branch_delete_failed)
+                        }
                     )
                 )
                 if (success) refreshBranches()

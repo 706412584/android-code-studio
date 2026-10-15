@@ -299,9 +299,12 @@ public abstract class BaseIncrementalAnalyzeManager extends
     if (commentText.length() > 2) {
       commentText = commentText.substring(2);
       commentText = commentText.trim();
-      if ("todo".equalsIgnoreCase(commentText.substring(0, 4))) {
+      // Guard the substring bounds: short comments such as '//ab' or '// a' leave
+      // fewer than 4 characters here and would throw StringIndexOutOfBoundsException.
+      if (commentText.length() >= 4 && "todo".equalsIgnoreCase(commentText.substring(0, 4))) {
         commentType = TODO_COMMENT;
-      } else if ("fixme".equalsIgnoreCase(commentText.substring(0, 5))) {
+      } else if (commentText.length() >= 5
+                     && "fixme".equalsIgnoreCase(commentText.substring(0, 5))) {
         commentType = FIXME_COMMENT;
       }
     }

@@ -16,7 +16,9 @@
 */
 package com.tom.rv2ide.git
 
+import org.eclipse.jgit.api.CreateBranchCommand
 import org.eclipse.jgit.api.Git
+import org.eclipse.jgit.api.ListBranchCommand
 import org.eclipse.jgit.api.Status
 import org.eclipse.jgit.diff.DiffEntry
 import org.eclipse.jgit.lib.Constants
@@ -297,18 +299,64 @@ class GitManager(private val projectPath: String) {
         }
     }
     
+    /**
+     * 列出仓库已知的全部分支：本地分支（`refs/heads/...`）与远程跟踪分支
+     * （`refs/remotes/...`）。
+     *
+     * <p>克隆只会为远端的默认分支创建本地分支，因此**只列本地分支会让刚克隆的仓库
+     * 看起来只有一个分支**，用户无法切换到其它分支。远程分支与本地分支同名时去重，
+     * 并跳过 `origin/HEAD` 这类符号引用。
+     *
+     * <p>注意：本方法返回的名字可能对应**只有远程跟踪 ref 的分支**（尚未在本地建立）。
+     * 需要判断「本地是否已有该分支」的场景（如删除、创建校验）应改用
+     * [getLocalBranches]。
+     */
     fun getAllBranches(): List<String> {
+        val branches = linkedSetOf<String>()
+        try {
+            git?.branchList()
+                ?.setListMode(ListBranchCommand.ListMode.ALL)
+                ?.call()
+                ?.forEach { ref ->
+                    val name = ref.name
+                    when {
+                        name.startsWith(Constants.R_HEADS) ->
+                            branches.add(name.removePrefix(Constants.R_HEADS))
+
+                        name.startsWith(Constants.R_REMOTES) -> {
+                            val remoteBranch = name.removePrefix(Constants.R_REMOTES)
+                            val branchName = remoteBranch.substringAfter('/', "")
+                            if (branchName.isNotEmpty() && branchName != "HEAD") {
+                                branches.add(branchName)
+                            }
+                        }
+                    }
+                }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+        return branches.sorted()
+    }
+
+    /**
+     * 只列出**本地**分支名（`refs/heads/...`）。
+     *
+     * <p>与 [getAllBranches] 的区别在于本方法不会返回仅存在于远程跟踪 ref 的分支。
+     * 删除分支、判断「分支是否已存在」等操作需要这个语义：JGit 的 `branchDelete`
+     * 只删本地 ref，对只有远程跟踪 ref 的分支调用会失败。
+     */
+    fun getLocalBranches(): List<String> {
         val branches = mutableListOf<String>()
         try {
             git?.branchList()?.call()?.forEach { ref ->
-                branches.add(ref.name.removePrefix("refs/heads/"))
+                branches.add(ref.name.removePrefix(Constants.R_HEADS))
             }
         } catch (e: Exception) {
             e.printStackTrace()
         }
-        return branches
+        return branches.sorted()
     }
-    
+
     fun createBranch(branchName: String): Boolean {
         return try {
             git?.branchCreate()?.setName(branchName)?.call()
@@ -318,19 +366,83 @@ class GitManager(private val projectPath: String) {
             false
         }
     }
-    
+
+    /**
+     * 切换到指定分支。
+     *
+     * <p>若本地没有该分支、但存在同名的远程跟踪 ref，则先基于它创建本地跟踪分支
+     * （等价于 `git checkout <branch>` 的行为），再切换过去。否则直接切换本地分支。
+     */
     fun checkoutBranch(branchName: String): Boolean {
         return try {
-            git?.checkout()?.setName(branchName)?.call()
+            val repo = repository
+            val localRef = repo?.exactRef(Constants.R_HEADS + branchName)
+            if (localRef != null) {
+                git?.checkout()?.setName(branchName)?.call()
+            } else {
+                val remoteRef = findRemoteTrackingRef(branchName)
+                if (remoteRef != null) {
+                    git?.checkout()
+                        ?.setName(branchName)
+                        ?.setCreateBranch(true)
+                        ?.setStartPoint(remoteRef)
+                        ?.setUpstreamMode(CreateBranchCommand.SetupUpstreamMode.SET_UPSTREAM)
+                        ?.call()
+                } else {
+                    // 既无本地分支也无远程跟踪分支——让 JGit 抛出，交由 catch 返回 false。
+                    git?.checkout()?.setName(branchName)?.call()
+                }
+            }
             true
         } catch (e: Exception) {
             e.printStackTrace()
             false
         }
     }
+
+    /**
+     * 查找与 [branchName] 同名的远程跟踪 ref（如 `refs/remotes/origin/feature`）。
+     *
+     * <p>优先选 `origin`，其余远端按字母序。找不到返回 `null`。
+     */
+    private fun findRemoteTrackingRef(branchName: String): String? {
+        val repo = repository ?: return null
+        return try {
+            repo.refDatabase.getRefsByPrefix(Constants.R_REMOTES)
+                .map { it.name }
+                .filter { name ->
+                    val remoteBranch = name.removePrefix(Constants.R_REMOTES)
+                    val branch = remoteBranch.substringAfter('/', "")
+                    branch.isNotEmpty() && branch != "HEAD" && branch == branchName
+                }
+                .sortedWith(
+                    compareBy(
+                        { it.removePrefix(Constants.R_REMOTES).substringBefore('/') != "origin" },
+                        { it },
+                    )
+                )
+                .firstOrNull()
+        } catch (e: Exception) {
+            e.printStackTrace()
+            null
+        }
+    }
     
+    /**
+     * 删除**本地**分支。
+     *
+     * <p>JGit 的 `branchDelete` 对不存在的分支名不会抛异常，而是静默返回——若不先校验，
+     * 对「只有远程跟踪 ref」的分支调用会返回 `true`，让调用方误以为删除成功。
+     * 因此这里先确认本地存在该分支。
+     *
+     * <p>删除远程分支需用 `git.push().setDelete(true)`，不在本方法职责内。
+     */
     fun deleteBranch(branchName: String): Boolean {
         return try {
+            val repo = repository ?: return false
+            if (repo.exactRef(Constants.R_HEADS + branchName) == null) {
+                return false
+            }
             git?.branchDelete()?.setBranchNames(branchName)?.call()
             true
         } catch (e: Exception) {

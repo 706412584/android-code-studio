@@ -146,6 +146,7 @@
   <string name="git_client_checkout_failed">Failed to checkout branch</string>
   <string name="git_client_branch_deleted">Branch deleted</string>
   <string name="git_client_branch_delete_failed">Failed to delete branch</string>
+  <string name="git_client_branch_delete_remote_only">%1$s only exists on the remote. Check it out to create a local branch first.</string>
   <string name="git_client_changes_committed">Changes committed</string>
   <string name="git_client_commit_failed">Failed to commit</string>
   <string name="git_client_clone_failed">Failed to clone repository</string>

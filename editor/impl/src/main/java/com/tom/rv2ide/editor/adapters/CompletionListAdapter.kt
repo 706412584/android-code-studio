@@ -174,17 +174,18 @@ class CompletionListAdapter : EditorCompletionAdapter() {
 
       val sb = StringBuilder()
       if (info!!.since > 1) {
-        sb.append(textView.context.getString(msg_api_info_since, info.since))
+        sb.append(textView.context.getString(msg_api_info_since, info.formatSince()))
         sb.append("\n")
       }
 
       if (info.removedIn > 0) {
-        sb.append(textView.context.getString(msg_api_info_removed, info.removedIn))
+        sb.append(textView.context.getString(msg_api_info_removed, info.formatRemovedIn()))
         sb.append("\n")
       }
 
       if (info.deprecatedIn > 0) {
-        sb.append(textView.context.getString(msg_api_info_deprecated, info.deprecatedIn))
+        sb.append(
+            textView.context.getString(msg_api_info_deprecated, info.formatDeprecatedIn()))
         sb.append("\n")
       }
 
