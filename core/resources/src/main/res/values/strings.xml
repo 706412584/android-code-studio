@@ -1044,6 +1044,15 @@
   <string name="idepref_group_summary">Discuss featues, bugs and improvements here.</string>
   <string name="idepref_changelog_summary">What\'s new in this version?</string>
   <string name="idepref_about_summary">More about Android Code Studio.</string>
+  <string name="pref_patch_status">Hot-update patch</string>
+  <string name="idepref_patch_none">No patch applied</string>
+  <string name="idepref_patch_applied">Patch %1$s applied</string>
+  <string name="pref_patch_revert">Revert patch</string>
+  <string name="idepref_patch_revert_summary">Remove the applied hot-update patch and restart. Use this if the UI looks wrong after an update.</string>
+  <string name="idepref_patch_revert_title">Revert hot-update patch</string>
+  <string name="idepref_patch_revert_message">The applied patch will be removed and the app will restart. Continue?</string>
+  <string name="idepref_patch_revert_ok">Patch removed. Restarting…</string>
+  <string name="idepref_patch_revert_failed">Failed to remove the patch.</string>
   <string name="idepref_check_update_summary">Check whether a newer version is available.</string>
   <string name="idepref_general_summary">General IDE configuration.</string>
   <string name="idepref_editor_summary">Configure the editor.</string>

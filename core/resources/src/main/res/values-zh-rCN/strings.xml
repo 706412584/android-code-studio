@@ -999,6 +999,15 @@
   <string name="idepref_group_summary">在这里讨论功能、错误和改进。</string>
   <string name="idepref_changelog_summary">此版本有什么新内容?</string>
   <string name="idepref_about_summary">有关 Android Code Studio 的更多信息。</string>
+  <string name="pref_patch_status">热更新补丁</string>
+  <string name="idepref_patch_none">未应用补丁</string>
+  <string name="idepref_patch_applied">已应用补丁 %1$s</string>
+  <string name="pref_patch_revert">回退补丁</string>
+  <string name="idepref_patch_revert_summary">移除已应用的热更新补丁并重启。更新后界面显示异常时用它恢复。</string>
+  <string name="idepref_patch_revert_title">回退热更新补丁</string>
+  <string name="idepref_patch_revert_message">将移除已应用的补丁并重启应用。继续？</string>
+  <string name="idepref_patch_revert_ok">补丁已移除，正在重启…</string>
+  <string name="idepref_patch_revert_failed">移除补丁失败。</string>
   <string name="idepref_check_update_summary">检查是否有新版本可用。</string>
   <string name="idepref_general_summary">常规 IDE 配置。</string>
   <string name="idepref_editor_summary">配置编辑器。</string>
