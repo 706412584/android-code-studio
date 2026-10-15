@@ -80,6 +80,9 @@ import com.tom.rv2ide.artificial.agent.tool.InstallApkTool;
 import com.tom.rv2ide.artificial.agent.tool.LayoutPreviewTool;
 import com.tom.rv2ide.artificial.agent.tool.LaunchAppTool;
 import com.tom.rv2ide.artificial.agent.tool.LogcatReadTool;
+import com.tom.rv2ide.artificial.agent.tool.LogWireReadTool;
+import com.tom.rv2ide.artificial.agent.tool.LogWireSetEnabledTool;
+import com.tom.rv2ide.artificial.agent.tool.LogWireStatusTool;
 import com.tom.rv2ide.artificial.agent.tool.PhoneActionCaptureTool;
 import com.tom.rv2ide.artificial.agent.tool.ProjectInfoTool;
 import com.tom.rv2ide.artificial.agent.tool.PhoneBaselineTool;
@@ -1506,6 +1509,12 @@ public final class AgentOrchestrator {
     // 实测：用户已配好 Shizuku 且 shell_execute 能跑 logcat，但 logcat_read 因
     // 自建 registry 解析到 Termux（无 adb 权限）而恒失败，模型据此误判「设备缺权限」。
     registry.register(new LogcatReadTool(appContext, shellBackends));
+    // LogWire 通道（被构建应用主动上报，无 shell 权限也能读）：
+    // logwire_read 读缓冲、logwire_status 查状态（只读，免确认）、
+    // logwire_set_enabled 开关 Logsender（写，需确认——它改变后续构建产物）。
+    registry.register(new LogWireReadTool(appContext));
+    registry.register(new LogWireStatusTool(appContext, shellBackends));
+    registry.register(new LogWireSetEnabledTool());
 
     // ---- 真机测试工具集（经 Shizuku 走 adb 级权限，不需要无障碍服务）----
     // 全部复用上面那一份 shell 后端注册表，与 shell_execute 看到同一个 active 后端。

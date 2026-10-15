@@ -35,14 +35,15 @@ import org.slf4j.LoggerFactory;
  *
  * <p>「运行 app 测试」闭环的第四步：改代码 → 构建 → 安装 → 启动 → <b>读日志</b> → 修。
  *
- * <p><b>为什么不用 IDE 已有的日志设施</b>：
- * <ul>
- *   <li>{@code IDELogcatReader} 只读 IDE 自身进程（{@code --pid=self}），看不到被测应用
- *   <li>{@code LogReceiverService} 是流式推送且单消费者互斥，会和日志面板抢通道，
- *       还要求用户开启开关并让被测应用集成 logwire 库
- * </ul>
- * 因此这里直接调用系统 {@code logcat -d}：dump 后即退出，天然是「取一段」语义，
- * 且不侵入用户项目、不与任何 UI 竞争。
+ * <p><b>与 LogWire 通道的分工</b>：本工具执行系统 {@code logcat -d}（dump 后即退出，
+ * 天然是「取一段」语义），覆盖**任意**应用——包括未集成日志库的、以及系统应用；
+ * 代价是需要 shell 后端权限（Shizuku/Termux）。
+ * {@code logwire_read} 走被构建应用主动上报的通道（无需权限），但只覆盖开启
+ * Logsender 且由本 IDE 构建的应用。两者互补：**本工具在包名已知且 LogWire 有数据时
+ * 优先返回 LogWire 结果**（免权限、更实时），否则回退 logcat（见 {@link #readRaw}）。
+ *
+ * <p>{@code IDELogcatReader} 只读 IDE 自身进程（{@code --pid=self}），
+ * 看不到被测应用——这也是本工具走系统 logcat 而非复用它的一部分原因。
  *
  * <p><b>两种模式</b>：
  * <ul>
@@ -125,7 +126,8 @@ public final class LogcatReadTool extends BaseTool {
         + "设置 mode=crash 可做结构化崩溃判定：按 PID 读 crash buffer 的 FATAL EXCEPTION，"
         + "返回「是否崩溃 + 崩溃堆栈」（并识别 ANR）。"
         + "经 shell 后端执行（有 Shizuku 时自动用 adb 级权限，无则用当前后端）；"
-        + "权限不足时会返回空结果并说明原因。";
+        + "指定 packageName 时若 LogWire 通道已有该应用的日志则优先返回（无需权限），"
+        + "否则回退 logcat。权限不足时会返回空结果并说明原因。";
   }
 
   @Override
@@ -221,6 +223,16 @@ public final class LogcatReadTool extends BaseTool {
       context.reportProgress("读取日志" + (packageName.isEmpty() ? "" : ": " + packageName));
     }
 
+    // LogWire 优先：包名已知且该通道有数据时直接返回——免 shell 权限、更实时。
+    // 只在**有命中**时才拦截；无命中必须继续走 logcat，否则「应用日志在 LogWire 里
+    // 恰好被环形缓冲挤掉了」会变成「读不到日志」。
+    if (!packageName.isEmpty()) {
+      ToolResult fromLogWire = tryLogWire(packageName, lines, level, filter);
+      if (fromLogWire != null) {
+        return fromLogWire;
+      }
+    }
+
     List<String> command = new ArrayList<>();
     command.add("logcat");
     // -d: dump 后退出（不是流式跟随），这正是「取一段」需要的行为
@@ -298,6 +310,43 @@ public final class LogcatReadTool extends BaseTool {
     }
     sb.append(text);
     return ok(sb.toString());
+  }
+
+  /**
+   * 尝试从 LogWire 通道读取（命中则返回结果，未命中返回 null 让调用方走 logcat）。
+   *
+   * <p>触发条件是**该包名在 LogWire 缓冲里有通过过滤的数据**——只在有数据时拦截，
+   * 因为「LogWire 没数据」有太多合法原因（未开开关、应用非本 IDE 构建、应用未启动、
+   * 环形缓冲已挤掉），这些情况下 logcat 仍可能读到；反过来「LogWire 有数据」是强信号：
+   * 应用确实在跑且日志已送达本进程。
+   *
+   * <p>不自动绑定：绑定会启动服务并可能触发用户项目的日志上报，而本工具的主路径是
+   * logcat。绑定交给显式的 {@code logwire_read}（它需要绑定才能工作），这里只读
+   * 已经存在的会话状态——若用户或 logwire_read 之前已绑定过，就能直接受益。
+   */
+  private ToolResult tryLogWire(String packageName, int lines, String level, String filter) {
+    try {
+      LogWireSession.Snapshot snapshot = LogWireSession.snapshot(packageName, lines);
+      if (!snapshot.getBound()) {
+        return null;
+      }
+      java.util.List<io.github.mohammedbaqernull.logger.model.LogEntry> matched =
+          LogWireReadTool.applyFilters(snapshot.getEntries(), level, filter);
+      if (matched.isEmpty()) {
+        return null;
+      }
+      StringBuilder sb = new StringBuilder();
+      sb.append("[来源: LogWire / ").append(packageName).append(" / ")
+          .append(matched.size()).append(" 条]\n");
+      for (io.github.mohammedbaqernull.logger.model.LogEntry entry : matched) {
+        sb.append(LogWireReadTool.formatEntry(entry)).append('\n');
+      }
+      return ok(sb.toString());
+    } catch (Throwable t) {
+      // LogWire 是增强路径：它出错不该让整个 logcat_read 失败，静默回退。
+      log.debug("LogWire 优先读取失败，回退 logcat", t);
+      return null;
+    }
   }
 
   // ---------------------------------------------------------------------------
