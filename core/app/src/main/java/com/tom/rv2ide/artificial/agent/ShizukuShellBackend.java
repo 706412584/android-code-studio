@@ -52,6 +52,9 @@ import rikka.shizuku.Shizuku;
  *   <li>进程输出通过 {@link ParcelFileDescriptor} 读取，必须手动 close，否则 fd 泄漏。
  *   <li>Shizuku 未安装或未授权时 {@code getBinder()} 返回 null / 抛异常，
  *       此时 {@link #isAvailable()} 为 false，{@link #unavailableReason()} 给出具体原因。
+ *   <li><b>不依赖 Shizuku 的包名</b>（第三方魔改版可用）：可用性只看 binder 与授权
+ *       （{@code Shizuku.pingBinder()} / {@code checkSelfPermission()}）；「是否安装」
+ *       以「有应用声明 API_V23 权限」为准——官方包与任意魔改包名都识别。
  * </ul>
  *
  * <p><b>授权流程</b>：本类只检查已有授权，不主动弹窗请求。需要授权时调用
@@ -110,11 +113,25 @@ public final class ShizukuShellBackend implements ShellBackend {
         + "但只有 Android 系统命令，没有 git / node / python 等命令行工具。";
   }
 
-  /** Shizuku 服务端是否已安装（无论是否授权）。 */
+  /**
+   * Shizuku 是否已安装（无论是否授权；兼容第三方魔改包名）。
+   *
+   * <p><b>为什么不查包名</b>：魔改版 Shizuku 的包名各不相同（官方为
+   * {@code moe.shizuku.privileged.api}），查固定包名会把「已安装并授权」误判为
+   * 「未安装」——实测表现是设置里切不过去、提示「没有安装」。
+   *
+   * <p>兼容实现都必须声明 {@code moe.shizuku.manager.permission.API_V23} 权限：
+   * 客户端的授权请求、服务端的权限授予用的都是这个写死在 Shizuku-API 里的名字
+   * （binder 投递协议本身也不携带 manager 包名）。因此查「谁声明了它」即可定位
+   * manager，与包名无关。
+   */
   public static boolean isShizukuInstalled(Context context) {
     try {
-      context.getPackageManager().getPackageInfo("moe.shizuku.privileged.api", 0);
-      return true;
+      // 部分 OEM 的 PackageManager 在权限不存在时返回 null 而不是抛异常，两者都要挡。
+      return context
+              .getPackageManager()
+              .getPermissionInfo("moe.shizuku.manager.permission.API_V23", 0)
+          != null;
     } catch (PackageManager.NameNotFoundException e) {
       return false;
     }
@@ -122,10 +139,10 @@ public final class ShizukuShellBackend implements ShellBackend {
 
   @Override
   public boolean isAvailable() {
-    if (!isShizukuInstalled(appContext)) {
-      return false;
-    }
     try {
+      // 只看 binder 与授权，不查包名：binder 存活本身就是「已安装且服务在运行」的
+      // 证据（binder 只能由 Shizuku 服务端推给本应用），查固定包名会误伤魔改版
+      // ——实测表现是「已安装并授权却提示没有安装」。
       if (!Shizuku.pingBinder()) {
         return false;
       }
@@ -139,22 +156,22 @@ public final class ShizukuShellBackend implements ShellBackend {
 
   @Override
   public String unavailableReason() {
-    if (!isShizukuInstalled(appContext)) {
-      return "Shizuku 未安装。需要 adb 权限执行 pm install / am start 时，"
-          + "请先安装 Shizuku（moe.shizuku.privileged.api）并完成授权。";
-    }
     try {
-      if (!Shizuku.pingBinder()) {
-        return "Shizuku 服务未运行。请打开 Shizuku 应用并启动服务"
-            + "（部分机型每次重启后需要重新启动）。";
-      }
-      if (Shizuku.checkSelfPermission() != PERMISSION_GRANTED) {
-        return "AndroidCodeStudio 尚未获得 Shizuku 授权。请在 Shizuku 应用中授予本应用权限。";
+      if (Shizuku.pingBinder()) {
+        return Shizuku.checkSelfPermission() == PERMISSION_GRANTED
+            ? ""
+            : "AndroidCodeStudio 尚未获得 Shizuku 授权。请在 Shizuku 应用中授予本应用权限。";
       }
     } catch (Throwable e) {
       return "Shizuku 状态检查失败: " + e.getMessage();
     }
-    return "";
+    // 没有 binder：区分「没装」与「服务没跑」——两者给用户的下一步动作不同。
+    if (!isShizukuInstalled(appContext)) {
+      return "Shizuku 未安装。需要 adb 权限执行 pm install / am start 时，"
+          + "请先安装 Shizuku（官方版或兼容版）并完成授权。";
+    }
+    return "Shizuku 服务未运行。请打开 Shizuku 应用并启动服务"
+        + "（部分机型每次重启后需要重新启动）。";
   }
 
   /** 授权结果回调，在主线程被调用。 */
@@ -169,15 +186,14 @@ public final class ShizukuShellBackend implements ShellBackend {
    * 监听器在收到结果后**立即注销**，避免每次请求都在 Shizuku 里堆积一个常驻监听器
    * （那会导致一次授权触发 N 次回调，且持有 Activity/回调引用造成泄漏）。
    *
-   * @return true 表示请求已发出；false 表示前置条件不满足（未安装 / 服务未运行），
-   *     此时不会弹出授权框，调用方可直接根据 {@link #unavailableReason()} 提示用户
+   * @return true 表示请求已发出；false 表示前置条件不满足（binder 不存在，即服务未运行）
+   *     或请求过程异常，此时不会弹出授权框，调用方可直接根据
+   *     {@link #unavailableReason()} 提示用户
    */
   public boolean requestPermission(PermissionResultCallback callback) {
-    if (!isShizukuInstalled(appContext)) {
-      log.warn("Shizuku 未安装，无法请求授权");
-      return false;
-    }
     try {
+      // 前置条件只有「binder 活着」——它同时蕴含「已安装」与「服务在运行」，
+      // 且不依赖包名（见 isShizukuInstalled 的说明）。
       if (!Shizuku.pingBinder()) {
         log.warn("Shizuku 服务未运行，无法请求授权");
         return false;
