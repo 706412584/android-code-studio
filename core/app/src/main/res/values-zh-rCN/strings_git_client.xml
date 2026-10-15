@@ -146,6 +146,7 @@
   <string name="git_client_checkout_failed">切换分支失败</string>
   <string name="git_client_branch_deleted">分支已删除</string>
   <string name="git_client_branch_delete_failed">删除分支失败</string>
+  <string name="git_client_branch_delete_remote_only">%1$s 仅存在于远程。请先切换该分支以建立本地分支，再删除本地分支。</string>
   <string name="git_client_changes_committed">更改已提交</string>
   <string name="git_client_commit_failed">提交失败</string>
   <string name="git_client_clone_failed">克隆仓库失败</string>

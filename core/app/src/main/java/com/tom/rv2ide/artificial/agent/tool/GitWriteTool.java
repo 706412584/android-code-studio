@@ -394,8 +394,13 @@ public final class GitWriteTool extends BaseTool {
     if (branch == null) {
       return GitRepoSupport.err(getName(), "branch_create 需要 branch（分支名）。");
     }
+    if (manager.getLocalBranches().contains(branch)) {
+      return GitRepoSupport.err(getName(), "本地分支已存在：" + branch + "。可直接 action=checkout 切换。");
+    }
+    // 远程已有同名分支时，直接 checkout 即可建立本地跟踪分支，不必新建。
     if (manager.getAllBranches().contains(branch)) {
-      return GitRepoSupport.err(getName(), "分支已存在：" + branch + "。可直接 action=checkout 切换。");
+      return GitRepoSupport.err(getName(),
+          "远程已存在同名分支：" + branch + "。用 action=checkout 可直接建立本地跟踪分支。");
     }
     if (!manager.createBranch(branch)) {
       return failure("branch_create");
@@ -414,15 +419,17 @@ public final class GitWriteTool extends BaseTool {
       return GitRepoSupport.err(getName(),
           "不能删除当前所在的分支：" + branch + "。先 checkout 到其它分支再删除。");
     }
-    if (!manager.getAllBranches().contains(branch)) {
+    // 只能用本地分支判断：getAllBranches() 含远程跟踪分支，而 branchDelete 只删本地 ref，
+    // 用后者判断会出现「校验通过但删除失败」。
+    if (!manager.getLocalBranches().contains(branch)) {
       return GitRepoSupport.err(getName(),
-          "分支不存在：" + branch + "。现有分支：" + join(manager.getAllBranches()));
+          "本地分支不存在：" + branch + "。现有本地分支：" + join(manager.getLocalBranches()));
     }
     if (!manager.deleteBranch(branch)) {
       return failure("branch_delete");
     }
     return GitRepoSupport.ok(getName(),
-        "已删除分支：" + branch + "。剩余：" + join(manager.getAllBranches()));
+        "已删除分支：" + branch + "。剩余：" + join(manager.getLocalBranches()));
   }
 
   // ---- 远端 ----
