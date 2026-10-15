@@ -134,6 +134,29 @@ public final class ToolNames {
     /** uiautomator2 代理：Unicode 输入 / 等待消失 / 多点触控 / 滚动到元素 / 通用 jsonrpc 逃生舱。 */
     public static final String PHONE_UIAUTOMATOR = "phone_uiautomator";
 
+    // ---- LogWire（被构建应用主动上报的日志通道，无 adb 权限也能读）----
+    /**
+     * 读取 LogWire 通道的日志（被构建应用经 AIDL 主动上报）。
+     *
+     * <p>与 `logcat_read` 的分工：本工具不执行任何 shell 命令，因此**不需要
+     * Shizuku/Termux 权限**，但只覆盖「开启了 Logsender 且由本 IDE 构建安装」的应用；
+     * `logcat_read` 覆盖任意应用但需要 shell 后端权限。只读，无副作用。
+     */
+    public static final String LOGWIRE_READ = "logwire_read";
+    /**
+     * 查询 LogWire 通道状态（Logsender 开关、连接状态、已知应用）。只读，免确认。
+     *
+     * <p>与 {@link #LOGWIRE_SET_ENABLED} 拆开的原因同 {@link #GIT}/{@link #GIT_WRITE}：
+     * 权限层按工具分级，混在一起会让只读查询也弹确认框。
+     */
+    public static final String LOGWIRE_STATUS = "logwire_status";
+    /**
+     * 开关 Logsender（日志通道总开关）。
+     *
+     * <p>改变的是**后续所有构建的产物**（是否注入日志库），属持续影响，需确认。
+     */
+    public static final String LOGWIRE_SET_ENABLED = "logwire_set_enabled";
+
     // ---- 云编译（GitHub Actions；app 层工具，服务层在 cloudbuild 包）----
     /**
      * 触发 GitHub Actions 云编译并等待到终态（消耗 CI 资源，需确认）。
