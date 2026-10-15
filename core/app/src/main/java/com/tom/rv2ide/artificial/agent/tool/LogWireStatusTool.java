@@ -97,9 +97,9 @@ public final class LogWireStatusTool extends BaseTool {
     }
 
     boolean logsenderEnabled = DevOpsPreferences.INSTANCE.getLogsenderEnabled();
-    // 顺带触发绑定：让状态查询同时反映「现在能不能连上」，
-    // 否则用户看到「未连接」也不知道是没开还是没连。
-    LogWireSession.ensureBound(appContext);
+    // 顺带触发绑定并等待连接：让状态查询反映「现在能不能连上」，
+    // 否则用户看到「未连接」也不知道是没开还是还没连完（bindService 回调是异步的）。
+    LogWireSession.ensureConnectedAndWait(appContext);
     LogWireSession.Snapshot snapshot = LogWireSession.snapshot(null, 0);
     List<String> packages = snapshot.getPackages();
     boolean connected = snapshot.getBound();

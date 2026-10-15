@@ -153,13 +153,14 @@ public final class LogWireReadTool extends BaseTool {
       context.reportProgress("读取 LogWire 日志" + (packageName.isEmpty() ? "" : ": " + packageName));
     }
 
-    // 懒绑定：首次查询时连上服务。已连过则 no-op。
-    boolean bindRequested = LogWireSession.ensureBound(appContext);
+    // 懒绑定并**等待连接建立**：bindService 返回不代表已连上（回调是异步的），
+    // 不等待会让首次调用永远返回空（实测：目标应用正在上报，而本工具报「没有日志」）。
+    boolean connected = LogWireSession.ensureConnectedAndWait(appContext);
     LogWireSession.Snapshot snapshot =
         LogWireSession.snapshot(packageName.isEmpty() ? null : packageName, lines);
 
-    // 未绑定：给可操作的排查路径，而不是一句「失败」。
-    if (!bindRequested || !snapshot.getBound()) {
+    // 未连接：给可操作的排查路径，而不是一句「失败」。
+    if (!connected || !snapshot.getBound()) {
       StringBuilder sb = new StringBuilder();
       sb.append("(LogWire 通道未连接)\n");
       sb.append("可能原因：\n");

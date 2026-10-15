@@ -122,7 +122,41 @@ object LogWireSession {
     }
   }
 
-  /** 查询快照（不自动绑定；调用方应先 [ensureBound]）。 */
+  /**
+   * 确保已连接（发起绑定并**等待连接建立**，最多 [WAIT_CONNECT_MS]）。
+   *
+   * <p><b>为什么必须等待</b>：`bindService` 返回 true 只表示「绑定请求已受理」，
+   * `onServiceConnected` 是稍后异步回调的。实测踩到：`logwire_read` 调用后立即查询，
+   * 那时连接还没建立、缓冲为空，工具返回「没有日志」——而目标应用其实正在上报
+   * （22 秒后 ACS 侧才连上）。用户/模型会据此误判「LogWire 不可用」并回退 logcat。
+   *
+   * <p>已连接时立即返回（常见路径零等待）。等待用轮询而非锁：连接回调在 binder
+   * 线程，而本方法可能被任意线程调用，轮询的几十毫秒粒度对日志查询完全够用，
+   * 且不必引入额外的同步原语。
+   *
+   * @return 是否已连接
+   */
+  @JvmStatic
+  fun ensureConnectedAndWait(context: Context): Boolean {
+    if (connected) {
+      return true
+    }
+    if (!ensureBound(context)) {
+      return false
+    }
+    val deadline = System.currentTimeMillis() + WAIT_CONNECT_MS
+    while (!connected && System.currentTimeMillis() < deadline) {
+      try {
+        Thread.sleep(WAIT_POLL_MS)
+      } catch (e: InterruptedException) {
+        Thread.currentThread().interrupt()
+        break
+      }
+    }
+    return connected
+  }
+
+  /** 查询快照（不自动绑定；调用方应先 [ensureBound] 或 [ensureConnectedAndWait]）。 */
   @JvmStatic
   fun snapshot(packageName: String?, limit: Int): Snapshot =
       Snapshot(
@@ -169,4 +203,10 @@ object LogWireSession {
       val packages: List<String>,
       val bound: Boolean,
   )
+
+  /** 等待连接建立的超时（毫秒）。连接是本地 binder 调用，正常在几十毫秒内完成。 */
+  private const val WAIT_CONNECT_MS = 3_000L
+
+  /** 等待时的轮询间隔（毫秒）。 */
+  private const val WAIT_POLL_MS = 50L
 }
