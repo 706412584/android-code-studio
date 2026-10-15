@@ -215,6 +215,14 @@
       android:exported="false"
       android:name=".services.AssistantOverlayService" />
 
+    <!--
+      AI 运行期保活：agent 运行 / 后台 shell 任务期间持 wakelock 并常驻前台。
+      exported=false：只允许本应用启动，避免第三方应用拉起常驻通知。
+    -->
+    <service
+      android:exported="false"
+      android:name=".services.AgentRunService" />
+
     <service
       android:name="com.termux.app.TermuxService"
       android:enabled="true"

@@ -175,12 +175,30 @@ class BackgroundShellRunner(
             } catch (t: Throwable) {
               log.warn("后台任务完成回调失败: {}", id, t)
             }
+            // 保活释放：必须在最外层 finally 的**最后**——前面任何一步抛异常
+            // （回调失败、关闭失败）都不能让它跳过，否则 wakelock 与前台服务
+            // 会一直挂着。与下面的 acquire 严格配对。
+            AgentKeepAlive.release()
           }
         },
         "bg-shell-$id"
       )
     thread.isDaemon = true
-    thread.start()
+    // 保活申请放在 start() 之前：任务一旦开跑就需要防息屏冻结，
+    // 放 start() 之后会留下一个「线程已在跑但 wakelock 还没持」的窗口。
+    // acquire 内部 post 到主线程，与 finally 里的 release 经同一 Handler 串行，
+    // 顺序天然保证（acquire 先于 release 入队）。
+    AgentKeepAlive.acquire()
+    try {
+      thread.start()
+    } catch (t: Throwable) {
+      // start() 几乎不会失败（OOM 级别），但失败时线程不会跑、finally 不会执行，
+      // 上面那次 acquire 就永远没人释放——回滚掉，别让 wakelock 泄漏到重启。
+      AgentKeepAlive.release()
+      tasks.remove(id)
+      return BackgroundShellPort.TaskStatus.startFailed(
+        cmd, t.message ?: t.javaClass.simpleName)
+    }
 
     return statusOf(task)
   }
@@ -210,6 +228,28 @@ class BackgroundShellRunner(
     // 只置标志：后端的等待循环会看到并终止进程，随后正常走收尾路径。
     task.cancel.set(true)
     return true
+  }
+
+  /**
+   * 停止本 runner 上所有仍在运行的后台任务。
+   *
+   * <p>用途：保活通知的「停止」按钮（见 [com.tom.rv2ide.services.AgentRunService]）。
+   * 后台任务能独立于 agent 运行存活，只取消运行会让它们继续跑下去。
+   *
+   * <p>语义与 [stop] 一致：只置取消标志，让后端等待循环自行终止进程并走收尾路径
+   * （状态置 STOPPED、`onFinished` 回调、保活释放都在那条路径里），
+   * 这里不碰状态字段——否则会与任务线程的收尾写竞争。
+   *
+   * @return 实际置了取消标志的任务数
+   */
+  fun stopAll(): Int {
+    var count = 0
+    for (task in tasks.values) {
+      if (task.state == BackgroundShellPort.State.RUNNING && task.cancel.compareAndSet(false, true)) {
+        count++
+      }
+    }
+    return count
   }
 
   override fun isAvailable(): Boolean = newRegistry().available().isNotEmpty()
