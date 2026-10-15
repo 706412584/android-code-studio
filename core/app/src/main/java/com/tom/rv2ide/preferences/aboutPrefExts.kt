@@ -19,11 +19,13 @@ package com.tom.rv2ide.preferences
 
 import android.content.Intent
 import com.tom.rv2ide.activities.AboutActivity
+import com.tom.rv2ide.activities.TomIDEUpdater
 import com.tom.rv2ide.app.IDEApplication
 import com.tom.rv2ide.resources.R
 
 private const val KEY_CHANGELOG = "idepref_changelog"
 private const val KEY_ABOUT = "idepref_about"
+private const val KEY_CHECK_UPDATE = "idepref_check_update"
 
 val changelog =
     SimpleClickablePreference(
@@ -32,6 +34,22 @@ val changelog =
         summary = R.string.idepref_changelog_summary,
     ) {
       IDEApplication.instance.showChangelog()
+      true
+    }
+
+/**
+ * 手动「检查更新」。
+ *
+ * <p>此前检查更新只在启动时静默执行（`MainActivity.onCreate`），设置里没有入口——
+ * 用户想主动确认是否有新版时无从下手（用户报的「没有检查更新选项」）。
+ */
+val checkUpdate =
+    SimpleClickablePreference(
+        key = KEY_CHECK_UPDATE,
+        title = R.string.pref_check_update,
+        summary = R.string.idepref_check_update_summary,
+    ) { preference ->
+      TomIDEUpdater(preference.context).checkForUpdatesManually()
       true
     }
 val about =

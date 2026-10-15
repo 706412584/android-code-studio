@@ -76,6 +76,7 @@ class AboutPreferences(
 
   init {
     addPreference(changelog)
+    addPreference(checkUpdate)
     addPreference(about)
   }
 }

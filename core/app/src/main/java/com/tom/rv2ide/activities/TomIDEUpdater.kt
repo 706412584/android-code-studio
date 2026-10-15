@@ -173,6 +173,54 @@ class TomIDEUpdater(private val context: Context) {
   }
 
   /**
+   * 手动检查更新（设置页入口）。
+   *
+   * <p>与启动时的 [checkForUpdates] 的区别：那个是静默的——没有更新就不打扰用户。
+   * 手动点击**必须有反馈**，否则「点了没反应」会被当成功能坏了。因此在
+   * 「已是最新 / 检查失败」两种情况下各弹一个短提示；有更新时复用 [checkForUpdates]
+   * 的弹窗路径。提示用 Toast 而不是对话框，避免与更新弹窗叠在一起。
+   */
+  fun checkForUpdatesManually() {
+    CoroutineScope(Dispatchers.IO).launch {
+      val updateInfo =
+          try {
+            fetchUpdateInfo()
+          } catch (e: Exception) {
+            Log.e(TAG, "Error checking for updates", e)
+            null
+          }
+      if (updateInfo == null) {
+        showToastOnMain(R.string.updater_check_failed)
+        return@launch
+      }
+
+      // 已应用补丁达到清单目标：与 checkForUpdates 的早退分支一致，视为已是最新。
+      // 不处理这一支会「点了没反应」——checkForUpdates() 在该分支静默返回。
+      val appliedVersion = appliedPatchVersion()
+      if (appliedVersion != null && appliedVersion >= updateInfo.baseVersionName) {
+        showToastOnMain(R.string.updater_no_updates_available)
+        return@launch
+      }
+
+      val patch = updateInfo.patch
+      if ((patch != null && isPatchApplicable(patch)) || isUpdateAvailable(updateInfo)) {
+        // 有可用更新：走与启动检查相同的弹窗（内部会拉 changelog 并显示）。
+        checkForUpdates()
+        return@launch
+      }
+
+      showToastOnMain(R.string.updater_no_updates_available)
+    }
+  }
+
+  private suspend fun showToastOnMain(resId: Int) {
+    withContext(Dispatchers.Main) {
+      android.widget.Toast.makeText(context, context.getString(resId), android.widget.Toast.LENGTH_SHORT)
+          .show()
+    }
+  }
+
+  /**
    * 已应用补丁的版本名（如 `1.0.0+gh.r07`）；未应用补丁时返回 null。
    *
    * <p>用版本名而不是 versionCode：SDK 的 `getPatchedVersionCode()` 只在内存维护，
