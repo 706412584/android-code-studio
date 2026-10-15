@@ -14,12 +14,5 @@
             "apkUrl": "{baseUrl}/android-code-studio-arm64-v8a-{versionName}.apk"
         }
     },
-    "changelog": "https://raw.githubusercontent.com/706412584/android-code-studio/refs/heads/dev/whatsnew/1.0.0+gh.r12.md",
-    "patch": {
-        "versionCode": 1033,
-        "versionName": "1.0.0+gh.r12",
-        "baseVersionCode": 1032,
-        "patchUrl": "https://github.com/706412584/android-code-studio/releases/download/v1.0.0+gh.r12/acs-hotupdate-1.0.0+gh.r12.zip",
-        "sha256": "212a768e6f06ce57c8f96d01ad2969d0fa4125a19e0de01c81972d4cbae2207a"
-    }
+    "changelog": "https://raw.githubusercontent.com/706412584/android-code-studio/refs/heads/dev/whatsnew/1.0.0+gh.r12.md"
 }
