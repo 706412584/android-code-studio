@@ -136,6 +136,18 @@ public final class McpToolAdapter extends BaseTool {
     return true;
   }
 
+  /**
+   * MCP 工具按需加载（照搬 Aharou 的 deferred 语义）。
+   *
+   * <p>MCP 工具的定义随 server 数量线性增长（几个 server 就能吃掉几十万 token），
+   * 而单轮实际只会用到一两个。延迟化后：平时只把目录（名字 + 一行描述）注入提示词，
+   * 模型用 {@code tool_search} 检索命中才展开完整 schema。
+   */
+  @Override
+  public boolean isDeferredLoading() {
+    return true;
+  }
+
   @Override
   public JSONObject getParameters() {
     return info.getInputSchema();

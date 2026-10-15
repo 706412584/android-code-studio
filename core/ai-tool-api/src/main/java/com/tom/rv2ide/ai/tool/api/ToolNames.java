@@ -76,6 +76,14 @@ public final class ToolNames {
      * 一个能据以继续的决定。
      */
     public static final String ASK_USER_QUESTION = "ask_user_question";
+    /**
+     * 按需加载工具的发现入口：在延迟加载目录（当前是 MCP 工具）里按关键词检索，
+     * 命中后把这些工具的完整定义放进后续每轮请求的 tools 数组。
+     *
+     * <p>照搬 Aharou {@code ToolSearchTool} 的语义：MCP 工具的定义每轮全量注入时，
+     * 几个 server 就能吃掉几十万 token，而单轮实际只会用到其中一两个。
+     */
+    public static final String TOOL_SEARCH = "tool_search";
     /** 读取 skill 全文（渐进披露的按需加载端）。 */
     public static final String SKILL = "skill";
     /** 写入 / 删除 skill，让模型能自己沉淀踩过的坑。 */
@@ -99,6 +107,14 @@ public final class ToolNames {
     /** 文生视频（异步任务 + 轮询，协议照 cc-haha media-gen）。 */
     public static final String VIDEO_GENERATION = "video_generation";
     // ---- 手机控制（真机测试闭环，经 Shizuku 走 adb 级权限，不依赖无障碍服务） ----
+    /**
+     * 影子屏：宿主上的无头虚拟显示屏（不在设备屏幕显示）。
+     *
+     * <p>移植自 Aharou（GPL-3.0）：在虚拟屏里启动 App、截图、点按、滑动、输入，
+     * 全程不占用用户主屏。与 phone_* 工具的分工：那些操作**用户当前屏幕**，
+     * 本工具操作离屏虚拟屏——做第三方 App 自动化测试优先用它。
+     */
+    public static final String VSCREEN = "vscreen";
     /** 截取设备屏幕。 */
     public static final String PHONE_SCREENSHOT = "phone_screenshot";
     /** 按坐标点击。 */
