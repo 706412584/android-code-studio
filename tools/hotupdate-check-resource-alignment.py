@@ -34,13 +34,24 @@ RESOURCE_RE = re.compile(r"^\s+resource (0x[0-9a-fA-F]{8}) (\S+)\s*$")
 def find_aapt2() -> str:
     import os
 
+    def versions_desc(paths):
+        # 按版本号排序（不是字符串排序：字符串会把 9.0.0 排在 10.0.0 之后）。
+        def key(p):
+            parts = p.parent.name.split(".")
+            return tuple(int(x) if x.isdigit() else 0 for x in parts)
+        return sorted(paths, key=key, reverse=True)
+
     candidates = []
     sdk = os.environ.get("ANDROID_HOME") or os.environ.get("ANDROID_SDK_ROOT")
     if sdk:
         bt = Path(sdk) / "build-tools"
         if bt.is_dir():
-            candidates.extend(sorted(bt.glob("*/aapt2*"), reverse=True))
-    candidates.extend(sorted(Path("D:/android/build-tools").glob("*/aapt2.exe"), reverse=True))
+            # 精确匹配 aapt2 / aapt2.exe——`aapt2*` 会误配 aapt2-proto 等同名目录。
+            for name in ("aapt2", "aapt2.exe"):
+                candidates.extend(versions_desc(bt.glob("*/" + name)))
+    local = Path("D:/android/build-tools")
+    if local.is_dir():
+        candidates.extend(versions_desc(local.glob("*/aapt2.exe")))
     for c in candidates:
         if c.is_file():
             return str(c)
