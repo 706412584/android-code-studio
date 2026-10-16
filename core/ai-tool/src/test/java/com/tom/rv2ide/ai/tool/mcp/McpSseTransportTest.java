@@ -700,4 +700,30 @@ final class McpSseTransportTest {
     assertEquals(0, server.streamOpens.get(), "关闭后不应再建连");
     server.close();
   }
+
+  // ---- URL 校验（requireHttpUrl）----
+
+  @Test
+  void emptyServerUrlFailsWithExplicitMessage() {
+    // 未配置地址时必须在建连前就报错——否则会去打开一个空 URL，
+    // 抛出的异常与真实原因（没配置）毫无关系，用户无从排查。
+    McpClient client =
+        new McpClient(new FakeSseServer(), "", Collections.emptyMap(), McpClient.Transport.SSE);
+    Exception e = assertThrows(Exception.class, client::initialize);
+    assertTrue(e.getMessage().contains("未配置"), e.getMessage());
+  }
+
+  @Test
+  void nonHttpSchemeIsRejectedWithTheOffendingUrl() {
+    // file:// / ws:// 之类不是 SSE 能用的协议；错误里要带上原地址便于定位。
+    McpClient client =
+        new McpClient(
+            new FakeSseServer(),
+            "file:///etc/passwd",
+            Collections.emptyMap(),
+            McpClient.Transport.SSE);
+    Exception e = assertThrows(Exception.class, client::initialize);
+    assertTrue(e.getMessage().contains("http"), e.getMessage());
+    assertTrue(e.getMessage().contains("file://"), "错误应回显原地址：" + e.getMessage());
+  }
 }
