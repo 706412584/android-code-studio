@@ -455,10 +455,12 @@
   <string name="ai_assistant_revert_failed">撤销失败 — %1$s</string>
 
   <!-- 对话导出 -->
-  <string name="ai_assistant_export">复制</string>
+  <string name="ai_assistant_export">导出</string>
   <string name="ai_assistant_export_copied">已复制 %1$d 个字符到剪贴板</string>
-  <string name="ai_assistant_export_empty">还没有可复制的内容</string>
-  <string name="ai_assistant_export_failed">复制失败：剪贴板不可用</string>
+  <string name="ai_assistant_export_empty">还没有可导出的内容</string>
+  <string name="ai_assistant_export_failed">导出失败：无法写入文件</string>
+  <string name="ai_assistant_export_written">已导出到 %1$s</string>
+  <string name="ai_assistant_export_open_with">打开导出文件</string>
   <string name="ai_assistant_code_copy">复制</string>
   <string name="ai_assistant_code_copied">已复制</string>
   <string name="ai_assistant_code_expand">展开全部 %1$d 行</string>

@@ -4601,10 +4601,20 @@ class FloatingAssistantView(
   }
 
   /**
-   * 把当前对话复制到剪贴板。
+   * 把当前对话导出为 Markdown 文件。
    *
-   * <p>导出的内容取自列表里已有的消息（含工具卡片），而不是重新读会话日志：
-   * 用户看到的就是他要导出的，两者必须一致。
+   * <p><b>为什么写文件而不是复制剪贴板</b>：长对话的 Markdown 动辄几十万字符，
+   * 剪贴板既装不下也读不了（粘贴到任何地方都是一坨）。写文件后路径可直接被
+   * 文件管理器打开、被其他 app 分享、也能经 adb 拉出来排查问题（实测需求：
+   * 会话渲染异常时需要拿原始数据核对）。
+   *
+   * <p>落点 `getExternalFilesDir(null)/exports/`：应用外部私有目录，**无需任何存储
+   * 权限**，且 `adb pull /sdcard/Android/data/com.tom.rv2ide/files/exports/...`
+   * 可直接取出（与 PhoneScreenshotTool 的截图通路同一约定）。
+   *
+   * <p>内容取自列表里已有的消息（含工具卡片与推理块），而不是重新读会话日志：
+   * 用户看到的就是他要导出的，两者必须一致——**这也是排查渲染问题的关键**：
+   * 导出的文本忠实反映 UI 列表的数据形态。
    */
   private fun copyConversation() {
     val markdown = buildMarkdownExport()
@@ -4612,15 +4622,69 @@ class FloatingAssistantView(
       appendTrace(context.getString(string.ai_assistant_export_empty))
       return
     }
-    val clipboard =
-        context.getSystemService(android.content.Context.CLIPBOARD_SERVICE)
-            as? android.content.ClipboardManager
-    if (clipboard == null) {
+    val file = try {
+      val base = context.getExternalFilesDir(null) ?: context.filesDir
+      val dir = java.io.File(base, "exports")
+      if (!dir.isDirectory && !dir.mkdirs()) {
+        appendTrace(context.getString(string.ai_assistant_export_failed))
+        return
+      }
+      // 文件名带时间戳：同一会话多次导出不互相覆盖（排查问题时经常要对比两次导出）。
+      val stamp = java.text.SimpleDateFormat("yyyyMMdd-HHmmss", java.util.Locale.US)
+          .format(java.util.Date())
+      val title =
+          displayedConversationId?.let { id ->
+            runCatching {
+              orchestrator.conversationStore.list().firstOrNull { it.id == id }?.title
+            }.getOrNull()
+          }
+      val safeTitle = (title ?: "").replace(Regex("[^\\p{L}\\p{N}_-]"), "_").take(40)
+          .ifBlank { "conversation" }
+      val target = java.io.File(dir, "$stamp-$safeTitle.md")
+      target.writeText(markdown, Charsets.UTF_8)
+      target
+    } catch (e: Exception) {
+      com.tom.rv2ide.ai.tool.api.ErrorLog.record("agent", "导出对话失败", e, null)
       appendTrace(context.getString(string.ai_assistant_export_failed))
       return
     }
-    clipboard.setPrimaryClip(android.content.ClipData.newPlainText("AI 对话", markdown))
-    appendTrace(context.getString(string.ai_assistant_export_copied, markdown.length))
+    appendTrace(context.getString(string.ai_assistant_export_written, file.absolutePath))
+    // 同时复制路径到剪贴板：方便用户直接粘到文件管理器/其他 app。
+    val clipboard =
+        context.getSystemService(android.content.Context.CLIPBOARD_SERVICE)
+            as? android.content.ClipboardManager
+    clipboard?.setPrimaryClip(android.content.ClipData.newPlainText("AI 对话导出路径", file.absolutePath))
+    // 导出后直接唤起打开器：用户点「导出」的意图就是「看/用它」，
+    // 只给一行路径文字还得自己去找文件管理器。打开器不可用时静默跳过
+    // （路径已在 trace 里，剪贴板也备好了）。
+    openExportedFile(file)
+  }
+
+  /**
+   * 用系统打开器打开导出的文件。
+   *
+   * <p>经 FileProvider 换成 content:// URI——Android 7+ 对 file:// URI 直接抛
+   * FileUriExposedException。`file_paths.xml` 已覆盖 `external-files-path`，
+   * 导出的 `exports/` 目录在其范围内，无需改配置。
+   */
+  private fun openExportedFile(file: java.io.File) {
+    try {
+      val uri =
+          androidx.core.content.FileProvider.getUriForFile(
+              context, "${context.packageName}.fileprovider", file)
+      val intent =
+          android.content.Intent(android.content.Intent.ACTION_VIEW).apply {
+            setDataAndType(uri, "text/markdown")
+            addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+          }
+      context.startActivity(
+          android.content.Intent.createChooser(intent, context.getString(string.ai_assistant_export_open_with)))
+    } catch (e: Exception) {
+      // 设备上没有能打开 text/markdown 的 app，或 chooser 被系统拦下：
+      // 路径已展示，这里静默即可（记录一笔供排查）。
+      com.tom.rv2ide.ai.tool.api.ErrorLog.record("agent", "打开导出文件失败", e, null)
+    }
   }
 
   /** 按当前列表内容拼出 Markdown。 */

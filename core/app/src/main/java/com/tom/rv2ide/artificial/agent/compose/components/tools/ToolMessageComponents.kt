@@ -444,9 +444,12 @@ internal fun ToolMessageBody(
           modifier = Modifier.padding(start = ChatStyle.rowIconSize + Spacing.sm))
     }
     // 生成图常显预览（cc-haha ImageGenerationBlock 语义）：图片是这条结果的主体，
-    // 折进卡片里用户看不到「查看图片功能回来了」。只在非 running 且磁盘有文件时显示；
-    // 折叠展开均常驻。expandedOverride 的旧分支里同样渲染一份，展开时是同一入口。
-    if (!running && !message.isError) {
+    // 折进卡片里用户看不到「查看图片功能回来了」。只在非 running 且磁盘有文件时显示。
+    //
+    // **折叠态由这里渲染，展开态由下方展开分支渲染**——不要两处都渲染：展开时
+    // 两份卡片会叠出两个「点击查看大图」（用户实测反馈的重复 UI）。
+    // 展开分支的判据是 effectiveExpanded，这里的判据取反，恰好互补、每个状态一份。
+    if (!running && !message.isError && !effectiveExpanded) {
       val imagePaths = remember(message.content) { generatedImagePaths(message) }
       if (imagePaths.isNotEmpty()) {
         Spacer(Modifier.height(Spacing.xs))
@@ -501,6 +504,10 @@ internal fun ToolMessageBody(
             // UI 从 content 里提取路径、从磁盘加载内联显示。用户看到的仍是图片，
             // 模型看到的是几百字节文本。位置在 imageBase64 之后：旧会话里内联
             // base64 的结果优先走原分支，不受影响。
+            //
+            // **这里只负责展开态**：折叠态由上方「生成图常显预览」块渲染（其判据
+            // 带 !effectiveExpanded）。两处互补、每个状态恰好一份——若上方块漏了
+            // 展开态排除，展开时会叠出两个「点击查看大图」（用户实测反馈）。
             Spacer(Modifier.height(Spacing.xs))
             ToolResultImageFromPaths(generatedImagePaths(message))
           } else if (edit != null) {

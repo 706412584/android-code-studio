@@ -460,10 +460,12 @@
   <string name="ai_assistant_revert_failed">Undo failed — %1$s</string>
 
   <!-- Conversation export -->
-  <string name="ai_assistant_export">Copy</string>
+  <string name="ai_assistant_export">Export</string>
   <string name="ai_assistant_export_copied">Copied %1$d characters to the clipboard</string>
-  <string name="ai_assistant_export_empty">Nothing to copy yet</string>
-  <string name="ai_assistant_export_failed">Copy failed: clipboard unavailable</string>
+  <string name="ai_assistant_export_empty">Nothing to export yet</string>
+  <string name="ai_assistant_export_failed">Export failed: cannot write file</string>
+  <string name="ai_assistant_export_written">Exported to %1$s</string>
+  <string name="ai_assistant_export_open_with">Open exported file</string>
   <string name="ai_assistant_code_copy">Copy</string>
   <string name="ai_assistant_code_copied">Copied</string>
   <string name="ai_assistant_code_expand">Show all %1$d lines</string>

@@ -598,15 +598,34 @@ class AssistantMessageAdapter(
    * 否则两段内容会在列表里并存。与 [removeIfBlank] 的区别是它**无条件移除**——
    * 重试场景下部分内容可能有几百字，但依然是作废的。
    *
+   * <p><b>必须穿透分组</b>：推理块会被 [appendThinking] 收进 [ToolGroup.children]，
+   * 顶层 `indexOf` 找不到它。此前正是这里漏了穿透——断流重发时组内推理块清理失败，
+   * 旧推理碎片残留在列表里与新内容交错（实测反馈的「思考块被截断、碎片散落」）。
+   *
    * @return 是否真的移除了
    */
   fun remove(id: Long): Boolean {
     val index = indexOf(id)
-    if (index < 0) {
+    if (index >= 0) {
+      items.removeAt(index)
+      notifyCompat { notifyItemRemoved(index) }
+      return true
+    }
+    // 顶层没有 → 查组内。命中时从组里摘掉该 child；组因此变空时整组移除。
+    val groupIndex =
+        items.indexOfFirst { it is ToolGroup && it.children.any { child -> child.id == id } }
+    if (groupIndex < 0) {
       return false
     }
-    items.removeAt(index)
-    notifyCompat { notifyItemRemoved(index) }
+    val group = items[groupIndex] as ToolGroup
+    val next = group.children.filterNot { it.id == id }
+    if (next.isEmpty()) {
+      items.removeAt(groupIndex)
+      notifyCompat { notifyItemRemoved(groupIndex) }
+    } else {
+      items[groupIndex] = group.copy(children = next)
+      notifyCompat { notifyItemChanged(groupIndex) }
+    }
     return true
   }
 
