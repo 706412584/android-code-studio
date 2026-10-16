@@ -18,6 +18,7 @@
 package com.tom.rv2ide.ai.tool;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -28,6 +29,8 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import org.json.JSONObject;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+import java.nio.file.Path;
 
 /**
  * {@link VideoGenerationTool} 的协议行为（Agnes / Grok 两路 + 失败态）。
@@ -197,5 +200,61 @@ class VideoGenerationToolTest {
     assertEquals(
         "https://host/agnesapi?video_id=v1&model_name=agnes-video-2.5",
         agnes.agnesPollUrl("v1", "agnes-video-2.5"));
+  }
+
+  @Test
+  public void successfulDownloadWritesFileAndReportsSize(@TempDir Path dir) throws Exception {
+    // 起本地 HTTP 服务器提供 mp4 字节：验证「下载成功」路径真正落盘并回报大小。
+    // 既有的 agnes/grok 用例用的是不可达的 https://cdn，走的是下载失败分支——
+    // 成功分支此前完全没覆盖。
+    byte[] mp4 = new byte[4096];
+    java.util.Arrays.fill(mp4, (byte) 0x42);
+    com.sun.net.httpserver.HttpServer server =
+        com.sun.net.httpserver.HttpServer.create(
+            new java.net.InetSocketAddress("127.0.0.1", 0), 0);
+    server.createContext(
+        "/v.mp4",
+        exchange -> {
+          exchange.sendResponseHeaders(200, mp4.length);
+          try (java.io.OutputStream out = exchange.getResponseBody()) {
+            out.write(mp4);
+          }
+        });
+    server.start();
+    try {
+      String url = "http://127.0.0.1:" + server.getAddress().getPort() + "/v.mp4";
+      ScriptedPort port =
+          new ScriptedPort(
+              ok(new JSONObject().put("video_id", "v9").toString()),
+              ok(
+                  new JSONObject()
+                      .put("status", "completed")
+                      .put("url", url)
+                      .toString()));
+      VideoGenerationTool tool = new VideoGenerationTool(port);
+      ToolContext ctx =
+          ToolContext.builder()
+              .homePath(dir.toString())
+              .videoGeneration(
+                  new VideoGenerationEndpoint(
+                      "https://host/v1", "sk-test", "agnes-video-2.5-flash", ""))
+              .build();
+
+      ToolResult result =
+          tool.execute(new JSONObject().put("prompt", "a cat runs"), ctx);
+
+      assertFalse(result.isError(), result.getContent());
+      assertTrue(result.getContent().contains("视频生成成功"), result.getContent());
+      assertTrue(result.getContent().contains("文件路径"), result.getContent());
+      // 落盘位置：homePath/videos/ 下的 mp4，且内容与服务器一致。
+      java.io.File saved = new java.io.File(dir.toFile(), "ai-generated");
+      java.io.File[] files = saved.listFiles();
+      assertNotNull(files);
+      assertEquals(1, files.length, "应恰好落盘一个视频文件");
+      assertTrue(files[0].getName().endsWith(".mp4"), files[0].getName());
+      assertEquals(4096, files[0].length(), "落盘内容长度应与服务器一致");
+    } finally {
+      server.stop(0);
+    }
   }
 }
