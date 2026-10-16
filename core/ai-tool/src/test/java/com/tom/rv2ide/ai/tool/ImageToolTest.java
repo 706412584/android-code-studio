@@ -339,4 +339,84 @@ class ImageToolTest {
     assertFalse(ok.isError(), ok.getContent());
     assertTrue(ok.getContent().contains("crop"), ok.getContent());
   }
+
+  // ---- runResize 的宽高比与上限逻辑（此前只测了参数校验）----
+
+  @Test
+  void resizeMaxDimensionPreservesAspectRatio(@TempDir Path dir) throws Exception {
+    writeFakePng(dir, "wide.png");
+    FakePort port = new FakePort();
+    // 4x2 的图：max_dimension=2 应得 2x1（保持 2:1 比例，两轴分别取整）。
+    port.decodeResult = new ImageProcessingPort.Decoded(
+        new int[] {0xFF000000, 0xFF000000, 0xFF000000, 0xFF000000, 0xFF000000, 0xFF000000, 0xFF000000, 0xFF000000},
+        4, 2);
+    ToolResult r =
+        new ImageTool(port)
+            .execute(
+                new JSONObject()
+                    .put("action", "resize")
+                    .put("path", "wide.png")
+                    .put("max_dimension", 2),
+                contextFor(dir));
+    assertFalse(r.isError(), r.getContent());
+    assertTrue(r.getContent().contains("2x1"), "应保持宽高比缩到 2x1：" + r.getContent());
+  }
+
+  @Test
+  void resizeMaxDimensionLargerThanImageKeepsOriginal(@TempDir Path dir) throws Exception {
+    writeFakePng(dir, "small.png");
+    FakePort port = new FakePort();
+    port.decodeResult = red2x2();
+    // max_dimension 大于原图最长边 → 不放大，保持原尺寸。
+    ToolResult r =
+        new ImageTool(port)
+            .execute(
+                new JSONObject()
+                    .put("action", "resize")
+                    .put("path", "small.png")
+                    .put("max_dimension", 999),
+                contextFor(dir));
+    assertFalse(r.isError(), r.getContent());
+    assertTrue(r.getContent().contains("2x2"), "不应放大小图：" + r.getContent());
+  }
+
+  @Test
+  void resizeSingleAxisComputesOtherFromAspect(@TempDir Path dir) throws Exception {
+    writeFakePng(dir, "rect.png");
+    FakePort port = new FakePort();
+    port.decodeResult = new ImageProcessingPort.Decoded(
+        new int[] {0xFF000000, 0xFF000000, 0xFF000000, 0xFF000000, 0xFF000000, 0xFF000000, 0xFF000000, 0xFF000000},
+        4, 2);
+    // 只给 width=8 → 高度按比例算 4。
+    ToolResult r =
+        new ImageTool(port)
+            .execute(
+                new JSONObject()
+                    .put("action", "resize")
+                    .put("path", "rect.png")
+                    .put("width", 8)
+                    .put("filter", "nearest"),
+                contextFor(dir));
+    assertFalse(r.isError(), r.getContent());
+    assertTrue(r.getContent().contains("8x4"), "单轴缩放应按比例算另一轴：" + r.getContent());
+  }
+
+  @Test
+  void resizeBicubicNotesBilinearFallback(@TempDir Path dir) throws Exception {
+    writeFakePng(dir, "b.png");
+    FakePort port = new FakePort();
+    port.decodeResult = red2x2();
+    // bicubic 在 Android 上按双线性处理——结果里应注明，避免用户以为真做了 bicubic。
+    ToolResult r =
+        new ImageTool(port)
+            .execute(
+                new JSONObject()
+                    .put("action", "resize")
+                    .put("path", "b.png")
+                    .put("max_dimension", 1)
+                    .put("filter", "bicubic"),
+                contextFor(dir));
+    assertFalse(r.isError(), r.getContent());
+    assertTrue(r.getContent().contains("双线性"), "bicubic 应注明按双线性处理：" + r.getContent());
+  }
 }
