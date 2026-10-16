@@ -265,7 +265,9 @@ public final class VideoGenerationTool extends BaseTool {
               "视频状态查询连续失败，任务 ID: " + videoId + "：" + describeException(e));
         }
       }
-      sleep(POLL_INTERVAL_MS * transientFailures);
+      // 成功后 transientFailures 会被重置为 0——直接相乘会让正常轮询退化成零间隔
+      // 热循环（把上游打爆）。保底 1 个间隔：正常 3s，连续失败时按失败次数退避。
+      sleep(POLL_INTERVAL_MS * Math.max(1, transientFailures));
     }
     throw new VideoTaskException(
         "视频生成等待超时，任务 ID: " + videoId + "，最后状态: " + lastState);
