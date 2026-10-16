@@ -121,6 +121,28 @@ public interface ToolSettingsPort {
   }
 
   /**
+   * 询问用户是否放行一次**敏感档**调用（如影子屏 label 命中「确认支付」「转账」）。
+   *
+   * <p><b>与 {@link #confirmDangerousTool} 的本质区别</b>：敏感档必须**逐次确认且不可记忆**——
+   * 实现方不得走任何捷径（全局放行、持久化规则、运行内已批准记忆都跳过），
+   * 且用户答复**不写入**任何记忆。理由：这些动作（付款、转账、发送、删除）按下后
+   * 无法撤销，保护的对象是「模型别乱按」，而不是「用户嫌弹窗烦」——用户对普通命令
+   * 点的「始终允许」不应顺带放行支付按钮。
+   *
+   * <p>默认委托到 {@link #confirmDangerousTool}（行为退化为普通确认）：
+   * 未覆写的实现方仍能执行，只是没有「不可记忆」的加强语义。
+   *
+   * @param conversationId 产生该调用的会话 id；空串表示无会话
+   * @param toolName 工具规范名
+   * @param arguments 工具参数原始 JSON 文本（可能已附加敏感词告警，供 UI 展示）
+   * @return true 表示放行**本次**调用
+   */
+  default boolean confirmSensitiveTool(
+      String conversationId, String toolName, String arguments) {
+    return confirmDangerousTool(conversationId, toolName, arguments);
+  }
+
+  /**
    * 丢弃某个会话的运行内授权记忆。会话运行结束时调用，避免条目随会话数累积。
    *
    * <p>默认空实现。

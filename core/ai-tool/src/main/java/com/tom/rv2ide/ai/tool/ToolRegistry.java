@@ -99,6 +99,15 @@ public final class ToolRegistry {
   private final Map<String, ToolDisplayCategory> displayCategoryCache = new LinkedHashMap<>();
   private final ReentrantReadWriteLock lock = new ReentrantReadWriteLock();
 
+  /**
+   * 已展开的延迟加载工具名。
+   *
+   * <p><b>为什么按「名」而不是改工具对象</b>：工具实例由装配方创建并跨会话共享
+   * （MCP 适配器还持有网络连接），在实例上翻标志会让「一个会话展开」泄漏成
+   * 「所有会话都展开」。按名维护一份展开集，作用域天然跟着注册表走。
+   */
+  private final java.util.Set<String> activated = new java.util.LinkedHashSet<>();
+
   /** 创建一个空注册表。工具需通过 {@link #register} 加入。 */
   public ToolRegistry() {}
 
@@ -250,6 +259,98 @@ public final class ToolRegistry {
     lock.readLock().lock();
     try {
       return new java.util.LinkedHashSet<>(tools.keySet());
+    } finally {
+      lock.readLock().unlock();
+    }
+  }
+
+  // =====================================================================================
+  // 延迟加载（按需检索）——照搬 Aharou ToolRegistry 的 deferred 语义
+  // =====================================================================================
+
+  /**
+   * 返回「按需加载」的工具目录（全量，未展开）。
+   *
+   * <p>供 {@code tool_search} 检索用。哪些工具算按需加载由 {@link BaseTool#isDeferredLoading()}
+   * 声明（MCP 工具为 true——它们的 schema 大、数量随 server 增长，全量注入会吃掉
+   * 几十万 token，而单轮只会用到一两个）。
+   */
+  public List<BaseTool> getDeferredTools() {
+    lock.readLock().lock();
+    try {
+      List<BaseTool> result = new ArrayList<>();
+      for (BaseTool tool : tools.values()) {
+        if (tool.isDeferredLoading()) {
+          result.add(tool);
+        }
+      }
+      return result;
+    } finally {
+      lock.readLock().unlock();
+    }
+  }
+
+  /** 展开一批延迟加载工具，使其进入后续每轮请求的 tools 数组。 */
+  public void activate(Collection<String> names) {
+    if (names == null || names.isEmpty()) {
+      return;
+    }
+    lock.writeLock().lock();
+    try {
+      activated.addAll(names);
+    } finally {
+      lock.writeLock().unlock();
+    }
+  }
+
+  /** 某个延迟加载工具是否已展开。 */
+  public boolean isActivated(String name) {
+    if (name == null) {
+      return false;
+    }
+    lock.readLock().lock();
+    try {
+      return activated.contains(name);
+    } finally {
+      lock.readLock().unlock();
+    }
+  }
+
+  /**
+   * 工具是否应出现在本轮请求的 tools 数组里。
+   *
+   * <p>常驻工具（{@code !isDeferredLoading()}）恒为 true；延迟加载工具仅在展开后为 true。
+   * 这是「平时只给目录、命中才展开」的过滤点——单点实现，避免各处漏判。
+   */
+  public boolean isRequestable(String name) {
+    lock.readLock().lock();
+    try {
+      BaseTool tool = tools.get(name);
+      if (tool == null) {
+        return false;
+      }
+      return !tool.isDeferredLoading() || activated.contains(name);
+    } finally {
+      lock.readLock().unlock();
+    }
+  }
+
+  /**
+   * 过滤出可请求的工具列表（保持登记顺序）。
+   *
+   * <p>AgentSession 每轮请求前调用：deferred 且未展开的工具从 tools 数组剔除，
+   * 但仍在注册表里（{@code get} 仍可查到，{@code tool_search} 仍能检索到目录）。
+   */
+  public List<BaseTool> getRequestableTools() {
+    lock.readLock().lock();
+    try {
+      List<BaseTool> result = new ArrayList<>();
+      for (BaseTool tool : tools.values()) {
+        if (!tool.isDeferredLoading() || activated.contains(tool.getName())) {
+          result.add(tool);
+        }
+      }
+      return result;
     } finally {
       lock.readLock().unlock();
     }

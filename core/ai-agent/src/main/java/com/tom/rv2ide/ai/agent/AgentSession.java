@@ -343,7 +343,9 @@ public final class AgentSession {
     // 本次请求的下标：裁剪必须保住它，否则模型不知道自己在做什么。
     final int historyEnd = messages.size() - 1;
 
-    List<ToolInfo> tools = new ArrayList<>(registry.getAll());
+    // 工具列表**每轮请求前重建**（见循环内），不能只算一次：
+    // tool_search 展开的按需工具必须从下一轮起出现在 tools 数组里，
+    // 只算一次的话展开结果永远不生效（模型检索到却调不到）。
 
     int toolCallLimit = config == null ? -1 : config.getToolCallLimit();
     int toolCallCount = 0;
@@ -401,6 +403,14 @@ public final class AgentSession {
 
       turnIndex++;
       emit(listener, AgentEvent.turnStarted(turnIndex));
+
+      // 每轮重建工具列表：上一轮 tool_search 展开的按需工具在这里进入 tools 数组，
+      // 未展开的按需工具（MCP）不出现——它们的目录已随提示词注入（见 ToolSearchTool）。
+      //
+      // 代价说明：tools 数组变化会打断服务端的前缀缓存（prompt cache），展开的那一轮
+      // 首 token 延迟上升。这是按需加载的固有代价（Aharou 同样如此），且只在
+      // 「模型真的检索并展开」的轮次发生——不展开时列表逐轮相同，缓存不受影响。
+      List<ToolInfo> tools = new ArrayList<>(registry.getRequestableTools());
 
       ModelCompletionResponse response;
       try {

@@ -100,6 +100,7 @@ import com.tom.rv2ide.artificial.agent.tool.PhoneOcrTool;
 import com.tom.rv2ide.artificial.agent.tool.PhoneScreenshotCompareTool;
 import com.tom.rv2ide.artificial.agent.tool.PhoneScreenshotTool;
 import com.tom.rv2ide.artificial.agent.tool.PhoneSwipeTool;
+import com.tom.rv2ide.artificial.agent.tool.VdTool;
 import com.tom.rv2ide.artificial.agent.tool.PhoneTestScenarioTool;
 import com.tom.rv2ide.artificial.agent.tool.PhoneViewHierarchyTool;
 import com.tom.rv2ide.artificial.agent.tool.PhoneWaitForTool;
@@ -1554,6 +1555,11 @@ public final class AgentOrchestrator {
     // 端口在 executeRun 注入（.u2Proxy(...)）；server 生命周期由 U2ServerManager 跨调用管理。
     registry.register(new com.tom.rv2ide.ai.tool.PhoneUiautomatorTool());
 
+    // 影子屏（vscreen，移植自 Aharou）：把 App 开到无头虚拟屏上操作，用户主屏零打扰。
+    // 与上面 phone_* 工具的分工：那些操作**用户当前屏幕**（跑自动化时用户没法用手机），
+    // 本工具操作离屏虚拟屏——第三方 App 自动化测试优先用它。需要 Shizuku。
+    registry.register(new VdTool(appContext, shellBackends));
+
     // 动作级截图回归 / 基线 / 多步场景：内部会调用其它工具来驱动界面。
     //
     // 它们**不接收注册表**。早先的写法是构造时传入 registry、execute 时直接
@@ -1620,6 +1626,17 @@ public final class AgentOrchestrator {
     // UI 的分类色查询不该触发网络请求，也不该创建无人释放的连接。
     if (includeMcp && mcpClientsOut != null) {
       registerMcpTools(registry, http, mcpClientsOut);
+    }
+
+    // 按需加载工具的发现入口（tool_search）。必须在 MCP 注册**之后**——
+    // 它检索的是注册表里的 deferred 目录，早注册会拿到不完整的目录。
+    //
+    // 注册条件收紧到「本次真的装配了 MCP」：MCP 是唯一的 deferred 来源，
+    // 没接 MCP 时目录恒为空，工具没有存在意义。不能只看 includeMcp——
+    // UI 路径（buildRegistry() 查分类色）传 includeMcp=true 但 mcpClientsOut=null，
+    // 只看 includeMcp 会让 UI 的工具列表里出现一个永远查不到东西的 tool_search。
+    if (includeMcp && mcpClientsOut != null) {
+      registry.register(new com.tom.rv2ide.ai.tool.ToolSearchTool(registry));
     }
 
     return registry;
@@ -2079,7 +2096,11 @@ public final class AgentOrchestrator {
       }
     }
 
-    List<ToolInfo> tools = new ArrayList<>(registry.getAll());
+    // 提示词里的工具清单只列**常驻**工具：按需加载的 MCP 工具不在其中——
+    // 它们的完整 schema 由 tool_search 展开时才给出，这里只通过 tool_search 的
+    // promptSupplement（目录）让模型知道它们存在。若列全量，几十个 MCP 工具的
+    // 长描述会把提示词撑爆，正是延迟加载要解决的问题。
+    List<ToolInfo> tools = new ArrayList<>(registry.getRequestableTools());
     // 协议支持原生工具调用时不注入 XML 兜底格式，否则会诱导模型改用文本调用。
     ModelClient modelClient = new ModelClient();
     boolean nativeTools = modelClient.supportsNativeTools(config);

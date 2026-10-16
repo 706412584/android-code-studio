@@ -124,6 +124,12 @@ public final class ToolPermissionRule {
       java.util.Collections.unmodifiableSet(
           new java.util.LinkedHashSet<>(
               java.util.Arrays.asList(
+                  // 影子屏与 phone_* 交互同类：每次调用的爆炸半径都是「在（虚拟）屏幕上做
+                  // 一次交互」，参数（坐标/文字）几乎每次都不同。按参数摘要建键会让
+                  // 「始终允许」完全失效（下一次点击照旧弹窗）；而它的每一次调用在权限
+                  // 语义上等价，不存在提权路径。敏感档（label 命中支付/转账等）不走本规则
+                  // ——执行器对敏感调用跳过一切记忆，见 ToolExecutor.isSensitiveCall 分支。
+                  ToolNames.VSCREEN,
                   ToolNames.PHONE_CLICK,
                   ToolNames.PHONE_CLICK_VIEW,
                   ToolNames.PHONE_SWIPE,

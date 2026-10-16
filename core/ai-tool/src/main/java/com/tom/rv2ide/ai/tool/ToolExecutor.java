@@ -126,7 +126,31 @@ public final class ToolExecutor {
       return ToolResult.of(callId, toolName, permission.getReason(), true);
     }
 
-    if (tool.needsConfirmation() && permissionService.needsConfirmation(toolName) && !confirmed) {
+    // 参数先解析：确认闸门要看参数内容（敏感档判定），执行也要用同一份解析结果。
+    JSONObject input;
+    try {
+      String args = ToolArgsCleaner.clean(toolCall.getArguments());
+      input = args.trim().isEmpty() ? new JSONObject() : new JSONObject(args);
+    } catch (Exception e) {
+      ExceptionUtils.restoreInterrupt(e);
+      return ToolResult.of(
+          callId, toolName, "参数解析失败: " + ExceptionUtils.describeException(e), true);
+    }
+
+    // 敏感档（如影子屏 label 命中「确认支付」）：逐次确认、不可记忆。**不受 AUTO 模式豁免**
+    // ——用户选 AUTO 是为了少弹窗，不是为了让模型静默按下支付按钮。跳过一切规则/全局放行
+    // 捷径，直接询问；答复不写入任何记忆——见 confirmSensitiveTool。
+    if (!confirmed && tool.needsConfirmation() && tool.isSensitiveCall(input)) {
+      ToolSettingsPort callSettings =
+          context == null ? ToolSettingsPort.defaults() : context.getSettings();
+      String conversationId = context == null ? "" : context.getConversationId();
+      if (!callSettings.confirmSensitiveTool(conversationId, toolName, toolCall.getArguments())) {
+        return ToolResult.of(
+            callId, toolName, "用户拒绝执行敏感操作 " + toolName + "（或未确认）。", true);
+      }
+    } else if (tool.needsConfirmation()
+        && permissionService.needsConfirmation(toolName)
+        && !confirmed) {
       // 带上工具名与参数询问，用户才能判断要放行的是什么。
       ToolSettingsPort callSettings =
           context == null ? ToolSettingsPort.defaults() : context.getSettings();
@@ -142,16 +166,6 @@ public final class ToolExecutor {
         context == null
             ? ToolContext.builder().homePath("").build()
             : context.withToolCallId(callId);
-
-    JSONObject input;
-    try {
-      String args = ToolArgsCleaner.clean(toolCall.getArguments());
-      input = args.trim().isEmpty() ? new JSONObject() : new JSONObject(args);
-    } catch (Exception e) {
-      ExceptionUtils.restoreInterrupt(e);
-      return ToolResult.of(
-          callId, toolName, "参数解析失败: " + ExceptionUtils.describeException(e), true);
-    }
 
     try {
       ToolResult result =

@@ -61,6 +61,22 @@ public abstract class BaseTool implements ToolInfo {
     return false;
   }
 
+  /**
+   * 本次调用是否应提级为「敏感操作」：确认必须逐次进行、结果不可记忆。
+   *
+   * <p>用于「按下后无法撤销」的语义敏感场景（如影子屏 {@code tap}/{@code type} 的
+   * label 命中「确认支付」「转账」等词）。敏感调用的执行语义由 {@link ToolExecutor}
+   * 落地：忽略持久化规则与全局放行、每次都询问用户、答复不写入任何记忆。
+   *
+   * <p>默认 false。覆写者应同时保证 {@link #needsConfirmation()} 为 true——
+   * 本钩子只改变「如何确认」，不改变「是否需要确认」。
+   *
+   * @param args 已清洗并解析的工具参数
+   */
+  public boolean isSensitiveCall(JSONObject args) {
+    return false;
+  }
+
   /** 只读模式下是否放行。默认不放行，由读类工具覆写。 */
   public boolean isAllowedInReadonlyMode() {
     return false;
@@ -100,6 +116,19 @@ public abstract class BaseTool implements ToolInfo {
 
   /** 是否记录 diff 供用户审查。写类工具覆写为 true。 */
   public boolean shouldRecordDiff() {
+    return false;
+  }
+
+  /**
+   * 是否为「按需加载」工具：默认不进每轮请求的 tools 数组，由 {@code tool_search} 检索展开。
+   *
+   * <p><b>为什么要有这个机制</b>（照搬 Aharou ToolRegistry 的 deferred 语义）：
+   * MCP 工具的定义随 server 数量线性增长，几个 server 就能吃掉几十万 token，
+   * 而单轮实际只会用到其中一两个。改成「平时只给目录、命中才展开」后，
+   * 上下文里只留真正要用到的 schema。内置工具保持全量注入——它们的描述短、
+   * 数量固定，且几乎每轮都可能用到，延迟化反而增加一次检索往返。
+   */
+  public boolean isDeferredLoading() {
     return false;
   }
 
