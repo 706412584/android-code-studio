@@ -174,4 +174,89 @@ class ArchiveToolTest {
     // 默认解到与 zip 同名的目录 bundle/
     assertTrue(new File(dir, "bundle/data.txt").isFile());
   }
+
+  // ---- 此前未覆盖的分支 ----
+
+  @Test
+  void compressWithoutOutputUsesSourceNameWithZipExtension(@TempDir File dir) throws Exception {
+    // 省略 output：默认归档名 = 源文件名（去扩展名）+ .zip。
+    write(new File(dir, "notes.txt"), "N");
+    ToolResult result = run(context(dir.getAbsolutePath()), "compress", "notes.txt", null);
+    assertFalse(result.isError(), result.getContent());
+    assertTrue(new File(dir, "notes.zip").isFile(), "默认应产出 notes.zip");
+  }
+
+  @Test
+  void compressDirectoryWithoutOutputUsesDirectoryName(@TempDir File dir) throws Exception {
+    // 目录：默认名保留目录名（不剥"扩展名"）。
+    write(new File(dir, "proj/a.txt"), "A");
+    ToolResult result = run(context(dir.getAbsolutePath()), "compress", "proj", null);
+    assertFalse(result.isError(), result.getContent());
+    assertTrue(new File(dir, "proj.zip").isFile(), "默认应产出 proj.zip");
+  }
+
+  @Test
+  void compressEmptyDirectoryIsRejected(@TempDir File dir) throws Exception {
+    File empty = new File(dir, "empty");
+    assertTrue(empty.mkdirs());
+    ToolResult result = run(context(dir.getAbsolutePath()), "compress", "empty", null);
+    assertTrue(result.isError());
+    assertTrue(result.getContent().contains("空"), result.getContent());
+  }
+
+  @Test
+  void emptySubdirectoryKeepsStructureInArchive(@TempDir File dir) throws Exception {
+    // 空子目录也要在归档里留条目——否则解压后目录结构丢失。
+    write(new File(dir, "proj/a.txt"), "A");
+    assertTrue(new File(dir, "proj/sub-empty").mkdirs());
+
+    ToolContext ctx = context(dir.getAbsolutePath());
+    assertFalse(run(ctx, "compress", "proj", "out.zip").isError());
+    assertFalse(run(ctx, "extract", "out.zip", "restored").isError());
+
+    assertTrue(new File(dir, "restored/proj/sub-empty").isDirectory(),
+        "空子目录应被还原");
+  }
+
+  @Test
+  void extractNonFileIsRejected(@TempDir File dir) throws Exception {
+    File sub = new File(dir, "subdir");
+    assertTrue(sub.mkdirs());
+    ToolResult result = run(context(dir.getAbsolutePath()), "extract", "subdir", null);
+    assertTrue(result.isError());
+    assertTrue(result.getContent().contains("必须是文件"), result.getContent());
+  }
+
+  @Test
+  void extractToExistingFileTargetIsRejected(@TempDir File dir) throws Exception {
+    write(new File(dir, "a.txt"), "A");
+    ToolContext ctx = context(dir.getAbsolutePath());
+    assertFalse(run(ctx, "compress", "a.txt", "a.zip").isError());
+    write(new File(dir, "occupied"), "not a dir");
+
+    ToolResult result = run(ctx, "extract", "a.zip", "occupied");
+    assertTrue(result.isError());
+    assertTrue(result.getContent().contains("不是目录"), result.getContent());
+  }
+
+  @Test
+  void extractRoundTripReportsEntryCountAndSize(@TempDir File dir) throws Exception {
+    // 结果元数据：条目数与解压后大小都要如实报出。
+    write(new File(dir, "x.txt"), "hello");
+    ToolContext ctx = context(dir.getAbsolutePath());
+    assertFalse(run(ctx, "compress", "x.txt", "x.zip").isError());
+
+    ToolResult result = run(ctx, "extract", "x.zip", "out");
+    assertFalse(result.isError(), result.getContent());
+    assertTrue(result.getContent().contains("条目数: 1"), result.getContent());
+    assertTrue(result.getContent().contains("解压后大小"), result.getContent());
+  }
+
+  @Test
+  void toolMetadata() {
+    ArchiveTool tool = new ArchiveTool();
+    assertTrue(tool.needsConfirmation(), "解压/压缩是写操作，应确认");
+    assertEquals(
+        com.tom.rv2ide.ai.tool.api.ToolDisplayCategory.GENERIC, tool.getDisplayCategory());
+  }
 }
