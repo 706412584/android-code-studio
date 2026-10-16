@@ -68,4 +68,42 @@ class GatedAnalyzerTest {
     Object result = GatedAnalyzer.run(() -> "never", 0);
     assertSame(GatedAnalyzer.TIMED_OUT, result);
   }
+
+  @Test
+  void nullTaskReturnsNull() {
+    assertNull(GatedAnalyzer.run(null, 1_000));
+  }
+
+  @Test
+  void interruptedWaiterReturnsTimeoutAndRestoresFlag() throws Exception {
+    // 调用方线程在等待中被中断：必须恢复中断位并返回 TIMED_OUT（协作式取消的契约）。
+    java.util.concurrent.atomic.AtomicReference<Object> result =
+        new java.util.concurrent.atomic.AtomicReference<>();
+    java.util.concurrent.atomic.AtomicBoolean flagRestored =
+        new java.util.concurrent.atomic.AtomicBoolean();
+    Thread caller =
+        new Thread(
+            () -> {
+              result.set(
+                  GatedAnalyzer.run(
+                      () -> {
+                        Thread.sleep(5_000);
+                        return "late";
+                      },
+                      10_000));
+              flagRestored.set(Thread.currentThread().isInterrupted());
+            });
+    caller.start();
+    Thread.sleep(200);
+    caller.interrupt();
+    caller.join(3_000);
+    assertSame(GatedAnalyzer.TIMED_OUT, result.get(), "被中断的等待应返回 TIMED_OUT");
+    assertTrue(flagRestored.get(), "中断位应被恢复而不是被吞掉");
+  }
+
+  @Test
+  void timedOutMarkerToStringIsStable() {
+    // 标记的 toString 会出现在日志/断言里——稳定的名字便于排查。
+    assertEquals("GatedAnalyzer.TIMED_OUT", GatedAnalyzer.TIMED_OUT.toString());
+  }
 }

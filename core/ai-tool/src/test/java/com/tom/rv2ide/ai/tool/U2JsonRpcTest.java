@@ -94,4 +94,32 @@ class U2JsonRpcTest {
     }
     assertEquals(emoji, new JSONObject(body).getJSONArray("params").getString(0));
   }
+
+  // ---- escapeString 的剩余转义分支 ----
+
+  @Test
+  void backslashCrTabAndControlCharsAreEscaped() {
+    // 方法名里出现反斜杠/回车/制表/裸控制字符时，生成的 JSON 必须仍可解析。
+    String method = "me\\th\rre\tturn\u0007bell";
+    String body = U2JsonRpc.buildBody(method, "[]");
+    assertEquals(method, new JSONObject(body).getString("method"),
+        "转义后解析回来应还原原文");
+  }
+
+  @Test
+  void nullMethodAndParamsNormalize() {
+    // method=null → 空串；params=null/空白 → []。不得 NPE。
+    String body = U2JsonRpc.buildBody(null, null);
+    JSONObject parsed = new JSONObject(body);
+    assertEquals("", parsed.getString("method"));
+    assertEquals(0, parsed.getJSONArray("params").length());
+
+    String blank = U2JsonRpc.buildBody("m", "   ");
+    assertEquals(0, new JSONObject(blank).getJSONArray("params").length());
+  }
+
+  @Test
+  void asciiEscapeHandlesNull() {
+    assertEquals("", U2JsonRpc.asciiEscape(null));
+  }
 }

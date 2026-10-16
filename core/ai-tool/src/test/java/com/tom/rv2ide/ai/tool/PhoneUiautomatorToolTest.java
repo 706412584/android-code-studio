@@ -819,4 +819,57 @@ class PhoneUiautomatorToolTest {
     assertFalse(r2.isError(), r2.getContent());
     assertFalse(r2.getContent().contains("result:"), r2.getContent());
   }
+
+  @Test
+  void callWithoutMethodIsRejected() throws Exception {
+    FakePort port = new FakePort();
+    ToolResult r = new PhoneUiautomatorTool().execute(args("call"), ctx(port));
+    assertTrue(r.isError());
+    assertTrue(r.getContent().contains("method"), r.getContent());
+    assertTrue(port.methods.isEmpty(), "缺 method 不得下发");
+  }
+
+  @Test
+  void callWithoutParamsSendsEmptyArray() throws Exception {
+    // params 缺省 → "[]"（空参数数组），而不是 null 或 "{}"。
+    FakePort port = new FakePort();
+    ToolResult r = new PhoneUiautomatorTool().execute(
+        args("call").put("method", "scrollForward"), ctx(port));
+    assertFalse(r.isError(), r.getContent());
+    assertEquals("[]", port.params.get(0));
+  }
+
+  @Test
+  void waitGoneFailureUsesFormatFailure() throws Exception {
+    // waitGone 端口失败路径（与返回 false 的「仍然存在」是两回事）。
+    FakePort port = new FakePort();
+    port.ok = false;
+    port.error = "server 无响应";
+    ToolResult r = new PhoneUiautomatorTool().execute(
+        args("waitGone").put("selector", new JSONObject().put("text", "x")), ctx(port));
+    assertTrue(r.isError());
+    assertTrue(r.getContent().contains("server 无响应"), r.getContent());
+  }
+
+  @Test
+  void failureWithRestartNoticeIsShown() throws Exception {
+    // 失败结果 + 曾自动重启：提示必须同时出现（否则用户以为 server 一直好好的）。
+    FakePort port = new FakePort();
+    port.ok = false;
+    port.error = "连接断开";
+    port.restarted = true;
+    ToolResult r = new PhoneUiautomatorTool().execute(
+        args("setText").put("selector", new JSONObject().put("text", "a")).put("text", "b"),
+        ctx(port));
+    assertTrue(r.isError());
+    assertTrue(r.getContent().contains("自动重启"), r.getContent());
+    assertTrue(r.getContent().contains("连接断开"), r.getContent());
+  }
+
+  @Test
+  void displayCategoryIsPhoneControl() {
+    assertEquals(
+        com.tom.rv2ide.ai.tool.api.ToolDisplayCategory.PHONE_CONTROL,
+        new PhoneUiautomatorTool().getDisplayCategory());
+  }
 }
