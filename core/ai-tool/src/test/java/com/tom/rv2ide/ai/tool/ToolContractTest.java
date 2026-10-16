@@ -25,6 +25,7 @@ import static org.junit.jupiter.api.Assertions.fail;
 
 import com.tom.rv2ide.ai.tool.api.ToolCategory;
 import com.tom.rv2ide.ai.tool.api.ToolNames;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -32,6 +33,7 @@ import java.util.Set;
 import org.json.JSONArray;
 import org.json.JSONObject;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 /**
  * 全量工具的元数据与 schema 契约。
@@ -52,7 +54,12 @@ import org.junit.jupiter.api.Test;
  */
 class ToolContractTest {
 
-  /** 可无参构造的全量工具。新增工具时把它加进来——这正是本测试的意义。 */
+  /**
+   * 可无参构造的全量工具。新增工具时把它加进来——这正是本测试的意义。
+   *
+   * <p>需要注入依赖的工具（如 {@code TodoUpdateTool(MemoryStore)}）在
+   * {@link #allToolsWithDeps} 里单独列出。
+   */
   private static List<BaseTool> allTools() {
     List<BaseTool> tools = new ArrayList<>();
     tools.add(new ArchiveTool());
@@ -81,10 +88,38 @@ class ToolContractTest {
     return tools;
   }
 
+  /** 需注入依赖的工具；用最小可用实现构造，schema 与元数据同样纳入契约校验。 */
+  private static List<BaseTool> allToolsWithDeps(java.io.File tmpDir) {
+    List<BaseTool> tools = new ArrayList<>();
+    tools.add(new TodoUpdateTool(TodoStateStore.inMemory()));
+    tools.add(
+        new com.tom.rv2ide.ai.tool.memory.MemoryUpdateTool(
+            new com.tom.rv2ide.ai.tool.memory.MemoryStore(new java.io.File(tmpDir, "mem.json"))));
+    // 只验证 schema/元数据，不触发执行，因此端口给最小实现即可。
+    tools.add(new HttpRequestTool(new NoopHttpRequestPort()));
+    tools.add(new WebFetchTool(new NoopHttpPort()));
+    tools.add(new ImageTool(new NoopImageProcessingPort()));
+    tools.add(
+        new ImageGenerationTool(new NoopHttpRequestPort(), new NoopHttpPort()));
+    tools.add(new VideoGenerationTool(new NoopHttpRequestPort()));
+    tools.add(new com.tom.rv2ide.ai.tool.skill.SkillTool(com.tom.rv2ide.ai.tool.skill.SkillRegistry.empty()));
+    tools.add(new com.tom.rv2ide.ai.tool.skill.SkillWriteTool(com.tom.rv2ide.ai.tool.skill.SkillRegistry.empty()));
+    tools.add(new ToolSearchTool(new ToolRegistry()));
+    tools.add(new CodeGraphTool(new ShellBackendRegistry()));
+    tools.add(new ShellExecuteTool(new ShellBackendRegistry()));
+    return tools;
+  }
+
+  private static List<BaseTool> everyTool(java.io.File tmpDir) {
+    List<BaseTool> tools = new ArrayList<>(allTools());
+    tools.addAll(allToolsWithDeps(tmpDir));
+    return tools;
+  }
+
   @Test
-  void everyToolHasIdentityAndValidSchema() {
+  void everyToolHasIdentityAndValidSchema(@TempDir Path tmpDir) {
     List<String> problems = new ArrayList<>();
-    for (BaseTool tool : allTools()) {
+    for (BaseTool tool : everyTool(tmpDir.toFile())) {
       String name = safe(tool, () -> tool.getName());
       if (name == null || name.isEmpty()) {
         problems.add(tool.getClass().getSimpleName() + ": getName 为空");
@@ -110,19 +145,19 @@ class ToolContractTest {
   }
 
   @Test
-  void toolNamesAreUnique() {
+  void toolNamesAreUnique(@TempDir Path tmpDir) {
     Set<String> seen = new HashSet<>();
-    for (BaseTool tool : allTools()) {
+    for (BaseTool tool : everyTool(tmpDir.toFile())) {
       String name = tool.getName();
       assertTrue(seen.add(name), "工具名重复：" + name + "（模型无法区分两个同名工具）");
     }
   }
 
   @Test
-  void schemaJsonRoundTrips() throws Exception {
+  void schemaJsonRoundTrips(@TempDir Path tmpDir) throws Exception {
     // toJson() 是发给 provider 的最终形态：若某个工具的 schema 里含 NaN/循环引用
     // 等不可序列化的值，这里会炸——比线上 400 早得多。
-    for (BaseTool tool : allTools()) {
+    for (BaseTool tool : everyTool(tmpDir.toFile())) {
       JSONObject json = tool.toJson();
       assertNotNull(json, tool.getName() + ": toJson 返回 null");
       assertEquals("function", json.optString("type"), tool.getName() + ": 包装类型应为 function");
@@ -201,6 +236,61 @@ class ToolContractTest {
       return getter.get();
     } catch (Throwable t) {
       return null;
+    }
+  }
+
+  // ---- 最小端口实现（契约测试只读 schema/元数据，不触发执行）----
+
+  private static final class NoopHttpPort implements HttpPort {
+    @Override
+    public String getText(String url, java.util.Map<String, String> headers) {
+      return "";
+    }
+
+    @Override
+    public BinaryResponse getBytes(String url, java.util.Map<String, String> headers) {
+      return new BinaryResponse("application/octet-stream", new byte[0]);
+    }
+
+    @Override
+    public TextResponse postJson(
+        String url, String jsonBody, java.util.Map<String, String> headers) {
+      return new TextResponse("{}", java.util.Map.of());
+    }
+
+    @Override
+    public StreamHandle openStream(String url, java.util.Map<String, String> headers) {
+      return HttpPort.streamHandle(200, new java.io.StringReader(""));
+    }
+  }
+
+  private static final class NoopHttpRequestPort implements HttpRequestPort {
+    @Override
+    public Response request(
+        String method,
+        String url,
+        java.util.Map<String, String> headers,
+        String body,
+        int timeoutMs) {
+      return new Response(200, "OK", "application/json", java.util.Map.of(), "{}");
+    }
+  }
+
+  private static final class NoopImageProcessingPort implements ImageProcessingPort {
+    @Override
+    public Decoded decode(byte[] raw, long maxPixels) {
+      return null;
+    }
+
+    @Override
+    public Encoded encodePng(int[] pixels, int width, int height, long maxInlineBytes) {
+      return new Encoded(new byte[0], width, height);
+    }
+
+    @Override
+    public Decoded scale(
+        int[] pixels, int width, int height, int targetWidth, int targetHeight, String filter) {
+      return new Decoded(pixels, targetWidth, targetHeight);
     }
   }
 }
