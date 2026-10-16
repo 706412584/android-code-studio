@@ -273,6 +273,13 @@ public final class ToolNames {
      */
     public static final String PROJECT_INFO = "project_info";
     /**
+     * 测试覆盖率查询：跑 kover 任务、解析报告，返回各模块覆盖率与未覆盖的类。
+     *
+     * <p>补的是「AI 改完代码后不知道哪里没测到」这个缺口。{@code gradle_build} 能跑
+     * 测试任务，但只回「成功/失败 + 输出尾部」——覆盖率数字（数十万行 XML）读不到。
+     */
+    public static final String TEST_COVERAGE = "test_coverage";
+    /**
      * 代码格式化：经语言服务器格式化源文件（就地写回）。
      *
      * <p>手机上无法手动对齐格式，用语言服务器的 formatter 比让模型猜缩进可靠。

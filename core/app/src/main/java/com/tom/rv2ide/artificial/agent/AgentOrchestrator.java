@@ -78,6 +78,7 @@ import com.tom.rv2ide.artificial.agent.tool.GradleBuildTool;
 import com.tom.rv2ide.artificial.secrets.ApiKey;
 import com.tom.rv2ide.artificial.agent.tool.InstallApkTool;
 import com.tom.rv2ide.artificial.agent.tool.LayoutPreviewTool;
+import com.tom.rv2ide.artificial.agent.tool.TestCoverageTool;
 import com.tom.rv2ide.artificial.agent.tool.LaunchAppTool;
 import com.tom.rv2ide.artificial.agent.tool.LogcatReadTool;
 import com.tom.rv2ide.artificial.agent.tool.PhoneA11yTool;
@@ -1490,6 +1491,8 @@ public final class AgentOrchestrator {
     // 运行测试闭环：构建 → 安装 → 启动 → 读日志
     registry.register(new GradleBuildTool(this::lookupBuildService));
     registry.register(new InstallApkTool(appContext));
+    // 测试覆盖率：改完代码后自查「哪里没被测到」（跑 kover + 解析报告，与 gradle_build 同档）。
+    registry.register(new TestCoverageTool(this::lookupBuildService));
 
     // 云编译：GitHub Actions 触发（需确认）与状态查询（只读）分成两个工具，
     // 权限分级才能各归其位（同 git / git_write 的拆分理由）。
