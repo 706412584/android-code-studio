@@ -575,4 +575,248 @@ class PhoneUiautomatorToolTest {
     assertEquals(2, sent.getInt("index"));
     assertTrue(sent.getBoolean("clickable"));
   }
+
+  // ---------------------------------------------------------------------
+  // 补充：selector 剩余字段 / 各动作未覆盖分支
+  // ---------------------------------------------------------------------
+
+  @Test
+  void descriptionFieldsMapToTheirMaskBits() throws Exception {
+    FakePort port = new FakePort();
+    // description 精确 + descriptionContains 子串两种语义，键名不能混（同 text 的教训）。
+    JSONObject exact = new JSONObject().put("description", "关闭");
+    new PhoneUiautomatorTool().execute(
+        args("setText").put("selector", exact).put("text", "x"), ctx(port));
+    JSONObject sentExact = new JSONArray(port.params.get(0)).getJSONObject(0);
+    assertEquals(0x40L, sentExact.getLong("mask"));
+    assertEquals("关闭", sentExact.getString("description"));
+    assertFalse(sentExact.has("descriptionContains"));
+
+    FakePort port2 = new FakePort();
+    JSONObject contains = new JSONObject().put("description", "关闭").put("descriptionContains", true);
+    new PhoneUiautomatorTool().execute(
+        args("setText").put("selector", contains).put("text", "x"), ctx(port2));
+    JSONObject sentContains = new JSONArray(port2.params.get(0)).getJSONObject(0);
+    assertEquals(0x80L, sentContains.getLong("mask"));
+    assertEquals("关闭", sentContains.getString("descriptionContains"));
+    assertFalse(sentContains.has("description"), "contains 模式不得出现 description 键");
+  }
+
+  @Test
+  void scrollableFlagAndNegativeIndexInSelector() throws Exception {
+    FakePort port = new FakePort();
+    JSONObject sel = new JSONObject().put("scrollable", false).put("index", -1);
+    new PhoneUiautomatorTool().execute(
+        args("setText").put("selector", sel).put("text", "x"), ctx(port));
+    JSONObject sent = new JSONArray(port.params.get(0)).getJSONObject(0);
+    // scrollable 显式 false 也要带 mask 位（服务端按 mask 判断字段存在）。
+    assertEquals(0x4000L, sent.getLong("mask"));
+    assertFalse(sent.getBoolean("scrollable"));
+    assertFalse(sent.has("index"), "index<0 不参与匹配，不得下发");
+  }
+
+  @Test
+  void waitGoneTrueReportsSuccessWithTimeout() throws Exception {
+    FakePort port = new FakePort();
+    port.resultJson = "true";
+    ToolResult r = new PhoneUiautomatorTool().execute(
+        args("waitGone").put("selector", new JSONObject().put("text", "x")).put("timeoutMs", 3000),
+        ctx(port));
+    assertFalse(r.isError(), r.getContent());
+    assertTrue(r.getContent().contains("已消失"), r.getContent());
+    assertTrue(r.getContent().contains("3000ms"), r.getContent());
+  }
+
+  @Test
+  void clickFailsWhenObjInfoFails() throws Exception {
+    FakePort port = new FakePort();
+    port.ok = false;
+    port.error = "节点不存在";
+    ToolResult r = new PhoneUiautomatorTool().execute(
+        args("click").put("selector", new JSONObject().put("text", "x")), ctx(port));
+    assertTrue(r.isError());
+    assertTrue(r.getContent().contains("查找节点失败"), r.getContent());
+    assertEquals(1, port.methods.size(), "objInfo 失败后不得继续发 click");
+  }
+
+  @Test
+  void clickFailsWhenBoundsMissing() throws Exception {
+    FakePort port = new FakePort();
+    port.resultJson = "{}"; // objInfo 成功但没有 bounds
+    ToolResult r = new PhoneUiautomatorTool().execute(
+        args("click").put("selector", new JSONObject().put("text", "x")), ctx(port));
+    assertTrue(r.isError());
+    assertTrue(r.getContent().contains("没有可用的 bounds"), r.getContent());
+  }
+
+  @Test
+  void emptyActionIsRejected() throws Exception {
+    FakePort port = new FakePort();
+    ToolResult r = new PhoneUiautomatorTool().execute(args(""), ctx(port));
+    assertTrue(r.isError());
+    assertTrue(r.getContent().contains("action 不能为空"), r.getContent());
+  }
+
+  @Test
+  void portThrowableIsConvertedToErrorResult() throws Exception {
+    // 端口实现抛异常时工具层必须转成 error 变体（工具约定：不向循环抛异常）。
+    U2ProxyPort throwing = new U2ProxyPort() {
+      @Override
+      public Result call(String method, String paramsJson, long timeoutMs, BooleanSupplier cancelled) {
+        throw new IllegalStateException("端口内部错误");
+      }
+
+      @Override
+      public boolean isAvailable() {
+        return true;
+      }
+
+      @Override
+      public String unavailableReason() {
+        return "";
+      }
+
+      @Override
+      public void stop() {}
+
+      @Override
+      public String restart() {
+        return null;
+      }
+
+      @Override
+      public void onActionFinished() {}
+    };
+    ToolResult r = new PhoneUiautomatorTool().execute(args("dump"), ctx(throwing));
+    assertTrue(r.isError());
+    assertTrue(r.getContent().contains("端口内部错误"), r.getContent());
+  }
+
+  @Test
+  void scrollToHorizontalDirection() throws Exception {
+    FakePort port = new FakePort();
+    new PhoneUiautomatorTool().execute(
+        args("scrollTo").put("selector", new JSONObject().put("text", "x"))
+            .put("direction", "horizontal"),
+        ctx(port));
+    JSONArray params = new JSONArray(port.params.get(0));
+    assertFalse(params.getBoolean(2), "horizontal → vertical=false");
+  }
+
+  @Test
+  void gestureStepsClampedToUpperBound() throws Exception {
+    FakePort port = new FakePort();
+    JSONArray pts = new JSONArray();
+    for (int v : new int[] {1, 2, 3, 4, 5, 6, 7, 8}) {
+      pts.put(v);
+    }
+    new PhoneUiautomatorTool().execute(
+        args("gesture").put("points2", pts).put("steps", 99_999), ctx(port));
+    JSONArray params = new JSONArray(port.params.get(0));
+    assertEquals(1000, params.getInt(5), "steps 上限 1000");
+  }
+
+  @Test
+  void swipePointsExplicitStepsOverrideDurationDerived() throws Exception {
+    FakePort port = new FakePort();
+    JSONArray pts = new JSONArray().put(0).put(0).put(10).put(10);
+    new PhoneUiautomatorTool().execute(
+        args("swipePoints").put("points", pts).put("durationMs", 500).put("steps", 7),
+        ctx(port));
+    JSONArray params = new JSONArray(port.params.get(0));
+    assertEquals(7, params.getInt(1), "显式 steps 优先于 durationMs 换算");
+  }
+
+  @Test
+  void swipePointsClampsDurationToUpperBound() throws Exception {
+    FakePort port = new FakePort();
+    JSONArray pts = new JSONArray().put(0).put(0).put(10).put(10);
+    new PhoneUiautomatorTool().execute(
+        args("swipePoints").put("points", pts).put("durationMs", 999_999), ctx(port));
+    // 30000ms 上限 → steps = 30000/5 = 6000
+    JSONArray params = new JSONArray(port.params.get(0));
+    assertEquals(6000, params.getInt(1), "durationMs 上限 30000 → steps 6000");
+  }
+
+  @Test
+  void dumpLargeXmlIsTruncatedByToolResult() throws Exception {
+    // dump 的 XML 可达 54KB；结果必须走 ToolResult.truncateContent 而不是原样回传。
+    FakePort port = new FakePort();
+    StringBuilder big = new StringBuilder("\"");
+    for (int i = 0; i < 60_000; i++) {
+      big.append('x');
+    }
+    big.append("\"");
+    port.resultJson = big.toString();
+    ToolResult r = new PhoneUiautomatorTool().execute(args("dump"), ctx(port));
+    assertFalse(r.isError(), r.getContent());
+    // truncateContent 保留首尾各 25K + 标记（≈51235 字符），而不是砍到 50K 以内。
+    assertTrue(r.getContent().length() <= 51_200 + 200,
+        "dump 输出必须被截断，实际长度 " + r.getContent().length());
+    assertTrue(r.getContent().contains("chars truncated"), "应带截断标记");
+  }
+
+  @Test
+  void toResultPreviewTruncatesLongNonDumpResult() throws Exception {
+    // 非 dump 动作的结果文本超过 8K 预览上限时截断并注明总长。
+    FakePort port = new FakePort();
+    StringBuilder big = new StringBuilder("\"");
+    for (int i = 0; i < 9_000; i++) {
+      big.append('y');
+    }
+    big.append("\"");
+    port.resultJson = big.toString();
+    ToolResult r = new PhoneUiautomatorTool().execute(
+        args("call").put("method", "getText"), ctx(port));
+    assertFalse(r.isError(), r.getContent());
+    assertTrue(r.getContent().contains("已截断"), r.getContent());
+  }
+
+  @Test
+  void unquoteFallsBackOnInvalidEscapeSequence() throws Exception {
+    // 外层引号 + 非法转义（\x）→ JSONArray 解析失败 → 兜底裸切引号，不崩。
+    FakePort port = new FakePort();
+    port.resultJson = "\"bad\\xescape\"";
+    ToolResult r = new PhoneUiautomatorTool().execute(args("dump"), ctx(port));
+    assertFalse(r.isError(), r.getContent());
+    assertTrue(r.getContent().contains("bad"), r.getContent());
+    assertFalse(r.getContent().contains("\"bad"), "外层引号应被去掉");
+  }
+
+  @Test
+  void extractCenterRejectsPartialBounds() {
+    // 四个边缺一不可——缺字段的半截 bounds 算出来的中心是错的。
+    assertNull(PhoneUiautomatorTool.extractCenter(
+        "{\"bounds\":{\"left\":0,\"top\":0,\"right\":10}}"));
+  }
+
+  @Test
+  void toResultShowsRestartNoticeForNonDumpAction() throws Exception {
+    FakePort port = new FakePort();
+    port.restarted = true;
+    ToolResult r = new PhoneUiautomatorTool().execute(
+        args("setText").put("selector", new JSONObject().put("text", "a")).put("text", "b"),
+        ctx(port));
+    assertFalse(r.isError(), r.getContent());
+    assertTrue(r.getContent().contains("自动重启"), r.getContent());
+  }
+
+  @Test
+  void toResultAppendsResultBodyWhenNotPlainTrue() throws Exception {
+    FakePort port = new FakePort();
+    port.resultJson = "\"hello world\"";
+    ToolResult r = new PhoneUiautomatorTool().execute(
+        args("call").put("method", "getText"), ctx(port));
+    assertFalse(r.isError(), r.getContent());
+    assertTrue(r.getContent().contains("hello world"), r.getContent());
+    assertTrue(r.getContent().contains("result"), r.getContent());
+
+    // "true" 是大多数动作的正常返回值——不应在结果里重复展示。
+    FakePort port2 = new FakePort();
+    port2.resultJson = "true";
+    ToolResult r2 = new PhoneUiautomatorTool().execute(
+        args("call").put("method", "click"), ctx(port2));
+    assertFalse(r2.isError(), r2.getContent());
+    assertFalse(r2.getContent().contains("result:"), r2.getContent());
+  }
 }
