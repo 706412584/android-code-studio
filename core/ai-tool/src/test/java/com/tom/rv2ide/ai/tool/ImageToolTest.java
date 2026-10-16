@@ -44,6 +44,14 @@ class ImageToolTest {
     int lastMaxPixels = -1;
     long lastMaxInlineBytes = -1;
     int encodeCalls = 0;
+    /** 非空时 encodePng 返回它（模拟「超过内联上限」的巨图）。 */
+    Encoded forcedEncode;
+    /** forcedEncode 非空时，预览编码（有限预算）是否返回小图。 */
+    boolean previewSucceeds = true;
+    /** 为 true 时 encodePng 返回 null（模拟编码失败/OOM）。 */
+    boolean encodeFails;
+    /** scale 返回 null（模拟缩放失败）。 */
+    boolean scaleFails;
 
     @Override
     public Decoded decode(byte[] raw, long maxPixels) {
@@ -55,6 +63,21 @@ class ImageToolTest {
     public Encoded encodePng(int[] pixels, int width, int height, long maxInlineBytes) {
       encodeCalls++;
       lastMaxInlineBytes = maxInlineBytes;
+      if (encodeFails) {
+        return null;
+      }
+      if (forcedEncode != null) {
+        // 全尺寸编码（预算 Long.MAX_VALUE）返回巨图；预览编码（有限预算）按配置
+        // 返回小图或同样巨图——两种情况分别覆盖「降采样预览」与「未回传」分支。
+        if (maxInlineBytes == Long.MAX_VALUE) {
+          return forcedEncode;
+        }
+        if (previewSucceeds) {
+          byte[] small = {(byte) 0x89, 'P', 'N', 'G'};
+          return new Encoded(small, width, height);
+        }
+        return forcedEncode;
+      }
       // 固定 PNG 魔数字节（内容不合法无所谓，工具层不做解码）
       byte[] png = {(byte) 0x89, 'P', 'N', 'G', 0x0D, 0x0A, 0x1A, 0x0A};
       return new Encoded(png, width, height);
@@ -63,6 +86,9 @@ class ImageToolTest {
     @Override
     public Decoded scale(int[] pixels, int width, int height,
         int targetWidth, int targetHeight, String filter) {
+      if (scaleFails) {
+        return null;
+      }
       int[] out = ImageOps.scaleNearest(pixels, width, height, targetWidth, targetHeight);
       return new Decoded(out, targetWidth, targetHeight);
     }
@@ -418,5 +444,266 @@ class ImageToolTest {
                 contextFor(dir));
     assertFalse(r.isError(), r.getContent());
     assertTrue(r.getContent().contains("双线性"), "bicubic 应注明按双线性处理：" + r.getContent());
+  }
+
+  // ---- execute 的前置校验与失败分支 ----
+
+  @Test
+  void missingInputFileIsReported(@TempDir Path dir) throws Exception {
+    FakePort port = new FakePort();
+    port.decodeResult = red2x2();
+    ToolResult r = new ImageTool(port).execute(
+        new JSONObject().put("action", "chroma_key").put("path", "nope.png").put("key_color", "#FF0000"),
+        contextFor(dir));
+    assertTrue(r.isError());
+    assertTrue(r.getContent().contains("不存在"), r.getContent());
+  }
+
+  @Test
+  void nonImageContentIsRejectedBeforeDecode(@TempDir Path dir) throws Exception {
+    // magic bytes 校验在解码之前——把文本当图片解码没有意义，先拦掉。
+    Files.write(dir.resolve("fake.png"), "not an image".getBytes());
+    FakePort port = new FakePort();
+    port.decodeResult = red2x2();
+    ToolResult r = new ImageTool(port).execute(
+        new JSONObject().put("action", "chroma_key").put("path", "fake.png").put("key_color", "#FF0000"),
+        contextFor(dir));
+    assertTrue(r.isError());
+    assertTrue(r.getContent().contains("magic bytes"), r.getContent());
+    assertEquals(-1, port.lastMaxPixels, "校验失败不得进入解码");
+  }
+
+  @Test
+  void decodeNullIsReportedWithPixelHint(@TempDir Path dir) throws Exception {
+    writeFakePng(dir, "a.png");
+    FakePort port = new FakePort();
+    port.decodeResult = null;
+    ToolResult r = new ImageTool(port).execute(
+        new JSONObject().put("action", "chroma_key").put("path", "a.png").put("key_color", "#FF0000"),
+        contextFor(dir));
+    assertTrue(r.isError());
+    assertTrue(r.getContent().contains("解码失败"), r.getContent());
+  }
+
+  @Test
+  void cancellationBeforeChromaKeyReturnsCancelled(@TempDir Path dir) throws Exception {
+    // 取消信号在像素处理前已置位：chromaKey 返回 null → 工具报「已取消」。
+    writeFakePng(dir, "a.png");
+    FakePort port = new FakePort();
+    port.decodeResult = red2x2();
+    ToolContext ctx =
+        ToolContext.builder().homePath(dir.toString()).cancellation(() -> true).build();
+    ToolResult r = new ImageTool(port).execute(
+        new JSONObject().put("action", "chroma_key").put("path", "a.png").put("key_color", "#FF0000"),
+        ctx);
+    assertTrue(r.isError());
+    assertTrue(r.getContent().contains("已取消"), r.getContent());
+  }
+
+  @Test
+  void cropOutsideImageIsRejected(@TempDir Path dir) throws Exception {
+    writeFakePng(dir, "a.png");
+    FakePort port = new FakePort();
+    port.decodeResult = red2x2();
+    ToolResult r = new ImageTool(port).execute(
+        new JSONObject().put("action", "crop").put("path", "a.png")
+            .put("rect", new JSONObject().put("x", 100).put("y", 100).put("width", 5).put("height", 5)),
+        contextFor(dir));
+    assertTrue(r.isError());
+    assertTrue(r.getContent().contains("无交集"), r.getContent());
+  }
+
+  @Test
+  void cropOutputWritesFileAndReturnsImage(@TempDir Path dir) throws Exception {
+    writeFakePng(dir, "a.png");
+    FakePort port = new FakePort();
+    port.decodeResult = red2x2();
+    ToolResult r = new ImageTool(port).execute(
+        new JSONObject().put("action", "crop").put("path", "a.png")
+            .put("rect", new JSONObject().put("x", 0).put("y", 0).put("width", 1).put("height", 2)),
+        contextFor(dir));
+    assertFalse(r.isError(), r.getContent());
+    assertTrue(r.hasImage(), "crop 应内联回传图片");
+    // 落盘：ai-images/ 下有产物文件。
+    File outDir = new File(dir.toFile(), "ai-images");
+    File[] files = outDir.listFiles();
+    assertNotNull(files);
+    assertEquals(1, files.length, "应恰好落盘一个文件");
+    assertTrue(files[0].getName().startsWith("crop-"), files[0].getName());
+  }
+
+  @Test
+  void resizeScaleFailureIsReported(@TempDir Path dir) throws Exception {
+    // bilinear 走端口 scale；端口返回 null（内存不足）时明确报错。
+    writeFakePng(dir, "a.png");
+    FakePort port = new FakePort();
+    port.decodeResult = red2x2();
+    port.scaleFails = true;
+    ToolResult r = new ImageTool(port).execute(
+        new JSONObject().put("action", "resize").put("path", "a.png")
+            .put("max_dimension", 1).put("filter", "bilinear"),
+        contextFor(dir));
+    assertTrue(r.isError());
+    assertTrue(r.getContent().contains("缩放失败"), r.getContent());
+  }
+
+  @Test
+  void resizeOversizedTargetIsRejected(@TempDir Path dir) throws Exception {
+    writeFakePng(dir, "a.png");
+    FakePort port = new FakePort();
+    port.decodeResult = red2x2();
+    ToolResult r = new ImageTool(port).execute(
+        new JSONObject().put("action", "resize").put("path", "a.png").put("width", 5000),
+        contextFor(dir));
+    assertTrue(r.isError());
+    assertTrue(r.getContent().contains("上限"), r.getContent());
+  }
+
+  @Test
+  void encodeFailureIsReported(@TempDir Path dir) throws Exception {
+    writeFakePng(dir, "a.png");
+    FakePort port = new FakePort();
+    port.decodeResult = red2x2();
+    port.encodeFails = true;
+    ToolResult r = new ImageTool(port).execute(
+        new JSONObject().put("action", "chroma_key").put("path", "a.png").put("key_color", "#FF0000"),
+        contextFor(dir));
+    assertTrue(r.isError());
+    assertTrue(r.getContent().contains("编码失败"), r.getContent());
+  }
+
+  @Test
+  void oversizedEncodedImageUsesPreviewWithoutInline(@TempDir Path dir) throws Exception {
+    // 全尺寸编码超过内联上限、预览编码也失败（返回 null）→ 文本结果说明未回传。
+    writeFakePng(dir, "a.png");
+    FakePort port = new FakePort();
+    port.decodeResult = red2x2();
+    // 强制「全尺寸编码」返回超过 4MB 的字节，且预览编码也失败 → 走「未回传」分支。
+    port.forcedEncode = new ImageProcessingPort.Encoded(new byte[4 * 1024 * 1024 + 1], 2, 2);
+    port.previewSucceeds = false;
+    ToolResult r = new ImageTool(port).execute(
+        new JSONObject().put("action", "chroma_key").put("path", "a.png").put("key_color", "#FF0000"),
+        contextFor(dir));
+    assertFalse(r.isError(), r.getContent());
+    assertFalse(r.hasImage(), "超过内联上限且预览失败时不应内联");
+    assertTrue(r.getContent().contains("超过内联上限"), r.getContent());
+    assertTrue(r.getContent().contains("文件路径"), r.getContent());
+  }
+
+  @Test
+  void explicitOutputPathMustBePngAndNotExist(@TempDir Path dir) throws Exception {
+    writeFakePng(dir, "a.png");
+    FakePort port = new FakePort();
+    port.decodeResult = red2x2();
+    // 已存在的输出文件（resolveOutput 快速失败）
+    Files.write(dir.resolve("exists.png"), new byte[] {1});
+    ToolResult r = new ImageTool(port).execute(
+        new JSONObject().put("action", "chroma_key").put("path", "a.png")
+            .put("key_color", "#FF0000").put("output", "exists.png"),
+        contextFor(dir));
+    assertTrue(r.isError());
+    assertTrue(r.getContent().contains("已存在"), r.getContent());
+  }
+
+  @Test
+  void autoKeyColorFromCornersIsUsedForChromaKey(@TempDir Path dir) throws Exception {
+    // key_color=auto → 四角均值；红色图四角都是红，结果里应出现 #FF0000。
+    writeFakePng(dir, "a.png");
+    FakePort port = new FakePort();
+    port.decodeResult = red2x2();
+    ToolResult r = new ImageTool(port).execute(
+        new JSONObject().put("action", "chroma_key").put("path", "a.png").put("key_color", "auto"),
+        contextFor(dir));
+    assertFalse(r.isError(), r.getContent());
+    assertTrue(r.getContent().contains("#FF0000"), "auto 应解析为四角颜色：" + r.getContent());
+  }
+
+  @Test
+  void oversizedImageGetsDownscaledPreviewInline(@TempDir Path dir) throws Exception {
+    // 全尺寸编码 >4MB 但预览编码成功：内联预览 + 注明降采样，文件仍是全尺寸。
+    writeFakePng(dir, "a.png");
+    FakePort port = new FakePort();
+    port.decodeResult = red2x2();
+    port.forcedEncode = new ImageProcessingPort.Encoded(new byte[4 * 1024 * 1024 + 1], 2, 2);
+    port.previewSucceeds = true;
+    ToolResult r = new ImageTool(port).execute(
+        new JSONObject().put("action", "chroma_key").put("path", "a.png").put("key_color", "#FF0000"),
+        contextFor(dir));
+    assertFalse(r.isError(), r.getContent());
+    assertTrue(r.hasImage(), "预览编码成功时应内联降采样图");
+    assertTrue(r.getContent().contains("降采样预览"), r.getContent());
+  }
+
+  @Test
+  void resizeByHeightOnlyComputesWidthFromAspect(@TempDir Path dir) throws Exception {
+    // 只给 height：宽度按宽高比推算（4x2 图 height=4 → width=8）。
+    writeFakePng(dir, "a.png");
+    FakePort port = new FakePort();
+    port.decodeResult = new ImageProcessingPort.Decoded(
+        new int[] {0xFF000000, 0xFF000000, 0xFF000000, 0xFF000000, 0xFF000000, 0xFF000000, 0xFF000000, 0xFF000000},
+        4, 2);
+    ToolResult r = new ImageTool(port).execute(
+        new JSONObject().put("action", "resize").put("path", "a.png")
+            .put("height", 4).put("filter", "nearest"),
+        contextFor(dir));
+    assertFalse(r.isError(), r.getContent());
+    assertTrue(r.getContent().contains("8x4"), "单轴高度缩放应推算宽度：" + r.getContent());
+  }
+
+  @Test
+  void resizeCancelledBeforeScaling(@TempDir Path dir) throws Exception {
+    writeFakePng(dir, "a.png");
+    FakePort port = new FakePort();
+    port.decodeResult = red2x2();
+    ToolContext ctx =
+        ToolContext.builder().homePath(dir.toString()).cancellation(() -> true).build();
+    ToolResult r = new ImageTool(port).execute(
+        new JSONObject().put("action", "resize").put("path", "a.png").put("max_dimension", 1),
+        ctx);
+    assertTrue(r.isError());
+    assertTrue(r.getContent().contains("已取消"), r.getContent());
+  }
+
+  @Test
+  void lumaKeyCancelReturnsCancelled(@TempDir Path dir) throws Exception {
+    writeFakePng(dir, "a.png");
+    FakePort port = new FakePort();
+    port.decodeResult = red2x2();
+    ToolContext ctx =
+        ToolContext.builder().homePath(dir.toString()).cancellation(() -> true).build();
+    ToolResult r = new ImageTool(port).execute(
+        new JSONObject().put("action", "luma_key").put("path", "a.png").put("key_color", "#00FF00"),
+        ctx);
+    assertTrue(r.isError());
+    assertTrue(r.getContent().contains("已取消"), r.getContent());
+  }
+
+  @Test
+  void dominantColorsCancelledReturnsError(@TempDir Path dir) throws Exception {
+    writeFakePng(dir, "a.png");
+    FakePort port = new FakePort();
+    port.decodeResult = red2x2();
+    ToolContext ctx =
+        ToolContext.builder().homePath(dir.toString()).cancellation(() -> true).build();
+    ToolResult r = new ImageTool(port).execute(
+        new JSONObject().put("action", "dominant_colors").put("path", "a.png"), ctx);
+    assertTrue(r.isError());
+    assertTrue(r.getContent().contains("已取消"), r.getContent());
+  }
+
+  @Test
+  void lumaKeyFullSuccessPath(@TempDir Path dir) throws Exception {
+    // luma_key 成功路径：黑色图黑底抠图 → 透明像素比例高。
+    writeFakePng(dir, "a.png");
+    FakePort port = new FakePort();
+    port.decodeResult = new ImageProcessingPort.Decoded(
+        new int[] {0xFF000000, 0xFF000000, 0xFF000000, 0xFF000000}, 2, 2);
+    ToolResult r = new ImageTool(port).execute(
+        new JSONObject().put("action", "luma_key").put("path", "a.png"),
+        contextFor(dir));
+    assertFalse(r.isError(), r.getContent());
+    assertTrue(r.hasImage(), r.getContent());
+    assertTrue(r.getContent().contains("luma_key"), r.getContent());
+    assertTrue(r.getContent().contains("透明像素"), r.getContent());
   }
 }
