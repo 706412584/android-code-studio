@@ -36,6 +36,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
@@ -228,6 +229,14 @@ internal fun MarkdownContent(
     /** 长文本虚拟化渲染：正文改用 LazyColumn 逐块渲染（调用方需配合 heightIn 等有限高度约束
      *  才能触发懒加载），避免超大 md 一次性全量组合/测量造成的卡顿。 */
     lazyScroll: Boolean = false,
+    /**
+     * lazyScroll 时是否自动跟随内容末尾（仅流式场景应传 true）。
+     *
+     * <p>思考窗口展开后新内容持续追加，窗口高度有上限（300dp）——不自动跟随的话
+     * 新块追加在视口下方看不到，用户得每几秒手动滑一次（实测反馈）。完成后
+     * （不再增长）传 false：用户要的是从顶部开始回读，不该被拽到末尾。
+     */
+    autoScrollToBottom: Boolean = false,
     cacheEnabled: Boolean = true,
     retainState: Boolean = true
 ) {
@@ -379,12 +388,24 @@ internal fun MarkdownContent(
                 state: MarkdownParseState.Success,
                 components: MarkdownComponents,
                 modifier: Modifier
-            ) -> Unit = remember(lazyScroll) {
+            ) -> Unit = remember(lazyScroll, autoScrollToBottom) {
                 if (lazyScroll) {
                     { state, components, m ->
                         // 不用库的 LazyMarkdownSuccess：它只按 startOffset 作 item key，内容原地变化时
                         // 同一位置会复用别的节点的内部渲染状态；这里补 key(node) 做节点级隔离。
-                        LazyColumn(modifier = m) {
+                        val listState = rememberLazyListState()
+                        // 自动跟随末尾（仅流式场景启用，见参数注释）：节点数变化即滚到最后一个。
+                        // 用 animateScrollToItem 而非 scrollToItem：块级追加（一个代码块/表格一次
+                        // 到位）时瞬跳观感突兀；animate 在新增量很小时几乎立即到位、不丢跟随感。
+                        if (autoScrollToBottom) {
+                            LaunchedEffect(state.node.children.size) {
+                                val last = state.node.children.size - 1
+                                if (last >= 0) {
+                                    listState.animateScrollToItem(last)
+                                }
+                            }
+                        }
+                        LazyColumn(state = listState, modifier = m) {
                             items(
                                 items = state.node.children,
                                 key = { node -> node.startOffset },

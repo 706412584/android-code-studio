@@ -896,6 +896,10 @@ internal fun ReasoningBubble(
                     // 而不是固定高度，内容不足上限时高度照样由内容决定）。
                     retainState = true,
                     lazyScroll = true,
+                    // 流式期间自动跟随末尾：思考窗口限高 300dp，新内容追加在视口下方，
+                    // 不跟随的话用户每几秒要手动滑一次（实测反馈）。思考完成后（live=false）
+                    // 不再跟随——用户要从顶部回读，不该被拽到末尾。
+                    autoScrollToBottom = live,
                     modifier = Modifier
                         .fillMaxWidth()
                         .heightIn(max = ReasoningWindowMaxHeight)

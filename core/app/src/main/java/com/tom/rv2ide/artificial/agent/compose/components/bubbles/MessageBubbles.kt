@@ -91,6 +91,7 @@ import com.tom.rv2ide.artificial.agent.compose.components.tools.MessageAttachmen
 import com.tom.rv2ide.artificial.agent.compose.components.tools.ToolMessageBody
 import com.tom.rv2ide.artificial.agent.compose.model.AgentUIMessage
 import com.tom.rv2ide.artificial.agent.compose.model.MessageRole
+import com.tom.rv2ide.artificial.agent.compose.model.ToolRunStatus
 import com.tom.rv2ide.artificial.agent.compose.model.hasVisibleContent
 import com.tom.rv2ide.artificial.agent.compose.theme.Brand
 import com.tom.rv2ide.artificial.agent.compose.theme.Spacing
@@ -400,7 +401,10 @@ internal fun AgentMessageItem(
                 durationMs = reasoningDurationMs,
                 // 展开态透传：内部 remember 会被 LazyColumn 的条目回收吃掉（见参数注释）
                 expandedOverride = reasoningExpandedOverride,
-                onExpandedChange = onReasoningExpandedChange
+                onExpandedChange = onReasoningExpandedChange,
+                // 流式标记：映射层给仍在生成的 Thinking 设 RUNNING（见 fromThinking）。
+                // 展开窗口据此自动跟随末尾（见 ReasoningBubble 的 autoScrollToBottom）。
+                live = message.toolStatus == ToolRunStatus.RUNNING,
             )
         }
         if (hasContent || hasAttachments || message.role != MessageRole.ASSISTANT) {

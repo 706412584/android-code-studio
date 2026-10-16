@@ -16,13 +16,30 @@
 */
 package com.tom.rv2ide.configurations
 
-import com.tom.rv2ide.projects.internal.ProjectManagerImpl
+import com.tom.rv2ide.projects.IProjectManager
 
 /**
  * @author Mohammed-baqer-null @ https://github.com/Mohammed-baqer-null
  */
 
 object GCProperties {
-    // user project
-    val userProject = ProjectManagerImpl.getInstance().projectDir.absolutePath.toString()
+    /**
+     * 当前项目根路径；**没有打开项目时为空串**。
+     *
+     * <p><b>为什么不能是启动即求值的 val</b>：原实现 `val userProject =
+     * ProjectManagerImpl.getInstance().projectDir...` 在 object 类加载时求值，而
+     * `projectDir` 的 getter 在未打开项目时 `checkNotNull` 抛 IllegalStateException。
+     * 后果：任何在「没打开项目」时触达本 object 的入口都直接闪退——实测从助手顶栏
+     * 点 Git 图标（GitClientFragment 读本属性）即崩。
+     *
+     * <p>改成惰性 getter：每次读取时查当前项目；未打开时返回空串，由调用方
+     * （GitViewModel 等）按「无项目」正常降级，而不是把进程带走。
+     */
+    val userProject: String
+        get() =
+            try {
+                IProjectManager.getInstance().projectDirOrNull?.absolutePath.orEmpty()
+            } catch (e: RuntimeException) {
+                ""
+            }
 }
