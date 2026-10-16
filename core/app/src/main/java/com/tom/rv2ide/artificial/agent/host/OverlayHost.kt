@@ -163,6 +163,8 @@ private class OverlayDialogs(
       onAllowAlways: () -> Unit,
       onDeny: () -> Unit,
   ) {
+    // 超时守卫：5 分钟无应答即视为拒绝并关窗（与 ActivityHost 同一预算）。
+    val guard = DialogTimeouts.Guard { onDeny() }.start()
     val dialog =
         AlertDialog.Builder(themed)
             .setTitle(string.ai_assistant_dangerous_title)
@@ -173,12 +175,20 @@ private class OverlayDialogs(
                     args?.take(500) ?: "",
                 ))
             .setCancelable(false)
-            .setPositiveButton(string.ai_assistant_dangerous_allow_once) { _, _ -> onAllowOnce() }
+            .setPositiveButton(string.ai_assistant_dangerous_allow_once) { _, _ ->
+              guard.cancel()
+              onAllowOnce()
+            }
             .setNeutralButton(string.ai_assistant_dangerous_allow_always) { _, _ ->
+              guard.cancel()
               onAllowAlways()
             }
-            .setNegativeButton(string.ai_assistant_dangerous_deny) { _, _ -> onDeny() }
+            .setNegativeButton(string.ai_assistant_dangerous_deny) { _, _ ->
+              guard.cancel()
+              onDeny()
+            }
             .create()
+    guard.attach(dialog)
     applyOverlayType(dialog)
     dialog.show()
   }
@@ -192,9 +202,16 @@ private class OverlayDialogs(
       onCancel()
       return
     }
+    // 超时守卫覆盖整次调用（与 ActivityHost 同一预算：5 分钟，逐题各计会导致错配）。
+    val guard = DialogTimeouts.Guard { onCancel() }.start()
     val answers = mutableListOf<String>()
     fun askNext(index: Int) {
+      if (guard.isFinished()) {
+        // 已超时：不要再摆下一道题。
+        return
+      }
       if (index >= questions.size) {
+        guard.cancel()
         onAnswer(answers)
         return
       }
@@ -218,9 +235,16 @@ private class OverlayDialogs(
                   answers.add(selected.joinToString(","))
                   askNext(index + 1)
                 }
-                .setNegativeButton(android.R.string.cancel) { _, _ -> onCancel() }
-                .setOnCancelListener { onCancel() }
+                .setNegativeButton(android.R.string.cancel) { _, _ ->
+                  guard.cancel()
+                  onCancel()
+                }
+                .setOnCancelListener {
+                  guard.cancel()
+                  onCancel()
+                }
                 .create()
+        guard.attach(dialog)
         applyOverlayType(dialog)
         dialog.show()
       } else {
@@ -245,9 +269,16 @@ private class OverlayDialogs(
                               answers.add(input.text.toString().trim())
                               askNext(index + 1)
                             }
-                            .setNegativeButton(android.R.string.cancel) { _, _ -> onCancel() }
-                            .setOnCancelListener { onCancel() }
+                            .setNegativeButton(android.R.string.cancel) { _, _ ->
+                              guard.cancel()
+                              onCancel()
+                            }
+                            .setOnCancelListener {
+                              guard.cancel()
+                              onCancel()
+                            }
                             .create()
+                    guard.attach(inputDialog)
                     applyOverlayType(inputDialog)
                     inputDialog.show()
                   } else {
@@ -255,9 +286,16 @@ private class OverlayDialogs(
                     askNext(index + 1)
                   }
                 }
-                .setNegativeButton(android.R.string.cancel) { _, _ -> onCancel() }
-                .setOnCancelListener { onCancel() }
+                .setNegativeButton(android.R.string.cancel) { _, _ ->
+                  guard.cancel()
+                  onCancel()
+                }
+                .setOnCancelListener {
+                  guard.cancel()
+                  onCancel()
+                }
                 .create()
+        guard.attach(dialog)
         applyOverlayType(dialog)
         dialog.show()
       }

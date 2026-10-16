@@ -4528,7 +4528,11 @@ class FloatingAssistantView(
             latch.countDown()
           }
         }
-    latch.await(120, java.util.concurrent.TimeUnit.SECONDS)
+    // 超时用共享常量：弹窗侧（ActivityHost/OverlayHost 的 DialogTimeouts.Guard）会先在此值
+    // 到达时自动关闭并回调拒绝；本 await 多出的 10 秒余量只兜「主线程也卡住」的极端情况。
+    latch.await(
+        com.tom.rv2ide.artificial.agent.host.DialogTimeouts.AWAIT_MS,
+        java.util.concurrent.TimeUnit.MILLISECONDS)
     return accepted
   }
 
@@ -4547,9 +4551,24 @@ class FloatingAssistantView(
             // 答案**后回调同一个 lambda，所以下面的等待与超时逻辑对两者一视同仁。
             val panel = composePanel
             if (panel != null) {
+              // Compose 路径的弹窗由面板自己渲染，宿主层的 AlertDialog 守卫盖不到它——
+              // 这里单独排一次超时：到点收起面板上的提问框并当成「取消」唤醒等待方，
+              // 否则面板上的框会一直挂着（与 XML 路径修复前同样的毛病）。
+              val composeTimeout =
+                  Runnable {
+                    panel.cancelPendingQuestion()
+                    result = null
+                    latch.countDown()
+                  }
+              // 本 lambda 已跑在主线程（外层 Handler(Looper.getMainLooper()).post），
+              // 因此这里直接 new 一个主线程 Handler 排队即可。
+              val timeoutHandler = android.os.Handler(android.os.Looper.getMainLooper())
+              timeoutHandler.postDelayed(
+                  composeTimeout, com.tom.rv2ide.artificial.agent.host.DialogTimeouts.TIMEOUT_MS)
               panel.askQuestion(
                   questions.toPendingUserQuestion(id = "ask-" + System.nanoTime()),
                   { answer ->
+                    timeoutHandler.removeCallbacks(composeTimeout)
                     result = answer?.toAnswerList()
                     latch.countDown()
                   },
@@ -4571,8 +4590,13 @@ class FloatingAssistantView(
             latch.countDown()
           }
         }
-    // 用户看题并作答可能需要较长时间，给 180 秒超时。
-    latch.await(180, java.util.concurrent.TimeUnit.SECONDS)
+    // 超时用共享常量（ActivityHost/OverlayHost 的 DialogTimeouts.Guard 同值）：
+    // 弹窗侧先超时关窗并回调取消，本 await 的余量只兜「主线程卡住」的极端情况。
+    // Compose 路径由面板负责在宿主销毁时收尾（见 cancelPendingQuestion），
+    // 其超时同样受这里的 await 上限约束。
+    latch.await(
+        com.tom.rv2ide.artificial.agent.host.DialogTimeouts.AWAIT_MS,
+        java.util.concurrent.TimeUnit.MILLISECONDS)
     return result
   }
 
