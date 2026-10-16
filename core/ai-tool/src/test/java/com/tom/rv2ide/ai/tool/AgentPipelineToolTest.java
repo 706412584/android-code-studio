@@ -207,4 +207,94 @@ final class AgentPipelineToolTest {
     assertTrue(result.isError(), "子任务失败应使流水线以 error 返回");
     assertTrue(result.getContent().contains("boom"), result.getContent());
   }
+
+  // ---- 此前未覆盖的分支 ----
+
+  @Test
+  void rejectsTooManyAgents() {
+    JSONObject[] items = new JSONObject[13];
+    for (int i = 0; i < items.length; i++) {
+      items[i] = agent("a" + i);
+    }
+    ToolResult result =
+        new AgentPipelineTool(new FakeRunner())
+            .execute(new JSONObject().put("agents", agents(items)), ctx());
+    assertTrue(result.isError(), "超 12 个子任务应被拒");
+    assertTrue(result.getContent().contains("最多"), result.getContent());
+  }
+
+  @Test
+  void nullRunnerResultBecomesFailure() {
+    // runner 返回 null（实现缺陷）不能 NPE——应转为失败结果继续流水线。
+    SubAgentRunner nullRunner = request -> null;
+    ToolResult result =
+        new AgentPipelineTool(nullRunner)
+            .execute(new JSONObject().put("agents", agents(agent("a"))), ctx());
+    assertTrue(result.isError(), result.getContent());
+    assertTrue(result.getContent().contains("没有返回结果"), result.getContent());
+  }
+
+  @Test
+  void runnerExceptionIsCaughtAndReported() {
+    SubAgentRunner throwing =
+        request -> {
+          throw new IllegalStateException("runner 内部错误");
+        };
+    ToolResult result =
+        new AgentPipelineTool(throwing)
+            .execute(new JSONObject().put("agents", agents(agent("a"))), ctx());
+    assertTrue(result.isError(), result.getContent());
+    assertTrue(result.getContent().contains("runner 内部错误"), result.getContent());
+  }
+
+  @Test
+  void longPromptIsTruncatedToLimit() {
+    // 每个子任务 prompt 上限 4000 字符——超长必须截断而不是发给 runner。
+    StringBuilder big = new StringBuilder();
+    for (int i = 0; i < 4500; i++) {
+      big.append('p');
+    }
+    FakeRunner runner = new FakeRunner();
+    JSONObject a = new JSONObject().put("id", "a").put("prompt", big.toString());
+    ToolResult result =
+        new AgentPipelineTool(runner)
+            .execute(new JSONObject().put("agents", agents(a)), ctx());
+
+    assertFalse(result.isError(), result.getContent());
+    assertEquals(4000, runner.seenTasks.get(0).length(), "prompt 应被截断到 4000");
+  }
+
+  @Test
+  void emptyPromptFallsBackToDescription() {
+    // prompt 为空时用 description 兜底（模型常只填一个）。
+    FakeRunner runner = new FakeRunner();
+    JSONObject a = new JSONObject().put("id", "a").put("description", "做点事");
+    ToolResult result =
+        new AgentPipelineTool(runner)
+            .execute(new JSONObject().put("agents", agents(a)), ctx());
+
+    assertFalse(result.isError(), result.getContent());
+    assertTrue(runner.seenTasks.get(0).startsWith("做点事"), runner.seenTasks.get(0));
+  }
+
+  @Test
+  void failedUpstreamIsVisibleToDownstream() {
+    // 单层内失败不中断整条流水线：下游能看到「上游失败了」继续跑。
+    java.util.Map<String, Integer> calls = new java.util.HashMap<>();
+    SubAgentRunner partial =
+        request -> {
+          int n = calls.merge(request.getTask().contains("do a") ? "a" : "c", 1, Integer::sum);
+          if (request.getTask().contains("do a")) {
+            return new SubAgentRunner.Result(false, "a 失败了", 0, 0);
+          }
+          return new SubAgentRunner.Result(true, "OUT(c)", 0, 0);
+        };
+    ToolResult result =
+        new AgentPipelineTool(partial)
+            .execute(new JSONObject().put("agents", agents(agent("a"), agent("c", "a"))), ctx());
+
+    // 整条流水线失败（有节点失败），但 c 仍被执行到——上游失败信息注入了它的任务。
+    assertTrue(result.isError());
+    assertEquals(1, calls.getOrDefault("c", 0), "下游应继续执行");
+  }
 }

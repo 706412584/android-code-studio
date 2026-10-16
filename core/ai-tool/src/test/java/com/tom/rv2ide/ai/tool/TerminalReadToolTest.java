@@ -130,4 +130,52 @@ final class TerminalReadToolTest {
     assertTrue(truncated.length() < big.length(), "超长应被截断");
     assertTrue(truncated.contains("省略"), truncated.substring(0, 200));
   }
+
+  // ---- 此前未覆盖的分支 ----
+
+  @Test
+  void unavailablePortExplainsReason() {
+    FakePort port = new FakePort();
+    port.available = false;
+    ToolResult result = new TerminalReadTool().execute(new JSONObject(), ctx(port));
+    assertTrue(result.isError());
+    assertTrue(result.getContent().contains("测试用：不可用"), result.getContent());
+  }
+
+  @Test
+  void emptyTranscriptIsStatedExplicitly() {
+    FakePort port = new FakePort();
+    port.list.add(new TerminalPort.Session(0, "bash", true, "", "   "));
+    ToolResult result =
+        new TerminalReadTool().execute(new JSONObject().put("session", 0), ctx(port));
+    assertFalse(result.isError(), result.getContent());
+    assertTrue(result.getContent().contains("屏幕为空"), result.getContent());
+  }
+
+  @Test
+  void nullSessionParamListsSessions() {
+    // session 显式传 null（JSON null）与省略等价——只列清单。
+    FakePort port = new FakePort();
+    port.list.add(new TerminalPort.Session(0, "bash", true, "", "content"));
+    ToolResult result = new TerminalReadTool()
+        .execute(new JSONObject().put("session", JSONObject.NULL), ctx(port));
+    assertFalse(result.isError(), result.getContent());
+    assertTrue(result.getContent().contains("[0]"), result.getContent());
+    assertFalse(result.getContent().contains("content"), "不应倒出屏幕内容");
+  }
+
+  @Test
+  void unnamedSessionShowsPlaceholder() {
+    FakePort port = new FakePort();
+    port.list.add(new TerminalPort.Session(0, "", true, "", ""));
+    ToolResult result = new TerminalReadTool().execute(new JSONObject(), ctx(port));
+    assertTrue(result.getContent().contains("(未命名)"), result.getContent());
+  }
+
+  @Test
+  void metadataAndConcurrency() {
+    TerminalReadTool tool = new TerminalReadTool();
+    assertEquals(com.tom.rv2ide.ai.tool.api.ToolDisplayCategory.SHELL, tool.getDisplayCategory());
+    assertTrue(tool.isConcurrencySafe(), "读终端是只读操作，可并发");
+  }
 }

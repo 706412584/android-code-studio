@@ -352,6 +352,76 @@ final class HttpRequestToolTest {
     }
   }
 
+  // ---- 此前未覆盖的分支 ----
+
+  @Test
+  void nullResponseIsReportedAsError() throws Exception {
+    // 端口返回 null（实现异常）不应 NPE——必须转成错误文案。
+    FakePort port = new FakePort((HttpRequestPort.Response) null);
+    ToolResult result =
+        new HttpRequestTool(port).execute(new JSONObject().put("url", "https://a.example"), null);
+    assertTrue(result.isError());
+    assertTrue(result.getContent().contains("未收到响应"), result.getContent());
+  }
+
+  @Test
+  void blankMethodFallsBackToGet() throws Exception {
+    FakePort port = new FakePort(response(200, "text/plain", "x"));
+    new HttpRequestTool(port)
+        .execute(new JSONObject().put("url", "https://a.example").put("method", "   "), null);
+    assertEquals("GET", port.method);
+  }
+
+  @Test
+  void nonPositiveTimeoutFallsBackToDefault() throws Exception {
+    FakePort port = new FakePort(response(200, "text/plain", "x"));
+    new HttpRequestTool(port)
+        .execute(new JSONObject().put("url", "https://a.example").put("timeout_ms", -5), null);
+    assertEquals(HttpRequestTool.DEFAULT_TIMEOUT_MS, port.timeoutMs);
+  }
+
+  @Test
+  void jsonArrayBodyIsFormatted() throws Exception {
+    // 顶层是数组的 JSON 响应也要美化（走 JSONArray 分支）。
+    FakePort port = new FakePort(response(200, "application/json", "[{\"a\":1}]"));
+    ToolResult result =
+        new HttpRequestTool(port).execute(new JSONObject().put("url", "https://a.example"), null);
+    assertFalse(result.isError());
+    assertTrue(result.getContent().contains("\"a\""), result.getContent());
+  }
+
+  @Test
+  void emptyStringBodyIsTreatedAsNoBody() throws Exception {
+    // body="" 等价于没给 body：不应带 Content-Type，也不该把空串发给端口。
+    FakePort port = new FakePort(response(200, "text/plain", "x"));
+    new HttpRequestTool(port)
+        .execute(new JSONObject().put("url", "https://a.example").put("body", ""), null);
+    assertNull(port.body, "空字符串 body 应归一为 null");
+    assertNull(headerIgnoreCase(port.headers, "Content-Type"), "无 body 不应带 Content-Type");
+  }
+
+  @Test
+  void displayCategoryIsGeneric() {
+    assertEquals(
+        com.tom.rv2ide.ai.tool.api.ToolDisplayCategory.GENERIC,
+        new HttpRequestTool(null).getDisplayCategory());
+  }
+
+  @Test
+  void progressIsReportedWhenContextProvided() throws Exception {
+    // 有 context 时报告 method + url（UI 进度条依赖）。
+    FakePort port = new FakePort(response(200, "text/plain", "x"));
+    ToolContext context =
+        ToolContext.builder()
+            .homePath(System.getProperty("java.io.tmpdir"))
+            .progressListener(message -> {})
+            .build();
+    ToolResult result =
+        new HttpRequestTool(port)
+            .execute(new JSONObject().put("url", "https://a.example").put("method", "POST"), context);
+    assertFalse(result.isError(), result.getContent());
+  }
+
   private static String headerIgnoreCase(Map<String, String> headers, String name) {
     if (headers == null) {
       return null;
