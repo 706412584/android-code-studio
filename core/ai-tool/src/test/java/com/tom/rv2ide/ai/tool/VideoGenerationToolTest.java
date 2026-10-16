@@ -202,6 +202,142 @@ class VideoGenerationToolTest {
         agnes.agnesPollUrl("v1", "agnes-video-2.5"));
   }
 
+  // ---- 失败分支（此前未覆盖）----
+
+  private static HttpRequestPort.Response err(int code, String body) {
+    return new HttpRequestPort.Response(code, "ERR", "application/json", new LinkedHashMap<>(), body);
+  }
+
+  @Test
+  public void agnesCreateHttpErrorIsReported() throws Exception {
+    // 提交端点 4xx：错误应带状态码，而不是一路等到轮询超时。
+    ScriptedPort port = new ScriptedPort(err(401, "{\"message\":\"invalid key\"}"));
+    ToolResult result =
+        new VideoGenerationTool(port).execute(new JSONObject().put("prompt", "x"), agnesContext());
+    assertTrue(result.isError());
+    assertTrue(result.getContent().contains("401"), result.getContent());
+  }
+
+  @Test
+  public void agnesMissingVideoIdIsReported() throws Exception {
+    ScriptedPort port = new ScriptedPort(ok("{}")); // 既无 video_id 也无 id/task_id
+    ToolResult result =
+        new VideoGenerationTool(port).execute(new JSONObject().put("prompt", "x"), agnesContext());
+    assertTrue(result.isError());
+    assertTrue(result.getContent().contains("video_id"), result.getContent());
+  }
+
+  @Test
+  public void agnesMetadataUrlIsAccepted() throws Exception {
+    // 结果 URL 可能在 metadata.url（FrameBaker 两种形态都见过）。
+    ScriptedPort port =
+        new ScriptedPort(
+            ok(new JSONObject().put("video_id", "v9").toString()),
+            ok(new JSONObject()
+                .put("status", "completed")
+                .put("metadata", new JSONObject().put("url", "https://cdn/meta.mp4"))
+                .toString()));
+    ToolResult result =
+        new VideoGenerationTool(port).execute(new JSONObject().put("prompt", "x"), agnesContext());
+    // 下载会失败（cdn 不可达）——但错误文案里应带出 URL，证明 metadata 被解析。
+    assertTrue(result.getContent().contains("meta.mp4"), result.getContent());
+  }
+
+  @Test
+  public void agnesCompletedWithoutUrlIsReported() throws Exception {
+    ScriptedPort port =
+        new ScriptedPort(
+            ok(new JSONObject().put("video_id", "v1").toString()),
+            ok(new JSONObject().put("status", "completed").toString()));
+    ToolResult result =
+        new VideoGenerationTool(port).execute(new JSONObject().put("prompt", "x"), agnesContext());
+    assertTrue(result.isError());
+    assertTrue(result.getContent().contains("未返回 URL"), result.getContent());
+  }
+
+  @Test
+  public void agnesEmptyPromptIsRejected() {
+    ScriptedPort port = new ScriptedPort(ok("{}"));
+    ToolResult result =
+        new VideoGenerationTool(port).execute(new JSONObject().put("prompt", "   "), agnesContext());
+    assertTrue(result.isError());
+    assertTrue(result.getContent().contains("prompt"), result.getContent());
+  }
+
+  @Test
+  public void grokMissingRequestIdIsReported() throws Exception {
+    ScriptedPort port = new ScriptedPort(ok("{}"));
+    ToolResult result =
+        new VideoGenerationTool(port).execute(new JSONObject().put("prompt", "x"), grokContext());
+    assertTrue(result.isError());
+    assertTrue(result.getContent().contains("request_id"), result.getContent());
+  }
+
+  @Test
+  public void grokDoneWithoutVideoUrlIsReported() throws Exception {
+    ScriptedPort port =
+        new ScriptedPort(
+            ok(new JSONObject().put("request_id", "r1").toString()),
+            ok(new JSONObject().put("status", "done").toString()));
+    ToolResult result =
+        new VideoGenerationTool(port).execute(new JSONObject().put("prompt", "x"), grokContext());
+    assertTrue(result.isError());
+    assertTrue(result.getContent().contains("video.url"), result.getContent());
+  }
+
+  @Test
+  public void grokFailedStateIsReported() throws Exception {
+    ScriptedPort port =
+        new ScriptedPort(
+            ok(new JSONObject().put("request_id", "r1").toString()),
+            ok(new JSONObject().put("status", "failed").put("error", "moderation").toString()));
+    ToolResult result =
+        new VideoGenerationTool(port).execute(new JSONObject().put("prompt", "x"), grokContext());
+    assertTrue(result.isError());
+    assertTrue(result.getContent().contains("moderation"), result.getContent());
+  }
+
+  @Test
+  public void nullHttpPortExplains() {
+    ToolResult result =
+        new VideoGenerationTool(null).execute(new JSONObject().put("prompt", "x"), agnesContext());
+    assertTrue(result.isError());
+    assertTrue(result.getContent().contains("网络访问"), result.getContent());
+  }
+
+  @Test
+  public void downloadFailureReturnsUrlForManualRetry(@TempDir Path dir) throws Exception {
+    // 任务成功但下载失败：结果应仍为 ok 并带出 URL 与任务 ID（模型可告知用户稍后重试）。
+    ScriptedPort port =
+        new ScriptedPort(
+            ok(new JSONObject().put("video_id", "v1").toString()),
+            ok(new JSONObject()
+                .put("status", "completed")
+                .put("url", "https://cdn.invalid.example/never.mp4")
+                .toString()));
+    ToolContext ctx =
+        ToolContext.builder()
+            .homePath(dir.toString())
+            .videoGeneration(
+                new VideoGenerationEndpoint("https://host/v1", "k", "agnes-video-2.5", ""))
+            .build();
+    ToolResult result =
+        new VideoGenerationTool(port).execute(new JSONObject().put("prompt", "x"), ctx);
+    assertFalse(result.isError(), result.getContent());
+    assertTrue(result.getContent().contains("保存失败"), result.getContent());
+    assertTrue(result.getContent().contains("never.mp4"), result.getContent());
+    assertTrue(result.getContent().contains("v1"), result.getContent());
+  }
+
+  @Test
+  public void displayCategoryAndConcurrency() {
+    VideoGenerationTool tool = new VideoGenerationTool(new ScriptedPort(ok("{}")));
+    assertEquals(
+        com.tom.rv2ide.ai.tool.api.ToolDisplayCategory.IMAGE_GENERATION,
+        tool.getDisplayCategory());
+    assertFalse(tool.isConcurrencySafe(), "轮询占线程，不应并发");
+  }
+
   @Test
   public void successfulDownloadWritesFileAndReportsSize(@TempDir Path dir) throws Exception {
     // 起本地 HTTP 服务器提供 mp4 字节：验证「下载成功」路径真正落盘并回报大小。
