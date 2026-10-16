@@ -50,19 +50,19 @@ public final class ToolMessages {
 
   /** 对应上游 strings.xml 的 tool_file_read_dir_content。 */
   public static final String FILE_READ_DIR_CONTENT =
-      "Directory %1$s:\\n%2$s";
+      "Directory %1$s:\n%2$s";
 
   /** 对应上游 strings.xml 的 tool_file_read_dir_specify_file。 */
   public static final String FILE_READ_DIR_SPECIFY_FILE =
-      "\\n\\nTo read a file, specify the exact file path.";
+      "\n\nTo read a file, specify the exact file path.";
 
   /** 对应上游 strings.xml 的 tool_file_read_exceed_1mb。 */
   public static final String FILE_READ_EXCEED_1MB =
-      "File %1$s is %2$dKB, exceeding the 1MB read limit.\\nUse start_kb/end_kb to specify a smaller range, e.g.: {\\\"file_path\\\":\\\"%3$s\\\",\\\"start_kb\\\":0,\\\"end_kb\\\":50}";
+      "File %1$s is %2$dKB, exceeding the 1MB read limit.\nUse start_kb/end_kb to specify a smaller range, e.g.: {\\\"file_path\\\":\\\"%3$s\\\",\\\"start_kb\\\":0,\\\"end_kb\\\":50}";
 
   /** 对应上游 strings.xml 的 tool_file_read_exceed_50kb。 */
   public static final String FILE_READ_EXCEED_50KB =
-      "File %1$s is %2$dKB, exceeding the 50KB single-read limit.\\nUse start_kb and end_kb to specify the range, e.g.: {\\\"file_path\\\":\\\"%3$s\\\",\\\"start_kb\\\":0,\\\"end_kb\\\":50}";
+      "File %1$s is %2$dKB, exceeding the 50KB single-read limit.\nUse start_kb and end_kb to specify the range, e.g.: {\\\"file_path\\\":\\\"%3$s\\\",\\\"start_kb\\\":0,\\\"end_kb\\\":50}";
 
   /** 对应上游 strings.xml 的 tool_file_read_start_out_of_range。 */
   public static final String FILE_READ_START_OUT_OF_RANGE =
@@ -70,7 +70,7 @@ public final class ToolMessages {
 
   /** 对应上游 strings.xml 的 tool_file_read_range_info。 */
   public static final String FILE_READ_RANGE_INFO =
-      "\\n\\n… (total %1$d lines, showing KB %2$d-%3$d / total %4$dKB)";
+      "\n\n… (total %1$d lines, showing KB %2$d-%3$d / total %4$dKB)";
 
   /** 对应上游 strings.xml 的 tool_file_read_failed。 */
   public static final String FILE_READ_FAILED =
@@ -78,7 +78,7 @@ public final class ToolMessages {
 
   /** 对应上游 strings.xml 的 tool_file_read_dir_truncated。 */
   public static final String FILE_READ_DIR_TRUNCATED =
-      "… (too many directory items, truncated)\\n";
+      "… (too many directory items, truncated)\n";
 
   /**
    * 图片文件读取成功时给模型的文字说明。
@@ -110,7 +110,7 @@ public final class ToolMessages {
 
   /** 对应上游 strings.xml 的 tool_file_edit_is_directory。 */
   public static final String FILE_EDIT_IS_DIRECTORY =
-      "Path is a directory, cannot edit: %1$s\\nTo edit a file, specify the exact file path.";
+      "Path is a directory, cannot edit: %1$s\nTo edit a file, specify the exact file path.";
 
   /** 对应上游 strings.xml 的 tool_file_edit_no_match。 */
   public static final String FILE_EDIT_NO_MATCH =
@@ -130,7 +130,7 @@ public final class ToolMessages {
 
   /** 对应上游 strings.xml 的 tool_file_write_is_directory。 */
   public static final String FILE_WRITE_IS_DIRECTORY =
-      "Path is a directory, cannot write file: %1$s\\nTo create a file, specify the full file path.";
+      "Path is a directory, cannot write file: %1$s\nTo create a file, specify the full file path.";
 
   /** 对应上游 strings.xml 的 tool_file_write_mkdir_failed。 */
   public static final String FILE_WRITE_MKDIR_FAILED =
@@ -166,11 +166,11 @@ public final class ToolMessages {
 
   /** 对应上游 strings.xml 的 tool_file_delete_success。 */
   public static final String FILE_DELETE_SUCCESS =
-      "Successfully deleted %1$d item(s):\\n";
+      "Successfully deleted %1$d item(s):\n";
 
   /** 对应上游 strings.xml 的 tool_file_delete_partial_fail。 */
   public static final String FILE_DELETE_PARTIAL_FAIL =
-      "Failed %1$d item(s):\\n";
+      "Failed %1$d item(s):\n";
 
   /** 对应上游 strings.xml 的 tool_file_delete_none。 */
   public static final String FILE_DELETE_NONE =
@@ -186,11 +186,11 @@ public final class ToolMessages {
 
   /** 对应上游 strings.xml 的 tool_glob_found。 */
   public static final String GLOB_FOUND =
-      "Found %1$d matching file(s) in %2$s:\\n";
+      "Found %1$d matching file(s) in %2$s:\n";
 
   /** 对应上游 strings.xml 的 tool_glob_truncated。 */
   public static final String GLOB_TRUNCATED =
-      "… (too many results, truncated)\\n";
+      "… (too many results, truncated)\n";
 
   /** 对应上游 strings.xml 的 tool_glob_failed。 */
   public static final String GLOB_FAILED =
@@ -206,11 +206,11 @@ public final class ToolMessages {
 
   /** 对应上游 strings.xml 的 tool_list_dir_empty。 */
   public static final String LIST_DIR_EMPTY =
-      "Directory %1$s:\\n(empty directory)";
+      "Directory %1$s:\n(empty directory)";
 
   /** 对应上游 strings.xml 的 tool_list_dir_content。 */
   public static final String LIST_DIR_CONTENT =
-      "Directory %1$s:\\n";
+      "Directory %1$s:\n";
 
   /** 对应上游 strings.xml 的 tool_list_dir_failed。 */
   public static final String LIST_DIR_FAILED =
