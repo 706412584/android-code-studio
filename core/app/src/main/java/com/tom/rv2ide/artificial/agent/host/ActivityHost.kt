@@ -430,19 +430,34 @@ private class ActivityDialogs(private val context: Context) : AssistantDialogs {
       onAllowAlways: () -> Unit,
       onDeny: () -> Unit,
   ) {
-    AlertDialog.Builder(context)
-        .setTitle(string.ai_assistant_dangerous_title)
-        .setMessage(
-            context.getString(
-                string.ai_assistant_dangerous_message,
-                toolName,
-                args?.take(500) ?: "",
-            ))
-        .setCancelable(false)
-        .setPositiveButton(string.ai_assistant_dangerous_allow_once) { _, _ -> onAllowOnce() }
-        .setNeutralButton(string.ai_assistant_dangerous_allow_always) { _, _ -> onAllowAlways() }
-        .setNegativeButton(string.ai_assistant_dangerous_deny) { _, _ -> onDeny() }
-        .show()
+    // 超时守卫：5 分钟无人应答即视为拒绝并关窗，避免弹窗一直挂着（它的回调早已返回，
+    // 用户点了也没反应）。超时走 onDeny——语义与用户点「拒绝」一致：不授权、不记忆。
+    val guard = DialogTimeouts.Guard { onDeny() }.start()
+    val dialog =
+        AlertDialog.Builder(context)
+            .setTitle(string.ai_assistant_dangerous_title)
+            .setMessage(
+                context.getString(
+                    string.ai_assistant_dangerous_message,
+                    toolName,
+                    args?.take(500) ?: "",
+                ))
+            .setCancelable(false)
+            .setPositiveButton(string.ai_assistant_dangerous_allow_once) { _, _ ->
+              guard.cancel()
+              onAllowOnce()
+            }
+            .setNeutralButton(string.ai_assistant_dangerous_allow_always) { _, _ ->
+              guard.cancel()
+              onAllowAlways()
+            }
+            .setNegativeButton(string.ai_assistant_dangerous_deny) { _, _ ->
+              guard.cancel()
+              onDeny()
+            }
+            .create()
+    guard.attach(dialog)
+    dialog.show()
   }
 
   override fun showUserQuestions(
@@ -454,10 +469,18 @@ private class ActivityDialogs(private val context: Context) : AssistantDialogs {
       onCancel()
       return
     }
+    // 超时守卫覆盖**整次调用**（可能连续弹多道题）：5 分钟无应答即取消并收掉当前弹窗。
+    // 逐题各计一次会导致 N 道题等 N×5 分钟，而调用方只 await 一次——必然错配。
+    val guard = DialogTimeouts.Guard { onCancel() }.start()
     // 多道题时逐道询问，收集全部答案后一次性回调。
     val answers = mutableListOf<String>()
     fun askNext(index: Int) {
+      if (guard.isFinished()) {
+        // 已超时：不要再摆下一道题（守卫已回调取消，调用方走了）。
+        return
+      }
       if (index >= questions.size) {
+        guard.cancel()
         onAnswer(answers)
         return
       }
@@ -469,52 +492,79 @@ private class ActivityDialogs(private val context: Context) : AssistantDialogs {
 
       if (q.multiSelect) {
         val checked = BooleanArray(optionsArray.size)
-        MaterialAlertDialogBuilder(context)
-            .setTitle(q.header.ifBlank { context.getString(string.ai_assistant_question_title) })
-            .setMessage(q.question)
-            .setMultiChoiceItems(optionsArray, checked) { _, which, isChecked ->
-              checked[which] = isChecked
-            }
-            .setPositiveButton(string.ai_assistant_question_submit) { _, _ ->
-              val selected = optionsArray.filterIndexed { i, _ -> checked[i] }
-              answers.add(selected.joinToString(","))
-              askNext(index + 1)
-            }
-            .setNegativeButton(android.R.string.cancel) { _, _ -> onCancel() }
-            .setOnCancelListener { onCancel() }
-            .show()
+        val dialog =
+            MaterialAlertDialogBuilder(context)
+                .setTitle(q.header.ifBlank { context.getString(string.ai_assistant_question_title) })
+                .setMessage(q.question)
+                .setMultiChoiceItems(optionsArray, checked) { _, which, isChecked ->
+                  checked[which] = isChecked
+                }
+                .setPositiveButton(string.ai_assistant_question_submit) { _, _ ->
+                  val selected = optionsArray.filterIndexed { i, _ -> checked[i] }
+                  answers.add(selected.joinToString(","))
+                  askNext(index + 1)
+                }
+                .setNegativeButton(android.R.string.cancel) { _, _ ->
+                  guard.cancel()
+                  onCancel()
+                }
+                .setOnCancelListener {
+                  guard.cancel()
+                  onCancel()
+                }
+                .create()
+        guard.attach(dialog)
+        dialog.show()
       } else {
         var selectedIndex = 0
-        MaterialAlertDialogBuilder(context)
-            .setTitle(q.header.ifBlank { context.getString(string.ai_assistant_question_title) })
-            .setMessage(q.question)
-            .setSingleChoiceItems(optionsArray, selectedIndex) { _, which ->
-              selectedIndex = which
-            }
-            .setPositiveButton(string.ai_assistant_question_submit) { _, _ ->
-              if (selectedIndex == optionsArray.size - 1) {
-                // 选了「其它」：弹简单输入框
-                val input = android.widget.EditText(context).apply {
-                  hint = context.getString(string.ai_assistant_question_other_hint)
+        val dialog =
+            MaterialAlertDialogBuilder(context)
+                .setTitle(q.header.ifBlank { context.getString(string.ai_assistant_question_title) })
+                .setMessage(q.question)
+                .setSingleChoiceItems(optionsArray, selectedIndex) { _, which ->
+                  selectedIndex = which
                 }
-                MaterialAlertDialogBuilder(context)
-                    .setTitle(q.question)
-                    .setView(input)
-                    .setPositiveButton(string.ai_assistant_question_submit) { _, _ ->
-                      answers.add(input.text.toString().trim())
-                      askNext(index + 1)
+                .setPositiveButton(string.ai_assistant_question_submit) { _, _ ->
+                  if (selectedIndex == optionsArray.size - 1) {
+                    // 选了「其它」：弹简单输入框
+                    val input = android.widget.EditText(context).apply {
+                      hint = context.getString(string.ai_assistant_question_other_hint)
                     }
-                    .setNegativeButton(android.R.string.cancel) { _, _ -> onCancel() }
-                    .setOnCancelListener { onCancel() }
-                    .show()
-              } else {
-                answers.add(optionsArray[selectedIndex])
-                askNext(index + 1)
-              }
-            }
-            .setNegativeButton(android.R.string.cancel) { _, _ -> onCancel() }
-            .setOnCancelListener { onCancel() }
-            .show()
+                    val inputDialog =
+                        MaterialAlertDialogBuilder(context)
+                            .setTitle(q.question)
+                            .setView(input)
+                            .setPositiveButton(string.ai_assistant_question_submit) { _, _ ->
+                              answers.add(input.text.toString().trim())
+                              askNext(index + 1)
+                            }
+                            .setNegativeButton(android.R.string.cancel) { _, _ ->
+                              guard.cancel()
+                              onCancel()
+                            }
+                            .setOnCancelListener {
+                              guard.cancel()
+                              onCancel()
+                            }
+                            .create()
+                    guard.attach(inputDialog)
+                    inputDialog.show()
+                  } else {
+                    answers.add(optionsArray[selectedIndex])
+                    askNext(index + 1)
+                  }
+                }
+                .setNegativeButton(android.R.string.cancel) { _, _ ->
+                  guard.cancel()
+                  onCancel()
+                }
+                .setOnCancelListener {
+                  guard.cancel()
+                  onCancel()
+                }
+                .create()
+        guard.attach(dialog)
+        dialog.show()
       }
     }
     askNext(0)
