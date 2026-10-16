@@ -481,4 +481,42 @@ final class MemorySearchTest {
     JSONObject input = new JSONObject().put("action", "list");
     assertFalse(new MemoryUpdateTool(null).execute(input, null).isError());
   }
+
+  // ---- describeTokens / normalize（此前未覆盖的辅助路径）----
+
+  @Test
+  void describeTokensJoinsSortedTokensStably() {
+    // 诊断用：结果必须稳定（已排序），否则日志里同一输入每次顺序不同。
+    String first = MemorySearch.describeTokens("数据库连接");
+    assertEquals(first, MemorySearch.describeTokens("数据库连接"), "同一输入应稳定");
+    assertTrue(first.contains("数据"), first);
+    assertTrue(first.contains("连接"), first);
+  }
+
+  @Test
+  void describeTokensHandlesNullAndEmpty() {
+    assertEquals("", MemorySearch.describeTokens(null));
+    assertEquals("", MemorySearch.describeTokens(""));
+  }
+
+  @Test
+  void normalizeTrimsAndLowercases() {
+    assertEquals("retrofit 超时", MemorySearch.normalize("  Retrofit 超时  "));
+    assertEquals("", MemorySearch.normalize(null));
+  }
+
+  @Test
+  void singleCharacterEnglishIsDroppedButBigramSurvives() {
+    // 单字母英文词（a/i）是噪声；中文单字无 bigram 也就没有 token。
+    assertTrue(MemorySearch.tokenize("a i").isEmpty());
+    assertTrue(MemorySearch.tokenize("好").isEmpty(), "单字中文不产生 bigram");
+  }
+
+  @Test
+  void mixedScriptBoundaryFlushesEnglishWord() {
+    // 中英混排时西文词必须被收掉，不能与中文粘连。
+    java.util.Set<String> tokens = MemorySearch.tokenize("用Retrofit请求");
+    assertTrue(tokens.contains("retrofit"), tokens.toString());
+    assertTrue(tokens.contains("请求"), tokens.toString());
+  }
 }

@@ -276,4 +276,43 @@ final class ToolSearchTest {
     assertEquals(11, registry.getRequestableTools().size());
     assertEquals(12, registry.getDeferredTools().size(), "目录大小不受展开影响");
   }
+
+  // ---- 剩余分支：截断、目录摘要截断、元数据 ----
+
+  @Test
+  void longDescriptionIsAbbreviatedInCatalogAndResults() {
+    ToolRegistry registry = new ToolRegistry();
+    StringBuilder longDesc = new StringBuilder();
+    for (int i = 0; i < 200; i++) {
+      longDesc.append("很长的描述文本 ");
+    }
+    registry.register(new DeferredTool("mcpx_long", longDesc.toString()));
+
+    // promptSupplement 里目录行截到 80 字符并标注省略。
+    String supplement = new ToolSearchTool(registry).promptSupplement("");
+    assertNotNull(supplement);
+    assertTrue(supplement.contains("省略"), "目录描述应被截断并标注：" + supplement);
+
+    // 展开结果里的 schema/描述也走同一截断。
+    ToolResult result = runSearch(registry, "mcpx_long");
+    assertFalse(result.isError(), result.getContent());
+    assertTrue(result.getContent().contains("mcpx_long"), result.getContent());
+  }
+
+  @Test
+  void displayMetadataAndReadonlyAccess() {
+    ToolSearchTool tool = new ToolSearchTool(registry());
+    assertEquals(com.tom.rv2ide.ai.tool.api.ToolDisplayCategory.GENERIC, tool.getDisplayCategory());
+    assertTrue(tool.isAllowedInReadonlyMode(), "纯目录查询应允许只读模式");
+    assertEquals(ToolCategory.READ, tool.getCategory());
+  }
+
+  @Test
+  void nullInputListsAllDeferred() {
+    // input 为 null（协议层异常路径）不应 NPE——按空 query 列出全部。
+    ToolRegistry registry = registry();
+    ToolResult result = new ToolSearchTool(registry).execute(null, null);
+    assertFalse(result.isError(), result.getContent());
+    assertTrue(result.getContent().contains("mcpx_fetch_weather"), result.getContent());
+  }
 }

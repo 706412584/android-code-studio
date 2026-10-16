@@ -253,4 +253,113 @@ final class SkillWriteToolTest {
     assertTrue(result.getContent().contains("good"));
     assertTrue(result.getContent().contains("evil"), "应说明哪条被拒");
   }
+
+  // ---- 此前未覆盖的分支 ----
+
+  @Test
+  void writeWithoutSkillsArrayIsRejected(@TempDir Path dir) {
+    SkillWriteTool tool = toolFor(dir);
+    JSONObject input = new JSONObject().put("action", "write");
+    ToolResult result = tool.execute(input, null);
+    assertTrue(result.isError());
+    assertTrue(result.getContent().contains("skills"), result.getContent());
+  }
+
+  @Test
+  void writeBatchOverMaxIsRejected(@TempDir Path dir) {
+    SkillWriteTool tool = toolFor(dir);
+    JSONArray skills = new JSONArray();
+    for (int i = 0; i <= SkillWriteTool.MAX_BATCH; i++) {
+      skills.put(new JSONObject().put("name", "s" + i).put("body", "x"));
+    }
+    ToolResult result =
+        tool.execute(new JSONObject().put("action", "write").put("skills", skills), null);
+    assertTrue(result.isError());
+    assertTrue(result.getContent().contains("最多"), result.getContent());
+    assertEquals(0, SkillRegistry.load(dir.toFile()).size(), "超限时一条都不该写");
+  }
+
+  @Test
+  void allRejectedReportsErrorWithReasons(@TempDir Path dir) {
+    SkillWriteTool tool = toolFor(dir);
+    JSONObject bad = new JSONObject().put("name", "../evil").put("body", "x");
+    ToolResult result = tool.execute(
+        new JSONObject().put("action", "write").put("skills", new JSONArray().put(bad)), null);
+    assertTrue(result.isError(), "全部被拒时整体应是错误");
+    assertTrue(result.getContent().contains("未写入"), result.getContent());
+  }
+
+  @Test
+  void nullElementInSkillsArrayIsSkipped(@TempDir Path dir) {
+    // JSON 数组里混入 null 元素（模型生成的畸形 JSON）不应弄挂整批。
+    SkillWriteTool tool = toolFor(dir);
+    JSONArray skills = new JSONArray();
+    skills.put(JSONObject.NULL);
+    skills.put(new JSONObject().put("name", "ok").put("body", "内容"));
+    ToolResult result =
+        tool.execute(new JSONObject().put("action", "write").put("skills", skills), null);
+    assertFalse(result.isError(), result.getContent());
+    assertTrue(result.getContent().contains("ok"), result.getContent());
+  }
+
+  @Test
+  void emptyNameIsReportedAsPlaceholder(@TempDir Path dir) {
+    SkillWriteTool tool = toolFor(dir);
+    JSONObject empty = new JSONObject().put("name", "").put("body", "x");
+    ToolResult result = tool.execute(
+        new JSONObject().put("action", "write").put("skills", new JSONArray().put(empty)), null);
+    assertTrue(result.isError());
+    assertTrue(result.getContent().contains("空名字"), result.getContent());
+  }
+
+  @Test
+  void deleteRejectsEmptyNameWithHint(@TempDir Path dir) {
+    SkillWriteTool tool = toolFor(dir);
+    ToolResult result =
+        tool.execute(new JSONObject().put("action", "delete").put("name", ""), null);
+    assertTrue(result.isError());
+    assertTrue(result.getContent().contains("name"), result.getContent());
+  }
+
+  @Test
+  void deleteRejectsInvalidName(@TempDir Path dir) {
+    SkillWriteTool tool = toolFor(dir);
+    ToolResult result = tool.execute(
+        new JSONObject().put("action", "delete").put("name", "../evil"), null);
+    assertTrue(result.isError());
+    assertTrue(result.getContent().contains("非法"), result.getContent());
+  }
+
+  @Test
+  void deleteFindsSingleFileLayout(@TempDir Path dir) throws IOException {
+    // 单文件布局（<name>.md）也要能删——SkillRegistry 两种布局都支持。
+    SkillWriteTool tool = toolFor(dir);
+    File single = dir.resolve("legacy.md").toFile();
+    Files.write(single.toPath(), "# legacy\n".getBytes(StandardCharsets.UTF_8));
+
+    ToolResult result =
+        tool.execute(new JSONObject().put("action", "delete").put("name", "legacy"), null);
+
+    assertFalse(result.isError(), result.getContent());
+    assertFalse(single.exists(), "单文件应被删除");
+  }
+
+  @Test
+  void listReportsEmptyStateWithGuidance(@TempDir Path dir) {
+    ToolResult result = toolFor(dir).execute(new JSONObject().put("action", "list"), null);
+    assertFalse(result.isError());
+    assertTrue(result.getContent().contains("没有 skill"), result.getContent());
+    assertTrue(result.getContent().contains("write"), "空列表应指路怎么写");
+  }
+
+  @Test
+  void defaultActionIsWrite(@TempDir Path dir) {
+    // action 缺省时默认 write（schema 文档承诺的语义）。
+    SkillWriteTool tool = toolFor(dir);
+    JSONObject skill = new JSONObject().put("name", "d").put("body", "内容");
+    JSONObject input = new JSONObject().put("skills", new JSONArray().put(skill));
+    ToolResult result = tool.execute(input, null);
+    assertFalse(result.isError(), result.getContent());
+    assertNotNull(SkillRegistry.load(dir.toFile()).find("d"));
+  }
 }

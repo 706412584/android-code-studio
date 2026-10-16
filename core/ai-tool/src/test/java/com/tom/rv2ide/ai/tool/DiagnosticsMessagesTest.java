@@ -99,6 +99,46 @@ class DiagnosticsMessagesTest {
     assertEquals("", DiagnosticsMessages.block("Foo.java", null, 20));
   }
 
+  // ---- parseSeverity / severityName（此前仅经 formatItem 间接覆盖）----
+
+  @Test
+  void parseSeverityAcceptsLongAndShortForms() {
+    assertEquals(1, DiagnosticsMessages.parseSeverity("error"));
+    assertEquals(1, DiagnosticsMessages.parseSeverity("E"));
+    assertEquals(2, DiagnosticsMessages.parseSeverity("warning"));
+    assertEquals(2, DiagnosticsMessages.parseSeverity("warn"));
+    assertEquals(2, DiagnosticsMessages.parseSeverity("w"));
+    assertEquals(3, DiagnosticsMessages.parseSeverity("info"));
+    assertEquals(3, DiagnosticsMessages.parseSeverity("i"));
+    assertEquals(4, DiagnosticsMessages.parseSeverity("hint"));
+    assertEquals(4, DiagnosticsMessages.parseSeverity("h"));
+  }
+
+  @Test
+  void parseSeverityFallsBackToWarning() {
+    // 未知/null 一律回落 warning——诊断宁可多显示不可漏显示。
+    assertEquals(2, DiagnosticsMessages.parseSeverity(null));
+    assertEquals(2, DiagnosticsMessages.parseSeverity("bogus"));
+    assertEquals(2, DiagnosticsMessages.parseSeverity("  "));
+    assertEquals(1, DiagnosticsMessages.parseSeverity("  ERROR  "), "两侧空白应被容忍");
+  }
+
+  @Test
+  void severityNameMapsAllLevelsWithWarningDefault() {
+    assertEquals("错误", DiagnosticsMessages.severityName(1));
+    assertEquals("警告", DiagnosticsMessages.severityName(2));
+    assertEquals("信息", DiagnosticsMessages.severityName(3));
+    assertEquals("提示", DiagnosticsMessages.severityName(4));
+    // 未知数值回落警告（default 分支）。
+    assertEquals("警告", DiagnosticsMessages.severityName(0));
+    assertEquals("警告", DiagnosticsMessages.severityName(99));
+  }
+
+  @Test
+  void filterHandlesNullList() {
+    assertTrue(DiagnosticsMessages.filterBySeverity(null, 4).isEmpty());
+  }
+
   private static DiagnosticsPort.Item newItem() {
     return new DiagnosticsPort.Item(11, 4, 1, "boom", "E1");
   }
