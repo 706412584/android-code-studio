@@ -620,4 +620,311 @@ final class AgentSessionTest {
     assertNotNull(prompt);
     assertTrue(prompt.contains("没有可用工具"), prompt);
   }
+
+  // ---- 运行中注入（offerInject / offerNotice / drainLeftoverInjects）----
+
+  @Test
+  void completedSessionRejectsInjectAndNotice() {
+    // 关键契约：收尾后必须返回 false，让调用方回退到别的投递路径——静默丢弃
+    // 会把用户中途发的消息永久吞掉。
+    AgentSession session =
+        new AgentSession(
+            clientWith(new ScriptedProtocol(true)), fileRegistry(),
+            new ToolExecutor(fileRegistry(), null, null));
+
+    assertTrue(session.offerInject("开始前的注入应被接受"));
+    assertTrue(session.offerNotice("恢复一次会话"));
+    // 未运行过 → 仍在接受注入
+
+    assertFalse(session.offerInject(null), "null 注入应被拒");
+    assertFalse(session.offerInject("   "), "空白注入应被拒");
+    assertFalse(session.offerNotice(null), "null 通知应被拒");
+    assertFalse(session.offerNotice(""), "空通知应被拒");
+  }
+
+  @Test
+  void drainLeftoverInjectsReturnsAndClearsQueue() {
+    AgentSession session =
+        new AgentSession(
+            clientWith(new ScriptedProtocol(true)), fileRegistry(),
+            new ToolExecutor(fileRegistry(), null, null));
+
+    assertTrue(session.offerInject("第一条"));
+    assertTrue(session.offerInject("第二条"));
+
+    List<String> leftover = session.drainLeftoverInjects();
+    assertEquals(List.of("第一条", "第二条"), leftover, "应按投递顺序返回全部未消费注入");
+    assertTrue(session.drainLeftoverInjects().isEmpty(), "取走后应清空——重复取会重复回灌");
+  }
+
+  @Test
+  void injectIsWrappedWithNoticeHeaderWhenLoopRuns() throws IOException {
+    // 注入是「用户在运行中补的话」，包装文案让模型能区分它与本次原始请求。
+    @SuppressWarnings("unchecked")
+    Path workspace = Files.createTempDirectory("inject-test");
+    ScriptedProtocol protocol = new ScriptedProtocol(true).enqueue("ok", List.of());
+    AgentSession session =
+        new AgentSession(
+            clientWith(protocol), fileRegistry(), new ToolExecutor(fileRegistry(), null, null));
+
+    // 运行前投递：循环应在安全边界取走并并入请求。
+    assertTrue(session.offerInject("补充要求：用 Kotlin"));
+
+    session.run(
+        config(10),
+        "系统提示",
+        "原始请求",
+        ToolContext.builder().homePath(workspace.toString()).build(),
+        null,
+        null);
+
+    List<ModelMessage> sent = protocol.receivedMessages.get(0);
+    assertTrue(
+        sent.stream().anyMatch(m -> m.getContent().contains("补充要求：用 Kotlin")),
+        "运行中的注入应出现在发给模型的消息里");
+  }
+
+  // ---- 并行工具执行 ----
+
+  @Test
+  void parallelBatchKeepsResultOrderAndLimit(@TempDir Path workspace) throws IOException {
+    // 并发安全的只读工具会被并行批处理；结果顺序必须与请求顺序一致，
+    // 否则工具结果与 tool_call id 会错配（模型看到张冠李戴的结果）。
+    Files.writeString(workspace.resolve("a.txt"), "hello\n");
+    Files.writeString(workspace.resolve("b.txt"), "world\n");
+
+    ScriptedProtocol protocol =
+        new ScriptedProtocol(true)
+            .enqueue(
+                "并行读两个文件",
+                List.of(
+                    call("p1", "file_read", "{\"file_path\":\"a.txt\"}"),
+                    call("p2", "file_read", "{\"file_path\":\"b.txt\"}")))
+            .enqueue("读完了", List.of());
+
+    ToolRegistry registry = fileRegistry();
+    registry.register(new com.tom.rv2ide.ai.tool.ListDirectoryTool());
+
+    AgentSession session =
+        new AgentSession(clientWith(protocol), registry, new ToolExecutor(registry, null, null));
+
+    AgentRunResult result =
+        session.run(
+            config(10),
+            "系统",
+            "读两个文件",
+            ToolContext.builder().homePath(workspace.toString()).build(),
+            null,
+            null);
+
+    assertEquals(2, result.getToolCallCount(), "两个只读调用都应执行");
+    assertFalse(result.isFailed());
+    // 第三轮请求里两条结果都在，且 a 的内容在 b 之前（顺序与请求一致）。
+    List<ModelMessage> last = protocol.receivedMessages.get(1);
+    String joined = String.join("\n", last.stream().map(ModelMessage::getContent).toList());
+    int atA = joined.indexOf("hello");
+    int atB = joined.indexOf("world");
+    assertTrue(atA >= 0 && atB >= 0, "两条结果都应回灌：" + joined);
+    assertTrue(atA < atB, "并行执行后结果顺序仍应与请求顺序一致");
+  }
+
+  @Test
+  void parallelBatchReportsToolErrorWithoutBreakingLoop(@TempDir Path workspace) throws IOException {
+    // 并行批里某个工具失败（文件不存在）不能让整批或整轮崩掉——
+    // 错误要作为结果回灌给模型（与串行路径同约定）。
+    ScriptedProtocol protocol =
+        new ScriptedProtocol(true)
+            .enqueue(
+                "读一个不存在的和一个存在的",
+                List.of(
+                    call("e1", "file_read", "{\"file_path\":\"missing.txt\"}"),
+                    call("e2", "file_read", "{\"file_path\":\"ok.txt\"}")))
+            .enqueue("看到了错误", List.of());
+    Files.writeString(workspace.resolve("ok.txt"), "content\n");
+
+    ToolRegistry registry = fileRegistry();
+    AgentSession session =
+        new AgentSession(clientWith(protocol), registry, new ToolExecutor(registry, null, null));
+
+    AgentRunResult result =
+        session.run(
+            config(10),
+            "sys",
+            "req",
+            ToolContext.builder().homePath(workspace.toString()).build(),
+            null,
+            null);
+
+    assertFalse(result.isFailed(), "单个工具失败不应让整轮失败");
+    assertEquals(2, result.getToolCallCount(), "两个调用都应被计数（含失败的）");
+    // 下一轮请求里应带上了成功那条的内容。
+    List<ModelMessage> next = protocol.receivedMessages.get(1);
+    assertTrue(
+        next.stream().anyMatch(m -> m.getContent().contains("content")),
+        "成功的结果仍应回灌");
+  }
+
+  @Test
+  void streamingCallbacksAreForwardedAsDeltas() throws IOException {
+    // (createTempDirectory 会抛 IOException)
+    // 流式增量必须转成 TEXT_DELTA / REASONING_DELTA 事件——UI 靠它们做逐字渲染。
+    Path workspace = Files.createTempDirectory("delta-test");
+    ScriptedProtocol protocol =
+        new ScriptedProtocol(true) {
+          @Override
+          public ModelCompletionResponse stream(
+              ModelConfig config,
+              List<ModelMessage> messages,
+              ModelStreamCallback callback,
+              ModelCancellationToken cancellationToken,
+              ModelRequestOptions options)
+              throws ModelCompletionException {
+            if (callback != null) {
+              callback.onTextDelta("你");
+              callback.onReasoningDelta("思考中");
+            }
+            return new ModelCompletionResponse("你好", "", List.of(), 0, 0);
+          }
+        };
+
+    List<AgentEvent.Type> events = new ArrayList<>();
+    new AgentSession(
+            clientWith(protocol), fileRegistry(),
+            new ToolExecutor(fileRegistry(), null, null))
+        .run(
+            config(10),
+            "sys",
+            "req",
+            ToolContext.builder().homePath(workspace.toString()).build(),
+            null,
+            event -> events.add(event.getType()));
+
+    assertTrue(events.contains(AgentEvent.Type.TEXT_DELTA), "文本增量应转成 TEXT_DELTA");
+    assertTrue(events.contains(AgentEvent.Type.REASONING_DELTA), "推理增量应转成 REASONING_DELTA");
+  }
+
+  @Test
+  void cancelledTokenProducesCancellationResultNotFailure(@TempDir Path workspace)
+      throws IOException {
+    // 已取消的 token：循环应在进入工具执行前就退出，结果为「已取消」而非「失败」。
+    ModelCancellationToken token = new ModelCancellationToken();
+    token.cancel();
+
+    ScriptedProtocol protocol =
+        new ScriptedProtocol(true)
+            .enqueue("调用工具", List.of(call("c1", "file_read", "{\"file_path\":\"a.txt\"}")));
+    Files.writeString(workspace.resolve("a.txt"), "x");
+
+    AgentRunResult result =
+        new AgentSession(
+                clientWith(protocol), fileRegistry(),
+                new ToolExecutor(fileRegistry(), null, null))
+            .run(
+                config(10),
+                "sys",
+                "req",
+                ToolContext.builder().homePath(workspace.toString()).build(),
+                token,
+                null);
+
+    assertNotNull(result, "取消路径必须能正常返回结果而不抛异常");
+    assertEquals(0, result.getToolCallCount(), "已取消时不应执行任何工具");
+  }
+
+  @Test
+  void toolCallLimitZeroMeansUnlimitedNotBlocked(@TempDir Path workspace) throws IOException {
+    // 语义澄清：limit <= 0 表示**不限制**（见 AgentSession 的 `toolCallLimit > 0` 守卫），
+    // 不是「禁止调用」。把它误读成「0 = 不许调用」会写出反向行为的测试。
+    ScriptedProtocol protocol =
+        new ScriptedProtocol(true)
+            .enqueue("想读文件", List.of(call("c1", "file_read", "{\"file_path\":\"a.txt\"}")))
+            .enqueue("读完了", List.of());
+    Files.writeString(workspace.resolve("a.txt"), "x");
+
+    AgentRunResult result =
+        new AgentSession(
+                clientWith(protocol), fileRegistry(),
+                new ToolExecutor(fileRegistry(), null, null))
+            .run(
+                config(0),
+                "sys",
+                "req",
+                ToolContext.builder().homePath(workspace.toString()).build(),
+                null,
+                null);
+
+    assertEquals(1, result.getToolCallCount(), "上限 0（=不限制）时工具应正常执行");
+    assertFalse(result.isFailed());
+  }
+
+  @Test
+  void parallelToolThrowingRuntimeExceptionIsConvertedToErrorResult(@TempDir Path workspace)
+      throws IOException {
+    // 并行批里某个工具直接抛 RuntimeException（不是返回 error 结果）：
+    // 必须被捕获转成 error 结果回灌，而不是让整批/整轮崩掉。
+    Files.writeString(workspace.resolve("ok.txt"), "fine\n");
+
+    ScriptedProtocol protocol =
+        new ScriptedProtocol(true)
+            .enqueue(
+                "一个会炸、一个正常",
+                List.of(
+                    call("boom", "concurrent_boom", "{}"),
+                    call("ok", "file_read", "{\"file_path\":\"ok.txt\"}")))
+            .enqueue("知道哪个炸了", List.of());
+
+    ToolRegistry registry = fileRegistry();
+    registry.register(new ConcurrentBoomTool());
+
+    AgentRunResult result =
+        new AgentSession(clientWith(protocol), registry, new ToolExecutor(registry, null, null))
+            .run(
+                config(10),
+                "sys",
+                "req",
+                ToolContext.builder().homePath(workspace.toString()).build(),
+                null,
+                null);
+
+    assertFalse(result.isFailed(), "单个工具抛异常不应让整轮失败");
+    assertEquals(2, result.getToolCallCount(), "两个调用都应被计数");
+    // 正常那条的结果仍应回灌（证明抛出没有中断整批）。
+    assertTrue(
+        protocol.receivedMessages.get(1).stream()
+            .anyMatch(m -> m.getContent().contains("fine")),
+        "同批中正常工具的结果仍应回灌");
+  }
+
+  /** 并发安全但调用即抛异常——用于验证并行批的异常兜底。 */
+  private static final class ConcurrentBoomTool extends com.tom.rv2ide.ai.tool.BaseTool {
+    @Override
+    public String getName() {
+      return "concurrent_boom";
+    }
+
+    @Override
+    public String getDescription() {
+      return "测试用：可并发，但执行必抛异常";
+    }
+
+    @Override
+    public com.tom.rv2ide.ai.tool.api.ToolCategory getCategory() {
+      return com.tom.rv2ide.ai.tool.api.ToolCategory.READ;
+    }
+
+    @Override
+    public boolean isConcurrencySafe() {
+      return true;
+    }
+
+    @Override
+    public org.json.JSONObject getParameters() {
+      return new org.json.JSONObject();
+    }
+
+    @Override
+    public ToolResult execute(org.json.JSONObject input, com.tom.rv2ide.ai.tool.ToolContext ctx) {
+      throw new IllegalStateException("故意抛出的异常");
+    }
+  }
 }

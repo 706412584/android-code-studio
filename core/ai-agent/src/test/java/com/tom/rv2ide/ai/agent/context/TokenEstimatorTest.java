@@ -163,4 +163,19 @@ final class TokenEstimatorTest {
     ToolModelMessage plain = new ToolModelMessage("abcd", "c1", "t");
     assertEquals(TokenEstimator.estimate(plain), TokenEstimator.estimate(nonImage));
   }
+
+  @Test
+  void malformedImageMarkerIsNotChargedAndDoesNotThrow() {
+    // 含 linecode_ 标记但结构不合法：hasImagePayload 会走到解析分支并返回 null
+    // （或抛异常后被兜住）。这种输入不能让估算抛异常——估算跑在发请求的路径上，
+    // 抛了整轮对话就断了。
+    ToolModelMessage broken =
+        new ToolModelMessage("abcd", "c1", "t", false, "{\"linecode_broken\":true}");
+    ToolModelMessage justMarker = new ToolModelMessage("abcd", "c1", "t", false, "linecode_");
+    ToolModelMessage plain = new ToolModelMessage("abcd", "c1", "t");
+
+    assertEquals(TokenEstimator.estimate(plain), TokenEstimator.estimate(broken),
+        "非法图片标记不应被当成图片计费");
+    assertEquals(TokenEstimator.estimate(plain), TokenEstimator.estimate(justMarker));
+  }
 }
