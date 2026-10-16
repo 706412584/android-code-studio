@@ -18,6 +18,8 @@
 package com.tom.rv2ide.ai.tool.mcp;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
@@ -163,5 +165,87 @@ class StdioTransportTest {
         .put("method", method)
         .put("params", params)
         .toString();
+  }
+
+  @Test
+  public void closeIsIdempotentAndFailsPendingRequests() throws Exception {
+    if (pythonCommand() == null) {
+      return; // 与其余用例同前提：无 python 则跳过。
+    }
+    // 起一个「收到请求但不回应」的 server，制造一个挂起的请求。
+    String silent = "import sys\nfor line in sys.stdin:\n    pass\n";
+    StdioTransport transport =
+        new StdioTransport(
+            pythonCommand(),
+            java.util.Arrays.asList("-c", silent),
+            Collections.emptyMap(),
+            "");
+    try {
+      transport.open();
+      // 不等待响应，直接在另一线程发请求（会被阻塞）。
+      Thread sender =
+          new Thread(
+              () -> {
+                try {
+                  transport.send(requestJson(1, "never-answered"));
+                } catch (Exception ignored) {
+                  // 关闭导致的失败是预期结果。
+                }
+              });
+      sender.setDaemon(true);
+      sender.start();
+      Thread.sleep(300);
+
+      transport.close();
+      // 关键：close 必须唤醒所有挂起请求（failPending），否则调用线程永久阻塞。
+      sender.join(5_000L);
+      assertFalse(sender.isAlive(), "close 后挂起的请求应被唤醒而不是永久阻塞");
+
+      // 幂等：重复 close 不应抛异常。
+      transport.close();
+      transport.close();
+    } finally {
+      transport.close();
+    }
+  }
+
+  @Test
+  public void sendAfterCloseFailsFast() throws Exception {
+    if (pythonCommand() == null) {
+      return;
+    }
+    StdioTransport transport =
+        new StdioTransport(
+            pythonCommand(), java.util.Arrays.asList("-c", "pass"), Collections.emptyMap(), "");
+    transport.open();
+    transport.close();
+
+    // 关闭后发送必须立即失败（带明确原因），而不是挂起等待一个永不到来的响应。
+    Exception e =
+        assertThrows(
+            Exception.class, () -> transport.send(requestJson(2, "ping")));
+    assertNotNull(e.getMessage());
+  }
+
+  private static String cachedPython;
+
+  /** 与 setUp 同源的 python 探测（子类测试直接复用）。 */
+  private static String pythonCommand() {
+    if (cachedPython != null) {
+      return cachedPython.isEmpty() ? null : cachedPython;
+    }
+    for (String candidate : new String[] {"python3", "python"}) {
+      try {
+        Process probe = new ProcessBuilder(candidate, "--version").start();
+        if (probe.waitFor() == 0) {
+          cachedPython = candidate;
+          return candidate;
+        }
+      } catch (Exception ignored) {
+        // 试下一个。
+      }
+    }
+    cachedPython = "";
+    return null;
   }
 }
