@@ -32,6 +32,7 @@ import com.tom.rv2ide.ai.tool.api.ToolDisplayCategory;
 import com.tom.rv2ide.ai.tool.api.ToolNames;
 import com.tom.rv2ide.ai.tool.api.ToolResult;
 import com.tom.rv2ide.artificial.agent.a11y.AcsAccessibilityService;
+import com.tom.rv2ide.artificial.agent.tool.vd.ScreenActionSemantics;
 import org.json.JSONObject;
 
 /**
@@ -75,6 +76,8 @@ public final class PhoneA11yWriteTool extends BaseTool {
         + "swipe=滑动（x/y 起点，x2/y2 终点，duration 毫秒）；"
         + "key=系统键（back / home / recents / notifications）；"
         + "setText=给输入框写文字（传 id 与 text）。"
+        + "tap/setText 建议带 label（手指下/目标元素的文字）：命中「确认支付」「删除」这类敏感词"
+        + "会提级为敏感操作（逐次确认、不可记忆）；不传会收到一条告警。"
         + "id 来自 phone_a11y 的 dump/find，60 秒过期——过期会明确报错，重新 dump 即可。"
         + "**会改变设备状态**，每次调用需用户确认。"
         + "与 phone_click/phone_swipe 的区别：那些需要 Shizuku，两者都能用时优先它们。";
@@ -166,8 +169,62 @@ public final class PhoneA11yWriteTool extends BaseTool {
                                 .put("back")
                                 .put("home")
                                 .put("recents")
-                                .put("notifications"))))
+                                .put("notifications")))
+                .put(
+                    "label",
+                    new JSONObject()
+                        .put("type", "string")
+                        .put(
+                            "description",
+                            "tap / setText 专用：手指下或目标元素的文字（按钮、链接、输入框的标签），"
+                                + "如「确认支付」。命中敏感词会把本次调用提级为敏感操作、逐次确认；"
+                                + "tap/setText 不传会收到一条告警。")))
         .put("required", new org.json.JSONArray().put("action"));
+  }
+
+  /** 带 label 的动作集合：语义风控只看这两个（与 VdTool 的 LABEL_ACTIONS 对应）。 */
+  private static final java.util.Set<String> LABEL_ACTIONS =
+      java.util.Collections.unmodifiableSet(
+          new java.util.LinkedHashSet<>(java.util.Arrays.asList("tap", "settext")));
+
+  /**
+   * 敏感档判定（{@link BaseTool#isSensitiveCall} 的覆写）：tap/setText 的 label 命中敏感词
+   * 即为敏感——执行器据此走「逐次确认、不可记忆」的加强确认路径。
+   *
+   * <p>与 {@link VdTool} 的同类判定共用 {@link ScreenActionSemantics} 词表，保证两个
+   * 「操作屏幕」工具的保护强度一致（付款/转账/删除这类动作按下后退不回来）。
+   */
+  @Override
+  public boolean isSensitiveCall(JSONObject args) {
+    ScreenActionSemantics.Assessment assessment = assessCall(args);
+    return assessment != null && assessment.isSensitive();
+  }
+
+  /**
+   * 仅对带 label 的动作做语义评估；其余动作没有「手指下是什么」这回事，返回 null。
+   * （照搬 VdTool {@code assessCall} 的分流逻辑。）
+   */
+  private static ScreenActionSemantics.Assessment assessCall(JSONObject args) {
+    if (args == null) {
+      return null;
+    }
+    String action = args.optString("action", "").trim().toLowerCase(java.util.Locale.ROOT);
+    if (!LABEL_ACTIONS.contains(action)) {
+      return null;
+    }
+    return ScreenActionSemantics.assess(args.optString("label", ""));
+  }
+
+  /**
+   * 给 tap/setText 的结果附上语义告警：命中敏感词给出「退不回来」的说明；
+   * 没传 label 给一条提醒（手指下是什么无从得知）。无告警时原样返回。
+   */
+  private static String withLabelNote(JSONObject input, String base) {
+    ScreenActionSemantics.Assessment assessment = assessCall(input);
+    if (assessment == null || assessment.warning == null || assessment.warning.isEmpty()) {
+      return base;
+    }
+    return base + "\n\n" + assessment.warning;
   }
 
   @Override
@@ -212,7 +269,7 @@ public final class PhoneA11yWriteTool extends BaseTool {
         return error("节点 id「" + id + "」已过期或不存在——请重新用 phone_a11y dump/find 后再点。");
       }
       if (clickNode(service, node)) {
-        return ok("已点击节点 " + id);
+        return ok(withLabelNote(input, "已点击节点 " + id));
       }
       return error("节点点击失败（不可点击且坐标兜底失败）。");
     }
@@ -234,7 +291,7 @@ public final class PhoneA11yWriteTool extends BaseTool {
       return error("坐标不能为负: x=" + x + " y=" + y);
     }
     if (tapAt(service, x, y)) {
-      return ok("已点击 (" + x + ", " + y + ")");
+      return ok(withLabelNote(input, "已点击 (" + x + ", " + y + ")"));
     }
     return error("点击手势失败。");
   }
@@ -303,7 +360,7 @@ public final class PhoneA11yWriteTool extends BaseTool {
       return error("节点 id「" + id + "」已过期或不存在——请重新用 phone_a11y dump/find 后再写。");
     }
     if (service.setNodeText(node, input.optString("text", ""))) {
-      return ok("已写入文本");
+      return ok(withLabelNote(input, "已写入文本"));
     }
     return error("写入失败（该节点可能不支持设置文本）。");
   }
