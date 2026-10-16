@@ -112,13 +112,29 @@ public final class SkillMarketClient {
   private final int connectTimeoutMs;
   private final int readTimeoutMs;
 
+  /**
+   * 上游基址。默认指向生产端点；包私有构造可替换为本地服务器，
+   * 使安装/下载全流程可在单测里跑（见 {@code SkillMarketInstallTest}）。
+   */
+  private final String clawhubBase;
+
+  private final String skillhubBase;
+
   public SkillMarketClient() {
     this(15_000, 30_000);
   }
 
   SkillMarketClient(int connectTimeoutMs, int readTimeoutMs) {
+    this(connectTimeoutMs, readTimeoutMs, CLAWHUB_BASE, SKILLHUB_BASE);
+  }
+
+  /** 测试可见：注入上游基址（本地 HTTP 服务器）以覆盖网络全流程。 */
+  SkillMarketClient(
+      int connectTimeoutMs, int readTimeoutMs, String clawhubBase, String skillhubBase) {
     this.connectTimeoutMs = connectTimeoutMs;
     this.readTimeoutMs = readTimeoutMs;
+    this.clawhubBase = clawhubBase == null ? CLAWHUB_BASE : clawhubBase;
+    this.skillhubBase = skillhubBase == null ? SKILLHUB_BASE : skillhubBase;
   }
 
   // ---- 浏览 / 搜索 ----
@@ -139,13 +155,13 @@ public final class SkillMarketClient {
     StringBuilder errors = new StringBuilder();
     try {
       out.addAll(parseClawhubList(
-          httpGet(CLAWHUB_BASE + "/skills?limit=" + limit + "&sort=downloads")));
+          httpGet(clawhubBase + "/skills?limit=" + limit + "&sort=downloads")));
     } catch (Exception e) {
       errors.append("ClawHub: ").append(e.getMessage()).append("; ");
     }
     try {
       out.addAll(parseSkillhubList(
-          httpGet(SKILLHUB_BASE + "/skills?page=1&pageSize=" + limit)));
+          httpGet(skillhubBase + "/skills?page=1&pageSize=" + limit)));
     } catch (Exception e) {
       errors.append("SkillHub: ").append(e.getMessage());
     }
@@ -176,7 +192,7 @@ public final class SkillMarketClient {
     try {
       String body =
           httpGet(
-              CLAWHUB_BASE + "/skills?limit=" + limit + "&sort=downloads");
+              clawhubBase + "/skills?limit=" + limit + "&sort=downloads");
       return parseClawhubList(body);
     } catch (Exception e) {
       return new ArrayList<>();
@@ -187,7 +203,7 @@ public final class SkillMarketClient {
     try {
       String body =
           httpGet(
-              CLAWHUB_BASE
+              clawhubBase
                   + "/search?q="
                   + urlEncode(query)
                   + "&limit="
@@ -236,7 +252,7 @@ public final class SkillMarketClient {
   private List<MarketSkill> listSkillhub(int limit) {
     try {
       String body =
-          httpGet(SKILLHUB_BASE + "/skills?page=1&pageSize=" + limit);
+          httpGet(skillhubBase + "/skills?page=1&pageSize=" + limit);
       return parseSkillhubList(body);
     } catch (Exception e) {
       return new ArrayList<>();
@@ -247,7 +263,7 @@ public final class SkillMarketClient {
     try {
       String body =
           httpGet(
-              SKILLHUB_BASE
+              skillhubBase
                   + "/skills?page=1&pageSize="
                   + limit
                   + "&keyword="
@@ -340,7 +356,13 @@ public final class SkillMarketClient {
           if (file.size > MAX_FILE_BYTES) {
             return InstallResult.failure("单文件超过 5MB：" + file.path);
           }
-          byte[] bytes = downloadFile(skill, file.path);
+          byte[] bytes;
+          try {
+            bytes = downloadFile(skill, file.path);
+          } catch (IOException e) {
+            // 带上文件路径——否则用户只看到 "HTTP 404"，不知道是哪个文件挂了。
+            return InstallResult.failure("下载失败：" + file.path + "（" + e.getMessage() + "）");
+          }
           if (bytes == null) {
             return InstallResult.failure("下载失败：" + file.path);
           }
@@ -421,11 +443,11 @@ public final class SkillMarketClient {
       case SOURCE_CLAWHUB:
         body =
             httpGet(
-                CLAWHUB_BASE + "/skills/" + urlEncode(skill.slug) + "/versions/"
+                clawhubBase + "/skills/" + urlEncode(skill.slug) + "/versions/"
                     + (skill.version.isEmpty() ? "latest" : urlEncode(skill.version)));
         return parseClawhubFiles(body);
       case SOURCE_SKILLHUB:
-        body = httpGet(SKILLHUB_BASE + "/v1/skills/" + urlEncode(skill.slug) + "/files");
+        body = httpGet(skillhubBase + "/v1/skills/" + urlEncode(skill.slug) + "/files");
         return parseSkillhubFiles(body);
       default:
         throw new IOException("未知来源：" + skill.source);
@@ -492,7 +514,7 @@ public final class SkillMarketClient {
     switch (skill.source) {
       case SOURCE_CLAWHUB:
         url =
-            CLAWHUB_BASE
+            clawhubBase
                 + "/skills/"
                 + urlEncode(skill.slug)
                 + "/file?path="
@@ -500,7 +522,7 @@ public final class SkillMarketClient {
         break;
       case SOURCE_SKILLHUB:
         url =
-            SKILLHUB_BASE
+            skillhubBase
                 + "/v1/skills/"
                 + urlEncode(skill.slug)
                 + "/file?path="
