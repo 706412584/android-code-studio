@@ -353,6 +353,17 @@
   <string name="ai_agent_battery_disabled">已加入白名单——息屏后 AI 可继续运行</string>
   <string name="ai_agent_battery_off">未加入白名单——点击去设置</string>
   <string name="ai_agent_battery_no_settings">本设备没有电池优化设置页</string>
+
+  <!-- 无障碍服务（AI 免 Shizuku 操作屏幕；设置 → AI 助手 → 工具） -->
+  <string name="acs_a11y_service_label">AndroidCS 无障碍</string>
+  <string name="acs_a11y_service_description">让 AI 助手读屏与操作界面：读取界面元素、截图、点击与滑动——无需 Shizuku/adb 权限。</string>
+  <string name="acs_a11y_service_summary">允许 AndroidCS 读取屏幕内容并执行手势</string>
+  <string name="ai_agent_a11y_title">无障碍（免 Shizuku 操作屏幕）</string>
+  <string name="ai_agent_a11y_summary">让 AI 无需 Shizuku 即可读屏、点击与滑动；需先在系统设置里开启本应用的无障碍服务。</string>
+  <string name="ai_agent_a11y_on">已开启 · 已连接——AI 可读屏并操作界面</string>
+  <string name="ai_agent_a11y_on_not_connected">已开启 · 未连接（系统可能稍后重绑）</string>
+  <string name="ai_agent_a11y_off">未开启——点击跳转系统无障碍设置</string>
+  <string name="ai_agent_a11y_no_settings">本设备没有无障碍设置页</string>
   <string name="ai_agent_codegraph_state_installed">已安装 · v%1$s · 占用 %2$s</string>
   <string name="ai_agent_codegraph_state_partial">安装不完整——缺少 %1$s</string>
   <string name="ai_agent_codegraph_state_missing">未安装</string>

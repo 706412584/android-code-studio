@@ -17,6 +17,7 @@
 
 package com.tom.rv2ide.preferences
 
+import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.view.View
@@ -141,6 +142,9 @@ private class ToolsPage(
     addPreference(PermissionModePreference())
     addPreference(AuthorizedToolsPreference())
     addPreference(ShellBackendPreference())
+    // 紧随 shell 后端：两者是同一件事的两条路（操作设备的能力来源）——
+    // Shizuku 那条要装要授权，无障碍这条勾选一次即可。放一起用户才好权衡。
+    addPreference(AccessibilityPreference())
     addPreference(CodeCompletionSwitch())
   }
 }
@@ -472,6 +476,95 @@ private class IgnoreBatteryOptimizationPreference(
       Toast.makeText(context, R.string.ai_agent_battery_no_settings, Toast.LENGTH_LONG).show()
     }
     return true
+  }
+}
+
+/**
+ * 无障碍服务入口（设置 → AI 助手 → 工具）。
+ *
+ * <p><b>为什么需要它</b>：AI 的 `phone_a11y` / `phone_a11y_write` 工具走无障碍通道，
+ * **不需要 Shizuku/adb 权限**——这是没装 Shizuku 的用户操作屏幕的唯一途径。
+ * 但 Android 禁止应用自行开启无障碍，必须用户手动勾选，所以这里提供入口与状态展示。
+ *
+ * <p>三态摘要：已开启且已连接 / 已开启未连接（系统稍后可能重绑）/ 未开启。
+ * 与 [AssistantOverlayPreference] 同一模式（`onCreateView` 里写动态 summary，
+ * 避免被基类的静态资源覆盖）。
+ */
+@Parcelize
+private class AccessibilityPreference(
+    override val key: String = "ai_agent_accessibility",
+    override val title: Int = R.string.ai_agent_a11y_title,
+    override val summary: Int? = R.string.ai_agent_a11y_summary,
+) : BasePreference() {
+
+  override fun onCreatePreference(context: Context): Preference =
+      androidx.preference.Preference(context).apply { key = "ai_agent_accessibility" }
+
+  override fun onCreateView(context: Context): Preference {
+    val pref = super.onCreateView(context)
+    // super 之后：此时静态 summary 已写完，动态状态才不会被盖掉。
+    pref.summary = describe(context)
+    return pref
+  }
+
+  /** 状态 → 一行摘要。 */
+  private fun describe(context: Context): String =
+      if (com.tom.rv2ide.artificial.agent.a11y.AcsAccessibilityService.isConnected()) {
+        context.getString(R.string.ai_agent_a11y_on)
+      } else if (isServiceEnabled(context)) {
+        // 系统认为开着但服务还没绑上：MIUI 等 ROM 重绑有延迟，别显示成「未开启」
+        // 让用户以为没生效而去重复勾选。
+        context.getString(R.string.ai_agent_a11y_on_not_connected)
+      } else {
+        context.getString(R.string.ai_agent_a11y_off)
+      }
+
+  override fun onPreferenceClick(preference: Preference): Boolean {
+    val context = preference.context
+    val intent = android.content.Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS)
+    // 非 Activity 上下文要加 NEW_TASK；设置页通常是 Activity，加了也无害。
+    intent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+    return try {
+      context.startActivity(intent)
+      true
+    } catch (e: Exception) {
+      // 极少数 ROM 没有该 Activity：给出可操作提示而不是静默。
+      Toast.makeText(context, R.string.ai_agent_a11y_no_settings, Toast.LENGTH_LONG).show()
+      true
+    }
+  }
+
+  /**
+   * 系统设置里本应用的无障碍服务是否处于「已启用」。
+   *
+   * <p>与 `AcsAccessibilityService.isConnected()` 的区别：那个看**服务实例**是否活着，
+   * 这个看**系统开关**是否打开。两者可能短暂不一致（刚勾选时服务还没绑上、
+   * 或服务被 ROM 杀掉但开关仍开着），分开判断才能给出准确的三态摘要。
+   *
+   * <p><b>比对必须用 `flattenToShortString()`</b>：系统写入该设置时用的是
+   * `AccessibilityManagerService.persistComponentNamesToSettingLocked`，它调
+   * `flattenToShortString()`（类名以包名为前缀时缩写为 `.类名`）。若用
+   * `flattenToString()` 精确比对，本服务存的是
+   * `com.tom.rv2ide/.artificial.agent.a11y.AcsAccessibilityService`，
+   * 而期望值是 `com.tom.rv2ide/com.tom.rv2ide.artificial...`——永不相等，
+   * 「已开启·未连接」这个中间态会永远显示成「未开启」。
+   *
+   * <p>用 `unflattenFromString` 解析后按 ComponentName 比较，两种写法都能命中。
+   */
+  private fun isServiceEnabled(context: Context): Boolean {
+    val expected =
+        ComponentName(
+            context,
+            com.tom.rv2ide.artificial.agent.a11y.AcsAccessibilityService::class.java)
+    val enabled =
+        android.provider.Settings.Secure.getString(
+            context.contentResolver,
+            android.provider.Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES,
+        ) ?: return false
+    return enabled.split(':').any { entry ->
+      val parsed = ComponentName.unflattenFromString(entry) ?: return@any false
+      parsed == expected
+    }
   }
 }
 

@@ -358,6 +358,17 @@
   <string name="ai_agent_battery_disabled">Whitelisted — AI keeps running when the screen is off</string>
   <string name="ai_agent_battery_off">Not whitelisted — tap to allow background work</string>
   <string name="ai_agent_battery_no_settings">This device has no battery optimization settings page</string>
+
+  <!-- 无障碍服务（AI 免 Shizuku 操作屏幕；设置 → AI 助手 → 工具） -->
+  <string name="acs_a11y_service_label">AndroidCS Accessibility</string>
+  <string name="acs_a11y_service_description">Let the AI assistant read the screen and operate the UI: read elements, take screenshots, tap and swipe — without Shizuku/adb permissions.</string>
+  <string name="acs_a11y_service_summary">Allow AndroidCS to read screen content and perform gestures</string>
+  <string name="ai_agent_a11y_title">Accessibility (no Shizuku needed)</string>
+  <string name="ai_agent_a11y_summary">Let the AI read the screen and tap/swipe without Shizuku. Requires enabling the service in system settings.</string>
+  <string name="ai_agent_a11y_on">Enabled · connected — AI can read and operate the screen</string>
+  <string name="ai_agent_a11y_on_not_connected">Enabled · not connected yet (the system may rebind later)</string>
+  <string name="ai_agent_a11y_off">Not enabled — tap to open system accessibility settings</string>
+  <string name="ai_agent_a11y_no_settings">This device has no accessibility settings page</string>
   <string name="ai_agent_codegraph_state_installed">Installed · v%1$s · %2$s on disk</string>
   <string name="ai_agent_codegraph_state_partial">Incomplete install — %1$s missing</string>
   <string name="ai_agent_codegraph_state_missing">Not installed</string>
