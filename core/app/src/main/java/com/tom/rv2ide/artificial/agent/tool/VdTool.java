@@ -229,7 +229,10 @@ public final class VdTool extends BaseTool {
     int h = input.optInt("height", VdController.DEFAULT_HEIGHT);
     int dpi = input.optInt("dpi", VdController.DEFAULT_DPI);
     VdController.VdInfo info = vdController.start(w, h, dpi);
-    return ok("影子屏已就绪\n" + infoJson(info));
+    // 已在运行时 start 是幂等的：复用现有屏，传进来的尺寸/密度被忽略（改尺寸要先 stop）。
+    boolean reused = info.width != w || info.height != h;
+    return ok("影子屏" + (reused ? "已在运行，复用现有屏（尺寸与传入参数不同，如需变更请先 stop）" : "已就绪")
+        + "\n" + infoJson(info));
   }
 
   private ToolResult doStatus() {
@@ -303,7 +306,7 @@ public final class VdTool extends BaseTool {
       return error("x / y 必须是数字。");
     }
     vdController.tap(info, x, y);
-    return ok("已点击 (" + x + ", " + y + ")");
+    return ok(withLabelNote(input, "已点击 (" + x + ", " + y + ")"));
   }
 
   private ToolResult doSwipe(JSONObject input) {
@@ -338,7 +341,49 @@ public final class VdTool extends BaseTool {
     String text = input.optString("text", "");
     boolean submit = input.optBoolean("submit", false);
     vdController.type(info, text, submit);
-    return ok(submit ? "已输入文字并回车" : "已输入文字");
+    return ok(withLabelNote(input, submit ? "已输入文字并回车" : "已输入文字"));
+  }
+
+  /** 带 label 的动作集合：语义风控只看这两个（与 Aharou 的 LABEL_ACTIONS 一致）。 */
+  private static final java.util.Set<String> LABEL_ACTIONS =
+      java.util.Collections.unmodifiableSet(
+          new java.util.LinkedHashSet<>(java.util.Arrays.asList("tap", "type")));
+
+  /**
+   * 敏感档判定（{@link BaseTool#isSensitiveCall} 的覆写）：tap/type 的 label 命中敏感词
+   * 即为敏感——执行器据此走「逐次确认、不可记忆」的加强确认路径。
+   */
+  @Override
+  public boolean isSensitiveCall(JSONObject args) {
+    ScreenActionSemantics.Assessment assessment = assessCall(args);
+    return assessment != null && assessment.isSensitive();
+  }
+
+  /**
+   * 仅对带 label 的动作做语义评估；其余动作没有「手指下是什么」这回事，返回 null。
+   * （照搬 Aharou {@code VdTool.assessArgs} 的分流。）
+   */
+  private static ScreenActionSemantics.Assessment assessCall(JSONObject args) {
+    if (args == null) {
+      return null;
+    }
+    String action = args.optString("action", "").trim().toLowerCase(java.util.Locale.ROOT);
+    if (!LABEL_ACTIONS.contains(action)) {
+      return null;
+    }
+    return ScreenActionSemantics.assess(args.optString("label", ""));
+  }
+
+  /**
+   * 给 tap/type 的结果附上语义告警：命中敏感词给出「退不回来」的说明；
+   * 没传 label 给一条提醒（手指下是什么无从得知）。无告警时原样返回。
+   */
+  private static String withLabelNote(JSONObject input, String base) {
+    ScreenActionSemantics.Assessment assessment = assessCall(input);
+    if (assessment == null || assessment.warning == null || assessment.warning.isEmpty()) {
+      return base;
+    }
+    return base + "\n\n" + assessment.warning;
   }
 
   private VdController.VdInfo requireRunning() {
@@ -377,8 +422,10 @@ public final class VdTool extends BaseTool {
   /**
    * 影子屏上的前台包名与 Activity（best-effort：拿不到返回 null，不让截图因此失败）。
    *
-   * <p>resumed 行的字段名随版本变（Android 10 {@code ResumedActivity}、13+ {@code topResumedActivity}），
-   * 匹配公共子串；退出条件带 {@code ActivityStackSupervisor} 防读到全局段（最后一块屏没有下一段头）。
+   * <p>行选择复用 {@link VdController#pickResumedLine}：awk 只圈 section 并收集所有
+   * resumed 行，Java 侧按优先级挑（topResumedActivity &gt; ResumedActivity:，
+   * 排除栈级的 mResumedActivity——裸子串匹配会先命中它取到过期值）。
+   * 退出条件带 {@code ActivityStackSupervisor} 防读到全局段（最后一块屏没有下一段头）。
    */
   private String[] shadowForeground(int displayId) {
     try {
@@ -388,11 +435,15 @@ public final class VdTool extends BaseTool {
                   "dumpsys activity activities | awk '/Display #" + displayId
                       + " \\(activities from top to bottom\\)/{f=1;next}"
                       + " f&&/Display #/{exit} f&&/ActivityStackSupervisor/{exit}"
-                      + " f&&/ResumedActivity/{print;exit}'",
+                      + " f&&/ResumedActivity/{print}'",
                   15_000L)
               .stdout;
+      String line = VdController.pickResumedLine(out);
+      if (line == null) {
+        return new String[] {null, null};
+      }
       java.util.regex.Matcher m =
-          java.util.regex.Pattern.compile("([A-Za-z0-9_.]+)/([A-Za-z0-9_.$]+)").matcher(out);
+          java.util.regex.Pattern.compile("([A-Za-z0-9_.]+)/([A-Za-z0-9_.$]+)").matcher(line);
       if (m.find()) {
         return new String[] {m.group(1), m.group(2)};
       }

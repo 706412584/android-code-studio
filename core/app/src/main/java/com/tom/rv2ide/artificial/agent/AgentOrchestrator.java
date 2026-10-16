@@ -1622,9 +1622,11 @@ public final class AgentOrchestrator {
     // 按需加载工具的发现入口（tool_search）。必须在 MCP 注册**之后**——
     // 它检索的是注册表里的 deferred 目录，早注册会拿到不完整的目录。
     //
-    // 注册条件：MCP 是唯一的 deferred 来源，没接 MCP 时目录恒为空，工具没有存在意义。
-    // 不注册还避免占一个工具位、省一份 schema。
-    if (includeMcp) {
+    // 注册条件收紧到「本次真的装配了 MCP」：MCP 是唯一的 deferred 来源，
+    // 没接 MCP 时目录恒为空，工具没有存在意义。不能只看 includeMcp——
+    // UI 路径（buildRegistry() 查分类色）传 includeMcp=true 但 mcpClientsOut=null，
+    // 只看 includeMcp 会让 UI 的工具列表里出现一个永远查不到东西的 tool_search。
+    if (includeMcp && mcpClientsOut != null) {
       registry.register(new com.tom.rv2ide.ai.tool.ToolSearchTool(registry));
     }
 

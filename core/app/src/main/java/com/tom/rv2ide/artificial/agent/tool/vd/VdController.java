@@ -56,9 +56,17 @@ import org.slf4j.LoggerFactory;
  * <p><b>Android 10 实测差异</b>（黑鲨 SKW-A0 / JOYUI 12）：SurfaceFlinger 输出里虚拟屏
  * 没有数字 id（只有 {@code + DisplayDevice{virtual, "acs-vd"}}），{@code sfDisplayId}
  * 为空是常态——截图走 runner 自己出图、不依赖它；{@code dumpsys activity} 的 resumed 行
- * 叫 {@code ResumedActivity}/{@code mResumedActivity}（13+ 才叫 {@code topResumedActivity}），
- * 落屏校验按公共子串匹配。触控注入（{@code input -d}）实测可用，即使该屏不是
+ * 叫 {@code ResumedActivity}（13+ 叫 {@code topResumedActivity}），同段还有栈级的
+ * {@code mResumedActivity}——行选择见 {@link #pickResumedLine}（不能裸子串匹配，会先命中
+ * 栈级记录取到过期值）。触控注入（{@code input -d}）实测可用，即使该屏不是
  * top-focused display 也能送达（前提：目标窗口可见；任务若被系统挪回主屏，注入会静默丢弃）。
+ *
+ * <p><b>root 模式 shell（Shizuku uid 0）</b>：{@code createVirtualDisplay} 会校验
+ * 「packageName 必须属于调用 uid」，而 uid 0 名下没有任何包（实测
+ * {@code cmd package list packages --uid 0} 为空）——runner 以 uid 0 原样启动必然抛
+ * {@code SecurityException: packageName must match the calling uid}。因此 uid 为 0 时
+ * 先 {@code su 2000 -g 1015} 降权到 shell 再启动；{@code -g 1015}（sdcard_rw）是 runner
+ * 写 App 外部私有目录（截图输出落点）所需，缺它时实测 Permission denied。
  */
 public final class VdController {
 
@@ -225,13 +233,16 @@ public final class VdController {
     // 自己起就把随机名定下来；之后截图按这个路径等 runner 出图。
     runnerShotPath = defaultShotPath();
     startedHere = true;
-    exec(
+    String launch =
         "cd /data/local/tmp; rm -f " + STOP_FILE + " " + LOG_FILE + "; "
             + "CLASSPATH=" + JAR_REMOTE + " setsid app_process / com.tom.rv2ide.vd.VdMain "
             + width + " " + height + " " + dpi + " "
             + "\"" + runnerShotPath + "\" " + SHOT_REQ_FILE + " "
-            + "> " + LOG_FILE + " 2>&1 < /dev/null & echo LAUNCHED",
-        30_000L);
+            + "> " + LOG_FILE + " 2>&1 < /dev/null & echo LAUNCHED";
+    // root 模式 shell（uid 0）先降权到 shell：runner 声明 com.android.shell 包名，
+    // createVirtualDisplay 校验「包名属于调用 uid」，uid 0 名下无包，必然 SecurityException。
+    String prefix = privilegeDropPrefix();
+    exec(prefix.isEmpty() ? launch : prefix + shellQuote(launch), 30_000L);
 
     int id = -1;
     String lastLog = "";
@@ -272,6 +283,35 @@ public final class VdController {
     exec("touch " + STOP_FILE + " && echo OK", 15_000L);
     sleep(600L);
     startedHere = false;
+  }
+
+  /**
+   * 需要时给出「降权到 shell(2000)」的命令前缀；不需要时返回空串。
+   *
+   * <p><b>为什么需要</b>：runner 声明 {@code com.android.shell} 包名，而
+   * {@code createVirtualDisplay} 校验「包名必须属于调用 uid」。当 shell 通道是 root
+   * （Shizuku 以 root 启动、或 adb root 模式）时调用 uid 为 0，而 uid 0 名下没有任何包
+   * ——直接启动必然 {@code SecurityException: packageName must match the calling uid}
+   * （实测黑鲨 SKW-A0，Shizuku 以 root 运行）。降权到 shell 后校验通过；
+   * {@code -g 1015}（sdcard_rw）是 runner 把截图写进 App 外部私有目录所需，
+   * 缺它时写图 Permission denied。
+   *
+   * <p>只在探测到 uid 0 时才包裹：普通 Shizuku 是 uid 2000，设备上通常没有 su，
+   * 无条件包裹会让本可用的启动直接失败。su 一并从常见路径查找——Shizuku 进程的
+   * PATH 不一定含 /sbin（Magisk su 的落点）。
+   */
+  private String privilegeDropPrefix() {
+    Exec probe =
+        exec(
+            "id -u; command -v su 2>/dev/null"
+                + " || ls /sbin/su /system/bin/su /system/xbin/su 2>/dev/null | head -n 1",
+            15_000L);
+    String[] lines = probe.output.trim().split("\\s+");
+    if (lines.length == 0 || !"0".equals(lines[0])) {
+      return "";
+    }
+    String su = lines.length > 1 && !lines[1].isEmpty() ? lines[1] : "su";
+    return su + " 2000 -g 1015 sh -c ";
   }
 
   /** 刷新当前状态；未运行返回 null。 */
@@ -390,6 +430,11 @@ public final class VdController {
     if (!comp.contains("/")) {
       throw new IllegalStateException("找不到可启动的入口：" + component);
     }
+    // resolve-activity 的输出来自系统，但按「外部输入」对待：再验一次格式才拼进 am 命令。
+    // 系统输出格式受约束、被恶意 App 影响的可能极低，但白名单校验的成本是零。
+    if (!COMPONENT_SLASH_RE.matcher(comp).matches()) {
+      throw new IllegalStateException("resolve-activity 返回了异常的组件名：" + abbreviate(comp, 120));
+    }
     String pkg = comp.substring(0, comp.indexOf('/'));
     // 直接往影子屏启动，**不走 move-stack**。move-stack 那条路要先把应用在主屏拉起来、
     // 再把它整个搬进影子屏：屏幕上会先闪出这个应用，目标应用若本就在主屏运行还会被连任务搬走
@@ -416,8 +461,9 @@ public final class VdController {
   /**
    * 目标包是否已是 {@code displayId} 那块屏的栈顶（每块屏只有一条 resumed 记录，用作落屏校验）。
    *
-   * <p>字段名随版本变：Android 10 是 {@code ResumedActivity:}，13+ 是 {@code topResumedActivity=}；
-   * 用公共子串 {@code ResumedActivity} 匹配，两代都能命中。
+   * <p>行选择交给 {@link #pickResumedLine}（可单测）：awk 只负责圈出该屏的 section 并收集
+   * 所有含 resumed 的行——单靠 awk 一条正则选行会踩到 {@code mResumedActivity} 与
+   * {@code ResumedActivity} 的前缀包含问题。
    */
   private boolean hasTaskOnDisplay(String pkg, int displayId) {
     try {
@@ -429,13 +475,53 @@ public final class VdController {
                   "dumpsys activity activities | awk '/Display #" + displayId
                       + " \\(activities from top to bottom\\)/{f=1;next}"
                       + " f&&/Display #/{exit} f&&/ActivityStackSupervisor/{exit}"
-                      + " f&&/ResumedActivity/{print;exit}'",
+                      + " f&&/ResumedActivity/{print}'",
                   15_000L)
               .output;
-      return out.contains(pkg + "/");
+      String line = pickResumedLine(out);
+      return line != null && line.contains(pkg + "/");
     } catch (RuntimeException e) {
       return false;
     }
+  }
+
+  /**
+   * 从 section 文本里选出「该屏的 resumed 记录」行；选不出返回 null。测试可见。
+   *
+   * <p>三个候选形态（实测取样）：
+   * <ul>
+   *   <li>{@code "  topResumedActivity=ActivityRecord{...}"} — Android 13+ 屏级记录；
+   *   <li>{@code " ResumedActivity:ActivityRecord{...}"} — Android 10 屏级记录（行首单空格）；
+   *   <li>{@code "    mResumedActivity: ActivityRecord{...}"} — Android 10 **栈级**记录（行首四空格），
+   *       取值可能滞后于屏级记录（实测同一段里两者指向不同 Activity）。
+   * </ul>
+   *
+   * <p>优先级：{@code topResumedActivity} &gt; 行首空白 + {@code ResumedActivity:}；
+   * {@code mResumedActivity} 必须排除——它是 {@code ResumedActivity} 的子串，
+   * 裸子串匹配会先命中它取到过期值（reviewer 实测：段内 mResumedActivity 在前，
+   * 真值在后，launch 落屏校验会误判）。
+   */
+  public static String pickResumedLine(String section) {
+    if (section == null) {
+      return null;
+    }
+    String fallback = null;
+    for (String raw : section.split("\n")) {
+      String line = raw.trim();
+      if (line.isEmpty()) {
+        continue;
+      }
+      if (line.startsWith("topResumedActivity")) {
+        // 13+ 的屏级记录（格式 `topResumedActivity=...`；不用 startsWith("...=")，
+        // 防个别 ROM 打成 `topResumedActivity:` 时漏掉）。
+        return line;
+      }
+      // 屏级：行首（去缩进后）以 ResumedActivity: 开头；mResumedActivity 是 "m" 开头，天然排除。
+      if (fallback == null && line.startsWith("ResumedActivity:")) {
+        fallback = line;
+      }
+    }
+    return fallback;
   }
 
   /**

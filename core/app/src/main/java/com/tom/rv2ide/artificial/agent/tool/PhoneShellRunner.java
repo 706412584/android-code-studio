@@ -253,16 +253,35 @@ final class PhoneShellRunner {
     return null;
   }
 
-  private static ShellBackend resolveAdbBackend(ShellBackendRegistry registry) {
+  /**
+   * 解析出「具备 adb 权限」的后端。
+   *
+   * <p><b>为什么选中的后端不具备 adb 权限时要回退</b>：用户的 shell 后端设置（默认
+   * {@code termux}）管的是 {@code shell_execute} 这类通用命令走哪条通道，而
+   * {@code phone_*} / {@code vscreen} 这类设备控制命令**天然需要 adb**（{@code screencap} /
+   * {@code dumpsys} / {@code am} 在 app 自身 uid 下必然失败）。真机 E2E 实测：后端为
+   * Termux 而 Shizuku 明明就绪时，工具报「请在 Shizuku 应用中安装并授权」——用户照做也
+   * 解决不了（真正要做的是切换后端设置），等于把可用的 Shizuku 白白闲置。
+   * 这里改为：选中后端有 adb 权限就用它；否则找任意可用的 adb 后端（Shizuku）。
+   *
+   * <p><b>与「不降级」原则不矛盾</b>：类注释里的「严格语义」指的是**不降级到本地进程**
+   * （那会产生误导性的空结果）；从 Termux 换到 Shizuku 是升级，不是降级。
+   * 找不到任何可用的 adb 后端时仍返回 null，由调用方给出明确错误。
+   */
+  static ShellBackend resolveAdbBackend(ShellBackendRegistry registry) {
     if (registry == null) {
       return null;
     }
     ShellBackendRegistry.Resolution resolution = registry.resolveActive();
-    if (!resolution.isUsable()) {
-      return null;
+    if (resolution.isUsable() && resolution.getBackend().hasAdbPrivileges()) {
+      return resolution.getBackend();
     }
-    ShellBackend backend = resolution.getBackend();
-    return backend.hasAdbPrivileges() ? backend : null;
+    for (ShellBackend backend : registry.all()) {
+      if (backend.hasAdbPrivileges() && backend.isAvailable()) {
+        return backend;
+      }
+    }
+    return null;
   }
 
   /** 组装「需要 Shizuku」的可读说明，尽量给出具体的不可用原因。 */

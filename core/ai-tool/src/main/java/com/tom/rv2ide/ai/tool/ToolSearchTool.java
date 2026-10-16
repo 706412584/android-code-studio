@@ -48,8 +48,10 @@ import org.json.JSONObject;
  * </ul>
  *
  * <p><b>展开的作用域</b>：{@link ToolRegistry#activate} 记在注册表上，而注册表是
- * 每次运行装配的（见 {@code AgentOrchestrator.buildRegistry}），因此展开只影响本次
- * 运行——与 Aharou 按会话生效的语义一致。
+ * **每次运行装配**的（见 {@code AgentOrchestrator.buildRegistry}），因此展开只影响
+ * 本次运行——比 Aharou「按会话生效」更窄：同一会话的下一轮运行需要重新检索展开。
+ * 这是刻意的取舍：注册表同时被 UI 分类查询与运行装配复用，做成跨运行存活会引入
+ * 「谁清理」的生命周期问题；重新检索的成本是一次轻量工具调用，可接受。
  */
 public final class ToolSearchTool extends BaseTool {
 

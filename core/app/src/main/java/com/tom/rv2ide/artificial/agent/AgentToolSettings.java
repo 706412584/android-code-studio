@@ -289,6 +289,29 @@ public final class AgentToolSettings implements ToolSettingsPort {
   }
 
   /**
+   * 敏感档确认：逐次询问、不可记忆。
+   *
+   * <p><b>刻意跳过三道捷径</b>：全局放行（{@code areDangerousToolsConfirmed}）、
+   * 持久化规则、运行内已批准记忆——付款/转账/发送/删除这类动作按下后退不回来，
+   * 保护对象是「模型别乱按」。用户对普通命令点过的「始终允许」不应顺带放行支付按钮，
+   * 因此这里**每次都真的弹窗**，且答复**不写入任何记忆**。
+   *
+   * <p>锁仍复用 {@link #confirmationLock}：与普通确认串行，避免两个弹窗重叠。
+   */
+  @Override
+  public boolean confirmSensitiveTool(
+      String conversationId, String toolName, String arguments) {
+    synchronized (confirmationLock) {
+      DangerousToolConfirmer c = confirmer;
+      if (c == null) {
+        // 没有 UI 可问（后台运行）→ 拒绝。敏感档尤其不能因「无法询问」而放行。
+        return false;
+      }
+      return c.confirm(toolName, arguments);
+    }
+  }
+
+  /**
    * 处理一次三档答复。
    *
    * <p>由 UI 层在用户点击按钮后调用：{@code ALLOW_ALWAYS} 会写持久化规则，

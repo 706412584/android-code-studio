@@ -158,4 +158,47 @@ public class VdControllerShotPathTest {
     assertEquals("", VdController.parseSfDisplayId(null));
     assertEquals("", VdController.parseSfDisplayId(""));
   }
+
+  // ---- resumed 行选择（Android 10 实机取样）----
+
+  /**
+   * Android 10 的 section 里 {@code mResumedActivity}（栈级，4 空格缩进）在
+   * {@code ResumedActivity}（屏级，1 空格缩进）之前——裸子串匹配会先命中栈级记录，
+   * 取到可能滞后的值。这里钉住必须选中屏级记录。
+   */
+  @Test
+  public void pickResumedLine_prefersScreenLevelOverStackLevel() {
+    String section =
+        "    mResumedActivity: ActivityRecord{ad3cbfc u0 com.android.settings/.MiuiSettings t1894}\n"
+            + " ResumedActivity:ActivityRecord{6aea874 u0 com.miui.home/.launcher.Launcher t1}\n";
+    assertEquals(
+        "ResumedActivity:ActivityRecord{6aea874 u0 com.miui.home/.launcher.Launcher t1}",
+        VdController.pickResumedLine(section));
+  }
+
+  /** 栈级记录单独出现时不得被误选（它是 m 开头，不匹配屏级前缀）。 */
+  @Test
+  public void pickResumedLine_ignoresStackLevelAlone() {
+    assertNull(
+        VdController.pickResumedLine(
+            "    mResumedActivity: ActivityRecord{ad3cbfc u0 com.android.settings/.MiuiSettings t1894}\n"));
+  }
+
+  /** Android 13+ 的 {@code topResumedActivity=} 优先于 10 的形态（同段混排时取前者）。 */
+  @Test
+  public void pickResumedLine_prefersTopResumedActivity() {
+    String section =
+        " ResumedActivity:ActivityRecord{aaa u0 com.a/.B t1}\n"
+            + "  topResumedActivity=ActivityRecord{bbb u0 com.c/.D t2}\n";
+    assertEquals(
+        "topResumedActivity=ActivityRecord{bbb u0 com.c/.D t2}",
+        VdController.pickResumedLine(section));
+  }
+
+  @Test
+  public void pickResumedLine_returnsNullForEmptyOrMissing() {
+    assertNull(VdController.pickResumedLine(null));
+    assertNull(VdController.pickResumedLine(""));
+    assertNull(VdController.pickResumedLine("  Stack #193: type=standard mode=fullscreen\n"));
+  }
 }

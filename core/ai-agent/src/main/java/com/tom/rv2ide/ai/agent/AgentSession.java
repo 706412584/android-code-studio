@@ -406,6 +406,10 @@ public final class AgentSession {
 
       // 每轮重建工具列表：上一轮 tool_search 展开的按需工具在这里进入 tools 数组，
       // 未展开的按需工具（MCP）不出现——它们的目录已随提示词注入（见 ToolSearchTool）。
+      //
+      // 代价说明：tools 数组变化会打断服务端的前缀缓存（prompt cache），展开的那一轮
+      // 首 token 延迟上升。这是按需加载的固有代价（Aharou 同样如此），且只在
+      // 「模型真的检索并展开」的轮次发生——不展开时列表逐轮相同，缓存不受影响。
       List<ToolInfo> tools = new ArrayList<>(registry.getRequestableTools());
 
       ModelCompletionResponse response;
