@@ -31,6 +31,8 @@ plugins {
   alias(libs.plugins.kotlin.jvm) apply false
   alias(libs.plugins.protobuf) apply false
   alias(libs.plugins.benchmark) apply false
+  // 覆盖率插件：只在根声明版本，由 ai-* / app 模块按需 apply（见各模块 build.gradle.kts）。
+  alias(libs.plugins.kover) apply false
   id("org.jetbrains.kotlin.plugin.serialization") version "1.9.10" apply false
   // Compose 编译器插件。版本必须与 Kotlin 一致（libs.versions.toml 的 kotlin = 2.1.0），
   // 否则编译器会报版本不匹配。子模块用不带版本的 `id(...)` 引用此处声明的插件。

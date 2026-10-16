@@ -249,6 +249,9 @@ kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
 protobuf = { id = "com.google.protobuf", version = "0.9.4" }
 benchmark = { id = "androidx.benchmark", version.ref = "benchmark" }
 detekt = { id = "io.gitlab.arturbosch.detekt", version = "1.23.6" }
+# 覆盖率（Kotlin 原生 JaCoCo 替代）。用途：本仓库有 1744 项单测，却没有覆盖率视图——
+# AI 改完代码后「哪些分支没被测到」无从得知。kover 生成的 HTML 报告按类/分支标红。
+kover = { id = "org.jetbrains.kotlinx.kover", version = "0.9.11" }
 com-github-jk1-tcdeps = { id = "com.github.jk1.tcdeps", version = "1.6.2" }
 com-jaredsburrows-license = { id = "com.jaredsburrows.license", version = "0.9.8" }
 io-gitlab-arturbosch-detekt = { id = "io.gitlab.arturbosch.detekt", version = "1.22.0" }
