@@ -46,6 +46,16 @@ public final class ToolContext {
   /** 工作区根目录的绝对路径。工具只能在此目录（及其 {@link #getExtraWriteRoots()}）内操作。 */
   private final String homePath;
 
+  /**
+   * 编辑器**当前打开**的项目根目录；未打开项目时为空串。
+   *
+   * <p><b>为什么需要它</b>：会话可以绑定到与编辑器不同的项目（跨项目会话）。文件类
+   * 工具按 {@link #homePath}（会话 cwd）隔离，但构建/变体类工具走全局单例的 Gradle
+   * 构建服务——那个服务只服务于编辑器打开的项目。两者不一致时若不拦，构建会
+   * **静默作用于错误的项目**（数据损坏级）。见 {@link #getProjectMismatchReason()}。
+   */
+  private final String openProjectPath;
+
   /** 额外允许写入的根目录，用于技能目录等白名单场景。 */
   private final List<String> extraWriteRoots;
 
@@ -163,6 +173,7 @@ public final class ToolContext {
 
   private ToolContext(Builder builder) {
     this.homePath = builder.homePath == null ? "" : builder.homePath;
+    this.openProjectPath = builder.openProjectPath == null ? "" : builder.openProjectPath;
     this.extraWriteRoots =
         builder.extraWriteRoots == null
             ? Collections.emptyList()
@@ -194,6 +205,56 @@ public final class ToolContext {
 
   public String getHomePath() {
     return homePath;
+  }
+
+  /** 编辑器当前打开的项目根目录；未打开项目时为空串。 */
+  public String getOpenProjectPath() {
+    return openProjectPath;
+  }
+
+  /**
+   * 检查「会话绑定的项目」与「编辑器当前打开的项目」是否一致。
+   *
+   * <p>构建类工具（{@code gradle_build} / {@code build_variant} / {@code test_coverage}）
+   * 走全局单例的 Gradle 构建服务，后者只服务于编辑器打开的项目。会话绑定别的项目时，
+   * 这些工具若不拦会**静默构建错误的项目**——文件工具作用于 B、构建却作用于 A，
+   * 产物与改动分属两个项目。宁可报错让用户显式处理。
+   *
+   * <p>以下情况一律视为「无法判定/无需拦截」，返回空串：
+   * <ul>
+   *   <li>{@code openProjectPath} 为空（编辑器没打开项目）——错误由工具自身的
+   *       「构建服务不可用」分支报出，本方法不重复；
+   *   <li>{@code homePath} 为空（无会话工作区）；
+   *   <li>两者相等（正常场景）。
+   * </ul>
+   *
+   * @return 不一致时的可执行错误文案；无需拦截时为空串
+   */
+  public String getProjectMismatchReason() {
+    if (openProjectPath.isEmpty() || homePath.isEmpty()) {
+      return "";
+    }
+    String session = stripTrailingSeparators(homePath);
+    String open = stripTrailingSeparators(openProjectPath);
+    if (session.equals(open)) {
+      return "";
+    }
+    return "本会话绑定的项目是 "
+        + session
+        + "，而编辑器当前打开的是 "
+        + open
+        + "。构建类工具（gradle_build / build_variant / test_coverage）只能作用于"
+        + "编辑器打开的项目——请先打开目标项目的编辑器再构建，"
+        + "或改用 shell_execute 在会话项目里直接跑 ./gradlew。";
+  }
+
+  /** 去掉结尾的路径分隔符（`/x/y/` 与 `/x/y` 视为同一目录）。 */
+  private static String stripTrailingSeparators(String path) {
+    String value = path;
+    while (value.length() > 1 && (value.endsWith("/") || value.endsWith("\\"))) {
+      value = value.substring(0, value.length() - 1);
+    }
+    return value;
   }
 
   public List<String> getExtraWriteRoots() {
@@ -325,6 +386,7 @@ public final class ToolContext {
   public ToolContext withToolCallId(String newToolCallId) {
     return builder()
         .homePath(this.homePath)
+        .openProjectPath(this.openProjectPath)
         .extraWriteRoots(this.extraWriteRoots)
         .bypassPathProtection(this.bypassPathProtection)
         .toolCallId(newToolCallId)
@@ -362,6 +424,7 @@ public final class ToolContext {
   public ToolContext withProgressListener(ProgressListener newProgressListener) {
     return builder()
         .homePath(this.homePath)
+        .openProjectPath(this.openProjectPath)
         .extraWriteRoots(this.extraWriteRoots)
         .bypassPathProtection(this.bypassPathProtection)
         .toolCallId(this.toolCallId)
@@ -422,6 +485,7 @@ public final class ToolContext {
 
   public static final class Builder {
     private String homePath;
+    private String openProjectPath;
     private List<String> extraWriteRoots;
     private boolean bypassPathProtection;
     private String toolCallId;
@@ -449,6 +513,12 @@ public final class ToolContext {
 
     public Builder homePath(String value) {
       this.homePath = value;
+      return this;
+    }
+
+    /** 编辑器当前打开的项目根（构建类工具的归属校验用；未打开项目时留空）。 */
+    public Builder openProjectPath(String value) {
+      this.openProjectPath = value;
       return this;
     }
 

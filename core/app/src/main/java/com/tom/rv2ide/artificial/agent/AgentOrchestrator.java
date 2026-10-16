@@ -2172,6 +2172,10 @@ public final class AgentOrchestrator {
     ToolContext toolContext =
         ToolContext.builder()
             .homePath(runWorkspace.getAbsolutePath())
+            // 编辑器当前打开的项目：构建类工具（gradle_build/build_variant/test_coverage）
+            // 走全局构建服务、只服务于它。会话绑定别的项目时由工具层守卫拦截
+            //（见 ToolContext.getProjectMismatchReason），而不是静默构建错误的项目。
+            .openProjectPath(currentOpenProjectPath())
             .settings(settings)
             // 会话 id 随上下文下发：危险工具的运行内授权按会话隔离。
             .conversationId(conversationId)
@@ -2909,6 +2913,26 @@ public final class AgentOrchestrator {
       return null;
     }
     return workspace;
+  }
+
+  /**
+   * 编辑器**当前打开**的项目根路径；未打开项目时返回空串。
+   *
+   * <p>与 {@link #resolveRunWorkspace} 的区别：那个是「本次运行该作用于哪个项目」
+   * （会话绑定优先），这个是「编辑器此刻打开的是哪个项目」（构建服务的实际归属）。
+   * 两者不一致时构建类工具必须拒绝执行——构建服务是全局单例，只服务后者。
+   *
+   * <p>取值经 {@code IProjectManager}：与 {@code ReportedBuildVariantPort} 同一来源，
+   * 两处判定不会漂移。任何异常按「未打开项目」处理（不阻断运行）。
+   */
+  private String currentOpenProjectPath() {
+    try {
+      File dir =
+          com.tom.rv2ide.projects.IProjectManager.getInstance().getProjectDirOrNull();
+      return dir == null ? "" : dir.getAbsolutePath();
+    } catch (RuntimeException e) {
+      return "";
+    }
   }
 
   /**

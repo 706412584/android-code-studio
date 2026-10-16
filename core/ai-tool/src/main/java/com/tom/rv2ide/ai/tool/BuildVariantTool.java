@@ -134,6 +134,11 @@ public final class BuildVariantTool extends BaseTool {
     if (context == null) {
       return error("工具上下文缺失（内部错误）。");
     }
+    // 跨项目守卫：变体走编辑器打开的项目的全局构建服务，会话绑定别的项目时必须拦。
+    String mismatch = context.getProjectMismatchReason();
+    if (!mismatch.isEmpty()) {
+      return error(mismatch);
+    }
     BuildVariantPort port = context.getBuildVariant();
     if (port == null) {
       return error("当前环境未接入项目变体能力（build_variant 端口未注入）。");

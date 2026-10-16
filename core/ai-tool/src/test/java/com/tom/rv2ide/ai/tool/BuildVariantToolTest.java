@@ -268,6 +268,75 @@ class BuildVariantToolTest {
     assertFalse(tool.isConcurrencySafe());
   }
 
+  // ---- 跨项目守卫 ----
+
+  @Test
+  void mismatchedProjectIsRejectedBeforeTouchingPort() {
+    // 会话绑定 /projB、编辑器打开 /projA：变体工具必须拒绝，且不调用端口——
+    // 静默作用于编辑器项目是数据损坏级的问题。
+    FakePort port = new FakePort();
+    port.modules = Arrays.asList(appModule());
+    ToolContext context =
+        ToolContext.builder()
+            .homePath("/projB")
+            .openProjectPath("/projA")
+            .buildVariant(port)
+            .build();
+
+    ToolResult result = new BuildVariantTool().execute(new JSONObject(), context);
+
+    assertTrue(result.isError());
+    assertTrue(result.getContent().contains("/projB"), result.getContent());
+    assertTrue(result.getContent().contains("/projA"), result.getContent());
+    assertTrue(result.getContent().contains("shell_execute"), "应给出可行替代：" + result.getContent());
+  }
+
+  @Test
+  void matchingProjectPassesGuard() {
+    FakePort port = new FakePort();
+    port.modules = Arrays.asList(appModule());
+    ToolContext context =
+        ToolContext.builder()
+            .homePath("/projA")
+            .openProjectPath("/projA")
+            .buildVariant(port)
+            .build();
+
+    ToolResult result = new BuildVariantTool().execute(new JSONObject(), context);
+
+    assertFalse(result.isError(), result.getContent());
+  }
+
+  @Test
+  void trailingSeparatorIsNotAMismatch() {
+    // `/projA/` 与 `/projA` 是同一目录——路径末尾斜杠不该误报。
+    FakePort port = new FakePort();
+    port.modules = Arrays.asList(appModule());
+    ToolContext context =
+        ToolContext.builder()
+            .homePath("/projA/")
+            .openProjectPath("/projA")
+            .buildVariant(port)
+            .build();
+
+    ToolResult result = new BuildVariantTool().execute(new JSONObject(), context);
+
+    assertFalse(result.isError(), result.getContent());
+  }
+
+  @Test
+  void emptyOpenProjectSkipsGuard() {
+    // 编辑器没打开项目时守卫放行——错误应由「端口不可用」分支报出，不重复报。
+    FakePort port = new FakePort();
+    port.modules = Arrays.asList(appModule());
+    ToolContext context =
+        ToolContext.builder().homePath("/projB").buildVariant(port).build();
+
+    ToolResult result = new BuildVariantTool().execute(new JSONObject(), context);
+
+    assertFalse(result.isError(), result.getContent());
+  }
+
   private static JSONObject selectInput() {
     JSONObject input = new JSONObject();
     try {

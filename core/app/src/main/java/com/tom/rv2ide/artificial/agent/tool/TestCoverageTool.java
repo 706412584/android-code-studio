@@ -157,6 +157,13 @@ public final class TestCoverageTool extends BaseTool {
 
   @Override
   public ToolResult execute(JSONObject input, ToolContext context) {
+    // 跨项目守卫：与 gradle_build 同因——构建服务只服务于编辑器打开的项目。
+    if (context != null) {
+      String mismatch = context.getProjectMismatchReason();
+      if (!mismatch.isEmpty()) {
+        return error(mismatch);
+      }
+    }
     BuildService service = buildServiceProvider == null ? null : buildServiceProvider.get();
     if (service == null) {
       return error("构建服务不可用。请确认已打开一个项目并完成初始化。");

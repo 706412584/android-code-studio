@@ -132,6 +132,14 @@ public final class GradleBuildTool extends BaseTool {
 
   @Override
   public ToolResult execute(JSONObject input, ToolContext context) {
+    // 跨项目守卫：构建服务只服务于编辑器打开的项目。会话绑定别的项目时必须拦，
+    // 否则会静默构建错误的项目（文件工具作用于 B、构建产物却来自 A）。
+    if (context != null) {
+      String mismatch = context.getProjectMismatchReason();
+      if (!mismatch.isEmpty()) {
+        return error(mismatch);
+      }
+    }
     JSONArray tasksJson = input.optJSONArray("tasks");
     if (tasksJson == null || tasksJson.length() == 0) {
       return error("tasks 不能为空");
