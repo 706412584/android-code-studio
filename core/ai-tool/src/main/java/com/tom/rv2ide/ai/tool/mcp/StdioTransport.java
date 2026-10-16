@@ -205,6 +205,12 @@ final class StdioTransport implements McpTransport {
               + "）"
               + (reason.isEmpty() ? "" : "，stderr: " + abbreviate(reason, 300)));
     }
+    // failPending（进程退出/连接关闭）唤醒的等待必须抛错——此前只唤醒不检查，
+    // 调用方拿到的是空串「成功」：工具层会把「进程死了」当成「server 回了个空结果」
+    // （真机表现：请求静默返回空、无从判断为什么）。与超时路径同属失败语义。
+    if (!box.failure.isEmpty()) {
+      throw new Exception(box.failure);
+    }
     return box.body;
   }
 
