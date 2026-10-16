@@ -188,17 +188,6 @@ public final class SkillMarketClient {
     }
   }
 
-  private List<MarketSkill> listClawhub(int limit) {
-    try {
-      String body =
-          httpGet(
-              clawhubBase + "/skills?limit=" + limit + "&sort=downloads");
-      return parseClawhubList(body);
-    } catch (Exception e) {
-      return new ArrayList<>();
-    }
-  }
-
   private List<MarketSkill> searchClawhub(String query, int limit) {
     try {
       String body =
@@ -247,16 +236,6 @@ public final class SkillMarketClient {
       // 形态不符当空列表，由上层提示。
     }
     return out;
-  }
-
-  private List<MarketSkill> listSkillhub(int limit) {
-    try {
-      String body =
-          httpGet(skillhubBase + "/skills?page=1&pageSize=" + limit);
-      return parseSkillhubList(body);
-    } catch (Exception e) {
-      return new ArrayList<>();
-    }
   }
 
   private List<MarketSkill> searchSkillhub(String query, int limit) {
