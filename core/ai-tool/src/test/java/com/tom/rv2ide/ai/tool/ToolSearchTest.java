@@ -235,4 +235,45 @@ final class ToolSearchTest {
     runSearch(registry, "天气");
     assertEquals(2, registry.getRequestableTools().size());
   }
+
+  /**
+   * 展开状态钉在**注册表实例**上，不跨注册表泄漏。
+   *
+   * <p>这是「每次运行新建注册表」这一装配约定的回归保护：若有人把 activated 挪成
+   * 静态字段或共享单例，上一轮运行展开的 MCP 工具会泄漏到下一轮——上下文又悄悄变回
+   * 全量注入，按需加载形同虚设，且不会有任何报错。
+   */
+  @Test
+  void activationDoesNotLeakAcrossRegistries() {
+    ToolRegistry a = registry();
+    ToolRegistry b = registry();
+
+    runSearch(a, "天气");
+
+    assertTrue(requestableNames(a).contains("mcpx_fetch_weather"));
+    assertFalse(
+        requestableNames(b).contains("mcpx_fetch_weather"),
+        "A 注册表展开的工具不得出现在 B 注册表里");
+  }
+
+  /**
+   * 一次匹配超过上限时只展开前 {@code MAX_RESULTS} 个，且结果里如实说明截断
+   * （「单次最多展开 N 个」）——静默截断会让模型以为目录里只有这么几个工具。
+   */
+  @Test
+  void maxResultsTruncatesLargeMatches() {
+    ToolRegistry registry = new ToolRegistry();
+    registry.register(new ResidentTool("file_read"));
+    for (int i = 0; i < 12; i++) {
+      registry.register(new DeferredTool("mcpx_tool_" + i, "批量工具 " + i));
+    }
+
+    ToolResult result = runSearch(registry, "");
+
+    assertFalse(result.isError(), result.getContent());
+    assertTrue(result.getContent().contains("单次最多展开 10 个"), "应如实说明截断");
+    // 1 个常驻 + 10 个展开 = 11；剩下 2 个仍在目录里不可请求。
+    assertEquals(11, registry.getRequestableTools().size());
+    assertEquals(12, registry.getDeferredTools().size(), "目录大小不受展开影响");
+  }
 }
