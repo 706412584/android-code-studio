@@ -161,4 +161,57 @@ final class ImageFileSupportTest {
     assertTrue(result.isError(), "不支持的图片格式应报错");
     assertTrue(result.getContent().contains("unsupported"), result.getContent());
   }
+
+  // ---- read() 的边界与 detectMimeType 的短输入 ----
+
+  @Test
+  void emptyFileIsRejected(@TempDir Path dir) throws IOException {
+    Path empty = dir.resolve("empty.png");
+    Files.write(empty, new byte[0]);
+
+    ImageFileSupport.Result result = ImageFileSupport.read(empty.toFile(), null);
+
+    assertTrue(result.error.contains("为空"), result.error);
+  }
+
+  @Test
+  void oversizedFileIsRejectedWithSizeInfo(@TempDir Path dir) throws IOException {
+    // 稀疏文件：setLength 不会真写 21MB 数据，秒建。
+    Path big = dir.resolve("big.png");
+    try (java.io.RandomAccessFile raf = new java.io.RandomAccessFile(big.toFile(), "rw")) {
+      raf.setLength(ImageFileSupport.MAX_IMAGE_FILE_BYTES + 1);
+    }
+
+    ImageFileSupport.Result result = ImageFileSupport.read(big.toFile(), null);
+
+    assertTrue(result.error.contains("过大"), result.error);
+    assertTrue(result.error.contains("20MB"), "应告知上限：" + result.error);
+  }
+
+  @Test
+  void detectMimeTypeHandlesNullAndShortInput() {
+    assertNull(ImageFileSupport.detectMimeType(null));
+    assertNull(ImageFileSupport.detectMimeType(new byte[0]));
+    assertNull(ImageFileSupport.detectMimeType(new byte[] {(byte) 0xFF, (byte) 0xD8}),
+        "两字节不足以判定 JPEG");
+  }
+
+  @Test
+  void detectMimeTypeRejectsJpegMagicWithLongerPngPrefix() {
+    // 短于 8 字节但以 PNG 魔数开头 → 不是 PNG（长度不够）；也不满足 JPEG。
+    byte[] shortPng = {(byte) 0x89, 'P', 'N', 'G', (byte) 0x0D, (byte) 0x0A};
+    assertNull(ImageFileSupport.detectMimeType(shortPng));
+  }
+
+  @Test
+  void jpegReadProducesImagePayload(@TempDir Path dir) throws IOException {
+    Path jpg = dir.resolve("photo.jpg");
+    Files.write(jpg, jpegBytes());
+
+    ImageFileSupport.Result result = ImageFileSupport.read(jpg.toFile(), null);
+
+    assertTrue(result.error.isEmpty(), "成功时 error 应为空串：" + result.error);
+    assertEquals("image/jpeg", result.mimeType);
+    assertFalse(result.base64.isEmpty());
+  }
 }
