@@ -287,4 +287,65 @@ final class BackgroundToolsTest {
       throw new AssertionError("后台路径不应调用同步后端");
     }
   }
+
+  // ---- 状态映射与输出截断（辅助路径）----
+
+  @Test
+  void everyStateMapsToItsStableWireName() {
+    // 状态名是给模型看的稳定字符串；改名字等于破坏模型的既有理解，
+    // 因此每个枚举值都要有明确的映射（default 分支只留给 UNKNOWN）。
+    String[][] cases = {
+      {"FAILED", "failed"},
+      {"STOPPED", "stopped"},
+    };
+    for (String[] c : cases) {
+      FakePort port = new FakePort();
+      port.state = State.valueOf(c[0]);
+      port.exitCode = 1;
+      port.hasExitCode = true;
+      ToolResult r =
+          new TaskOutputTool()
+              .execute(new JSONObject().put("task_id", "task-1"), contextWith(port));
+      assertTrue(r.getContent().contains("state: " + c[1]),
+          c[0] + " 应映射为 " + c[1] + "，实际：" + r.getContent());
+    }
+  }
+
+  @Test
+  void hugeOutputIsTruncatedInResult() throws Exception {
+    // 后台任务的输出可能极大（构建日志）；结果里必须截断，否则一次 task_output
+    // 就能吃掉整个上下文窗口。
+    File out = File.createTempFile("bgtask-big", ".log");
+    out.deleteOnExit();
+    StringBuilder sb = new StringBuilder();
+    for (int i = 0; i < 50000; i++) {
+      sb.append("line-").append(i).append(" ").append("x".repeat(20)).append('\n');
+    }
+    Files.write(out.toPath(), sb.toString().getBytes(StandardCharsets.UTF_8));
+
+    FakePort port = new FakePort();
+    port.state = State.DONE;
+    port.exitCode = 0;
+    port.hasExitCode = true;
+    port.outputFilePath = out.getAbsolutePath();
+
+    ToolResult r =
+        new TaskOutputTool().execute(new JSONObject().put("task_id", "task-1"), contextWith(port));
+    assertFalse(r.isError(), r.getContent());
+    assertTrue(r.getContent().length() < 60000,
+        "超大输出必须截断，实际长度 " + r.getContent().length());
+  }
+
+  @Test
+  void missingOutputFileIsReportedWithoutCrash() {
+    // 输出文件被清理/路径失效：应如实说明而不是抛异常。
+    FakePort port = new FakePort();
+    port.state = State.DONE;
+    port.exitCode = 0;
+    port.hasExitCode = true;
+    port.outputFilePath = "/definitely/not/here-12345.log";
+    ToolResult r =
+        new TaskOutputTool().execute(new JSONObject().put("task_id", "task-1"), contextWith(port));
+    assertFalse(r.isError(), "文件缺失不应让工具失败：" + r.getContent());
+  }
 }
