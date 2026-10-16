@@ -4397,7 +4397,24 @@ class FloatingAssistantView(
           beginNewConversation(projects.firstOrNull())
           return@withContext
         }
-        val labels = projects.map { it.name }.toTypedArray()
+        // 构建类工具（gradle_build / build_variant / test_coverage）只服务编辑器
+        // 当前打开的项目；会话绑定别的项目时这些工具会明确拒绝（见 ToolContext
+        // 的跨项目守卫）。在这里就给出提示——用户事前知道边界，而不是撞墙后才知道。
+        val openProjectPath =
+            try {
+              com.tom.rv2ide.projects.IProjectManager.getInstance()
+                  .projectDirOrNull
+                  ?.absolutePath ?: ""
+            } catch (e: Exception) {
+              ""
+            }
+        val needsOpenSuffix = context.getString(string.ai_conversation_new_project_needs_open)
+        val labels =
+            projects
+                .map { p ->
+                  if (p.absolutePath == openProjectPath) p.name else p.name + needsOpenSuffix
+                }
+                .toTypedArray()
         val currentIdx =
             projects.indexOfFirst { it.absolutePath == workspace?.absolutePath }.coerceAtLeast(0)
         host.dialogs.showSingleChoice(

@@ -216,6 +216,7 @@
   <string name="ai_conversation_meta">%1$s · %2$d 条消息</string>
   <string name="ai_conversation_list_title">会话</string>
   <string name="ai_conversation_new_project_title">在哪个项目中新建会话</string>
+  <string name="ai_conversation_new_project_needs_open">（构建需先打开）</string>
   <string name="ai_assistant_more">更多</string>
   <string name="ai_assistant_settings">设置</string>
   <string name="ai_conversation_delete_confirm_title">删除会话</string>
