@@ -198,7 +198,7 @@ public final class SkillMarketClient {
     }
   }
 
-  private List<MarketSkill> parseClawhubList(String body) {
+  static List<MarketSkill> parseClawhubList(String body) {
     List<MarketSkill> out = new ArrayList<>();
     try {
       JSONObject root = new JSONObject(body);
@@ -258,7 +258,7 @@ public final class SkillMarketClient {
     }
   }
 
-  private List<MarketSkill> parseSkillhubList(String body) {
+  static List<MarketSkill> parseSkillhubList(String body) {
     List<MarketSkill> out = new ArrayList<>();
     try {
       JSONObject root = new JSONObject(body);
@@ -403,7 +403,7 @@ public final class SkillMarketClient {
 
   // ---- 上游文件清单 / 下载 ----
 
-  private static final class FileEntry {
+  static final class FileEntry {
     final String path;
     final long size;
     final String sha256;
@@ -432,7 +432,7 @@ public final class SkillMarketClient {
     }
   }
 
-  private static List<FileEntry> parseClawhubFiles(String body) {
+  static List<FileEntry> parseClawhubFiles(String body) {
     List<FileEntry> out = new ArrayList<>();
     JSONObject root = new JSONObject(body);
     JSONArray files =
@@ -460,7 +460,7 @@ public final class SkillMarketClient {
     return out;
   }
 
-  private static List<FileEntry> parseSkillhubFiles(String body) {
+  static List<FileEntry> parseSkillhubFiles(String body) {
     List<FileEntry> out = new ArrayList<>();
     JSONObject root = new JSONObject(body);
     JSONArray files =

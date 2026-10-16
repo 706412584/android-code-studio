@@ -260,4 +260,83 @@ class ImageToolTest {
     assertTrue(tool.isConcurrencySafe());
     assertFalse(tool.needsConfirmation());
   }
+
+  // ---- luma_key / crop（此前未覆盖的分派路径）----
+
+  @Test
+  void lumaKeyDispatchesAndWritesOutput(@TempDir Path dir) throws Exception {
+    writeFakePng(dir, "src.png");
+    FakePort port = new FakePort();
+    port.decodeResult = red2x2();
+    ImageTool tool = new ImageTool(port);
+
+    ToolResult r =
+        tool.execute(
+            new JSONObject()
+                .put("action", "luma_key")
+                .put("path", "src.png")
+                .put("key_color", "#00FF00"),
+            contextFor(dir));
+
+    assertFalse(r.isError(), r.getContent());
+    assertTrue(port.encodeCalls >= 1, "luma_key 应经端口编码输出");
+    assertTrue(r.getContent().contains("luma_key"), "结果应注明所用动作：" + r.getContent());
+  }
+
+  @Test
+  void lumaKeyRejectsBadColorSpec(@TempDir Path dir) throws Exception {
+    writeFakePng(dir, "src.png");
+    FakePort port = new FakePort();
+    port.decodeResult = red2x2();
+    ToolResult r =
+        new ImageTool(port)
+            .execute(
+                new JSONObject()
+                    .put("action", "luma_key")
+                    .put("path", "src.png")
+                    .put("key_color", "not-a-color"),
+                contextFor(dir));
+    assertTrue(r.isError(), "非法颜色应被拒绝");
+    assertTrue(r.getContent().contains("#RRGGBB"), r.getContent());
+  }
+
+  @Test
+  void cropRequiresValidRectAndRejectsNonPositiveSize(@TempDir Path dir) throws Exception {
+    writeFakePng(dir, "src.png");
+    FakePort port = new FakePort();
+    port.decodeResult = red2x2();
+    ImageTool tool = new ImageTool(port);
+
+    // 缺 rect
+    ToolResult missing =
+        tool.execute(
+            new JSONObject().put("action", "crop").put("path", "src.png"), contextFor(dir));
+    assertTrue(missing.isError());
+    assertTrue(missing.getContent().contains("rect"), missing.getContent());
+
+    // width 非正
+    ToolResult bad =
+        tool.execute(
+            new JSONObject()
+                .put("action", "crop")
+                .put("path", "src.png")
+                .put(
+                    "rect",
+                    new JSONObject().put("x", 0).put("y", 0).put("width", 0).put("height", 5)),
+            contextFor(dir));
+    assertTrue(bad.isError(), "非正尺寸应被拒绝");
+
+    // 合法裁剪
+    ToolResult ok =
+        tool.execute(
+            new JSONObject()
+                .put("action", "crop")
+                .put("path", "src.png")
+                .put(
+                    "rect",
+                    new JSONObject().put("x", 0).put("y", 0).put("width", 1).put("height", 1)),
+            contextFor(dir));
+    assertFalse(ok.isError(), ok.getContent());
+    assertTrue(ok.getContent().contains("crop"), ok.getContent());
+  }
 }
