@@ -1069,12 +1069,47 @@ NoSuchMethodError: No virtual method appendReplacement(Ljava/lang/StringBuilder;
 
 ### 未验证项（做后续工作时应顺带补齐）
 
+> **2026-10-18 更新**：下表前两项已完成真机验证（黑鲨 SKW-A0 / Android 10），
+> 并顺带跑通了 Root 后端、后台项目构建、并行子 agent、a11y 读屏、phone_ocr。
+> 详见下方「2026-10-18 真机验证记录」。
+
 | 项 | 状态 |
 |---|---|
-| ShizukuShellBackend 端到端 | 黑鲨已装 Shizuku，**需启动服务后重测** |
-| 构建闭环四件套在真机的完整 agent 驱动 | 四件套各自验证过，**未经 agent 串起来跑** |
+| ~~ShizukuShellBackend 端到端~~ | ✅ 已验（截图 / 日志 / 设备控制均走通） |
+| ~~构建闭环四件套在真机的完整 agent 驱动~~ | ✅ 已验（构建 → 安装 → 启动 → 读日志，agent 驱动） |
 | agnes 网关端到端 | 有 key 与端点，`AgentLiveGatewayTest` 默认跳过，未跑 |
 | **上下文压缩的真实触发** | 单测覆盖边界逻辑，但**未经真机长对话触发**（需历史超硬阈值） |
+
+### 2026-10-18 真机验证记录
+
+| 项 | 结果 |
+|---|---|
+| RootShellBackend（su，uid 0） | ✅ `id -u` 返回 0；探测失败时如实报告每个候选的原因 |
+| 后台项目构建（未打开的项目） | ✅ 会话绑 ProjectB、编辑器开 MyBasicActivity，构建落在 ProjectB（APK 时间戳证实） |
+| 全局构建并发闸门 | ✅ 未触发冲突（单项目顺序构建） |
+| 多标签页切换 / 文件隔离 / 旋转 | ✅ 两项目互切、文件内容与文件树均跟随、旋转两次不丢 |
+| LSP 按活跃 workspace 路由 | ✅ 日志 `Active workspace changed: A -> B` + `Pushing active workspace to language servers` |
+| 并行子 agent 进度分桶 | ✅ 两个子任务步骤互不串卡，各自完成 |
+| a11y 读屏 | ✅ 正确列出 5 个可点击元素（contentDescription） |
+| phone_ocr | ✅ 识别 32 行屏幕文本 |
+| test_coverage | ⚠️ 工具链路正常，但测试项目未接 kover，如实报错 |
+
+**本轮修复的真机缺陷（4 个）**：
+
+1. **AAPT2 override 丢失（构建必失败）** — P1 把 `getBuildArguments` 搬到
+   `ToolingConnection` 时只保留了 init script，漏掉 `android.aapt2FromMavenOverride`。
+   AGP 回退去 Maven 取 x86-64 的 aapt2，arm64 上 `Daemon startup failed`。
+   修复：在连接层重新生成全部参数（aapt2 / logsender / init script / 构建偏好）。
+2. **跨项目构建回报错误 APK 路径** — `GradleBuildTool` 用了无参
+   `ApkLocator.findApkPath()`，它走编辑器全局 workspace。后台构建 ProjectB 时
+   回报的是 MyBasicActivity 的路径，模型据此向用户报告了错误结论。
+   修复：改用按会话 cwd 的 `findApkPath(projectPath)` / `findApplicationId(projectPath)`。
+3. **后台构建没有 UI 入口** — `KEY_BACKGROUND_BUILD` 只有常量，功能实际不可达。
+   修复：工具页新增「后台项目构建」开关；新会话选择器的「构建需先打开」提示
+   在该开关开启时不再显示（否则自相矛盾）。
+4. **root 探测失败原因被覆盖** — 只保留最后一个候选的错误，真正原因（PATH 里的 su
+   被 Magisk 拒绝 / 被 Shamiko 隐藏）被 `/data/adb/magisk/su: Permission denied` 盖掉。
+   修复：汇总所有候选的失败原因，并提示 Shamiko 白名单。
 
 ### P0-1 前置调研结论（2026-09-17 核实，影响存储选型）
 

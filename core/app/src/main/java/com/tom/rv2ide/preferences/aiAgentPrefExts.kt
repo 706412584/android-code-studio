@@ -20,6 +20,8 @@ package com.tom.rv2ide.preferences
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.os.Handler
+import android.os.Looper
 import android.view.View
 import android.widget.Toast
 import androidx.preference.Preference
@@ -28,6 +30,7 @@ import com.tom.rv2ide.R
 import com.tom.rv2ide.activities.FolderPickerActivity
 import com.tom.rv2ide.ai.agent.ProjectRulesLoader
 import com.tom.rv2ide.artificial.agent.AgentImageToolSettings
+import com.tom.rv2ide.artificial.agent.AgentToolSettings
 import com.tom.rv2ide.artificial.agent.AssistantUiStyleStore
 import com.tom.rv2ide.artificial.agent.ModelCatalogFetcher
 import com.tom.rv2ide.artificial.agent.ProviderConfigStore
@@ -36,6 +39,7 @@ import com.tom.rv2ide.artificial.agent.compose.AssistantThinkingCollapsePref
 import com.tom.rv2ide.artificial.agent.compose.AssistantToolStatusBarPref
 import com.tom.rv2ide.artificial.agent.compose.theme.AppThemePreset
 import com.tom.rv2ide.artificial.agent.compose.theme.AssistantThemePrefs
+import com.tom.rv2ide.ai.tool.RootShellBackend
 import com.tom.rv2ide.artificial.agent.ShizukuShellBackend
 import com.tom.rv2ide.artificial.agent.codegraph.CodeGraphInstaller
 import com.tom.rv2ide.artificial.agent.codegraph.CodeGraphManager
@@ -145,6 +149,9 @@ private class ToolsPage(
     // 紧随 shell 后端：两者是同一件事的两条路（操作设备的能力来源）——
     // Shizuku 那条要装要授权，无障碍这条勾选一次即可。放一起用户才好权衡。
     addPreference(AccessibilityPreference())
+    // 默认关闭：每开一个后台项目就多一个 tooling JVM（-Xmx2g），4GB 设备会 OOM。
+    // 原先只有 AgentToolSettings 的常量，没有 UI 入口，等于该功能不可达。
+    addPreference(BackgroundBuildSwitch())
     addPreference(CodeCompletionSwitch())
   }
 }
@@ -2590,6 +2597,39 @@ private class AuthorizedToolsPreference(
  * 本类不直接调用 CodeCompletionManager——那需要 Activity 级的作用域与编辑器引用，
  * 而设置页两者都没有。
  */
+/**
+ * 后台项目构建开关。
+ *
+ * <p>对应 {@code AgentToolSettings.KEY_BACKGROUND_BUILD}（存在 "ai_agent_tools"）。
+ * 开关本身只写偏好：{@code AgentOrchestrator} 每次执行构建类工具时现查，
+ * 不需要重启助手。
+ */
+@Parcelize
+private class BackgroundBuildSwitch(
+    override val key: String = "background_build_enabled",
+    override val title: Int = R.string.ai_agent_background_build_title,
+    override val summary: Int? = R.string.ai_agent_background_build_summary,
+) : SwitchPreference(
+    setValue = { enabled ->
+      agentPrefs(com.tom.rv2ide.app.BaseApplication.getBaseInstance())
+          .edit()
+          .putBoolean(AgentToolSettings.KEY_BACKGROUND_BUILD, enabled)
+          .apply()
+    },
+    getValue = {
+      agentPrefs(com.tom.rv2ide.app.BaseApplication.getBaseInstance())
+          .getBoolean(AgentToolSettings.KEY_BACKGROUND_BUILD, false)
+    },
+) {
+  override fun onCreatePreference(context: Context): Preference {
+    return super.onCreatePreference(context).apply {
+      key = "background_build_enabled"
+      title = context.getString(R.string.ai_agent_background_build_title)
+      summary = context.getString(R.string.ai_agent_background_build_summary)
+    }
+  }
+}
+
 @Parcelize
 private class CodeCompletionSwitch(
     override val key: String = "code_completion_enabled",
@@ -2739,8 +2779,12 @@ private class ShellBackendPreference(
     override val summary: Int? = R.string.ai_agent_shell_backend_summary,
 ) : BasePreference() {
 
-  private val values = arrayOf("termux", "shizuku")
-  private val shown = arrayOf("内置终端 Termux（无 adb 权限）", "Shizuku（adb 权限）")
+  private val values = arrayOf("termux", "shizuku", "root")
+  private val shown =
+      arrayOf(
+          "内置终端 Termux（无 adb/root）",
+          "Shizuku（adb；以 root 启动时为 root）",
+          "Root（su，需要设备已 root）")
 
   override fun onCreatePreference(context: Context): Preference {
     val current = agentPrefs(context).getString("shell_backend", "termux")
@@ -2762,6 +2806,22 @@ private class ShellBackendPreference(
           dialog.dismiss()
           if (values[which] == ShizukuShellBackend.ID) {
             ensureShizukuAuthorized(context)
+          } else if (values[which] == RootShellBackend.ID) {
+            // 探测要起一次 su 进程，首次会弹 Magisk 授权框。放到后台线程：
+            // 主线程等待用户点授权会直接 ANR。
+            Toast.makeText(context, "正在检查 root 权限…", Toast.LENGTH_SHORT).show()
+            val appContext = context.applicationContext
+            Thread {
+                  val backend = RootShellBackend()
+                  backend.invalidateCache()
+                  val available = backend.isAvailable()
+                  val message =
+                      if (available) "Root 已就绪（${backend.resolvedSuPath()}）"
+                      else backend.unavailableReason()
+                  Handler(Looper.getMainLooper())
+                      .post { Toast.makeText(appContext, message, Toast.LENGTH_LONG).show() }
+                }
+                .start()
           }
         }
         .setNegativeButton(android.R.string.cancel, null)

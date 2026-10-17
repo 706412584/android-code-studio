@@ -71,13 +71,13 @@
   <string name="ai_agent_tool_status_bar_summary">工具运行时在输入区上方显示浮动迷你终端状态条；默认关闭</string>
   <string name="ai_agent_thinking_collapse">思考完毕后自动折叠</string>
   <string name="ai_agent_thinking_collapse_summary">思考内容在输出期间保持展开，结束后自动折叠；关闭则始终展开</string>
-  <string name="ai_agent_description">使用 AI 助手 生成由 AI 驱动的代码</string>
+  <string name="ai_agent_description">读写代码、执行命令、构建并在真机上验证</string>
   <string name="ai_agent_prompt_hint">描述你想要生成什么代码…</string>
   <string name="ai_agent_send">发送</string>
   <string name="ai_agent_settings">设置</string>
   <string name="ai_agent_instructions">输入您的请求，人工智能将为您生成代码。确保在设置中配置您的 Gemini API 密钥。</string>
   <string name="ai_agent_enable">启用AI代理</string>
-  <string name="ai_agent_enable_summary">启用人工智能驱动的代码生成</string>
+  <string name="ai_agent_enable_summary">启用 AI 编程助手</string>
   <string name="ai_agent_api_key">Gemini API 密钥</string>
   <string name="ai_agent_api_key_summary">输入您的 Google Gemini API 密钥以使用 AI 功能</string>
   <string name="ai_agent_api_key_dialog_title">输入 Gemini API 密钥</string>
@@ -180,6 +180,8 @@
   <string name="ai_agent_permission_summary">agent 在不询问的情况下可以做到什么程度</string>
   <string name="ai_agent_shell_backend_title">Shell 后端</string>
   <string name="ai_agent_shell_backend_summary">由哪个后端执行 shell 命令</string>
+  <string name="ai_agent_background_build_title">后台项目构建</string>
+  <string name="ai_agent_background_build_summary">允许助手构建未在编辑器中打开的项目；每个项目会多一个 tooling 进程，低内存设备慎用</string>
   <string name="ai_agent_custom_group">自定义 OpenAI 兼容端点</string>
   <string name="ai_agent_custom_base_url">Base URL</string>
   <string name="ai_agent_custom_api_key">API 密钥</string>
@@ -233,18 +235,18 @@
 
   <!-- AI Agent Deepseek -->
   <string name="ai_agent_deepseek_api_key">Deepseek API 密钥</string>
-  <string name="ai_agent_deepseek_api_key_summary">输入您的 OpenAI API 密钥以使用 AI 功能</string>
-  <string name="ai_agent_deepseek_api_key_dialog_title">输入 Deepseek API 密钥</string>
+  <string name="ai_agent_deepseek_api_key_summary">填写 DeepSeek 密钥（platform.deepseek.com）</string>
+  <string name="ai_agent_deepseek_api_key_dialog_title">输入 DeepSeek API 密钥</string>
 
   <!-- AI Agent OpenAI -->
   <string name="ai_agent_openai_api_key">OpenAI API 密钥</string>
-  <string name="ai_agent_openai_api_key_summary">输入您的 OpenAI API 密钥以使用 AI 功能</string>
-  <string name="ai_agent_openai_api_key_dialog_title">输入 Deepseek API 密钥</string>
+  <string name="ai_agent_openai_api_key_summary">填写 OpenAI 密钥（platform.openai.com）</string>
+  <string name="ai_agent_openai_api_key_dialog_title">输入 OpenAI API 密钥</string>
 
   <!-- AI Agent anthropic -->
   <string name="ai_agent_anthropic_api_key">Anthropic API 密钥</string>
-  <string name="ai_agent_anthropic_api_key_summary">输入您的 OpenAI API 密钥以使用 AI 功能</string>
-  <string name="ai_agent_anthropic_api_key_dialog_title">输入 Deepseek API 密钥</string>
+  <string name="ai_agent_anthropic_api_key_summary">填写 Anthropic 密钥（console.anthropic.com）</string>
+  <string name="ai_agent_anthropic_api_key_dialog_title">输入 Anthropic API 密钥</string>
 
   <!-- AI Agent grok -->
   <string name="ai_agent_grok_api_key">Grok API 密钥</string>

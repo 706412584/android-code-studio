@@ -86,8 +86,8 @@ public final class ShellExecuteTool extends BaseTool {
   public String getDescription() {
     return "在本机执行 shell 命令并返回退出码与输出。"
         + "可用于运行脚本、查看文件、调用系统命令。"
-        + "命令由「后端」执行，不同后端能用的命令不同："
-        + "一个提供 adb 权限（pm/am/logcat），另一个提供命令行工具链（git/node/python）。"
+        + "命令由「后端」执行：一个提供 adb/root 权限（pm/am/logcat），"
+        + "另一个提供命令行工具链（git/node/python）。"
         + "默认用用户设置的后端；需要另一个后端的能力时，用 backend 参数临时指定。"
         + "命令耗时长且你暂时不需要结果时，用 run_in_background 后台执行："
         + "立即返回任务 id，完成时会自动通知，中间可以继续做别的事。";

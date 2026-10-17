@@ -91,7 +91,7 @@ public final class ShizukuShellBackend implements ShellBackend {
 
   @Override
   public String displayName() {
-    return "Shizuku (adb 权限)";
+    return "Shizuku（adb/root）";
   }
 
   @Override
@@ -109,8 +109,10 @@ public final class ShizukuShellBackend implements ShellBackend {
 
   @Override
   public String capabilitySummary() {
-    return "提供 adb 级权限（pm install / am start / logcat 等），"
-        + "但只有 Android 系统命令，没有 git / node / python 等命令行工具。";
+    // 服务以 root 启动时 newProcess 继承 uid 0，所以权限可能高于 adb(2000)，
+    // 能力描述必须把这个事实带上，否则模型会误判「这里做不了 root 才能做的事」。
+    return "adb 级权限，Shizuku 以 root 启动时即 root（pm/am/logcat 可用）；"
+        + "没有 git/node/python 等工具链。";
   }
 
   /**

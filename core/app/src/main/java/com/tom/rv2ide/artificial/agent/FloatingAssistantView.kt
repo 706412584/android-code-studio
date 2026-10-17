@@ -4400,9 +4400,10 @@ class FloatingAssistantView(
           beginNewConversation(projects.firstOrNull())
           return@withContext
         }
-        // 构建类工具（gradle_build / build_variant / test_coverage）只服务编辑器
-        // 当前打开的项目；会话绑定别的项目时这些工具会明确拒绝（见 ToolContext
-        // 的跨项目守卫）。在这里就给出提示——用户事前知道边界，而不是撞墙后才知道。
+        // 构建类工具（gradle_build / test_coverage）在开启「后台项目构建」后可以
+        // 直接作用于未打开的项目；未开启时仍只服务编辑器当前项目，会明确拒绝
+        // （见 ToolContext 的跨项目守卫）。因此这里只在「后台构建关闭」时提示边界，
+        // 否则会出现「说构建需先打开、实际却能构建」的自相矛盾文案。
         val openProjectPath =
             try {
               com.tom.rv2ide.projects.IProjectManager.getInstance()
@@ -4411,7 +4412,15 @@ class FloatingAssistantView(
             } catch (e: Exception) {
               ""
             }
-        val needsOpenSuffix = context.getString(string.ai_conversation_new_project_needs_open)
+        val backgroundBuildEnabled =
+            try {
+              com.tom.rv2ide.artificial.agent.AgentToolSettings(context)
+                  .isBackgroundBuildEnabled
+            } catch (e: Exception) {
+              false
+            }
+        val needsOpenSuffix =
+            if (backgroundBuildEnabled) "" else context.getString(string.ai_conversation_new_project_needs_open)
         val labels =
             projects
                 .map { p ->

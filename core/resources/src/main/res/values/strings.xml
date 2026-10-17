@@ -71,13 +71,13 @@
   <string name="ai_agent_tool_status_bar_summary">Show a floating mini-terminal status bar above the input while tools run. Off by default.</string>
   <string name="ai_agent_thinking_collapse">Auto-collapse Thinking</string>
   <string name="ai_agent_thinking_collapse_summary">Keep reasoning expanded while it streams, then collapse it when done. Turn off to keep it always expanded.</string>
-  <string name="ai_agent_description">Get AI-powered code generation using AI Agent</string>
+  <string name="ai_agent_description">Read, edit, run commands, build, and verify on device</string>
   <string name="ai_agent_prompt_hint">Describe what code you want to generate...</string>
   <string name="ai_agent_send">Send</string>
   <string name="ai_agent_settings">Settings</string>
   <string name="ai_agent_instructions">Enter your request and the AI will generate code for you. Make sure to configure your Gemini API key in settings.</string>
   <string name="ai_agent_enable">Enable AI Agent</string>
-  <string name="ai_agent_enable_summary">Enable AI-powered code generation</string>
+  <string name="ai_agent_enable_summary">Enable the AI coding agent</string>
   <string name="ai_agent_api_key">Gemini API Key</string>
   <string name="ai_agent_api_key_summary">Enter your Google Gemini API key to use AI features</string>
   <string name="ai_agent_api_key_dialog_title">Enter Gemini API Key</string>
@@ -185,6 +185,8 @@
   <string name="ai_agent_permission_summary">How much the agent may do without asking</string>
   <string name="ai_agent_shell_backend_title">Shell backend</string>
   <string name="ai_agent_shell_backend_summary">Which backend executes shell commands</string>
+  <string name="ai_agent_background_build_title">Background project builds</string>
+  <string name="ai_agent_background_build_summary">Let the agent build projects that are not open in the editor. Each project adds a tooling process — avoid on low-memory devices.</string>
   <string name="ai_agent_custom_group">Custom OpenAI-compatible endpoint</string>
   <string name="ai_agent_custom_base_url">Base URL</string>
   <string name="ai_agent_custom_api_key">API key</string>
@@ -238,18 +240,18 @@
 
   <!-- AI Agent Deepseek -->
   <string name="ai_agent_deepseek_api_key">Deepseek API Key</string>
-  <string name="ai_agent_deepseek_api_key_summary">Enter your Deepseek API key to use AI features</string>
-  <string name="ai_agent_deepseek_api_key_dialog_title">Enter Deepseek API Key</string>
+  <string name="ai_agent_deepseek_api_key_summary">DeepSeek key from platform.deepseek.com</string>
+  <string name="ai_agent_deepseek_api_key_dialog_title">Enter DeepSeek API Key</string>
 
   <!-- AI Agent OpenAI -->
   <string name="ai_agent_openai_api_key">OpenAI API Key</string>
-  <string name="ai_agent_openai_api_key_summary">Enter your Deepseek API key to use AI features</string>
-  <string name="ai_agent_openai_api_key_dialog_title">Enter Deepseek API Key</string>
+  <string name="ai_agent_openai_api_key_summary">OpenAI key from platform.openai.com</string>
+  <string name="ai_agent_openai_api_key_dialog_title">Enter OpenAI API Key</string>
 
   <!-- AI Agent anthropic -->
   <string name="ai_agent_anthropic_api_key">Anthropic API Key</string>
-  <string name="ai_agent_anthropic_api_key_summary">Enter your Deepseek API key to use AI features</string>
-  <string name="ai_agent_anthropic_api_key_dialog_title">Enter Deepseek API Key</string>
+  <string name="ai_agent_anthropic_api_key_summary">Anthropic key from console.anthropic.com</string>
+  <string name="ai_agent_anthropic_api_key_dialog_title">Enter Anthropic API Key</string>
 
   <!-- AI Agent grok -->
   <string name="ai_agent_grok_api_key">Grok API Key</string>

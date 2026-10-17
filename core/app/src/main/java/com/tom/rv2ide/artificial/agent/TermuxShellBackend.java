@@ -118,8 +118,7 @@ public final class TermuxShellBackend implements ShellBackend {
 
   @Override
   public String capabilitySummary() {
-    return "提供命令行工具链（git / node / python / clang 等），"
-        + "但没有 adb 权限——pm / am / logcat 这类命令会失败。";
+    return "命令行工具链齐全（git/node/python），但没有 adb/root 权限。";
   }
 
   @Override
