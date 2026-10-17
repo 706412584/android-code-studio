@@ -72,6 +72,8 @@
   <string name="edit">Edit</string>
 
   <string name="msg_project_tab_close">Close project</string>
+  <string name="msg_project_tab_open_another">Open another project</string>
+  <string name="msg_project_tab_no_projects">No projects found</string>
   <string name="msg_project_tab_switch_failed">Unable to switch to the project</string>
   <string name="msg_project_tab_limit">Too many projects are open. Close one first.</string>
 

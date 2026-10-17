@@ -32,6 +32,7 @@ import com.blankj.utilcode.util.SizeUtils
 import com.google.android.material.bottomsheet.BottomSheetDialogFragment
 import com.tom.rv2ide.adapters.viewholders.FileTreeViewHolder
 import com.tom.rv2ide.databinding.LayoutEditorFileTreeBinding
+import com.tom.rv2ide.utils.ILogger
 import com.tom.rv2ide.eventbus.events.filetree.FileClickEvent
 import com.tom.rv2ide.eventbus.events.filetree.FileLongClickEvent
 import com.tom.rv2ide.events.ExpandTreeNodeRequestEvent
@@ -232,7 +233,19 @@ class FileTreeFragment :
       return
     }
     // 无项目时返回——projectDir 未设置会抛异常，此时没有文件树可展示。
-    val projectDir = IProjectManager.getInstance().projectDirOrNull ?: return
+    val projectDir = IProjectManager.getInstance().projectDirOrNull
+    ILogger.ROOT.info(
+        "[ProjectTab] FileTreeFragment.listProjectFiles: projectDir={} binding={}",
+        projectDir?.absolutePath,
+        binding != null)
+    if (projectDir == null) {
+      return
+    }
+
+    // 标题也在这里更新：多标签页切换项目不会重建本 fragment（onViewCreated 只跑一次），
+    // 否则标题会一直停留在第一次打开的项目名上。
+    binding?.fileTreeLabel?.text = projectDir.name
+
     val rootNode = TreeNode(File(""))
     rootNode.viewHolder = FileTreeViewHolder(requireContext())
 

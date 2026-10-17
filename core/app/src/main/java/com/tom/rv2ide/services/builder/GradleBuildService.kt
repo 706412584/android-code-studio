@@ -201,15 +201,17 @@ class GradleBuildService :
       requireConnection().cancelCurrentBuild()
 
   // ---- ToolingServerRunner.Observer 委托 ----
+  //
+  // 注意：Service 本身已不再直接充当 Observer（ToolingConnection 才是），这里保留实现
+  // 只是接口要求。项目代理的发布在 ToolingConnection.onListenerStarted 里完成——
+  // 之前留在这里的注册代码是死代码，导致 setupProject 拿到 null 并抛 NPE。
 
   override fun onListenerStarted(
       server: com.tom.rv2ide.tooling.api.IToolingApiServer,
       projectProxy: com.tom.rv2ide.tooling.api.IProject,
       errorStream: java.io.InputStream,
   ) {
-    val conn = requireConnection()
-    conn.onListenerStarted(server, projectProxy, errorStream)
-    Lookup.getDefault().update(BuildService.KEY_PROJECT_PROXY, projectProxy)
+    connection?.onListenerStarted(server, projectProxy, errorStream)
   }
 
   override fun onServerExited(exitCode: Int) {
@@ -307,7 +309,14 @@ class GradleBuildService :
     }
     // 项目切换：旧连接必须关掉，否则会留下一个孤儿 tooling 进程。
     existing?.close()
-    val fresh = ToolingConnection(projectDir, notificationSink) { this }
+    val fresh =
+        ToolingConnection(
+            projectDir,
+            notificationSink,
+            { this },
+            // 编辑器连接负责发布项目代理：IProjectManager.setupProject() 的默认参数依赖它。
+            publishProjectProxy = true,
+        )
     // 连接新建时补上此前登记的监听器（见 setEventListener）。
     fresh.setEventListener(pendingEventListener)
     connection = fresh
@@ -497,7 +506,34 @@ class GradleBuildService :
   }
 
   internal fun startToolingServer(listener: OnServerStartListener?) {
+    startToolingServerFor(requireConnection(), listener)
+  }
+
+  /**
+   * 确保**当前项目**的 tooling server 已启动。
+   *
+   * <p>多标签页切换项目后，`requireConnection()` 会为新路径新建连接，而新连接的 server
+   * 尚未启动。调用方若直接 `initializeProject()` 会抛
+   * `ToolingServerNotStartedException`（真机上是崩溃）。本方法先解析当前项目的连接，
+   * 未启动时拉起并在启动完成后回调。
+   *
+   * @param onStarted server 已可用时调用；**可能同步调用**，调用方需处理重入。
+   * @return true 表示 server 已就绪（[onStarted] 已同步执行）；false 表示正在启动，
+   *   启动完成后会回调。
+   */
+  internal fun ensureToolingServerStarted(onStarted: (() -> Unit)?): Boolean {
     val conn = requireConnection()
+    if (conn.isToolingServerStarted()) {
+      conn.republishProjectProxy()
+      onStarted?.invoke()
+      return true
+    }
+
+    startToolingServerFor(conn) { onStarted?.invoke() }
+    return false
+  }
+
+  private fun startToolingServerFor(conn: ToolingConnection, listener: OnServerStartListener?) {
     val envs = TermuxShellEnvironment().getEnvironment(this, false)
     val aapt2 = Environment.AAPT2
     if (aapt2.isFile) {
@@ -510,6 +546,10 @@ class GradleBuildService :
       )
     }
     conn.startToolingServer(envs, listener)
+
+    // server 已在运行（`startToolingServer` 不会重复触发 onListenerStarted）时，
+    // 把缓存的代理补回 Lookup——它可能已被上一个编辑器 Activity 的 unregisterAll() 清掉。
+    conn.republishProjectProxy()
   }
 
   fun setEventListener(eventListener: EventListener?): GradleBuildService {

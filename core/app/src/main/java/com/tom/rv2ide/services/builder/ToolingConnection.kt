@@ -17,6 +17,7 @@
 
 package com.tom.rv2ide.services.builder
 
+import com.tom.rv2ide.lookup.Lookup
 import com.tom.rv2ide.projects.builder.BuildOutcome
 import com.tom.rv2ide.projects.builder.BuildService
 import com.tom.rv2ide.projects.builder.BuildOutputBuffer
@@ -66,6 +67,13 @@ internal class ToolingConnection(
     val projectPath: String,
     private val sink: BuildNotificationSink?,
     private val clientFactory: () -> IToolingApiClient,
+    /**
+     * 是否把 tooling server 返回的项目代理发布到全局 `Lookup`（`KEY_PROJECT_PROXY`）。
+     *
+     * <p>只有**编辑器连接**可以发布：`IProjectManager.setupProject()` 的默认参数从那里
+     * 取代理，后台连接发布会把它指向后台项目。这也符合本类的硬边界（后台不得污染全局）。
+     */
+    private val publishProjectProxy: Boolean = false,
 ) : BuildService, IToolingApiClient, ToolingServerRunner.Observer, AutoCloseable {
 
   companion object {
@@ -85,6 +93,15 @@ internal class ToolingConnection(
     get() = _lastBuildOutcome
 
   @Volatile private var isToolingServerStarted = false
+
+  /**
+   * tooling server 返回的项目代理。
+   *
+   * <p>必须缓存：`Lookup` 会被编辑器 Activity 销毁时的 `unregisterAll()` 清空，而 tooling
+   * server 已经启动时不会再触发 [onListenerStarted]——只靠那次回调写 Lookup，重新打开
+   * 项目就会拿到 null（表现为 `setupProject` 抛 NPE）。
+   */
+  @Volatile private var lastProjectProxy: IProject? = null
 
   private var server: IToolingApiServer? = null
   private var _toolingApiClient: ForwardingToolingApiClient? = null
@@ -114,6 +131,31 @@ internal class ToolingConnection(
     startServerOutputReader(errorStream)
     this.server = server
     isToolingServerStarted = true
+
+    // P1 把 Observer 从 GradleBuildService 移到这里后，这行注册一度留在了已成死代码的
+    // Service.onListenerStarted 里，导致 `IProjectManager.setupProject()` 的默认参数
+    // 拿到 null 并抛 NPE（真机表现为「Project setup failed: Unknown error occurred」）。
+    lastProjectProxy = projectProxy
+    syncProjectProxyToLookup()
+  }
+
+  /**
+   * 把缓存的代理重新写入 `Lookup`。
+   *
+   * <p>用于「tooling server 已在运行、但 `Lookup` 被清空」的场景：编辑器 Activity 销毁时
+   * `BaseEditorActivity.postDestroy()` 会 `unregisterAll()`，而 server 不会因此重启，
+   * 于是重新打开项目时 `onListenerStarted` 不再触发。宿主在重新绑定 Service 时调用本方法。
+   */
+  fun republishProjectProxy() {
+    syncProjectProxyToLookup()
+  }
+
+  private fun syncProjectProxyToLookup() {
+    if (!publishProjectProxy) {
+      return
+    }
+    val proxy = lastProjectProxy ?: return
+    Lookup.getDefault().update(BuildService.KEY_PROJECT_PROXY, proxy)
   }
 
   override fun onServerExited(exitCode: Int) {

@@ -53,6 +53,7 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.updateLayoutParams
 import androidx.core.view.updatePadding
 import androidx.core.view.updatePaddingRelative
+import androidx.fragment.app.FragmentManager
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.lifecycleScope
@@ -1298,11 +1299,31 @@ override fun onApplySystemBarInsets(insets: Insets) {
   }
 
   open fun getFileTreeFragment(): FileTreeFragment? {
-    if (filesTreeFragment == null) {
-      filesTreeFragment =
-          supportFragmentManager.findFragmentByTag(FileTreeFragment.TAG) as FileTreeFragment?
+    // 侧栏页面由 EditorSidebarFragment 用**它的 childFragmentManager** 添加，tag 是
+    // 动作 id（`ide.editor.sidebar.fileTree`），不是 FileTreeFragment.TAG
+    // （那个常量对应旧布局里的静态 fragment）。
+    //
+    // 这里必须递归查找所有 childFragmentManager：直接查 Activity 的 manager 永远返回
+    // null，导致切换项目后文件树不刷新（切项目不重建 Activity，onResume 也不会再触发）。
+    findFileTreeFragment(supportFragmentManager)?.let {
+      filesTreeFragment = it
+      return it
     }
     return filesTreeFragment
+  }
+
+  private fun findFileTreeFragment(manager: FragmentManager): FileTreeFragment? {
+    manager.fragments.forEach { fragment ->
+      if (fragment is FileTreeFragment) {
+        return fragment
+      }
+      if (fragment.isAdded) {
+        findFileTreeFragment(fragment.childFragmentManager)?.let {
+          return it
+        }
+      }
+    }
+    return null
   }
 
   private fun hasNativeFiles(projectRoot: File): Boolean {
@@ -1513,6 +1534,11 @@ override fun onApplySystemBarInsets(insets: Insets) {
 
     try {
       val session = manager.switchTo(targetPath) ?: return
+      log.info(
+          "[ProjectTab] switch: target={} active={} sessions={}",
+          targetPath,
+          manager.activeSession()?.id,
+          manager.allSessions().map { it.id })
       editorViewModel.projectDir = File(targetPath)
       editorTabsViewModel.refresh()
 
@@ -1534,6 +1560,19 @@ override fun onApplySystemBarInsets(insets: Insets) {
 
       // 切换不重建 Activity，onStart 不会再触发，这里显式恢复新项目的文件。
       handler.restoreOpenedFilesForCurrentProject()
+
+      // 文件树也按全局 projectDir 渲染，不刷新会继续显示上一个项目的结构。
+      try {
+        val tree = getFileTreeFragment()
+        log.info(
+            "[ProjectTab] refresh file tree: fragment={} binding={} projectDir={}",
+            tree != null,
+            tree?.view != null,
+            IProjectManager.getInstance().projectDirOrNull?.absolutePath)
+        tree?.listProjectFiles()
+      } catch (err: Throwable) {
+        log.warn("Failed to refresh file tree after project switch", err)
+      }
     } catch (err: Throwable) {
       log.error("Failed to switch project tab to {}", targetPath, err)
       flashError(getString(string.msg_project_tab_switch_failed))
@@ -1563,11 +1602,9 @@ override fun onApplySystemBarInsets(insets: Insets) {
   }
 
   private fun renderProjectTabs(group: ChipGroup, scroll: View, tabs: List<ProjectTab>) {
-    scroll.visibility = if (tabs.size > 1) View.VISIBLE else View.GONE
+    // 始终显示：单项目时它也是「打开另一个项目」的唯一入口。
+    scroll.visibility = View.VISIBLE
     group.removeAllViews()
-    if (tabs.size <= 1) {
-      return
-    }
 
     tabs.forEach { tab ->
       val chip =
@@ -1588,7 +1625,69 @@ override fun onApplySystemBarInsets(insets: Insets) {
       group.addView(chip)
     }
 
+    // 「打开另一个项目」：编辑器里原本没有这个入口，多标签页就无法从 UI 触发。
+    group.addView(
+        Chip(this).apply {
+          text = "+"
+          isCheckable = false
+          isCloseIconVisible = false
+          contentDescription = getString(string.msg_project_tab_open_another)
+          setOnClickListener { showOpenProjectPicker() }
+        })
+
     selectProjectChip(group, editorTabsViewModel.activeId.value)
+  }
+
+  /**
+   * 选择并打开另一个项目。
+   *
+   * <p>列表来自 `WizardPreferences` 的最近项目 + `Environment.PROJECTS_DIR` 下的目录；
+   * 选中后走 `MainActivity` 相同的入口语义（已开则切换、未开则新建会话），但不经过
+   * MainActivity——它在本任务的返回栈里，无法可靠地拉回前台。
+   */
+  private fun showOpenProjectPicker() {
+    val recent =
+        com.tom.rv2ide.templates.preferences.WizardPreferences.getRecentProjects(this)
+    val discovered =
+        com.tom.rv2ide.utils.GeneralFileUtils.listDirsInDirectory(
+                com.tom.rv2ide.utils.Environment.PROJECTS_DIR)
+            .map { it.absolutePath }
+            .filter { path ->
+              java.io.File(path, "build.gradle").exists() ||
+                  java.io.File(path, "build.gradle.kts").exists() ||
+                  java.io.File(path, "settings.gradle").exists() ||
+                  java.io.File(path, "settings.gradle.kts").exists()
+            }
+
+    val candidates = (recent + discovered).distinct()
+    if (candidates.isEmpty()) {
+      flashInfo(getString(string.msg_project_tab_no_projects))
+      return
+    }
+
+    val labels =
+        candidates
+            .map { path ->
+              val name = java.io.File(path).name
+              if (editorTabsViewModel.tabs.value.any { it.id == path }) "$name (已打开)" else name
+            }
+            .toTypedArray()
+
+    MaterialAlertDialogBuilder(this)
+        .setTitle(string.msg_project_tab_open_another)
+        .setItems(labels) { _, which ->
+          val path = candidates[which]
+          val manager = ProjectManagerImpl.getInstance()
+          if (manager.isSessionOpen(path)) {
+            switchProjectTab(path)
+          } else {
+            manager.openSession(path)
+            editorTabsViewModel.refresh()
+            switchProjectTab(path)
+          }
+        }
+        .setNegativeButton(android.R.string.cancel, null)
+        .show()
   }
 
   private fun selectProjectChip(group: ChipGroup, activeId: String?) {

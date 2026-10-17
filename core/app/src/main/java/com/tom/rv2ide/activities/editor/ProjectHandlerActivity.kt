@@ -401,8 +401,42 @@ fun initializeProject(buildVariants: Map<String, String>) {
       return
     }
 
-    if (!buildService.isToolingServerStarted()) {
-      flashError(string.msg_tooling_server_unavailable)
+    // 多标签页切换项目后，新项目的连接可能还没有启动 tooling server。
+    // 此时直接 initializeProject 会抛 ToolingServerNotStartedException（真机上是崩溃）。
+    //
+    // `ensureToolingServerStarted` 的约定是：返回 true 时**已同步**调用回调，返回 false
+    // 时只登记回调。因此这里不能按返回值再发一次请求，否则已就绪的情况会初始化两遍。
+    var handled = false
+    val proceed = {
+      if (!handled) {
+        handled = true
+        if (!isFinishing && !isDestroyed) {
+          sendProjectInitRequest(manager, projectDir, buildVariants, initialized)
+        }
+      }
+    }
+
+    val gradleService = buildService as? GradleBuildService
+    if (gradleService == null) {
+      proceed()
+    } else {
+      gradleService.ensureToolingServerStarted {
+        // 启动回调可能来自任意线程；切回主线程再发请求。
+        com.tom.rv2ide.tasks.runOnUiThread { proceed() }
+      }
+    }
+  }
+
+  /** 把初始化请求发给 tooling server；调用前必须确保 server 已启动。 */
+  private fun sendProjectInitRequest(
+      manager: ProjectManagerImpl,
+      projectDir: File,
+      buildVariants: Map<String, String>,
+      initialized: Boolean,
+  ) {
+    val buildService = Lookup.getDefault().lookup(BuildService.KEY_BUILD_SERVICE)
+    if (buildService == null) {
+      log.error("No build service found. Cannot initialize project.")
       return
     }
 
