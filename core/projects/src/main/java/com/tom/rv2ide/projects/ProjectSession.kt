@@ -52,7 +52,12 @@ class ProjectSession(val projectDir: File) {
   /** 会话的稳定标识：规范化后的绝对路径。 */
   val id: String = projectDir.absolutePath
 
-  /** 最近一次被激活的时间戳（`System.nanoTime()`）；仅用于会话淘汰。 */
+  /**
+   * 最近一次被激活的逻辑时间戳（单调递增），仅用于会话 LRU 淘汰。
+   *
+   * <p>用注册表内的计数器而不是 `System.nanoTime()`：同一毫秒内的连续激活在
+   * 时间戳上可能并列，导致「关闭活跃标签后该回到哪个」不确定；计数器保证严格全序。
+   */
   @Volatile internal var lastAccessAt: Long = 0L
 
   /** 清空项目级状态（关闭项目时调用）。 */

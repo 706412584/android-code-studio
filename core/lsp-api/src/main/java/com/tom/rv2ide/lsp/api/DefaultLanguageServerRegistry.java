@@ -44,19 +44,34 @@ public class DefaultLanguageServerRegistry extends ILanguageServerRegistry {
   private final Map<String, ILanguageServer> mRegister = new HashMap<>();
   private final ReadWriteLock lock = new ReentrantReadWriteLock();
 
+  /**
+   * Workspace of the foreground project session. Guarded by {@link #lock} for writes; reads are
+   * volatile so that {@link #getActiveWorkspace()} never blocks.
+   */
+  @Nullable private volatile IWorkspace activeWorkspace = null;
+
   @Override
   public void register(@NonNull final ILanguageServer server) {
     if (!EventBus.getDefault().isRegistered(this)) {
       EventBus.getDefault().register(this);
     }
+    final boolean added;
     lock.writeLock().lock();
     try {
       final var old = mRegister.put(server.getServerId(), server);
+      added = old == null;
       if (old != null) {
         mRegister.put(old.getServerId(), old);
       }
     } finally {
       lock.writeLock().unlock();
+    }
+
+    // A server registered while a project is already open (e.g. a new server type added after the
+    // first workspace setup) must not stay unconfigured until the next sync.
+    final IWorkspace workspace = activeWorkspace;
+    if (added && workspace != null) {
+      server.setupWorkspace(workspace);
     }
   }
 
@@ -101,6 +116,7 @@ public class DefaultLanguageServerRegistry extends ILanguageServerRegistry {
     lock.writeLock().lock();
     try {
       mRegister.clear();
+      activeWorkspace = null;
     } finally {
       lock.writeLock().unlock();
     }
@@ -117,6 +133,53 @@ public class DefaultLanguageServerRegistry extends ILanguageServerRegistry {
     }
   }
 
+  @Override
+  public void setActiveWorkspace(@Nullable final IWorkspace workspace, final boolean force) {
+    final IWorkspace previous;
+    lock.writeLock().lock();
+    try {
+      previous = activeWorkspace;
+      if (!force && sameWorkspace(previous, workspace)) {
+        return;
+      }
+      activeWorkspace = workspace;
+    } finally {
+      lock.writeLock().unlock();
+    }
+
+    if (workspace == null) {
+      ILogger.ROOT.debug("Active workspace cleared; language servers keep their last workspace");
+      return;
+    }
+
+    if (previous != null && !sameWorkspace(previous, workspace)) {
+      ILogger.ROOT.debug(
+          "Active workspace changed: {} -> {}", workspaceRoot(previous), workspaceRoot(workspace));
+    }
+
+    ILogger.ROOT.debug("Pushing active workspace to language servers...");
+    lock.readLock().lock();
+    try {
+      for (final var server : mRegister.values()) {
+        server.setupWorkspace(workspace);
+      }
+    } finally {
+      lock.readLock().unlock();
+    }
+  }
+
+  @Nullable
+  @Override
+  public IWorkspace getActiveWorkspace() {
+    return activeWorkspace;
+  }
+
+  /**
+   * A {@link ProjectInitializedEvent} may be posted for a background session (e.g. a Gradle sync
+   * finishing while the user is on another tab). Only the workspace of the foreground session may
+   * be pushed to the servers, otherwise the last project to finish syncing would silently take over
+   * completion and diagnostics for every tab.
+   */
   @Subscribe(threadMode = ThreadMode.BACKGROUND)
   @SuppressWarnings("unused")
   public void onProjectInitialized(ProjectInitializedEvent event) {
@@ -125,9 +188,71 @@ public class DefaultLanguageServerRegistry extends ILanguageServerRegistry {
       return;
     }
 
+    final boolean adopt;
+    lock.writeLock().lock();
+    try {
+      final IWorkspace active = activeWorkspace;
+      if (active == null) {
+        // No active workspace has been declared yet (single-project startup). Adopt the workspace
+        // from the event so that the servers are still configured exactly as before.
+        activeWorkspace = workspace;
+        adopt = true;
+      } else if (!sameWorkspace(active, workspace)) {
+        ILogger.ROOT.debug(
+            "Ignoring ProjectInitializedEvent for background workspace: {}",
+            workspaceRoot(workspace));
+        return;
+      } else {
+        // A re-sync replaces the workspace instance for the same project directory. Keep the
+        // active reference pointing at the live instance so later `getActiveWorkspace()` callers
+        // see the refreshed model.
+        activeWorkspace = workspace;
+        adopt = false;
+      }
+    } finally {
+      lock.writeLock().unlock();
+    }
+
+    if (adopt) {
+      ILogger.ROOT.debug(
+          "No active workspace set; adopting workspace from ProjectInitializedEvent");
+    }
+
     ILogger.ROOT.debug("Dispatching ProjectInitializedEvent to language servers...");
-    for (final var server : mRegister.values()) {
-      server.setupWorkspace(workspace);
+    lock.readLock().lock();
+    try {
+      for (final var server : mRegister.values()) {
+        server.setupWorkspace(workspace);
+      }
+    } finally {
+      lock.readLock().unlock();
+    }
+  }
+
+  /**
+   * Workspace identity is the canonical project directory. A re-sync produces a fresh {@link
+   * IWorkspace} instance for the same directory; that must not be treated as a tab switch (which
+   * would leave the old workspace active) nor as a duplicate (which would skip the re-setup that a
+   * re-sync needs).
+   */
+  private static boolean sameWorkspace(@Nullable final IWorkspace first,
+      @Nullable final IWorkspace second) {
+    if (first == second) {
+      return true;
+    }
+    if (first == null || second == null) {
+      return false;
+    }
+    return workspaceRoot(first).equals(workspaceRoot(second));
+  }
+
+  @NonNull
+  private static String workspaceRoot(@NonNull final IWorkspace workspace) {
+    final var dir = workspace.getProjectDir();
+    try {
+      return dir.getCanonicalPath();
+    } catch (final Exception e) {
+      return dir.getAbsolutePath();
     }
   }
 }

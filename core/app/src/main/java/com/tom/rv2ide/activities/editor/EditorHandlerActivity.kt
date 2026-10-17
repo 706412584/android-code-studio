@@ -98,7 +98,13 @@ open class EditorHandlerActivity : ProjectHandlerActivity(), IEditorHandler {
   override fun preDestroy() {
     super.preDestroy()
     EditorSessionRegistry.unbind(this)
-    TSLanguageRegistry.instance.destroy()
+
+    // 语法高亮注册表是**进程级**的：多标签页下关一个标签不能把它清掉，否则其它标签
+    // 全部失去高亮。只有最后一个会话关闭（或进程退出）时才销毁。
+    if (ProjectManagerImpl.getInstance().allSessions().isEmpty()) {
+      TSLanguageRegistry.instance.destroy()
+    }
+
     editorViewModel.removeAllFiles()
   }
 
@@ -174,6 +180,33 @@ open class EditorHandlerActivity : ProjectHandlerActivity(), IEditorHandler {
 
   override fun saveOpenedFiles() {
     writeOpenedFilesCache(getOpenedFiles(), getCurrentEditor()?.editor?.file)
+  }
+
+  /**
+   * 项目标签切换完成后调用。
+   *
+   * <p>`onStart` 会从新项目的 `.acside` 缓存恢复文件；在此之前必须清掉「已保存」标记，
+   * 否则切回该标签时 `onPause` 会以为缓存已写过而跳过落盘（`isOpenedFilesSaved`）。
+   * 同时清空内存中的缓存对象，强制下一次 `getOrReadOpenedFilesCache` 重新读盘。
+   */
+  internal fun onProjectSwitched() {
+    isOpenedFilesSaved.set(false)
+    editorViewModel.openedFilesCache = null
+  }
+
+  /**
+   * 项目标签切换后恢复新项目的打开文件。
+   *
+   * <p>切换不重建 Activity，因此 `onStart` 不会再次触发；这里显式走一遍与 `onStart`
+   * 相同的恢复路径。`openFileAndGetIndex` 对已打开文件是幂等的，重复调用安全。
+   */
+  internal fun restoreOpenedFilesForCurrentProject() {
+    try {
+      editorViewModel.getOrReadOpenedFilesCache(this::onReadOpenedFilesCache)
+      editorViewModel.openedFilesCache = null
+    } catch (err: Throwable) {
+      log.error("Failed to reopen recently opened files", err)
+    }
   }
 
   private fun writeOpenedFilesCache(openedFiles: List<OpenedFile>, selectedFile: File?) {

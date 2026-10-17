@@ -19,6 +19,7 @@ package com.tom.rv2ide.lsp.java;
 
 import androidx.annotation.NonNull;
 import com.tom.rv2ide.lsp.java.compiler.JavaCompilerService;
+import com.tom.rv2ide.projects.IWorkspace;
 import com.tom.rv2ide.projects.ModuleProject;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -71,5 +72,27 @@ public class JavaCompilerProvider {
       compiler.destroy();
     }
     mCompilers.clear();
+  }
+
+  /**
+   * Destroy only the compilers belonging to the given workspace.
+   *
+   * <p>Used when a language server switches project tabs: {@link #destroy()} would also tear down
+   * the compilers of the other tabs, forcing them to re-index on the next switch back.
+   */
+  public synchronized void destroy(@NonNull IWorkspace workspace) {
+    final var root = workspace.getProjectDir().toPath().toAbsolutePath().normalize();
+    mCompilers
+        .entrySet()
+        .removeIf(
+            entry -> {
+              final var module = entry.getKey();
+              final var dir = module.getProjectDir().toPath().toAbsolutePath().normalize();
+              if (!dir.startsWith(root)) {
+                return false;
+              }
+              entry.getValue().destroy();
+              return true;
+            });
   }
 }

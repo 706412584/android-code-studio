@@ -76,12 +76,25 @@ class ProjectSessionRegistryTest {
     val session = registry.activate(dir)
     session.projectInitialized = true
 
-    registry.close(dir)
+    val removed = registry.close(dir)
 
+    assertSame(session, removed)
     assertEquals(0, registry.size())
     assertNull(registry.active())
     assertNull(session.workspace)
     assertTrue(!session.projectInitialized)
+  }
+
+  @Test
+  fun `closing a missing session returns null and keeps active unchanged`() {
+    val a = tempDir("a")
+    val registry = ProjectSessionRegistry(maxSessions = 3)
+    val sessionA = registry.activate(a)
+
+    assertNull(registry.close(tempDir("missing")))
+
+    assertEquals(1, registry.size())
+    assertSame(sessionA, registry.active())
   }
 
   @Test
@@ -117,6 +130,131 @@ class ProjectSessionRegistryTest {
     assertSame(sessionC, registry.active())
     assertTrue(registry.all().any { it === sessionA })
     assertTrue(registry.all().none { it === sessionB })
+  }
+
+  @Test
+  fun `three sessions coexist up to the limit`() {
+    val a = tempDir("a")
+    val b = tempDir("b")
+    val c = tempDir("c")
+    val registry = ProjectSessionRegistry(maxSessions = 3)
+
+    val sessionA = registry.activate(a)
+    val sessionB = registry.activate(b)
+    val sessionC = registry.activate(c)
+
+    assertEquals(3, registry.size())
+    assertSame(sessionC, registry.active())
+    assertEquals(listOf(sessionA.id, sessionB.id, sessionC.id), registry.all().map { it.id })
+  }
+
+  @Test
+  fun `opening a fourth session evicts the least recently used inactive one`() {
+    val a = tempDir("a")
+    val b = tempDir("b")
+    val c = tempDir("c")
+    val d = tempDir("d")
+    val registry = ProjectSessionRegistry(maxSessions = 3)
+
+    registry.activate(a)
+    registry.activate(b)
+    val sessionC = registry.activate(c)
+    // 用一次 B，使 A 成为最久未使用；再切回 C 让 C 保持活跃。
+    registry.switchTo(b)
+    registry.switchTo(c)
+
+    registry.activate(d)
+
+    assertEquals(3, registry.size())
+    assertEquals(
+        listOf(registry.keyOf(b), registry.keyOf(c), registry.keyOf(d)),
+        registry.all().map { it.id },
+    )
+    assertTrue(registry.all().none { it.id == registry.keyOf(a) })
+    assertSame(sessionC, registry.find(c))
+  }
+
+  @Test
+  fun `switchTo activates an existing session without creating one`() {
+    val a = tempDir("a")
+    val b = tempDir("b")
+    val registry = ProjectSessionRegistry(maxSessions = 3)
+    val sessionA = registry.activate(a)
+    val sessionB = registry.activate(b)
+
+    assertSame(sessionA, registry.switchTo(a))
+    assertSame(sessionA, registry.active())
+    assertEquals(2, registry.size())
+
+    assertNull(registry.switchTo(tempDir("missing")))
+    assertEquals(2, registry.size())
+    assertSame(sessionA, registry.active())
+    assertSame(sessionB, registry.find(b))
+  }
+
+  @Test
+  fun `closing the active session activates the most recently used remaining session`() {
+    val a = tempDir("a")
+    val b = tempDir("b")
+    val c = tempDir("c")
+    val registry = ProjectSessionRegistry(maxSessions = 3)
+
+    registry.activate(a)
+    registry.activate(b)
+    registry.activate(c)
+    // 使用顺序：A → B → C → A → C，因此 C 活跃、A 次新、B 最旧。
+    registry.switchTo(a)
+    registry.switchTo(c)
+
+    val removed = registry.close(c)
+
+    assertTrue(removed != null)
+    assertNull(registry.find(c))
+    assertEquals(2, registry.size())
+    assertSame(registry.find(a), registry.active())
+    assertTrue(registry.all().any { it.id == registry.keyOf(b) })
+  }
+
+  @Test
+  fun `closing the active session with no remaining sessions clears active`() {
+    val registry = ProjectSessionRegistry(maxSessions = 3)
+    val dir = tempDir("a")
+    registry.activate(dir)
+
+    registry.close(dir)
+
+    assertNull(registry.active())
+    assertNull(registry.activeId)
+  }
+
+  @Test
+  fun `closing an inactive session does not change the active one`() {
+    val a = tempDir("a")
+    val b = tempDir("b")
+    val registry = ProjectSessionRegistry(maxSessions = 3)
+    registry.activate(a)
+    val sessionB = registry.activate(b)
+    registry.switchTo(a)
+    val sessionA = registry.active()
+
+    assertSame(sessionA, registry.active())
+    assertTrue(registry.close(b) != null)
+
+    assertSame(sessionA, registry.active())
+    assertEquals(1, registry.size())
+    assertNull(registry.find(sessionB.projectDir))
+  }
+
+  @Test
+  fun `all preserves the order in which sessions were opened`() {
+    val a = tempDir("a")
+    val b = tempDir("b")
+    val registry = ProjectSessionRegistry(maxSessions = 3)
+    registry.activate(a)
+    registry.activate(b)
+    registry.switchTo(a)
+
+    assertEquals(listOf(registry.keyOf(a), registry.keyOf(b)), registry.all().map { it.id })
   }
 
   @Test

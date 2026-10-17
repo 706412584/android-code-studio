@@ -20,8 +20,15 @@ package com.tom.rv2ide.lsp.api;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
+import com.tom.rv2ide.projects.IWorkspace;
+
 /**
  * A language server registry which keeps track of registered language servers.
+ *
+ * <p>The registry also owns the notion of the <b>active workspace</b>. Language servers are
+ * process-wide singletons, so with multiple project tabs open only the workspace belonging to the
+ * foreground session may be pushed to them. Events for background workspaces are ignored; callers
+ * must call {@link #setActiveWorkspace(IWorkspace)} when the user switches tabs.
  *
  * @author Akash Yadav
  */
@@ -67,4 +74,30 @@ public abstract class ILanguageServerRegistry {
    */
   @Nullable
   public abstract ILanguageServer getServer(@NonNull String serverId);
+
+  /**
+   * Set the workspace of the foreground project session.
+   *
+   * <p>When the workspace differs from the currently active one (or {@code force} is {@code true}),
+   * it is pushed to every registered server via {@link ILanguageServer#setupWorkspace(IWorkspace)}.
+   * Passing the same workspace again is a no-op unless {@code force} is set, so servers that do
+   * expensive cache invalidation in {@code setupWorkspace} are not re-initialized needlessly.
+   *
+   * @param workspace The workspace to activate, or {@code null} if no project is open.
+   * @param force Whether to re-push the workspace even if it is already active.
+   */
+  public abstract void setActiveWorkspace(@Nullable IWorkspace workspace, boolean force);
+
+  /** Same as {@link #setActiveWorkspace(IWorkspace, boolean)} with {@code force = false}. */
+  public final void setActiveWorkspace(@Nullable IWorkspace workspace) {
+    setActiveWorkspace(workspace, false);
+  }
+
+  /**
+   * Get the workspace of the foreground project session.
+   *
+   * @return The active workspace, or {@code null} if none has been set.
+   */
+  @Nullable
+  public abstract IWorkspace getActiveWorkspace();
 }

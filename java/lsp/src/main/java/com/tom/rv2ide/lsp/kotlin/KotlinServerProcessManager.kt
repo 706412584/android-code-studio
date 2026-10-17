@@ -53,8 +53,10 @@ class KotlinServerProcessManager(context: Context) {
   private var diagnosticsCallback: ((DiagnosticResult) -> Unit)? = null
   private val notificationHandler = KotlinNotificationHandler()
   
-  // Thread pool for handling responses asynchronously
-  private val executorService = Executors.newFixedThreadPool(2)
+  // Thread pool for handling responses asynchronously.
+  // Recreated by [startServer] after [shutdown], so that a workspace switch (which restarts the
+  // KLS process) does not leave the server with a dead executor and therefore no responses.
+  private var executorService = Executors.newFixedThreadPool(2)
 
   fun setDiagnosticsCallback(callback: (DiagnosticResult) -> Unit) {
     diagnosticsCallback = callback
@@ -65,6 +67,11 @@ class KotlinServerProcessManager(context: Context) {
     if (process?.isAlive == true) {
       KslLogs.debug("Server already running")
       return
+    }
+
+    // [shutdown] terminates the executor; a restart needs a live one for response dispatch.
+    if (executorService.isShutdown) {
+      executorService = Executors.newFixedThreadPool(2)
     }
 
     KslLogs.info("Starting Kotlin Language Server with standard JSON-RPC...")

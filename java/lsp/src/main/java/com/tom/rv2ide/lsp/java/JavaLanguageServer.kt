@@ -59,11 +59,11 @@ import com.tom.rv2ide.lsp.models.SignatureHelpParams
 import com.tom.rv2ide.lsp.util.LSPEditorActions
 import com.tom.rv2ide.models.Range
 import com.tom.rv2ide.projects.FileManager.getActiveDocumentCount
-import com.tom.rv2ide.projects.IProjectManager.Companion.getInstance
 import com.tom.rv2ide.projects.IWorkspace
 import com.tom.rv2ide.projects.ModuleProject
 import com.tom.rv2ide.utils.DocumentUtils
 import com.tom.rv2ide.utils.VMUtils
+import java.io.File
 import java.nio.file.Path
 import java.util.Objects
 import kotlinx.coroutines.CoroutineScope
@@ -87,6 +87,21 @@ class JavaLanguageServer : ILanguageServer {
   private val timer = AnalyzeTimer { analyzeSelected() }
   private var cachedCompletion: CachedCompletion
 
+  /**
+   * Workspace pushed by [setupWorkspace].
+   *
+   * <p>Deliberately **not** read from the global `IProjectManager`: with multiple project tabs that
+   * singleton points at whichever session happens to be active, while this server must resolve
+   * files against the workspace it was last set up with. `@Volatile` because setup happens on the
+   * registry's background thread while completions/diagnostics run on worker threads.
+   */
+  @Volatile
+  private var workspace: IWorkspace? = null
+
+  /** Root directory of [workspace]; used to detect real tab switches and re-syncs. */
+  @Volatile
+  private var workspaceRoot: Path? = null
+
   val settings: IServerSettings
     get() {
       return _settings ?: JavaServerSettings.getInstance().also { _settings = it }
@@ -101,7 +116,7 @@ class JavaLanguageServer : ILanguageServer {
   }
 
   init {
-    diagnosticProvider = JavaDiagnosticProvider()
+    diagnosticProvider = JavaDiagnosticProvider { workspace }
     cachedCompletion = CachedCompletion.EMPTY
 
     applySettings(JavaServerSettings.getInstance())
@@ -120,6 +135,8 @@ class JavaLanguageServer : ILanguageServer {
     clearCache()
     EventBus.getDefault().unregister(this)
     timer.cancel()
+    workspace = null
+    workspaceRoot = null
   }
 
   override fun connectClient(client: ILanguageClient?) {
@@ -133,29 +150,45 @@ class JavaLanguageServer : ILanguageServer {
   override fun setupWorkspace(workspace: IWorkspace) {
     LSPEditorActions.ensureActionsMenuRegistered(JavaCodeActionsMenu)
 
-    // Once we have workspace initialized
-    // Destory the NO_MODULE_COMPILER instance
+    val root = workspace.getProjectDir().toPath().toAbsolutePath().normalize()
+    val previousRoot = workspaceRoot
+
+    // Scoped invalidation: with multiple project tabs open, the caches below are shared by every
+    // project. Clearing them globally would throw away the other tabs' compilers/file managers and
+    // force a re-index on the next switch back, so only the entries of *this* workspace are
+    // dropped. Entries are keyed by `ModuleProject` identity and a re-sync rebuilds those
+    // instances, so a repeated setup of the same project also needs this (the old entries can
+    // never be hit again).
+    if (previousRoot != null && previousRoot != root) {
+      // Per-file caches keyed by path would otherwise leak diagnostics across projects.
+      diagnosticProvider?.clearAll()
+      cachedCompletion = CachedCompletion.EMPTY
+    }
+
     JavaCompilerService.NO_MODULE_COMPILER.destroy()
+    SourceFileManager.clearCache(workspace)
+    // Cached JAR file systems for R.jar must be re-created so completions see regenerated
+    // resources. Scope it to this workspace: the other tabs' R.jar caches stay valid.
+    val rootPrefix = root.toString() + File.separator
+    clearCachesForPaths { path: String -> path.endsWith("/R.jar") && path.startsWith(rootPrefix) }
+    JavaCompilerProvider.getInstance().destroy(workspace)
 
-    // Clear cached file managers
-    SourceFileManager.clearCache()
-
-    // Clear cached JAR file system for R.jar
-    // Using the cached instance will result in completions not being updated for updated resources
-    // TODO Clearing caches for JAR files ending with '/R.jar' is probably not a good idea
-    //    Maybe this could be improved by using data from the AndroidModule workspace model
-    clearCachesForPaths { path: String -> path.endsWith("/R.jar") }
-
-    // Clear cached module-specific compilers
-    JavaCompilerProvider.getInstance().destroy()
-
-    // Cache classpath locations
+    // Cache classpath locations for this workspace's modules.
     for (subModule in workspace.getSubProjects()) {
       if (subModule !is ModuleProject || subModule.path == workspace.getRootProject().path) {
         continue
       }
       SourceFileManager.forModule(subModule)
     }
+
+    // Publish the workspace only after the caches are ready: requests racing with setup must not
+    // resolve against a half-initialized state.
+    this.workspace = workspace
+    this.workspaceRoot = root
+    if (previousRoot != null && previousRoot != root) {
+      log.info("Java language server switched workspace: {} -> {}", previousRoot, root)
+    }
+
     startOrRestartAnalyzeTimer()
   }
 
@@ -246,11 +279,19 @@ class JavaLanguageServer : ILanguageServer {
     if (!DocumentUtils.isJavaFile(file)) {
       return JavaCompilerService.NO_MODULE_COMPILER
     }
-    val workspace = getInstance().getWorkspace() ?: return JavaCompilerService.NO_MODULE_COMPILER
+    val workspace = this.workspace ?: return JavaCompilerService.NO_MODULE_COMPILER
     val module =
         workspace.findModuleForFile(file!!) ?: return JavaCompilerService.NO_MODULE_COMPILER
     return JavaCompilerProvider.get(module)
   }
+
+  /**
+   * The workspace this server is currently configured for.
+   *
+   * <p>Exposed for diagnostics providers and tests. May be `null` before the first [setupWorkspace].
+   */
+  @RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
+  fun getWorkspace(): IWorkspace? = workspace
 
   private fun updateCachedCompletion(cachedCompletion: CachedCompletion) {
     Objects.requireNonNull(cachedCompletion)
@@ -277,7 +318,7 @@ class JavaLanguageServer : ILanguageServer {
 
     // TODO Find an alternative to efficiently update changeDelta in JavaCompilerService instance
     JavaCompilerService.NO_MODULE_COMPILER.onDocumentChange(event)
-    val module = getInstance().getWorkspace()?.findModuleForFile(event.changedFile, true)
+    val module = workspace?.findModuleForFile(event.changedFile, true)
     if (module != null) {
       val compiler = JavaCompilerProvider.get(module)
       compiler.onDocumentChange(event)

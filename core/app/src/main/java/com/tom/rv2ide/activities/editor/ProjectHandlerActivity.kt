@@ -37,6 +37,7 @@ import com.tom.rv2ide.handlers.LspHandler.connectClient
 import com.tom.rv2ide.handlers.LspHandler.destroyLanguageServers
 import com.tom.rv2ide.lookup.Lookup
 import com.tom.rv2ide.lsp.IDELanguageClientImpl
+import com.tom.rv2ide.lsp.api.ILanguageServerRegistry
 import com.tom.rv2ide.lsp.java.utils.CancelChecker
 import com.tom.rv2ide.preferences.internal.GeneralPreferences
 import com.tom.rv2ide.projects.GradleProject
@@ -171,9 +172,10 @@ abstract class ProjectHandlerActivity : BaseEditorActivity() {
       // sometimes, when the IDE closed and reopened instantly, these values prevent initialization
       // of the project
       //
-      // 只关本会话，不要 destroy() 全局管理器：多标签页下关一个标签不能拆掉其它项目的
-      // workspace / 初始化状态。单会话阶段两者等价。
-      ProjectManagerImpl.getInstance().closeSession()
+      // S2 是「单 Activity + 多会话」：所有项目标签都活在这一个编辑器 Activity 里，
+      // Activity 结束就意味着整个编辑器关闭，因此这里必须关掉全部会话。
+      // （关单个标签走的是 BaseEditorActivity.closeProjectTab → closeSession(path)。）
+      ProjectManagerImpl.getInstance().destroy()
 
       editorViewModel.isInitializing = false
       editorViewModel.isBuildInProgress = false
@@ -201,6 +203,8 @@ abstract class ProjectHandlerActivity : BaseEditorActivity() {
 
     if (isDestroying) {
 
+      // 单 Activity 承载全部标签：Activity 结束 = 编辑器关闭，语言服务器可以整体停掉。
+      // （关单个标签不会走到这里，见 closeProjectTab。）
       try {
         stopLanguageServers()
       } catch (err: Exception) {
@@ -541,6 +545,10 @@ fun initializeProject(buildVariants: Map<String, String>) {
           return@launch
         }
 
+        // 语言服务器是进程级的：多标签页下只有前台项目的 workspace 能推给它们，
+        // 否则最后完成同步的后台项目会静默接管补全与诊断。
+        ILanguageServerRegistry.getDefault().setActiveWorkspace(workspace)
+
         manager.notifyProjectUpdate()
         updateBuildVariants(workspace.getAndroidVariantSelections())
 
@@ -700,7 +708,8 @@ fun initializeProject(buildVariants: Map<String, String>) {
     mFindInProjectDialog = null // Create the dialog again if needed
   }
 
-  private fun updateBuildVariants(buildVariants: Map<String, BuildVariantInfo>) {
+  /** 切回已同步的项目时复用其 variant 选择，避免重复同步。 */
+  internal fun updateBuildVariants(buildVariants: Map<String, BuildVariantInfo>) {
     // avoid using the 'runOnUiThread' method defined in the activity
     com.tom.rv2ide.tasks.runOnUiThread {
       buildVariantsViewModel.buildVariants = buildVariants
@@ -859,7 +868,11 @@ fun initializeProject(buildVariants: Map<String, String>) {
       IProjectManager.getInstance().projectDirOrNull?.absolutePath?.let {
         GeneralPreferences.forgetOpenedProject(it)
       }
-      GeneralPreferences.lastOpenedProject = GeneralPreferences.NO_OPENED_PROJECT
+      // 多标签页：还有其它项目开着时，不能清掉「启动时自动打开」的项目，
+      // 否则用户关掉一个标签后，下次启动就不会自动打开任何项目。
+      if (ProjectManagerImpl.getInstance().allSessions().size <= 1) {
+        GeneralPreferences.lastOpenedProject = GeneralPreferences.NO_OPENED_PROJECT
+      }
     }
 
     // Make sure we close files

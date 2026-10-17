@@ -61,6 +61,16 @@ class XMLLanguageServer : ILanguageServer {
 
   private var settings: IServerSettings? = null
 
+  /**
+   * Workspace of the active project session (last [setupWorkspace]).
+   *
+   * <p>The XML providers are stateless (they parse the document per request), so nothing needs to
+   * be invalidated on a tab switch. The field exists so that future project-dependent completion
+   * (e.g. resource resolution) resolves against the right project instead of the global
+   * `IProjectManager` singleton.
+   */
+  @Volatile private var workspace: IWorkspace? = null
+
   override val serverId: String = SERVER_ID
 
   init {
@@ -81,7 +91,14 @@ class XMLLanguageServer : ILanguageServer {
     this.settings = settings
   }
 
-  override fun setupWorkspace(workspace: IWorkspace) {}
+  override fun setupWorkspace(workspace: IWorkspace) {
+    // No project-scoped cache to invalidate: the providers in this module are stateless and the
+    // snippet repository is global, project-independent data. Just remember the active workspace.
+    this.workspace = workspace
+  }
+
+  /** The workspace this server is currently configured for; `null` before the first setup. */
+  fun getWorkspace(): IWorkspace? = workspace
 
   override fun complete(params: CompletionParams?): CompletionResult {
     val completionProvider: ICompletionProvider =

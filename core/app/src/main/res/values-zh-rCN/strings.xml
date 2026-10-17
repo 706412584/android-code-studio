@@ -76,4 +76,8 @@
 
   <string name="edit">编辑</string>
 
+  <string name="msg_project_tab_close">关闭项目</string>
+  <string name="msg_project_tab_switch_failed">无法切换到该项目</string>
+  <string name="msg_project_tab_limit">打开的项目过多，请先关闭一个</string>
+
 </resources>

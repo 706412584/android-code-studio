@@ -47,6 +47,31 @@
           app:waveAmplitude="1dp"
           android:indeterminate="true" />
 
+        <!--
+          项目标签条：每个标签是一个已打开的项目（最多 3 个）。
+          只有一个项目时隐藏，保持单项目下的原有界面高度。
+          与下方文件标签（@id/tabs）是两层不同的东西：这里切项目，下面切文件。
+        -->
+        <HorizontalScrollView
+          android:id="@+id/project_tabs_scroll"
+          android:layout_width="match_parent"
+          android:layout_height="wrap_content"
+          android:paddingStart="8dp"
+          android:paddingEnd="8dp"
+          android:scrollbars="none"
+          android:visibility="gone"
+          tools:visibility="visible">
+
+          <com.google.android.material.chip.ChipGroup
+            android:id="@+id/project_tabs"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            app:chipSpacingHorizontal="6dp"
+            app:singleLine="true"
+            app:singleSelection="true" />
+
+        </HorizontalScrollView>
+
         <com.google.android.material.tabs.TabLayout
           android:id="@+id/tabs"
           style="@style/AppTheme.TabLayout"

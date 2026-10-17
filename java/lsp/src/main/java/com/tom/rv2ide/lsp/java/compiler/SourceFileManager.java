@@ -25,6 +25,7 @@ import com.blankj.utilcode.util.CloseUtils;
 import com.tom.rv2ide.javac.config.JavacConfigProvider;
 import com.tom.rv2ide.javac.services.fs.AndroidFsProviderImpl;
 import com.tom.rv2ide.projects.android.AndroidModule;
+import com.tom.rv2ide.projects.IWorkspace;
 import com.tom.rv2ide.projects.ModuleProject;
 import com.tom.rv2ide.projects.util.StringSearch;
 import com.tom.rv2ide.utils.ClassTrie;
@@ -260,6 +261,33 @@ public class SourceFileManager extends ForwardingJavaFileManager<JavacFileManage
     }
 
     cachedFileManagers.clear();
+  }
+
+  /**
+   * Clear cached file managers belonging to the given workspace only.
+   *
+   * <p>With multiple project tabs open, {@link #clearCache()} would close the other tabs' file
+   * managers as well. Entries are keyed by {@link ModuleProject} identity, and a Gradle re-sync
+   * builds brand-new module instances, so the entries of the project being (re)configured are
+   * always stale and must go — but only those.
+   */
+  public static void clearCache(@NonNull IWorkspace workspace) {
+    final var root = workspace.getProjectDir().toPath().toAbsolutePath().normalize();
+    cachedFileManagers
+        .entrySet()
+        .removeIf(
+            entry -> {
+              if (!isInWorkspace(entry.getKey(), root)) {
+                return false;
+              }
+              CloseUtils.closeIO(entry.getValue());
+              return true;
+            });
+  }
+
+  private static boolean isInWorkspace(@NonNull ModuleProject module, @NonNull Path root) {
+    final var dir = module.getProjectDir().toPath().toAbsolutePath().normalize();
+    return dir.startsWith(root);
   }
 
   public void setContext(final Context context) {

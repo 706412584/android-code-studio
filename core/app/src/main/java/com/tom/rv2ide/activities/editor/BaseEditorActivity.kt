@@ -65,6 +65,8 @@ import com.github.mikephil.charting.data.LineDataSet
 import com.github.mikephil.charting.formatter.IAxisValueFormatter
 import com.google.android.material.bottomsheet.BottomSheetBehavior
 import com.google.android.material.bottomsheet.BottomSheetBehavior.BottomSheetCallback
+import com.google.android.material.chip.Chip
+import com.google.android.material.chip.ChipGroup
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.snackbar.Snackbar
 import com.google.android.material.tabs.TabLayout
@@ -88,6 +90,7 @@ import com.tom.rv2ide.handlers.EditorActivityLifecyclerObserver
 import com.tom.rv2ide.handlers.LspHandler.registerLanguageServers
 import com.tom.rv2ide.interfaces.DiagnosticClickListener
 import com.tom.rv2ide.lookup.Lookup
+import com.tom.rv2ide.lsp.api.ILanguageServerRegistry
 import com.tom.rv2ide.lsp.models.DiagnosticItem
 import com.tom.rv2ide.models.DiagnosticGroup
 import com.tom.rv2ide.models.OpenedFile
@@ -99,6 +102,7 @@ import com.tom.rv2ide.indexing.views.IndexingBanner
 import com.tom.rv2ide.projectdata.state.Initialization
 import com.tom.rv2ide.projectdata.logs.LogStream
 import com.tom.rv2ide.projects.IProjectManager
+import com.tom.rv2ide.projects.internal.ProjectManagerImpl
 import com.tom.rv2ide.tasks.cancelIfActive
 import com.tom.rv2ide.ui.CodeEditorView
 import com.tom.rv2ide.ui.ContentTranslatingDrawerLayout
@@ -139,7 +143,6 @@ import org.greenrobot.eventbus.Subscribe
 import org.greenrobot.eventbus.ThreadMode.MAIN
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
-import com.tom.rv2ide.projects.internal.ProjectManagerImpl
 import io.github.mohammedbaqernull.seasonal.SeasonalEffects
 
 /**
@@ -168,7 +171,13 @@ abstract class BaseEditorActivity :
   private val editorTextWatchers = ConcurrentHashMap<CodeEditorView, TextWatcher>()
   private val editorContentHashes = ConcurrentHashMap<CodeEditorView, Int>()
   private var lastAutoSaveCheck = 0L
-  
+
+  /** 项目标签条是否已绑定过监听（避免 onStart 重复添加）。 */
+  private var projectTabsBound = false
+
+  /** 正在切换项目标签；期间忽略标签条的选中回调，防止重入。 */
+  private var isSwitchingProjectTab = false
+
   private lateinit var dependencyUpdater: DependencyUpdaterDialog
 
   var isDestroying = false
@@ -181,6 +190,14 @@ abstract class BaseEditorActivity :
 
   var uiDesignerResultLauncher: ActivityResultLauncher<Intent>? = null
   val editorViewModel by viewModels<EditorViewModel>()
+
+  /**
+   * 项目标签数据层。
+   *
+   * <p>activity-scoped：标签列表与活跃标签必须跨配置变更保留，且不能放进进程级 object
+   * （会随 Activity 泄漏）。数据源是 `ProjectManagerImpl.sessionRegistry`，本类不维护副本。
+   */
+  val editorTabsViewModel by viewModels<EditorTabsViewModel>()
 
   internal var _binding: ActivityEditorBinding? = null
   val binding: ActivityEditorBinding
@@ -320,8 +337,18 @@ abstract class BaseEditorActivity :
     const val EDITOR_CONTAINER_SCALE_FACTOR = 0.87f
     const val KEY_BOTTOM_SHEET_SHOWN = "editor_bottomSheetShown"
     const val KEY_STRING_EXT_HELPER = "editor_stringExtHelper"
-    const val KEY_PROJECT_PATH = "saved_projectPath"
-    const val KEY_AUTO_SAVE_ENABLED = "auto_save_enabled"
+  const val KEY_PROJECT_PATH = "saved_projectPath"
+
+  /**
+   * 启动/切换到某个项目时由 `MainActivity` 传入的项目根目录。
+   *
+   * <p>与 [KEY_PROJECT_PATH] 的区别：[KEY_PROJECT_PATH] 是**状态恢复**用的
+   * （`onSaveInstanceState`），本常量是**显式导航**用的。多标签页下后者优先——
+   * 用户点标签时意图明确，不应被旧状态覆盖。
+   */
+  const val EXTRA_PROJECT_PATH = "extra_projectPath"
+
+  const val KEY_AUTO_SAVE_ENABLED = "auto_save_enabled"
     private const val BOTTOM_SHEET_HIDE_REASON_EDITOR_SEARCH = "editor_search_overlay"
   }
 
@@ -723,8 +750,14 @@ override fun onApplySystemBarInsets(insets: Insets) {
 
     registerLanguageServers(this)
 
-    if (savedInstanceState != null && savedInstanceState.containsKey(KEY_PROJECT_PATH)) {
-      IProjectManager.getInstance().openProject(savedInstanceState.getString(KEY_PROJECT_PATH)!!)
+    // 项目来源优先级：显式导航（EXTRA_PROJECT_PATH）> 状态恢复（KEY_PROJECT_PATH）。
+    // 多标签页下，用户点标签的意图必须压过被系统回收前的旧状态。
+    val intentProjectPath = intent?.getStringExtra(EXTRA_PROJECT_PATH)
+    val savedProjectPath = savedInstanceState?.getString(KEY_PROJECT_PATH)
+    when {
+      intentProjectPath != null -> openProjectSession(intentProjectPath)
+      savedProjectPath != null -> openProjectSession(savedProjectPath)
+      else -> {}
     }
 
     // 捕获本编辑器所属项目：onPause 里会话会先关闭，之后写 openedFiles 缓存时
@@ -733,6 +766,9 @@ override fun onApplySystemBarInsets(insets: Insets) {
     if (editorViewModel.projectDir == null) {
       editorViewModel.projectDir = IProjectManager.getInstance().projectDirOrNull
     }
+
+    editorTabsViewModel.refresh()
+    observeProjectTabs()
 
     onBackPressedDispatcher.addCallback(this, onBackPressedCallback)
     lifecycle.addObserver(mLifecycleObserver)
@@ -1050,6 +1086,23 @@ override fun onApplySystemBarInsets(insets: Insets) {
     codeCompletion?.stop()
   }
 
+  /**
+   * 收到新的导航意图（多标签页切项目）。
+   *
+   * <p>`MainActivity.openProject` 用 `SINGLE_TOP` 启动编辑器，已存在时走这里。必须先
+   * `setIntent` 再读 extra，否则后续 `onSaveInstanceState` 会拿着旧 intent。
+   */
+  override fun onNewIntent(intent: Intent) {
+    super.onNewIntent(intent)
+    setIntent(intent)
+
+    val path = intent.getStringExtra(EXTRA_PROJECT_PATH) ?: return
+    // 外部可能直接改了会话表（MainActivity 在启动前调用了 switchTo/openSession），
+    // 所以先同步标签列表。
+    editorTabsViewModel.refresh()
+    switchProjectTab(path)
+  }
+
   override fun onResume() {
     super.onResume()
     invalidateOptionsMenu()
@@ -1115,10 +1168,10 @@ override fun onApplySystemBarInsets(insets: Insets) {
     // Save all pending files before saving instance state
     saveAllPendingFiles()
 
-    // 无项目时 projectDirPath 会抛异常（同 onCreate 的说明）——保存时跳过即可，
-    // 下次恢复时 KEY_PROJECT_PATH 缺省，走「无项目」路径。
-    runCatching { IProjectManager.getInstance().projectDirPath }
-        .getOrNull()
+    // 存**本 Activity 所属项目**而不是全局活跃项目：多标签页下 Activity 存活期间
+    // 全局活跃指针可能已被别的入口改过，存全局值会在恢复时打开错误的项目。
+    (editorViewModel.projectDir ?: IProjectManager.getInstance().projectDirOrNull)
+        ?.absolutePath
         ?.let { outState.putString(KEY_PROJECT_PATH, it) }
     super.onSaveInstanceState(outState)
   }
@@ -1381,6 +1434,203 @@ override fun onApplySystemBarInsets(insets: Insets) {
     val visible = editorViewModel.isBuildInProgress || editorViewModel.isInitializing
     content.progressIndicator.visibility = if (visible) View.VISIBLE else View.GONE
     invalidateOptionsMenu()
+  }
+
+  /**
+   * 打开（或切到）给定项目，供 `onCreate` 与 `onNewIntent` 共用。
+   *
+   * <p>用 `switchTo` 优先：项目已在会话表里时**只切活跃指针**，不触发 `openSession`
+   * 的 LRU 淘汰分支（上限已满时它可能关掉别的项目）。项目不在表里（例如进程被回收后
+   * 从 `savedInstanceState` 恢复）才新建。
+   */
+  protected fun openProjectSession(path: String) {
+    val manager = ProjectManagerImpl.getInstance()
+    if (!manager.isSessionOpen(path)) {
+      manager.openSession(path)
+    } else {
+      manager.switchTo(path)
+    }
+  }
+
+  /**
+   * 切换项目标签后的重建入口。
+   *
+   * <p>S2 阶段允许重建视图（undo 栈与滚动位置会丢），因此这里走的是与「冷启动打开项目」
+   * 相同的路径：清空文件标签 → 重新初始化项目 → `onStart` 从 `.acside` 缓存恢复文件。
+   * S3 才改成保留每个标签的视图实例。
+   */
+  private fun switchProjectTab(targetPath: String, saveCurrent: Boolean = true) {
+    val manager = ProjectManagerImpl.getInstance()
+    if (editorViewModel.projectDir?.absolutePath == targetPath) {
+      return
+    }
+
+    val handler = this as? EditorHandlerActivity
+    if (handler == null) {
+      manager.switchTo(targetPath)
+      return
+    }
+
+    // 先落盘当前项目的打开文件，否则切走就丢了。
+    if (saveCurrent) {
+      handler.saveOpenedFiles()
+    }
+
+    // 关文件可能弹「未保存」确认框；用户取消时回调**不会执行**，此时既不能切走会话，
+    // 也不能把 isSwitchingProjectTab 留在 true（否则之后所有标签操作都被静默忽略）。
+    // 因此标志只在回调内部置位/复位。
+    handler.doCloseAll {
+      isSwitchingProjectTab = true
+      try {
+        applyProjectSwitch(targetPath)
+      } finally {
+        isSwitchingProjectTab = false
+      }
+    }
+  }
+
+  /**
+   * 把编辑器的项目上下文切到 [targetPath]（会话指针、文件视图、构建变体、LSP）。
+   *
+   * <p>调用方负责：文件视图已清空、`isSwitchingProjectTab` 已置位。
+   */
+  private fun applyProjectSwitch(targetPath: String) {
+    val manager = ProjectManagerImpl.getInstance()
+    val handler = this as? EditorHandlerActivity ?: return
+
+    try {
+      val session = manager.switchTo(targetPath) ?: return
+      editorViewModel.projectDir = File(targetPath)
+      editorTabsViewModel.refresh()
+
+      editorViewModel.isInitializing = false
+      editorViewModel.isBuildInProgress = false
+      // 新项目的文件列表要重新参与 onPause 的缓存写入。
+      handler.onProjectSwitched()
+
+      val workspace = session.workspace
+      if (session.projectInitialized && workspace != null) {
+        // 该项目此前已同步过：直接复用它的 workspace，不做第二次 Gradle 同步。
+        // 语言服务器是进程级的，切回来必须显式把 workspace 重新推给它们。
+        ILanguageServerRegistry.getDefault().setActiveWorkspace(workspace)
+        (this as? ProjectHandlerActivity)
+            ?.updateBuildVariants(workspace.getAndroidVariantSelections())
+      } else {
+        (this as? ProjectHandlerActivity)?.initializeProject()
+      }
+
+      // 切换不重建 Activity，onStart 不会再触发，这里显式恢复新项目的文件。
+      handler.restoreOpenedFilesForCurrentProject()
+    } catch (err: Throwable) {
+      log.error("Failed to switch project tab to {}", targetPath, err)
+      flashError(getString(string.msg_project_tab_switch_failed))
+    }
+  }
+
+  /** 渲染项目标签条；只有一个项目时隐藏，保持单项目下的原有界面。 */
+  private fun observeProjectTabs() {
+    if (projectTabsBound) {
+      return
+    }
+    projectTabsBound = true
+
+    lifecycleScope.launch {
+      editorTabsViewModel.tabs.collect { tabs ->
+        val container = _binding?.content ?: return@collect
+        renderProjectTabs(container.projectTabs, container.projectTabsScroll, tabs)
+      }
+    }
+
+    lifecycleScope.launch {
+      editorTabsViewModel.activeId.collect { activeId ->
+        val group = _binding?.content?.projectTabs ?: return@collect
+        selectProjectChip(group, activeId)
+      }
+    }
+  }
+
+  private fun renderProjectTabs(group: ChipGroup, scroll: View, tabs: List<ProjectTab>) {
+    scroll.visibility = if (tabs.size > 1) View.VISIBLE else View.GONE
+    group.removeAllViews()
+    if (tabs.size <= 1) {
+      return
+    }
+
+    tabs.forEach { tab ->
+      val chip =
+          Chip(this).apply {
+            text = tab.displayName
+            isCheckable = true
+            isCheckedIconVisible = false
+            // 显式打开关闭图标：只设置监听器在不同 Material 版本上不一定显示图标。
+            isCloseIconVisible = true
+            tag = tab.id
+            setOnClickListener {
+              if (!isSwitchingProjectTab && !isChecked) {
+                switchProjectTab(tab.id)
+              }
+            }
+            setOnCloseIconClickListener { closeProjectTab(tab.id) }
+          }
+      group.addView(chip)
+    }
+
+    selectProjectChip(group, editorTabsViewModel.activeId.value)
+  }
+
+  private fun selectProjectChip(group: ChipGroup, activeId: String?) {
+    for (i in 0 until group.childCount) {
+      val chip = group.getChildAt(i) as? Chip ?: continue
+      val isActive = chip.tag == activeId
+      // setChecked 会触发 Checkable 的监听；这里没有挂 OnCheckedChangeListener，
+      // 点击只走 OnClickListener，因此不会重入切换。
+      chip.isChecked = isActive
+    }
+  }
+
+  /**
+   * 关闭一个项目标签。
+   *
+   * <p>关闭活跃标签时注册表会把活跃指针切到最近使用的剩余项目，编辑器必须跟着切过去；
+   * 关闭最后一个标签则等同于关闭项目（保留原有的确认与退出流程）。
+   */
+  private fun closeProjectTab(targetPath: String) {
+    if (isSwitchingProjectTab) {
+      return
+    }
+
+    val manager = ProjectManagerImpl.getInstance()
+    val isActive = editorTabsViewModel.activeId.value == targetPath
+
+    // 关闭非活跃标签：不碰编辑器状态，只关会话并刷新标签条。
+    if (!isActive) {
+      manager.closeSession(targetPath)
+      editorTabsViewModel.refresh()
+      return
+    }
+
+    // 关闭最后一个标签：交回原有的「关闭项目」流程（确认 → 保存 → finish），
+    // 会话由 preDestroy/onPause 关闭。这里先关会话会让确认弹窗变成空壳。
+    if (manager.allSessions().size <= 1) {
+      (this as? ProjectHandlerActivity)?.doConfirmProjectClose()
+      return
+    }
+
+    // 关闭活跃标签且还有其它项目：先关文件视图（可能弹未保存确认），成功后再关会话。
+    // 用户取消时什么都不做——标签还在，会话也还在，状态一致。
+    (this as? EditorHandlerActivity)?.doCloseAll {
+      (this as? EditorHandlerActivity)?.saveOpenedFiles()
+      manager.closeSession(targetPath)
+
+      val next = manager.activeSession()
+      if (next == null) {
+        editorTabsViewModel.refresh()
+        return@doCloseAll
+      }
+      // 文件已经关过，切标签时不必再关一次；也不该再走 doCloseAll（此时没有打开的文件，
+      // 但会多一次空回调）。直接在这里完成切换。
+      applyProjectSwitch(next.projectDir.absolutePath)
+    }
   }
 
   private fun setupViews() {

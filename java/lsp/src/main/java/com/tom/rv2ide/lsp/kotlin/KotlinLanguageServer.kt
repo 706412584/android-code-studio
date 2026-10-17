@@ -62,6 +62,9 @@ class KotlinLanguageServer(private val context: Context) : ILanguageServer {
   private var initialized = false
   private var workspaceSetup: KotlinWorkspaceSetup? = null
 
+  /** Absolute root of the workspace this server is currently configured for. */
+  @Volatile private var workspaceRoot: String? = null
+
   private val importAnalyzer = KotlinImportAnalyzer()
   private var compilerService: KotlinCompilerService? = null
   private val quickFixHandler by lazy { KotlinImportQuickFix(documentManager, importAnalyzer) }
@@ -108,10 +111,37 @@ class KotlinLanguageServer(private val context: Context) : ILanguageServer {
   }
 
   override fun setupWorkspace(workspace: IWorkspace) {
+    val root = workspace.getProjectDir().absolutePath
+
+    // A tab switch (or re-sync) must not keep the previous project's build watcher alive, nor its
+    // cached document set: KLS would otherwise answer for documents opened from the old project.
+    // `KotlinIndexCache` is already keyed by project path, so the on-disk index is *not* cleared.
+    val previous = workspaceSetup
+    if (previous != null) {
+      // Every setup installs its own watcher; the previous one must go, otherwise repeated
+      // re-syncs pile up watch services and reload the classpath multiple times per change.
+      previous.stopWatchers()
+      if (workspaceRoot != root) {
+        KslLogs.info("Kotlin language server switching workspace: {} -> {}", workspaceRoot, root)
+        documentManager.clear()
+        importAnalyzer.clearCache()
+        // Selection belongs to the previous project: analyzing it against the new workspace
+        // would produce diagnostics for a file outside the project.
+        selectedFile = null
+        activeEditors.clear()
+        analyzeTimer.cancel()
+        // LSP allows a single `initialize` per process, and the process is bound to the old
+        // rootUri. Restart it so KLS sees the new project instead of answering with stale
+        // workspace symbols from the previous tab.
+        processManager.shutdown()
+      }
+    }
+
     formatProvider = KotlinCodeFormatProvider(processManager)
 
     workspaceSetup = KotlinWorkspaceSetup(context, workspace)
     workspaceSetup?.setup(processManager)
+    workspaceRoot = root
 
     javaCompilerBridge = KotlinJavaCompilerBridge(workspace)
     requestHandler.setJavaCompilerBridge(javaCompilerBridge)
@@ -347,9 +377,15 @@ class KotlinLanguageServer(private val context: Context) : ILanguageServer {
     } catch (e: Exception) {
       KslLogs.warn("Error unregistering from EventBus", e)
     }
+    workspaceSetup?.stopWatchers()
+    workspaceSetup = null
+    workspaceRoot = null
     processManager.shutdown()
     importAnalyzer.clearCache()
+    documentManager.clear()
     initialized = false
+    selectedFile = null
+    activeEditors.clear()
     analyzeTimer.cancel()
     KslLogs.info("Kotlin Language Server shutdown complete")
   }

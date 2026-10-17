@@ -30,11 +30,13 @@ import androidx.transition.TransitionManager
 import androidx.transition.doOnEnd
 import com.google.android.material.transition.MaterialSharedAxis
 import com.tom.rv2ide.BuildConfig
+import com.tom.rv2ide.activities.editor.BaseEditorActivity
 import com.tom.rv2ide.activities.editor.EditorActivityKt
 import com.tom.rv2ide.app.EdgeToEdgeIDEActivity
 import com.tom.rv2ide.databinding.ActivityMainBinding
 import com.tom.rv2ide.preferences.internal.GeneralPreferences
 import com.tom.rv2ide.projects.IProjectManager
+import com.tom.rv2ide.projects.internal.ProjectManagerImpl
 import com.tom.rv2ide.resources.R.string
 import com.tom.rv2ide.templates.ITemplateProvider
 import com.tom.rv2ide.utils.DialogUtils
@@ -229,9 +231,31 @@ class MainActivity : EdgeToEdgeIDEActivity() {
     builder.show()
   }
 
+  /**
+   * 打开项目，或切回已经打开的项目标签。
+   *
+   * <p>多标签页下「打开项目」有两种语义：
+   * - 项目已经在会话表里 → **只切换**，不能走 `openSession`（它会触发 LRU 淘汰，
+   *   在上限已满时可能把别的项目关掉）；
+   * - 项目未打开 → 新建会话，并把路径带给编辑器 Activity。
+   *
+   * <p>两种情况都带 `EXTRA_PROJECT_PATH` 并加 `SINGLE_TOP`：编辑器 Activity 已存在时走
+   * `onNewIntent` 原地切换，避免叠出第二个编辑器实例。
+   */
   internal fun openProject(root: File) {
-    IProjectManager.getInstance().openProject(root)
-    startActivity(Intent(this, EditorActivityKt::class.java))
+    val manager = ProjectManagerImpl.getInstance()
+    if (manager.isSessionOpen(root)) {
+      manager.switchTo(root)
+    } else {
+      manager.openSession(root)
+    }
+
+    val intent =
+        Intent(this, EditorActivityKt::class.java).apply {
+          putExtra(BaseEditorActivity.EXTRA_PROJECT_PATH, root.absolutePath)
+          addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP)
+        }
+    startActivity(intent)
   }
 
   override fun onDestroy() {

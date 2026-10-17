@@ -89,10 +89,16 @@ interface ILanguageServer {
   fun applySettings(settings: IServerSettings?)
 
   /**
-   * Setup this language server with the given workspace. Servers are not expected to keep a
-   * reference to the provided workspace. Instead, use
-   * [getRootWorkspace()][com.tom.rv2ide.projects.IProjectManager.workspace] to obtain the workspace
-   * instance.
+   * Setup this language server with the given workspace.
+   *
+   * <p>Servers **must** keep the workspace passed here and resolve files against it, instead of
+   * reading the process-wide [com.tom.rv2ide.projects.IProjectManager] singleton. With multiple
+   * project tabs open, the singleton points at whichever session is active, which may not be the
+   * project a request belongs to.
+   *
+   * <p>The registry pushes the workspace of the active session only. Implementations must tolerate
+   * being called again for the same workspace (Gradle re-sync) and for a different one (tab
+   * switch).
    *
    * @param workspace The initialized workspace.
    */

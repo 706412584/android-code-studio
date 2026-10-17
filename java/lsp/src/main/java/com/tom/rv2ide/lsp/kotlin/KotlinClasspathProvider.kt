@@ -18,7 +18,7 @@
 package com.tom.rv2ide.lsp.kotlin
 
 import com.tom.rv2ide.lsp.kotlin.compiler.KotlinCompilerService
-import com.tom.rv2ide.projects.IProjectManager
+import com.tom.rv2ide.projects.IWorkspace
 import com.tom.rv2ide.projects.ModuleProject
 import com.tom.rv2ide.projects.android.AndroidModule
 import com.tom.rv2ide.projects.classpath.ClassInfo
@@ -40,8 +40,18 @@ class KotlinClasspathProvider {
   private var cachedClasspathList: List<String>? = null
   private var cachedClasspath: String? = null
 
-  fun initialize(service: KotlinCompilerService?) {
+  /**
+   * Workspace injected by [KotlinWorkspaceSetup].
+   *
+   * <p>Deliberately not read from `IProjectManager`: with multiple project tabs the singleton
+   * points at whichever session is active, so a background tab's KLS would be configured with the
+   * foreground project's classpath.
+   */
+  private var workspace: IWorkspace? = null
+
+  fun initialize(service: KotlinCompilerService?, workspace: IWorkspace? = null) {
     this.compilerService = service
+    this.workspace = workspace
     // Clear cache on re-initialization
     cachedClasspathList = null
     cachedClasspath = null
@@ -77,8 +87,7 @@ class KotlinClasspathProvider {
 
     // Then, enhance with project system classpaths
     try {
-      val projectManager = IProjectManager.getInstance()
-      val workspace = projectManager.getWorkspace()
+      val workspace = this.workspace
 
       if (workspace != null) {
         // Get all projects (root + subprojects)
@@ -364,8 +373,7 @@ class KotlinClasspathProvider {
   /** Attempts to detect the Kotlin version used in the project */
   private fun getKotlinVersionFromProject(): String? {
     try {
-      val projectManager = IProjectManager.getInstance()
-      val workspace = projectManager.getWorkspace() ?: return null
+      val workspace = this.workspace ?: return null
 
       // Check build.gradle.kts for kotlin version
       val rootProject = workspace.getRootProject()
@@ -540,8 +548,7 @@ class KotlinClasspathProvider {
 
     // Fallback to project system
     return try {
-      val projectManager = IProjectManager.getInstance()
-      val workspace = projectManager.getWorkspace()
+      val workspace = this.workspace
 
       if (workspace != null) {
         val androidModules = workspace.androidProjects()
@@ -581,8 +588,7 @@ class KotlinClasspathProvider {
   /** Gets the module classpath for a specific project path. */
   fun getModuleClasspath(projectPath: String): List<String> {
     return try {
-      val projectManager = IProjectManager.getInstance()
-      val workspace = projectManager.getWorkspace() ?: return emptyList()
+      val workspace = this.workspace ?: return emptyList()
 
       val module = workspace.findProject(projectPath) as? ModuleProject ?: return emptyList()
 
@@ -600,8 +606,7 @@ class KotlinClasspathProvider {
   /** Gets all source directories from the project system. */
   fun getSourceDirectories(): List<String> {
     return try {
-      val projectManager = IProjectManager.getInstance()
-      val workspace = projectManager.getWorkspace() ?: return emptyList()
+      val workspace = this.workspace ?: return emptyList()
 
       val sourceDirs = mutableSetOf<String>()
 

@@ -108,7 +108,7 @@ class KotlinWorkspaceSetup(private val context: Context, private val workspace: 
 
     LspFeatures.setProcessManager(processManager)
     initializeCompilerService()
-    classpathProvider.initialize(compilerService)
+    classpathProvider.initialize(compilerService, workspace)
 
     startBuildWatcher(processManager)
 
@@ -348,12 +348,30 @@ class KotlinWorkspaceSetup(private val context: Context, private val workspace: 
     }
   }
 
-  fun cleanup() {
+  /**
+   * Stop the build watcher and its coroutine scope.
+   *
+   * <p>Called when the server is re-configured for another workspace: the old watcher would
+   * otherwise keep polling directories of a project that is no longer active. Compiler services are
+   * deliberately **not** destroyed here — they are process-wide caches keyed by `ModuleProject`
+   * (see [cleanup] for the process-exit path), and the other tab may still be using them.
+   */
+  fun stopWatchers() {
     try {
-      // Stop build watcher
       watcherJob?.cancel()
       buildWatcher?.close()
       watchScope.cancel()
+    } catch (e: Exception) {
+      KslLogs.warn("Error stopping workspace build watcher", e)
+    }
+    watcherJob = null
+    buildWatcher = null
+  }
+
+  fun cleanup() {
+    try {
+      // Stop build watcher
+      stopWatchers()
 
       compilerService?.destroy()
       KotlinCompilerProvider.getInstance().destroy()

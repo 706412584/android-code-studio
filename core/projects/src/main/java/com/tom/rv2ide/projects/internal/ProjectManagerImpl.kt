@@ -72,13 +72,26 @@ import org.slf4j.LoggerFactory
  */
 @AutoService(IProjectManager::class)
 @RestrictTo(RestrictTo.Scope.LIBRARY_GROUP_PREFIX)
-class ProjectManagerImpl : IProjectManager, EventReceiver {
+class ProjectManagerImpl(
+    /** 同时打开的会话上限；传 1 即退回单项目行为（S2 的回滚开关）。 */
+    maxSessions: Int = DEFAULT_MAX_SESSIONS
+) : IProjectManager, EventReceiver {
 
   /**
-   * 会话表。S1 阶段上限为 1（与改动前「一次只能打开一个项目」一致）；
-   * 多标签页在 S2/S3 提高上限，本类其余代码不需要再改。
+   * 会话表。默认上限 3（S2）；单项目回滚路径只需把 [DEFAULT_MAX_SESSIONS] 改回 1，
+   * 或通过构造参数传入 1。
    */
-  private val sessions = ProjectSessionRegistry(maxSessions = 1)
+  private val sessions = ProjectSessionRegistry(maxSessions = maxSessions)
+
+  /**
+   * 会话表本体。
+   *
+   * <p>给 `EditorTabsViewModel` 之类的 UI 数据层读取用：标签列表必须与
+   * `IProjectManager` 共用同一份会话数据，不能再建一套 map（否则切换/关闭时两边不一致）。
+   */
+  @get:RestrictTo(RestrictTo.Scope.LIBRARY_GROUP_PREFIX)
+  val sessionRegistry: ProjectSessionRegistry
+    get() = sessions
 
   /** 当前活跃会话；未打开项目时为 null。 */
   private val session: ProjectSession?
@@ -101,6 +114,45 @@ class ProjectManagerImpl : IProjectManager, EventReceiver {
     // 路径归一化与去重在注册表里完成（canonical path）。
     sessions.activate(directory)
   }
+
+  /**
+   * 打开（或切到）指定项目会话。
+   *
+   * <p>已打开时直接激活既有会话；未打开时新建，超过上限时淘汰最久未使用的非活跃会话。
+   *
+   * @return 该项目的会话。
+   */
+  @RestrictTo(RestrictTo.Scope.LIBRARY_GROUP_PREFIX)
+  fun openSession(dir: File): ProjectSession = sessions.activate(dir)
+
+  @RestrictTo(RestrictTo.Scope.LIBRARY_GROUP_PREFIX)
+  fun openSession(path: String): ProjectSession = openSession(File(path))
+
+  /**
+   * 切到已打开的会话，**不会**新建会话。
+   *
+   * @return 目标会话；项目未打开时返回 null。
+   */
+  @RestrictTo(RestrictTo.Scope.LIBRARY_GROUP_PREFIX)
+  fun switchTo(dir: File): ProjectSession? = sessions.switchTo(dir)
+
+  @RestrictTo(RestrictTo.Scope.LIBRARY_GROUP_PREFIX)
+  fun switchTo(path: String): ProjectSession? = switchTo(File(path))
+
+  /** 项目是否已经打开（用于「新建标签还是切回已有标签」的判断）。 */
+  @RestrictTo(RestrictTo.Scope.LIBRARY_GROUP_PREFIX)
+  fun isSessionOpen(dir: File): Boolean = sessions.isOpen(dir)
+
+  @RestrictTo(RestrictTo.Scope.LIBRARY_GROUP_PREFIX)
+  fun isSessionOpen(path: String): Boolean = isSessionOpen(File(path))
+
+  /** 当前活跃会话；未打开项目时为 null。 */
+  @RestrictTo(RestrictTo.Scope.LIBRARY_GROUP_PREFIX)
+  fun activeSession(): ProjectSession? = sessions.active()
+
+  /** 当前打开的会话（按首次打开顺序）。 */
+  @RestrictTo(RestrictTo.Scope.LIBRARY_GROUP_PREFIX)
+  fun allSessions(): List<ProjectSession> = sessions.all()
 
   /**
    * 项目是否已完成同步。
@@ -175,7 +227,7 @@ class ProjectManagerImpl : IProjectManager, EventReceiver {
   /**
    * 关闭当前活跃会话（编辑器 Activity 结束时调用）。
    *
-   * <p>与 [destroy] 的区别：只清掉**本会话**的项目级状态，不影响（未来的）其它会话。
+   * <p>与 [destroy] 的区别：只清掉**本会话**的项目级状态，不影响其它会话。
    * 单会话阶段两者等价；多标签页阶段编辑器关闭一个标签时**必须**走这里。
    */
   @RestrictTo(RestrictTo.Scope.LIBRARY_GROUP_PREFIX)
@@ -184,6 +236,24 @@ class ProjectManagerImpl : IProjectManager, EventReceiver {
     log.info("Closing project session: {}", current.id)
     sessions.close(current.projectDir)
   }
+
+  /**
+   * 关闭指定会话；不影响其它会话。
+   *
+   * <p>若关闭的是活跃会话，注册表会把活跃指针切到最近使用的剩余会话
+   * （没有剩余会话时才置空），调用方可据此重新初始化编辑器。
+   *
+   * @return 被关闭的会话；项目未打开时返回 null。
+   */
+  @RestrictTo(RestrictTo.Scope.LIBRARY_GROUP_PREFIX)
+  fun closeSession(dir: File): ProjectSession? {
+    val removed = sessions.close(dir) ?: return null
+    log.info("Closing project session: {}", removed.id)
+    return removed
+  }
+
+  @RestrictTo(RestrictTo.Scope.LIBRARY_GROUP_PREFIX)
+  fun closeSession(path: String): ProjectSession? = closeSession(File(path))
 
   @JvmOverloads
   fun generateSources(
@@ -402,6 +472,15 @@ class ProjectManagerImpl : IProjectManager, EventReceiver {
   }
 
   companion object {
+
+    /**
+     * 同时打开的会话上限。
+     *
+     * <p>S2 取 3（计划 §4 S2/S4：上限 3、可配）。**回滚单项目**：改成 1 即可——
+     * 此时 `activate()` 打开新项目会关闭旧项目，与 S1 行为完全一致。
+     */
+    const val DEFAULT_MAX_SESSIONS = 3
+
     private val log = LoggerFactory.getLogger(ProjectManagerImpl::class.java)
 
     @JvmStatic

@@ -28,6 +28,7 @@ import com.tom.rv2ide.progress.ProgressManager
 import com.tom.rv2ide.progress.ProgressManager.Companion.abortIfCancelled
 import com.tom.rv2ide.projects.FileManager
 import com.tom.rv2ide.projects.IProjectManager
+import com.tom.rv2ide.projects.IWorkspace
 import java.nio.file.Path
 import java.time.Instant
 import java.util.concurrent.atomic.AtomicBoolean
@@ -38,7 +39,19 @@ import org.slf4j.LoggerFactory
  *
  * @author Akash Yadav
  */
-class JavaDiagnosticProvider {
+class JavaDiagnosticProvider(
+    /**
+     * Resolves the workspace this provider belongs to.
+     *
+     * <p>The language server is a process-wide singleton serving the active project tab, so the
+     * workspace must come from the server (last `setupWorkspace`), not from the global
+     * `IProjectManager` — during a tab switch the singleton may already point at another project.
+     * The default keeps standalone/AI call sites working.
+     */
+    private val workspaceProvider: () -> IWorkspace? = {
+      IProjectManager.getInstance().getWorkspace()
+    }
+) {
 
   private val analyzeTimestamps = mutableMapOf<Path, Instant>()
 
@@ -58,7 +71,7 @@ class JavaDiagnosticProvider {
   fun analyze(file: Path): DiagnosticResult {
 
     val module =
-        IProjectManager.getInstance().getWorkspace()?.findModuleForFile(file, false)
+        workspaceProvider()?.findModuleForFile(file, false)
             ?: return DiagnosticResult.NO_UPDATE
     val compiler = JavaCompilerService(module)
 
@@ -118,6 +131,19 @@ class JavaDiagnosticProvider {
   fun clearTimestamp(file: Path) {
     analyzeTimestamps.remove(file)
     cachedDiagnostics.remove(file)
+  }
+
+  /**
+   * Drop every cached timestamp/diagnostic.
+   *
+   * <p>Called when the server switches workspace: diagnostics of the previous project must not be
+   * served for the same-named file in the new one, and the cached timestamps refer to compilers
+   * that are about to be destroyed.
+   */
+  fun clearAll() {
+    analyzeTimestamps.clear()
+    cachedDiagnostics.clear()
+    cancel()
   }
 
   private fun doAnalyze(file: Path, task: CompileTask): DiagnosticResult {

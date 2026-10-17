@@ -272,10 +272,19 @@ class EditorViewModel : ViewModel() {
   }
 
   fun writeOpenedFiles(cache: OpenedFilesCache?) {
+    // 在**启动协程之前**捕获项目目录：切项目标签时先 saveOpenedFiles() 再改 projectDir，
+    // 若把目录解析放进协程里，调度延迟会让旧项目的文件写进新项目的缓存。
+    // 只捕获目录本身（纯内存读取），路径拼接与 .bak 重命名仍留在 IO 线程上。
+    val dir = projectDir ?: runCatching { IProjectManager.getInstance().projectDir }.getOrNull()
+    if (dir == null) {
+      ILogger.ROOT.warn("[EditorViewModel] No project directory; skipping opened files cache write")
+      return
+    }
+
     viewModelScope
         .launch(Dispatchers.IO) {
           try {
-            val file = getOpenedFilesCache(true)
+            val file = openedFilesCacheFile(dir, true)
 
             if (cache == null) {
               // Only delete if file exists
@@ -327,9 +336,12 @@ class EditorViewModel : ViewModel() {
   }
 
   @PublishedApi
-  internal fun getOpenedFilesCache(forWrite: Boolean = false): File {
-    val dir = projectDir ?: IProjectManager.getInstance().projectDir
-    var file = Environment.getProjectCacheDir(dir)
+  internal fun getOpenedFilesCache(forWrite: Boolean = false): File =
+      openedFilesCacheFile(projectDir ?: IProjectManager.getInstance().projectDir, forWrite)
+
+  /** 按显式项目目录解析缓存文件；[writeOpenedFiles] 用它把目录固定为写入时的项目。 */
+  private fun openedFilesCacheFile(projectDir: File, forWrite: Boolean): File {
+    var file = Environment.getProjectCacheDir(projectDir)
     file = File(file, "editor/openedFiles.json")
 
     if (file.exists() && forWrite) {
