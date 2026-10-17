@@ -386,6 +386,116 @@ public final class GradleBuildTool extends BaseTool {
       return apk == null ? null : apk.getAbsolutePath();
     }
 
+    /**
+     * 按项目路径定位 APK（跨项目会话必须用这个重载）。
+     *
+     * <p>实现方式：先按项目根目录扫描 `build/outputs/apk/**`（限深、跳过中间产物
+     * 目录），按修改时间取最新。**不走** `IProjectManager`——那是编辑器单例，
+     * 会话绑定 B 时会指向 A。
+     *
+     * <p>扫描失败（目录不存在/无产物）时返回 null，由调用方给出「未能自动定位」。
+     */
+    static String findApkPath(String projectPath) {
+      File root = new File(projectPath);
+      if (!root.isDirectory()) {
+        return null;
+      }
+      File newest = null;
+      java.util.ArrayDeque<File> queue = new java.util.ArrayDeque<>();
+      queue.add(root);
+      int visited = 0;
+      // 限深防止在超大仓库里扫到天荒地老；build/ 之外的层级一般不超过 3。
+      while (!queue.isEmpty() && visited < MAX_SCAN_DIRS) {
+        File dir = queue.poll();
+        visited++;
+        File[] children = dir.listFiles();
+        if (children == null) {
+          continue;
+        }
+        for (File child : children) {
+          if (child.isDirectory()) {
+            String name = child.getName();
+            if ("build".equals(name)) {
+              File apk = newestApkUnder(new File(child, "outputs/apk"));
+              if (apk != null && (newest == null || apk.lastModified() > newest.lastModified())) {
+                newest = apk;
+              }
+              continue;
+            }
+            if (".git".equals(name) || ".gradle".equals(name) || "node_modules".equals(name)) {
+              continue;
+            }
+            queue.add(child);
+          }
+        }
+      }
+      return newest == null ? null : newest.getAbsolutePath();
+    }
+
+    /** `build/outputs/apk` 下最新的 .apk（限深 4 层）。 */
+    private static File newestApkUnder(File dir) {
+      if (!dir.isDirectory()) {
+        return null;
+      }
+      File newest = null;
+      java.util.ArrayDeque<File> queue = new java.util.ArrayDeque<>();
+      java.util.ArrayDeque<Integer> depths = new java.util.ArrayDeque<>();
+      queue.add(dir);
+      depths.add(0);
+      while (!queue.isEmpty()) {
+        File current = queue.poll();
+        int depth = depths.poll();
+        File[] children = current.listFiles();
+        if (children == null) {
+          continue;
+        }
+        for (File child : children) {
+          if (child.isDirectory() && depth < 4) {
+            queue.add(child);
+            depths.add(depth + 1);
+          } else if (child.isFile() && child.getName().endsWith(".apk")) {
+            if (newest == null || child.lastModified() > newest.lastModified()) {
+              newest = child;
+            }
+          }
+        }
+      }
+      return newest;
+    }
+
+    /** 扫描目录数上限：防止在异常大的仓库里阻塞构建结果返回。 */
+    private static final int MAX_SCAN_DIRS = 4000;
+
+    /**
+     * 按项目路径读 applicationId。
+     *
+     * <p>从 APK 同目录的 `output-metadata.json` 里取（AGP 会写 applicationId）；
+     * 读不到时返回 null——这不是关键信息，不值得为它做额外解析。
+     */
+    static String findApplicationId(String projectPath) {
+      String apkPath = findApkPath(projectPath);
+      if (apkPath == null) {
+        return null;
+      }
+      File meta = new File(new File(apkPath).getParentFile(), "output-metadata.json");
+      if (!meta.isFile()) {
+        return null;
+      }
+      try {
+        String text = new String(java.nio.file.Files.readAllBytes(meta.toPath()),
+            java.nio.charset.StandardCharsets.UTF_8);
+        org.json.JSONObject json = new org.json.JSONObject(text);
+        org.json.JSONArray elements = json.optJSONArray("elements");
+        if (elements != null && elements.length() > 0) {
+          String id = elements.optJSONObject(0).optString("applicationId", "");
+          return id.isEmpty() ? null : id;
+        }
+      } catch (Exception e) {
+        log.debug("读取 output-metadata.json 失败: {}", meta, e);
+      }
+      return null;
+    }
+
     static String findApplicationId() {
       for (AndroidModule module : androidModules()) {
         BasicAndroidVariantMetadata variant = module.getSelectedVariant();
