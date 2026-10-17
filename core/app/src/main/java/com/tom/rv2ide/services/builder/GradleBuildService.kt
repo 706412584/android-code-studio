@@ -12,7 +12,7 @@
  *  GNU General Public License for more details.
  *
  *  You should have received a copy of the GNU General Public License
- *   along with AndroidIDE.  If not, see <https://www.gnu.org/licenses/>.
+ *  along with AndroidIDE.  If not, see <https://www.gnu.org/licenses/>.
  */
 package com.tom.rv2ide.services.builder
 
@@ -23,7 +23,6 @@ import android.app.PendingIntent
 import android.app.Service
 import android.content.Intent
 import android.os.IBinder
-import android.text.TextUtils
 import androidx.core.app.NotificationManagerCompat
 import com.blankj.utilcode.util.ResourceUtils
 import com.blankj.utilcode.util.ZipUtils
@@ -40,19 +39,12 @@ import com.tom.rv2ide.projects.builder.BuildOutputBuffer
 import com.tom.rv2ide.projects.builder.BuildService
 import com.tom.rv2ide.projects.internal.ProjectManagerImpl
 import com.tom.rv2ide.resources.R
-import com.tom.rv2ide.services.ToolingServerNotStartedException
 import com.tom.rv2ide.services.builder.ToolingServerRunner.OnServerStartListener
-import com.tom.rv2ide.tasks.ifCancelledOrInterrupted
 import com.tom.rv2ide.tasks.runOnUiThread
 import com.tom.rv2ide.tooling.api.Aapt2Config
-import com.tom.rv2ide.tooling.api.ForwardingToolingApiClient
-import com.tom.rv2ide.tooling.api.IProject
 import com.tom.rv2ide.tooling.api.IToolingApiClient
-import com.tom.rv2ide.tooling.api.IToolingApiServer
-import com.tom.rv2ide.tooling.api.LogSenderConfig.PROPERTY_LOGSENDER_ENABLED
 import com.tom.rv2ide.tooling.api.messages.InitializeProjectParams
 import com.tom.rv2ide.tooling.api.messages.LogMessageParams
-import com.tom.rv2ide.tooling.api.messages.TaskExecutionMessage
 import com.tom.rv2ide.tooling.api.messages.result.BuildCancellationRequestResult
 import com.tom.rv2ide.tooling.api.messages.result.BuildInfo
 import com.tom.rv2ide.tooling.api.messages.result.BuildResult
@@ -64,20 +56,19 @@ import com.tom.rv2ide.tooling.events.ProgressEvent
 import com.tom.rv2ide.utils.Environment
 import java.io.File
 import java.io.IOException
-import java.io.InputStream
-import java.util.Objects
 import java.util.concurrent.CompletableFuture
-import java.util.concurrent.CompletionException
-import java.util.concurrent.TimeUnit
-import kotlinx.coroutines.CoroutineName
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.launch
 import org.slf4j.LoggerFactory
 
 /**
  * A foreground service that handles interaction with the Gradle Tooling API.
+ *
+ * <p><b>职责边界（P1 起）</b>：本类是**宿主壳**——负责前台通知、Lookup 注册、以及
+ * 把编辑器项目的路径交给 [ToolingConnection]。真正的 tooling 进程管理、构建状态与
+ * 输出缓冲都在连接里，这样同一个连接类可以被注册表复用于后台项目（见
+ * `multiproject-build-plan.md`）。
+ *
+ * <p>Service 在同进程内恒为单例，因此「每项目一个 Service」不可行；可行的是
+ * 「每项目一个连接」，本类只承载编辑器那一个。
  *
  * @author Akash Yadav
  */
@@ -85,77 +76,154 @@ class GradleBuildService :
     Service(), BuildService, IToolingApiClient, ToolingServerRunner.Observer {
 
   private var mBinder: GradleServiceBinder? = null
-  private var isToolingServerStarted = false
-  override var isBuildInProgress = false
-    private set
 
   /**
-   * 构建输出的旁路缓冲，供 AI agent 读取失败原因。
+   * 编辑器项目对应的连接。
    *
-   * 与 [eventListener] 并存：输出照常流向 IDE 构建面板，同时留一份副本给 agent。
-   * `TaskExecutionResult` 只带 `Failure` 枚举，不含错误文本，模型拿不到真实报错
-   * 就只能靠反复试错（实测一次构建失败烧掉 30 次工具调用）。
+   * <p>惰性创建：`onCreate` 时项目可能尚未打开（`ProjectManagerImpl.projectDirPath`
+   * 为空）。连接按首次使用时的路径创建；路径变化时重建（用户切换项目）。
    */
-  override val buildOutput = BuildOutputBuffer()
+  private var connection: ToolingConnection? = null
+  private var connectionProjectPath: String = ""
 
-  @Volatile private var _lastBuildOutcome: BuildOutcome? = null
-
-  /**
-   * 最近一次构建的结果，供 agent 核验 APK 是否为本次产物。
-   *
-   * 模型会谎报构建成功（实测：删掉编译错误后未重新构建，却称「构建成功、APK 已生成」），
-   * 因此需要独立记录，而不是采信模型自述。
-   */
-  override val lastBuildOutcome: BuildOutcome?
-    get() = _lastBuildOutcome
-
-  override fun recordRejectedBuildAttempt() {
-    // 以「刚发生」为开始时间，使任何既有 APK 都被判定为陈旧产物
-    _lastBuildOutcome = BuildOutcome(false, System.currentTimeMillis())
-  }
-
-  /**
-   * We do not provide direct access to GradleBuildService instance to the Tooling API launcher as
-   * it may cause memory leaks. Instead, we create another client object which forwards all calls to
-   * us. So, when the service is destroyed, we release the reference to the service from this
-   * client.
-   */
-  private var _toolingApiClient: ForwardingToolingApiClient? = null
-  private var toolingServerRunner: ToolingServerRunner? = null
-  private var outputReaderJob: Job? = null
   private var notificationManager: NotificationManager? = null
-  private var server: IToolingApiServer? = null
-  private var eventListener: EventListener? = null
-  private var isReleaseVariant = false
 
-  private val buildServiceScope =
-      CoroutineScope(Dispatchers.Default + CoroutineName("GradleBuildService"))
+  /** 前台通知的接收方；把连接的状态变化映射成通知文案。 */
+  private val notificationSink =
+      object : BuildNotificationSink {
+        override fun update(state: BuildNotificationState) {
+          val message =
+              when (state) {
+                BuildNotificationState.IDLE -> getString(R.string.build_status_idle)
+                BuildNotificationState.IN_PROGRESS -> getString(R.string.build_status_in_progress)
+                BuildNotificationState.SUCCESS -> getString(R.string.build_status_sucess)
+                BuildNotificationState.FAILED -> getString(R.string.build_status_failed)
+              }
+          updateNotification(message, state == BuildNotificationState.IN_PROGRESS)
+        }
 
-  private val isGradleWrapperAvailable: Boolean
-    get() {
-      val projectManager = ProjectManagerImpl.getInstance()
-      val projectDir = projectManager.projectDirPath
-      if (TextUtils.isEmpty(projectDir)) {
-        return false
+        override fun onServerExited() {
+          stopForeground(STOP_FOREGROUND_REMOVE)
+        }
       }
-
-      val projectRoot = Objects.requireNonNull(projectManager.projectDir)
-      if (!projectRoot.exists()) {
-        return false
-      }
-
-      val gradlew = File(projectRoot, "gradlew")
-      val gradleWrapperJar = File(projectRoot, "gradle/wrapper/gradle-wrapper.jar")
-      val gradleWrapperProps = File(projectRoot, "gradle/wrapper/gradle-wrapper.properties")
-      return gradlew.exists() && gradleWrapperJar.exists() && gradleWrapperProps.exists()
-    }
 
   companion object {
-
     private val log = LoggerFactory.getLogger(GradleBuildService::class.java)
     private val NOTIFICATION_ID = R.string.app_name
-    private val SERVER_System_err = LoggerFactory.getLogger("ToolingApiErrorStream")
   }
+
+  // ---- BuildService 委托 ----
+
+  override val isBuildInProgress: Boolean
+    get() = connection?.isBuildInProgress == true
+
+  override val buildOutput: BuildOutputBuffer
+    get() = requireConnection().buildOutput
+
+  override val lastBuildOutcome: BuildOutcome?
+    get() = connection?.lastBuildOutcome
+
+  override fun recordRejectedBuildAttempt() {
+    connection?.recordRejectedBuildAttempt()
+  }
+
+  override fun isToolingServerStarted(): Boolean = connection?.isToolingServerStarted() == true
+
+  // ---- IToolingApiClient 委托 ----
+
+  override fun logMessage(params: LogMessageParams) {
+    connection?.logMessage(params)
+  }
+
+  override fun logOutput(line: String) {
+    connection?.logOutput(line)
+  }
+
+  override fun prepareBuild(buildInfo: BuildInfo) {
+    connection?.prepareBuild(buildInfo)
+  }
+
+  override fun onBuildSuccessful(result: BuildResult) {
+    connection?.onBuildSuccessful(result)
+  }
+
+  override fun onBuildFailed(result: BuildResult) {
+    connection?.onBuildFailed(result)
+  }
+
+  override fun onProgressEvent(event: ProgressEvent) {
+    connection?.onProgressEvent(event)
+  }
+
+  override fun getBuildArguments(): CompletableFuture<List<String>> {
+    // 原实现的两项参数（AAPT2 override、logsender 开关）保持不变；
+    // init script 由连接持有路径，避免并发连接互相覆盖进程级属性。
+    val extraArgs = ArrayList<String>()
+    extraArgs.add("-Pandroid.aapt2FromMavenOverride=" + Environment.AAPT2.absolutePath)
+    extraArgs.add("${com.tom.rv2ide.tooling.api.LogSenderConfig.PROPERTY_LOGSENDER_ENABLED}=" +
+        "${DevOpsPreferences.logsenderEnabled}")
+
+    if (DevOpsPreferences.logsenderEnabled) {
+      connection?.setLoggerInitScriptPath(createLoggerInitScript().absolutePath)
+    } else {
+      connection?.setLoggerInitScriptPath(null)
+    }
+    connection?.getBuildArguments()?.get()?.let { extraArgs.addAll(it) }
+
+    if (BuildPreferences.isStacktraceEnabled) extraArgs.add("--stacktrace")
+    if (BuildPreferences.isInfoEnabled) extraArgs.add("--info")
+    if (BuildPreferences.isDebugEnabled) extraArgs.add("--debug")
+    if (BuildPreferences.isScanEnabled) extraArgs.add("--scan")
+    if (BuildPreferences.isWarningModeAllEnabled) {
+      extraArgs.add("--warning-mode")
+      extraArgs.add("all")
+    }
+    if (BuildPreferences.isBuildCacheEnabled) extraArgs.add("--build-cache")
+    if (BuildPreferences.isOfflineEnabled) extraArgs.add("--offline")
+    return CompletableFuture.completedFuture(extraArgs)
+  }
+
+  override fun checkGradleWrapperAvailability(): CompletableFuture<GradleWrapperCheckResult> {
+    return if (isGradleWrapperAvailable)
+        CompletableFuture.completedFuture(GradleWrapperCheckResult(true))
+    else installWrapper()
+  }
+
+  override fun metadata(): CompletableFuture<ToolingServerMetadata> = requireConnection().metadata()
+
+  override fun initializeProject(
+      params: InitializeProjectParams
+  ): CompletableFuture<InitializeResult> = requireConnection().initializeProject(params)
+
+  override fun executeTasks(vararg tasks: String): CompletableFuture<TaskExecutionResult> =
+      requireConnection().executeTasks(*tasks)
+
+  override fun cancelCurrentBuild(): CompletableFuture<BuildCancellationRequestResult> =
+      requireConnection().cancelCurrentBuild()
+
+  // ---- ToolingServerRunner.Observer 委托 ----
+
+  override fun onListenerStarted(
+      server: com.tom.rv2ide.tooling.api.IToolingApiServer,
+      projectProxy: com.tom.rv2ide.tooling.api.IProject,
+      errorStream: java.io.InputStream,
+  ) {
+    val conn = requireConnection()
+    conn.onListenerStarted(server, projectProxy, errorStream)
+    Lookup.getDefault().update(BuildService.KEY_PROJECT_PROXY, projectProxy)
+  }
+
+  override fun onServerExited(exitCode: Int) {
+    connection?.onServerExited(exitCode)
+  }
+
+  override fun getClient(): IToolingApiClient {
+    // 必须返回**本 Service**（而不是连接的 client）：ToolingServerRunner 用它做
+    // LSP 回调入口，回调会经过本类的委托再落到连接。
+    return this
+  }
+
+  // ---- 生命周期 ----
 
   override fun onCreate() {
     notificationManager = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
@@ -163,9 +231,67 @@ class GradleBuildService :
     Lookup.getDefault().update(BuildService.KEY_BUILD_SERVICE, this)
   }
 
-  override fun isToolingServerStarted(): Boolean {
-    return isToolingServerStarted && server != null
+  override fun onStartCommand(intent: Intent, flags: Int, startId: Int): Int {
+    // No point in restarting the service if it really gets killed.
+    return START_NOT_STICKY
   }
+
+  override fun onDestroy() {
+    mBinder?.release()
+    mBinder = null
+
+    log.info("Service is being destroyed. Dismissing the shown notification...")
+    notificationManager!!.cancel(NOTIFICATION_ID)
+
+    val lookup = Lookup.getDefault()
+    lookup.unregister(BuildService.KEY_BUILD_SERVICE)
+    lookup.unregister(BuildService.KEY_PROJECT_PROXY)
+
+    connection?.close()
+    connection = null
+  }
+
+  override fun onBind(intent: Intent): IBinder? {
+    if (mBinder == null) {
+      mBinder = GradleServiceBinder(this)
+    }
+    return mBinder
+  }
+
+  // ---- 连接管理 ----
+
+  /**
+   * 取当前编辑器项目的连接；项目路径变化时重建。
+   *
+   * <p>路径来自 `ProjectManagerImpl`（编辑器单例）——**只有这里**可以读它。
+   * 后台连接由注册表创建并显式传入路径，不经过本方法。
+   */
+  private fun requireConnection(): ToolingConnection {
+    val projectDir = currentProjectPath()
+    val existing = connection
+    if (existing != null && existing.projectPath == projectDir) {
+      return existing
+    }
+    // 项目切换：旧连接必须关掉，否则会留下一个孤儿 tooling 进程。
+    existing?.close()
+    val fresh = ToolingConnection(projectDir, notificationSink) { this }
+    // 连接新建时补上此前登记的监听器（见 setEventListener）。
+    fresh.setEventListener(pendingEventListener)
+    connection = fresh
+    connectionProjectPath = projectDir
+    return fresh
+  }
+
+  private fun currentProjectPath(): String {
+    return try {
+      ProjectManagerImpl.getInstance().projectDirPath ?: ""
+    } catch (e: Exception) {
+      log.warn("Unable to resolve project directory", e)
+      ""
+    }
+  }
+
+  // ---- 通知 ----
 
   private fun showNotification(
       message: String,
@@ -200,62 +326,24 @@ class GradleBuildService :
             .setContentText(message)
             .setContentIntent(intent)
 
-    // Checking whether to add a ProgressBar to the notification
     if (isProgress) {
-      // Add ProgressBar to Notification
       builder.setProgress(100, 0, true)
     }
     return builder.build()
   }
 
-  override fun onStartCommand(intent: Intent, flags: Int, startId: Int): Int {
-    // No point in restarting the service if it really gets killed.
-    return START_NOT_STICKY
+  private fun updateNotification(message: String, isProgress: Boolean) {
+    runOnUiThread { doUpdateNotification(message, isProgress) }
   }
 
-  override fun onDestroy() {
-    mBinder?.release()
-    mBinder = null
-
-    log.info("Service is being destroyed. Dismissing the shown notification...")
-    notificationManager!!.cancel(NOTIFICATION_ID)
-
-    val lookup = Lookup.getDefault()
-    lookup.unregister(BuildService.KEY_BUILD_SERVICE)
-    lookup.unregister(BuildService.KEY_PROJECT_PROXY)
-
-    server?.also { server ->
-      try {
-        log.info("Shutting down Tooling API server...")
-        // send the shutdown request but do not wait for the server to respond
-        // the service should not block the onDestroy call in order to avoid timeouts
-        // the tooling server must release resources and exit automatically
-        server.shutdown().get(1, TimeUnit.SECONDS)
-      } catch (e: Throwable) {
-        log.error("Failed to shutdown Tooling API server", e)
-      }
-    }
-
-    log.debug("Cancelling tooling server runner...")
-    toolingServerRunner?.release()
-    toolingServerRunner = null
-
-    _toolingApiClient?.client = null
-    _toolingApiClient = null
-
-    log.debug("Cancelling tooling server output reader job...")
-    outputReaderJob?.cancel()
-    outputReaderJob = null
-
-    isToolingServerStarted = false
+  private fun doUpdateNotification(message: String, isProgress: Boolean) {
+    (getSystemService(NOTIFICATION_SERVICE) as NotificationManager).notify(
+        NOTIFICATION_ID,
+        buildNotification(message, isProgress),
+    )
   }
 
-  override fun onBind(intent: Intent): IBinder? {
-    if (mBinder == null) {
-      mBinder = GradleServiceBinder(this)
-    }
-    return mBinder
-  }
+  // ---- wrapper ----
 
   /** Creates a Gradle init script that injects the logger plugin into user projects. */
   private fun createLoggerInitScript(): File {
@@ -264,15 +352,15 @@ class GradleBuildService :
         """
           allprojects {
               afterEvaluate {
-                  if (plugins.hasPlugin('com.android.application') || 
+                  if (plugins.hasPlugin('com.android.application') ||
                       plugins.hasPlugin('com.android.library')) {
-                      
+
                       android {
                           compileOptions {
                               coreLibraryDesugaringEnabled = true
                           }
                       }
-                      
+
                       dependencies {
                           implementation files('${getLoggerRuntimeAar().absolutePath}')
                           coreLibraryDesugaring 'com.android.tools:desugar_jdk_libs:2.0.4'
@@ -286,7 +374,6 @@ class GradleBuildService :
     return initScript
   }
 
-  /** Gets or creates the logger plugin directory. */
   private fun getLoggerPluginDir(): File {
     val dir = File(Environment.HOME, "plugins/logger")
     if (!dir.exists()) {
@@ -295,11 +382,9 @@ class GradleBuildService :
     return dir
   }
 
-  /** Extracts and returns the logger runtime AAR file. */
   private fun getLoggerRuntimeAar(): File {
     val aar = File(getLoggerPluginDir(), "logger-runtime.aar")
     if (!aar.exists()) {
-      // Extract from assets
       if (
           !ResourceUtils.copyFileFromAssets(
               ToolsManager.getCommonAsset("logger-runtime.aar"),
@@ -312,160 +397,36 @@ class GradleBuildService :
     return aar
   }
 
-  /** Check if tasks include debug builds (not release-only). */
-  private fun isDebugBuild(tasks: List<String>): Boolean {
-    // Check if any task contains "Debug" or doesn't contain "Release"
-    val hasDebugTask =
-        tasks.any { task ->
-          task.contains("Debug", ignoreCase = true) ||
-              task.contains("assembleDebug", ignoreCase = true)
-        }
-
-    val hasOnlyRelease =
-        tasks.all { task ->
-          task.contains("Release", ignoreCase = true) ||
-              task.contains("assembleRelease", ignoreCase = true)
-        }
-
-    // If it's explicitly debug, or not explicitly release-only, treat as debug
-    return hasDebugTask || !hasOnlyRelease
-  }
-
-  /**
-   * Inject logger by adding init script to Gradle arguments. This modifies the system property that
-   * will be read by the Tooling API.
-   */
-  private fun injectLoggerForCurrentBuild() {
-    val initScript = createLoggerInitScript()
-    // Set property that will be picked up by Tooling API
-    System.setProperty("ide.logger.init.script", initScript.absolutePath)
-  }
-
-  override fun onListenerStarted(
-      server: IToolingApiServer,
-      projectProxy: IProject,
-      errorStream: InputStream,
-  ) {
-    startServerOutputReader(errorStream)
-    this.server = server
-    Lookup.getDefault().update(BuildService.KEY_PROJECT_PROXY, projectProxy)
-    isToolingServerStarted = true
-  }
-
-  override fun onServerExited(exitCode: Int) {
-    log.warn("Tooling API process terminated with exit code: {}", exitCode)
-    stopForeground(STOP_FOREGROUND_REMOVE)
-  }
-
-  override fun getClient(): IToolingApiClient {
-    if (_toolingApiClient == null) {
-      _toolingApiClient = ForwardingToolingApiClient(this)
-    }
-    return _toolingApiClient!!
-  }
-
-  override fun logMessage(params: LogMessageParams) {
-    val logger = LoggerFactory.getLogger(params.tag)
-    when (params.level) {
-      'D' -> logger.debug(params.message)
-      'W' -> logger.warn(params.message)
-      'E' -> logger.error(params.message)
-      'I' -> logger.info(params.message)
-
-      else -> logger.trace(params.message)
-    }
-  }
-
-  override fun logOutput(line: String) {
-    eventListener?.onOutput(line)
-    // 旁路留一份给 AI agent，让它能看到真实错误而非只有 BUILD_FAILED
-    buildOutput.append(line)
-  }
-
-  override fun prepareBuild(buildInfo: BuildInfo) {
-    updateNotification(getString(R.string.build_status_in_progress), true)
-    eventListener?.prepareBuild(buildInfo)
-  }
-
-  override fun onBuildSuccessful(result: BuildResult) {
-    updateNotification(getString(R.string.build_status_sucess), false)
-    eventListener?.onBuildSuccessful(result.tasks)
-  }
-
-  override fun onBuildFailed(result: BuildResult) {
-    updateNotification(getString(R.string.build_status_failed), false)
-    eventListener?.onBuildFailed(result.tasks)
-  }
-
-  override fun onProgressEvent(event: ProgressEvent) {
-    eventListener?.onProgressEvent(event)
-  }
-
-  override fun getBuildArguments(): CompletableFuture<List<String>> {
-    val extraArgs = ArrayList<String>()
-    
-    if (DevOpsPreferences.logsenderEnabled) {
-      injectLoggerForCurrentBuild()
-      if (!isReleaseVariant) {
-        val initScriptPath = System.getProperty("ide.logger.init.script")
-        if (initScriptPath != null) {
-          extraArgs.add("--init-script")
-          extraArgs.add(initScriptPath)
-          System.clearProperty("ide.logger.init.script")
-        }
+  private val isGradleWrapperAvailable: Boolean
+    get() {
+      val projectManager = ProjectManagerImpl.getInstance()
+      val projectDir = projectManager.projectDirPath
+      if (projectDir.isNullOrEmpty()) {
+        return false
       }
+      val projectRoot = projectManager.projectDir ?: return false
+      if (!projectRoot.exists()) {
+        return false
+      }
+      val gradlew = File(projectRoot, "gradlew")
+      val gradleWrapperJar = File(projectRoot, "gradle/wrapper/gradle-wrapper.jar")
+      val gradleWrapperProps = File(projectRoot, "gradle/wrapper/gradle-wrapper.properties")
+      return gradlew.exists() && gradleWrapperJar.exists() && gradleWrapperProps.exists()
     }
-
-    // Override AAPT2 binary
-    extraArgs.add("-Pandroid.aapt2FromMavenOverride=" + Environment.AAPT2.absolutePath)
-    extraArgs.add("-P${PROPERTY_LOGSENDER_ENABLED}=${DevOpsPreferences.logsenderEnabled}")
-
-    if (BuildPreferences.isStacktraceEnabled) {
-      extraArgs.add("--stacktrace")
-    }
-    if (BuildPreferences.isInfoEnabled) {
-      extraArgs.add("--info")
-    }
-    if (BuildPreferences.isDebugEnabled) {
-      extraArgs.add("--debug")
-    }
-    if (BuildPreferences.isScanEnabled) {
-      extraArgs.add("--scan")
-    }
-    if (BuildPreferences.isWarningModeAllEnabled) {
-      extraArgs.add("--warning-mode")
-      extraArgs.add("all")
-    }
-    if (BuildPreferences.isBuildCacheEnabled) {
-      extraArgs.add("--build-cache")
-    }
-    if (BuildPreferences.isOfflineEnabled) {
-      extraArgs.add("--offline")
-    }
-
-    return CompletableFuture.completedFuture(extraArgs)
-  }
-
-  override fun checkGradleWrapperAvailability(): CompletableFuture<GradleWrapperCheckResult> {
-    return if (isGradleWrapperAvailable)
-        CompletableFuture.completedFuture(GradleWrapperCheckResult(true))
-    else installWrapper()
-  }
-
-  internal fun setServerListener(listener: OnServerStartListener?) {
-    if (toolingServerRunner != null) {
-      toolingServerRunner!!.setListener(listener)
-    }
-  }
 
   private fun installWrapper(): CompletableFuture<GradleWrapperCheckResult> {
-    eventListener?.also { eventListener ->
+    eventListenerForWrapper()?.also { eventListener ->
       eventListener.onOutput("-------------------- NOTE --------------------")
       eventListener.onOutput(getString(R.string.msg_installing_gradlew))
       eventListener.onOutput("----------------------------------------------")
     }
     return CompletableFuture.supplyAsync { doInstallWrapper() }
   }
+
+  private fun eventListenerForWrapper(): EventListener? = wrapperListener
+
+  /** 供 installWrapper 输出提示；由 setEventListener 同步。 */
+  @Volatile private var wrapperListener: EventListener? = null
 
   private fun doInstallWrapper(): GradleWrapperCheckResult {
     val extracted = File(Environment.TMP_DIR, "gradle-wrapper.zip")
@@ -490,138 +451,39 @@ class GradleBuildService :
     return GradleWrapperCheckResult(false)
   }
 
-  private fun updateNotification(message: String, isProgress: Boolean) {
-    runOnUiThread { doUpdateNotification(message, isProgress) }
-  }
+  // ---- 编辑器侧入口（供 ProjectHandlerActivity 使用） ----
 
-  private fun doUpdateNotification(message: String, isProgress: Boolean) {
-    (getSystemService(NOTIFICATION_SERVICE) as NotificationManager).notify(
-        NOTIFICATION_ID,
-        buildNotification(message, isProgress),
-    )
-  }
-
-  override fun metadata(): CompletableFuture<ToolingServerMetadata> {
-    checkServerStarted()
-    return server!!.metadata()
-  }
-
-  override fun initializeProject(
-      params: InitializeProjectParams
-  ): CompletableFuture<InitializeResult> {
-    checkServerStarted()
-    Objects.requireNonNull(params)
-    return performBuildTasks(server!!.initialize(params)).thenApply { result ->
-      result
-    }
-  }
- 
-  override fun executeTasks(vararg tasks: String): CompletableFuture<TaskExecutionResult> {
-    checkServerStarted()
-    val message = TaskExecutionMessage(listOf(*tasks))
-    val startedAt = System.currentTimeMillis()
-    return performBuildTasks(server!!.executeTasks(message))
-        .whenComplete { result, error ->
-          // 记录结果供 agent 核验 APK 是否可信。异常路径也要记，否则失败会被当成「无记录」而放行。
-          val successful = error == null && result != null && result.isSuccessful
-          _lastBuildOutcome = BuildOutcome(successful, startedAt)
-        }
-  }
-
-  override fun cancelCurrentBuild(): CompletableFuture<BuildCancellationRequestResult> {
-    checkServerStarted()
-    return server!!.cancelCurrentBuild()
-  }
-
-  private fun <T> performBuildTasks(future: CompletableFuture<T>): CompletableFuture<T> {
-    return CompletableFuture.runAsync(this::onPrepareBuildRequest)
-        .handleAsync { _, _ ->
-          try {
-            return@handleAsync future.get()
-          } catch (e: Throwable) {
-            throw CompletionException(e)
-          }
-        }
-        .handle(this::markBuildAsFinished)
-  }
-
-  private fun onPrepareBuildRequest() {
-    checkServerStarted()
-    ensureTmpdir()
-    if (isBuildInProgress) {
-      logBuildInProgress()
-      throw BuildInProgressException()
-    }
-    // 新一轮构建开始，丢弃上一轮的输出，避免 agent 读到陈旧错误
-    buildOutput.clear()
-    // 清掉上一轮结果：构建进行中不应让 agent 拿旧结论判断产物
-    _lastBuildOutcome = null
-    isBuildInProgress = true
-  }
-
-  @Throws(ToolingServerNotStartedException::class)
-  private fun checkServerStarted() {
-    if (!isToolingServerStarted()) {
-      throw ToolingServerNotStartedException()
-    }
-  }
-
-  private fun ensureTmpdir() {
-    Environment.mkdirIfNotExits(Environment.TMP_DIR)
-  }
-
-  private fun logBuildInProgress() {
-    log.warn("A build is already in progress!")
-  }
-
-  @Suppress("UNUSED_PARAMETER")
-  private fun <T> markBuildAsFinished(result: T, throwable: Throwable?): T {
-    isBuildInProgress = false
-    return result
+  internal fun setServerListener(listener: OnServerStartListener?) {
+    requireConnection().setServerListener(listener)
   }
 
   internal fun startToolingServer(listener: OnServerStartListener?) {
-    if (toolingServerRunner?.isStarted != true) {
-      val envs = TermuxShellEnvironment().getEnvironment(this, false)
-
-      // 把 AAPT2 路径随环境变量交给 tooling server，作为 RPC 之外的独立通道。
-      // 原因见 Aapt2Config.ENV_AAPT2_OVERRIDE 的文档。
-      //
-      // 必须确认文件已存在再传：`Environment.AAPT2` 只是路径声明
-      // （`Environment.init` 里的 `new File(ANDROIDIDE_HOME, "aapt2")`），
-      // 而真正的拷贝发生在 `ToolsManager.init` 的异步任务里。若此时尚未落地，
-      // 传下去会得到一个**指向不存在文件**的 override——那比不传更糟，
-      // AGP 会直接以「指定的 aapt2 不存在」失败。
-      val aapt2 = Environment.AAPT2
-      if (aapt2.isFile) {
-        envs[Aapt2Config.ENV_AAPT2_OVERRIDE] = aapt2.absolutePath
-      } else {
-        log.warn(
-            "AAPT2 not yet extracted at {}; skipping the override fallback. " +
-                "The RPC path still supplies it when it succeeds.",
-            aapt2,
-        )
-      }
-
-      toolingServerRunner = ToolingServerRunner(listener, this).also { it.startAsync(envs) }
-      return
-    }
-
-    if (toolingServerRunner!!.isStarted && listener != null) {
-      listener.onServerStarted(toolingServerRunner!!.pid!!)
+    val conn = requireConnection()
+    val envs = TermuxShellEnvironment().getEnvironment(this, false)
+    val aapt2 = Environment.AAPT2
+    if (aapt2.isFile) {
+      envs[Aapt2Config.ENV_AAPT2_OVERRIDE] = aapt2.absolutePath
     } else {
-      setServerListener(listener)
+      log.warn(
+          "AAPT2 not yet extracted at {}; skipping the override fallback. " +
+              "The RPC path still supplies it when it succeeds.",
+          aapt2,
+      )
     }
+    conn.startToolingServer(envs, listener)
   }
 
   fun setEventListener(eventListener: EventListener?): GradleBuildService {
-    if (eventListener == null) {
-      this.eventListener = null
-      return this
-    }
-    this.eventListener = wrap(eventListener)
+    wrapperListener = eventListener
+    // 连接可能尚未创建（首次构建前）。此时只记下来，在 requireConnection()
+    // 新建连接时补上——否则第一次构建的进度不会流向构建面板。
+    pendingEventListener = wrap(eventListener)
+    connection?.setEventListener(pendingEventListener)
     return this
   }
+
+  /** 尚未有连接时暂存的事件监听器（已包装）。 */
+  @Volatile private var pendingEventListener: EventListener? = null
 
   private fun wrap(listener: EventListener?): EventListener? {
     return if (listener == null) {
@@ -650,67 +512,17 @@ class GradleBuildService :
         }
   }
 
-  private fun startServerOutputReader(input: InputStream) {
-    if (outputReaderJob?.isActive == true) {
-      return
-    }
-
-    outputReaderJob =
-        buildServiceScope.launch(Dispatchers.IO + CoroutineName("ToolingServerErrorReader")) {
-          val reader = input.bufferedReader()
-          try {
-            reader.forEachLine { line -> SERVER_System_err.error(line) }
-          } catch (e: Throwable) {
-            e.ifCancelledOrInterrupted(suppress = true) {
-              // will be suppressed
-              return@launch
-            }
-
-            // log the error and fail silently
-            log.error("Failed to read tooling server output", e)
-          }
-        }
-  }
-
   /** Handles events received from a Gradle build. */
   interface EventListener {
 
-    /**
-     * Called just before a build is started.
-     *
-     * @param buildInfo The information about the build to be executed.
-     * @see IToolingApiClient.prepareBuild
-     */
     fun prepareBuild(buildInfo: BuildInfo)
 
-    /**
-     * Called when a build is successful.
-     *
-     * @param tasks The tasks that were run.
-     * @see IToolingApiClient.onBuildSuccessful
-     */
     fun onBuildSuccessful(tasks: List<String?>)
 
-    /**
-     * Called when a progress event is received from the Tooling API server.
-     *
-     * @param event The event model describing the event.
-     */
     fun onProgressEvent(event: ProgressEvent)
 
-    /**
-     * Called when a build fails.
-     *
-     * @param tasks The tasks that were run.
-     * @see IToolingApiClient.onBuildFailed
-     */
     fun onBuildFailed(tasks: List<String?>)
 
-    /**
-     * Called when the output line is received.
-     *
-     * @param line The line of the build output.
-     */
     fun onOutput(line: String?)
   }
 }
