@@ -238,8 +238,20 @@ if (-not $SkipUpdaterJson) {
 
         if ($ChangelogPath) {
             $dest = Join-Path $repoRoot "whatsnew/$versionName.md"
-            Copy-Item $ChangelogPath $dest -Force
-            Ok "changelog -> whatsnew/$versionName.md"
+            # 最常见的用法就是把 changelog 直接写/放在 whatsnew/<version>.md 再传进来。
+            # 此时源与目标相同，Copy-Item 会抛 "无法使用项 … 其自身覆盖该项"，
+            # 整个发布卡在最后一步（实测 r13 踩到）。同路径直接跳过。
+            # 用 GetFullPath 而不是 Resolve-Path：目标文件可能尚不存在，
+            # 且 StrictMode 下访问 $null.Path 会抛异常。
+            $samePath =
+                [System.IO.Path]::GetFullPath((Join-Path (Get-Location) $ChangelogPath)) -eq
+                [System.IO.Path]::GetFullPath($dest)
+            if ($samePath) {
+                Ok "changelog 已在 whatsnew/$versionName.md，无需复制"
+            } else {
+                Copy-Item $ChangelogPath $dest -Force
+                Ok "changelog -> whatsnew/$versionName.md"
+            }
         }
 
         git -C $repoRoot add updater.json
