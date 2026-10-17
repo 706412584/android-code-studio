@@ -168,7 +168,6 @@ class GradleBuildService :
     } else {
       connection?.setLoggerInitScriptPath(null)
     }
-    connection?.getBuildArguments()?.get()?.let { extraArgs.addAll(it) }
 
     if (BuildPreferences.isStacktraceEnabled) extraArgs.add("--stacktrace")
     if (BuildPreferences.isInfoEnabled) extraArgs.add("--info")
@@ -259,6 +258,37 @@ class GradleBuildService :
       mBinder = GradleServiceBinder(this)
     }
     return mBinder
+  }
+
+  // ---- 后台连接 ----
+
+  /**
+   * 为一个后台项目新建独立连接（不触碰编辑器项目）。
+   *
+   * <p>连接不写 Lookup、不设事件监听器——那些是编辑器单槽位，后台连接写进去会
+   * 让 UI 构建面板显示错误项目的进度。
+   */
+  internal fun createBackgroundConnection(projectPath: String): ToolingConnection? {
+    val path = projectPath.trim()
+    if (path.isEmpty()) {
+      return null
+    }
+    val registry = BuildConnectionRegistryHolder.get() ?: return null
+    (registry.find(path) as? ToolingConnection)?.let {
+      return it
+    }
+    val conn =
+        ToolingConnection(
+            path,
+            // 后台连接不显示前台通知：多个项目同时构建时通知会互相覆盖。
+            sink = null,
+            clientFactory = { this },
+        )
+    if (DevOpsPreferences.logsenderEnabled) {
+      conn.setLoggerInitScriptPath(createLoggerInitScript().absolutePath)
+    }
+    registry.register(path, conn, BuildConnectionRegistry.Owner.BACKGROUND)
+    return conn
   }
 
   // ---- 连接管理 ----

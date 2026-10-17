@@ -1808,16 +1808,34 @@ public final class AgentOrchestrator {
     try {
       com.tom.rv2ide.services.builder.BuildConnectionRegistry registry =
           com.tom.rv2ide.services.builder.BuildConnectionRegistryHolder.get();
-      if (registry != null && projectPath != null && !projectPath.trim().isEmpty()) {
+      boolean hasPath = projectPath != null && !projectPath.trim().isEmpty();
+      if (registry != null && hasPath) {
         com.tom.rv2ide.projects.builder.BuildService byPath = registry.find(projectPath);
         if (byPath != null) {
           return byPath;
         }
+        // 未命中：该会话绑定的项目没有连接。
+        // 开启后台构建时按需创建（会起一个独立 tooling JVM，默认关闭）；
+        // 未开启则返回 null，由工具层给出「尚未建立构建连接」的明确错误。
+        if (backgroundBuildEnabled() && appContext != null) {
+          return com.tom.rv2ide.services.builder.BackgroundBuildManager.INSTANCE
+              .getOrCreate(appContext, projectPath);
+        }
+        return null;
       }
       return com.tom.rv2ide.lookup.Lookup.getDefault()
           .lookup(com.tom.rv2ide.projects.builder.BuildService.KEY_BUILD_SERVICE);
     } catch (RuntimeException e) {
       return null;
+    }
+  }
+
+  /** 后台项目构建开关（默认关闭，见 AgentToolSettings.KEY_BACKGROUND_BUILD）。 */
+  private boolean backgroundBuildEnabled() {
+    try {
+      return settings != null && settings.isBackgroundBuildEnabled();
+    } catch (RuntimeException e) {
+      return false;
     }
   }
 

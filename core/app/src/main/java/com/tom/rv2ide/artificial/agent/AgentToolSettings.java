@@ -59,6 +59,14 @@ public final class AgentToolSettings implements ToolSettingsPort {
   public static final String KEY_AGENT_MODE = "agent_mode";
 
   /**
+   * 是否允许为「未在编辑器中打开」的项目建立后台构建连接。
+   *
+   * <p>默认关闭：后台连接会额外起一个 tooling JVM（每个约 2GB 堆上限），
+   * 在低端设备上可能直接 OOM。默认关 → 用户显式开启，是灰度发布的安全姿势。
+   */
+  public static final String KEY_BACKGROUND_BUILD = "background_build_enabled";
+
+  /**
    * 全局危险工具放行键。
    *
    * <p>保留是为了兼容旧版本已写入的值，以及提供「我知道自己在做什么，别再问我」的出口。
@@ -173,6 +181,15 @@ public final class AgentToolSettings implements ToolSettingsPort {
 
   public void setAgentModeEnabled(boolean enabled) {
     prefs.edit().putBoolean(KEY_AGENT_MODE, enabled).apply();
+  }
+
+  /** 后台项目构建是否开启。默认关闭（见 KEY_BACKGROUND_BUILD 的说明）。 */
+  public boolean isBackgroundBuildEnabled() {
+    return prefs.getBoolean(KEY_BACKGROUND_BUILD, false);
+  }
+
+  public void setBackgroundBuildEnabled(boolean enabled) {
+    prefs.edit().putBoolean(KEY_BACKGROUND_BUILD, enabled).apply();
   }
 
   /** 供 executor 线程调用：危险工具是否可全局放行。 */
