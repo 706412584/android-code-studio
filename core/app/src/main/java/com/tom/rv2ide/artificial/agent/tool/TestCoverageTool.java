@@ -157,8 +157,10 @@ public final class TestCoverageTool extends BaseTool {
 
   @Override
   public ToolResult execute(JSONObject input, ToolContext context) {
-    // 跨项目守卫：与 gradle_build 同因——构建服务只服务于编辑器打开的项目。
-    if (context != null) {
+    // 跨项目守卫（与 gradle_build 同语义）：provider 已注入时按会话 cwd 查找连接，
+    // 后台构建开启时还能按需建立；只有 provider 未注入（测试/旧装配）才需要
+    // 退回全局 Lookup，此时必须拦住以免跑错项目的测试。
+    if (context != null && buildServiceProvider == null) {
       String mismatch = context.getProjectMismatchReason();
       if (!mismatch.isEmpty()) {
         return error(mismatch);
@@ -173,7 +175,8 @@ public final class TestCoverageTool extends BaseTool {
       if (projectPath != null && !projectPath.trim().isEmpty()) {
         return error(
             "项目 " + projectPath + " 尚未建立构建连接。"
-                + "请先在 IDE 中打开该项目并等待初始化完成，"
+                + "请先在 IDE 中打开该项目并等待初始化完成、"
+                + "或在 AI 设置里开启「后台项目构建」，"
                 + "或改用 shell_execute 执行 ./gradlew。");
       }
       return error("构建服务不可用。请确认已打开一个项目并完成初始化。");

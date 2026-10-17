@@ -253,15 +253,47 @@ internal class ToolingConnection(
   }
 
   override fun getBuildArguments(): CompletableFuture<List<String>> {
-    // P1 保持与原实现一致：init script 路径由本连接持有（而不是 System.setProperty），
-    // 这样多个连接并发构建时不会互相覆盖。脚本的生成由宿主注入（见
-    // GradleBuildService.createLoggerInitScript），连接层只消费路径。
+    // 参数必须在这里生成，而不是留在 GradleBuildService：tooling server 的
+    // `getBuildArguments` RPC 打到的是**连接自己的** `ForwardingToolingApiClient`
+    // （见 getClient），Service 上那份同名方法永远不会被调用。
+    //
+    // P1 重构时这里只保留了 init script，漏掉了 aapt2 override——真机表现是
+    // `AAPT2 aapt2-8.13.0-13719691-linux Daemon startup failed`：AGP 回退去
+    // Maven 取 `aapt2:...:linux`（x86-64），arm64 设备上根本执行不了。
     val args = ArrayList<String>()
+
+    // AAPT2：必须用设备上可执行的 arm64 二进制（Environment.AAPT2 由 IDE 解压）。
+    val aapt2 = com.tom.rv2ide.utils.Environment.AAPT2
+    if (aapt2.isFile) {
+      args.add(
+          "-P${com.tom.rv2ide.tooling.api.Aapt2Config.PROPERTY_AAPT2_FROM_MAVEN_OVERRIDE}=" +
+              aapt2.absolutePath)
+    }
+
+    args.add(
+        "-P${com.tom.rv2ide.tooling.api.LogSenderConfig.PROPERTY_LOGSENDER_ENABLED}=" +
+            "${com.tom.rv2ide.preferences.internal.DevOpsPreferences.logsenderEnabled}")
+
+    // init script 路径由本连接持有（而不是进程级 System.setProperty），
+    // 这样多个连接并发构建时不会互相覆盖。
     val initScript = loggerInitScriptPath
     if (initScript != null) {
       args.add("--init-script")
       args.add(initScript)
     }
+
+    // 日志详细程度等构建偏好。原先由 Service 传给 launcher，搬家后同样要带过来。
+    val prefs = com.tom.rv2ide.preferences.internal.BuildPreferences
+    if (prefs.isStacktraceEnabled) args.add("--stacktrace")
+    if (prefs.isInfoEnabled) args.add("--info")
+    if (prefs.isDebugEnabled) args.add("--debug")
+    if (prefs.isScanEnabled) args.add("--scan")
+    if (prefs.isWarningModeAllEnabled) {
+      args.add("--warning-mode")
+      args.add("all")
+    }
+    if (prefs.isBuildCacheEnabled) args.add("--build-cache")
+    if (prefs.isOfflineEnabled) args.add("--offline")
     return CompletableFuture.completedFuture(args)
   }
 

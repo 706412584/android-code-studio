@@ -176,7 +176,8 @@ public final class GradleBuildTool extends BaseTool {
       if (projectPath != null && !projectPath.trim().isEmpty()) {
         return error(
             "项目 " + projectPath + " 尚未建立构建连接。"
-                + "请先在 IDE 中打开该项目并等待初始化完成，"
+                + "请先在 IDE 中打开该项目并等待初始化完成、"
+                + "或在 AI 设置里开启「后台项目构建」，"
                 + "或改用 shell_execute 执行 ./gradlew。");
       }
       return error("构建服务不可用。请确认已打开一个项目并完成初始化。");
@@ -277,14 +278,19 @@ public final class GradleBuildTool extends BaseTool {
     StringBuilder sb = new StringBuilder();
     sb.append("构建成功。\n");
 
-    // 尝试定位 APK：AGP 把产物路径写在 output listing 文件里，需要解析它。
-    String apkPath = ApkLocator.findApkPath();
+    // 尝试定位 APK：**必须按会话项目路径**扫描，不能用无参重载。
+    //
+    // 无参重载走 `IProjectManager` 的 workspace（编辑器单例）。后台项目构建时
+    // 会话绑 B、编辑器开 A，它会把 A 的 APK 路径报给模型——真机实测：ProjectB
+    // 的 APK 确实被重新构建（01:31），工具却回了 MyBasicActivity 的路径（01:21），
+    // 模型据此以为构建打错了项目，还主动向用户报告了这个错误结论。
+    String apkPath = ApkLocator.findApkPath(projectPath);
     if (apkPath != null) {
       sb.append("APK: ").append(apkPath).append('\n');
     } else {
       sb.append("(未能自动定位 APK 路径，可用 install_apk 时手动指定)\n");
     }
-    String applicationId = ApkLocator.findApplicationId();
+    String applicationId = ApkLocator.findApplicationId(projectPath);
     if (applicationId != null) {
       sb.append("applicationId: ").append(applicationId).append('\n');
     }
