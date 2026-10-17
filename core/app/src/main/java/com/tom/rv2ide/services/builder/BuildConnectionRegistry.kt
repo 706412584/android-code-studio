@@ -63,6 +63,29 @@ internal class BuildConnectionRegistry(
 
   private val entries = ConcurrentHashMap<String, Entry>()
 
+  /**
+   * 全局构建并发许可。
+   *
+   * <p><b>为什么默认只允许 1 个</b>：每个 tooling 连接对应一个独立 JVM，各自还会
+   * fork Gradle daemon（`-Xmx2g`）。同时跑两个项目意味着 4 个 JVM，在 4GB 内存的
+   * 手机上必然被系统杀掉。允许配置到 2，但默认取保守值。
+   *
+   * <p>用信号量而不是「全局布尔」：后者在构建失败/取消时容易忘记释放，一旦泄漏
+   * 就再也构建不了。信号量的 tryAcquire + finally release 语义更难写错。
+   */
+  private val buildPermits = java.util.concurrent.Semaphore(1)
+
+  /** 尝试占用一个全局构建许可；返回 false 表示「其他项目正在构建」。 */
+  internal fun tryAcquireBuildPermit(): Boolean = buildPermits.tryAcquire()
+
+  /** 释放构建许可；必须在 finally 中调用。 */
+  internal fun releaseBuildPermit() {
+    buildPermits.release()
+  }
+
+  /** 当前是否有可用构建许可（诊断用）。 */
+  internal fun hasAvailableBuildPermit(): Boolean = buildPermits.availablePermits() > 0
+
   /** 路径归一化：canonical 去尾分隔符。失败时退回绝对路径。 */
   fun keyOf(projectPath: String): String {
     val raw = projectPath.trim()

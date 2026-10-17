@@ -242,12 +242,27 @@ internal class ToolingConnection(
 
   override fun executeTasks(vararg tasks: String): CompletableFuture<TaskExecutionResult> {
     checkServerStarted()
+
+    // 全局并发闸门：多个项目同时构建会起多套 JVM + Gradle daemon，
+    // 4GB 内存的设备上必然被系统杀掉。拿不到许可时立即失败并如实说明，
+    // 而不是排队——排队会让用户以为「点了没反应」。
+    val registry = BuildConnectionRegistryHolder.get()
+    val acquired = registry == null || registry.tryAcquireBuildPermit()
+    if (!acquired) {
+      recordRejectedBuildAttempt()
+      return CompletableFuture.failedFuture(
+          IllegalStateException("另一个项目的构建正在进行，请稍后重试。"))
+    }
+
     val message = TaskExecutionMessage(listOf(*tasks))
     val startedAt = System.currentTimeMillis()
     return performBuildTasks(server!!.executeTasks(message))
         .whenComplete { result, error ->
           val successful = error == null && result != null && result.isSuccessful
           _lastBuildOutcome = BuildOutcome(successful, startedAt)
+          // 许可必须无条件释放：构建失败、取消、超时都要还回去，
+          // 否则一次失败就永久锁死后续所有构建。
+          registry?.releaseBuildPermit()
         }
   }
 
