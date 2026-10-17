@@ -307,6 +307,82 @@ class StdioTransportTest {
     assertTrue(e.getMessage().contains("启动命令"), e.getMessage());
   }
 
+  @Test
+  public void exitErrorCarriesTruncatedStderrTail() throws Exception {
+    String py = python();
+    assumeTrue(py != null, "no python on PATH");
+    // 子进程写一段**超长** stderr 后立刻退出。进程退出后 send 走 failPending，
+    // 错误里必须带上 stderr 尾巴，且尾巴要截断（否则一条错误消息能拖出几百 KB）。
+    String longStderr = "boom-" + repeat('x', 600) + "\n";
+    String script =
+        "import sys\n"
+            + "sys.stderr.write(" + javaLiteral(longStderr) + ")\n"
+            + "sys.stderr.flush()\n"
+            + "sys.exit(3)\n";
+    StdioTransport transport =
+        new StdioTransport(py, java.util.Arrays.asList("-c", script), Collections.emptyMap(), "");
+    try {
+      try {
+        transport.open();
+      } catch (Exception ignored) {
+        // 另一条合法路径：open 直接发现进程已退出。下面统一按 send 的契约断言。
+      }
+      Thread.sleep(300);
+      Exception e =
+          assertThrows(Exception.class, () -> transport.send(requestJson(1, "ping")));
+      assertTrue(e.getMessage().contains("退出") || e.getMessage().contains("运行"), e.getMessage());
+      // abbreviate 取的是**尾部**，因此截断后前缀 "boom-" 会消失、剩下连续的 x。
+      assertTrue(e.getMessage().contains("xxx"), "错误应带 stderr 尾巴：" + e.getMessage());
+      assertTrue(
+          e.getMessage().length() < 800, "stderr 应被截断，实际长度 " + e.getMessage().length());
+    } finally {
+      transport.close();
+    }
+  }
+
+  @Test
+  public void closeEscalatesToDestroyWhenProcessIgnoresEof() throws Exception {
+    String py = python();
+    assumeTrue(py != null, "no python on PATH");
+    // 子进程不读 stdin：关 stdin 不会让它退出，close 必须升级到 destroy。
+    String script = "import time\ntime.sleep(30)\n";
+    StdioTransport transport =
+        new StdioTransport(py, java.util.Arrays.asList("-c", script), Collections.emptyMap(), "");
+    transport.open();
+    long started = System.currentTimeMillis();
+    transport.close();
+    assertTrue(
+        System.currentTimeMillis() - started < 5_000,
+        "close 不应无限等待一个不理会 EOF 的进程");
+  }
+
+  @Test
+  public void nullBodyIsTreatedAsNotification() throws Exception {
+    String py = python();
+    assumeTrue(py != null, "no python on PATH");
+    // null 报文没有 id，必须按通知处理而不是 NPE 或挂起等响应。
+    StdioTransport transport =
+        new StdioTransport(py, java.util.Arrays.asList("-c", "pass"), Collections.emptyMap(), "");
+    try {
+      assertEquals("", transport.send(null));
+    } finally {
+      transport.close();
+    }
+  }
+
+  private static String repeat(char c, int count) {
+    StringBuilder sb = new StringBuilder(count);
+    for (int i = 0; i < count; i++) {
+      sb.append(c);
+    }
+    return sb.toString();
+  }
+
+  /** 把字符串转成 Python 源码里的字面量（测试里只含 ASCII）。 */
+  private static String javaLiteral(String value) {
+    return "'" + value.replace("\\", "\\\\").replace("'", "\\'").replace("\n", "\\n") + "'";
+  }
+
   private static String requestJson(long id, String method) {
     return requestJson(id, method, new JSONObject());
   }

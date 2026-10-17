@@ -265,6 +265,12 @@ final class HttpStreamTransport implements McpTransport {
       while ((line = handle.readLine()) != null) {
         if (line.isEmpty()) {
           dispatch(handle, latch, eventName, data.toString());
+          if (stream.get() != handle) {
+            // dispatch 判定这条连接已不可用（endpoint 地址非法等）并摘掉了它。
+            // 继续读只会在已关闭的流上抛异常，把 failure 覆盖成「Stream closed」，
+            // 让调用方看到的原因与真实问题无关。
+            return;
+          }
           eventName = "message";
           data.setLength(0);
           continue;

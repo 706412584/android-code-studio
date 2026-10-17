@@ -250,6 +250,101 @@ final class McpClientTest {
     assertThrows(Exception.class, client::initialize);
   }
 
+  @Test
+  void longNonJsonResponseIsTruncatedInTheError() throws Exception {
+    // 打到网页时正文可能几百 KB。错误里只该带前 200 字符，否则一条错误消息
+    // 会把整页 HTML 灌进上下文。
+    StringBuilder html = new StringBuilder("<html><body>");
+    for (int i = 0; i < 500; i++) {
+      html.append("padding-");
+    }
+    html.append("</body></html>");
+    ScriptedHttp http =
+        new ScriptedHttp()
+            .enqueue(initResponse("x"), headers("Mcp-Session-Id", "s"))
+            .enqueue("{\"jsonrpc\":\"2.0\",\"result\":{}}")
+            .enqueue(html.toString());
+
+    Exception error =
+        assertThrows(
+            Exception.class, () -> new McpClient(http, "https://wrong.example.com").listTools());
+
+    assertTrue(error.getMessage().contains("不是 JSON"), error.getMessage());
+    assertTrue(error.getMessage().contains("…"), "截断处应有省略号：" + error.getMessage());
+    assertTrue(error.getMessage().length() < 300, "正文应被截断：" + error.getMessage().length());
+  }
+
+  @Test
+  void stdioTransportUsesCommandFromServerUrlWhenCommandMissing() throws Exception {
+    // stdio 配置省略 command 时回落到 serverUrl（UI 里命令就填在那个字段）。
+    // 用一个不存在的命令验证它确实被当成启动命令：错误里会出现该名字。
+    McpClient client =
+        new McpClient(
+            null,
+            "acs-no-such-command-xyz",
+            Collections.<String, String>emptyMap(),
+            McpClient.Transport.STDIO,
+            "",
+            Collections.<String>emptyList(),
+            Collections.<String, String>emptyMap(),
+            "");
+    Exception e = assertThrows(Exception.class, client::initialize);
+    assertTrue(e.getMessage().contains("acs-no-such-command-xyz"), e.getMessage());
+  }
+
+  @Test
+  void stdioTransportFallsBackToExtraHeadersAsEnv() throws Exception {
+    // 旧调用方把「环境变量」塞在 extraHeaders 里（stdio 复用同一个 Map 参数）。
+    // stdioEnv 为 null 时必须回落到 extraHeaders，否则这些变量会静默丢失。
+    String py = python();
+    org.junit.jupiter.api.Assumptions.assumeTrue(py != null, "no python on PATH");
+    String script =
+        "import sys, json, os\n"
+            + "for line in sys.stdin:\n"
+            + "    try:\n"
+            + "        msg = json.loads(line)\n"
+            + "    except Exception:\n"
+            + "        continue\n"
+            + "    if 'id' not in msg:\n"
+            + "        continue\n"
+            + "    sys.stdout.write(json.dumps({'jsonrpc': '2.0', 'id': msg['id'], "
+            + "'result': {'protocolVersion': 'x', 'serverInfo': {'name': "
+            + "os.environ.get('ACS_ENV_FALLBACK', 'missing')}}}) + '\\n')\n"
+            + "    sys.stdout.flush()\n";
+    McpClient client =
+        new McpClient(
+            null,
+            py,
+            Collections.singletonMap("ACS_ENV_FALLBACK", "from-headers"),
+            McpClient.Transport.STDIO,
+            py,
+            java.util.Arrays.asList("-c", script),
+            null, // stdioEnv = null → 应回落到 extraHeaders
+            "");
+    try {
+      client.initialize();
+      assertEquals("from-headers", client.getServerName());
+    } finally {
+      client.close();
+    }
+  }
+
+  private static String python() {
+    for (String candidate : new String[] {"python", "python3", "py"}) {
+      try {
+        Process probe = new ProcessBuilder(candidate, "--version").start();
+        if (probe.waitFor(10, java.util.concurrent.TimeUnit.SECONDS)
+            && probe.exitValue() == 0) {
+          return candidate;
+        }
+        probe.destroyForcibly();
+      } catch (Exception ignored) {
+        // 试下一个。
+      }
+    }
+    return null;
+  }
+
   // ---- tools/list ----
 
   @Test
