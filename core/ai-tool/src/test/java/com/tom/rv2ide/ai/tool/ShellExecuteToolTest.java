@@ -41,7 +41,7 @@ import org.junit.jupiter.api.Test;
 final class ShellExecuteToolTest {
 
   /** 记录收到的超时值，其余行为固定返回成功。 */
-  private static final class RecordingBackend implements ShellBackend {
+  private static class RecordingBackend implements ShellBackend {
     final List<Long> timeouts = new ArrayList<>();
     private final String id;
     private final boolean available;
@@ -363,5 +363,293 @@ final class ShellExecuteToolTest {
     assertEquals(null, new ShellExecuteTool(null).promptSupplement("agent"));
     assertEquals(
         null, new ShellExecuteTool(new ShellBackendRegistry()).promptSupplement("agent"));
+  }
+
+  // ---- 元数据 / 失败分支 / 后台执行 / 输出截断 ----
+
+  @Test
+  void metadata() {
+    ShellExecuteTool tool = new ShellExecuteTool(new ShellBackendRegistry());
+    assertEquals("shell_execute", tool.getName());
+    assertEquals(com.tom.rv2ide.ai.tool.api.ToolCategory.SYSTEM, tool.getCategory());
+    assertEquals(com.tom.rv2ide.ai.tool.api.ToolDisplayCategory.SHELL, tool.getDisplayCategory());
+    assertTrue(tool.needsConfirmation(), "执行任意命令必须确认");
+    assertFalse(tool.isConcurrencySafe(), "命令可能有顺序依赖");
+  }
+
+  @Test
+  void nullRegistryIsReported() {
+    ToolResult result =
+        new ShellExecuteTool(null).execute(new JSONObject().put("command", "ls"), context());
+    assertTrue(result.isError());
+    assertTrue(result.getContent().contains("未配置"), result.getContent());
+  }
+
+  @Test
+  void noUsableBackendExplainsWhy() {
+    // 所有后端都不可用：错误里必须带各后端给出的原因。
+    ShellBackendRegistry registry = new ShellBackendRegistry();
+    registry.register(new RecordingBackend("termux", false));
+    registry.setActiveId("termux");
+
+    ToolResult result =
+        new ShellExecuteTool(registry).execute(new JSONObject().put("command", "ls"), context());
+
+    assertTrue(result.isError());
+    assertTrue(result.getContent().contains("没有可用"), result.getContent());
+  }
+
+  /** 执行时抛运行时异常的后端。 */
+  private static final class CrashingBackend extends RecordingBackend {
+    @Override
+    public ShellRequest.ShellResult execute(
+        ShellRequest request, ShellRequest.ShellOutputSink sink) {
+      throw new IllegalStateException("backend crashed");
+    }
+  }
+
+  /** 总是超时的后端。 */
+  private static final class TimeoutBackend extends RecordingBackend {
+    @Override
+    public ShellRequest.ShellResult execute(
+        ShellRequest request, ShellRequest.ShellOutputSink sink) {
+      return ShellRequest.ShellResult.timeout();
+    }
+  }
+
+  @Test
+  void runtimeExceptionFromBackendIsReported() {
+    ShellBackendRegistry registry = new ShellBackendRegistry();
+    registry.register(new CrashingBackend());
+    registry.setActiveId("termux");
+
+    ToolResult result =
+        new ShellExecuteTool(registry).execute(new JSONObject().put("command", "ls"), context());
+
+    assertTrue(result.isError());
+    assertTrue(result.getContent().contains("backend crashed"), result.getContent());
+  }
+
+  @Test
+  void timedOutCommandIsAnErrorButNonZeroExitIsNot() {
+    // 超时是错误（模型应缩短命令或转后台）；普通非零退出是有效结果。
+    ShellBackendRegistry timeoutRegistry = new ShellBackendRegistry();
+    timeoutRegistry.register(new TimeoutBackend());
+    timeoutRegistry.setActiveId("termux");
+
+    ToolResult timedOut =
+        new ShellExecuteTool(timeoutRegistry)
+            .execute(new JSONObject().put("command", "sleep 999"), context());
+    assertTrue(timedOut.isError(), "超时应标记为错误");
+
+    ShellBackendRegistry failRegistry = new ShellBackendRegistry();
+    failRegistry.register(new FailingBackend("termux", "boom", true));
+    failRegistry.setActiveId("termux");
+    ToolResult failed =
+        new ShellExecuteTool(failRegistry)
+            .execute(new JSONObject().put("command", "false"), context());
+    assertFalse(failed.isError(), "非零退出不是工具错误：" + failed.getContent());
+    assertTrue(failed.getContent().contains("boom"), failed.getContent());
+  }
+
+  @Test
+  void backgroundWithoutPortExplains() {
+    ShellBackendRegistry registry = new ShellBackendRegistry();
+    registry.register(new RecordingBackend("termux", true));
+    registry.setActiveId("termux");
+
+    ToolResult result =
+        new ShellExecuteTool(registry)
+            .execute(
+                new JSONObject().put("command", "sleep 60").put("run_in_background", true),
+                context());
+
+    assertTrue(result.isError());
+    assertTrue(result.getContent().contains("后台执行未接入"), result.getContent());
+  }
+
+  /** 最小可用的后台端口：只实现被调用的分支。 */
+  private static final class FakeBackgroundPort implements BackgroundShellPort {
+    final boolean available;
+    final String reason;
+    final TaskStatus startResult;
+    String lastCommand;
+    String lastCwd;
+    String lastBackend;
+    long lastTimeout;
+
+    FakeBackgroundPort(boolean available, String reason, TaskStatus startResult) {
+      this.available = available;
+      this.reason = reason;
+      this.startResult = startResult;
+    }
+
+    @Override
+    public TaskStatus start(String command, String cwd, String backendId, long timeoutMs) {
+      lastCommand = command;
+      lastCwd = cwd;
+      lastBackend = backendId;
+      lastTimeout = timeoutMs;
+      return startResult;
+    }
+
+    @Override
+    public boolean isAvailable() {
+      return available;
+    }
+
+    @Override
+    public String unavailableReason() {
+      return reason;
+    }
+
+    @Override
+    public TaskStatus status(String taskId) {
+      throw new UnsupportedOperationException();
+    }
+
+    @Override
+    public TaskStatus await(String taskId, long timeoutMs) {
+      throw new UnsupportedOperationException();
+    }
+
+    @Override
+    public boolean stop(String taskId) {
+      throw new UnsupportedOperationException();
+    }
+  }
+
+  private static ToolContext contextWithBackground(BackgroundShellPort port) {
+    return ToolContext.builder()
+        .homePath(System.getProperty("java.io.tmpdir"))
+        .backgroundShell(port)
+        .build();
+  }
+
+  @Test
+  void backgroundWithUnavailablePortExplainsWhy() {
+    ShellBackendRegistry registry = new ShellBackendRegistry();
+    registry.register(new RecordingBackend("termux", true));
+    registry.setActiveId("termux");
+
+    ToolResult result =
+        new ShellExecuteTool(registry)
+            .execute(
+                new JSONObject().put("command", "sleep 60").put("run_in_background", true),
+                contextWithBackground(new FakeBackgroundPort(false, "没有后台执行服务", null)));
+
+    assertTrue(result.isError());
+    assertTrue(result.getContent().contains("没有后台执行服务"), result.getContent());
+  }
+
+  @Test
+  void backgroundStartFailureIsReported() {
+    ShellBackendRegistry registry = new ShellBackendRegistry();
+    registry.register(new RecordingBackend("termux", true));
+    registry.setActiveId("termux");
+
+    ToolResult result =
+        new ShellExecuteTool(registry)
+            .execute(
+                new JSONObject().put("command", "sleep 60").put("run_in_background", true),
+                contextWithBackground(
+                    new FakeBackgroundPort(
+                        true, "", BackgroundShellPort.TaskStatus.startFailed("sleep 60", "no shell"))));
+
+    assertTrue(result.isError());
+    assertTrue(result.getContent().contains("no shell"), result.getContent());
+  }
+
+  @Test
+  void backgroundSuccessReturnsTaskIdAndOutputFile() {
+    ShellBackendRegistry registry = new ShellBackendRegistry();
+    registry.register(new RecordingBackend("termux", true));
+    registry.setActiveId("termux");
+    FakeBackgroundPort port =
+        new FakeBackgroundPort(
+            true,
+            "",
+            new BackgroundShellPort.TaskStatus(
+                "task-7", "sleep 60", BackgroundShellPort.State.RUNNING, -1, false,
+                "/tmp/out.log", 1L, 0L, ""));
+
+    ToolResult result =
+        new ShellExecuteTool(registry)
+            .execute(
+                new JSONObject()
+                    .put("command", "sleep 60")
+                    .put("run_in_background", true)
+                    .put("timeoutMs", 60000),
+                contextWithBackground(port));
+
+    assertFalse(result.isError(), result.getContent());
+    assertTrue(result.getContent().contains("task-7"), result.getContent());
+    assertTrue(result.getContent().contains("/tmp/out.log"), result.getContent());
+    assertTrue(result.getContent().contains("task_output"), result.getContent());
+    assertEquals("sleep 60", port.lastCommand);
+    assertEquals(60_000L, port.lastTimeout);
+  }
+
+  @Test
+  void truncateKeepsHeadAndTailAndStatesTheOmission() {
+    // 上限是 32KB：必须显著超过它才会触发截断。
+    StringBuilder text = new StringBuilder();
+    for (int i = 0; i < 20_000; i++) {
+      text.append('a');
+    }
+    text.append("MIDDLE");
+    for (int i = 0; i < 20_000; i++) {
+      text.append('z');
+    }
+
+    String truncated = ShellExecuteTool.truncate(text.toString());
+
+    assertTrue(truncated.startsWith("aaa"), "应保留开头");
+    assertTrue(truncated.endsWith("zzz"), "应保留结尾");
+    assertTrue(truncated.contains("省略"), truncated.substring(0, 40));
+    assertFalse(truncated.contains("MIDDLE"), "中间内容应被省略");
+    assertTrue(truncated.length() < text.length());
+  }
+
+  @Test
+  void truncateHandlesNullAndShortText() {
+    assertEquals("", ShellExecuteTool.truncate(null));
+    assertEquals("short", ShellExecuteTool.truncate("short"));
+  }
+
+  @Test
+  void permissionDeniedAlsoTriggersTheBackendHint() {
+    // 权限拒绝与「找不到命令」一样，换个后端往往能解决。
+    ShellBackendRegistry registry = new ShellBackendRegistry();
+    registry.register(new FailingBackend("shizuku", "sh: /data/x: Permission denied", false));
+    registry.register(new FailingBackend("termux", "", true));
+    registry.setActiveId("shizuku");
+
+    String out = runFailing(registry, "Permission denied");
+    assertTrue(out.contains("提示"), out);
+  }
+
+  @Test
+  void noSuchFileAlsoTriggersTheBackendHint() {
+    ShellBackendRegistry registry = new ShellBackendRegistry();
+    registry.register(new FailingBackend("shizuku", "sh: python: no such file or directory", false));
+    registry.register(new FailingBackend("termux", "", true));
+    registry.setActiveId("shizuku");
+
+    String out = runFailing(registry, "no such file or directory");
+    assertTrue(out.contains("提示"), out);
+  }
+
+  @Test
+  void missingCommandWithoutAlternativeBackendOnlyExplainsTheCurrentOne() {
+    // 只有一个后端时不能承诺「换后端就好」——只说明现状。
+    ShellBackendRegistry registry = new ShellBackendRegistry();
+    registry.register(new FailingBackend("shizuku", "not found", false));
+    registry.setActiveId("shizuku");
+
+    String out = runFailing(registry, "not found");
+    assertTrue(out.contains("提示"), out);
+    assertTrue(out.contains("Android 系统命令"), out);
+    assertFalse(out.contains("换后端可能解决"), out);
   }
 }

@@ -211,5 +211,140 @@ final class CodeGraphToolTest {
     assertTrue(tool.isConcurrencySafe(), "多个查询互不依赖，可并发");
     assertFalse(tool.needsConfirmation(), "只读查询无需逐次确认");
     assertEquals("codegraph", tool.getName());
+    assertEquals(
+        com.tom.rv2ide.ai.tool.api.ToolDisplayCategory.READ, tool.getDisplayCategory());
+  }
+
+  // ---- 可用性探测 / 后端缺失 / 超时 / 截断 ----
+
+  /** 注入指定的探测回调（测试结束后应恢复，避免静态状态串味）。 */
+  private static void setProbe(final boolean ready, final String wrapper) {
+    CodeGraphTool.setAvailabilityProbe(
+        new CodeGraphTool.AvailabilityProbe() {
+          @Override
+          public boolean isReady() {
+            return ready;
+          }
+
+          @Override
+          public String wrapperPath() {
+            return wrapper;
+          }
+        });
+  }
+
+  @Test
+  void promptSupplementDependsOnProbeState() {
+    setProbe(true, "/usr/bin/acs-codegraph");
+    String ready = new CodeGraphTool(new ShellBackendRegistry()).promptSupplement("agent");
+    assertTrue(ready.contains("优先用本工具"), ready);
+
+    setProbe(false, null);
+    String notReady = new CodeGraphTool(new ShellBackendRegistry()).promptSupplement("agent");
+    assertTrue(notReady.contains("grep"), notReady);
+    assertTrue(notReady.contains("未检测到"), notReady);
+
+    // 未注入探测（null）也应按不可用处理。
+    CodeGraphTool.setAvailabilityProbe(null);
+    String none = new CodeGraphTool(new ShellBackendRegistry()).promptSupplement("agent");
+    assertTrue(none.contains("grep"), none);
+  }
+
+  @Test
+  void missingShellBackendIsReportedBeforeRunning() throws Exception {
+    setProbe(true, "/usr/bin/acs-codegraph");
+    ShellBackendRegistry empty = new ShellBackendRegistry();
+    ToolResult r =
+        new CodeGraphTool(empty)
+            .execute(args("query", "Foo"), context("/proj"));
+
+    assertTrue(r.isError());
+    assertTrue(r.getContent().contains("shell 后端"), r.getContent());
+  }
+
+  @Test
+  void blankWrapperPathIsReportedAsNotInstalled() throws Exception {
+    setProbe(true, "   ");
+    FakeBackend backend = new FakeBackend(ok("x"));
+    ShellBackendRegistry registry = new ShellBackendRegistry();
+    registry.register(backend);
+    // 注意：不能用 run()，它会重新注入一个有效的 wrapper 路径。
+    ToolResult r =
+        new CodeGraphTool(registry).execute(args("query", "Foo"), context("/proj"));
+
+    assertTrue(r.isError());
+    assertTrue(r.getContent().contains("未安装"), r.getContent());
+    assertEquals(0, backend.requests.size(), "未安装时不应执行命令");
+  }
+
+  @Test
+  void nullProbeIsReportedAsNotInstalled() throws Exception {
+    FakeBackend backend = new FakeBackend(ok("x"));
+    ShellBackendRegistry registry = new ShellBackendRegistry();
+    registry.register(backend);
+    CodeGraphTool.setAvailabilityProbe(null);
+
+    ToolResult r =
+        new CodeGraphTool(registry).execute(args("query", "Foo"), context("/proj"));
+
+    assertTrue(r.isError());
+    assertTrue(r.getContent().contains("未安装"), r.getContent());
+  }
+
+  @Test
+  void timeoutSuggestsRetryAndIndexCheck() throws Exception {
+    setProbe(true, "/usr/bin/acs-codegraph");
+    FakeBackend backend =
+        new FakeBackend(new ShellRequest.ShellResult(-1, "", "", true, false));
+    ToolResult r = run(backend, context("/proj"), args("query", "Foo"));
+
+    assertTrue(r.isError());
+    assertTrue(r.getContent().contains("超时"), r.getContent());
+    assertTrue(r.getContent().contains("重试"), r.getContent());
+  }
+
+  @Test
+  void genericFailureIncludesExitCodeAndOutput() throws Exception {
+    setProbe(true, "/usr/bin/acs-codegraph");
+    FakeBackend backend = new FakeBackend(fail(2, "unexpected parser error"));
+    ToolResult r = run(backend, context("/proj"), args("node", "Foo"));
+
+    assertTrue(r.isError());
+    assertTrue(r.getContent().contains("退出码 2"), r.getContent());
+    assertTrue(r.getContent().contains("unexpected parser error"), r.getContent());
+  }
+
+  @Test
+  void longOutputIsTruncatedKeepingHeadAndTail() throws Exception {
+    setProbe(true, "/usr/bin/acs-codegraph");
+    // 上限 32KB，保留头部 2/3（≈21845）与尾部 1/3（≈10923）。
+    // 把标记放在 25K 处、后面再补 20K：这样标记既超过头部，又落在尾部窗口之前。
+    StringBuilder out = new StringBuilder();
+    for (int i = 0; i < 25_000; i++) {
+      out.append('a');
+    }
+    out.append("MIDDLE");
+    for (int i = 0; i < 20_000; i++) {
+      out.append('z');
+    }
+    FakeBackend backend = new FakeBackend(ok(out.toString()));
+    ToolResult r = run(backend, context("/proj"), args("files", null));
+
+    assertFalse(r.isError(), r.getContent());
+    assertTrue(r.getContent().contains("省略"), "超长输出应标注省略量");
+    assertFalse(r.getContent().contains("MIDDLE"), "中间内容应被省略");
+    // 尾部保留的是最后 1/3 上限（约 10.9KB），而尾部只有 10KB 的 z。
+    assertTrue(r.getContent().trim().endsWith("zzz"), "应保留结尾");
+  }
+
+  @Test
+  void nullStdoutAndStderrAreTolerated() throws Exception {
+    setProbe(true, "/usr/bin/acs-codegraph");
+    FakeBackend backend =
+        new FakeBackend(new ShellRequest.ShellResult(1, null, null, false, false));
+    ToolResult r = run(backend, context("/proj"), args("query", "Foo"));
+
+    assertTrue(r.isError());
+    assertTrue(r.getContent().contains("退出码 1"), r.getContent());
   }
 }

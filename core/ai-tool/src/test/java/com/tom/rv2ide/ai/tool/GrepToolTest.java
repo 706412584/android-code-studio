@@ -319,6 +319,160 @@ final class GrepToolTest {
     assertTrue(tool.isConcurrencySafe(), "只读遍历可并发");
   }
 
+  // ---- 渲染 / 分页 / glob 的剩余分支 ----
+
+  @Test
+  void displayCategoryIsRead() {
+    assertEquals(
+        com.tom.rv2ide.ai.tool.api.ToolDisplayCategory.READ,
+        new GrepTool().getDisplayCategory());
+  }
+
+  @Test
+  void noMatchesInEachModeHasModeSpecificText(@TempDir Path root) {
+    writeQuiet(root, "a.kt", "nothing here");
+
+    ToolResult files = run(root, new JSONObject().put("pattern", "zzz"));
+    assertFalse(files.isError());
+    assertTrue(files.getContent().contains("No files found"), files.getContent());
+
+    ToolResult content =
+        run(root, new JSONObject().put("pattern", "zzz").put("output_mode", "content"));
+    assertFalse(content.isError());
+    assertTrue(content.getContent().contains("No matches found"), content.getContent());
+
+    ToolResult count =
+        run(root, new JSONObject().put("pattern", "zzz").put("output_mode", "count"));
+    assertFalse(count.isError());
+    assertTrue(count.getContent().contains("No matches found"), count.getContent());
+  }
+
+  @Test
+  void countModeReportsTotalAcrossFiles(@TempDir Path root) {
+    writeQuiet(root, "a.kt", "hit\nhit\n");
+    writeQuiet(root, "b.kt", "hit\n");
+
+    ToolResult result =
+        run(root, new JSONObject().put("pattern", "hit").put("output_mode", "count"));
+
+    assertFalse(result.isError(), result.getContent());
+    assertTrue(result.getContent().contains("a.kt:2"), result.getContent());
+    assertTrue(result.getContent().contains("b.kt:1"), result.getContent());
+    assertTrue(result.getContent().contains("3 occurrence(s)"), result.getContent());
+    assertTrue(result.getContent().contains("2 file(s)"), result.getContent());
+  }
+
+  @Test
+  void offsetBeyondResultCountYieldsNoFilesMessage(@TempDir Path root) {
+    // offset 超过结果数：page 为空，应按「没找到」返回而不是抛下标越界。
+    writeQuiet(root, "a.kt", "hit");
+    ToolResult result =
+        run(root, new JSONObject().put("pattern", "hit").put("offset", 100));
+    assertFalse(result.isError(), result.getContent());
+    assertTrue(result.getContent().contains("No files found"), result.getContent());
+  }
+
+  @Test
+  void offsetWithoutTruncationNotesTheOffset(@TempDir Path root) {
+    writeQuiet(root, "a.kt", "hit");
+    writeQuiet(root, "b.kt", "hit");
+
+    ToolResult files =
+        run(root, new JSONObject().put("pattern", "hit").put("offset", 1));
+    assertTrue(files.getContent().contains("[offset: 1]"), files.getContent());
+
+    ToolResult content =
+        run(
+            root,
+            new JSONObject()
+                .put("pattern", "hit")
+                .put("output_mode", "content")
+                .put("offset", 1));
+    assertTrue(content.getContent().contains("[offset: 1]"), content.getContent());
+
+    ToolResult count =
+        run(
+            root,
+            new JSONObject()
+                .put("pattern", "hit")
+                .put("output_mode", "count")
+                .put("offset", 1));
+    assertTrue(count.getContent().contains("[offset: 1]"), count.getContent());
+  }
+
+  @Test
+  void truncatedResultsSuggestOffset(@TempDir Path root) {
+    writeQuiet(root, "a.kt", "hit");
+    writeQuiet(root, "b.kt", "hit");
+    writeQuiet(root, "c.kt", "hit");
+
+    ToolResult result =
+        run(root, new JSONObject().put("pattern", "hit").put("head_limit", 1));
+
+    assertTrue(result.getContent().contains("showing 1 of 3"), result.getContent());
+    assertTrue(result.getContent().contains("offset"), result.getContent());
+  }
+
+  @Test
+  void longLineIsTruncatedWithAnExplicitMarker(@TempDir Path root) {
+    StringBuilder longLine = new StringBuilder();
+    for (int i = 0; i < 1000; i++) {
+      longLine.append('x');
+    }
+    longLine.append("NEEDLE");
+    writeQuiet(root, "a.kt", longLine.toString());
+
+    ToolResult result =
+        run(
+            root,
+            new JSONObject().put("pattern", "NEEDLE").put("output_mode", "content"));
+
+    assertTrue(result.getContent().contains("该行过长，已截断"), result.getContent());
+    assertFalse(result.getContent().contains("NEEDLE"), "截断后不应包含尾部内容");
+  }
+
+  @Test
+  void tabsAreReplacedBySpacesInContentMode(@TempDir Path root) {
+    writeQuiet(root, "a.kt", "\thit\tvalue");
+    ToolResult result =
+        run(root, new JSONObject().put("pattern", "hit").put("output_mode", "content"));
+    assertFalse(result.getContent().contains("\t"), "制表符应被替换，否则输出对齐会乱");
+  }
+
+  @Test
+  void globDoubleStarAndQuestionMarkSemantics() {
+    assertTrue(GrepTool.matchGlob("**/*.kt", "src/a/b.kt"));
+    assertTrue(GrepTool.matchGlob("*.kt", "a.kt"));
+    assertFalse(GrepTool.matchGlob("*.kt", "src/a.kt"), "单星号不跨目录");
+    assertTrue(GrepTool.matchGlob("?.kt", "a.kt"));
+    assertFalse(GrepTool.matchGlob("?.kt", "ab.kt"));
+    assertTrue(GrepTool.matchGlob("a.b", "a.b"), "点号应被转义");
+    assertFalse(GrepTool.matchGlob("a.b", "axb"));
+  }
+
+  @Test
+  void oversizedFileIsSkippedButReported(@TempDir Path root) throws IOException {
+    // 超过 2MB 上限的文件被跳过，跳过数要在结果里体现（否则模型以为搜过了）。
+    Path big = root.resolve("big.txt");
+    byte[] bytes = new byte[2 * 1024 * 1024 + 1];
+    java.util.Arrays.fill(bytes, (byte) 'a');
+    Files.write(big, bytes);
+    writeQuiet(root, "small.kt", "hit");
+
+    ToolResult result = run(root, new JSONObject().put("pattern", "hit"));
+    assertFalse(result.isError(), result.getContent());
+    assertTrue(result.getContent().contains("small.kt"), result.getContent());
+    assertTrue(result.getContent().contains("已跳过"), result.getContent());
+  }
+
+  private static void writeQuiet(Path dir, String name, String content) {
+    try {
+      write(dir, name, content);
+    } catch (IOException e) {
+      throw new RuntimeException(e);
+    }
+  }
+
   @Test
   void parameterSchemaDocumentsRegexAndOutputModes() throws Exception {
     JSONObject params = new GrepTool().getParameters();
