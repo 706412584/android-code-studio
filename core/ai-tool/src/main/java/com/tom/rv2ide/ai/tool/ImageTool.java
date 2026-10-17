@@ -238,19 +238,21 @@ public final class ImageTool extends BaseTool {
       return error("图像处理繁忙（并发任务较多），请稍后重试。");
     }
     try {
-      // 解码（端口内做两段式 bounds 预查：超 MAX_INPUT_PIXELS 直接返回 null）。
-      ImageProcessingPort.Decoded decoded = processor.decode(raw, MAX_INPUT_PIXELS);
-      if (decoded == null) {
-        return error("图片解码失败（文件损坏、格式不受支持，或像素超过上限 "
-            + MAX_INPUT_PIXELS + "——后者请先 resize 缩小）。");
-      }
-      java.util.function.BooleanSupplier cancelled = cancellationSignal(context);
-      // 4) action 分派。
+      // 4) 解码 + action 分派。
       // catch Throwable（不只 Exception）：像素处理段峰值可达 ~240MB，
       // OutOfMemoryError 是 Error 不是 Exception——ToolExecutor 与 AgentSession
       // 的兜底都只捕获 Exception/RuntimeException，漏出去的 OOM 会直接崩掉
       // agent 循环。工具约定「失败返回 error 变体」覆盖 Error。
+      //
+      // 解码必须包在同一段里：解码本身就是最大的内存分配点（整幅 RGBA 数组），
+      // 此前它在 try 之外，OOM 会直接穿透整个工具层。
       try {
+        ImageProcessingPort.Decoded decoded = processor.decode(raw, MAX_INPUT_PIXELS);
+        if (decoded == null) {
+          return error("图片解码失败（文件损坏、格式不受支持，或像素超过上限 "
+              + MAX_INPUT_PIXELS + "——后者请先 resize 缩小）。");
+        }
+        java.util.function.BooleanSupplier cancelled = cancellationSignal(context);
         if (ACTION_DOMINANT_COLORS.equals(action)) {
           return dominantColors(decoded, input, context);
         }
@@ -268,8 +270,8 @@ public final class ImageTool extends BaseTool {
         }
         return error("action 只能是 chroma_key / luma_key / crop / resize / dominant_colors，收到：" + action);
       } catch (OutOfMemoryError e) {
-        return error("内存不足：图片过大（" + decoded.width + "x" + decoded.height
-            + "）。请先 resize 到更小尺寸再处理。");
+        // decoded 可能还没赋值（解码阶段就 OOM），不能直接引用它的字段。
+        return error("内存不足：图片过大，请先 resize 到更小尺寸再处理。");
       } catch (Throwable e) {
         return error("图像处理失败: " + e.getClass().getSimpleName() + ": " + e.getMessage());
       }
@@ -541,7 +543,9 @@ public final class ImageTool extends BaseTool {
     File target;
     if (rawOutput == null || rawOutput.trim().isEmpty()) {
       File base = new File(context.getHomePath(), OUTPUT_DIR);
-      if (!base.exists() && !base.mkdirs() && !base.isDirectory()) {
+      // 用 isDirectory 判定：路径存在但是**文件**时 mkdirs 不会执行，
+      // 后续写入只会得到「Not a directory」，与真实原因无关。
+      if (!base.isDirectory() && !base.mkdirs() && !base.isDirectory()) {
         throw new IOException("无法创建输出目录: " + base.getAbsolutePath());
       }
       String name = action.replace('_', '-') + "-" + System.currentTimeMillis() + ".png";

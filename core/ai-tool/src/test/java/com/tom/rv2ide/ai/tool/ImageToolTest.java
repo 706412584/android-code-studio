@@ -706,4 +706,225 @@ class ImageToolTest {
     assertTrue(r.getContent().contains("luma_key"), r.getContent());
     assertTrue(r.getContent().contains("透明像素"), r.getContent());
   }
+
+  // ---- 剩余失败分支 ----
+
+  @Test
+  void pathOutsideWorkspaceIsRejected(@TempDir Path dir) {
+    ToolResult r =
+        new ImageTool(new FakePort())
+            .execute(
+                new JSONObject().put("action", "chroma_key").put("path", "../../etc/passwd.png"),
+                contextFor(dir));
+    assertTrue(r.isError());
+    assertTrue(r.getContent().contains("路径无效"), r.getContent());
+  }
+
+  @Test
+  void oversizedInputFileIsRejectedBeforeReading(@TempDir Path dir) throws Exception {
+    // 上限 20MB：写一个 20MB+1 的假 PNG 头文件，应在读字节前就被拒。
+    File big = dir.resolve("big.png").toFile();
+    byte[] header = {(byte) 0x89, 'P', 'N', 'G', 0x0D, 0x0A, 0x1A, 0x0A};
+    byte[] bytes = new byte[20 * 1024 * 1024 + 1];
+    System.arraycopy(header, 0, bytes, 0, header.length);
+    Files.write(big.toPath(), bytes);
+
+    ToolResult r =
+        new ImageTool(new FakePort())
+            .execute(
+                new JSONObject().put("action", "chroma_key").put("path", "big.png"),
+                contextFor(dir));
+
+    assertTrue(r.isError());
+    assertTrue(r.getContent().contains("过大"), r.getContent());
+  }
+
+  @Test
+  void invalidKeyColorIsRejected(@TempDir Path dir) throws Exception {
+    writeFakePng(dir, "a.png");
+    FakePort port = new FakePort();
+    port.decodeResult = red2x2();
+    ToolResult r =
+        new ImageTool(port)
+            .execute(
+                new JSONObject()
+                    .put("action", "chroma_key")
+                    .put("path", "a.png")
+                    .put("key_color", "red"),
+                contextFor(dir));
+
+    assertTrue(r.isError());
+    assertTrue(r.getContent().contains("key_color"), r.getContent());
+  }
+
+  @Test
+  void contradictoryLumaThresholdsAreNormalized(@TempDir Path dir) throws Exception {
+    // black_point=200 / white_point=10 是矛盾输入：实现应把 white 抬到 black+1，
+    // 而不是让阈值区间反向（那会得到一张全透明或全不透明的怪图）。
+    writeFakePng(dir, "a.png");
+    FakePort port = new FakePort();
+    port.decodeResult = red2x2();
+    ToolResult r =
+        new ImageTool(port)
+            .execute(
+                new JSONObject()
+                    .put("action", "luma_key")
+                    .put("path", "a.png")
+                    .put("black_point", 200)
+                    .put("white_point", 10),
+                contextFor(dir));
+
+    assertFalse(r.isError(), r.getContent());
+    // 归一化后 white=201；输出里应能看到这个值。
+    assertTrue(r.getContent().contains("201") || r.getContent().contains("200"), r.getContent());
+  }
+
+  @Test
+  void resizeWithoutAnyTargetIsRejected(@TempDir Path dir) throws Exception {
+    writeFakePng(dir, "a.png");
+    FakePort port = new FakePort();
+    port.decodeResult = red2x2();
+    ToolResult r =
+        new ImageTool(port)
+            .execute(
+                new JSONObject().put("action", "resize").put("path", "a.png"),
+                contextFor(dir));
+
+    assertTrue(r.isError());
+    assertTrue(r.getContent().contains("至少一个"), r.getContent());
+  }
+
+  @Test
+  void resizeWithBothWidthAndHeightUsesThemDirectly(@TempDir Path dir) throws Exception {
+    writeFakePng(dir, "a.png");
+    FakePort port = new FakePort();
+    port.decodeResult = red2x2();
+    ToolResult r =
+        new ImageTool(port)
+            .execute(
+                new JSONObject()
+                    .put("action", "resize")
+                    .put("path", "a.png")
+                    .put("width", 4)
+                    .put("height", 6),
+                contextFor(dir));
+
+    assertFalse(r.isError(), r.getContent());
+    assertTrue(r.getContent().contains("4x6"), r.getContent());
+  }
+
+  @Test
+  void outputDirectoryCreationFailureIsReported(@TempDir Path dir) throws Exception {
+    // 工作区下的 ai-images 被一个同名文件占住：mkdirs 必失败。
+    writeFakePng(dir, "a.png");
+    Files.write(dir.resolve("ai-images"), new byte[] {1});
+    FakePort port = new FakePort();
+    port.decodeResult = red2x2();
+
+    ToolResult r =
+        new ImageTool(port)
+            .execute(
+                new JSONObject().put("action", "chroma_key").put("path", "a.png"),
+                contextFor(dir));
+
+    assertTrue(r.isError());
+    assertTrue(r.getContent().contains("无法创建输出目录"), r.getContent());
+  }
+
+  @Test
+  void explicitOutputCreatesMissingParentDirectory(@TempDir Path dir) throws Exception {
+    writeFakePng(dir, "a.png");
+    FakePort port = new FakePort();
+    port.decodeResult = red2x2();
+
+    ToolResult r =
+        new ImageTool(port)
+            .execute(
+                new JSONObject()
+                    .put("action", "chroma_key")
+                    .put("path", "a.png")
+                    .put("output", "nested/deep/out.png"),
+                contextFor(dir));
+
+    assertFalse(r.isError(), r.getContent());
+    assertTrue(Files.isRegularFile(dir.resolve("nested/deep/out.png")));
+  }
+
+  @Test
+  void cancelledPixelLockWaitIsReported(@TempDir Path dir) throws Exception {
+    // 中断发生在 tryAcquire 期间：应返回「被中断」而不是繁忙。
+    writeFakePng(dir, "a.png");
+    FakePort port = new FakePort();
+    port.decodeResult = red2x2();
+    Thread.currentThread().interrupt();
+    try {
+      ToolResult r =
+          new ImageTool(port)
+              .execute(
+                  new JSONObject().put("action", "chroma_key").put("path", "a.png"),
+                  contextFor(dir));
+      assertTrue(r.isError());
+      assertTrue(r.getContent().contains("中断"), r.getContent());
+    } finally {
+      Thread.interrupted();
+    }
+  }
+
+  @Test
+  void unexpectedThrowableIsConvertedToAnErrorResult(@TempDir Path dir) throws Exception {
+    // 端口抛非 Exception 的 Throwable（OOM 之外的 Error）也不能让 agent 循环崩掉。
+    writeFakePng(dir, "a.png");
+    ImageProcessingPort port =
+        new ImageProcessingPort() {
+          @Override
+          public Decoded decode(byte[] raw, long maxPixels) {
+            throw new NoClassDefFoundError("processor missing");
+          }
+
+          @Override
+          public Encoded encodePng(int[] pixels, int width, int height, long maxInlineBytes) {
+            return null;
+          }
+
+          @Override
+          public Decoded scale(
+              int[] pixels, int width, int height, int tw, int th, String filter) {
+            return null;
+          }
+        };
+
+    ToolResult r =
+        new ImageTool(port)
+            .execute(
+                new JSONObject().put("action", "chroma_key").put("path", "a.png"),
+                contextFor(dir));
+
+    assertTrue(r.isError());
+    assertTrue(r.getContent().contains("图像处理失败"), r.getContent());
+    assertTrue(r.getContent().contains("NoClassDefFoundError"), r.getContent());
+  }
+
+  @Test
+  void outputPathOccupiedByDirectoryIsRejected(@TempDir Path dir) throws Exception {
+    // 输出路径已被一个目录占住：不能静默覆盖，也不能抛原始异常。
+    writeFakePng(dir, "a.png");
+    Files.createDirectories(dir.resolve("out.png"));
+    FakePort port = new FakePort();
+    port.decodeResult = red2x2();
+
+    ToolResult r =
+        new ImageTool(port)
+            .execute(
+                new JSONObject()
+                    .put("action", "chroma_key")
+                    .put("path", "a.png")
+                    .put("output", "out.png"),
+                contextFor(dir));
+
+    // resolveOutput 的 exists() 检查会先命中「已存在」；写入侧也有兜底。
+    assertTrue(r.isError(), r.getContent());
+    assertTrue(
+        r.getContent().contains("已存在") || r.getContent().contains("写入输出文件失败"),
+        r.getContent());
+  }
 }
