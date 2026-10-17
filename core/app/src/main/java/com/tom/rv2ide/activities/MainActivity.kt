@@ -87,9 +87,15 @@ class MainActivity : EdgeToEdgeIDEActivity() {
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
     tomIDEUpdater = TomIDEUpdater(this)
-    tomIDEUpdater.checkForUpdates()
-
-    openLastProject()
+    // 启动时序：先让更新检查跑完，再打开上次项目。
+    //
+    // 反过来的话（先 openLastProject）会立刻 startActivity(EditorActivity)，
+    // 而更新检查是异步网络请求——弹窗回来时 MainActivity 已被覆盖，弹窗挂在
+    // 不可见的 Activity 上，用户永远看不到「有新版本」（实测 r13→1035 静默无提示）。
+    //
+    // 有更新时由弹窗按钮驱动后续：点「下载」直接进下载，点「跳过」/「浏览器」
+    // 或直接关闭则继续打开上次项目。检查失败或无更新时立即继续，不拖慢启动。
+    tomIDEUpdater.checkForUpdates(onNoUpdate = { openLastProject() })
 
     viewModel.currentScreen.observe(this) { screen ->
       if (screen == -1) {

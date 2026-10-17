@@ -133,10 +133,21 @@ class TomIDEUpdater(private val context: Context) {
   private var progressIndicator: LinearProgressIndicator? = null
   private var progressText: TextView? = null
 
-  fun checkForUpdates() {
+  /**
+   * 启动时的静默检查。
+   *
+   * @param onNoUpdate 没有可用更新（或检查失败）时回调；用于「等更新弹窗处理完
+   *     再打开上次项目」的启动时序。有更新时不回调——由弹窗按钮决定后续动作。
+   *
+   * <p><b>为什么需要这个回调</b>：MainActivity 的 onCreate 会立刻
+   * {@code openLastProject()} 跳到 EditorActivity，而本方法是异步网络请求，
+   * 弹窗要等它返回后才显示——那时 MainActivity 已被覆盖，弹窗挂在不可见的
+   * Activity 上，用户永远看不到「有新版本」（实测：r13 → 清单 1035 时静默无提示）。
+   */
+  fun checkForUpdates(onNoUpdate: (() -> Unit)? = null) {
     CoroutineScope(Dispatchers.IO).launch {
       try {
-        val updateInfo = fetchUpdateInfo() ?: return@launch
+        val updateInfo = fetchUpdateInfo() ?: return@launch.also { notifyNoUpdate(onNoUpdate) }
 
         // 已应用补丁的版本达到清单目标时，两个分支都不再提示：
         // - 补丁分支：见 isPatchApplicable 的「尚未应用」检查；
@@ -147,6 +158,7 @@ class TomIDEUpdater(private val context: Context) {
         val appliedVersion = appliedPatchVersion()
         if (appliedVersion != null && appliedVersion >= updateInfo.baseVersionName) {
           Log.d(TAG, "已应用补丁 $appliedVersion ≥ 清单目标 ${updateInfo.baseVersionName}，无需提示")
+          notifyNoUpdate(onNoUpdate)
           return@launch
         }
 
@@ -164,12 +176,34 @@ class TomIDEUpdater(private val context: Context) {
 
         if (isUpdateAvailable(updateInfo)) {
           val changelog = fetchChangelog(updateInfo.changelogUrl)
-          withContext(Dispatchers.Main) { showUpdateDialog(updateInfo, changelog) }
+          withContext(Dispatchers.Main) { showUpdateDialog(updateInfo, changelog, onNoUpdate) }
+        } else {
+          notifyNoUpdate(onNoUpdate)
         }
       } catch (e: Exception) {
         Log.e(TAG, "Error checking for updates", e)
+        notifyNoUpdate(onNoUpdate)
       }
     }
+  }
+
+  /** 只执行一次的 Runnable：弹窗按钮与 dismiss 监听会重复触发同一个回调。 */
+  private class OnceRunnable(private val action: (() -> Unit)?) {
+    private val fired = java.util.concurrent.atomic.AtomicBoolean(false)
+
+    fun run() {
+      if (action != null && fired.compareAndSet(false, true)) {
+        action.invoke()
+      }
+    }
+  }
+
+  /** 在主线程回调「无需等待更新弹窗」。 */
+  private fun notifyNoUpdate(onNoUpdate: (() -> Unit)?) {
+    if (onNoUpdate == null) {
+      return
+    }
+    CoroutineScope(Dispatchers.Main).launch { onNoUpdate() }
   }
 
   /**
@@ -727,11 +761,20 @@ class TomIDEUpdater(private val context: Context) {
     return variant
   }
 
-  private fun showUpdateDialog(updateInfo: UpdateInfo, changelog: String) {
+  private fun showUpdateDialog(
+      updateInfo: UpdateInfo,
+      changelog: String,
+      onDismissed: (() -> Unit)? = null,
+  ) {
     val currentArch = getDeviceArchitecture()
     val availableVariant = getVariantForCurrentArchitecture(updateInfo)
 
+    // 按钮回调与 setOnDismissListener 都会触发：用一次性闸门保证
+    // 「继续启动流程」只执行一次（否则会打开两次上次项目）。
+    val notifyOnce = OnceRunnable(onDismissed)
+
     if (availableVariant == null) {
+      notifyOnce.run()
       return
     }
 
@@ -761,10 +804,13 @@ class TomIDEUpdater(private val context: Context) {
         // setMessage 会把弹窗顶得非常高。
         .setView(buildInfoDialogView(header, changelog, null))
         .setPositiveButton(context.getString(R.string.updater_download)) { _, _ ->
+          // 下载不需要等：用户已明确要看进度，直接进下载弹窗。
+          notifyOnce.run()
           downloadAndInstall(availableVariant)
         }
         .setNeutralButton(context.getString(R.string.updater_view_in_browser)) { _, _ ->
           // 分卷没有单一可打开的 URL，用第一分卷兜底（CN 用户也可以直接看浏览器下载）。
+          notifyOnce.run()
           openInBrowser(availableVariant.parts.firstOrNull() ?: availableVariant.apkUrl)
         }
         // 「稍后」与「跳过此版本」的区别很重要：稍后下次启动还会弹，
@@ -772,7 +818,9 @@ class TomIDEUpdater(private val context: Context) {
         // 用户面对同一个不想装的版本只能每次启动都点一遍，弹窗就成了噪声。
         .setNegativeButton(context.getString(R.string.updater_skip_version)) { _, _ ->
           rememberSkippedVersion(availableVariant.versionCode)
+          notifyOnce.run()
         }
+        .setOnDismissListener { notifyOnce.run() }
         .setCancelable(true)
         .show()
   }
@@ -826,9 +874,12 @@ class TomIDEUpdater(private val context: Context) {
 
         val totalParts = variant.parts.size
         val partFiles = mutableListOf<File>()
+        // 跨分卷的累计字节与总长：进度条必须单调递增，不能每卷归零。
+        // 总长先预读（HEAD），否则边下边算分母会让进度从 100% 跳回 67%。
+        val progressState = PartProgress(probePartSizes(variant.parts))
         variant.parts.forEachIndexed { index, partUrl ->
           val partFile = File(partsDir, "part.$index")
-          downloadToFile(partUrl, partFile, index, totalParts)
+          downloadToFile(partUrl, partFile, index, totalParts, progressState)
           partFiles += partFile
         }
 
@@ -863,8 +914,67 @@ class TomIDEUpdater(private val context: Context) {
     }
   }
 
+  /**
+   * 跨分卷的进度累加器。
+   *
+   * <p>分卷是 Gitee 100MB 单文件限制的产物，用户视角仍是「下载一个 APK」，
+   * 所以进度必须跨卷连续。每卷各自从 0 开始会表现为进度条反复重置。
+   *
+   * <p>总长在下载前由 [probePartSizes] 预先取得——不能边下边算分母：
+   * 那会让分母随分卷推进而变化，第 1 卷下完是 100%，第 2 卷开始又变成 67%。
+   */
+  private class PartProgress(val totalBytes: Long) {
+    var completedBytes = 0L
+    var lastPercent = -1
+
+    /** 已下载字节 / 总长（总长未知时返回 null）。 */
+    fun fraction(doneInPart: Long): Int? {
+      if (totalBytes <= 0) {
+        return null
+      }
+      return (((completedBytes + doneInPart) * 100) / totalBytes).toInt().coerceIn(0, 100)
+    }
+  }
+
+  /**
+   * 预读各分卷的 Content-Length（只读响应头，不下载正文）。
+   *
+   * <p>拿不到长度（服务端不给 Content-Length）时返回 0，调用方退化为
+   * 「不确定进度」——进度条不会倒退，只是不精确。
+   */
+  private fun probePartSizes(partUrls: List<String>): Long {
+    var sum = 0L
+    for (partUrl in partUrls) {
+      val connection = URL(partUrl).openConnection() as HttpURLConnection
+      connection.requestMethod = "HEAD"
+      connection.connectTimeout = 30000
+      connection.readTimeout = 30000
+      try {
+        if (connection.responseCode == HttpURLConnection.HTTP_OK) {
+          val length = connection.contentLengthLong
+          if (length <= 0) {
+            // 任一分卷长度未知就无法给出准确总长，整体退化为不确定进度。
+            return 0L
+          }
+          sum += length
+        }
+      } catch (e: Exception) {
+        Log.w(TAG, "预读分卷大小失败：$partUrl", e)
+      } finally {
+        connection.disconnect()
+      }
+    }
+    return sum
+  }
+
   /** 下载单个分卷到 [dest]；[index]/[total] 用于进度文案（`分卷 i/N`）。 */
-  private suspend fun downloadToFile(urlStr: String, dest: File, index: Int, total: Int) {
+  private suspend fun downloadToFile(
+      urlStr: String,
+      dest: File,
+      index: Int,
+      total: Int,
+      progress: PartProgress,
+  ) {
     val url = URL(urlStr)
     val connection = url.openConnection() as HttpURLConnection
     connection.requestMethod = "GET"
@@ -875,12 +985,38 @@ class TomIDEUpdater(private val context: Context) {
       if (responseCode != HttpURLConnection.HTTP_OK) {
         throw IllegalStateException("HTTP $responseCode（分卷 ${index + 1}/$total）")
       }
+      val label = "下载分卷 ${index + 1}/$total"
+      // 保留已显示的百分比：同一卷开始时不归零。
       withContext(Dispatchers.Main) {
-        updateProgress(0, "下载分卷 ${index + 1}/$total…")
+        updateProgress(progress.lastPercent.coerceAtLeast(0), "$label…")
       }
+
+      val buffer = ByteArray(8192)
+      var doneInPart = 0L
       connection.inputStream.use { input ->
-        FileOutputStream(dest).use { output -> input.copyTo(output, 8192) }
+        FileOutputStream(dest).use { output ->
+          while (true) {
+            val n = input.read(buffer)
+            if (n <= 0) break
+            output.write(buffer, 0, n)
+            doneInPart += n
+            val percent = progress.fraction(doneInPart) ?: continue
+            if (percent != progress.lastPercent) {
+              progress.lastPercent = percent
+              val doneMB = ((progress.completedBytes + doneInPart) / (1024 * 1024)).toInt()
+              val totalMB = (progress.totalBytes / (1024 * 1024)).toInt()
+              withContext(Dispatchers.Main) {
+                updateProgress(
+                    percent,
+                    context.getString(R.string.updater_progress_format, doneMB, totalMB) +
+                        "（$label）",
+                )
+              }
+            }
+          }
+        }
       }
+      progress.completedBytes += doneInPart
     } finally {
       connection.disconnect()
     }
@@ -915,7 +1051,7 @@ class TomIDEUpdater(private val context: Context) {
           return@withContext null
         }
 
-        val contentLength = connection.contentLength
+        val contentLength = connection.contentLengthLong
         val inputStream = connection.inputStream
 
         // Create temp file
@@ -923,23 +1059,32 @@ class TomIDEUpdater(private val context: Context) {
         val outputStream = FileOutputStream(apkFile)
 
         val buffer = ByteArray(8192)
-        var totalBytes = 0
+        var totalBytes = 0L
         var bytesRead: Int
+        // 只在百分比真正变化时才切主线程：141MB 按 8KB 分块约 1.8 万次，
+        // 每块都 post 一次主线程任务会让进度条本身卡顿。
+        var lastPercent = -1
 
         while (inputStream.read(buffer).also { bytesRead = it } != -1) {
           outputStream.write(buffer, 0, bytesRead)
           totalBytes += bytesRead
 
           if (contentLength > 0) {
-            val progress = (totalBytes * 100) / contentLength
-            val progressMB = totalBytes / (1024 * 1024)
-            val totalMB = contentLength / (1024 * 1024)
+            // 必须用 Long 运算：totalBytes * 100 在 141MB 的包上约 148 亿，
+            // 远超 Int 上限（21.4 亿）。用 Int 会回绕成负数，进度条被夹回 0，
+            // 整个下载过程中反复「归零」——用户看到的就是进度条无限重置。
+            val progress = ((totalBytes * 100) / contentLength).toInt().coerceIn(0, 100)
+            if (progress != lastPercent) {
+              lastPercent = progress
+              val progressMB = (totalBytes / (1024 * 1024)).toInt()
+              val totalMB = (contentLength / (1024 * 1024)).toInt()
 
-            withContext(Dispatchers.Main) {
-              updateProgress(
-                  progress,
-                  context.getString(R.string.updater_progress_format, progressMB, totalMB),
-              )
+              withContext(Dispatchers.Main) {
+                updateProgress(
+                    progress,
+                    context.getString(R.string.updater_progress_format, progressMB, totalMB),
+                )
+              }
             }
           }
         }
