@@ -261,4 +261,230 @@ class ImageGenerationToolTest {
     assertTrue(e.isConfigured());
     assertFalse(new ImageGenerationEndpoint("", "", "").isConfigured());
   }
+
+  // ---- 参数校验 / 失败分支（此前未覆盖）----
+
+  @Test
+  public void toolMetadata() {
+    ImageGenerationTool tool = new ImageGenerationTool(new FakePort(ok("{}")));
+    assertEquals(
+        com.tom.rv2ide.ai.tool.api.ToolDisplayCategory.IMAGE_GENERATION,
+        tool.getDisplayCategory());
+    assertTrue(tool.isConcurrencySafe(), "无共享可变状态，可并发");
+  }
+
+  @Test
+  public void nullHttpPortExplains() {
+    ToolResult result = new ImageGenerationTool(null).execute(input("x"), context());
+    assertTrue(result.isError());
+    assertTrue(result.getContent().contains("网络访问"), result.getContent());
+  }
+
+  @Test
+  public void invalidSizeIsRejected() {
+    FakePort port = new FakePort(ok("{}"));
+    ImageGenerationTool tool = new ImageGenerationTool(port);
+    for (String size : new String[] {"abc", "0x100", "100x0", "5000x5000", "1024", "x1024"}) {
+      ToolResult result = tool.execute(input("x").put("size", size), context());
+      assertTrue(result.isError(), "应拒绝尺寸 " + size);
+      assertTrue(result.getContent().contains("size"), result.getContent());
+    }
+    assertEquals(null, port.method, "校验失败不应发请求");
+  }
+
+  @Test
+  public void emptySizeFallsBackToDefault() throws Exception {
+    FakePort port =
+        new FakePort(
+            ok(new JSONObject()
+                .put("data", new org.json.JSONArray().put(new JSONObject().put("b64_json", PNG_BASE64)))
+                .toString()));
+    new ImageGenerationTool(port).execute(input("x").put("size", ""), context());
+    assertEquals("1024x1024", new JSONObject(port.body).getString("size"));
+  }
+
+  @Test
+  public void countIsClampedToValidRange() throws Exception {
+    FakePort port =
+        new FakePort(
+            ok(new JSONObject()
+                .put("data", new org.json.JSONArray().put(new JSONObject().put("b64_json", PNG_BASE64)))
+                .toString()));
+    ImageGenerationTool tool = new ImageGenerationTool(port);
+    // n=0 → 1；n=99 → MAX_COUNT(4)。服务端不该收到越界值。
+    tool.execute(input("x").put("n", 0), context());
+    assertEquals(1, new JSONObject(port.body).getInt("n"));
+    tool.execute(input("x").put("n", 99), context());
+    assertEquals(4, new JSONObject(port.body).getInt("n"));
+  }
+
+  @Test
+  public void networkExceptionIsReported() {
+    HttpRequestPort port =
+        (method, url, headers, body, timeoutMs) -> {
+          throw new java.io.IOException("connection refused");
+        };
+    ToolResult result = new ImageGenerationTool(port).execute(input("x"), context());
+    assertTrue(result.isError());
+    assertTrue(result.getContent().contains("connection refused"), result.getContent());
+  }
+
+  @Test
+  public void longHttpErrorBodyIsTruncated() {
+    StringBuilder body = new StringBuilder();
+    for (int i = 0; i < 500; i++) {
+      body.append("detail-");
+    }
+    FakePort port = new FakePort(httpError(500, body.toString()));
+    ToolResult result = new ImageGenerationTool(port).execute(input("x"), context());
+    assertTrue(result.isError());
+    assertTrue(result.getContent().contains("…"), "超长正文应被截断");
+    assertTrue(result.getContent().length() < 1200, "错误正文不应超过 800 字符");
+  }
+
+  @Test
+  public void nonJsonResponseIsReported() {
+    FakePort port = new FakePort(ok("<html>oops</html>"));
+    ToolResult result = new ImageGenerationTool(port).execute(input("x"), context());
+    assertTrue(result.isError());
+    assertTrue(result.getContent().contains("不是 JSON"), result.getContent());
+    assertTrue(result.getContent().contains("oops"), result.getContent());
+  }
+
+  @Test
+  public void emptyDataArrayIsReported() {
+    FakePort port = new FakePort(ok("{\"data\":[]}"));
+    ToolResult result = new ImageGenerationTool(port).execute(input("x"), context());
+    assertTrue(result.isError());
+    assertTrue(result.getContent().contains("data 为空"), result.getContent());
+  }
+
+  @Test
+  public void badBase64IsReportedWithEntryIndex() {
+    FakePort port =
+        new FakePort(
+            ok(new JSONObject()
+                .put("data", new org.json.JSONArray().put(new JSONObject().put("b64_json", "!!!not-base64!!!")))
+                .toString()));
+    ToolResult result = new ImageGenerationTool(port).execute(input("x"), context());
+    assertTrue(result.isError());
+    assertTrue(result.getContent().contains("第 1 张"), result.getContent());
+    assertTrue(result.getContent().contains("base64"), result.getContent());
+  }
+
+  @Test
+  public void itemWithoutAnyImageDataIsReported() {
+    FakePort port =
+        new FakePort(
+            ok(new JSONObject()
+                .put("data", new org.json.JSONArray().put(new JSONObject().put("revised_prompt", "x")))
+                .toString()));
+    ToolResult result = new ImageGenerationTool(port).execute(input("x"), context());
+    assertTrue(result.isError());
+    assertTrue(result.getContent().contains("未返回图片数据"), result.getContent());
+  }
+
+  @Test
+  public void downloadFailureIsReportedPerEntry() {
+    HttpPort failingDownloader =
+        new HttpPort() {
+          @Override
+          public String getText(String url, Map<String, String> headers) {
+            throw new UnsupportedOperationException();
+          }
+
+          @Override
+          public BinaryResponse getBytes(String url, Map<String, String> headers) throws Exception {
+            throw new java.io.IOException("cdn down");
+          }
+
+          @Override
+          public TextResponse postJson(String url, String jsonBody, Map<String, String> headers) {
+            throw new UnsupportedOperationException();
+          }
+
+          @Override
+          public StreamHandle openStream(String url, Map<String, String> headers) {
+            throw new UnsupportedOperationException();
+          }
+        };
+    FakePort port =
+        new FakePort(
+            ok(new JSONObject()
+                .put("data", new org.json.JSONArray()
+                    .put(new JSONObject().put("url", "https://cdn/a.png")))
+                .toString()));
+    ToolResult result =
+        new ImageGenerationTool(port, failingDownloader).execute(input("x"), context());
+    assertTrue(result.isError());
+    assertTrue(result.getContent().contains("下载结果图片失败"), result.getContent());
+    assertTrue(result.getContent().contains("cdn down"), result.getContent());
+  }
+
+  @Test
+  public void unwritableOutputDirectoryIsReported() throws Exception {
+    // 保存目录指向一个已存在的文件：必须明确说「无法创建目录」，
+    // 而不是把「Not a directory」当成落盘失败原因。
+    Path occupied = tmpDir.resolve("occupied");
+    Files.write(occupied, new byte[] {1});
+    FakePort port =
+        new FakePort(
+            ok(new JSONObject()
+                .put("data", new org.json.JSONArray().put(new JSONObject().put("b64_json", PNG_BASE64)))
+                .toString()));
+    ToolContext ctx =
+        ToolContext.builder()
+            .homePath(tmpRoot())
+            .imageGeneration(
+                new ImageGenerationEndpoint(
+                    "https://host/v1", "k", "m", occupied.toString()))
+            .build();
+
+    ToolResult result = new ImageGenerationTool(port).execute(input("x"), ctx);
+
+    assertTrue(result.isError());
+    assertTrue(result.getContent().contains("无法创建目录"), result.getContent());
+  }
+
+  @Test
+  public void customOutputDirectoryIsUsed() throws Exception {
+    Path custom = tmpDir.resolve("custom-images");
+    FakePort port =
+        new FakePort(
+            ok(new JSONObject()
+                .put("data", new org.json.JSONArray().put(new JSONObject().put("b64_json", PNG_BASE64)))
+                .toString()));
+    ToolContext ctx =
+        ToolContext.builder()
+            .homePath(tmpRoot())
+            .imageGeneration(
+                new ImageGenerationEndpoint("https://host/v1", "k", "m", custom.toString()))
+            .build();
+
+    ToolResult result = new ImageGenerationTool(port).execute(input("x"), ctx);
+
+    assertFalse(result.isError(), result.getContent());
+    assertTrue(Files.isDirectory(custom), "应使用自定义目录");
+    try (java.util.stream.Stream<Path> files = Files.list(custom)) {
+      assertEquals(1, files.count());
+    }
+  }
+
+  @Test
+  public void partialSuccessReportsBothSavedAndFailedEntries() throws Exception {
+    // 一张成功一张坏：整体是成功，但失败原因也要出现在结果里。
+    FakePort port =
+        new FakePort(
+            ok(new JSONObject()
+                .put("data", new org.json.JSONArray()
+                    .put(new JSONObject().put("b64_json", PNG_BASE64))
+                    .put(new JSONObject().put("b64_json", "!!!bad!!!")))
+                .toString()));
+    ToolResult result = new ImageGenerationTool(port).execute(input("x"), context());
+
+    assertFalse(result.isError(), result.getContent());
+    assertTrue(result.getContent().contains("生成成功"), result.getContent());
+    assertTrue(result.getContent().contains("1/2"), result.getContent());
+    assertTrue(result.getContent().contains("第 2 张"), result.getContent());
+  }
 }

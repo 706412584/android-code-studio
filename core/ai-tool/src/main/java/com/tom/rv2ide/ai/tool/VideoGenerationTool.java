@@ -391,7 +391,9 @@ public final class VideoGenerationTool extends BaseTool {
     } else {
       base = new File(context.getHomePath(), OUTPUT_DIR);
     }
-    if (!base.exists() && !base.mkdirs() && !base.isDirectory()) {
+    // 用 isDirectory 而非 exists 判定：路径存在但**是文件**时，mkdirs 不会执行，
+    // 后续落盘只会得到一个「Not a directory」，与真实原因（保存目录配置错了）无关。
+    if (!base.isDirectory() && !base.mkdirs() && !base.isDirectory()) {
       throw new IOException("无法创建目录: " + base.getAbsolutePath());
     }
 

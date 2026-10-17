@@ -338,6 +338,284 @@ class VideoGenerationToolTest {
     assertFalse(tool.isConcurrencySafe(), "轮询占线程，不应并发");
   }
 
+  // ---- 轮询 / 参数 / 落盘（此前未覆盖）----
+
+  @Test
+  public void agnesForwardsOptionalAspectRatioAndWhitelistedFields() throws Exception {
+    // 可选字段必须原样透传给上游；漏掉 aspect_ratio 会让服务端按默认比例出片。
+    ScriptedPort port =
+        new ScriptedPort(
+            ok(new JSONObject().put("video_id", "v1").toString()),
+            ok(new JSONObject().put("status", "completed").put("url", "https://cdn/x.mp4").toString()));
+    ToolContext ctx =
+        ToolContext.builder()
+            .homePath("/tmp")
+            .videoGeneration(
+                new VideoGenerationEndpoint("https://host/v1", "k", "agnes-video-2.5", ""))
+            .build();
+    ToolResult result =
+        new VideoGenerationTool(port)
+            .execute(
+                new JSONObject()
+                    .put("prompt", "x")
+                    .put("aspect_ratio", "9:16")
+                    .put("seed", 42)
+                    .put("negative_prompt", "blurry"),
+                ctx);
+
+    JSONObject sent = new JSONObject(port.first()[2]);
+    assertEquals("9:16", sent.getString("aspect_ratio"));
+    assertEquals(42, sent.getInt("seed"));
+    assertEquals("blurry", sent.getString("negative_prompt"));
+    // 下载失败是预期（cdn 不可达），但参数已发出。
+    assertTrue(result.getContent().contains("保存失败"), result.getContent());
+  }
+
+  @Test
+  public void grokForwardsAspectRatioAndImageUrl() throws Exception {
+    ScriptedPort port =
+        new ScriptedPort(
+            ok(new JSONObject().put("request_id", "r1").toString()),
+            ok(new JSONObject()
+                .put("status", "done")
+                .put("video", new JSONObject().put("url", "https://cdn/g.mp4"))
+                .toString()));
+    ToolResult result =
+        new VideoGenerationTool(port)
+            .execute(
+                new JSONObject()
+                    .put("prompt", "x")
+                    .put("aspect_ratio", "1:1")
+                    .put("image_url", "https://cdn/in.png"),
+                grokContext());
+
+    JSONObject sent = new JSONObject(port.first()[2]);
+    assertEquals("1:1", sent.getString("aspect_ratio"));
+    assertEquals("https://cdn/in.png", sent.getString("image_url"));
+    assertTrue(result.getContent().contains("保存失败"), result.getContent());
+  }
+
+  @Test
+  public void agnesGivesUpAfterConsecutiveTransientFailures() throws Exception {
+    // 连续 4 次瞬时失败（> MAX_TRANSIENT_FAILURES）必须放弃并报出任务 ID，
+    // 而不是一直退避到超时。退避总计 3+6+9 秒，本类是唯一慢用例。
+    final java.util.concurrent.atomic.AtomicInteger calls =
+        new java.util.concurrent.atomic.AtomicInteger();
+    HttpRequestPort port =
+        (method, url, headers, body, timeoutMs) -> {
+          if (calls.getAndIncrement() == 0) {
+            return ok(new JSONObject().put("video_id", "v1").toString());
+          }
+          throw new java.io.IOException("network down");
+        };
+    ToolResult result =
+        new VideoGenerationTool(port)
+            .execute(new JSONObject().put("prompt", "x"), agnesContext());
+
+    assertTrue(result.isError());
+    assertTrue(result.getContent().contains("连续失败"), result.getContent());
+    assertTrue(result.getContent().contains("v1"), result.getContent());
+    assertTrue(result.getContent().contains("network down"), result.getContent());
+  }
+
+  @Test
+  public void agnesPollTimeoutIsReportedWithLastState() throws Exception {
+    // 轮询到超时仍未完成：错误里要带任务 ID 与最后状态，便于用户去后台查。
+    ScriptedPort port =
+        new ScriptedPort(
+            ok(new JSONObject().put("video_id", "v9").toString()),
+            ok(new JSONObject().put("status", "processing").toString()));
+    ToolResult result =
+        new VideoGenerationTool(port)
+            .execute(
+                new JSONObject().put("prompt", "x").put("timeout_seconds", 1), agnesContext());
+
+    assertTrue(result.isError());
+    assertTrue(result.getContent().contains("超时"), result.getContent());
+    assertTrue(result.getContent().contains("processing"), result.getContent());
+  }
+
+  @Test
+  public void grokPollTimeoutIsReportedWithLastState() throws Exception {
+    ScriptedPort port =
+        new ScriptedPort(
+            ok(new JSONObject().put("request_id", "r9").toString()),
+            ok(new JSONObject().put("status", "processing").toString()));
+    ToolResult result =
+        new VideoGenerationTool(port)
+            .execute(
+                new JSONObject().put("prompt", "x").put("timeout_seconds", 1), grokContext());
+
+    assertTrue(result.isError());
+    assertTrue(result.getContent().contains("超时"), result.getContent());
+    assertTrue(result.getContent().contains("processing"), result.getContent());
+  }
+
+  @Test
+  public void pollHttpErrorIsReportedWithStatusCodeAndBody() throws Exception {
+    // 轮询端返回 5xx：错误里要带状态码与被截断的正文，否则只能看到「超时」。
+    StringBuilder longBody = new StringBuilder();
+    for (int i = 0; i < 100; i++) {
+      longBody.append("detail-");
+    }
+    ScriptedPort port =
+        new ScriptedPort(
+            ok(new JSONObject().put("video_id", "v1").toString()),
+            err(500, longBody.toString()));
+    ToolResult result =
+        new VideoGenerationTool(port).execute(new JSONObject().put("prompt", "x"), agnesContext());
+
+    assertTrue(result.isError());
+    assertTrue(result.getContent().contains("500"), result.getContent());
+    assertTrue(result.getContent().contains("…"), "超长正文应被截断：" + result.getContent());
+  }
+
+  @Test
+  public void exceptionWithoutMessageFallsBackToClassName() throws Exception {
+    // 有些异常没有 message。错误里至少要有类型名，不能出现「失败：」后面空无一物。
+    HttpRequestPort port =
+        (method, url, headers, body, timeoutMs) -> {
+          throw new RuntimeException();
+        };
+    ToolResult result =
+        new VideoGenerationTool(port).execute(new JSONObject().put("prompt", "x"), agnesContext());
+
+    assertTrue(result.isError());
+    assertTrue(result.getContent().contains("RuntimeException"), result.getContent());
+  }
+
+  @Test
+  public void interruptDuringPollingCancelsTheWait() throws Exception {
+    // 用户取消（线程中断）必须立刻退出轮询并如实报告取消，而不是睡满间隔。
+    ScriptedPort port =
+        new ScriptedPort(
+            ok(new JSONObject().put("video_id", "v1").toString()),
+            ok(new JSONObject().put("status", "processing").toString()),
+            ok(new JSONObject().put("status", "processing").toString()));
+    final VideoGenerationTool tool = new VideoGenerationTool(port);
+    final ToolResult[] outcome = new ToolResult[1];
+    Thread runner =
+        new Thread(
+            () -> outcome[0] = tool.execute(new JSONObject().put("prompt", "x"), agnesContext()));
+    runner.setDaemon(true);
+    runner.start();
+    Thread.sleep(500); // 让它进入 sleep(3s)
+    runner.interrupt();
+    runner.join(5_000);
+
+    assertFalse(runner.isAlive(), "中断后应立即退出");
+    assertNotNull(outcome[0]);
+    assertTrue(outcome[0].isError());
+    assertTrue(outcome[0].getContent().contains("取消"), outcome[0].getContent());
+  }
+
+  @Test
+  public void customOutputDirectoryIsUsed(@TempDir Path dir) throws Exception {
+    // 用户配置了保存目录时必须用它，而不是工作区下的 ai-generated/。
+    byte[] bytes = new byte[1024];
+    com.sun.net.httpserver.HttpServer server =
+        com.sun.net.httpserver.HttpServer.create(
+            new java.net.InetSocketAddress("127.0.0.1", 0), 0);
+    server.createContext(
+        "/v.mp4",
+        exchange -> {
+          exchange.sendResponseHeaders(200, bytes.length);
+          try (java.io.OutputStream out = exchange.getResponseBody()) {
+            out.write(bytes);
+          }
+        });
+    server.start();
+    try {
+      String url = "http://127.0.0.1:" + server.getAddress().getPort() + "/v.mp4";
+      ScriptedPort port =
+          new ScriptedPort(
+              ok(new JSONObject().put("video_id", "v1").toString()),
+              ok(new JSONObject().put("status", "completed").put("url", url).toString()));
+      Path custom = dir.resolve("custom-out");
+      ToolContext ctx =
+          ToolContext.builder()
+              .homePath(dir.toString())
+              .videoGeneration(
+                  new VideoGenerationEndpoint(
+                      "https://host/v1", "k", "agnes-video-2.5", custom.toString()))
+              .build();
+
+      ToolResult result =
+          new VideoGenerationTool(port).execute(new JSONObject().put("prompt", "x"), ctx);
+
+      assertFalse(result.isError(), result.getContent());
+      java.io.File[] files = custom.toFile().listFiles();
+      assertNotNull(files);
+      assertEquals(1, files.length, "应落盘到自定义目录");
+      assertTrue(files[0].getName().endsWith(".mp4"));
+    } finally {
+      server.stop(0);
+    }
+  }
+
+  @Test
+  public void unwritableOutputDirectoryIsReported(@TempDir Path dir) throws Exception {
+    // 输出目录指向一个已存在的**文件**：mkdirs 必然失败，必须明确报错而不是抛原始异常。
+    java.io.File occupied = dir.resolve("occupied").toFile();
+    java.nio.file.Files.write(occupied.toPath(), new byte[] {1});
+    ScriptedPort port =
+        new ScriptedPort(
+            ok(new JSONObject().put("video_id", "v1").toString()),
+            ok(new JSONObject()
+                .put("status", "completed")
+                .put("url", "https://cdn/v.mp4")
+                .toString()));
+    ToolContext ctx =
+        ToolContext.builder()
+            .homePath(dir.toString())
+            .videoGeneration(
+                new VideoGenerationEndpoint(
+                    "https://host/v1", "k", "agnes-video-2.5", occupied.getAbsolutePath()))
+            .build();
+
+    ToolResult result =
+        new VideoGenerationTool(port).execute(new JSONObject().put("prompt", "x"), ctx);
+
+    // 下载失败按约定仍返回 ok（带 URL），但原因必须是「无法创建目录」。
+    assertFalse(result.isError(), result.getContent());
+    assertTrue(result.getContent().contains("无法创建目录"), result.getContent());
+  }
+
+  @Test
+  public void downloadHttpErrorIsReportedWithStatusCode(@TempDir Path dir) throws Exception {
+    com.sun.net.httpserver.HttpServer server =
+        com.sun.net.httpserver.HttpServer.create(
+            new java.net.InetSocketAddress("127.0.0.1", 0), 0);
+    server.createContext(
+        "/missing.mp4",
+        exchange -> {
+          exchange.sendResponseHeaders(404, -1);
+          exchange.close();
+        });
+    server.start();
+    try {
+      String url = "http://127.0.0.1:" + server.getAddress().getPort() + "/missing.mp4";
+      ScriptedPort port =
+          new ScriptedPort(
+              ok(new JSONObject().put("video_id", "v1").toString()),
+              ok(new JSONObject().put("status", "completed").put("url", url).toString()));
+      ToolContext ctx =
+          ToolContext.builder()
+              .homePath(dir.toString())
+              .videoGeneration(
+                  new VideoGenerationEndpoint("https://host/v1", "k", "agnes-video-2.5", ""))
+              .build();
+
+      ToolResult result =
+          new VideoGenerationTool(port).execute(new JSONObject().put("prompt", "x"), ctx);
+
+      assertFalse(result.isError(), result.getContent());
+      assertTrue(result.getContent().contains("404"), result.getContent());
+    } finally {
+      server.stop(0);
+    }
+  }
+
   @Test
   public void successfulDownloadWritesFileAndReportsSize(@TempDir Path dir) throws Exception {
     // 起本地 HTTP 服务器提供 mp4 字节：验证「下载成功」路径真正落盘并回报大小。

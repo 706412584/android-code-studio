@@ -153,7 +153,9 @@ public final class RssSearchProvider implements WebSearchTool.Provider {
       if (!link.isEmpty() || !title.isEmpty()) {
         results.add(
             new WebSearchTool.Result(
-                HtmlTextExtractor.extract(title),
+                // title 同样可能被 CDATA 包裹（RSS 里很常见）；不剥会带出 "]]>"
+                // 残留并让 HtmlTextExtractor 的标签扫描错位。
+                HtmlTextExtractor.extract(stripCdata(title)),
                 link.trim(),
                 HtmlTextExtractor.extract(stripCdata(snippet))));
       }
