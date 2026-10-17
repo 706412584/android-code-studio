@@ -63,9 +63,16 @@ object LspHandler {
    * the servers. Only [destroyLanguageServers] (last session closed / process exit) tears them
    * down.
    *
+   * <p><b>Not called by the current integration.</b> S2 keeps every tab inside a single Activity,
+   * so closing a tab does not destroy the Activity; `BaseEditorActivity.applyProjectSwitch` already
+   * re-routes the servers via [setActiveWorkspace] when switching to the remaining project, which
+   * covers this case. This method is kept for a future integration that tears down per-tab
+   * Activities/holders (S3/S4) — use it there instead of `destroyLanguageServers`.
+   *
    * @param workspace The workspace of the session being closed.
    * @param remainingActiveWorkspace Workspace that should become active, or `null` if none remains.
    */
+  @Suppress("unused")
   fun stopSession(
       workspace: IWorkspace?,
       remainingActiveWorkspace: IWorkspace?,
