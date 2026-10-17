@@ -79,7 +79,9 @@ public final class ConversationLog {
     byte[] payload = (line + "\n").getBytes(StandardCharsets.UTF_8);
 
     File parent = file.getParentFile();
-    if (parent != null && !parent.exists() && !parent.mkdirs() && !parent.exists()) {
+    // 用 isDirectory 判定：路径存在但**是文件**时 mkdirs 不会执行，
+    // 后续 RandomAccessFile 只会抛「系统找不到指定的路径」——与真实原因无关。
+    if (parent != null && !parent.isDirectory() && !parent.mkdirs() && !parent.isDirectory()) {
       throw new IOException("无法创建目录: " + parent);
     }
 

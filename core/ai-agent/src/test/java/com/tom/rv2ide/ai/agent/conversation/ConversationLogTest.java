@@ -347,4 +347,67 @@ final class ConversationLogTest {
     assertNull(ConversationCodec.parse("{ 不是合法 JSON"));
     assertNull(ConversationCodec.parse("{\"type\":\"unknown\",\"uuid\":\"x\"}"));
   }
+
+  // ---- 剩余分支 ----
+
+  @Test
+  void entryLocationExposesOffsetsAndOrdinal(@TempDir Path dir) throws IOException {
+    // 偏移与长度必须与文件里的实际位置一致：增量读取与裁剪都依赖它们。
+    ConversationLog log = logAt(dir, "c1.jsonl");
+    log.append(UserMessageEntry.create(null, T0, "abc"));
+    log.append(UserMessageEntry.create(null, T0 + 1, "def"));
+
+    List<ConversationLog.EntryLocation> locations = log.readAll();
+    assertEquals(2, locations.size());
+    assertEquals(0, locations.get(0).getOrdinal());
+    assertEquals(1, locations.get(1).getOrdinal());
+    assertEquals(0L, locations.get(0).getByteStart());
+    assertEquals(locations.get(0).getByteLength(), locations.get(1).getByteStart());
+    assertTrue(locations.get(0).getByteLength() > 0);
+    // 两段长度之和应等于文件大小。
+    assertEquals(
+        Files.size(log.getFile().toPath()),
+        locations.get(0).getByteLength() + locations.get(1).getByteLength());
+  }
+
+  @Test
+  void fingerprintIsEmptyForNonPositiveOffset(@TempDir Path dir) throws IOException {
+    // indexedBytes <= 0 表示「尚未索引任何内容」，水位线不适用 → 空串。
+    ConversationLog log = logAt(dir, "c1.jsonl");
+    log.append(UserMessageEntry.create(null, T0, "abc"));
+    assertEquals("", log.fingerprint(0));
+    assertEquals("", log.fingerprint(-1));
+  }
+
+  @Test
+  void fingerprintIsEmptyWhenFileMissing(@TempDir Path dir) throws IOException {
+    ConversationLog log = logAt(dir, "nope.jsonl");
+    assertEquals("", log.fingerprint(10));
+  }
+
+  @Test
+  void appendCreatesMissingParentDirectories(@TempDir Path dir) throws IOException {
+    // 首次写会话时目录可能还不存在：必须自动创建，而不是抛 FileNotFoundException。
+    Path nested = dir.resolve("a/b/c");
+    ConversationLog log = new ConversationLog(nested.resolve("c1.jsonl").toFile());
+
+    log.append(UserMessageEntry.create(null, T0, "内容"));
+
+    assertTrue(log.exists());
+    assertEquals(1, log.readAll().size());
+  }
+
+  @Test
+  void appendFailsWhenParentCannotBeCreated(@TempDir Path dir) throws IOException {
+    // 父路径是一个文件：mkdirs 必然失败，应抛 IOException 而不是让 RandomAccessFile
+    // 抛出一个与真实原因无关的 FileNotFoundException。
+    Path blocker = dir.resolve("blocker");
+    Files.write(blocker, new byte[] {1});
+    ConversationLog log = new ConversationLog(blocker.resolve("c1.jsonl").toFile());
+
+    IOException e =
+        org.junit.jupiter.api.Assertions.assertThrows(
+            IOException.class, () -> log.append(UserMessageEntry.create(null, T0, "x")));
+    assertTrue(e.getMessage().contains("无法创建目录"), e.getMessage());
+  }
 }

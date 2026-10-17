@@ -375,4 +375,64 @@ final class ConversationExporterTest {
     assertTrue(toolAt < compactAt, "工具调用应在压缩记录之前");
     assertTrue(compactAt < finalAt, "压缩记录应在后续助手回复之前");
   }
+
+  // ---- 剩余分支 ----
+
+  @Test
+  void entriesOfSkipsNullsAndNullEntries() throws Exception {
+    // 偏移列表里可能有 null（并发/裁剪留下的空洞）：转换不能因此 NPE。
+    java.nio.file.Path dir = java.nio.file.Files.createTempDirectory("exp-entries");
+    ConversationLog log = new ConversationLog(dir.resolve("c.jsonl").toFile());
+    log.append(user("a"));
+    List<ConversationLog.EntryLocation> locations = new ArrayList<>();
+    locations.add(null);
+    locations.addAll(log.readAll());
+
+    List<ConversationEntry> entries = ConversationExporter.entriesOf(locations);
+
+    assertEquals(1, entries.size());
+    assertEquals("a", ((UserMessageEntry) entries.get(0)).getContent());
+  }
+
+  @Test
+  void entriesOfHandlesNullList() {
+    assertTrue(ConversationExporter.entriesOf(null).isEmpty());
+  }
+
+  @Test
+  void headingFollowedByParagraphIsSeparatedByBlankLine() {
+    // 助手正文紧跟在标题后：必须空一行，否则 Markdown 会把正文并进标题。
+    String markdown =
+        ConversationExporter.toMarkdown("t", entries(user("问题"), assistant("答案")));
+
+    assertTrue(markdown.contains("**用户**\n\n问题"), markdown);
+    assertTrue(markdown.contains("**助手**\n\n答案"), markdown);
+  }
+
+  @Test
+  void blankTitleFallsBackToConversationFileName() {
+    // 纯空白标题清洗后为空 → 用 conversation.md，而不是 ".md"。
+    // 注意：非法字符会被替换成下划线（不是删除），所以 "///" → "___.md" 是预期行为。
+    assertEquals("conversation.md", ConversationExporter.suggestedFileName("   "));
+    assertEquals("conversation.md", ConversationExporter.suggestedFileName(""));
+    assertEquals("___.md", ConversationExporter.suggestedFileName("///"));
+  }
+
+  @Test
+  void plainTextModeHasNoMarkdownEmphasis() {
+    String plain =
+        ConversationExporter.toPlainText(
+            "t",
+            entries(
+                user("问"),
+                assistantWithTools("答", "file_read"),
+                toolResult("file_read", "内容", false)));
+
+    // 注意：toPlainText 的语义是「仅对话」（不含工具过程），**不是**去 Markdown 标记。
+    // 真正的纯文本转换在 app 层的 AssistantMessageActions.toPlainText。
+    assertTrue(plain.contains("**用户**"), plain);
+    assertFalse(plain.contains("file_read"), "仅对话模式不应包含工具名：" + plain);
+    assertTrue(plain.contains("问"), plain);
+    assertTrue(plain.contains("答"), plain);
+  }
 }
