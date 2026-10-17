@@ -1795,8 +1795,25 @@ public final class AgentOrchestrator {
   }
 
   /** 通过 Lookup 取构建服务；不可用时返回 null。 */
-  private com.tom.rv2ide.projects.builder.BuildService lookupBuildService() {
+  /**
+   * 按会话工作区取构建连接。
+   *
+   * <p>优先用注册表按路径查找；注册表未命中时退回全局 Lookup（编辑器连接）。
+   * 回退是必要的：注册表在 Service 绑定完成前可能尚未登记，而编辑器连接此时
+   * 已经可用——直接返回 null 会让「刚打开项目就构建」失败。
+   *
+   * @param projectPath 会话 cwd；空串表示用编辑器当前项目
+   */
+  private com.tom.rv2ide.projects.builder.BuildService lookupBuildService(String projectPath) {
     try {
+      com.tom.rv2ide.services.builder.BuildConnectionRegistry registry =
+          com.tom.rv2ide.services.builder.BuildConnectionRegistryHolder.get();
+      if (registry != null && projectPath != null && !projectPath.trim().isEmpty()) {
+        com.tom.rv2ide.projects.builder.BuildService byPath = registry.find(projectPath);
+        if (byPath != null) {
+          return byPath;
+        }
+      }
       return com.tom.rv2ide.lookup.Lookup.getDefault()
           .lookup(com.tom.rv2ide.projects.builder.BuildService.KEY_BUILD_SERVICE);
     } catch (RuntimeException e) {

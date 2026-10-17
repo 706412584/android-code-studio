@@ -65,9 +65,20 @@ public final class GradleBuildTool extends BaseTool {
   /** 取消信号轮询分片（ms）。用户点停止后最迟这么久终止 Gradle 侧构建。 */
   private static final long CANCEL_POLL_MS = 250L;
 
-  /** 构建服务查询器。用接口注入而非直接依赖 Lookup，便于测试。 */
+  /**
+   * 构建服务查询器。用接口注入而非直接依赖 Lookup，便于测试。
+   *
+   * <p><b>为什么带项目路径</b>：会话可以绑定任意项目（cwd 在 SessionMetaEntry），
+   * 而构建连接是「每项目一个」。只给无参 {@code get()} 的话，工具层只能拿到
+   * 编辑器当前项目的连接，跨项目会话要么静默构建错项目、要么一律拒绝。
+   * 传入会话 cwd 后，注册表可以返回对应项目的连接（P3 起还能按需创建）。
+   */
   public interface BuildServiceProvider {
-    BuildService get();
+    /**
+     * @param projectPath 会话的工作区路径；空串表示「用编辑器当前项目」
+     * @return 该项目的构建服务；不存在时返回 null
+     */
+    BuildService get(String projectPath);
   }
 
   private final BuildServiceProvider buildServiceProvider;
@@ -132,9 +143,13 @@ public final class GradleBuildTool extends BaseTool {
 
   @Override
   public ToolResult execute(JSONObject input, ToolContext context) {
-    // 跨项目守卫：构建服务只服务于编辑器打开的项目。会话绑定别的项目时必须拦，
-    // 否则会静默构建错误的项目（文件工具作用于 B、构建产物却来自 A）。
-    if (context != null) {
+    // 跨项目守卫（P2 起语义变化）：注册表按会话 cwd 查找连接，命中即用该项目的
+    // 连接；只有**没有该项目连接**时才拒绝。原先「编辑器开 A、会话绑 B 一律拒绝」
+    // 的硬守卫已移除——那会让跨项目构建永远不可用。
+    //
+    // 仍保留 mismatch 检查的降级路径：provider 未注入（测试/旧装配）时没有注册表，
+    // 此时只能退回全局 Lookup，必须拦住以免静默构建错项目。
+    if (context != null && buildServiceProvider == null) {
       String mismatch = context.getProjectMismatchReason();
       if (!mismatch.isEmpty()) {
         return error(mismatch);
@@ -152,8 +167,18 @@ public final class GradleBuildTool extends BaseTool {
       }
     }
 
-    BuildService service = buildServiceProvider == null ? null : buildServiceProvider.get();
+    String projectPath = context == null ? "" : context.getHomePath();
+    BuildService service =
+        buildServiceProvider == null ? null : buildServiceProvider.get(projectPath);
     if (service == null) {
+      // 区分两种「不可用」：项目没打开 vs 该项目还没有构建连接。
+      // 混为一谈会让模型反复重试同一个调用。
+      if (projectPath != null && !projectPath.trim().isEmpty()) {
+        return error(
+            "项目 " + projectPath + " 尚未建立构建连接。"
+                + "请先在 IDE 中打开该项目并等待初始化完成，"
+                + "或改用 shell_execute 执行 ./gradlew。");
+      }
       return error("构建服务不可用。请确认已打开一个项目并完成初始化。");
     }
     if (!service.isToolingServerStarted()) {

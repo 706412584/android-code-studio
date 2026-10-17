@@ -164,8 +164,18 @@ public final class TestCoverageTool extends BaseTool {
         return error(mismatch);
       }
     }
-    BuildService service = buildServiceProvider == null ? null : buildServiceProvider.get();
+    String projectPath = context == null ? "" : context.getHomePath();
+    BuildService service =
+        buildServiceProvider == null ? null : buildServiceProvider.get(projectPath);
     if (service == null) {
+      // 区分两种「不可用」：项目没打开 vs 该项目还没有构建连接。
+      // 混为一谈会让模型反复重试同一个调用。
+      if (projectPath != null && !projectPath.trim().isEmpty()) {
+        return error(
+            "项目 " + projectPath + " 尚未建立构建连接。"
+                + "请先在 IDE 中打开该项目并等待初始化完成，"
+                + "或改用 shell_execute 执行 ./gradlew。");
+      }
       return error("构建服务不可用。请确认已打开一个项目并完成初始化。");
     }
     if (!service.isToolingServerStarted()) {

@@ -247,6 +247,9 @@ class GradleBuildService :
     lookup.unregister(BuildService.KEY_BUILD_SERVICE)
     lookup.unregister(BuildService.KEY_PROJECT_PROXY)
 
+    if (connectionProjectPath.isNotEmpty()) {
+      BuildConnectionRegistryHolder.get()?.remove(connectionProjectPath)
+    }
     connection?.close()
     connection = null
   }
@@ -279,6 +282,12 @@ class GradleBuildService :
     fresh.setEventListener(pendingEventListener)
     connection = fresh
     connectionProjectPath = projectDir
+    // 登记进注册表：工具层按会话 cwd 查找连接时能命中编辑器项目。
+    // 只有编辑器连接写注册表；后台连接（P3）由注册表自己创建并登记。
+    if (projectDir.isNotEmpty()) {
+      BuildConnectionRegistryHolder.get()
+          ?.register(projectDir, fresh, BuildConnectionRegistry.Owner.EDITOR)
+    }
     return fresh
   }
 
