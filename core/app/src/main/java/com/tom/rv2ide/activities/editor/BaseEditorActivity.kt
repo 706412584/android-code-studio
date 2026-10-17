@@ -53,6 +53,8 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.updateLayoutParams
 import androidx.core.view.updatePadding
 import androidx.core.view.updatePaddingRelative
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.lifecycleScope
 import com.blankj.utilcode.constant.MemoryConstants
 import com.blankj.utilcode.util.ConvertUtils.byte2MemorySize
@@ -196,8 +198,19 @@ abstract class BaseEditorActivity :
    *
    * <p>activity-scoped：标签列表与活跃标签必须跨配置变更保留，且不能放进进程级 object
    * （会随 Activity 泄漏）。数据源是 `ProjectManagerImpl.sessionRegistry`，本类不维护副本。
+   *
+   * <p><b>必须用 factory</b>：`EditorTabsViewModel` 的构造参数有默认值但没有
+   * `@JvmOverloads`，Kotlin 不会为它生成无参构造。直接用 `by viewModels<>()` 会在
+   * 首次访问时抛 `RuntimeException: Cannot create an instance of class ...`——
+   * 这是运行时错误，编译期查不出来。
    */
-  val editorTabsViewModel by viewModels<EditorTabsViewModel>()
+  val editorTabsViewModel: EditorTabsViewModel by viewModels {
+    object : ViewModelProvider.Factory {
+      @Suppress("UNCHECKED_CAST")
+      override fun <T : ViewModel> create(modelClass: Class<T>): T =
+          EditorTabsViewModel(ProjectManagerImpl.getInstance().sessionRegistry) as T
+    }
+  }
 
   internal var _binding: ActivityEditorBinding? = null
   val binding: ActivityEditorBinding
