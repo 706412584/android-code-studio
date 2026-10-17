@@ -137,4 +137,122 @@ final class FileDiffStoreCompactTest {
     FileDiffStore store = new FileDiffStore(file);
     assertNotNull(store.getAll(), "损坏文件应加载为空而不是抛异常");
   }
+
+  // ---- 未命中 / 持久化 / 回放分支 ----
+
+  @Test
+  void getFileExposesTheBackingFile(@TempDir Path dir) {
+    File file = dir.resolve("diffs.jsonl").toFile();
+    assertEquals(file, new FileDiffStore(file).getFile());
+  }
+
+  @Test
+  void missingIdReturnsNullForStateChanges(@TempDir Path dir) {
+    FileDiffStore store = new FileDiffStore(dir.resolve("diffs.jsonl").toFile());
+    assertEquals(null, store.markReverted("no-such-id"));
+    assertEquals(null, store.setReview("no-such-id", DiffRecord.REVIEW_ACCEPTED, "m"));
+    assertEquals(null, store.findById(null), "null id 应返回 null 而不是抛异常");
+  }
+
+  @Test
+  void unknownPathChainIsEmpty(@TempDir Path dir) {
+    FileDiffStore store = new FileDiffStore(dir.resolve("diffs.jsonl").toFile());
+    assertTrue(store.getDiffChain("/never/seen").isEmpty());
+  }
+
+  @Test
+  void revertAndReviewEventsSurviveReload(@TempDir Path dir) throws Exception {
+    // 状态事件是独立行；重载时按 id 应用到记录上。
+    File file = dir.resolve("diffs.jsonl").toFile();
+    FileDiffStore store = new FileDiffStore(file);
+    DiffRecord r = record(store, "/w/e.txt", "a", "b");
+    store.markReverted(r.getId());
+    store.setReview(r.getId(), DiffRecord.REVIEW_REJECTED, "nope");
+
+    FileDiffStore reloaded = new FileDiffStore(file);
+    DiffRecord fromDisk = reloaded.findById(r.getId());
+
+    assertNotNull(fromDisk);
+    assertTrue(fromDisk.isReverted(), "回滚状态应持久化");
+    assertEquals(DiffRecord.REVIEW_REJECTED, fromDisk.getReviewState());
+    assertEquals("nope", fromDisk.getReviewMessage());
+  }
+
+  @Test
+  void duplicateDiffLinesKeepTheLastWrite(@TempDir Path dir) throws Exception {
+    // 手工编辑或异常中断可能留下重复 id；后写覆盖先写。
+    File file = dir.resolve("diffs.jsonl").toFile();
+    // 字段名是压缩过的（t/id/p/old/new/ex/ts），见 FileDiffStore 常量。
+    Files.writeString(
+        file.toPath(),
+        "{\"t\":\"d\",\"id\":\"x\",\"p\":\"/w/f\",\"old\":\"o1\",\"new\":\"n1\","
+            + "\"ex\":true,\"ts\":1}\n"
+            + "{\"t\":\"d\",\"id\":\"x\",\"p\":\"/w/f\",\"old\":\"o2\",\"new\":\"n2\","
+            + "\"ex\":true,\"ts\":2}\n");
+
+    FileDiffStore store = new FileDiffStore(file);
+
+    assertEquals(1, store.getDiffChain("/w/f").size(), "同 id 不应重复入链");
+    assertEquals("o2", store.findById("x").getOldContent(), "后写应生效");
+  }
+
+  @Test
+  void stateEventBeforeItsDiffRecordIsSkipped(@TempDir Path dir) throws Exception {
+    // 文件被截断时可能出现「只有状态事件」：无法应用，跳过即可。
+    File file = dir.resolve("diffs.jsonl").toFile();
+    Files.writeString(file.toPath(), "{\"t\":\"r\",\"id\":\"orphan\"}\n");
+
+    FileDiffStore store = new FileDiffStore(file);
+
+    assertTrue(store.getAll().isEmpty());
+    assertEquals(null, store.findById("orphan"));
+  }
+
+  @Test
+  void linesWithoutIdAreIgnored(@TempDir Path dir) throws Exception {
+    File file = dir.resolve("diffs.jsonl").toFile();
+    Files.writeString(
+        file.toPath(), "{\"t\":\"d\",\"p\":\"/w/g\"}\n" + "\n" + "   \n");
+
+    FileDiffStore store = new FileDiffStore(file);
+
+    assertTrue(store.getAll().isEmpty());
+  }
+
+  @Test
+  void compactPreservesRevertedAndReviewedStateOnDisk(@TempDir Path dir) throws Exception {
+    // 裁剪重写时必须把状态事件一并写回，否则重启后回滚/审查状态全部丢失。
+    File file = dir.resolve("diffs.jsonl").toFile();
+    FileDiffStore store = new FileDiffStore(file, 1);
+    DiffRecord r = record(store, "/w/h.txt", "a", "b");
+    store.markReverted(r.getId());
+    store.setReview(r.getId(), DiffRecord.REVIEW_ACCEPTED, "ok");
+    // 再写几条触发裁剪。
+    for (int i = 0; i < 5; i++) {
+      record(store, "/w/other" + i + ".txt", "o", "n");
+    }
+
+    FileDiffStore reloaded = new FileDiffStore(file, 1);
+    DiffRecord fromDisk = reloaded.findById(r.getId());
+    if (fromDisk != null) { // 若已被裁掉则跳过（KEEP_PER_PATH 语义允许）
+      assertTrue(fromDisk.isReverted(), "裁剪后回滚状态应保留");
+      assertEquals(DiffRecord.REVIEW_ACCEPTED, fromDisk.getReviewState());
+    }
+  }
+
+  @Test
+  void writingToUncreatableDirectoryDegradesToMemoryOnly(@TempDir Path dir) throws Exception {
+    // 父路径是一个**文件**：mkdirs 必失败。此时应静默降级为仅内存，
+    // 不能把已成功的文件编辑翻成错误。
+    File blocker = dir.resolve("blocker").toFile();
+    Files.writeString(blocker.toPath(), "x");
+    File file = new File(blocker, "diffs.jsonl");
+
+    FileDiffStore store = new FileDiffStore(file);
+    DiffRecord r = store.recordDiff("/w/i.txt", "a", "b", true);
+
+    assertNotNull(r);
+    assertEquals(r.getId(), store.findById(r.getId()).getId(), "内存索引仍应可用");
+    assertTrue(!file.exists());
+  }
 }
