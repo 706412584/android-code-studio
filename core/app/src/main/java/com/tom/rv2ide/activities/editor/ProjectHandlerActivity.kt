@@ -40,6 +40,7 @@ import com.tom.rv2ide.lsp.IDELanguageClientImpl
 import com.tom.rv2ide.lsp.java.utils.CancelChecker
 import com.tom.rv2ide.preferences.internal.GeneralPreferences
 import com.tom.rv2ide.projects.GradleProject
+import com.tom.rv2ide.projects.IProjectManager
 import com.tom.rv2ide.projects.builder.BuildService
 import com.tom.rv2ide.projects.internal.ProjectManagerImpl
 import com.tom.rv2ide.services.builder.GradleBuildService
@@ -169,7 +170,10 @@ abstract class ProjectHandlerActivity : BaseEditorActivity() {
       // reset these values here
       // sometimes, when the IDE closed and reopened instantly, these values prevent initialization
       // of the project
-      ProjectManagerImpl.getInstance().destroy()
+      //
+      // 只关本会话，不要 destroy() 全局管理器：多标签页下关一个标签不能拆掉其它项目的
+      // workspace / 初始化状态。单会话阶段两者等价。
+      ProjectManagerImpl.getInstance().closeSession()
 
       editorViewModel.isInitializing = false
       editorViewModel.isBuildInProgress = false
@@ -822,7 +826,7 @@ fun initializeProject(buildVariants: Map<String, String>) {
 
   private fun initialSetup() {
     val manager = ProjectManagerImpl.getInstance()
-    GeneralPreferences.lastOpenedProject = manager.projectDirPath
+    GeneralPreferences.recordOpenedProject(manager.projectDirPath)
     try {
       val workspace = manager.getWorkspace()
       if (workspace == null) {
@@ -851,6 +855,10 @@ fun initializeProject(buildVariants: Map<String, String>) {
       saveOpenedFiles()
 
       // reset the lastOpenedProject if the user explicitly chose to close the project
+      // 会话可能已被关闭，projectDir 会抛异常，因此用 projectDirOrNull。
+      IProjectManager.getInstance().projectDirOrNull?.absolutePath?.let {
+        GeneralPreferences.forgetOpenedProject(it)
+      }
       GeneralPreferences.lastOpenedProject = GeneralPreferences.NO_OPENED_PROJECT
     }
 

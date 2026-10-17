@@ -35,7 +35,13 @@ object GeneralPreferences {
   const val TERMINAL_USE_SYSTEM_SHELL = "idepref_general_terminalShell"
   const val LAST_OPENED_PROJECT = "ide_last_project"
 
+  /** 最近打开的项目列表；换行分隔，避免引入 JSON 依赖。 */
+  const val LAST_OPENED_PROJECTS = "ide_last_projects"
+
   const val NO_OPENED_PROJECT = "<NO_OPENED_PROJECT>"
+
+  /** 最近项目列表的上限。 */
+  const val MAX_RECENT_PROJECTS = 10
 
   var uiMode: Int
     get() = prefManager.getInt(UI_MODE, AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM)
@@ -106,4 +112,53 @@ object GeneralPreferences {
     set(value) {
       prefManager.putString(LAST_OPENED_PROJECT, value)
     }
+
+  /**
+   * 最近打开的项目（新到旧，去重）。
+   *
+   * <p>旧字段 [lastOpenedProject] 是单值，多标签页后只能记住最后一个；本字段是它的
+   * 列表版。两者同时维护：旧字段保持「启动时自动打开的项目」，旧版本降级/回滚仍能工作。
+   */
+  var lastOpenedProjects: List<String>
+    get() =
+        prefManager
+            .getString(LAST_OPENED_PROJECTS, "")
+            .orEmpty()
+            .lineSequence()
+            .map { it.trim() }
+            .filter { it.isNotEmpty() && it != NO_OPENED_PROJECT }
+            .toList()
+    set(value) {
+      prefManager.putString(
+          LAST_OPENED_PROJECTS,
+          value.filter { it.isNotEmpty() && it != NO_OPENED_PROJECT }
+              .distinct()
+              .take(MAX_RECENT_PROJECTS)
+              .joinToString("\n"),
+      )
+    }
+
+  /** 记录一个刚成功打开的项目：置顶、去重、裁剪，并同步单值字段。 */
+  fun recordOpenedProject(path: String) {
+    if (path.isEmpty() || path == NO_OPENED_PROJECT) {
+      return
+    }
+    val current = lastOpenedProjects
+    lastOpenedProjects = listOf(path) + current.filter { it != path }
+    lastOpenedProject = path
+  }
+
+  /**
+   * 从最近列表移除一个项目（关闭项目时）。
+   *
+   * <p>不动 [lastOpenedProject]：显式关闭项目后启动不应自动打开别的项目，
+   * 调用方仍按原逻辑把它重置为 [NO_OPENED_PROJECT]。
+   */
+  fun forgetOpenedProject(path: String) {
+    val current = lastOpenedProjects
+    val remaining = current.filter { it != path }
+    if (remaining.size != current.size) {
+      lastOpenedProjects = remaining
+    }
+  }
 }

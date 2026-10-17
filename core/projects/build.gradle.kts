@@ -58,4 +58,5 @@ dependencies {
   implementation(libs.google.auto.service.annotations)
   implementation(libs.google.guava)
 
+  testImplementation(libs.tests.junit)
 }

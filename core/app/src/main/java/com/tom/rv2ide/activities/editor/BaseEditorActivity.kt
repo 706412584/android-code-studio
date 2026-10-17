@@ -727,6 +727,13 @@ override fun onApplySystemBarInsets(insets: Insets) {
       IProjectManager.getInstance().openProject(savedInstanceState.getString(KEY_PROJECT_PATH)!!)
     }
 
+    // 捕获本编辑器所属项目：onPause 里会话会先关闭，之后写 openedFiles 缓存时
+    // 全局单例已经没有项目了（见 EditorViewModel.projectDir 的说明）。
+    // 仅在尚为空时写入：配置变更重建 Activity 时保留首次捕获的路径。
+    if (editorViewModel.projectDir == null) {
+      editorViewModel.projectDir = IProjectManager.getInstance().projectDirOrNull
+    }
+
     onBackPressedDispatcher.addCallback(this, onBackPressedCallback)
     lifecycle.addObserver(mLifecycleObserver)
 

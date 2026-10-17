@@ -33,6 +33,8 @@ import com.tom.rv2ide.projects.CachingProject
 import com.tom.rv2ide.projects.IProjectManager
 import com.tom.rv2ide.projects.IWorkspace
 import com.tom.rv2ide.projects.ModuleProject
+import com.tom.rv2ide.projects.ProjectSession
+import com.tom.rv2ide.projects.ProjectSessionRegistry
 import com.tom.rv2ide.projects.R
 import com.tom.rv2ide.projects.android.AndroidModule
 import com.tom.rv2ide.projects.builder.BuildService
@@ -72,39 +74,71 @@ import org.slf4j.LoggerFactory
 @RestrictTo(RestrictTo.Scope.LIBRARY_GROUP_PREFIX)
 class ProjectManagerImpl : IProjectManager, EventReceiver {
 
-  private var _workspace: WorkspaceImpl? = null
-  private var _projectDir: File? = null
+  /**
+   * 会话表。S1 阶段上限为 1（与改动前「一次只能打开一个项目」一致）；
+   * 多标签页在 S2/S3 提高上限，本类其余代码不需要再改。
+   */
+  private val sessions = ProjectSessionRegistry(maxSessions = 1)
 
-  var projectInitialized: Boolean = false
-  var cachedInitResult: InitializeResult? = null
+  /** 当前活跃会话；未打开项目时为 null。 */
+  private val session: ProjectSession?
+    get() = sessions.active()
 
   override val projectDir: File
-    get() = checkNotNull(_projectDir) { "Cannot get project directory. Path has not been set." }
+    get() =
+        checkNotNull(session?.projectDir) {
+          "Cannot get project directory. Path has not been set."
+        }
 
   override val projectSyncIssues: ProjectSyncIssues?
     get() = getWorkspace()?.getProjectSyncIssues()
 
   override fun getWorkspace(): IWorkspace? {
-    return _workspace
+    return session?.workspace
   }
 
   override fun openProject(directory: File) {
-    // IMP: Always use canonical path
-    this._projectDir = directory.canonicalFile
+    // 路径归一化与去重在注册表里完成（canonical path）。
+    sessions.activate(directory)
   }
 
+  /**
+   * 项目是否已完成同步。
+   *
+   * <p>保留为可写属性：编辑器 Activity 在同步成功/失败时会显式置位（见
+   * `ProjectHandlerActivity.onProjectInitialized`），语义与改动前一致。
+   */
+  var projectInitialized: Boolean
+    get() = session?.projectInitialized == true
+    set(value) {
+      session?.projectInitialized = value
+    }
+
+  /** 最近一次同步结果；用于同一实例重建时跳过重复初始化。 */
+  var cachedInitResult: InitializeResult?
+    get() = session?.cachedInitResult
+    set(value) {
+      session?.cachedInitResult = value
+    }
+
   override suspend fun setupProject(project: IProject) {
-    this._workspace =
+    val current =
+        session
+            ?: throw IllegalStateException(
+                "Cannot setup project. No project has been opened (call openProject first).")
+    current.workspace =
         withStopWatch("Transform project proxy") {
           withContext(Dispatchers.IO) {
-            WorkspaceModelBuilder.build(projectDir, CachingProject(project))
+            WorkspaceModelBuilder.build(current.projectDir, CachingProject(project))
           }
         }
 
     val rootProject = this.getWorkspace() ?: return
 
     // build variants must be updated before the sources and classpaths are indexed
-    updateBuildVariants { buildVariants -> _workspace!!.setVariantSelections(buildVariants) }
+    updateBuildVariants { buildVariants ->
+      (current.workspace as? WorkspaceImpl)?.setVariantSelections(buildVariants)
+    }
 
     log.info(
         "Found {} project sync issues: {}",
@@ -135,13 +169,20 @@ class ProjectManagerImpl : IProjectManager, EventReceiver {
 
   override fun destroy() {
     log.info("Destroying project manager")
+    sessions.closeAll()
+  }
 
-    this._workspace?.setVariantSelections(emptyMap())
-    this._workspace = null
-
-    this._projectDir = null
-    this.cachedInitResult = null
-    this.projectInitialized = false
+  /**
+   * 关闭当前活跃会话（编辑器 Activity 结束时调用）。
+   *
+   * <p>与 [destroy] 的区别：只清掉**本会话**的项目级状态，不影响（未来的）其它会话。
+   * 单会话阶段两者等价；多标签页阶段编辑器关闭一个标签时**必须**走这里。
+   */
+  @RestrictTo(RestrictTo.Scope.LIBRARY_GROUP_PREFIX)
+  fun closeSession() {
+    val current = session ?: return
+    log.info("Closing project session: {}", current.id)
+    sessions.close(current.projectDir)
   }
 
   @JvmOverloads

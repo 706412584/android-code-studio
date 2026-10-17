@@ -51,6 +51,16 @@ class EditorViewModel : ViewModel() {
   internal val _filesModified = MutableLiveData(false)
   internal val _filesSaving = MutableLiveData(false)
 
+  /**
+   * 本编辑器所属项目的根目录，由 Activity 在 `onCreate` 时捕获。
+   *
+   * <p>不再每次读写缓存都去问 `IProjectManager` 全局单例：`onPause` 里会话会先被关闭，
+   * 之后 `saveOpenedFiles()` 才写缓存，那时全局单例已经没有项目了（旧代码会抛
+   * `IllegalStateException` 并静默丢失缓存）。捕获一次后，关闭标签页的写入仍落到
+   * 正确的项目目录，多标签页时也不会写到别的项目里。
+   */
+  @Volatile var projectDir: File? = null
+
   private val _openedFiles = MutableLiveData<OpenedFilesCache>()
   private val _isBoundToBuildService = MutableLiveData(false)
   private val _files = MutableLiveData<MutableList<File>>(ArrayList())
@@ -318,7 +328,8 @@ class EditorViewModel : ViewModel() {
 
   @PublishedApi
   internal fun getOpenedFilesCache(forWrite: Boolean = false): File {
-    var file = Environment.getProjectCacheDir(IProjectManager.getInstance().projectDir)
+    val dir = projectDir ?: IProjectManager.getInstance().projectDir
+    var file = Environment.getProjectCacheDir(dir)
     file = File(file, "editor/openedFiles.json")
 
     if (file.exists() && forWrite) {
