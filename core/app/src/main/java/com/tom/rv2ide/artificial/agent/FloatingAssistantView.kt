@@ -4068,8 +4068,9 @@ class FloatingAssistantView(
     // 「状态混乱」之一），PROGRESS 步骤也被静默丢弃。
     //
     // 卡片用运行中状态建出，并把调用 id 记进配对表——TOOL_FINISHED 靠它精确回填。
-    val pending = snapshot.pendingToolCall
-    if (pending != null) {
+    // 并行派遣时可能同时有多张在途卡片：逐张恢复，否则未恢复的那几个子 agent
+    // 的 PROGRESS 会全部挤到同一张卡上（「第二个代理显示在第一个工具下面」）。
+    for (pending in snapshot.pendingToolCalls) {
       val id =
           adapter.appendToolCall(
               toolName = pending.name,
@@ -4082,6 +4083,8 @@ class FloatingAssistantView(
       ui.lastToolCardId = id
       runningToolCardId = id
       runningToolOutput[id] = StringBuilder()
+    }
+    if (snapshot.pendingToolCalls.isNotEmpty()) {
       publishLiveToolOutput()
     }
   }

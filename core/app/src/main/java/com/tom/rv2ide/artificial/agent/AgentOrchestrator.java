@@ -292,7 +292,8 @@ public final class AgentOrchestrator {
 
   /** 见 {@link #currentRunSnapshot}。 */
   public static final class RunSnapshot {
-    static final RunSnapshot EMPTY = new RunSnapshot("", "", "", null);
+    static final RunSnapshot EMPTY =
+        new RunSnapshot("", "", "", java.util.Collections.emptyList());
 
     /** 本轮已产生的正文（未落盘部分）；空串表示没有。 */
     public final String text;
@@ -308,18 +309,24 @@ public final class AgentOrchestrator {
      * 用户切走再切回一个「正在跑工具」的会话时，回放的历史里没有那张卡片——
      * 没有本字段，视图接不回卡片，之后到达的 TOOL_FINISHED 只能把结果回填到
      * 历史里最后一张无关卡片上（实测反馈的「状态混乱」之一）。
+     *
+     * <p><b>为什么是列表</b>：并行派遣多个子 agent 时会同时有多张在途卡片。
+     * 单槽位只能恢复一张，其余的进度行无处可去。
      */
-    public final com.tom.rv2ide.ai.tool.api.ToolCall pendingToolCall;
+    public final java.util.List<com.tom.rv2ide.ai.tool.api.ToolCall> pendingToolCalls;
 
     RunSnapshot(
         String text,
         String reasoning,
         String lastAction,
-        com.tom.rv2ide.ai.tool.api.ToolCall pendingToolCall) {
+        java.util.List<com.tom.rv2ide.ai.tool.api.ToolCall> pendingToolCalls) {
       this.text = text == null ? "" : text;
       this.reasoning = reasoning == null ? "" : reasoning;
       this.lastAction = lastAction == null ? "" : lastAction;
-      this.pendingToolCall = pendingToolCall;
+      this.pendingToolCalls =
+          pendingToolCalls == null
+              ? java.util.Collections.emptyList()
+              : java.util.Collections.unmodifiableList(new java.util.ArrayList<>(pendingToolCalls));
     }
   }
 
@@ -2701,16 +2708,38 @@ public final class AgentOrchestrator {
      * 不落盘的话重启后步骤区就空了——用户实测反馈过「步骤确实不见了」，
      * 而子代理的中间过程不进主对话，这些行是回看时唯一的凭据。
      */
-    private final java.util.List<String> stepBuffer = new java.util.ArrayList<>();
+    /**
+     * 按**工具调用 id** 分桶的步骤行。
+     *
+     * <p><b>为什么必须分桶</b>：并行派遣多个子 agent 时，它们的 PROGRESS 行会交错
+     * 到达。用一个共享列表的话，所有子 agent 的步骤会混在一起，并在**第一个**
+     * TOOL_FINISHED 时被整批写进那张卡片——用户看到的是「第二个代理的进度显示在
+     * 第一个工具下面」，且另一张卡片永远停在旧轮次（实测反馈）。
+     *
+     * <p>无 id 的事件（旧路径/文本形态调用）落到 {@link #NO_CALL_ID} 桶，
+     * 行为与原来的单缓冲一致。
+     */
+    private final java.util.Map<String, java.util.List<String>> stepBuffers =
+        new java.util.HashMap<>();
+
+    /** 无调用 id 的事件（文本形态调用）使用的桶键。 */
+    private static final String NO_CALL_ID = "";
 
     /**
      * 正在执行中的工具调用（TOOL_STARTED 记入、TOOL_FINISHED 清空）。
      *
-     * <p>为 [RunSnapshot.pendingToolCall] 服务：视图切回「正在跑工具」的会话时，
+     * <p>为 [RunSnapshot.pendingToolCalls] 服务：视图切回「正在跑工具」的会话时，
      * 靠它把那张未落盘的卡片重建出来，后续 TOOL_FINISHED / PROGRESS 才有正确落点。
      * volatile：写方是事件线程（persist），读方是任意线程（snapshot）。
      */
-    private volatile com.tom.rv2ide.ai.tool.api.ToolCall pendingToolCall = null;
+    /**
+     * 正在执行中的工具调用，**按调用 id** 索引（并行时可能同时有多张）。
+     *
+     * <p>单槽位版本只会记住最后一个 TOOL_STARTED：视图重建时只能恢复一张卡，
+     * 其余子 agent 的后续 PROGRESS 找不到落点，全部挤到同一张卡上。
+     */
+    private final java.util.Map<String, com.tom.rv2ide.ai.tool.api.ToolCall> pendingToolCalls =
+        new java.util.LinkedHashMap<>();
 
     /**
      * 本轮已产生的**正文**（TEXT_DELTA 累积）。
@@ -2760,8 +2789,10 @@ public final class AgentOrchestrator {
       }
       switch (event.getType()) {
         case TOOL_STARTED:
-          // 记下在途调用，供视图重建时接回卡片（见 pendingToolCall 注释）。
-          pendingToolCall = event.getToolCall();
+          // 记下在途调用，供视图重建时接回卡片（见 pendingToolCalls 注释）。
+          if (event.getToolCall() != null) {
+            pendingToolCalls.put(callKey(event.getToolCall()), event.getToolCall());
+          }
           break;
         case REASONING_DELTA:
           // 累积本轮思考；不落盘（增量太碎），由 TURN_FINISHED 一并写入。
@@ -2773,9 +2804,10 @@ public final class AgentOrchestrator {
           }
           break;
         case PROGRESS:
-          // 累积当前工具的步骤行；由 TOOL_FINISHED 一并写入（见 stepBuffer 注释）。
+          // 累积**该调用**的步骤行；由对应的 TOOL_FINISHED 一并写入（见 stepBuffers 注释）。
           if (event.getMessage() != null && !event.getMessage().isEmpty()) {
-            stepBuffer.add(event.getMessage());
+            String key = event.getProgressCallId() == null ? NO_CALL_ID : event.getProgressCallId();
+            stepBuffers.computeIfAbsent(key, k -> new java.util.ArrayList<>()).add(event.getMessage());
             // 状态条文案：只留最近一条（见 lastAction 注释）。
             lastAction = event.getMessage();
           }
@@ -2808,20 +2840,20 @@ public final class AgentOrchestrator {
           break;
         case TOOL_FINISHED:
           if (event.getToolResult() != null) {
+            // 只取**这个调用**的步骤行：并行子 agent 的进度不能混进别人的卡片。
+            String key = callKey(event.getToolCall());
+            java.util.List<String> steps = stepBuffers.remove(key);
             appendEntry(
                 ToolResultEntry.create(
                     null,
                     System.currentTimeMillis(),
                     event.getToolResult(),
-                    new java.util.ArrayList<>(stepBuffer)));
+                    steps == null ? new java.util.ArrayList<>() : new java.util.ArrayList<>(steps)));
           }
-          stepBuffer.clear();
           // 并行执行时 TOOL_FINISHED 可能与另一调用的 TOOL_STARTED 交错——
-          // 只有结束的正是记录中的那个调用时才清（否则会把新调用误清掉）。
-          if (event.getToolCall() != null
-              && pendingToolCall != null
-              && pendingToolCall.getId().equals(event.getToolCall().getId())) {
-            pendingToolCall = null;
+          // 按 id 精确移除，不会误清新调用。
+          if (event.getToolCall() != null) {
+            pendingToolCalls.remove(callKey(event.getToolCall()));
           }
           break;
         case USER_MESSAGE:
@@ -2841,6 +2873,15 @@ public final class AgentOrchestrator {
       }
     }
 
+    /** 工具调用的桶键；无 id 时返回 {@link #NO_CALL_ID}（与无 id 的 PROGRESS 同桶）。 */
+    private String callKey(com.tom.rv2ide.ai.tool.api.ToolCall call) {
+      if (call == null) {
+        return NO_CALL_ID;
+      }
+      String id = call.getId();
+      return id == null || id.isEmpty() ? NO_CALL_ID : id;
+    }
+
     /** 见 {@link #currentRunSnapshot}。调用方可能来自任意线程，读取做最小同步。 */
     RunSnapshot snapshot() {
       String text;
@@ -2851,7 +2892,12 @@ public final class AgentOrchestrator {
         reasoning = reasoningBuffer.toString();
         action = lastAction;
       }
-      return new RunSnapshot(text, reasoning, action, pendingToolCall);
+      // 在途调用按开始顺序全部带上：视图重建时逐张恢复，后续 PROGRESS 才能归位。
+      java.util.List<com.tom.rv2ide.ai.tool.api.ToolCall> pending;
+      synchronized (pendingToolCalls) {
+        pending = new java.util.ArrayList<>(pendingToolCalls.values());
+      }
+      return new RunSnapshot(text, reasoning, action, pending);
     }
 
     private void appendEntry(ConversationEntry entry) {
