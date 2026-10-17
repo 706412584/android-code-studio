@@ -4400,18 +4400,14 @@ class FloatingAssistantView(
           beginNewConversation(projects.firstOrNull())
           return@withContext
         }
-        // 构建类工具（gradle_build / test_coverage）在开启「后台项目构建」后可以
-        // 直接作用于未打开的项目；未开启时仍只服务编辑器当前项目，会明确拒绝
-        // （见 ToolContext 的跨项目守卫）。因此这里只在「后台构建关闭」时提示边界，
-        // 否则会出现「说构建需先打开、实际却能构建」的自相矛盾文案。
-        val openProjectPath =
-            try {
-              com.tom.rv2ide.projects.IProjectManager.getInstance()
-                  .projectDirOrNull
-                  ?.absolutePath ?: ""
-            } catch (e: Exception) {
-              ""
-            }
+        // 构建类工具（gradle_build / test_coverage）的边界提示。
+        //
+        // 判据是「该项目是否**已打开**（任意标签）」，不是「是否是当前活跃标签」：
+        // 多标签页下两个项目都开着，切过去只是一个点击；给非活跃标签加
+        // 「构建需先打开」是在误导用户（他明明已经打开了）。
+        //
+        // 只有在既没打开、也没开启后台构建时，才真的需要提示——那时构建会被
+        // 明确拒绝（见 ToolContext 的跨项目守卫）。
         val backgroundBuildEnabled =
             try {
               com.tom.rv2ide.artificial.agent.AgentToolSettings(context)
@@ -4419,12 +4415,22 @@ class FloatingAssistantView(
             } catch (e: Exception) {
               false
             }
+        val openProjectPaths =
+            try {
+              com.tom.rv2ide.projects.internal.ProjectManagerImpl.getInstance()
+                  .allSessions()
+                  .map { it.projectDir.absolutePath }
+                  .toSet()
+            } catch (e: Exception) {
+              emptySet()
+            }
         val needsOpenSuffix =
-            if (backgroundBuildEnabled) "" else context.getString(string.ai_conversation_new_project_needs_open)
+            if (backgroundBuildEnabled) ""
+            else context.getString(string.ai_conversation_new_project_needs_open)
         val labels =
             projects
                 .map { p ->
-                  if (p.absolutePath == openProjectPath) p.name else p.name + needsOpenSuffix
+                  if (p.absolutePath in openProjectPaths) p.name else p.name + needsOpenSuffix
                 }
                 .toTypedArray()
         val currentIdx =

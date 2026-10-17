@@ -47,18 +47,22 @@ buildscript {
 
 // AGP 用 *FileDependencies 任务把 `files(...)` 形式的 jar 依赖 dex 化
 // （本项目有 9 个：jdk-compiler / java-compiler / jaxp / jdt / javapoet 等）。
-// 这些任务曾被上面那条「名字含 desugar 就禁用」的规则连带禁掉，后果是：
+// 这些任务曾被一条「名字含 desugar 就禁用」的规则连带禁掉，后果是：
 // jar 虽然在运行时 classpath 上，却从未进入 dex 合并输入，导致
 // `openjdk.tools.javac.**`（约 1900 个类）在 APK 中整体缺失，
 // 打开项目做 Gradle 同步时抛 NoClassDefFoundError: openjdk/tools/javac/file/CacheFSInfo。
+// 那次修复改成只禁 l8DexDesugarLib*，理由是「core library desugaring 的库
+// dex 化由 com.tom.rv2ide.desugaring 插件接管」。
 //
-// 这里只禁用 l8DexDesugarLib*（core library desugaring 的库 dex 化，
-// 由 com.tom.rv2ide.desugaring 插件接管），不再按名字模糊匹配。
-tasks.configureEach {
-    if (name.startsWith("l8DexDesugarLib")) {
-        enabled = false
-    }
-}
+// **那条理由是错的**：com.tom.rv2ide.desugaring 只做 ASM 类转换（替换个别
+// 方法实现），完全不打包 desugar_jdk_libs 的运行时类。于是 `j$.*` 只被引用、
+// 从不被定义——之前没暴露是因为没人用到 java.util.stream；jgit 6.8 的
+// RefDirectory.getRefsByPrefix 用了它，一点 Git 就
+// `NoClassDefFoundError: j$/util/stream/DesugarCollectors` 闪退（PJA110 实测）。
+//
+// 因此这里**不再禁用任何任务**：core library desugaring 必须由 AGP 自己的
+// l8DexDesugarLib 流程完成。上面 *FileDependencies 的问题已由「不再按名字
+// 模糊匹配」解决，两者互不冲突（真机构建已验证 APK 内含 41 个 j$/util 类）。
 
 configurations.all {
   resolutionStrategy {

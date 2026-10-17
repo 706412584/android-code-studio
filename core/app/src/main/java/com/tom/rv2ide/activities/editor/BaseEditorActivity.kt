@@ -1326,6 +1326,23 @@ override fun onApplySystemBarInsets(insets: Insets) {
     return null
   }
 
+  /** 递归查找侧栏里的助手页（与 [getFileTreeFragment] 同样的 childFragmentManager 原因）。 */
+  private fun findAssistantSidebarFragment(
+      manager: FragmentManager
+  ): com.tom.rv2ide.fragments.sidebar.AssistantSidebarFragment? {
+    manager.fragments.forEach { fragment ->
+      if (fragment is com.tom.rv2ide.fragments.sidebar.AssistantSidebarFragment) {
+        return fragment
+      }
+      if (fragment.isAdded) {
+        findAssistantSidebarFragment(fragment.childFragmentManager)?.let {
+          return it
+        }
+      }
+    }
+    return null
+  }
+
   private fun hasNativeFiles(projectRoot: File): Boolean {
     val androidMkFile = File(projectRoot, "src/main/jni/Android.mk")
     val cmakeListsFile = File(projectRoot, "src/main/jni/CMakeLists.txt")
@@ -1462,10 +1479,17 @@ override fun onApplySystemBarInsets(insets: Insets) {
 
   private fun onBuildStatusChanged() {
     log.debug(
-        "onBuildStatusChanged: isInitializing: ${editorViewModel.isInitializing}, isBuildInProgress: ${editorViewModel.isBuildInProgress}"
+        "onBuildStatusChanged: isInitializing: ${editorViewModel.isInitializing}, " +
+            "isBuildInProgress: ${editorViewModel.isBuildInProgress}, " +
+            "isSwitchingProject: ${editorViewModel.isSwitchingProject}"
     )
     Initialization.setInitializing(editorViewModel.isInitializing)
-    val visible = editorViewModel.isBuildInProgress || editorViewModel.isInitializing
+    // 切标签也要显示进度条：切到已同步的项目时不做 Gradle 同步，但仍有 LSP 重新
+    // 路由、文件视图重建等工作；不给反馈会让用户以为点击没生效（实测会连点两下）。
+    val visible =
+        editorViewModel.isBuildInProgress ||
+            editorViewModel.isInitializing ||
+            editorViewModel.isSwitchingProject
     content.progressIndicator.visibility = if (visible) View.VISIBLE else View.GONE
     invalidateOptionsMenu()
   }
@@ -1539,6 +1563,11 @@ override fun onApplySystemBarInsets(insets: Insets) {
           targetPath,
           manager.activeSession()?.id,
           manager.allSessions().map { it.id })
+
+      // 切标签期间显示进度条（onBuildStatusChanged 会据此显示）。
+      // 切换不是瞬间完成的：LSP 重新路由要销毁/重建编译缓存，文件视图要重建。
+      editorViewModel.isSwitchingProject = true
+
       editorViewModel.projectDir = File(targetPath)
       editorTabsViewModel.refresh()
 
@@ -1548,16 +1577,61 @@ override fun onApplySystemBarInsets(insets: Insets) {
       handler.onProjectSwitched()
 
       val workspace = session.workspace
-      if (session.projectInitialized && workspace != null) {
+      val alreadySynced = session.projectInitialized && workspace != null
+
+      if (alreadySynced) {
         // 该项目此前已同步过：直接复用它的 workspace，不做第二次 Gradle 同步。
         // 语言服务器是进程级的，切回来必须显式把 workspace 重新推给它们。
-        ILanguageServerRegistry.getDefault().setActiveWorkspace(workspace)
-        (this as? ProjectHandlerActivity)
-            ?.updateBuildVariants(workspace.getAndroidVariantSelections())
+        //
+        // **必须在后台线程做**：`setActiveWorkspace` 会遍历所有 server 调
+        // `setupWorkspace`，其中 JavaLanguageServer 要销毁/重建编译器与
+        // SourceFileManager 缓存（真机上是肉眼可见的停顿）。放在主线程会直接
+        // 卡住 UI，用户表现为「点标签后界面僵住几百毫秒到一两秒」。
+        //
+        // 切换完成的收尾（恢复文件、刷新文件树）依赖它，所以串在同一条链上，
+        // 最终统一回主线程提交。
+        lifecycleScope.launch(Dispatchers.IO) {
+          try {
+            ILanguageServerRegistry.getDefault().setActiveWorkspace(workspace)
+          } catch (err: Throwable) {
+            log.warn("Failed to push active workspace for {}", targetPath, err)
+          }
+          withContext(Dispatchers.Main) {
+            try {
+              (this@BaseEditorActivity as? ProjectHandlerActivity)
+                  ?.updateBuildVariants(workspace.getAndroidVariantSelections())
+              finishProjectSwitch(targetPath, handler)
+            } finally {
+              editorViewModel.isSwitchingProject = false
+            }
+          }
+        }
       } else {
+        // 未同步：走完整的 Gradle 同步（它自带进度与回调），这里不额外收尾，
+        // 否则会和同步完成后的初始化流程抢同一份文件视图。
+        editorViewModel.isSwitchingProject = false
         (this as? ProjectHandlerActivity)?.initializeProject()
       }
+    } catch (err: Throwable) {
+      editorViewModel.isSwitchingProject = false
+      log.error("Failed to switch project tab to {}", targetPath, err)
+      flashError(getString(string.msg_project_tab_switch_failed))
+    }
+  }
 
+  /** 切标签的收尾：恢复打开的文件、刷新文件树。必须在主线程调用。 */
+  private fun finishProjectSwitch(targetPath: String, handler: EditorHandlerActivity) {
+    // 助手面板也要跟着换工作区：它只在 onViewCreated 里 setWorkspace 一次，
+    // 切标签不重建 Fragment，不刷新的话面板仍认为自己在旧项目——
+    // 新建会话会绑错项目、工具调用打到旧目录。
+    try {
+      findAssistantSidebarFragment(supportFragmentManager)
+          ?.onWorkspaceChanged(File(targetPath))
+    } catch (err: Throwable) {
+      log.warn("Failed to refresh assistant workspace for {}", targetPath, err)
+    }
+
+    try {
       // 切换不重建 Activity，onStart 不会再触发，这里显式恢复新项目的文件。
       handler.restoreOpenedFilesForCurrentProject()
 
@@ -1574,8 +1648,7 @@ override fun onApplySystemBarInsets(insets: Insets) {
         log.warn("Failed to refresh file tree after project switch", err)
       }
     } catch (err: Throwable) {
-      log.error("Failed to switch project tab to {}", targetPath, err)
-      flashError(getString(string.msg_project_tab_switch_failed))
+      log.error("Failed to finish project switch to {}", targetPath, err)
     }
   }
 
@@ -1616,7 +1689,14 @@ override fun onApplySystemBarInsets(insets: Insets) {
             isCloseIconVisible = true
             tag = tab.id
             setOnClickListener {
-              if (!isSwitchingProjectTab && !isChecked) {
+              // 不能判 `!isChecked`：ChipGroup 的 singleSelection 在**分发点击之前**
+              // 就把这个 chip 置为 checked，所以点到未选中的标签时 isChecked 已经是
+              // true，判断会让这次点击什么都不做——用户必须点第二次（第二次它已
+              // checked，反而跳过）。实测就是「要双击才切换」。
+              //
+              // 判据改成「点的是不是当前活跃标签」：相同则无事可做（ChipGroup 的
+              // singleSelection 保证它仍保持选中），不同则切换。
+              if (!isSwitchingProjectTab && tab.id != editorTabsViewModel.activeId.value) {
                 switchProjectTab(tab.id)
               }
             }

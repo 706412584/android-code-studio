@@ -33,7 +33,9 @@ import com.tom.rv2ide.lookup.Lookup
 import com.tom.rv2ide.managers.PreferenceManager
 import com.tom.rv2ide.models.ApkMetadata
 import com.tom.rv2ide.projects.android.AndroidModule
+import com.tom.rv2ide.activities.editor.EditorHandlerActivity
 import com.tom.rv2ide.projects.builder.BuildService
+import com.tom.rv2ide.services.builder.GradleBuildService
 import com.tom.rv2ide.resources.R
 import com.tom.rv2ide.tooling.api.messages.result.TaskExecutionResult
 import com.tom.rv2ide.tooling.api.models.BasicAndroidVariantMetadata
@@ -155,11 +157,6 @@ class QuickRunWithCancellationAction(context: Context, override val order: Int) 
               return
             }
 
-    if (!buildService.isToolingServerStarted()) {
-      flashError(string.msg_tooling_server_unavailable)
-      return
-    }
-
     val activity =
         data.getActivity()
             ?: run {
@@ -170,11 +167,60 @@ class QuickRunWithCancellationAction(context: Context, override val order: Int) 
               return
             }
 
+    // 多标签页：切到另一个项目后，Service 的 requireConnection() 会为**新项目**新建
+    // 连接，而新连接的 tooling server 还没启动。原先这里只 `isToolingServerStarted()`
+    // 判断一次就返回（用户看到「工具服务不可用」），更糟的是在它之后直接
+    // executeTasks()——那条路径会抛 ToolingServerNotStartedException，而它在
+    // Default 调度器的协程里、没人捕获，直接 FATAL 把整个进程打掉：用户看到的是
+    // 「点绿色构建按钮后标签只剩一个」，因为进程重启后会话表全丢。
+    //
+    // 改为走 Service 的 ensureToolingServerStarted：server 已就绪时同步回调，
+    // 否则登记回调、启动完成后再继续。异常也在协程内兜住。
+    val gradleService = buildService as? GradleBuildService
+    if (gradleService == null) {
+      runBuild(data, activity, buildService, module, variant, taskName)
+      return
+    }
+
+    var handled = false
+    val proceed = {
+      if (!handled) {
+        handled = true
+        runBuild(data, activity, buildService, module, variant, taskName)
+      }
+    }
+    val startedNow = gradleService.ensureToolingServerStarted { proceed() }
+    if (!startedNow) {
+      // 正在启动：给用户一个明确反馈，避免以为点击没生效而重复点。
+      activity.runOnUiThread { activity.setStatus(activity.getString(string.msg_initializing_project)) }
+    }
+  }
+
+  private fun runBuild(
+      data: ActionData,
+      activity: EditorHandlerActivity,
+      buildService: BuildService,
+      module: AndroidModule,
+      variant: BasicAndroidVariantMetadata,
+      taskName: String,
+  ) {
     actionScope
         .launch(Dispatchers.Default) {
           activity.saveAllResult()
 
-          val result = withContext(Dispatchers.IO) { buildService.executeTasks(taskName).get() }
+          val result =
+              try {
+                withContext(Dispatchers.IO) { buildService.executeTasks(taskName).get() }
+              } catch (e: Throwable) {
+                // 协程里未捕获的异常会直接杀进程（见上方注释）。构建失败要变成
+                // 一条错误提示，而不是把用户的标签页一起带走。
+                log.error("Failed to execute task '{}'", taskName, e)
+                activity.runOnUiThread {
+                  activity.flashError(
+                      e.message ?: activity.getString(com.tom.rv2ide.resources.R.string.build_status_failed))
+                }
+                return@launch
+              }
 
           log.debug("Task execution result: {}", result)
 

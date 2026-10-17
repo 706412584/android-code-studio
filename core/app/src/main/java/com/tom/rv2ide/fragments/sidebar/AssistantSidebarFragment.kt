@@ -128,6 +128,17 @@ class AssistantSidebarFragment : Fragment() {
    *
    * <p>无项目时传 null 而不是静默失败：助手会提示「请先打开项目」。
    */
+  /**
+   * 切项目标签时由宿主调用：把面板的工作区换到新项目。
+   *
+   * <p>本 Fragment 不随标签切换重建，`setWorkspace` 只在 [onViewCreated] 跑过一次；
+   * 不刷新的话面板仍认为自己在旧项目——新建会话绑错项目、工具调用打到旧目录、
+   * 会话列表按旧 cwd 分组。
+   */
+  fun onWorkspaceChanged(workspace: File?) {
+    assistant?.setWorkspace(workspace)
+  }
+
   private fun currentWorkspace(): File? {
     val path = runCatching { IProjectManager.getInstance().projectDirPath }.getOrNull()
     if (path.isNullOrEmpty()) {
