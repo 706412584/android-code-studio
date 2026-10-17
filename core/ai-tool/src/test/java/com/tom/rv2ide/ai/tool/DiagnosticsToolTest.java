@@ -268,6 +268,91 @@ class DiagnosticsToolTest {
     assertTrue(port.calls.isEmpty());
   }
 
+  // ---- 剩余分支 ----
+
+  @Test
+  void metadata() {
+    DiagnosticsTool tool = new DiagnosticsTool();
+    assertEquals(
+        com.tom.rv2ide.ai.tool.api.ToolDisplayCategory.GENERIC, tool.getDisplayCategory());
+    assertTrue(tool.isAllowedInReadonlyMode(), "纯静态分析，只读模式应放行");
+    assertFalse(tool.isConcurrencySafe(), "语言服务器有项目级锁，不应并发");
+  }
+
+  @Test
+  void missingPathIsReported(@TempDir File dir) throws Exception {
+    ToolResult result =
+        new DiagnosticsTool()
+            .execute(
+                new JSONObject().put("path", "nope.java"),
+                contextWith(new FakePort(), dir.getAbsolutePath()));
+    assertTrue(result.isError());
+    assertTrue(result.getContent().contains("不存在"), result.getContent());
+  }
+
+  @Test
+  void directoryWithNoSupportedFilesExplainsInsteadOfEmptyResult(@TempDir File dir)
+      throws Exception {
+    // 目录里全是 .txt：必须明确说「没有可分析文件」，否则模型会读成「没有诊断」。
+    Files.write(new File(dir, "notes.txt").toPath(), "x".getBytes(StandardCharsets.UTF_8));
+    FakePort port = new FakePort();
+
+    ToolResult result =
+        new DiagnosticsTool()
+            .execute(new JSONObject().put("path", "."), contextWith(port, dir.getAbsolutePath()));
+
+    assertFalse(result.isError(), result.getContent());
+    assertTrue(result.getContent().contains("没有受支持"), result.getContent());
+    assertTrue(port.calls.isEmpty());
+  }
+
+  @Test
+  void maxFilesTruncationIsReported(@TempDir File dir) throws Exception {
+    // 3 个受支持文件、max_files=1：结果必须说明「未覆盖全部文件」。
+    for (int i = 0; i < 3; i++) {
+      Files.write(
+          new File(dir, "F" + i + ".java").toPath(), "class F{}".getBytes(StandardCharsets.UTF_8));
+    }
+    FakePort port = new FakePort();
+
+    ToolResult result =
+        new DiagnosticsTool()
+            .execute(
+                new JSONObject().put("path", ".").put("max_files", 1),
+                contextWith(port, dir.getAbsolutePath()));
+
+    assertFalse(result.isError(), result.getContent());
+    assertEquals(1, port.calls.size(), "max_files 应限制分析数量");
+    assertTrue(result.getContent().contains("max_files"), result.getContent());
+    assertTrue(result.getContent().contains("未覆盖全部文件"), result.getContent());
+  }
+
+  @Test
+  void perFileUnavailableIsCollectedAsFailure(@TempDir File dir) throws Exception {
+    // 单文件 unavailable（该扩展名没有注册服务器）不致命，但必须列出来。
+    Files.write(new File(dir, "A.java").toPath(), "class A{}".getBytes(StandardCharsets.UTF_8));
+    FakePort port = new FakePort();
+    port.byPath.put("A.java", DiagnosticsPort.Report.unavailable("no server for java"));
+
+    ToolResult result =
+        new DiagnosticsTool()
+            .execute(new JSONObject().put("path", "A.java"), contextWith(port, dir.getAbsolutePath()));
+
+    assertFalse(result.isError(), result.getContent());
+    assertTrue(result.getContent().contains("no server for java"), result.getContent());
+    assertTrue(result.getContent().contains("未完成"), result.getContent());
+  }
+
+  @Test
+  void emptyDirectoryWithNoChildrenIsHandled(@TempDir File dir) throws Exception {
+    FakePort port = new FakePort();
+    ToolResult result =
+        new DiagnosticsTool()
+            .execute(new JSONObject().put("path", "."), contextWith(port, dir.getAbsolutePath()));
+    assertFalse(result.isError(), result.getContent());
+    assertTrue(result.getContent().contains("没有受支持"), result.getContent());
+  }
+
   @Test
   void parsesSeverityNamesCaseInsensitively() {
     assertEquals(1, DiagnosticsMessages.parseSeverity("Error"));

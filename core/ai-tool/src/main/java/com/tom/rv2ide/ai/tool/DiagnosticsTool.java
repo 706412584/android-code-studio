@@ -268,12 +268,21 @@ public final class DiagnosticsTool extends BaseTool {
     }
 
     if (totalItems == 0 && failures.isEmpty()) {
-      return ok(
+      // 即使没有诊断，目录被 max_files 截断也必须说明——否则「扫了一半没报错」
+      // 会被模型读成「整个目录都干净」。
+      String clean =
           "已分析 "
               + analyzed
               + " 个文件，未发现 "
               + DiagnosticsMessages.severityName(minSeverity)
-              + " 及以上级别的诊断。");
+              + " 及以上级别的诊断。";
+      if (filesTruncated) {
+        clean +=
+            "\n… 结果被截断：目录内文件数超过 max_files="
+                + maxFiles
+                + "，未覆盖全部文件；可缩小路径范围或调大上限后重试。";
+      }
+      return ok(clean);
     }
 
     StringBuilder header = new StringBuilder();
