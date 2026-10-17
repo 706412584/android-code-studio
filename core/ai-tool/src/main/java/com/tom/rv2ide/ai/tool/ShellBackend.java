@@ -73,6 +73,20 @@ public interface ShellBackend {
   }
 
   /**
+   * 该后端是否以 root（uid 0）身份执行命令。
+   *
+   * <p>与 {@link #hasAdbPrivileges()} 分开而不是合并：adb 是 uid 2000，root 是它的
+   * 超集。Shizuku 以 root 启动时确实会继承 uid 0，但那是运行环境的巧合而非能力承诺
+   * （adb 方式启动时只有 2000），因此 Shizuku 后端不覆写本方法。显式 root 后端
+   * （{@code su}）覆写为 true。
+   *
+   * <p>默认 false。
+   */
+  default boolean hasRootPrivileges() {
+    return false;
+  }
+
+  /**
    * 该后端是否提供完整的命令行工具链（git / node / python / clang 等）。
    *
    * <p><b>为什么需要这个标识</b>：模型选择后端时需要的不是「后端名字」，而是

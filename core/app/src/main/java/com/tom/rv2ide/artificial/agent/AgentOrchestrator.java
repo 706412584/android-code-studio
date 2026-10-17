@@ -1763,14 +1763,19 @@ public final class AgentOrchestrator {
   /**
    * 装配 shell 后端注册表。
    *
-   * <p>注册顺序决定回退优先级：Termux（无 adb 权限但总是可用）→ Shizuku（adb 权限，
-   * 需设备端安装并授权）。用户选择的 {@code shell_backend} 优先；未选中或不可用时
-   * 由注册表按顺序回退，并把实际使用的后端与回退原因如实报告给模型。
+   * <p>注册顺序决定回退优先级：Termux（无特权但总是可用）→ Shizuku（adb 权限，
+   * 需设备端安装并授权）→ Root（su，需设备已 root 且已授权）。用户选择的
+   * {@code shell_backend} 优先；未选中或不可用时由注册表按顺序回退，并把实际
+   * 使用的后端与回退原因如实报告给模型。
+   *
+   * <p>Root 放最后：它的可用性探测要起一次 {@code su} 进程（首次还会弹 Magisk
+   * 授权框），只有前两个都不满足需求时才会被选中。
    */
   public ShellBackendRegistry buildShellBackends() {
     ShellBackendRegistry registry = new ShellBackendRegistry();
     registry.register(new TermuxShellBackend(appContext));
     registry.register(new ShizukuShellBackend(appContext));
+    registry.register(new com.tom.rv2ide.ai.tool.RootShellBackend());
     registry.setActiveId(settings.getShellBackendId());
     return registry;
   }

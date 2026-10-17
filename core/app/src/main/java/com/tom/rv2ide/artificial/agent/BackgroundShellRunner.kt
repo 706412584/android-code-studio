@@ -257,7 +257,7 @@ class BackgroundShellRunner(
   override fun unavailableReason(): String =
     if (isAvailable()) "" else "没有可用的 shell 后端"
 
-  /** 构造一个全新的后端注册表（Termux + Shizuku）。 */
+  /** 构造一个全新的后端注册表（Termux + Shizuku + Root）。 */
   private fun newRegistry(): ShellBackendRegistry {
     val registry = ShellBackendRegistry()
     try {
@@ -269,6 +269,11 @@ class BackgroundShellRunner(
       registry.register(ShizukuShellBackend(appContext))
     } catch (t: Throwable) {
       log.debug("注册 Shizuku 后端失败", t)
+    }
+    try {
+      registry.register(com.tom.rv2ide.ai.tool.RootShellBackend())
+    } catch (t: Throwable) {
+      log.debug("注册 Root 后端失败", t)
     }
     return registry
   }

@@ -126,4 +126,17 @@ public class PhoneShellRunnerBackendTest {
     // 唯一 adb 后端不可用：绝不能退而求其次用 Termux 执行特权命令（会产生误导性空结果）。
     assertNull(PhoneShellRunner.resolveAdbBackend(registry));
   }
+
+  @Test
+  public void rootBackendIsAnAdbBackend() {
+    // 显式 root 后端（su）是 adb 的超集：设备没装 Shizuku 但已 root 时，
+    // phone_* / vscreen 应能走 root 通道，而不是报「请安装 Shizuku」。
+    ShellBackendRegistry registry = new ShellBackendRegistry();
+    registry.register(new FakeBackend("termux", false, true));
+    registry.register(new FakeBackend("root", true, true));
+
+    ShellBackend resolved = PhoneShellRunner.resolveAdbBackend(registry);
+
+    assertEquals("没有可用 Shizuku 时应回退到 root", "root", resolved.id());
+  }
 }

@@ -68,7 +68,7 @@ final class PhoneShellRunner {
         && PACKAGE_PATTERN.matcher(packageName).matches();
   }
 
-  /** 构造一个默认的 shell 后端注册表（Termux + Shizuku）。 */
+  /** 构造一个默认的 shell 后端注册表（Termux + Shizuku + Root）。 */
   static ShellBackendRegistry defaultRegistry(android.content.Context context) {
     ShellBackendRegistry registry = new ShellBackendRegistry();
     try {
@@ -80,6 +80,11 @@ final class PhoneShellRunner {
       registry.register(new com.tom.rv2ide.artificial.agent.ShizukuShellBackend(context));
     } catch (Throwable e) {
       log.debug("注册 Shizuku 后端失败", e);
+    }
+    try {
+      registry.register(new com.tom.rv2ide.ai.tool.RootShellBackend());
+    } catch (Throwable e) {
+      log.debug("注册 Root 后端失败", e);
     }
     return registry;
   }
@@ -284,9 +289,9 @@ final class PhoneShellRunner {
     return null;
   }
 
-  /** 组装「需要 Shizuku」的可读说明，尽量给出具体的不可用原因。 */
+  /** 组装「需要 adb/root」的可读说明，尽量给出具体的不可用原因。 */
   private static String adbRequiredNote(ShellBackendRegistry registry) {
-    StringBuilder sb = new StringBuilder("需要 adb 级权限（Shizuku）才能执行该设备命令。");
+    StringBuilder sb = new StringBuilder("需要 adb 级权限（Shizuku 或 root）才能执行该设备命令。");
     String reason = "";
     if (registry != null) {
       // 优先给出具备 adb 权限的后端自身的不可用原因（如「Shizuku 未授权」）
@@ -309,7 +314,7 @@ final class PhoneShellRunner {
     if (!reason.isEmpty()) {
       sb.append(' ').append(reason);
     }
-    sb.append(" 请在 Shizuku 应用中安装并授权后重试。");
+    sb.append(" 请安装并授权 Shizuku，或确认设备已 root 并授予本应用 su 权限后重试。");
     return sb.toString();
   }
 }
