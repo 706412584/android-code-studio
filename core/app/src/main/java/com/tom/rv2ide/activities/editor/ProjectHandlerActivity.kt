@@ -42,6 +42,7 @@ import com.tom.rv2ide.lsp.java.utils.CancelChecker
 import com.tom.rv2ide.preferences.internal.GeneralPreferences
 import com.tom.rv2ide.projects.GradleProject
 import com.tom.rv2ide.projects.IProjectManager
+import com.tom.rv2ide.projects.IWorkspace
 import com.tom.rv2ide.projects.builder.BuildService
 import com.tom.rv2ide.projects.internal.ProjectManagerImpl
 import com.tom.rv2ide.services.builder.GradleBuildService
@@ -579,14 +580,20 @@ fun initializeProject(buildVariants: Map<String, String>) {
           return@launch
         }
 
-        // 语言服务器是进程级的：多标签页下只有前台项目的 workspace 能推给它们，
-        // 否则最后完成同步的后台项目会静默接管补全与诊断。
-        ILanguageServerRegistry.getDefault().setActiveWorkspace(workspace)
-
         manager.notifyProjectUpdate()
         updateBuildVariants(workspace.getAndroidVariantSelections())
 
+        // 先收尾（清 isInitializing、更新状态），再把 workspace 推给语言服务器。
+        //
+        // `setActiveWorkspace` 会遍历所有 server 调 `setupWorkspace`：Kotlin 那条要
+        // 重启语言服务器进程、重建 classpath 与 build watcher，可能耗时数十秒甚至
+        // 卡住。原先它在 `postProjectInit` 之前，卡住时进度条永远转、状态永远停在
+        // 「初始化项目」——真机实测（PJA110）就是这个现象。
+        //
+        // 语言服务器晚一点跟上没有副作用（补全/诊断短暂缺失），但 UI 卡在
+        // 「初始化中」会让用户以为项目打不开。
         com.tom.rv2ide.tasks.runOnUiThread { postProjectInit(true, null) }
+        routeLanguageServers(workspace)
       } catch (e: Exception) {
         log.error("Project setup failed", e)
         com.tom.rv2ide.tasks.runOnUiThread {
@@ -740,6 +747,24 @@ fun initializeProject(buildVariants: Map<String, String>) {
     }
 
     mFindInProjectDialog = null // Create the dialog again if needed
+  }
+
+  /**
+   * 把活跃 workspace 推给语言服务器；**不阻塞调用方**。
+   *
+   * <p>语言服务器是进程级的，多标签页下只有前台项目的 workspace 能推给它们，
+   * 否则最后完成同步的后台项目会静默接管补全与诊断。但 `setupWorkspace` 可能是
+   * 重操作（重启 LSP 进程、重建 classpath），绝不能让它挡住 UI 的收尾流程——
+   * 真机上那会表现为「项目已初始化、进度条还在转」。
+   */
+  private fun routeLanguageServers(workspace: IWorkspace) {
+    editorActivityScope.launch(Dispatchers.IO) {
+      try {
+        ILanguageServerRegistry.getDefault().setActiveWorkspace(workspace)
+      } catch (err: Throwable) {
+        log.warn("Failed to push active workspace to language servers", err)
+      }
+    }
   }
 
   /** 切回已同步的项目时复用其 variant 选择，避免重复同步。 */

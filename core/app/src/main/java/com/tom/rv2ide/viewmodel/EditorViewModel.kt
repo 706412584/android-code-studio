@@ -42,24 +42,6 @@ class EditorViewModel : ViewModel() {
 
   internal val _isBuildInProgress = MutableLiveData(false)
   internal val _isInitializing = MutableLiveData(false)
-
-  /**
-   * 项目标签切换进行中。
-   *
-   * <p>与 [isInitializing] 分开：切标签时可能既不构建也不同步（目标项目已初始化过），
-   * 但用户仍然需要看到「正在切换」的进度条——否则点击后界面毫无反馈，几秒后突然
-   * 换了一屏内容，体感是「卡住」而不是「切换」。
-   *
-   * <p>切到**已同步**的项目时只做内存内的状态搬运（LSP 重新路由、文件视图重建），
-   * 那些工作在 IO/后台线程完成，主线程只负责最后的 UI 提交。
-   */
-  internal val _isSwitchingProject = MutableLiveData(false)
-
-  var isSwitchingProject: Boolean
-    get() = _isSwitchingProject.value ?: false
-    set(value) {
-      _isSwitchingProject.value = value
-    }
   internal val _statusText = MutableLiveData<Pair<CharSequence, Int>>("" to CENTER)
 
   internal val _displayedFile = MutableLiveData(-1)

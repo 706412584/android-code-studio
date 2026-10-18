@@ -105,6 +105,7 @@ import com.tom.rv2ide.indexing.views.IndexingBanner
 import com.tom.rv2ide.projectdata.state.Initialization
 import com.tom.rv2ide.projectdata.logs.LogStream
 import com.tom.rv2ide.projects.IProjectManager
+import com.tom.rv2ide.projects.IWorkspace
 import com.tom.rv2ide.projects.internal.ProjectManagerImpl
 import com.tom.rv2ide.tasks.cancelIfActive
 import com.tom.rv2ide.ui.CodeEditorView
@@ -1480,16 +1481,10 @@ override fun onApplySystemBarInsets(insets: Insets) {
   private fun onBuildStatusChanged() {
     log.debug(
         "onBuildStatusChanged: isInitializing: ${editorViewModel.isInitializing}, " +
-            "isBuildInProgress: ${editorViewModel.isBuildInProgress}, " +
-            "isSwitchingProject: ${editorViewModel.isSwitchingProject}"
+            "isBuildInProgress: ${editorViewModel.isBuildInProgress}"
     )
     Initialization.setInitializing(editorViewModel.isInitializing)
-    // 切标签也要显示进度条：切到已同步的项目时不做 Gradle 同步，但仍有 LSP 重新
-    // 路由、文件视图重建等工作；不给反馈会让用户以为点击没生效（实测会连点两下）。
-    val visible =
-        editorViewModel.isBuildInProgress ||
-            editorViewModel.isInitializing ||
-            editorViewModel.isSwitchingProject
+    val visible = editorViewModel.isBuildInProgress || editorViewModel.isInitializing
     content.progressIndicator.visibility = if (visible) View.VISIBLE else View.GONE
     invalidateOptionsMenu()
   }
@@ -1520,6 +1515,15 @@ override fun onApplySystemBarInsets(insets: Insets) {
   private fun switchProjectTab(targetPath: String, saveCurrent: Boolean = true) {
     val manager = ProjectManagerImpl.getInstance()
     if (editorViewModel.projectDir?.absolutePath == targetPath) {
+      // 编辑器已经在这个项目上——但不能直接 return。
+      //
+      // `showOpenProjectPicker` 新建标签时先 `openSession(path)`，那一步会把注册表的
+      // 活跃指针指向新项目；若随后的切换因故没走完，注册表与编辑器就脱节了：
+      // 标签高亮在新项目、内容还是旧项目，而用户再点旧标签时这里会因「路径相同」
+      // 直接返回，表现为「怎么点都切不动」（真机实测）。
+      // 因此这里必须把活跃指针对齐回编辑器实际所在的项目。
+      manager.switchTo(targetPath)
+      editorTabsViewModel.refresh()
       return
     }
 
@@ -1557,16 +1561,17 @@ override fun onApplySystemBarInsets(insets: Insets) {
     val handler = this as? EditorHandlerActivity ?: return
 
     try {
-      val session = manager.switchTo(targetPath) ?: return
+      // 目标项目可能还没打开（从「＋」新建标签）：这里才建立会话。
+      // 放在切换内部而不是调用方，是为了让「注册表指针变更」与「编辑器真正切过去」
+      // 成为同一个原子动作——两者脱节过一次（真机：高亮在新标签、内容在旧标签）。
+      val session =
+          manager.switchTo(targetPath)
+              ?: manager.openSession(targetPath)
       log.info(
           "[ProjectTab] switch: target={} active={} sessions={}",
           targetPath,
           manager.activeSession()?.id,
           manager.allSessions().map { it.id })
-
-      // 切标签期间显示进度条（onBuildStatusChanged 会据此显示）。
-      // 切换不是瞬间完成的：LSP 重新路由要销毁/重建编译缓存，文件视图要重建。
-      editorViewModel.isSwitchingProject = true
 
       editorViewModel.projectDir = File(targetPath)
       editorTabsViewModel.refresh()
@@ -1580,42 +1585,51 @@ override fun onApplySystemBarInsets(insets: Insets) {
       val alreadySynced = session.projectInitialized && workspace != null
 
       if (alreadySynced) {
-        // 该项目此前已同步过：直接复用它的 workspace，不做第二次 Gradle 同步。
-        // 语言服务器是进程级的，切回来必须显式把 workspace 重新推给它们。
+        // 该项目此前已同步过：复用它的 workspace，不做第二次 Gradle 同步。
+        (this as? ProjectHandlerActivity)
+            ?.updateBuildVariants(workspace.getAndroidVariantSelections())
+
+        // UI 侧收尾**必须同步完成**：恢复文件、刷新文件树、让助手跟随。
+        // 它们都是纯内存操作，很快。
+        finishProjectSwitch(targetPath, handler)
+
+        // 语言服务器的重新路由**绝不能**出现在切换的关键路径上。
         //
-        // **必须在后台线程做**：`setActiveWorkspace` 会遍历所有 server 调
-        // `setupWorkspace`，其中 JavaLanguageServer 要销毁/重建编译器与
-        // SourceFileManager 缓存（真机上是肉眼可见的停顿）。放在主线程会直接
-        // 卡住 UI，用户表现为「点标签后界面僵住几百毫秒到一两秒」。
+        // `setActiveWorkspace` 会遍历所有 server 调 `setupWorkspace`，其中
+        // KotlinLanguageServer 要重启语言服务器进程（shutdown → sleep 500ms →
+        // 重新 initialize）、重建 classpath 与 build watcher；JavaLanguageServer
+        // 要销毁/重建编译器与 SourceFileManager 缓存。这些操作可能耗时数十秒，
+        // 在特定项目上甚至会卡死。
         //
-        // 切换完成的收尾（恢复文件、刷新文件树）依赖它，所以串在同一条链上，
-        // 最终统一回主线程提交。
-        lifecycleScope.launch(Dispatchers.IO) {
-          try {
-            ILanguageServerRegistry.getDefault().setActiveWorkspace(workspace)
-          } catch (err: Throwable) {
-            log.warn("Failed to push active workspace for {}", targetPath, err)
-          }
-          withContext(Dispatchers.Main) {
-            try {
-              (this@BaseEditorActivity as? ProjectHandlerActivity)
-                  ?.updateBuildVariants(workspace.getAndroidVariantSelections())
-              finishProjectSwitch(targetPath, handler)
-            } finally {
-              editorViewModel.isSwitchingProject = false
-            }
-          }
-        }
+        // 曾经把它串在切换链上（哪怕在 IO 线程），结果是：标签高亮变了、
+        // 编辑器内容没变、进度条永远转——因为收尾逻辑在它之后。真机实测
+        // （PJA110）就是这样卡死的。改为纯后台 fire-and-forget：
+        // 切换立即完成，LSP 稍后自己跟上；失败也只记日志，不影响界面。
+        routeLanguageServersInBackground(targetPath, workspace)
       } else {
-        // 未同步：走完整的 Gradle 同步（它自带进度与回调），这里不额外收尾，
-        // 否则会和同步完成后的初始化流程抢同一份文件视图。
-        editorViewModel.isSwitchingProject = false
+        // 未同步：走完整的 Gradle 同步（它自带进度与回调）。
         (this as? ProjectHandlerActivity)?.initializeProject()
       }
     } catch (err: Throwable) {
-      editorViewModel.isSwitchingProject = false
       log.error("Failed to switch project tab to {}", targetPath, err)
       flashError(getString(string.msg_project_tab_switch_failed))
+    }
+  }
+
+  /**
+   * 后台把活跃 workspace 推给语言服务器。
+   *
+   * <p>不参与切换的状态机：不设置任何 UI 标志、不等待、失败只记日志。
+   * 见 [applyProjectSwitch] 里对「为什么不能串在关键路径上」的说明。
+   */
+  private fun routeLanguageServersInBackground(targetPath: String, workspace: IWorkspace) {
+    lifecycleScope.launch(Dispatchers.IO) {
+      try {
+        ILanguageServerRegistry.getDefault().setActiveWorkspace(workspace)
+        log.info("[ProjectTab] language servers routed to {}", targetPath)
+      } catch (err: Throwable) {
+        log.warn("[ProjectTab] failed to route language servers to {}", targetPath, err)
+      }
     }
   }
 
@@ -1756,18 +1770,25 @@ override fun onApplySystemBarInsets(insets: Insets) {
     MaterialAlertDialogBuilder(this)
         .setTitle(string.msg_project_tab_open_another)
         .setItems(labels) { _, which ->
-          val path = candidates[which]
-          val manager = ProjectManagerImpl.getInstance()
-          if (manager.isSessionOpen(path)) {
-            switchProjectTab(path)
-          } else {
-            manager.openSession(path)
-            editorTabsViewModel.refresh()
-            switchProjectTab(path)
-          }
+          openOrSwitchToProject(candidates[which])
         }
         .setNegativeButton(android.R.string.cancel, null)
         .show()
+  }
+
+  /**
+   * 打开（或切到）一个项目。
+   *
+   * <p><b>为什么不在调用前 openSession</b>：`openSession(path)` 会**立刻**把注册表的
+   * 活跃指针指向新项目。若随后的切换因任何原因没走完（用户取消未保存确认、切换异常），
+   * 注册表与编辑器就脱节：标签高亮在新项目、编辑器内容还是旧项目，再点旧标签时
+   * `switchProjectTab` 又会因路径相同直接返回——表现为「怎么点都切不动」。
+   *
+   * <p>所以新建会话的责任交给 [applyProjectSwitch]：它先确认切换确实要发生，再
+   * 建立会话。注册表指针只在切换真正提交时才变。
+   */
+  private fun openOrSwitchToProject(path: String) {
+    switchProjectTab(path)
   }
 
   private fun selectProjectChip(group: ChipGroup, activeId: String?) {
