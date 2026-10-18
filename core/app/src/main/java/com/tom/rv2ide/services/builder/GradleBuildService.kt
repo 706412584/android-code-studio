@@ -340,8 +340,49 @@ class GradleBuildService :
     if (existing != null && existing.projectPath == projectDir) {
       return existing
     }
-    // 项目切换：旧连接必须关掉，否则会留下一个孤儿 tooling 进程。
-    existing?.close()
+
+    val registry = BuildConnectionRegistryHolder.get()
+
+    // 切回一个此前打开过的项目时，注册表里可能还留着它的连接（server 已 initialize）。
+    // 必须复用它：新建连接对应的 tooling server 从未做过 Gradle 同步，下一次
+    // executeTasks 会返回 PROJECT_NOT_INITIALIZED —— 真机表现是「切回标签后点构建，
+    // 状态变成『初始化项目』且构建不执行」。
+    if (projectDir.isNotEmpty()) {
+      val reused = registry?.find(projectDir) as? ToolingConnection
+      if (reused != null && reused.isToolingServerStarted()) {
+        // 切走的那个连接不关闭，降级为后台：它仍持有存活的 tooling 进程，
+        // 切回来时还能复用。关闭它意味着每次切标签都要重跑一次完整 Gradle 同步。
+        existing?.let { previous ->
+          if (previous !== reused) {
+            registry.demoteToBackground(previous.projectPath)
+          }
+        }
+        reused.setEventListener(pendingEventListener)
+        syncLoggerInitScript(reused)
+        reused.republishProjectProxy()
+        connection = reused
+        connectionProjectPath = projectDir
+        registry.promoteToEditor(projectDir)
+        // 后台连接按 TTL/数量回收：每多留一个就多一个 tooling JVM，手机上不能无限留。
+        registry.evictIdle(
+            isBusy = { it.isBuildInProgress },
+            close = { (it as? ToolingConnection)?.close() },
+        )
+        return reused
+      }
+    }
+
+    // 没有可复用的连接。切走的旧连接**不关闭**：它仍持有存活的 tooling 进程，
+    // 关闭意味着切回来时新连接的 server 从未 initialize，构建会返回
+    // PROJECT_NOT_INITIALIZED（真机实测）。降级为后台，由注册表按 TTL/数量回收。
+    existing?.let { previous ->
+      if (registry != null && previous.isToolingServerStarted()) {
+        registry.demoteToBackground(previous.projectPath)
+      } else {
+        previous.close()
+        registry?.remove(previous.projectPath)
+      }
+    }
     val fresh =
         ToolingConnection(
             projectDir,
@@ -363,6 +404,11 @@ class GradleBuildService :
       BuildConnectionRegistryHolder.get()
           ?.register(projectDir, fresh, BuildConnectionRegistry.Owner.EDITOR)
     }
+    // 降级下来的旧连接按 TTL/数量回收：每多留一个就多一个 tooling JVM。
+    registry?.evictIdle(
+        isBusy = { it.isBuildInProgress },
+        close = { (it as? ToolingConnection)?.close() },
+    )
     return fresh
   }
 
