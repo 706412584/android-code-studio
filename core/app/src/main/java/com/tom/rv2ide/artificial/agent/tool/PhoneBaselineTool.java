@@ -72,6 +72,7 @@ public final class PhoneBaselineTool extends BaseTool implements ToolInvokerAwar
   public String getDescription() {
     return "管理截图回归基线（项目内 .acs/baseline/）。"
         + "action=save 截当前画面存为基线；action=list 列出基线；action=delete 删除基线。"
+        + "display=device（默认，物理屏）或 vscreen（影子屏，不打扰用户；需先 vscreen action=start）。"
         + "基线可被 phone_screenshot_compare 与 phone_action_capture 用于回归对比。";
   }
 
@@ -104,7 +105,13 @@ public final class PhoneBaselineTool extends BaseTool implements ToolInvokerAwar
                     "name",
                     new JSONObject()
                         .put("type", "string")
-                        .put("description", "基线名，默认 default")))
+                        .put("description", "基线名，默认 default"))
+                .put(
+                    "display",
+                    new JSONObject()
+                        .put("type", "string")
+                        .put("description", "截图来源：device（默认，物理屏）/ vscreen（影子屏）")
+                        .put("enum", new org.json.JSONArray().put("device").put("vscreen"))))
         .put("required", new org.json.JSONArray().put("action"));
   }
 
@@ -120,7 +127,7 @@ public final class PhoneBaselineTool extends BaseTool implements ToolInvokerAwar
 
     switch (action) {
       case "save":
-        return save(name, projectRoot, context);
+        return save(name, projectRoot, context, input.optString("display", null));
       case "list":
         return list(projectRoot);
       case "delete":
@@ -130,11 +137,19 @@ public final class PhoneBaselineTool extends BaseTool implements ToolInvokerAwar
     }
   }
 
-  private ToolResult save(String name, String projectRoot, ToolContext context) {
+  private ToolResult save(
+      String name, String projectRoot, ToolContext context, String display) {
     if (context != null) {
       context.reportProgress("保存基线: " + name);
     }
-    PhoneScreenshotSource.Shot shot = PhoneScreenshotSource.capture(toolInvoker, context);
+    JSONObject captureArgs = new JSONObject();
+    try {
+      captureArgs.put("display", PhoneScreenshotSource.normalizeDisplay(display));
+    } catch (org.json.JSONException ignored) {
+      // put(String, String) 不抛；保留分支仅为显式表达「这里不可能失败」。
+    }
+    PhoneScreenshotSource.Shot shot =
+        PhoneScreenshotSource.capture(toolInvoker, context, captureArgs);
     if (!shot.ok) {
       return error("截图失败，无法保存基线: " + shot.error);
     }

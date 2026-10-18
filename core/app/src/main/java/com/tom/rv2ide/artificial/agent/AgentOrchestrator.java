@@ -126,8 +126,16 @@ import java.util.List;
  */
 public final class AgentOrchestrator {
 
-  /** 单次对话允许的工具调用次数上限。防止模型陷入循环消耗额度。 */
-  private static final int DEFAULT_TOOL_CALL_LIMIT = 100;
+  /**
+   * 单次对话允许的工具调用次数上限；{@code <= 0} 表示不限制。
+   *
+   * <p><b>默认不限</b>：真实的排查/重构任务经常超过 100 次调用（读文件、跑构建、
+   * 装包、读日志、再改再跑），此前到 100 次就硬停，任务做了一半被截断，用户只能
+   * 手动重新发起并重复已做的工作。额度消耗的约束已由「用户可随时停止」和
+   * {@link com.tom.rv2ide.ai.agent.AgentSession} 的总时长预算（默认关闭）承担，
+   * 不再用一个固定次数上限来兜底。
+   */
+  private static final int DEFAULT_TOOL_CALL_LIMIT = 0;
 
   /**
    * 每次运行最多注入多少条记忆。

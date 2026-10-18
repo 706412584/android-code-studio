@@ -557,7 +557,40 @@ public final class VdController {
           "截图失败：runner 未在 " + (SHOT_WAIT_MS / 1000) + " 秒内产出画面"
               + "（日志尾部：" + abbreviate(exec("tail -3 " + LOG_FILE, 10_000L).output, 200) + "）");
     }
-    return shot;
+    // runner 的截图输出路径在**启动时固定**，每次截图都会先删再写同一个文件。
+    // 直接把该路径交给调用方（视觉回归会把它存成基线、或稍后比对）会在下一次
+    // 截图时被覆盖——与 phone_screenshot 每次新建文件的契约不一致。
+    // 因此这里复制一份到唯一文件名再返回；复制失败时退回原路径（至少本次可用）。
+    return copyToUnique(shot);
+  }
+
+  /** 把 runner 刚产出的帧复制成唯一文件名；失败时返回原文件。 */
+  private File copyToUnique(File source) {
+    try {
+      String base = source.getName();
+      int dot = base.lastIndexOf('.');
+      String ext = dot >= 0 ? base.substring(dot) : ".png";
+      File dir = source.getParentFile();
+      if (dir == null) {
+        return source;
+      }
+      File unique =
+          new File(
+              dir,
+              "shot-"
+                  + System.currentTimeMillis()
+                  + "-"
+                  + UUID.randomUUID().toString().substring(0, 8)
+                  + ext);
+      java.nio.file.Files.copy(
+          source.toPath(),
+          unique.toPath(),
+          java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+      return unique;
+    } catch (Exception e) {
+      log.warn("复制影子屏截图失败，退回原路径: {}", source, e);
+      return source;
+    }
   }
 
   /**

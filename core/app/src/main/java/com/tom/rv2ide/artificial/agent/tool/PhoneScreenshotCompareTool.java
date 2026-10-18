@@ -83,6 +83,7 @@ public final class PhoneScreenshotCompareTool extends BaseTool implements ToolIn
         + "返回一张合成对比图（左参考/中当前/右差异，变化处标红）与数字指标"
         + "（变化像素占比、平均/最大通道差、变化区域包围盒）。"
         + "source=baseline 时按 regressThresholdPercent 判定是否回归。"
+        + "display=device（默认，物理屏）或 vscreen（影子屏，需先 vscreen action=start）。"
         + "用途：验证 UI 改动是否只在预期区域生效、动作后画面是否出现异常变化。";
   }
 
@@ -137,7 +138,13 @@ public final class PhoneScreenshotCompareTool extends BaseTool implements ToolIn
                         .put("type", "number")
                         .put(
                             "description",
-                            "回归判定阈值（变化像素占比 %），默认 " + DEFAULT_REGRESSION_PERCENT)))
+                            "回归判定阈值（变化像素占比 %），默认 " + DEFAULT_REGRESSION_PERCENT))
+                .put(
+                    "display",
+                    new JSONObject()
+                        .put("type", "string")
+                        .put("description", "当前画面的来源：device（默认，物理屏）/ vscreen（影子屏）")
+                        .put("enum", new org.json.JSONArray().put("device").put("vscreen"))))
         .put("required", new org.json.JSONArray().put("source"));
   }
 
@@ -212,8 +219,17 @@ public final class PhoneScreenshotCompareTool extends BaseTool implements ToolIn
       return error("参考图无法解码（可能不是有效 PNG）。");
     }
 
-    // 2) 截取当前画面
-    PhoneScreenshotSource.Shot shot = PhoneScreenshotSource.capture(toolInvoker, context);
+    // 2) 截取当前画面（display 决定截物理屏还是影子屏）
+    JSONObject captureArgs = new JSONObject();
+    try {
+      captureArgs.put(
+          "display",
+          PhoneScreenshotSource.normalizeDisplay(input.optString("display", null)));
+    } catch (org.json.JSONException ignored) {
+      // put(String, String) 不抛。
+    }
+    PhoneScreenshotSource.Shot shot =
+        PhoneScreenshotSource.capture(toolInvoker, context, captureArgs);
     if (!shot.ok) {
       reference.recycle();
       return error(shot.error);

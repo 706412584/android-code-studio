@@ -171,9 +171,19 @@ final class PhoneOcrText {
    * @param engine     引擎标识
    * @param maxLines   行数上限（超出截断并提示）
    * @param includeBoxes 是否输出 box 行
+   * @param targetTool box 中心点应传给哪个工具：物理屏是 {@code phone_click}，
+   *     影子屏是 {@code vscreen}（action=tap）。写错会让模型点到用户主屏。
    */
   static String format(List<OcrPort.Line> lines, int screenW, int screenH, Region regionScreen,
       float s, long elapsedMs, String engine, int maxLines, boolean includeBoxes) {
+    return format(lines, screenW, screenH, regionScreen, s, elapsedMs, engine, maxLines,
+        includeBoxes, "phone_click");
+  }
+
+  /** 带目标工具名的重载；见上方 {@code targetTool} 参数说明。 */
+  static String format(List<OcrPort.Line> lines, int screenW, int screenH, Region regionScreen,
+      float s, long elapsedMs, String engine, int maxLines, boolean includeBoxes,
+      String targetTool) {
     if (lines.isEmpty()) {
       // 空结果是有效结论（必须与失败区分）——给排查建议，不走 error 路径。
       return "OCR 完成，但未识别到任何文本。\n"
@@ -193,7 +203,9 @@ final class PhoneOcrText {
         .append(" h=").append(regionScreen.height).append('\n');
     sb.append("识别到 ").append(lines.size()).append(" 行文本。");
     if (includeBoxes) {
-      sb.append("box 为屏幕物理像素 [左,上,右,下]，中心点可直接传给 phone_click：\n");
+      sb.append("box 为屏幕像素 [左,上,右,下]，中心点可直接传给 ")
+          .append(targetTool == null || targetTool.isEmpty() ? "phone_click" : targetTool)
+          .append("：\n");
       int shown = Math.min(lines.size(), maxLines);
       for (int i = 0; i < shown; i++) {
         OcrPort.Line line = lines.get(i);

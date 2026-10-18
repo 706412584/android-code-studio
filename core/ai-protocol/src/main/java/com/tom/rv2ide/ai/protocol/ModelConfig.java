@@ -26,7 +26,14 @@ import org.json.JSONException;
 import org.json.JSONObject;
 
 public final class ModelConfig {
-    public static final int DEFAULT_TOOL_CALL_LIMIT = 200;
+    /**
+     * 单次对话的工具调用次数上限默认值；{@code <= 0} 表示不限制。
+     *
+     * <p><b>默认不限</b>：真实排查/重构任务经常超过几百次调用，固定次数上限会在
+     * 任务中途硬停，用户只能重新发起并重复已完成的工作。额度约束由用户手动停止
+     * 与可选的总时长预算承担。
+     */
+    public static final int DEFAULT_TOOL_CALL_LIMIT = 0;
     public static final int UNLIMITED_TOOL_CALLS = -1;
     public static final boolean DEFAULT_COMPRESSION_MODEL_AUTO = true;
     /** contextSize 字段未设置时的哨兵值，表示沿用旧 {@code {id}[{大小}]} 后缀解析或默认值。 */

@@ -67,6 +67,7 @@ public final class PhoneOcrTool extends BaseTool implements ToolInvokerAware {
         + "用于 uiautomator 取不到文本的场景：游戏/Canvas/自绘 UI、WebView 里渲染的文字、图片上的文字。"
         + "返回的 box 中心点可直接传给 phone_click。"
         + "支持 region（只识别屏幕某区域，与 phone_screenshot 同语义）与 scale（小字放大）。"
+        + "display=device（默认，物理屏）或 vscreen（影子屏，需先 vscreen action=start）。"
         + "需要 adb 级权限（Shizuku 后端）；无权限时会明确报错。"
         + "注意：普通 Android 控件的文字优先用 phone_view_hierarchy（更快更准）；本工具只在节点树没有文字时用。";
   }
@@ -111,7 +112,11 @@ public final class PhoneOcrTool extends BaseTool implements ToolInvokerAware {
                     .put("description", "最多返回的行数，默认 200，上限 500。"))
                 .put("includeBoxes", new JSONObject()
                     .put("type", "boolean")
-                    .put("description", "是否附带每行的屏幕像素包围盒 [左,上,右,下]（默认 true）。true 时可直接取 box 中心点传给 phone_click。")))
+                    .put("description", "是否附带每行的屏幕像素包围盒 [左,上,右,下]（默认 true）。true 时可直接取 box 中心点传给 phone_click。"))
+                .put("display", new JSONObject()
+                    .put("type", "string")
+                    .put("description", "截图来源：device（默认，物理屏）/ vscreen（影子屏，需先 vscreen action=start）。vscreen 时坐标是虚拟屏像素，直接传给 vscreen 的 tap。")
+                    .put("enum", new JSONArray().put("device").put("vscreen"))))
         // required 必须是顶层键（与 properties 平级）——嵌套会生成非法 schema，
         // 被严格校验的服务商 400 拒绝整个请求（CodeActionsTool 事故）。
         .put("required", new JSONArray());
@@ -146,8 +151,11 @@ public final class PhoneOcrTool extends BaseTool implements ToolInvokerAware {
 
     context.reportProgress("截取屏幕");
     // 2) 截图（maxDimension:0 = 原分辨率——默认 1568px 缩放会丢小字）
-    PhoneScreenshotSource.Shot shot = PhoneScreenshotSource.capture(
-        toolInvoker, context, new JSONObject().put("maxDimension", 0));
+    String display = PhoneScreenshotSource.normalizeDisplay(input.optString("display", null));
+    JSONObject captureArgs = new JSONObject().put("maxDimension", 0);
+    captureArgs.put("display", display);
+    PhoneScreenshotSource.Shot shot =
+        PhoneScreenshotSource.capture(toolInvoker, context, captureArgs);
     if (!shot.ok) {
       // shot.error 多数路径已带「截图失败: 」前缀（PhoneScreenshotSource 契约），
       // 只有少数不带——按需补前缀，避免出现「截图失败。\n截图失败: ...」的重复。
@@ -218,8 +226,14 @@ public final class PhoneOcrTool extends BaseTool implements ToolInvokerAware {
       int originY = Math.round(regionBmp.y * k);
       List<OcrPort.Line> mapped = PhoneOcrText.mapLines(
           result.getLines(), originX, originY, s, k, screenW, screenH);
+      // 影子屏的坐标属于虚拟屏，只能喂给 vscreen 的 tap；写成 phone_click 会让模型
+      // 去点用户主屏（同一组坐标在主屏上完全是另一个位置）。
+      String clickTarget =
+          PhoneScreenshotSource.DISPLAY_VSCREEN.equals(display)
+              ? "vscreen（action=tap）"
+              : "phone_click";
       String text = PhoneOcrText.format(mapped, screenW, screenH, regionScreen,
-          s, elapsedMs, result.getEngine(), maxLines, includeBoxes);
+          s, elapsedMs, result.getEngine(), maxLines, includeBoxes, clickTarget);
       // 纵向比例校验（计划 §4.3 step7）：k 只按宽度算；若落盘图高宽比与屏幕
       // 差异 >2%，说明发生了非等比收缩（内联体积收缩不该出现，但防御性告知），
       // 此时纵向坐标是近似的——必须明说，否则模型会当作精确值使用。

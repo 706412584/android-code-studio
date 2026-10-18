@@ -88,7 +88,8 @@ public final class VdTool extends BaseTool {
         + "phone_* 工具操作的是用户当前屏幕（会打扰用户），本工具把 App 开到虚拟屏上。"
         + "action=start 创建（可选 width/height/dpi）；status 查询；stop 停止；"
         + "launch 启动应用（component=\"包名/Activity\" 或仅包名）；"
-        + "shot 截图（图片随结果返回，图上带坐标网格；传 ocr=true 则改回文字、传 grid=false 关闭网格）；"
+        + "shot 截图（图片随结果返回，图上带坐标网格；传 ocr=true 则改回文字、传 grid=false 关闭网格、"
+        + "传 inline=false 只返回原分辨率 PNG 路径供视觉回归工具复用）；"
         + "tap / swipe / key 触控；type 往焦点输入框输文字（text=内容，可选 submit=true 回车，支持中文）。"
         + "需 Shizuku 就绪；未就绪时返回明确错误。";
   }
@@ -165,6 +166,15 @@ public final class VdTool extends BaseTool {
         new JSONObject()
             .put("type", "boolean")
             .put("description", "shot 专用：是否在图上叠加坐标网格（默认 true）。网格线标注的数字就是 tap 用的坐标，可直接照读。"));
+    props.put(
+        "inline",
+        new JSONObject()
+            .put("type", "boolean")
+            .put(
+                "description",
+                "shot 专用：是否把图片作为负载返回给模型（默认 true）；false 时只返回原分辨率 PNG 的文件路径，"
+                    + "供 phone_baseline / phone_screenshot_compare / phone_action_capture / phone_ocr "
+                    + "以 display=vscreen 复用。"));
     props.put(
         "text",
         new JSONObject()
@@ -260,6 +270,21 @@ public final class VdTool extends BaseTool {
     File file = vdController.screenshot(info);
     boolean wantOcr = input.optBoolean("ocr", false);
     boolean wantGrid = input.optBoolean("grid", true);
+    boolean inline = input.optBoolean("inline", true);
+    if (!inline) {
+      // 只返回路径：跳过整图解码与 base64 编码（1080x1920 解一次约 8MB），
+      // 仅读文件头拿像素尺寸。格式与 phone_screenshot 保持一致，供下游工具复用。
+      int[] dims = readImageBounds(file);
+      int w = dims[0] > 0 ? dims[0] : info.width;
+      int h = dims[1] > 0 ? dims[1] : info.height;
+      StringBuilder note = new StringBuilder();
+      note.append("已截图\n");
+      note.append("屏幕尺寸: ").append(w).append('x').append(h).append('\n');
+      note.append("输出尺寸: ").append(w).append('x').append(h).append('\n');
+      note.append("文件路径:\n").append(file.getAbsolutePath()).append('\n');
+      note.append("（inline=false，未把图片返回给模型，可用文件路径自行处理）");
+      return ok(note.toString());
+    }
     // OCR 直接吃画面，网格线会干扰识别，故 OCR 时不叠网格。
     ShotImage shot = encodeScreenshot(file, wantGrid && !wantOcr);
     String caption = buildCaption(info, shot);
@@ -495,6 +520,53 @@ public final class VdTool extends BaseTool {
       this.inputHeight = inputHeight;
       this.scale = scale;
     }
+  }
+
+  /**
+   * 只读图片像素尺寸，不解码整图。
+   *
+   * <p>{@code inline=false} 的路径只需要尺寸元数据，而解码一张 1080x1920 的位图要分配
+   * 约 8MB——视觉回归会连续截很多张，每张都全量解码会把 GC 压力堆到主循环上。
+   * 因此这里只解析文件头：PNG 读 IHDR，其它格式退回 {@link BitmapFactory} 的
+   * {@code inJustDecodeBounds}（同样不分配像素缓冲）。
+   *
+   * @return {宽, 高}；读不出来时返回 {0, 0}
+   */
+  private static int[] readImageBounds(File file) {
+    try {
+      byte[] head = new byte[24];
+      int read;
+      try (java.io.FileInputStream in = new java.io.FileInputStream(file)) {
+        read = in.read(head);
+      }
+      // PNG 签名 8 字节 + 长度 4 + "IHDR" 4 + 宽 4 + 高 4（大端）。
+      if (read >= 24
+          && (head[0] & 0xFF) == 0x89
+          && head[1] == 'P'
+          && head[2] == 'N'
+          && head[3] == 'G') {
+        int w = ((head[16] & 0xFF) << 24)
+            | ((head[17] & 0xFF) << 16)
+            | ((head[18] & 0xFF) << 8)
+            | (head[19] & 0xFF);
+        int h = ((head[20] & 0xFF) << 24)
+            | ((head[21] & 0xFF) << 16)
+            | ((head[22] & 0xFF) << 8)
+            | (head[23] & 0xFF);
+        if (w > 0 && h > 0) {
+          return new int[] {w, h};
+        }
+      }
+    } catch (Exception ignored) {
+      // 落到下面的兜底
+    }
+    BitmapFactory.Options options = new BitmapFactory.Options();
+    options.inJustDecodeBounds = true;
+    BitmapFactory.decodeFile(file.getAbsolutePath(), options);
+    if (options.outWidth > 0 && options.outHeight > 0) {
+      return new int[] {options.outWidth, options.outHeight};
+    }
+    return new int[] {0, 0};
   }
 
   /**

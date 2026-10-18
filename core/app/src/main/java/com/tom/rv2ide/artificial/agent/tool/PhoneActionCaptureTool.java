@@ -91,6 +91,7 @@ public final class PhoneActionCaptureTool extends BaseTool implements ToolInvoke
     return "动作级连拍：可选先执行一次动作工具，然后在多个时间点（默认 0/300/800ms）连续截图。"
         + "原图只在内部暂存，<b>不逐张返回</b>；只返回一张合成对比图与帧间数字指标。"
         + "可选与项目基线对比（saveBaseline / baselineName）。"
+        + "display=device（默认，物理屏）或 vscreen（影子屏，需先 vscreen action=start）。"
         + "后续可用 phone_screenshot_compare source=last 深入对比暂存帧。";
   }
 
@@ -165,7 +166,13 @@ public final class PhoneActionCaptureTool extends BaseTool implements ToolInvoke
                     "label",
                     new JSONObject()
                         .put("type", "string")
-                        .put("description", "会话标签，写入文件名便于识别")))
+                        .put("description", "会话标签，写入文件名便于识别"))
+                .put(
+                    "display",
+                    new JSONObject()
+                        .put("type", "string")
+                        .put("description", "截图来源：device（默认，物理屏）/ vscreen（影子屏）")
+                        .put("enum", new org.json.JSONArray().put("device").put("vscreen"))))
         .put("required", new org.json.JSONArray());
   }
 
@@ -178,6 +185,7 @@ public final class PhoneActionCaptureTool extends BaseTool implements ToolInvoke
     boolean saveBaseline = input.optBoolean("saveBaseline", false);
     boolean compareToBaseline = input.optBoolean("compareToBaseline", true);
     String projectRoot = context == null ? "" : context.getHomePath();
+    String display = PhoneScreenshotSource.normalizeDisplay(input.optString("display", null));
 
     if (context != null) {
       context.reportProgress("动作级连拍");
@@ -220,7 +228,14 @@ public final class PhoneActionCaptureTool extends BaseTool implements ToolInvoke
           break;
         }
       }
-      PhoneScreenshotSource.Shot shot = PhoneScreenshotSource.capture(toolInvoker, context);
+      JSONObject captureArgs = new JSONObject();
+      try {
+        captureArgs.put("display", display);
+      } catch (org.json.JSONException ignored) {
+        // put(String, String) 不抛。
+      }
+      PhoneScreenshotSource.Shot shot =
+          PhoneScreenshotSource.capture(toolInvoker, context, captureArgs);
       if (!shot.ok) {
         if (captured.isEmpty()) {
           return error("连拍失败（首帧）: " + shot.error);
