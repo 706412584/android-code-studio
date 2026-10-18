@@ -200,6 +200,77 @@ final class RootShellBackendTest {
   }
 
   @Test
+  void invalidateCacheLeavesConsistentState() {
+    // 回归：invalidateCache 曾在锁外只置 probeAtMs/resolvedSu，与进行中的 probe 交错时
+    // 可能出现 probeResult=true 但 resolvedSu=null，随后 execute 把 null 交给
+    // ProcessBuilder（NPE，且不在 execute 的 catch 里）。
+    ShellStarter starter = new ShellStarter("0", 0);
+    RootShellBackend backend = backend(Arrays.asList("su"), starter);
+    assertTrue(backend.isAvailable());
+
+    backend.invalidateCache();
+
+    // 失效后应重新探测，并恢复到一致的可用状态
+    assertTrue(backend.isAvailable());
+    assertEquals("su", backend.resolvedSuPath());
+  }
+
+  @Test
+  void isPresentDoesNotForkForMissingAbsoluteCandidates() {
+    // 廉价判断：只查文件存在，不启动 su（否则每次生成提示词都会弹授权框）。
+    ShellStarter starter = new ShellStarter("0", 0);
+    RootShellBackend backend =
+        backend(Arrays.asList("/definitely/not/here/su", "/also/missing/su"), starter);
+
+    assertFalse(backend.isPresent());
+    assertEquals(0, starter.calls.get(), "isPresent 不应起进程");
+  }
+
+  @Test
+  void isPresentIsTrueForExistingAbsoluteCandidate() throws IOException {
+    java.io.File fake = java.io.File.createTempFile("fake-su", ".bin");
+    fake.deleteOnExit();
+    ShellStarter starter = new ShellStarter("0", 0);
+    RootShellBackend backend = backend(Arrays.asList(fake.getAbsolutePath()), starter);
+
+    assertTrue(backend.isPresent());
+    assertEquals(0, starter.calls.get(), "isPresent 不应起进程");
+  }
+
+  @Test
+  void executeTimeoutBudgetIncludesProbeCost() {
+    // 回归：探测可能耗时（首次会弹 Magisk 授权框），而 deadline 原先在探测**之后**
+    // 才起算，于是模型传入的 timeoutMs 完全覆盖不到探测，单次调用实际耗时远超预期。
+    ShellStarter starter = new ShellStarter("0", 0);
+    RootShellBackend backend = backend(Arrays.asList("su"), starter);
+    assertTrue(backend.isAvailable()); // 先探测一次，后续 execute 命中缓存
+
+    long started = System.currentTimeMillis();
+    ShellRequest.ShellResult result =
+        backend.execute(
+            new ShellRequest("echo quick", "", 5_000L, null),
+            ShellRequest.ShellOutputSink.NOOP);
+    long elapsed = System.currentTimeMillis() - started;
+
+    assertEquals(0, result.getExitCode());
+    assertTrue(elapsed < 5_000L, "执行不应超过给定预算，实际 " + elapsed + "ms");
+  }
+
+  @Test
+  void failureProbeIsCachedAfterCompletion() {
+    // 回归：probeAtMs 曾在探测**开始**时写入。单候选超时 10s、候选最多 6 个，
+    // 一次慢失败刚结束缓存就已过期，下一次调用立刻重新 fork。改为结束时写。
+    ShellStarter starter = new ShellStarter("0", 1);
+    RootShellBackend backend = backend(Arrays.asList("su"), starter);
+
+    assertFalse(backend.isAvailable());
+    int afterFirst = starter.calls.get();
+    assertFalse(backend.isAvailable());
+    assertFalse(backend.isAvailable());
+    assertEquals(afterFirst, starter.calls.get(), "失败结果也应在 TTL 内命中缓存");
+  }
+
+  @Test
   void executeReturnsStdoutAndExitCode() {
     RootShellBackend backend = backend(Arrays.asList("su"), new ShellStarter("0", 0));
 

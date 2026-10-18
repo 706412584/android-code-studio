@@ -271,9 +271,18 @@ class BackgroundShellRunner(
       log.debug("注册 Shizuku 后端失败", t)
     }
     try {
-      registry.register(com.tom.rv2ide.ai.tool.RootShellBackend())
+      // 共享实例：探测缓存跨任务复用，避免每个后台任务都重新 fork 一次 su。
+      registry.register(com.tom.rv2ide.ai.tool.RootShellBackend.shared())
     } catch (t: Throwable) {
       log.debug("注册 Root 后端失败", t)
+    }
+    // 必须应用用户设置的后端：不设置时 registry 的 activeId 退化为**注册顺序第一个**
+    // （Termux），于是后台命令永远走 Termux，用户在设置里选 Shizuku/root 后
+    // shell_execute 走的是新后端、run_in_background 却还是旧后端。
+    try {
+      registry.setActiveId(AgentToolSettings(appContext).getShellBackendId())
+    } catch (t: Throwable) {
+      log.debug("读取 shell 后端设置失败，使用注册顺序默认值", t)
     }
     return registry
   }

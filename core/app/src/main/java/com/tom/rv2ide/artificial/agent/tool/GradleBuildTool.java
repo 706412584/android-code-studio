@@ -457,9 +457,19 @@ public final class GradleBuildTool extends BaseTool {
         }
         for (File child : children) {
           if (child.isDirectory() && depth < 4) {
+            // androidTest 产物（build/outputs/apk/androidTest/...）也是 .apk，且跑过
+            // connectedAndroidTest 后通常比应用包更新——按 mtime 取最新会选中它，
+            // 再拿它去安装/启动就是测试包，不是用户的应用。
+            if ("androidTest".equals(child.getName())) {
+              continue;
+            }
             queue.add(child);
             depths.add(depth + 1);
           } else if (child.isFile() && child.getName().endsWith(".apk")) {
+            // 兜底：有的 AGP 版本把测试包直接平铺在 variant 目录里，以 -androidTest 结尾。
+            if (child.getName().contains("-androidTest")) {
+              continue;
+            }
             if (newest == null || child.lastModified() > newest.lastModified()) {
               newest = child;
             }
@@ -491,9 +501,18 @@ public final class GradleBuildTool extends BaseTool {
         String text = new String(java.nio.file.Files.readAllBytes(meta.toPath()),
             java.nio.charset.StandardCharsets.UTF_8);
         org.json.JSONObject json = new org.json.JSONObject(text);
+        // AGP 真实 schema 把 applicationId 放在**顶层**，elements 里只有 type/outputFile：
+        //   {"version":3,"applicationId":"com.x","elements":[{"type":"SINGLE",...}]}
+        // 旧实现只读 elements[0].applicationId，永远拿到空串（曾用不存在的 schema 写测试，
+        // 测试通过反而掩盖了 bug）。
+        String id = json.optString("applicationId", "");
+        if (!id.isEmpty()) {
+          return id;
+        }
+        // 兼容少数旧版/自定义产物的 element 级写法。
         org.json.JSONArray elements = json.optJSONArray("elements");
         if (elements != null && elements.length() > 0) {
-          String id = elements.optJSONObject(0).optString("applicationId", "");
+          id = elements.optJSONObject(0).optString("applicationId", "");
           return id.isEmpty() ? null : id;
         }
       } catch (Exception e) {

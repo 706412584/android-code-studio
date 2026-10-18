@@ -110,6 +110,16 @@ class ProjectManagerImpl(
     return session?.workspace
   }
 
+  /**
+   * 指定项目的 workspace；未打开时返回 null。
+   *
+   * <p>供多标签页的异步同步使用：回调到达时活跃会话可能已经换人，
+   * 不能再用 [getWorkspace]（它只认活跃会话）。
+   */
+  @RestrictTo(RestrictTo.Scope.LIBRARY_GROUP_PREFIX)
+  fun getWorkspaceFor(projectDir: File): IWorkspace? =
+      sessions.find(projectDir)?.workspace
+
   override fun openProject(directory: File) {
     // 路径归一化与去重在注册表里完成（canonical path）。
     sessions.activate(directory)
@@ -178,18 +188,30 @@ class ProjectManagerImpl(
         session
             ?: throw IllegalStateException(
                 "Cannot setup project. No project has been opened (call openProject first).")
-    current.workspace =
+    setupProject(current, project)
+  }
+
+  /**
+   * 为**指定会话**构建项目模型。
+   *
+   * <p>与 [setupProject] 的区别：归属由调用方显式给出，而不是取当前活跃会话。
+   * 多标签页下同步是异步的，回调到达时用户可能已经切走——用活跃会话会让
+   * A 项目的模型写进 B 项目的会话。
+   */
+  @RestrictTo(RestrictTo.Scope.LIBRARY_GROUP_PREFIX)
+  suspend fun setupProject(target: ProjectSession, project: IProject) {
+    target.workspace =
         withStopWatch("Transform project proxy") {
           withContext(Dispatchers.IO) {
-            WorkspaceModelBuilder.build(current.projectDir, CachingProject(project))
+            WorkspaceModelBuilder.build(target.projectDir, CachingProject(project))
           }
         }
 
-    val rootProject = this.getWorkspace() ?: return
+    val rootProject = target.workspace ?: return
 
     // build variants must be updated before the sources and classpaths are indexed
-    updateBuildVariants { buildVariants ->
-      (current.workspace as? WorkspaceImpl)?.setVariantSelections(buildVariants)
+    updateBuildVariants(target.projectDir) { buildVariants ->
+      (target.workspace as? WorkspaceImpl)?.setVariantSelections(buildVariants)
     }
 
     log.info(
@@ -311,9 +333,20 @@ class ProjectManagerImpl(
   }
 
   fun notifyProjectUpdate() {
+    val active = session ?: return
+    notifyProjectUpdate(active)
+  }
 
+  /**
+   * 通知**指定会话**的项目更新。
+   *
+   * <p>多标签页下同步回调可能属于非活跃项目；用活跃会话会通知错项目、
+   * 且索引的是别人的 workspace。
+   */
+  @RestrictTo(RestrictTo.Scope.LIBRARY_GROUP_PREFIX)
+  fun notifyProjectUpdate(target: ProjectSession) {
     executeAsync {
-      getWorkspace()?.apply {
+      target.workspace?.apply {
         getSubProjects().forEach { subproject ->
           if (subproject is ModuleProject) {
             subproject.indexSources()
@@ -322,14 +355,21 @@ class ProjectManagerImpl(
       }
 
       val event = ProjectInitializedEvent()
-      event.put(IWorkspace::class.java, getWorkspace())
+      event.put(IWorkspace::class.java, target.workspace)
       EventBus.getDefault().post(event)
     }
   }
 
-  private fun updateBuildVariants(onUpdated: (Map<String, BuildVariantInfo>) -> Unit = {}) {
+  /**
+   * @param projectDir 目标项目目录。必须显式传入：多标签页下同步可能属于非活跃会话，
+   *   用 `this.projectDir`（=活跃会话）会把变体选择写到别的项目上。
+   */
+  private fun updateBuildVariants(
+      projectDir: File,
+      onUpdated: (Map<String, BuildVariantInfo>) -> Unit = {},
+  ) {
     val rootProject =
-        checkNotNull(this.getWorkspace()) {
+        checkNotNull(getWorkspaceFor(projectDir)) {
           "Cannot update build variants. Root project model is null."
         }
 

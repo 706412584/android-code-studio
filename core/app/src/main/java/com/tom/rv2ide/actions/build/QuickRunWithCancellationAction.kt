@@ -206,30 +206,29 @@ class QuickRunWithCancellationAction(context: Context, override val order: Int) 
   ) {
     actionScope
         .launch(Dispatchers.Default) {
-          activity.saveAllResult()
+          // 整个构建链都必须兜住异常：actionScope 是普通 CoroutineScope（无
+          // SupervisorJob），未捕获异常会走到线程的默认 handler，直接 FATAL 杀进程。
+          // 之前只包了 executeTasks，saveAllResult() / handleResult() 抛异常同样致命。
+          try {
+            activity.saveAllResult()
 
-          val result =
-              try {
-                withContext(Dispatchers.IO) { buildService.executeTasks(taskName).get() }
-              } catch (e: Throwable) {
-                // 协程里未捕获的异常会直接杀进程（见上方注释）。构建失败要变成
-                // 一条错误提示，而不是把用户的标签页一起带走。
-                log.error("Failed to execute task '{}'", taskName, e)
-                activity.runOnUiThread {
-                  activity.flashError(
-                      e.message ?: activity.getString(com.tom.rv2ide.resources.R.string.build_status_failed))
-                }
-                return@launch
-              }
+            val result = withContext(Dispatchers.IO) { buildService.executeTasks(taskName).get() }
 
-          log.debug("Task execution result: {}", result)
+            log.debug("Task execution result: {}", result)
 
-          if (result?.isSuccessful != true) {
-            log.error("Tasks failed to execute: '{}'", taskName)
-            return@launch
+            if (result?.isSuccessful != true) {
+              log.error("Tasks failed to execute: '{}'", taskName)
+              return@launch
+            }
+
+            handleResult(data, result, module, variant)
+          } catch (e: Throwable) {
+            log.error("Failed to execute task '{}'", taskName, e)
+            activity.runOnUiThread {
+              activity.flashError(
+                  e.message ?: activity.getString(com.tom.rv2ide.resources.R.string.build_status_failed))
+            }
           }
-
-          handleResult(data, result, module, variant)
         }
         .invokeOnCompletion { error ->
           if (error != null) {

@@ -61,6 +61,13 @@ class EditorViewModel : ViewModel() {
    */
   @Volatile var projectDir: File? = null
 
+  /**
+   * 缓存读取的代际令牌；切项目标签时递增，用于丢弃在途的旧项目读取结果。
+   *
+   * <p>`@Volatile`：写入发生在主线程（切标签），读取发生在 IO 协程与主线程回调。
+   */
+  @Volatile private var cacheGeneration = 0L
+
   private val _openedFiles = MutableLiveData<OpenedFilesCache>()
   private val _isBoundToBuildService = MutableLiveData(false)
   private val _files = MutableLiveData<MutableList<File>>(ArrayList())
@@ -228,39 +235,64 @@ class EditorViewModel : ViewModel() {
   }
 
   /**
-   * Get the [OpenedFilesCache] if it is already loaded, otherwise read the cache from the file
-   * system and invoke the given callback.
+   * 读取打开文件缓存并回调。
    *
-   * If the cache is already loaded, [result] is called on the same thread. Otherwise, it is always
-   * called on the main/UI thread.
+   * <p><b>为什么带 [expectedDir]</b>：读取是异步的（缓存刚被切标签清空时必然走 IO）。
+   * 若在协程**内部**才去问 `projectDir`，快速连续切标签会让 A 项目的缓存被恢复进
+   * B 项目的标签页——协程启动时 A 还是活跃项目，真正读盘时已经换成 B。
+   * 因此路径在启动协程前捕获，并在回调前用代际令牌校验「这次读取是否已过期」。
+   *
+   * <p>代际令牌由 [invalidateCacheReads] 递增；切标签时调用它即可让在途读取作废。
    */
-  inline fun getOrReadOpenedFilesCache(crossinline result: (OpenedFilesCache?) -> Unit) {
-    return openedFilesCache?.let(result)
-        ?: run {
-          viewModelScope
-              .launch(Dispatchers.IO) {
-                val cache =
-                    try {
-                      val cacheFile = getOpenedFilesCache(false)
-                      if (cacheFile.exists() && cacheFile.length() > 0L) {
-                        cacheFile.bufferedReader().use(OpenedFilesCache::parse)
-                      } else null
-                    } catch (err: IOException) {
-                      // ignore exception
-                      null
-                    } catch (err: IllegalStateException) {
-                      // 没有打开项目时 projectDir 会抛 IllegalStateException（"Path has not
-                      // been set."）。此时本就没有 openedFiles 缓存可读，按「无缓存」处理。
-                      // 不吞掉它会让 onStart 的协程崩掉整个进程（外层 try/catch 抓不到协程内
-                      // 的异常）——无项目状态下启动编辑器 Activity 就会闪退。
-                      null
-                    }
+  fun getOrReadOpenedFilesCache(
+      expectedDir: File?,
+      result: (OpenedFilesCache?) -> Unit,
+  ) {
+    openedFilesCache?.let {
+      result(it)
+      return
+    }
 
-                withContext(Dispatchers.Main) { result(cache) }
+    val dir = expectedDir ?: projectDir
+    if (dir == null) {
+      result(null)
+      return
+    }
+
+    val generation = cacheGeneration
+    viewModelScope
+        .launch(Dispatchers.IO) {
+          val cache =
+              try {
+                val cacheFile = openedFilesCacheFile(dir, false)
+                if (cacheFile.exists() && cacheFile.length() > 0L) {
+                  cacheFile.bufferedReader().use(OpenedFilesCache::parse)
+                } else null
+              } catch (err: IOException) {
+                // ignore exception
+                null
+              } catch (err: IllegalStateException) {
+                // 没有打开项目时 projectDir 会抛 IllegalStateException（"Path has not
+                // been set."）。此时本就没有 openedFiles 缓存可读，按「无缓存」处理。
+                null
               }
-              .also { job -> handleOpenedFilesCacheJobCompletion(job, "read") }
-          Unit
+
+          withContext(Dispatchers.Main) {
+            if (generation != cacheGeneration) {
+              // 期间又切过项目：这份缓存属于旧项目，恢复它会把旧项目的文件
+              // 打开进当前项目。
+              ILogger.ROOT.debug("[EditorViewModel] Discarding stale opened files cache read")
+              return@withContext
+            }
+            result(cache)
+          }
         }
+        .also { job -> handleOpenedFilesCacheJobCompletion(job, "read") }
+  }
+
+  /** 让所有在途的缓存读取作废（切项目标签时调用）。 */
+  fun invalidateCacheReads() {
+    cacheGeneration++
   }
 
   fun handleOpenedFilesCacheJobCompletion(it: Job, operation: String) {
@@ -334,10 +366,6 @@ class EditorViewModel : ViewModel() {
         }
         .also { job -> handleOpenedFilesCacheJobCompletion(job, "write") }
   }
-
-  @PublishedApi
-  internal fun getOpenedFilesCache(forWrite: Boolean = false): File =
-      openedFilesCacheFile(projectDir ?: IProjectManager.getInstance().projectDir, forWrite)
 
   /** 按显式项目目录解析缓存文件；[writeOpenedFiles] 用它把目录固定为写入时的项目。 */
   private fun openedFilesCacheFile(projectDir: File, forWrite: Boolean): File {

@@ -50,7 +50,8 @@ public class ApkLocatorTest {
   private File apk(File project, String module, String variant, String name, long modified)
       throws IOException {
     File dir = new File(project, module + "/build/outputs/apk/" + variant);
-    assertTrue("应能创建目录 " + dir, dir.mkdirs());
+    // 同一 variant 目录下可能放多个 APK（应用包 + 测试包），已存在时不算失败。
+    assertTrue("应能创建目录 " + dir, dir.isDirectory() || dir.mkdirs());
     File apk = new File(dir, name);
     Files.write(apk.toPath(), new byte[] {0x50, 0x4b, 0x03, 0x04});
     assertTrue(apk.setLastModified(modified));
@@ -102,12 +103,29 @@ public class ApkLocatorTest {
     File meta = new File(apk.getParentFile(), "output-metadata.json");
     Files.write(
         meta.toPath(),
-        ("{\"version\":3,\"elements\":[{\"outputFile\":\"app-debug.apk\","
-                + "\"applicationId\":\"com.example.demo\"}]}")
+        // 与 AGP 真实输出一致：applicationId 在顶层，elements 里没有它。
+        ("{\"version\":3,\"applicationId\":\"com.example.demo\","
+                + "\"elements\":[{\"type\":\"SINGLE\",\"outputFile\":\"app-debug.apk\"}]}")
             .getBytes(StandardCharsets.UTF_8));
 
     assertEquals(
         "com.example.demo",
+        GradleBuildTool.ApkLocator.findApplicationId(project.getAbsolutePath()));
+  }
+
+  @Test
+  public void readsElementLevelApplicationIdForLegacyMetadata() throws IOException {
+    File project = project("MetaLegacy");
+    File apk = apk(project, "app", "debug", "app-debug.apk", 3_000L);
+    File meta = new File(apk.getParentFile(), "output-metadata.json");
+    Files.write(
+        meta.toPath(),
+        ("{\"version\":3,\"elements\":[{\"outputFile\":\"app-debug.apk\","
+                + "\"applicationId\":\"com.example.legacy\"}]}")
+            .getBytes(StandardCharsets.UTF_8));
+
+    assertEquals(
+        "com.example.legacy",
         GradleBuildTool.ApkLocator.findApplicationId(project.getAbsolutePath()));
   }
 
@@ -121,9 +139,6 @@ public class ApkLocatorTest {
 
   @Test
   public void skipsIntermediateDirectories() throws IOException {
-    // intermediates/ 下也有 .apk（拆分产物、未对齐包），但输出目录才是最终产物。
-    // 当前实现按 mtime 取最新，若 intermediates 里的更新会选错——这里钉住现状：
-    // 只有 build/outputs/apk 会被扫描。
     File project = project("Skip");
     File intermediates = new File(project, "app/build/intermediates/apk/debug");
     assertTrue(intermediates.mkdirs());
@@ -132,6 +147,34 @@ public class ApkLocatorTest {
     assertTrue(stale.setLastModified(9_000L));
     File expected = apk(project, "app", "debug", "real.apk", 1_000L);
 
+    assertEquals(
+        expected.getAbsolutePath(), GradleBuildTool.ApkLocator.findApkPath(project.getAbsolutePath()));
+  }
+
+  @Test
+  public void skipsAndroidTestApkEvenWhenNewer() throws IOException {
+    // 跑过 connectedAndroidTest 后，测试包通常比应用包更新。
+    // 若不排除，安装/启动拿到的会是测试包。
+    File project = project("TestApk");
+    File expected = apk(project, "app", "debug", "app-debug.apk", 1_000L);
+    File androidTestDir =
+        new File(project, "app/build/outputs/apk/androidTest/debug");
+    assertTrue(androidTestDir.mkdirs());
+    File testApk = new File(androidTestDir, "app-debug-androidTest.apk");
+    Files.write(testApk.toPath(), new byte[] {0x50, 0x4b});
+    assertTrue(testApk.setLastModified(9_000L));
+
+    assertEquals(
+        expected.getAbsolutePath(), GradleBuildTool.ApkLocator.findApkPath(project.getAbsolutePath()));
+  }
+
+  @Test
+  public void skipsAndroidTestSuffixedApkInSameVariantDir() throws IOException {
+    File project = project("TestApkFlat");
+    File expected = apk(project, "app", "debug", "app-debug.apk", 1_000L);
+    File testApk = apk(project, "app", "debug", "app-debug-androidTest.apk", 9_000L);
+
+    assertTrue(testApk.isFile());
     assertEquals(
         expected.getAbsolutePath(), GradleBuildTool.ApkLocator.findApkPath(project.getAbsolutePath()));
   }

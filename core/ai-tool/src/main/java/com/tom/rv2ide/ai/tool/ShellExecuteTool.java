@@ -134,7 +134,11 @@ public final class ShellExecuteTool extends BaseTool {
       return null;
     }
 
-    ShellBackendRegistry.Resolution active = registry.resolveActive();
+    // 这里刻意不调 resolveActive()：那会做**真实**可用性探测（root 后端要 fork su，
+    // 首次还会弹 Magisk 授权框），而本方法只是生成提示词。用注册表指针 + 廉价判断
+    // 就足够标出「当前默认」。
+    String activeId = registry.activeId();
+    ShellBackend active = activeId == null ? null : registry.get(activeId);
     // 「当前默认」标记只在有得选时才有意义——单后端下它既无信息量，也没有配套的
     // 选择指引（见下），只会让输出显得自相矛盾。
     boolean hasChoice = available.size() > 1;
@@ -143,7 +147,7 @@ public final class ShellExecuteTool extends BaseTool {
     sb.append("后端决定这条命令能用到什么：");
     for (ShellBackend backend : available) {
       sb.append("\n- ").append(backend.id()).append(": ").append(backend.capabilitySummary());
-      if (hasChoice && active.isUsable() && active.getBackend() == backend) {
+      if (hasChoice && active != null && active == backend) {
         sb.append("（当前默认）");
       }
     }
@@ -362,8 +366,10 @@ public final class ShellExecuteTool extends BaseTool {
 
     // 列出**其它**可用后端的能力，让模型知道还有什么选择；没有别的可用后端时只说明现状。
     StringBuilder others = new StringBuilder();
+    // 用 isPresent() 而不是 isAvailable()：这里只是给模型列「还能试哪些」，
+    // 不该为它 fork su 触发一次 root 授权探测。
     for (ShellBackend candidate : registry.all()) {
-      if (candidate == backend || !candidate.isAvailable()) {
+      if (candidate == backend || !candidate.isPresent()) {
         continue;
       }
       others.append("\n- ").append(candidate.id()).append(": ").append(candidate.capabilitySummary());

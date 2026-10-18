@@ -192,10 +192,43 @@ class GradleBuildService :
 
   override fun initializeProject(
       params: InitializeProjectParams
-  ): CompletableFuture<InitializeResult> = requireConnection().initializeProject(params)
+  ): CompletableFuture<InitializeResult> {
+    val conn = requireConnection()
+    // initializeProject 会跑一次同步构建，同样需要 init script。
+    syncLoggerInitScript(conn)
+    return conn.initializeProject(params)
+  }
 
-  override fun executeTasks(vararg tasks: String): CompletableFuture<TaskExecutionResult> =
-      requireConnection().executeTasks(*tasks)
+  override fun executeTasks(vararg tasks: String): CompletableFuture<TaskExecutionResult> {
+    val conn = requireConnection()
+    // init script 路径原先只在 `getBuildArguments()` 里设置——而那个方法在 Service 上
+    // 永远不会被调用（RPC 打到连接自己的 client），于是编辑器内构建从未带上
+    // `--init-script`，logwire_read 静默失效。这里在每次构建前同步一次，
+    // 顺带覆盖「构建前才打开 logsender」的情况。
+    syncLoggerInitScript(conn)
+    return conn.executeTasks(*tasks)
+  }
+
+  /**
+   * 每次构建前同步 init script。
+   *
+   * <p>不缓存路径：init script 里嵌入了 logger-runtime.aar 的绝对路径，且
+   * `createLoggerInitScript()` 顺带负责在 AAR 缺失时重新解压；缓存路径会让
+   * 「AAR 被清理后脚本仍指向不存在的文件」静默失效。脚本本身只有几百字节，
+   * 重复写入的代价可以忽略。
+   */
+  private fun syncLoggerInitScript(conn: ToolingConnection) {
+    if (!DevOpsPreferences.logsenderEnabled) {
+      conn.setLoggerInitScriptPath(null)
+      return
+    }
+    try {
+      conn.setLoggerInitScriptPath(createLoggerInitScript().absolutePath)
+    } catch (e: Exception) {
+      log.warn("Failed to create logger init script", e)
+      conn.setLoggerInitScriptPath(null)
+    }
+  }
 
   override fun cancelCurrentBuild(): CompletableFuture<BuildCancellationRequestResult> =
       requireConnection().cancelCurrentBuild()
@@ -319,6 +352,9 @@ class GradleBuildService :
         )
     // 连接新建时补上此前登记的监听器（见 setEventListener）。
     fresh.setEventListener(pendingEventListener)
+    // 首次连接就要带上 init script：initializeProject 本身也会跑一次同步构建，
+    // 只靠 executeTasks 前同步会漏掉那一次。
+    syncLoggerInitScript(fresh)
     connection = fresh
     connectionProjectPath = projectDir
     // 登记进注册表：工具层按会话 cwd 查找连接时能命中编辑器项目。

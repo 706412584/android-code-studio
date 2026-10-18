@@ -82,7 +82,8 @@ final class PhoneShellRunner {
       log.debug("注册 Shizuku 后端失败", e);
     }
     try {
-      registry.register(new com.tom.rv2ide.ai.tool.RootShellBackend());
+      // 共享实例：探测缓存跨调用复用（见 RootShellBackend.shared 的说明）。
+      registry.register(com.tom.rv2ide.ai.tool.RootShellBackend.shared());
     } catch (Throwable e) {
       log.debug("注册 Root 后端失败", e);
     }
@@ -155,22 +156,25 @@ final class PhoneShellRunner {
     if (backend == null) {
       return Output.failed("none", adbRequiredNote(registry));
     }
+    // channel 必须是**实际**后端：这里早先硬编码 "shizuku"，root 后端被选中时
+    // 调用方会误以为走的是 Shizuku（诊断日志与失败提示都会误导）。
+    String channel = backend.id();
     try {
       ShellRequest.ShellResult result =
           backend.execute(
               new ShellRequest(command, "", timeoutMs, null), ShellRequest.ShellOutputSink.NOOP);
       if (result.isTimedOut()) {
         return new Output(
-            false, -1, true, result.getStdout(), result.getStderr(), "shizuku",
+            false, -1, true, result.getStdout(), result.getStderr(), channel,
             "命令超时: " + command);
       }
       int exitCode = result.getExitCode();
       boolean ok = exitCode == 0;
       return new Output(
-          ok, exitCode, false, result.getStdout(), result.getStderr(), "shizuku", "");
+          ok, exitCode, false, result.getStdout(), result.getStderr(), channel, "");
     } catch (RuntimeException e) {
-      log.warn("Shizuku 执行失败: {}", command, e);
-      return Output.failed("shizuku", "Shizuku 执行异常: " + e.getMessage());
+      log.warn("{} 执行失败: {}", channel, command, e);
+      return Output.failed(channel, backend.displayName() + " 执行异常: " + e.getMessage());
     }
   }
 
@@ -218,7 +222,9 @@ final class PhoneShellRunner {
       return Output.failed("none", reason);
     }
     ShellBackend backend = resolution.getBackend();
-    String channel = backend.hasAdbPrivileges() ? "shizuku" : "local";
+    // 用真实 id（termux/shizuku/root）而不是按权限猜：root 后端也有 adb 权限，
+    // 按 hasAdbPrivileges() 归类会把它标成 "shizuku"。
+    String channel = backend.id();
     try {
       ShellRequest.ShellResult result =
           backend.execute(
@@ -281,8 +287,14 @@ final class PhoneShellRunner {
     if (resolution.isUsable() && resolution.getBackend().hasAdbPrivileges()) {
       return resolution.getBackend();
     }
+    // 先用廉价判断筛掉「本机根本不存在」的后端，再对候选做真实探测：
+    // 否则每台设备都会先对 root 后端 fork 一次 su（首次弹 Magisk 授权框），
+    // 即使 Shizuku 已可用。
     for (ShellBackend backend : registry.all()) {
-      if (backend.hasAdbPrivileges() && backend.isAvailable()) {
+      if (!backend.hasAdbPrivileges() || !backend.isPresent()) {
+        continue;
+      }
+      if (backend.isAvailable()) {
         return backend;
       }
     }
@@ -294,9 +306,11 @@ final class PhoneShellRunner {
     StringBuilder sb = new StringBuilder("需要 adb 级权限（Shizuku 或 root）才能执行该设备命令。");
     String reason = "";
     if (registry != null) {
-      // 优先给出具备 adb 权限的后端自身的不可用原因（如「Shizuku 未授权」）
+      // 优先给出具备 adb 权限的后端自身的不可用原因（如「Shizuku 未授权」）。
+      // 只对「本机可能存在」的后端询问原因：unavailableReason() 会触发真实探测，
+      // 对没装 su 的设备没必要为此弹一次授权框。
       for (ShellBackend backend : registry.all()) {
-        if (backend.hasAdbPrivileges()) {
+        if (backend.hasAdbPrivileges() && backend.isPresent()) {
           reason = backend.unavailableReason();
           break;
         }

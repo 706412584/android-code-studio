@@ -465,7 +465,10 @@ fun initializeProject(buildVariants: Map<String, String>) {
         return@whenCompleteAsync
       }
 
-      onProjectInitialized(result)
+      // 把**发起请求时**的项目路径带给回调。多标签页下回调可能晚于一次标签切换：
+      // 此时 manager.activeSession() 已经是另一个项目，而 setupProject() 用的是
+      // activeSession —— 不校验就会把 A 项目的同步结果写进 B 项目的会话。
+      onProjectInitialized(result, projectDir.absolutePath)
     }
   }
 
@@ -556,18 +559,59 @@ fun initializeProject(buildVariants: Map<String, String>) {
     }
   }
 
-  protected open fun onProjectInitialized(result: InitializeResult) {
+  /**
+   * @param projectPath 发起本次同步请求时的项目路径。
+   *
+   * <p>多标签页下 `setupProject()` 与 `cachedInitResult` 都作用于**当前活跃会话**，
+   * 而回调可能在用户切走之后才到。归属校验不通过时必须放弃这次结果：否则
+   * A 项目的 workspace 会被装进 B 项目的会话，A 本身则永远停在「未同步」。
+   * 放弃是安全的——用户切回 A 时 `applyProjectSwitch` 会看到
+   * `projectInitialized == false` 并重新发起同步。
+   */
+  protected open fun onProjectInitialized(result: InitializeResult, projectPath: String) {
     val manager = ProjectManagerImpl.getInstance()
+
+    val activePath =
+        try {
+          manager.activeSession()?.projectDir?.absolutePath
+        } catch (e: Exception) {
+          null
+        }
+    if (activePath == null || activePath != projectPath) {
+      log.warn(
+          "[ProjectTab] 放弃过期的同步结果：请求={} 当前活跃={}。切回该项目时会重新同步。",
+          projectPath,
+          activePath)
+      return
+    }
+
     if (isFromSavedInstance && manager.projectInitialized && result == manager.cachedInitResult) {
       log.debug("Not setting up project as this a configuration change")
       return
     }
 
-    manager.cachedInitResult = result
+    // 把结果与归属固定到**发起请求的会话**，而不是「当前活跃会话」：
+    // 校验通过后用户仍可能在 setup 期间切走，此时 activeSession 会变。
+    val targetSession =
+        manager.sessionRegistry.find(java.io.File(projectPath))
+            ?: run {
+              log.warn("[ProjectTab] 项目会话已关闭，放弃同步结果：{}", projectPath)
+              return
+            }
+    val projectProxy =
+        com.tom.rv2ide.lookup.Lookup.getDefault()
+            .lookup(com.tom.rv2ide.projects.builder.BuildService.KEY_PROJECT_PROXY)
+    if (projectProxy == null) {
+      log.error("[ProjectTab] 项目代理缺失，无法 setup：{}", projectPath)
+      com.tom.rv2ide.tasks.runOnUiThread { postProjectInit(false, null) }
+      return
+    }
+
+    targetSession.cachedInitResult = result
     editorActivityScope.launch(Dispatchers.IO) {
       try {
-        manager.setupProject()
-        val workspace = manager.getWorkspace()
+        manager.setupProject(targetSession, projectProxy)
+        val workspace = targetSession.workspace
 
         if (workspace == null) {
           com.tom.rv2ide.tasks.runOnUiThread {
@@ -580,7 +624,7 @@ fun initializeProject(buildVariants: Map<String, String>) {
           return@launch
         }
 
-        manager.notifyProjectUpdate()
+        manager.notifyProjectUpdate(targetSession)
         updateBuildVariants(workspace.getAndroidVariantSelections())
 
         // 先收尾（清 isInitializing、更新状态），再把 workspace 推给语言服务器。
@@ -592,11 +636,35 @@ fun initializeProject(buildVariants: Map<String, String>) {
         //
         // 语言服务器晚一点跟上没有副作用（补全/诊断短暂缺失），但 UI 卡在
         // 「初始化中」会让用户以为项目打不开。
-        com.tom.rv2ide.tasks.runOnUiThread { postProjectInit(true, null) }
-        routeLanguageServers(workspace)
+
+        // 同步确实成功了：标记写在**目标会话**上，与是否在前台无关。
+        // 不标记会让用户切回该项目时白跑一次完整的 Gradle 同步。
+        targetSession.projectInitialized = true
+
+        // setup 期间用户可能又切走了：此时不能再把 UI 状态写给当前活跃项目，
+        // 也不能把 LSP 路由到这个已经不在前台的 workspace。
+        val stillActive = manager.activeSession() === targetSession
+        com.tom.rv2ide.tasks.runOnUiThread {
+          if (stillActive) {
+            postProjectInit(true, null)
+          }
+          // 不在前台时**不动** isInitializing：那个标志属于当前显示的项目，
+          // 此刻它可能正为自己的同步在转进度条。
+        }
+        if (stillActive) {
+          routeLanguageServers(workspace)
+        } else {
+          log.info("[ProjectTab] 同步完成但项目已不在前台，跳过 LSP 路由：{}", projectPath)
+        }
       } catch (e: Exception) {
         log.error("Project setup failed", e)
+        // 失败状态也属于目标会话：用户已切走时不能把它写到别的项目上。
+        val stillActive = manager.activeSession() === targetSession
         com.tom.rv2ide.tasks.runOnUiThread {
+          if (!stillActive) {
+            log.warn("[ProjectTab] 同步失败但项目已不在前台，跳过错误弹窗：{}", projectPath)
+            return@runOnUiThread
+          }
           val errorMessage =
               when {
                 e.message?.contains("workspace", ignoreCase = true) == true ->

@@ -1775,7 +1775,8 @@ public final class AgentOrchestrator {
     ShellBackendRegistry registry = new ShellBackendRegistry();
     registry.register(new TermuxShellBackend(appContext));
     registry.register(new ShizukuShellBackend(appContext));
-    registry.register(new com.tom.rv2ide.ai.tool.RootShellBackend());
+    // 共享实例：探测缓存跨运行复用（见 RootShellBackend.shared 的说明）。
+    registry.register(com.tom.rv2ide.ai.tool.RootShellBackend.shared());
     registry.setActiveId(settings.getShellBackendId());
     return registry;
   }

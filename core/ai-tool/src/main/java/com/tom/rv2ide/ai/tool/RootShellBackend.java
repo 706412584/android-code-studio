@@ -61,11 +61,25 @@ public final class RootShellBackend implements ShellBackend {
   /** 探测 su 的超时：Magisk 授权弹窗由用户操作，给足时间但仍要有上限。 */
   static final long DEFAULT_PROBE_TIMEOUT_MS = 10_000L;
 
+  /**
+   * 整轮探测的总预算。
+   *
+   * <p>单候选超时 10s、候选最多 6 个，无总预算时最坏 60s——足以把一次工具调用
+   * 拖到用户以为卡死。总预算到期后直接放弃剩余候选并给出失败原因。
+   */
+  static final long DEFAULT_PROBE_BUDGET_MS = 15_000L;
+
   /** 探测成功后的缓存时长：root 状态极少变化。 */
   static final long DEFAULT_SUCCESS_TTL_MS = 60_000L;
 
-  /** 探测失败后的缓存时长：用户可能刚在 Magisk 里点了允许，别缓存太久。 */
-  static final long DEFAULT_FAILURE_TTL_MS = 10_000L;
+  /**
+   * 探测失败后的缓存时长。
+   *
+   * <p>用户可能刚在 Magisk 里点了允许，因此不宜过长；但也不能太短：一次失败探测
+   * 本身就要尝试多个候选（每个最多 10s），10s 的缓存等于「每次调用都重新探测」，
+   * 会让授权被拒的设备反复弹框。30s 是两者的折中。
+   */
+  static final long DEFAULT_FAILURE_TTL_MS = 30_000L;
 
   /** 常见 su 落点。Magisk 新版用 /debug_ramdisk，旧版在 /sbin。 */
   private static final List<String> DEFAULT_SU_CANDIDATES =
@@ -128,6 +142,26 @@ public final class RootShellBackend implements ShellBackend {
         DEFAULT_PROBE_TIMEOUT_MS,
         DEFAULT_SUCCESS_TTL_MS,
         DEFAULT_FAILURE_TTL_MS);
+  }
+
+  /**
+   * 进程级共享实例。
+   *
+   * <p><b>为什么需要它</b>：探测缓存是实例级的，而 app 层有三处各自构造注册表
+   * （`AgentOrchestrator.buildShellBackends()`、`BackgroundShellRunner.newRegistry()`、
+   * `PhoneShellRunner.defaultRegistry()`）。各建一个的话，root 用户每启动一个后台任务
+   * 都会在新实例上重新 fork 一次 su——已确认的授权状态完全不复用。
+   *
+   * <p><b>为什么可以共享</b>：本类除探测缓存外没有可变状态；{@link #execute} 只用
+   * 局部变量，探测本身在 `synchronized` 内。设置页的「测试 root」刻意 `new` 一个
+   * 新实例——那里要绕过缓存做一次真实探测。
+   */
+  public static RootShellBackend shared() {
+    return SharedHolder.INSTANCE;
+  }
+
+  private static final class SharedHolder {
+    static final RootShellBackend INSTANCE = new RootShellBackend();
   }
 
   /** 测试入口：替换候选路径、进程创建与缓存时长。 */
@@ -196,6 +230,40 @@ public final class RootShellBackend implements ShellBackend {
     }
   }
 
+  /**
+   * 廉价判断：只检查候选 su 路径是否存在，不 fork 进程、不弹授权框。
+   *
+   * <p>代价是「文件存在但未授权」会被判为存在——对「枚举可选项」的场景这是
+   * 可接受的（真正执行时会走 {@link #isAvailable()} 给出准确结论）。
+   */
+  @Override
+  public boolean isPresent() {
+    if (probeResult) {
+      // 已确认可用，直接复用，不必再扫文件。
+      return true;
+    }
+    for (String candidate : suCandidates) {
+      File asFile = new File(candidate);
+      if (!asFile.isAbsolute()) {
+        // 裸名（"su"）靠 PATH 解析。这里只扫 PATH 目录、不 fork：
+        // 找不到就说明这台设备大概率没 root，不必再去弹授权框。
+        String path = System.getenv("PATH");
+        if (path != null) {
+          for (String dir : path.split(File.pathSeparator)) {
+            if (!dir.isEmpty() && new File(dir, candidate).exists()) {
+              return true;
+            }
+          }
+        }
+        continue;
+      }
+      if (asFile.exists()) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   @Override
   public String unavailableReason() {
     if (isAvailable()) {
@@ -204,10 +272,18 @@ public final class RootShellBackend implements ShellBackend {
     return probeReason;
   }
 
-  /** 丢弃缓存，下一次 {@link #isAvailable()} 重新探测（用户刚授权后调用）。 */
-  public void invalidateCache() {
+  /**
+   * 丢弃缓存，下一次 {@link #isAvailable()} 重新探测（用户刚授权后调用）。
+   *
+   * <p>与 {@link #probe()} 同锁：否则可能与进行中的探测交错，出现
+   * 「probeResult=true 但 resolvedSu 被置空」——随后 {@link #execute} 会把 null
+   * 当成 su 路径，ProcessBuilder 抛 NPE 而不是 IOException。
+   */
+  public synchronized void invalidateCache() {
     probeAtMs = 0L;
+    probeResult = false;
     resolvedSu = null;
+    probeReason = "尚未探测";
   }
 
   /** 当前探测到的 su 路径；未探测或不可用时返回空串。 */
@@ -222,24 +298,45 @@ public final class RootShellBackend implements ShellBackend {
    * 「文件存在」与「能用」不一致（实测 app 域访问 /sbin/su 会被拒绝）。
    */
   private void probe() {
-    probeAtMs = System.currentTimeMillis();
-    probeResult = false;
+    // 刻意**不**在开头置 probeResult=false：探测期间（可能长达 15s，含授权弹窗）
+    // 并发调用走快路径时应沿用上一次的结论，而不是把可用的 root 短暂报成不可用。
+    // 结论只在探测真正结束时写入（成功/失败两个分支各写一次）。
+    long deadline = System.currentTimeMillis() + DEFAULT_PROBE_BUDGET_MS;
     StringBuilder failures = new StringBuilder();
     for (String candidate : suCandidates) {
+      long remaining = deadline - System.currentTimeMillis();
+      if (remaining <= 0) {
+        appendFailure(failures, "探测总预算已用尽，剩余候选未尝试");
+        break;
+      }
       Process process = null;
       try {
         process = starter.start(argv(candidate, "id -u"), "", null);
-        if (!process.waitFor(probeTimeoutMs, TimeUnit.MILLISECONDS)) {
+        // 并发读走两个流：串行「先读 stdout 再读 stderr」在子进程写满管道缓冲时
+        // 会互相等待（探测输出很小，但 su 可能派生仍持有写端的子进程）。
+        StreamDrain outDrain = new StreamDrain(process.getInputStream());
+        StreamDrain errDrain = new StreamDrain(process.getErrorStream());
+        outDrain.start();
+        errDrain.start();
+
+        long waitMs = Math.min(probeTimeoutMs, remaining);
+        if (!process.waitFor(waitMs, TimeUnit.MILLISECONDS)) {
           destroyQuietly(process);
           appendFailure(failures, candidate + " 探测超时（可能在等待授权）");
           continue;
         }
-        String output = readAll(process.getInputStream());
-        String err = readAll(process.getErrorStream());
+        // 进程已退出，流很快 EOF；给 drain 一点时间收尾，但不无限等。
+        outDrain.await(1_000L);
+        errDrain.await(1_000L);
+        String output = outDrain.text();
+        String err = errDrain.text();
         if (process.exitValue() == 0 && parseUid(output) == 0) {
           resolvedSu = candidate;
           probeResult = true;
           probeReason = "";
+          // 时间戳在**探测结束时**写：单候选超时 10s、候选最多 6 个，若在开始时写，
+          // 一次慢失败刚结束缓存就已经过期，下一次调用会立刻再 fork 一轮 su。
+          probeAtMs = System.currentTimeMillis();
           return;
         }
         String detail = err.trim();
@@ -263,6 +360,8 @@ public final class RootShellBackend implements ShellBackend {
       }
     }
     resolvedSu = null;
+    probeResult = false;
+    probeAtMs = System.currentTimeMillis();
     String detail = failures.length() == 0 ? "未找到可用的 su" : failures.toString();
     probeReason =
         "未获得 root 权限（"
@@ -284,15 +383,31 @@ public final class RootShellBackend implements ShellBackend {
     if (request == null || request.getCommand().trim().isEmpty()) {
       return ShellRequest.ShellResult.error("命令为空");
     }
+    // 探测可能耗时（首次会弹 Magisk 授权框）。它不属于「命令执行」，但会实实在在地
+    // 拖长一次工具调用，因此从总预算里扣：命令本身的等待时间 = timeout - 探测耗时。
+    long startedAt = System.currentTimeMillis();
     if (!isAvailable()) {
       return ShellRequest.ShellResult.error(unavailableReason());
+    }
+    long probeCost = System.currentTimeMillis() - startedAt;
+    long commandTimeout = request.getTimeoutMs() - probeCost;
+    if (commandTimeout <= 0) {
+      return ShellRequest.ShellResult.error(
+          "root 权限探测耗时 " + probeCost + "ms，已用完本次超时预算，命令未执行");
+    }
+    // isAvailable() 为 true 时 resolvedSu 必然非空（probe 只在成功分支设置它）。
+    // 这里仍做一次显式检查：接口约定 execute 不抛异常，而 null 传进 ProcessBuilder
+    // 抛的是 NPE（不在下面的 catch 里）。
+    String su = resolvedSu;
+    if (su == null || su.isEmpty()) {
+      return ShellRequest.ShellResult.error("root 后端状态异常（未解析到 su 路径），请重试");
     }
 
     Process process = null;
     try {
       process =
           starter.start(
-              argv(resolvedSu, request.getCommand()),
+              argv(su, request.getCommand()),
               request.getCwd(),
               request.getStdin());
 
@@ -306,7 +421,7 @@ public final class RootShellBackend implements ShellBackend {
 
       boolean timedOut = false;
       boolean exited = false;
-      long deadline = System.currentTimeMillis() + request.getTimeoutMs();
+      long deadline = System.currentTimeMillis() + commandTimeout;
       while (true) {
         long remaining = deadline - System.currentTimeMillis();
         if (remaining <= 0) {
@@ -378,28 +493,6 @@ public final class RootShellBackend implements ShellBackend {
     return -1;
   }
 
-  private static String readAll(InputStream in) {
-    if (in == null) {
-      return "";
-    }
-    try (InputStream stream = in) {
-      ByteArrayOutputStream out = new ByteArrayOutputStream();
-      byte[] buffer = new byte[4096];
-      int read;
-      int total = 0;
-      while ((read = stream.read(buffer)) > 0) {
-        out.write(buffer, 0, read);
-        total += read;
-        if (total >= MAX_OUTPUT_BYTES) {
-          break;
-        }
-      }
-      return new String(out.toByteArray(), StandardCharsets.UTF_8);
-    } catch (IOException e) {
-      return "";
-    }
-  }
-
   private static void destroyQuietly(Process process) {
     if (process == null) {
       return;
@@ -410,17 +503,6 @@ public final class RootShellBackend implements ShellBackend {
       process.destroyForcibly();
     } catch (Throwable ignored) {
       // 已退出
-    }
-  }
-
-  private static void closeQuietly(InputStream stream) {
-    if (stream == null) {
-      return;
-    }
-    try {
-      stream.close();
-    } catch (Throwable ignored) {
-      // 已关闭
     }
   }
 

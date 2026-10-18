@@ -85,6 +85,19 @@ public final class LogcatReadTool extends BaseTool {
   /** 模式：结构化崩溃判定。 */
   private static final String MODE_CRASH = "crash";
 
+  /**
+   * 允许的日志级别。
+   *
+   * <p>必须在这里校验，不能只靠 JSON schema 的 {@code enum}：schema 只是给模型的
+   * 提示，不是服务端校验。{@code level} 会被拼进 shell 命令（{@code *:<level>}），
+   * 而本工具属 READ 类别、默认不需要确认——未校验即构成无需确认的命令注入，
+   * 用户把后端设为 root 时更是一条 root 命令执行路径。
+   */
+  private static final java.util.Set<String> VALID_LEVELS =
+      java.util.Collections.unmodifiableSet(
+          new java.util.HashSet<>(
+              java.util.Arrays.asList("V", "D", "I", "W", "E", "F", "S")));
+
   private final Context appContext;
   private final ShellBackendRegistry shellBackends;
 
@@ -213,8 +226,10 @@ public final class LogcatReadTool extends BaseTool {
     }
     lines = Math.min(lines, MAX_LINES);
 
+    // level 会被直接拼进 shell 命令（`*:<level>`），且本工具不需要确认。
+    // 白名单校验见 VALID_LEVELS 的注释。
     String level = input.optString("level", "V").trim().toUpperCase();
-    if (level.isEmpty()) {
+    if (!VALID_LEVELS.contains(level)) {
       level = "V";
     }
     String filter = input.optString("filter", "").trim();

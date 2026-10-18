@@ -46,6 +46,20 @@ public interface ShellBackend {
   boolean isAvailable();
 
   /**
+   * 后端在本设备上「可能存在」的廉价判断，不触发任何授权或耗时探测。
+   *
+   * <p>用于只需要**枚举可选后端**的场景（例如给模型生成提示词、判断是否有后端可用）。
+   * 这类场景不该为「是否真的授权了」付出代价：{@link #isAvailable()} 对 root 后端要
+   * fork 一次 {@code su}，首次还会弹 Magisk 授权框，而用户可能根本没打算用 root。
+   *
+   * <p>默认等同于 {@link #isAvailable()}——对无副作用的实现（Termux/Shizuku）两者一致。
+   * 有探测成本的后端应覆写为「只查文件是否存在」之类的快速判断。
+   */
+  default boolean isPresent() {
+    return isAvailable();
+  }
+
+  /**
    * 不可用的原因，面向模型与用户的可读说明。
    *
    * <p>可用时返回空串。这个文本会被放进工具结果，因此要具体

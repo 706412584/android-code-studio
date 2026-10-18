@@ -1506,6 +1506,23 @@ override fun onApplySystemBarInsets(insets: Insets) {
   }
 
   /**
+   * 编辑器当前显示的是否就是这个项目。
+   *
+   * <p>路径比较必须归一化：标签 id 来自会话注册表（canonical path），而
+   * `editorViewModel.projectDir` 可能来自 `projectDirOrNull` 或用户选择的原始路径，
+   * 两者在含符号链接/尾分隔符时会不同——直接字符串比较会误判成「没在这个项目上」，
+   * 触发一次不必要的关文件/重开。
+   */
+  private fun isDisplayingProject(path: String): Boolean {
+    val displayed = editorViewModel.projectDir ?: return false
+    if (displayed.absolutePath == path) {
+      return true
+    }
+    return runCatching { displayed.canonicalPath == java.io.File(path).canonicalPath }
+        .getOrDefault(false)
+  }
+
+  /**
    * 切换项目标签后的重建入口。
    *
    * <p>S2 阶段允许重建视图（undo 栈与滚动位置会丢），因此这里走的是与「冷启动打开项目」
@@ -1514,7 +1531,7 @@ override fun onApplySystemBarInsets(insets: Insets) {
    */
   private fun switchProjectTab(targetPath: String, saveCurrent: Boolean = true) {
     val manager = ProjectManagerImpl.getInstance()
-    if (editorViewModel.projectDir?.absolutePath == targetPath) {
+    if (isDisplayingProject(targetPath)) {
       // 编辑器已经在这个项目上——但不能直接 return。
       //
       // `showOpenProjectPicker` 新建标签时先 `openSession(path)`，那一步会把注册表的
@@ -1708,9 +1725,10 @@ override fun onApplySystemBarInsets(insets: Insets) {
               // true，判断会让这次点击什么都不做——用户必须点第二次（第二次它已
               // checked，反而跳过）。实测就是「要双击才切换」。
               //
-              // 判据改成「点的是不是当前活跃标签」：相同则无事可做（ChipGroup 的
-              // singleSelection 保证它仍保持选中），不同则切换。
-              if (!isSwitchingProjectTab && tab.id != editorTabsViewModel.activeId.value) {
+              // 判据用「编辑器**实际显示**的项目」而不是注册表指针：
+              // 两者在异常路径上可能脱节（`applyProjectSwitch` 先改指针、后改编辑器，
+              // 中间抛异常时指针领先）。按指针判断会让用户点高亮标签毫无反应。
+              if (!isSwitchingProjectTab && !isDisplayingProject(tab.id)) {
                 switchProjectTab(tab.id)
               }
             }

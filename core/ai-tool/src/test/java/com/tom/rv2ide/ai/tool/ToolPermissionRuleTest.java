@@ -93,6 +93,26 @@ final class ToolPermissionRuleTest {
   }
 
   @Test
+  void shellRuleIncludesBackend() {
+    // 回归：规则键曾只含命令文本。用户在 Termux（app uid）下对某条命令点过
+    // 「始终允许」后，模型改填 backend="root" 会命中同一条规则并以 uid 0 执行——
+    // 这是一条无需再确认的提权路径。
+    String viaTermux =
+        ToolPermissionRule.keyFor("shell_execute", "{\"command\":\"id -u\",\"backend\":\"termux\"}");
+    String viaRoot =
+        ToolPermissionRule.keyFor("shell_execute", "{\"command\":\"id -u\",\"backend\":\"root\"}");
+    String viaDefault = ToolPermissionRule.keyFor("shell_execute", shell("id -u"));
+
+    assertNotEquals(viaTermux, viaRoot, "同一命令在不同后端下必须不是同一条规则");
+    assertNotEquals(viaDefault, viaRoot, "默认后端与显式 root 不能共用规则");
+    // 后端 id 大小写/空白不影响键
+    assertEquals(
+        viaRoot,
+        ToolPermissionRule.keyFor(
+            "shell_execute", "{\"command\":\"id -u\",\"backend\":\"  ROOT \"}"));
+  }
+
+  @Test
   void fileWriteRuleIsScopedToPath() {
     String a = ToolPermissionRule.keyFor("file_write", "{\"file_path\":\"/sdcard/proj/A.kt\"}");
     String b = ToolPermissionRule.keyFor("file_write", "{\"file_path\":\"/sdcard/proj/B.kt\"}");

@@ -192,6 +192,8 @@ open class EditorHandlerActivity : ProjectHandlerActivity(), IEditorHandler {
   internal fun onProjectSwitched() {
     isOpenedFilesSaved.set(false)
     editorViewModel.openedFilesCache = null
+    // 让上一个项目可能还在途中的缓存读取作废，否则它会把旧项目的文件恢复进来。
+    editorViewModel.invalidateCacheReads()
   }
 
   /**
@@ -202,7 +204,10 @@ open class EditorHandlerActivity : ProjectHandlerActivity(), IEditorHandler {
    */
   internal fun restoreOpenedFilesForCurrentProject() {
     try {
-      editorViewModel.getOrReadOpenedFilesCache(this::onReadOpenedFilesCache)
+      // 显式传当前项目目录：读取是异步的，不能在协程里才去问全局 projectDir。
+      editorViewModel.getOrReadOpenedFilesCache(editorViewModel.projectDir) {
+        onReadOpenedFilesCache(it)
+      }
       editorViewModel.openedFilesCache = null
     } catch (err: Throwable) {
       log.error("Failed to reopen recently opened files", err)
@@ -230,7 +235,9 @@ open class EditorHandlerActivity : ProjectHandlerActivity(), IEditorHandler {
     super.onStart()
 
     try {
-      editorViewModel.getOrReadOpenedFilesCache(this::onReadOpenedFilesCache)
+      editorViewModel.getOrReadOpenedFilesCache(editorViewModel.projectDir) {
+        onReadOpenedFilesCache(it)
+      }
       editorViewModel.openedFilesCache = null
     } catch (err: Throwable) {
       log.error("Failed to reopen recently opened files", err)

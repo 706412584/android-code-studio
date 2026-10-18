@@ -88,8 +88,18 @@ public final class ToolPermissionRule {
   /** git_write 的参数键：远端名（fetch / push / pull / remote_*）。 */
   public static final String ARG_REMOTE = "remote";
 
+  /** shell_execute 的参数键：本次调用临时指定的后端 id（可省略）。 */
+  public static final String ARG_BACKEND = "backend";
+
   /** 键与值之间的分隔符。见类注释说明为何选 NUL。 */
   private static final char SEPARATOR = '\u0000';
+
+  /**
+   * shell scope 里「命令」与「后端」之间的分隔符。
+   *
+   * <p>用控制字符而非普通字符：命令里可能出现任意可打印字符，控制字符不会。
+   */
+  private static final char BACKEND_SEPARATOR = '\u0002';
 
   /** 多路径 scope 内部的连接符。路径不可能含控制字符，故无歧义。 */
   private static final char PATH_JOINER = '\u0001';
@@ -187,7 +197,15 @@ public final class ToolPermissionRule {
       return digest(arguments);
     }
     if (ToolNames.SHELL_EXECUTE.equals(toolName)) {
-      return normalizeCommand(json.optString(ARG_COMMAND, ""));
+      // 后端必须进键：同一条命令在 Termux（app uid）与 root（uid 0）下破坏力天差地别。
+      // 不含后端的键会让「用户在 Termux 下始终允许过的命令」在模型改填
+      // backend="root" 时静默放行——一条从无特权到 uid 0 的提权路径。
+      // 空 backend（用用户设置的后端）与显式填写当前后端是两个不同的键，
+      // 这只会让用户多确认一次，方向是安全的。
+      String command = normalizeCommand(json.optString(ARG_COMMAND, ""));
+      String backend =
+          json.optString(ARG_BACKEND, "").trim().toLowerCase(java.util.Locale.ROOT);
+      return backend.isEmpty() ? command : command + BACKEND_SEPARATOR + backend;
     }
     if (ToolNames.GIT_WRITE.equals(toolName)) {
       return gitWriteScope(json, arguments);

@@ -102,11 +102,18 @@ public final class ShellBackendRegistry {
     }
   }
 
-  /** 仅当前可用的后端。 */
+  /**
+   * 仅当前可用的后端。
+   *
+   * <p>判据是 {@link ShellBackend#isPresent()} 而不是 {@link ShellBackend#isAvailable()}：
+   * 本方法主要被「枚举可选项」的场景调用（生成工具提示词、判断是否有后端可用），
+   * 不该在那里触发 root 的 {@code su} 探测（首次会弹 Magisk 授权框）。
+   * 真正要执行命令时走 {@link #resolve(String)}，那里才做真实可用性探测。
+   */
   public List<ShellBackend> available() {
     List<ShellBackend> result = new ArrayList<>();
     for (ShellBackend backend : all()) {
-      if (backend.isAvailable()) {
+      if (backend.isPresent()) {
         result.add(backend);
       }
     }
