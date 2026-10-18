@@ -66,23 +66,51 @@ private var shouldPrintVersionCode = true
 val Project.projectVersionCode: Int
   get() {
 
-    // I don't like this being hardcoded here, so change it if you want.
+    // 解析顺序：环境变量 → 仓库根 updater.json → 硬编码兜底。
     //
-    // 必须与仓库根目录 updater.json 里的 versionCode 保持同步：应用启动时拿本地
-    // versionCode 与清单比对来决定是否提示更新。若这里落后于清单，每次启动都会弹
-    // 「可用更新」——即使装的已经是最新代码，用户也只能反复点「稍后」。
-    val baseVersionCode = System.getenv("PROJECT_CONFIG_KT_BASE_VERSION_CODE")?.toIntOrNull() ?: 1027
-    // Default value (1020) is used if not specified. The middle digit (e.g., 10<2>0) represents the revision version, such as 1.0.0+gh.r0<2>.
-    
+    // 必须与 updater.json 里的 versionCode 保持同步：应用启动时拿本地 versionCode
+    // 与清单比对来决定是否提示更新。若这里落后于清单，每次启动都会弹「可用更新」——
+    // 即使装的已经是最新代码。反过来，本地包若低于设备上已装的版本，覆盖安装虽然
+    // 能成功（-d 允许降级），但应用内更新会误判「已是最新」。
+    //
+    // 此前只有环境变量 + 硬编码 1027：CI/发布脚本会注入，本地 `assembleDebug` 却
+    // 固定拿到 1027——而清单已到 1034，本地包的版本号因此落后于线上。
+    val fromEnv = System.getenv("PROJECT_CONFIG_KT_BASE_VERSION_CODE")?.toIntOrNull()
+    val baseVersionCode = fromEnv ?: readUpdaterJsonVersionCode() ?: 1027
+    // 兜底值的历史含义：中间位代表修订号，如 1.0.0+gh.r0<2>。
+
     val versionCode = baseVersionCode
-    
+
     if (shouldPrintVersionCode) {
-      logger.warn("Version code is '$versionCode'")
+      logger.warn(
+        "Version code is '$versionCode' (source: ${if (fromEnv != null) "env" else "updater.json"})")
       shouldPrintVersionCode = false
     }
-    
+
     return versionCode
   }
+
+/**
+ * 从仓库根的 `updater.json` 读 `baseVersionCode`。
+ *
+ * <p>不引 JSON 库：build-logic 是独立编译的 Kotlin 模块，加依赖会拖慢配置阶段；
+ * 而这里只需要一个整数。正则容忍空白与字段顺序。
+ *
+ * @return 解析失败/文件不存在时返回 null，由调用方回落到硬编码兜底
+ */
+private fun Project.readUpdaterJsonVersionCode(): Int? {
+  return try {
+    val file = rootDir.resolve("updater.json")
+    if (!file.isFile) {
+      return null
+    }
+    val text = file.readText()
+    Regex("\"baseVersionCode\"\\s*:\\s*(\\d+)").find(text)?.groupValues?.get(1)?.toIntOrNull()
+  } catch (e: Exception) {
+    // 构建配置阶段不该因为一个可选元数据文件失败。
+    null
+  }
+}
 /**
  * The version name which is used to download the artifacts at runtime.
  *

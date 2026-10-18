@@ -190,8 +190,9 @@ jobs:
           SIGNING_KEY_PASSWORD: ${{ secrets.SIGNING_KEY_PASSWORD }}
           SIGNING_KEY_ALIAS: androidcs
           # 发布时注入版本号（settings.gradle.kts 读 MAIN_VERSION/REVISION_NUM；
-          # ProjectConfig.kt 读 PROJECT_CONFIG_KT_BASE_VERSION_CODE）。构建模式下为空，
-          # 走默认 1.0.0+gh.r06 / 1027，与从前一致。
+          # ProjectConfig.kt 读 PROJECT_CONFIG_KT_BASE_VERSION_CODE）。构建模式下为空时，
+          # ProjectConfig 回落读仓库根 updater.json 的 baseVersionCode（再不行才用 1027），
+          # 因此普通构建不会落后于线上版本号。
           MAIN_VERSION: "1.0.0"
           REVISION_NUM: ${{ env.REVISION_NUM }}
           PROJECT_CONFIG_KT_BASE_VERSION_CODE: ${{ env.VERSION_CODE }}

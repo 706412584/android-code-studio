@@ -69,9 +69,26 @@ dependencyResolutionManagement {
 }
 
 gradle.rootProject {
+    // 版本名与 versionCode 必须来自同一份真源，否则本地包会出现
+    // 「versionName 1.0.0+gh.r06 / versionCode 1034」这类错位——
+    // 应用内更新按 versionCode 比较，用户看到的版本名却对不上。
+    //
+    // 顺序：环境变量（CI / 发布脚本注入）→ 仓库根 updater.json → 硬编码兜底。
+    val updaterJson = rootDir.resolve("updater.json")
+    fun readUpdaterField(field: String): String? {
+        return try {
+            if (!updaterJson.isFile) null
+            else Regex("\"$field\"\\s*:\\s*\"([^\"]+)\"").find(updaterJson.readText())?.groupValues?.get(1)
+        } catch (e: Exception) {
+            null
+        }
+    }
+
     val appMainVersion = System.getenv("MAIN_VERSION") ?: "1.0.0"
-    val revision = "r${System.getenv("REVISION_NUM") ?: "06"}"
-    val baseVersion = "$appMainVersion+gh.$revision"
+    val revision = System.getenv("REVISION_NUM")
+        ?: readUpdaterField("baseVersionName")?.substringAfterLast("r", "06")
+        ?: "06"
+    val baseVersion = "$appMainVersion+gh.r$revision"
     println("Android code studio version: $baseVersion")
     project.setProperty("version", baseVersion)
 }
