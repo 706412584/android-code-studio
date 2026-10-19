@@ -382,9 +382,66 @@ abstract class AbstractHttpModelProtocol implements ModelProtocol {
         // 实测单行 MB 级文本的 sora 文本测量耗时 1.4 秒（主线程完全卡死），而重试路径
         // 每次失败都写一条：连续重试 = 主线程被反复冻结（「错误重试卡死应用」的根因）。
         // 诊断价值集中在 URL/状态码/响应上，请求体保留头部即可。
-        builder.append("Request body (truncated):\n").append(truncateForLog(body == null ? "" : body.toString())).append("\n\n");
+        //
+        // **不能先 toString() 再截断**：body 里含全部历史与图片 base64，toString()
+        // 会先物化几十 MB 的字符串——真机实测 22MB 的单次分配正是失败在这条路径上
+        // （OutOfMemoryError: Failed to allocate a 22055512 byte allocation）。
+        // 改为逐键取头部：分配量被硬性限制在 MAX_LOGGED_BODY_CHARS 量级。
+        builder.append("Request body (truncated):\n").append(bodyHead(body)).append("\n\n");
         builder.append("Response:\n").append(truncateForLog(response == null ? "" : response));
         ErrorLog.record(type, throwable == null ? type : throwable.getMessage(), throwable, builder.toString());
+    }
+
+    /**
+     * 只取请求体的前若干字符，**不序列化整个 body**。
+     *
+     * <p>多模态请求的 body 可达几十 MB（图片 base64 是单行），而日志只需要头部
+     * 判断「模型名、消息条数、是否带图」。这里逐键拼接并在超限时停止：
+     * 最坏分配量是 {@link #MAX_LOGGED_BODY_CHARS} 的两倍（StringBuilder 扩容）。
+     *
+     * <p>字符串值本身可能仍是 MB 级的 base64——因此对每个值再单独截断，
+     * 保证单键也不会把整串复制进日志。
+     */
+    private static String bodyHead(JSONObject body) {
+        if (body == null) {
+            return "";
+        }
+        StringBuilder sb = new StringBuilder(MAX_LOGGED_BODY_CHARS + 64);
+        sb.append('{');
+        java.util.Iterator<String> keys = body.keys();
+        boolean first = true;
+        while (keys.hasNext() && sb.length() < MAX_LOGGED_BODY_CHARS) {
+            String key = keys.next();
+            Object value = body.opt(key);
+            if (!first) {
+                sb.append(',');
+            }
+            first = false;
+            sb.append('"').append(key).append("\":");
+            if (value instanceof String) {
+                String text = (String) value;
+                // 单值最多取剩余预算的 1/4：一个巨大的 base64 不该吃掉全部额度。
+                int budget = Math.max(64, (MAX_LOGGED_BODY_CHARS - sb.length()) / 4);
+                if (text.length() <= budget) {
+                    sb.append('"').append(text).append('"');
+                } else {
+                    sb.append('"').append(text, 0, budget)
+                        .append("…（已截断 ").append(text.length() - budget).append(" 字符）\"");
+                }
+            } else {
+                // 非字符串（数组/对象）整体序列化；它们通常不含图片负载。
+                String rendered = String.valueOf(value);
+                if (rendered.length() > MAX_LOGGED_BODY_CHARS / 4) {
+                    rendered = rendered.substring(0, MAX_LOGGED_BODY_CHARS / 4) + "…";
+                }
+                sb.append(rendered);
+            }
+        }
+        if (keys.hasNext()) {
+            sb.append(",…（其余键省略）");
+        }
+        sb.append('}');
+        return truncateForLog(sb.toString());
     }
 
     /** 截断超长文本用于日志；超限时附标记说明被截掉多少字符。 */

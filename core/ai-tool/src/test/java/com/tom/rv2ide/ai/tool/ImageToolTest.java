@@ -198,7 +198,9 @@ class ImageToolTest {
     ToolResult result = tool.execute(input, contextFor(dir));
     assertTrue(result.isError());
     assertTrue(result.getContent().contains("像素超过上限"), result.getContent());
-    assertEquals(12_000_000, port.lastMaxPixels, "端口收到 MAX_INPUT_PIXELS");
+    // 断言「端口收到的是工具声明的上限」而不是写死数字：上限本身会随设备内存调整
+    // （2026-10-19 由 12MP 降到 4MP，见 ImageTool.MAX_INPUT_PIXELS 的注释）。
+    assertEquals(ImageTool.MAX_INPUT_PIXELS, port.lastMaxPixels, "端口收到 MAX_INPUT_PIXELS");
   }
 
   @Test

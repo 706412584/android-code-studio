@@ -202,18 +202,28 @@ public final class PhoneOcrTool extends BaseTool implements ToolInvokerAware {
       if (Math.abs(s - 1.0f) > 0.001f) {
         int nw = Math.max(1, Math.round(work.getWidth() * s));
         int nh = Math.max(1, Math.round(work.getHeight() * s));
-        work2 = Bitmap.createScaledBitmap(work, nw, nh, true);
+        // 上采样（s>1）只增加内存与耗时，不增加信息量：OCR 引擎会自己把图缩到
+        // 模型输入尺寸。而小字场景真正需要的是**下采样**（避免引擎内部再缩）。
+        // 因此只对 s<1 做缩放；s>1 时保留原尺寸（引擎内部处理）。
+        if (s < 1.0f) {
+          work2 = Bitmap.createScaledBitmap(work, nw, nh, true);
+        } else {
+          s = 1.0f;
+        }
       }
       Bitmap ocrInput = work2 != null ? work2 : work;
-      // 7) PNG 编码
+      // 7) PNG 编码。用 ByteArrayOutputStream 的 toByteArray() 会再复制一份，
+      // 大图（1080x2400 PNG 约 2-4MB）时这点开销可以接受；关键是不再做上采样。
       ByteArrayOutputStream bos = new ByteArrayOutputStream();
       if (!ocrInput.compress(Bitmap.CompressFormat.PNG, 100, bos)) {
         return error("截图 PNG 编码失败。");
       }
+      byte[] ocrBytes = bos.toByteArray();
+      bos = null; // 及时让出引用，减少同时存活的大数组
       // 8) OCR
       context.reportProgress("识别文字");
       long t0 = System.nanoTime();
-      OcrPort.Result result = port.recognize(bos.toByteArray(), OCR_TIMEOUT_MS);
+      OcrPort.Result result = port.recognize(ocrBytes, OCR_TIMEOUT_MS);
       long elapsedMs = (System.nanoTime() - t0) / 1_000_000L;
       if (!result.isOk()) {
         return error("OCR 失败。\n" + result.getError());

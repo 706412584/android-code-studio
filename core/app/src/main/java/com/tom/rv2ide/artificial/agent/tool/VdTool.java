@@ -285,18 +285,28 @@ public final class VdTool extends BaseTool {
       note.append("（inline=false，未把图片返回给模型，可用文件路径自行处理）");
       return ok(note.toString());
     }
-    // OCR 直接吃画面，网格线会干扰识别，故 OCR 时不叠网格。
-    ShotImage shot = encodeScreenshot(file, wantGrid && !wantOcr);
-    String caption = buildCaption(info, shot);
-    StringBuilder note = new StringBuilder();
-    note.append("已截图");
-    if (!caption.isEmpty()) {
-      note.append("（").append(caption).append("）");
-    }
     if (wantOcr) {
+      // OCR 直接吃原图，不叠网格、也不需要给模型看图。此前这里先调
+      // encodeScreenshot 完整解码+缩放+JPEG 编码+base64（约 15MB），结果只用它
+      // 拿尺寸、base64 随即丢弃——纯浪费。改为只读文件头取尺寸。
       OcrPort port = context == null ? null : context.getOcr();
       if (port == null) {
         return error("OCR 端口未接入，无法识别截图文字（可改传 ocr=false 直接看图）。");
+      }
+      int[] dims = readImageBounds(file);
+      ShotImage shot =
+          new ShotImage(
+              "",
+              0,
+              0,
+              dims[0] > 0 ? dims[0] : info.width,
+              dims[1] > 0 ? dims[1] : info.height,
+              1f);
+      String caption = buildCaption(info, shot);
+      StringBuilder note = new StringBuilder();
+      note.append("已截图");
+      if (!caption.isEmpty()) {
+        note.append("（").append(caption).append("）");
       }
       note.append("\n");
       OcrPort.Result result = port.recognize(fileBytes(file), 20_000L);
@@ -312,6 +322,15 @@ public final class VdTool extends BaseTool {
       }
       note.append("\n\n").append(coordinateHint(shot));
       return ok(note.toString());
+    }
+
+    // 常规看图路径：解码 + 可选网格 + JPEG + base64。
+    ShotImage shot = encodeScreenshot(file, wantGrid);
+    String caption = buildCaption(info, shot);
+    StringBuilder note = new StringBuilder();
+    note.append("已截图");
+    if (!caption.isEmpty()) {
+      note.append("（").append(caption).append("）");
     }
     note.append("\n").append(coordinateHint(shot));
     if (shot.base64.isEmpty()) {

@@ -49,12 +49,39 @@ public final class ConversationHistory {
   private ConversationHistory() {}
 
   /**
+   * 历史里最多保留多少张图片。
+   *
+   * <p><b>为什么必须限制</b>：图片 base64 会随历史一路带到每次请求。单张手机截图
+   * 的 PNG base64 可达 2–4MB，影子屏自动化一轮几十张——而 512MB 堆在 60–100 张时就满了
+   * （真机实测 OOM）。更糟的是每张图在内存里不止一份：原始 base64、包着它的
+   * rawInputJson、以及序列化请求体时的副本，合计约 3 倍。
+   *
+   * <p><b>为什么是 3 张</b>：模型需要看到「最近发生了什么」，而不需要回看几十张截图。
+   * 保留最近 3 张足以支撑「刚截的图 → 我点了哪 → 结果如何」这类连续判断；更早的图
+   * 仍保留**文字结果**（尺寸、路径、OCR 文本），模型据此仍能理解发生过什么。
+   *
+   * <p>被丢弃的图片会替换成一句占位说明，避免模型看到「工具返回了空结果」而困惑。
+   */
+  public static final int MAX_IMAGES_IN_HISTORY = 3;
+
+  /**
    * 折叠条目为模型消息。
    *
    * @param entries 会话全部条目（按序）
    * @return 可直接作为 {@code AgentSession} 起点的消息列表；无有效条目时为空列表
    */
   public static List<ModelMessage> fold(List<ConversationLog.EntryLocation> entries) {
+    return fold(entries, MAX_IMAGES_IN_HISTORY);
+  }
+
+  /**
+   * 折叠条目为模型消息，并限制历史中保留的图片数量。
+   *
+   * @param entries 会话全部条目（按序）
+   * @param maxImages 最多保留最近多少张图片；{@code <= 0} 表示全部丢弃
+   */
+  public static List<ModelMessage> fold(
+      List<ConversationLog.EntryLocation> entries, int maxImages) {
     List<ModelMessage> messages = new ArrayList<>();
     if (entries == null) {
       return messages;
@@ -122,7 +149,64 @@ public final class ConversationHistory {
     if (!summaries.isEmpty()) {
       messages.add(0, new UserModelMessage(String.join("\n\n", summaries)));
     }
+    return trimImages(messages, maxImages);
+  }
+
+  /**
+   * 只保留最近 [maxImages] 张图片，更早的换成一句占位说明。
+   *
+   * <p>从后往前扫，计数到上限后把带图的 `rawInputJson` 置空、并在正文末尾追加说明。
+   * **不改 content 本身**：文字结果（尺寸、路径、OCR）对模型仍有价值，删掉反而丢信息。
+   *
+   * <p>为什么不在写入侧限制：历史文件是 append-only，旧图已经落盘；而且用户可能
+   * 回看很久以前的会话。限制放在**读取侧**（每次续接时重新计算），既不改历史格式，
+   * 也能随策略调整立刻生效。
+   */
+  private static List<ModelMessage> trimImages(List<ModelMessage> messages, int maxImages) {
+    int remaining = Math.max(0, maxImages);
+    // 从后往前：最近的图优先保留。
+    for (int i = messages.size() - 1; i >= 0; i--) {
+      ModelMessage message = messages.get(i);
+      if (!hasImagePayload(message)) {
+        continue;
+      }
+      if (remaining > 0) {
+        remaining--;
+        continue;
+      }
+      // 超出保留数量：剥掉图片负载，正文保留并加说明。
+      messages.set(i, withoutImage(message));
+    }
     return messages;
+  }
+
+  private static boolean hasImagePayload(ModelMessage message) {
+    String raw = message.getRawInputJson();
+    return raw != null && !raw.isEmpty();
+  }
+
+  /**
+   * 复制一份去掉图片负载的消息。
+   *
+   * <p>只处理工具结果与用户消息两种（当前只有它们可能带 rawInputJson）；
+   * 其它类型原样返回，避免为了一个理论上的情况去改协议层。
+   */
+  private static ModelMessage withoutImage(ModelMessage message) {
+    String note = "\n\n（此处的图片已从历史中省略以控制内存；文字结果仍然有效。）";
+    if (message instanceof ToolModelMessage) {
+      ToolModelMessage tool = (ToolModelMessage) message;
+      return new ToolModelMessage(
+          tool.getContent() + note,
+          tool.getToolCallId(),
+          tool.getToolName(),
+          tool.isToolError(),
+          null,
+          tool.getSteps());
+    }
+    if (message instanceof UserModelMessage) {
+      return new UserModelMessage(message.getContent() + note);
+    }
+    return message;
   }
 
   private static void append(ConversationEntry entry, List<ModelMessage> messages) {

@@ -49,8 +49,16 @@ public final class ImageTool extends BaseTool {
   static final String ACTION_DOMINANT_COLORS = "dominant_colors";
 
   // ---- 上限 ----
-  /** 输入图解码后的像素数上限。1200 万像素 ARGB_8888 ≈ 48MB。 */
-  static final long MAX_INPUT_PIXELS = 12_000_000L;
+  /**
+   * 输入图解码后的像素数上限。400 万像素 ARGB_8888 ≈ 16MB。
+   *
+   * <p><b>为什么从 1200 万降到 400 万</b>：一次图像处理的峰值不止「解码后的位图」——
+   * 还有解码出的 IntArray、处理后的输出 IntArray、以及 PNG 编码时的一份副本，
+   * 合计约 4 倍。1200 万像素下单次峰值实测 150–240MB，而中端机 Java 堆上限只有
+   * 256–512MB（PJA110 实测 512MB，且跑影子屏自动化时已用掉 490MB）。
+   * 400 万像素把单次峰值压到约 64MB，与「图像处理」这种辅助能力的定位相称。
+   */
+  static final long MAX_INPUT_PIXELS = 4_000_000L;
   /** 输入文件字节上限（对齐 ImageFileSupport.MAX_IMAGE_FILE_BYTES）。 */
   static final long MAX_INPUT_BYTES = 20L * 1024L * 1024L;
   /** 内联回传上限（对齐 PhoneScreenshotTool.MAX_INLINE_BYTES）。 */
@@ -62,8 +70,14 @@ public final class ImageTool extends BaseTool {
   static final int MAX_TOP_COLORS = 16;
   /** 落盘目录（工作区相对路径）。 */
   private static final String OUTPUT_DIR = "ai-images";
-  /** 像素处理全局串行化（复审 M3）：单次峰值可达 ~240MB，多路并发会 OOM。 */
-  private static final Semaphore PIXEL_LOCK = new Semaphore(2);
+  /**
+   * 像素处理全局串行化。
+   *
+   * <p><b>并发度 1</b>：单次峰值约 64MB（见 {@link #MAX_INPUT_PIXELS}），两路并发就是
+   * 128MB，再叠加会话历史里的图片 base64，512MB 堆很容易被顶穿。图像处理是低频操作，
+   * 串行化的代价只是第二个请求多等一会儿，换来的是不会 OOM。
+   */
+  private static final Semaphore PIXEL_LOCK = new Semaphore(1);
   /** 等锁上限：超时报「图像处理繁忙」而不是无限等待。 */
   private static final long PIXEL_LOCK_WAIT_SECONDS = 30L;
 

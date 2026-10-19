@@ -214,7 +214,33 @@ public final class PhoneScreenshotTool extends BaseTool {
               + "）。设备可能拒绝截屏（如设置了 FLAG_SECURE 的安全界面）。");
     }
 
-    // 2) 解码（必要时兼容 OEM 的 raw 输出）。
+    // 2) inline=false 早退：只要路径。
+    //
+    // 视觉回归链路（phone_baseline / phone_screenshot_compare / phone_action_capture）
+    // 全部以 inline=false 调用，只需要一个 PNG 文件路径。此前即使不内联，仍会完整
+    // 解码（1080x2400 ≈ 10MB）、裁剪、缩放、编码——每帧白烧约 15MB，连拍 3-6 帧
+    // 就是 90MB。这里只读文件头取尺寸，与 vscreen 的 inline=false 路径保持一致。
+    if (!inline) {
+      int[] dims = readPngBounds(target);
+      int width = dims[0];
+      int height = dims[1];
+      StringBuilder note = new StringBuilder();
+      note.append("截图成功。\n");
+      if (width > 0 && height > 0) {
+        note.append("屏幕尺寸: ").append(width).append('x').append(height).append('\n');
+        note.append("输出尺寸: ").append(width).append('x').append(height).append('\n');
+      } else {
+        // 读不出尺寸时不编造：下游按「解析不到 = 0」处理，仍能拿到路径。
+        note.append("屏幕尺寸: 0x0\n输出尺寸: 0x0\n");
+      }
+      note.append("格式: image/png\n");
+      note.append("大小: ").append(target.length() / 1024).append(" KB\n");
+      note.append("文件路径:\n").append(target.getAbsolutePath()).append('\n');
+      note.append("（inline=false，未把图片返回给模型，可用文件路径自行处理）");
+      return ok(note.toString());
+    }
+
+    // 3) 解码（必要时兼容 OEM 的 raw 输出）。
     Bitmap bitmap;
     try {
       bitmap = decode(target);
@@ -590,6 +616,45 @@ public final class PhoneScreenshotTool extends BaseTool {
       log.warn("写入截图文件失败: {}", out.getAbsolutePath(), e);
     }
     return out;
+  }
+
+  /**
+   * 只读 PNG 文件头取宽高（IHDR），不解码整图。
+   *
+   * @return {宽, 高}；非 PNG 或读取失败时返回 {0, 0}
+   */
+  private static int[] readPngBounds(File file) {
+    try {
+      byte[] head = new byte[24];
+      int read;
+      try (java.io.FileInputStream in = new java.io.FileInputStream(file)) {
+        read = in.read(head);
+      }
+      if (read >= 24
+          && (head[0] & 0xFF) == 0x89
+          && head[1] == 'P'
+          && head[2] == 'N'
+          && head[3] == 'G') {
+        int w = ((head[16] & 0xFF) << 24)
+            | ((head[17] & 0xFF) << 16)
+            | ((head[18] & 0xFF) << 8)
+            | (head[19] & 0xFF);
+        int h = ((head[20] & 0xFF) << 24)
+            | ((head[21] & 0xFF) << 16)
+            | ((head[22] & 0xFF) << 8)
+            | (head[23] & 0xFF);
+        if (w > 0 && h > 0) {
+          return new int[] {w, h};
+        }
+      }
+    } catch (Exception ignored) {
+      // 落到下面的兜底
+    }
+    // 非 PNG（部分 OEM 的 screencap 输出 raw）：用 inJustDecodeBounds 兜底，不分配像素。
+    BitmapFactory.Options options = new BitmapFactory.Options();
+    options.inJustDecodeBounds = true;
+    BitmapFactory.decodeFile(file.getAbsolutePath(), options);
+    return new int[] {Math.max(0, options.outWidth), Math.max(0, options.outHeight)};
   }
 
   private static String quote(String value) {

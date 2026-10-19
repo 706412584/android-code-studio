@@ -279,13 +279,15 @@ public final class PhoneActionCaptureTool extends BaseTool implements ToolInvoke
     // 基线对比
     File baselineFile = PhoneScreenshotStore.baselineFile(projectRoot, baselineName);
     PhoneScreenshotStore.DiffMetrics baselineDiff = null;
+    // 基线位图只解一次：先算指标、再画对比图，两处用的是同一张图。
+    // 此前解码了两次（每次 1080x2400 ≈ 10MB），是连拍链路里最容易白烧内存的一处。
+    Bitmap baselineBitmap = null;
     if (saveBaseline) {
       PhoneScreenshotStore.saveBaseline(captured.get(0).file, baselineFile);
     } else if (compareToBaseline && baselineFile.exists()) {
-      Bitmap baseline = PhoneScreenshotStore.decode(baselineFile);
-      if (baseline != null) {
-        baselineDiff = PhoneScreenshotStore.compare(baseline, first, tolerance);
-        baseline.recycle();
+      baselineBitmap = PhoneScreenshotStore.decode(baselineFile);
+      if (baselineBitmap != null) {
+        baselineDiff = PhoneScreenshotStore.compare(baselineBitmap, first, tolerance);
       }
     }
 
@@ -295,14 +297,10 @@ public final class PhoneActionCaptureTool extends BaseTool implements ToolInvoke
         : null;
     Bitmap comparison;
     String imageDesc;
-    if (baselineDiff != null) {
-      Bitmap baseline = PhoneScreenshotStore.decode(baselineFile);
+    if (baselineDiff != null && baselineBitmap != null) {
       comparison =
           PhoneScreenshotStore.renderComparison(
-              baseline, first, tolerance, "baseline:" + PhoneScreenshotStore.safeName(baselineName), "t0");
-      if (baseline != null) {
-        baseline.recycle();
-      }
+              baselineBitmap, first, tolerance, "baseline:" + PhoneScreenshotStore.safeName(baselineName), "t0");
       imageDesc = "对比图: 基线 vs t0（右栏红=相对基线的变化）";
     } else if (last != null) {
       comparison =
@@ -353,6 +351,9 @@ public final class PhoneActionCaptureTool extends BaseTool implements ToolInvoke
     first.recycle();
     if (last != null) {
       last.recycle();
+    }
+    if (baselineBitmap != null) {
+      baselineBitmap.recycle();
     }
 
     if (comparison == null) {
