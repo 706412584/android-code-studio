@@ -64,12 +64,17 @@ jobs:
           # 发布：仅当 Release + 给了 revision 时启用。versionName/versionCode 的
           # 计算必须与 tools/publish-release.ps1 完全一致，否则 updater.json 会错、
           # 用户端更新失效：
-          #   versionName = 1.0.0+gh.r<NN>   versionCode = 1021 + revision
+          #   versionName = 1.0.0+gh.r<NN>   versionCode = 1050 + revision
+          #
+          # **基数 1050（2026-10-19 由 1021 抬高）**：某测试机残留过一个手工构建的
+          # 1042 包，而 1021 基数下线上包最高只有 1035（r14）——低于 1042 即被 Android
+          # 拒绝覆盖安装（INSTALL_FAILED_VERSION_DOWNGRADE）。抬高后 r15 为 1065，
+          # 越过 1042。改这里必须同步改 publish-release.ps1 的 $VersionCodeBase。
           REV="${{ github.event.inputs.revision }}"
           if [ "$BUILD_TYPE" = "Release" ] && [ -n "$REV" ]; then
             REV_STR=$(printf '%02d' "$REV")
             VERSION_NAME="1.0.0+gh.r$REV_STR"
-            VERSION_CODE=$((1021 + REV))
+            VERSION_CODE=$((1050 + REV))
             echo "PUBLISH=true" >> $GITHUB_ENV
             echo "REVISION_NUM=$REV_STR" >> $GITHUB_ENV
             echo "VERSION_NAME=$VERSION_NAME" >> $GITHUB_ENV
