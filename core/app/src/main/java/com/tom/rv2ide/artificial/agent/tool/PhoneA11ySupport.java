@@ -224,18 +224,29 @@ final class PhoneA11ySupport {
   static String bitmapToJpegBase64(Bitmap bitmap) {
     int longest = Math.max(bitmap.getWidth(), bitmap.getHeight());
     Bitmap scaled = bitmap;
-    if (longest > MAX_IMAGE_EDGE) {
-      float ratio = (float) MAX_IMAGE_EDGE / longest;
-      scaled =
-          Bitmap.createScaledBitmap(
-              bitmap,
-              Math.max(1, (int) (bitmap.getWidth() * ratio)),
-              Math.max(1, (int) (bitmap.getHeight() * ratio)),
-              true);
+    boolean created = false;
+    try {
+      if (longest > MAX_IMAGE_EDGE) {
+        float ratio = (float) MAX_IMAGE_EDGE / longest;
+        scaled =
+            Bitmap.createScaledBitmap(
+                bitmap,
+                Math.max(1, (int) (bitmap.getWidth() * ratio)),
+                Math.max(1, (int) (bitmap.getHeight() * ratio)),
+                true);
+        // createScaledBitmap 在目标尺寸与源相同时返回同一实例，只有真的新建了才回收。
+        created = scaled != bitmap;
+      }
+      ByteArrayOutputStream bos = new ByteArrayOutputStream();
+      scaled.compress(Bitmap.CompressFormat.JPEG, JPEG_QUALITY, bos);
+      return android.util.Base64.encodeToString(bos.toByteArray(), android.util.Base64.NO_WRAP);
+    } finally {
+      // 缩放副本只用于编码：不回收的话每张截图都留下一份 1440px 位图（约 8MB），
+      // 连拍几次就足以把 512MB 堆推高。调用方负责回收原始 bitmap。
+      if (created && !scaled.isRecycled()) {
+        scaled.recycle();
+      }
     }
-    ByteArrayOutputStream bos = new ByteArrayOutputStream();
-    scaled.compress(Bitmap.CompressFormat.JPEG, JPEG_QUALITY, bos);
-    return android.util.Base64.encodeToString(bos.toByteArray(), android.util.Base64.NO_WRAP);
   }
 
   private static boolean containsIgnoreCase(String haystack, String needle) {

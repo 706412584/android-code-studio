@@ -18,6 +18,7 @@
 package com.tom.rv2ide.ai.agent.context;
 
 import com.tom.rv2ide.ai.agent.conversation.ConversationCompaction;
+import com.tom.rv2ide.ai.agent.conversation.ConversationHistory;
 import com.tom.rv2ide.ai.protocol.ModelMessage;
 import com.tom.rv2ide.ai.protocol.ToolModelMessage;
 import java.util.ArrayList;
@@ -113,6 +114,12 @@ public final class RunContextManager {
     if (messages == null || messages.isEmpty()) {
       return new ArrayList<>();
     }
+
+    // 图片数量限制与 token 预算**独立**：即使窗口未配置（预算不限），也不能让几十张
+    // 截图的 base64 同时驻留内存——那是 512MB 堆 OOM 的直接成因（真机复现过）。
+    // 就地修改：调用方持有的列表同步变小，被剥离的 base64 立刻可回收。
+    ConversationHistory.limitImages(
+        messages, ConversationHistory.MAX_IMAGES_IN_HISTORY, historyEnd);
 
     int budget = historyBudget();
     if (budget == UNLIMITED) {

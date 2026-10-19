@@ -23,7 +23,6 @@ import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.os.Handler;
 import android.os.Looper;
-import android.util.Base64;
 import android.view.View;
 import android.webkit.CookieManager;
 import android.webkit.WebChromeClient;
@@ -35,7 +34,6 @@ import com.tom.rv2ide.ai.tool.ToolContext;
 import com.tom.rv2ide.ai.tool.api.ToolCategory;
 import com.tom.rv2ide.ai.tool.api.ToolDisplayCategory;
 import com.tom.rv2ide.ai.tool.api.ToolResult;
-import java.io.ByteArrayOutputStream;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
@@ -376,13 +374,13 @@ public final class BrowserTool extends BaseTool {
       return error("截图未产出图像（页面可能尚未渲染或尺寸异常）。");
     }
 
-    byte[] jpeg;
     int width = bitmap.getWidth();
     int height = bitmap.getHeight();
+    // 走统一的有界编码（最长边 1568 + 字节上限）：WebView 视口截图在长页面上可能
+    // 是数 MB，直接内联会撑上下文，且历史里每张图都会驻留内存。
+    String base64;
     try {
-      ByteArrayOutputStream out = new ByteArrayOutputStream();
-      bitmap.compress(Bitmap.CompressFormat.JPEG, 80, out);
-      jpeg = out.toByteArray();
+      base64 = PhoneScreenshotStore.encodeBase64Bounded(bitmap);
     } finally {
       if (!bitmap.isRecycled()) {
         bitmap.recycle();
@@ -392,8 +390,12 @@ public final class BrowserTool extends BaseTool {
     String note =
         "页面截图。\nURL: " + lastUrl + "\n标题: " + lastTitle + "\n"
             + "尺寸: " + width + "x" + height + "\n";
-    return ToolResult.withImage(
-        getName(), note, "image/jpeg", Base64.encodeToString(jpeg, Base64.NO_WRAP));
+    if (base64 == null || base64.isEmpty()) {
+      return ok(note + "（截图编码失败，未内联图片。）");
+    }
+    // encodeBase64Bounded 优先 PNG、超限才转 JPEG，MIME 按实际编码结果给。
+    String mime = base64.startsWith("/9j/") ? "image/jpeg" : "image/png";
+    return ToolResult.withImage(getName(), note, mime, base64);
   }
 
   // ---------------------------------------------------------------------------

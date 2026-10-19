@@ -18,6 +18,7 @@
 package com.tom.rv2ide.ai.agent.conversation;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -137,6 +138,92 @@ final class ConversationHistoryTest {
         "QUJD",
         com.tom.rv2ide.ai.protocol.ImageInputPayload.fromImageResult(tool.getRawInputJson())
             .getDataBase64());
+  }
+
+  @Test
+  void keepsOnlyMostRecentImages(@TempDir Path dir) throws IOException {
+    // 事故原型：影子屏自动化连拍几十张，base64 全部随历史进请求 → 512MB 堆 OOM。
+    // 折叠时必须只保留最近 N 张，更早的退化成文字。
+    ConversationLog log = logAt(dir);
+    int total = ConversationHistory.MAX_IMAGES_IN_HISTORY + 2;
+    for (int i = 0; i < total; i++) {
+      log.append(
+          AssistantMessageEntry.create(
+              null, T0 + i * 2L, "", "", List.of(new ToolCall("c" + i, "vscreen", "{}"))));
+      log.append(
+          ToolResultEntry.create(
+              null,
+              T0 + i * 2L + 1,
+              ToolResult.withImage("vscreen", "截图 " + i, "image/png", "QUJD")
+                  .withCall("c" + i, "vscreen")));
+    }
+
+    List<ModelMessage> messages = ConversationHistory.fold(log.readAll());
+    long withImage = messages.stream().filter(ConversationHistoryTest::hasImage).count();
+    assertEquals(
+        ConversationHistory.MAX_IMAGES_IN_HISTORY,
+        withImage,
+        "历史里只应保留最近 N 张图: " + withImage);
+
+    // 最近的那张必须仍在，且正文不变。
+    ToolModelMessage newest =
+        assertInstanceOf(ToolModelMessage.class, messages.get(messages.size() - 1));
+    assertEquals("截图 " + (total - 1), newest.getContent());
+    assertTrue(hasImage(newest), "最新一张图不应被剥离");
+
+    // 最早的图被剥离，但文字结果保留并追加说明。
+    ToolModelMessage oldest = assertInstanceOf(ToolModelMessage.class, messages.get(1));
+    assertEquals("截图 0", oldest.getContent().split("\n\n")[0]);
+    assertFalse(hasImage(oldest), "超出保留数的图片必须剥掉 rawInputJson");
+    assertTrue(
+        oldest.getContent().contains("图片已从历史中省略"),
+        "被剥离的图片要留一句说明，否则模型以为工具没返回图: " + oldest.getContent());
+  }
+
+  @Test
+  void maxImagesZeroStripsEveryImage(@TempDir Path dir) throws IOException {
+    ConversationLog log = logAt(dir);
+    log.append(
+        AssistantMessageEntry.create(
+            null, T0 - 1, "", "", List.of(new ToolCall("c1", "vscreen", "{}"))));
+    log.append(
+        ToolResultEntry.create(
+            null,
+            T0,
+            ToolResult.withImage("vscreen", "图", "image/png", "QUJD")
+                .withCall("c1", "vscreen")));
+
+    List<ModelMessage> messages = ConversationHistory.fold(log.readAll(), 0);
+    assertEquals(2, messages.size(), "调用与结果都应在，只是图片被剥掉");
+    ToolModelMessage tool = assertInstanceOf(ToolModelMessage.class, messages.get(1));
+    assertFalse(hasImage(tool));
+    assertTrue(tool.getContent().startsWith("图"));
+    assertTrue(tool.getContent().contains("图片已从历史中省略"));
+  }
+
+  @Test
+  void imagesWithinLimitAreUntouched(@TempDir Path dir) throws IOException {
+    // 上限内必须零副作用：正文不追加说明、图片负载原样保留。
+    ConversationLog log = logAt(dir);
+    log.append(
+        AssistantMessageEntry.create(
+            null, T0 - 1, "", "", List.of(new ToolCall("c1", "vscreen", "{}"))));
+    log.append(
+        ToolResultEntry.create(
+            null,
+            T0,
+            ToolResult.withImage("vscreen", "图", "image/png", "QUJD")
+                .withCall("c1", "vscreen")));
+
+    ToolModelMessage tool =
+        assertInstanceOf(ToolModelMessage.class, ConversationHistory.fold(log.readAll()).get(1));
+    assertEquals("图", tool.getContent());
+    assertTrue(hasImage(tool));
+  }
+
+  /** 该消息是否还带着图片负载（{@code rawInputJson} 无图时是空串，不是 null）。 */
+  private static boolean hasImage(ModelMessage message) {
+    return message.getRawInputJson() != null && !message.getRawInputJson().isEmpty();
   }
 
   @Test

@@ -163,11 +163,34 @@ public final class ConversationHistory {
    * 也能随策略调整立刻生效。
    */
   private static List<ModelMessage> trimImages(List<ModelMessage> messages, int maxImages) {
+    return limitImages(messages, maxImages, -1);
+  }
+
+  /**
+   * 就地限制图片数量，并保护指定下标的图片不被剥离。
+   *
+   * <p><b>为什么运行中的消息列表也要用它</b>：{@link #fold} 只在**续接会话**时生效，
+   * 而同一次运行内的 {@code AgentSession} 消息列表是边跑边长的——影子屏自动化一轮
+   * 几十张截图全部留在内存里，还没等到续接就把堆撑爆了（真机 OOM 的实际形态）。
+   * 因此 {@code RunContextManager} 每轮请求前也要调用本方法。
+   *
+   * @param messages 就地修改的消息列表
+   * @param maxImages 最多保留最近多少张图；{@code <= 0} 表示全部丢弃
+   * @param protectedIndex 必须保留其图片的下标（通常是本次用户请求）；{@code < 0} 表示无
+   * @return 传入的列表，便于链式调用
+   */
+  public static List<ModelMessage> limitImages(
+      List<ModelMessage> messages, int maxImages, int protectedIndex) {
     int remaining = Math.max(0, maxImages);
     // 从后往前：最近的图优先保留。
     for (int i = messages.size() - 1; i >= 0; i--) {
       ModelMessage message = messages.get(i);
       if (!hasImagePayload(message)) {
+        continue;
+      }
+      if (i == protectedIndex) {
+        // 本次用户请求的附件是「当前问题」的一部分，与历史图片不同：剥掉它模型
+        // 就看不到用户刚发的图了。它不计入保留名额。
         continue;
       }
       if (remaining > 0) {

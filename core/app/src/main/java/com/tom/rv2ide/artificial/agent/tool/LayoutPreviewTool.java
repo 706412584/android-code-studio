@@ -192,9 +192,13 @@ public final class LayoutPreviewTool extends BaseTool {
 
     File output;
     byte[] png;
+    // 内联负载单独走有界编码：落盘保留原图（用户可能要拿完整预览），但发给模型的
+    // 那份必须限尺寸/限字节。2048px 的布局预览 PNG 可达数 MB，而它只是「看一眼效果」。
+    String inlineBase64;
     try {
       png = encodePng(bitmap);
       output = writeOutput(context, target, png);
+      inlineBase64 = PhoneScreenshotStore.encodeBase64Bounded(bitmap);
     } catch (Exception e) {
       return error("预览图保存失败：" + e.getMessage());
     } finally {
@@ -209,8 +213,13 @@ public final class LayoutPreviewTool extends BaseTool {
             + "尺寸: " + bitmap.getWidth() + "x" + bitmap.getHeight() + "\n"
             + "说明: 静态渲染，未编译的资源与自定义 View 会退化为占位/默认样式。\n"
             + "文件路径:\n" + output.getAbsolutePath() + "\n";
-    return ToolResult.withImage(
-        getName(), note, "image/png", android.util.Base64.encodeToString(png, android.util.Base64.NO_WRAP));
+    if (inlineBase64 == null || inlineBase64.isEmpty()) {
+      // 编码不出可内联的图时退回纯文字：路径仍然可用，不至于让整次调用失败。
+      return ok(note);
+    }
+    // encodeBase64Bounded 优先 PNG、超限才转 JPEG，因此 MIME 按实际编码结果给。
+    String mime = inlineBase64.startsWith("/9j/") ? "image/jpeg" : "image/png";
+    return ToolResult.withImage(getName(), note, mime, inlineBase64);
   }
 
   // ---------------------------------------------------------------------------

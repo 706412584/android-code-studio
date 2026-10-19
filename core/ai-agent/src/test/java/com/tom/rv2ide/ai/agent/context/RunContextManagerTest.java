@@ -22,6 +22,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.tom.rv2ide.ai.agent.conversation.ConversationHistory;
 import com.tom.rv2ide.ai.protocol.AssistantModelMessage;
 import com.tom.rv2ide.ai.protocol.ModelMessage;
 import com.tom.rv2ide.ai.protocol.SystemModelMessage;
@@ -64,6 +65,76 @@ final class RunContextManagerTest {
     messages.addAll(history);
     messages.add(request);
     return messages;
+  }
+
+  /** 带图片负载的工具结果（rawInputJson 用协议层的真实格式，否则不会被识别为图）。 */
+  private static ToolModelMessage imageResult(String callId, String content) {
+    try {
+      return new ToolModelMessage(
+          content,
+          callId,
+          "vscreen",
+          false,
+          com.tom.rv2ide.ai.protocol.ImageInputPayload.imageResultJson("image/png", "QUJD"));
+    } catch (org.json.JSONException e) {
+      throw new IllegalStateException(e);
+    }
+  }
+
+  private static boolean hasImage(ModelMessage message) {
+    String raw = message.getRawInputJson();
+    return raw != null && !raw.isEmpty();
+  }
+
+  @Test
+  void limitsImagesEvenWhenWindowIsUnconfigured() {
+    // 事故原型：窗口未配置时 fit 原样返回，几十张截图的 base64 全部驻留 → OOM。
+    // 图片数量限制必须独立于 token 预算生效。
+    List<ModelMessage> messages = new ArrayList<>();
+    messages.add(new SystemModelMessage("sys"));
+    int total = ConversationHistory.MAX_IMAGES_IN_HISTORY + 4;
+    for (int i = 0; i < total; i++) {
+      messages.add(assistantCalling());
+      messages.add(imageResult("c1", "shot " + i));
+    }
+    int requestIndex = messages.size();
+    messages.add(user("继续"));
+
+    List<ModelMessage> fitted = manager(0, 0).fit(messages, requestIndex);
+
+    long withImage = fitted.stream().filter(RunContextManagerTest::hasImage).count();
+    assertEquals(
+        ConversationHistory.MAX_IMAGES_IN_HISTORY,
+        withImage,
+        "运行中的消息列表也必须限制图片数量: " + withImage);
+    // 文字结果不能丢——模型仍要能读到「截过图」这件事。
+    assertTrue(
+        fitted.stream().anyMatch(m -> m.getContent().startsWith("shot 0")),
+        "被剥图的工具结果正文应保留");
+  }
+
+  @Test
+  void protectedRequestImageIsKept() {
+    // 本次用户请求附带的图是「当前问题」本身，不能被历史图片限额挤掉。
+    List<ModelMessage> messages = new ArrayList<>();
+    messages.add(new SystemModelMessage("sys"));
+    for (int i = 0; i < ConversationHistory.MAX_IMAGES_IN_HISTORY; i++) {
+      messages.add(assistantCalling());
+      messages.add(imageResult("c1", "shot " + i));
+    }
+    int requestIndex = messages.size();
+    try {
+      messages.add(
+          new UserModelMessage(
+              "看这张图",
+              com.tom.rv2ide.ai.protocol.ImageInputPayload.rawInputJson(
+                  "看这张图", "image/png", "QUJD")));
+    } catch (org.json.JSONException e) {
+      throw new IllegalStateException(e);
+    }
+
+    List<ModelMessage> fitted = manager(0, 0).fit(messages, requestIndex);
+    assertTrue(hasImage(fitted.get(requestIndex)), "本次请求的附件图必须保留");
   }
 
   @Test

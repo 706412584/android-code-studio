@@ -715,6 +715,62 @@ class AssistantMessageAdapter(
           imageMimeType = imageMimeType,
       )
     }
+    trimToolImages(MAX_TOOL_IMAGES)
+  }
+
+  /**
+   * 列表里最多保留多少张工具结果图片。
+   *
+   * <p><b>为什么界面侧也要限</b>：模型侧的历史图片已被限制（{@code
+   * ConversationHistory.MAX_IMAGES_IN_HISTORY}），但 UI 的消息列表是另一份独立数据，
+   * 每张截图的 base64 有 2–4MB。影子屏自动化一轮几十张时，两份叠加把 512MB 堆撑爆
+   * （真机 OOM 的实际形态：模型上下文已清，界面仍持有全部图）。
+   *
+   * <p>取 4 比模型侧的 3 略宽：用户刚操作完时想看到最近几张图，而卡片里图片被清掉
+   * 只是不再显示预览，**文字结果与路径都还在**，不影响理解与继续操作。
+   */
+  private val MAX_TOOL_IMAGES = 4
+
+  /**
+   * 只保留最近 [limit] 张工具结果图片，更早的卡片清掉 base64。
+   *
+   * <p>从后往前扫（最近优先）。清空后该字符串失去唯一强引用，可被 GC 回收；
+   * 卡片本身仍显示「结果」文本，不会变成空卡片。
+   */
+  private fun trimToolImages(limit: Int) {
+    var remaining = limit
+    for (i in items.indices.reversed()) {
+      when (val item = items[i]) {
+        is ToolCall -> {
+          if (item.imageBase64.isNullOrEmpty()) continue
+          if (remaining > 0) {
+            remaining--
+            continue
+          }
+          items[i] = item.copy(imageBase64 = null, imageMimeType = "")
+          notifyCompat { notifyItemChanged(i) }
+        }
+        is ToolGroup -> {
+          var groupChanged = false
+          val next = item.children.toMutableList()
+          for (j in next.indices.reversed()) {
+            val child = next[j] as? ToolCall ?: continue
+            if (child.imageBase64.isNullOrEmpty()) continue
+            if (remaining > 0) {
+              remaining--
+              continue
+            }
+            next[j] = child.copy(imageBase64 = null, imageMimeType = "")
+            groupChanged = true
+          }
+          if (groupChanged) {
+            items[i] = item.copy(children = next)
+            notifyCompat { notifyItemChanged(i) }
+          }
+        }
+        else -> {}
+      }
+    }
   }
 
   /**
