@@ -114,10 +114,23 @@ object MemorySampler {
     }
 
     val javaPercent = if (javaMax > 0) javaUsed * 100L / javaMax else 0L
+
+    // 主动响应：≥85% 时释放纯缓存，≥92% 时再释放一次并升级告警。
+    // 放在采样线程里做——那里本来就不碰 UI，释放器也不允许阻塞主线程。
+    // 这样「堆涨到 490MB」不再只能等 OOM，而是在 435MB 左右就开始腾空间。
+    val pressure =
+        try {
+          com.tom.rv2ide.artificial.agent.MemoryPressureGuard.check()
+        } catch (t: Throwable) {
+          com.tom.rv2ide.artificial.agent.MemoryPressureGuard.Action.NONE
+        }
+    val critical = pressure == com.tom.rv2ide.artificial.agent.MemoryPressureGuard.Action.CRITICAL
+
     val warn =
         javaPercent >= JAVA_HEAP_WARN_PERCENT ||
             nativeAllocated >= NATIVE_WARN_BYTES ||
-            totalMessages >= MESSAGE_COUNT_WARN
+            totalMessages >= MESSAGE_COUNT_WARN ||
+            critical
 
     val line =
         String.format(
@@ -130,7 +143,11 @@ object MemorySampler {
             views.size,
             totalMessages,
             totalTools,
-            if (warn) " ⚠ 接近上限，卡顿/OOM 风险" else "",
+            when {
+              critical -> " ⚠ 危急：已自动释放缓存，请压缩上下文或新建会话"
+              warn -> " ⚠ 接近上限，卡顿/OOM 风险"
+              else -> ""
+            },
         )
 
     IdeLogBufferHolder.get().append(

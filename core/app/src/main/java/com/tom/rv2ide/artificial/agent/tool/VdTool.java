@@ -572,44 +572,85 @@ public final class VdTool extends BaseTool {
   /**
    * 截图转 JPEG base64：长边压到 ≤1440 控制给模型的体积；{@code withGrid} 为真时在图上
    * 叠加坐标网格，网格标注的是 **input（未缩放）坐标**，让模型照读即可点击。
+   *
+   * <p><b>必须回收位图</b>：一张 1080x1920 的 ARGB_8888 位图占 8MB，而影子屏自动化
+   * 是「shot → tap → shot」的循环，一轮跑下来几十张。此前这里从不 recycle，每张图
+   * 泄漏 8MB（叠网格时再复制一份 → 16MB），512MB 堆跑十几张就 OOM。真机实测：
+   * `Failed to allocate a 22055512 byte allocation with 19MB until OOM`。
+   *
+   * <p>回收顺序：原图 → 缩放图（若另建）→ 叠网格图（若另建）。三者可能是同一个实例
+   * （未缩放 / 未叠网格时），因此逐个判断是否与已回收对象相同，避免重复 recycle。
    */
   private ShotImage encodeScreenshot(File file, boolean withGrid) {
     Bitmap bitmap = BitmapFactory.decodeFile(file.getAbsolutePath());
     if (bitmap == null) {
       return new ShotImage("", 0, 0, 0, 0, 1f);
     }
-    // 原图就是设备真实像素，也是 tap 使用的坐标系（不依赖 dumpsys 报的尺寸）。
-    int inputW = bitmap.getWidth();
-    int inputH = bitmap.getHeight();
-    int longest = Math.max(inputW, inputH);
-    float ratio = longest > MAX_IMAGE_EDGE ? (float) MAX_IMAGE_EDGE / longest : 1f;
-    Bitmap scaled =
-        ratio < 1f
-            ? Bitmap.createScaledBitmap(
-                bitmap,
-                Math.max(1, (int) (inputW * ratio)),
-                Math.max(1, (int) (inputH * ratio)),
-                true)
-            : bitmap;
-    float scale = (float) scaled.getWidth() / inputW;
-    Bitmap annotated = withGrid && inputW > 0 && inputH > 0 ? drawGrid(scaled, inputW, inputH, scale) : scaled;
-    ByteArrayOutputStream bos = new ByteArrayOutputStream();
-    annotated.compress(Bitmap.CompressFormat.JPEG, JPEG_QUALITY, bos);
-    return new ShotImage(
-        Base64.encodeToString(bos.toByteArray(), Base64.NO_WRAP),
-        annotated.getWidth(),
-        annotated.getHeight(),
-        inputW,
-        inputH,
-        scale);
+    Bitmap scaled = null;
+    Bitmap annotated = null;
+    try {
+      // 原图就是设备真实像素，也是 tap 使用的坐标系（不依赖 dumpsys 报的尺寸）。
+      int inputW = bitmap.getWidth();
+      int inputH = bitmap.getHeight();
+      int longest = Math.max(inputW, inputH);
+      float ratio = longest > MAX_IMAGE_EDGE ? (float) MAX_IMAGE_EDGE / longest : 1f;
+      scaled =
+          ratio < 1f
+              ? Bitmap.createScaledBitmap(
+                  bitmap,
+                  Math.max(1, (int) (inputW * ratio)),
+                  Math.max(1, (int) (inputH * ratio)),
+                  true)
+              : bitmap;
+      float scale = (float) scaled.getWidth() / inputW;
+      annotated =
+          withGrid && inputW > 0 && inputH > 0
+              ? drawGrid(scaled, inputW, inputH, scale)
+              : scaled;
+      ByteArrayOutputStream bos = new ByteArrayOutputStream();
+      annotated.compress(Bitmap.CompressFormat.JPEG, JPEG_QUALITY, bos);
+      return new ShotImage(
+          Base64.encodeToString(bos.toByteArray(), Base64.NO_WRAP),
+          annotated.getWidth(),
+          annotated.getHeight(),
+          inputW,
+          inputH,
+          scale);
+    } catch (OutOfMemoryError e) {
+      // 截图是辅助能力：宁可这一张没有图，也不要拖垮整个 agent 循环。
+      log.warn("vscreen 截图编码 OOM（位图 {}x{}），本次只返回文字", bitmap.getWidth(), bitmap.getHeight());
+      return new ShotImage("", 0, 0, bitmap.getWidth(), bitmap.getHeight(), 1f);
+    } finally {
+      recycleDistinct(bitmap, scaled, annotated);
+    }
   }
 
-  /** 在缩略图上叠坐标网格：细线半透明不盖内容，顶部信息条给出缩放比与尺寸。 */
+  /**
+   * 回收位图。同一实例可能出现在多个参数位上（未缩放 / 未叠网格时三者同源），
+   * 但 {@link Bitmap#recycle()} 对已回收的位图是幂等的，直接逐个调用即可。
+   */
+  private static void recycleDistinct(Bitmap... bitmaps) {
+    for (Bitmap bmp : bitmaps) {
+      if (bmp != null && !bmp.isRecycled()) {
+        bmp.recycle();
+      }
+    }
+  }
+
+  /**
+   * 在缩略图上叠坐标网格：细线半透明不盖内容，顶部信息条给出缩放比与尺寸。
+   *
+   * <p>原地绘制，不再 {@code copy()}：{@code src} 是 {@link #encodeScreenshot} 里
+   * {@code createScaledBitmap} 的产物（始终可变更）。此前对不可变位图会再复制一份
+   * 1080x1920 的 ARGB（8MB），而影子屏自动化连续截图时这笔额外分配正是 OOM 的推手。
+   */
   private Bitmap drawGrid(Bitmap src, int inputW, int inputH, float scale) {
-    Bitmap bmp = src.isMutable() ? src : src.copy(Bitmap.Config.ARGB_8888, true);
-    if (bmp == null) {
+    if (!src.isMutable()) {
+      // 理论上不会走到：缩放产物可变。真遇到时退回不叠网格，而不是再复制 8MB。
+      log.warn("vscreen 截图位图不可变，跳过网格叠加（尺寸 {}x{}）", src.getWidth(), src.getHeight());
       return src;
     }
+    Bitmap bmp = src;
     Canvas canvas = new Canvas(bmp);
     float textSize = Math.max(18f, Math.min(40f, bmp.getWidth() / 32f));
     Paint linePaint = new Paint(Paint.ANTI_ALIAS_FLAG);

@@ -114,6 +114,22 @@ object AssistantDiffBuilder {
   const val MAX_CELLS = 4_000_000L
 
   /**
+   * 单侧内容字符数上限。
+   *
+   * <p><b>为什么行数与 DP 单元数还不够</b>：上面两个守卫都按**行数**算，而压缩过的
+   * JS/CSS、生成物、单行 JSON 可以把几十 MB 塞进几百行。此时行数守卫放行、DP 表也很小，
+   * 但 {@link #splitLines} 的 substring 与后续 token 对齐仍会吃掉大量堆。
+   *
+   * <p>真机实测（PJA110，512MB 堆）：一轮改了 14 个文件，汇总卡片逐条算 diff 时
+   * `Failed to allocate a 22055512 byte allocation with 19MB until OOM`。22MB 的单次
+   * 分配正是某个大字符串/字符数组——按行数根本拦不住。
+   *
+   * <p>取 2_000_000 字符（约 4MB 的 UTF-16 字符串）：正常源码文件远达不到，
+   * 超过它的内容做逐行对照已无意义。
+   */
+  const val MAX_CHARS = 2_000_000
+
+  /**
    * 行内 token 级 DP 的单元数上限。
    *
    * <p>「行内比较规模安全」只在正常代码行上成立。压缩过的 JS/CSS 会把几万字符塞进一行，
@@ -133,6 +149,13 @@ object AssistantDiffBuilder {
   @JvmStatic
   @JvmOverloads
   fun build(oldContent: String, newContent: String, oldExists: Boolean = true): DiffResult {
+    // 字符数守卫必须在 splitLines/normalize **之前**：normalize 的 replace 会再造一份
+    // 同样大小的字符串，splitLines 的 substring 又会复制每一行。堆已紧张时，
+    // 在拆分阶段就可能 OOM，而那时已经没机会走 degraded 了。
+    if (oldContent.length > MAX_CHARS || newContent.length > MAX_CHARS) {
+      return degradedBySize(oldContent, newContent, oldExists)
+    }
+
     val oldLines = if (oldExists) splitLines(normalize(oldContent)) else emptyList()
     val newLines = splitLines(normalize(newContent))
 
@@ -287,6 +310,45 @@ object AssistantDiffBuilder {
     }
     return DiffResult(lines, added = new.size, removed = old.size, truncated = true)
   }
+
+  /**
+   * 按**字符数**超限时的降级：连 splitLines 都不做，只给一行摘要。
+   *
+   * <p>与 [degraded] 的区别：那个仍会把每一行原样放进结果（行数超限时行数本身还不算多），
+   * 而这里内容可能有几十 MB——再把每一行复制进 {@link DiffLine} 就是二次分配，正是要
+   * 避免的事。卡片只需告诉用户「这个文件改了多少」，具体内容让用户直接打开文件看。
+   */
+  private fun degradedBySize(oldContent: String, newContent: String, oldExists: Boolean): DiffResult {
+    val oldCount = if (oldExists) countLines(oldContent) else 0
+    val newCount = countLines(newContent)
+    val summary =
+        DiffLine(
+            1,
+            1,
+            DiffLineType.EQUAL,
+            "（文件过大，未逐行对比：旧 ${formatSize(oldContent.length)} / 新 ${formatSize(newContent.length)}，" +
+                "约 $oldCount → $newCount 行。请直接打开文件查看。）")
+    return DiffResult(listOf(summary), added = 0, removed = 0, truncated = true)
+  }
+
+  /** 数行数但不拆行（避免 substring 复制）。 */
+  private fun countLines(text: String): Int {
+    if (text.isEmpty()) {
+      return 0
+    }
+    var count = 1
+    for (i in text.indices) {
+      if (text[i] == '\n') {
+        count++
+      }
+    }
+    // 末尾换行是行终止符而非空行，与 splitLines 的语义保持一致。
+    return if (text[text.length - 1] == '\n') count - 1 else count
+  }
+
+  private fun formatSize(chars: Int): String =
+      if (chars >= 1_000_000) String.format(java.util.Locale.US, "%.1fM 字符", chars / 1_000_000.0)
+      else String.format(java.util.Locale.US, "%.0fK 字符", chars / 1_000.0)
 
   // ---- 行内词级 diff ----
 

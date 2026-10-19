@@ -306,6 +306,21 @@ public final class AgentSession {
       return runLoop(
           config, systemPrompt, userRequest, history, toolContext, cancellationToken, listener,
           contextManager, rawInputJson, reasoningEffort);
+    } catch (OutOfMemoryError oom) {
+      // OOM 是 Error 不是 Exception，此前会一路冒到 UI 的 catch(Throwable)，用户看到的是
+      // 「出错了：OutOfMemoryError — Failed to allocate a 22055512 byte allocation with
+      // 19MB until OOM」——既看不懂，也没有任何可操作建议，而且整轮会话就此终止。
+      //
+      // 这里转成普通失败事件：agent 循环正常收尾、会话历史保持完整，用户可以接着
+      // 压缩上下文或新建会话继续。**不在这里尝试恢复**——堆已经满了，任何额外分配
+      // （包括拼装错误文案）都可能再次 OOM，因此提示文案用常量。
+      return finish(
+          listener,
+          AgentEvent.failed(
+              "内存不足，本轮已中止。建议：新建会话、压缩上下文，或关闭其他占用内存的应用后重试。"),
+          "",
+          0,
+          0);
     } finally {
       // 收尾：关闭注入槽。此后 offerInject 一律拒绝——调用方（orchestrator）据此
       // 把消息留在队列里走正常排队路径。必须在 finally：本方法有多条 return

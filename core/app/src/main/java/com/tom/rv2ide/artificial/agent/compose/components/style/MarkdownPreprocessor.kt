@@ -52,6 +52,16 @@ internal object MarkdownPreprocessor {
 
     internal fun cachedEntryCount(): Int = cache.size()
 
+    /**
+     * 清空预处理缓存。内存压力下由
+     * [com.tom.rv2ide.artificial.agent.MemoryPressureGuard] 调用。
+     *
+     * <p>这些是纯缓存（原文 → 预处理结果的映射），丢弃后下一次渲染会重新计算，
+     * 不影响任何用户可见内容。权重上限 100 万字符，加上每条 key/value 各存一份，
+     * 实际占用可达数 MB。
+     */
+    internal fun clearCache() = cache.clear()
+
     fun process(raw: String, cacheEnabled: Boolean = true): String {
         if (raw.isEmpty()) return raw
         // 无需处理的快速路径：既没有 HTML 标签、没有 $ 或 \( / \[ 数学定界符，也没有 & 实体

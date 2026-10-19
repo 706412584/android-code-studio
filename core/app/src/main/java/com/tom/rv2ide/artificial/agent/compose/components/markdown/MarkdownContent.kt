@@ -159,6 +159,17 @@ internal class WeightedLruCache<K, V>(
 
     @Synchronized
     fun size(): Int = entries.size
+
+    /**
+     * 清空全部条目。内存压力下由 [com.tom.rv2ide.artificial.agent.MemoryPressureGuard]
+     * 调用：这些是**纯缓存**（解析结果可随时重算），丢弃不影响任何用户可见状态，
+     * 只是下一次渲染会重新解析。
+     */
+    @Synchronized
+    fun clear() {
+        entries.clear()
+        weight = 0
+    }
 }
 
 internal const val MARKDOWN_CACHE_MAX_ENTRIES = 80
@@ -199,6 +210,11 @@ internal class MarkdownRenderCache(
         if (trimmed != state.content) {
             parsedStates.put(trimmed, state)
         }
+    }
+
+    /** 清空解析缓存；内存压力下由 MemoryPressureGuard 调用。 */
+    fun clear() {
+        parsedStates.clear()
     }
 }
 

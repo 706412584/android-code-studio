@@ -142,6 +142,31 @@ private object LatexBitmapCache {
     fun prewarm(link: String, colorArgb: Int, textSizePx: Float, render: suspend () -> Bitmap?) {
         getOrStartBitmap(link, colorArgb, textSizePx, render)
     }
+
+    /**
+     * 丢弃全部缓存的公式位图。内存压力下由
+     * [com.tom.rv2ide.artificial.agent.MemoryPressureGuard] 调用。
+     *
+     * <p>最多 256 张位图，按公式尺寸每张几十 KB 到几百 KB——是这里最实在的一块。
+     * 已完成渲染的位图在这里显式 recycle；仍在渲染中的 Deferred 只从表里移除，
+     * 由它自己的协程收尾（不能取消，否则会打断正在进行的排版）。
+     */
+    fun clear() {
+        val dropped: List<Deferred<Bitmap?>>
+        synchronized(bitmaps) {
+            dropped = bitmaps.values.toList()
+            bitmaps.clear()
+        }
+        for (deferred in dropped) {
+            if (deferred.isCompleted) {
+                try {
+                    deferred.getCompleted()?.let { if (!it.isRecycled) it.recycle() }
+                } catch (t: Throwable) {
+                    // 渲染失败或已被回收：忽略。
+                }
+            }
+        }
+    }
 }
 
 internal class MathImageTransformer(
@@ -300,4 +325,14 @@ internal class MathImageTransformer(
             }
         }
     }
+}
+
+/**
+ * 清空公式位图缓存。供 [com.tom.rv2ide.artificial.agent.MemoryPressureGuard] 调用。
+ *
+ * <p>[LatexBitmapCache] 是 `private object`（只在包内使用），这里开一个内部入口，
+ * 而不是把它改成 public——缓存实现不该成为对外 API。
+ */
+internal fun clearLatexBitmapCache() {
+  LatexBitmapCache.clear()
 }

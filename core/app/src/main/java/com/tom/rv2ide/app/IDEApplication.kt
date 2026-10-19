@@ -135,6 +135,10 @@ class IDEApplication : TermuxApplication() {
     // 内存采样：每 60s 往日志缓冲写一行内存画像（超阈值升级为 WARN）。
     // 「有时候卡顿」类问题的排查入口——`ide_log_read` 一查就能看到内存轨迹
     // （例：连续几条 java 420→480→510MB 即 OOM 前兆）。旁路诊断，零业务耦合。
+    //
+    // 采样线程同时驱动 MemoryPressureGuard：堆 ≥85% 时释放下面注册的纯缓存，
+    // ≥92% 时再释放并升级告警。这样「涨到 490MB」不再只能等 OOM。
+    registerMemoryReleasers()
     com.tom.rv2ide.artificial.agent.tool.MemorySampler.start(this)
 
     if (GeneralPreferences.snowfallOverlay && isSnowfallSeasonActive()) {
@@ -308,6 +312,51 @@ class IDEApplication : TermuxApplication() {
   private fun handleCrash(thread: Thread, th: Throwable) {
     // writeException(th)
 
+    // OOM 兜底：先尽量释放可回收缓存，再决定是否真的崩。
+    //
+    // 走到这里说明某个线程没有接住 OutOfMemoryError（agent 循环与图片解码路径已各自
+    // 有 catch，这里覆盖其余路径，例如 Compose 重组、Markdown 渲染、编辑器）。
+    // 此时堆已满，但「释放缓存 + 提示用户」仍可能让进程活下来——用户至少能保存
+    // 正在编辑的文件，而不是直接丢失未保存内容。
+    //
+    // 不能保证一定恢复：若释放后仍无法分配，继续走下面的崩溃上报流程。
+    if (th is OutOfMemoryError) {
+      val released =
+          try {
+            com.tom.rv2ide.artificial.agent.MemoryPressureGuard.releaseNow()
+          } catch (ignored: Throwable) {
+            0
+          }
+      Log.e("IDEApplication", "OutOfMemoryError: 已释放 $released 个缓存，尝试恢复", th)
+
+      // 给 GC 一次机会，然后看是否真的有可分配空间。用一个小数组探测而不是
+      // 直接继续——探测失败就老老实实走崩溃上报。
+      System.gc()
+      val headroom = Runtime.getRuntime().maxMemory() -
+          (Runtime.getRuntime().totalMemory() - Runtime.getRuntime().freeMemory())
+      if (headroom > OOM_RECOVERY_MIN_HEADROOM_BYTES) {
+        try {
+          val intent =
+              Intent().apply {
+                action = CrashHandlerActivity.REPORT_ACTION
+                putExtra(CrashHandlerActivity.TRACE_KEY, getFullStackTrace(th))
+                putExtra(
+                    CrashHandlerActivity.OOM_RECOVERED_KEY,
+                    "内存不足，已释放缓存并恢复。若界面异常，请重启应用；" +
+                        "建议压缩会话上下文或新建会话。",
+                )
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+              }
+          startActivity(intent)
+          // **不**调用原 uncaughtExceptionHandler，也不 exitProcess：
+          // 让它回到原线程继续（该线程上的当前操作已失败，但进程还在）。
+          return
+        } catch (error: Throwable) {
+          Log.e("IDEApplication", "OOM 恢复提示失败，转为常规崩溃上报", error)
+        }
+      }
+    }
+
     try {
 
       val intent = Intent()
@@ -396,7 +445,42 @@ class IDEApplication : TermuxApplication() {
   fun getMemoryProfiler(): MemoryProfiler? {
     return memoryProfiler
   }
+
+  /**
+   * 注册「可随时丢弃」的缓存释放器。
+   *
+   * <p>只注册**纯缓存**：丢掉后下一次渲染重算，用户看不到任何差异。不要注册会话历史、
+   * 打开的文件、运行中的任务——那些丢了就是数据损坏。
+   *
+   * <p>释放器必须幂等且不阻塞：它们会在采样线程（60s 周期）与 OOM 兜底路径上被调用。
+   */
+  private fun registerMemoryReleasers() {
+    com.tom.rv2ide.artificial.agent.MemoryPressureGuard.register("markdown-preprocess") {
+      com.tom.rv2ide.artificial.agent.compose.components.style.MarkdownPreprocessor.clearCache()
+    }
+    com.tom.rv2ide.artificial.agent.MemoryPressureGuard.register("latex-bitmaps") {
+      com.tom.rv2ide.artificial.agent.compose.components.markdown.clearLatexBitmapCache()
+    }
+  }
+
+  override fun onTrimMemory(level: Int) {
+    super.onTrimMemory(level)
+    // 系统主动回收压力（切后台、内存紧张）时先丢纯缓存，比等 OOM 好。
+    if (level >= TRIM_MEMORY_RUNNING_LOW) {
+      com.tom.rv2ide.artificial.agent.MemoryPressureGuard.releaseNow()
+    }
+  }
+
   companion object {
+
+    /**
+     * OOM 恢复所需的最小剩余堆（字节）。
+     *
+     * <p>取 8MB：释放缓存后若连这个量都腾不出来，说明进程已无救，
+     * 继续运行只会在下一次分配时再崩一次（而且可能崩在更危险的位置，
+     * 例如写文件中途）。
+     */
+    private const val OOM_RECOVERY_MIN_HEADROOM_BYTES = 8L * 1024 * 1024
 
     private val log = LoggerFactory.getLogger(IDEApplication::class.java)
 
