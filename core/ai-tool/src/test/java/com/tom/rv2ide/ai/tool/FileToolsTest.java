@@ -300,4 +300,144 @@ final class FileToolsTest {
 
     assertTrue(result.isError(), "工作区外的写入应被拒绝");
   }
+
+  // ---- file_edit 批量模式（edits 数组）----
+
+  private static JSONObject edits(Object... oldNewPairs) {
+    org.json.JSONArray array = new org.json.JSONArray();
+    for (int i = 0; i < oldNewPairs.length; i += 2) {
+      array.put(
+          new JSONObject()
+              .put("old_string", (String) oldNewPairs[i])
+              .put("new_string", (String) oldNewPairs[i + 1]));
+    }
+    return new JSONObject().put("file_path", "f.txt").put("edits", array);
+  }
+
+  @Test
+  void batchEditAppliesAllReplacements(@TempDir Path workspace) throws IOException {
+    Files.writeString(workspace.resolve("f.txt"), "alpha\nbeta\ngamma\n");
+
+    ToolResult result =
+        new FileEditTool()
+            .execute(edits("alpha", "ALPHA", "gamma", "GAMMA"), context(workspace));
+
+    assertFalse(result.isError(), "批量编辑应成功: " + result.getContent());
+    assertEquals("ALPHA\nbeta\nGAMMA\n", Files.readString(workspace.resolve("f.txt")));
+  }
+
+  /**
+   * 核心保证：任何一条失败都**不写盘**。
+   *
+   * <p>逐次调用时，第 2 处失败会让第 1 处已经落盘——文件停在半改状态。
+   * 批量模式必须在内存里全部应用完再一次性写入。
+   */
+  @Test
+  void batchEditIsAtomicOnPartialFailure(@TempDir Path workspace) throws IOException {
+    String original = "alpha\nbeta\ngamma\n";
+    Files.writeString(workspace.resolve("f.txt"), original);
+
+    // 第 2 条匹配不到 → 整批失败
+    ToolResult result =
+        new FileEditTool()
+            .execute(edits("alpha", "ALPHA", "nonexistent", "X"), context(workspace));
+
+    assertTrue(result.isError());
+    assertTrue(result.getContent().contains("edits[1]"), result.getContent());
+    assertEquals(
+        original, Files.readString(workspace.resolve("f.txt")), "有一条失败时文件必须完全不动");
+  }
+
+  /** 按序应用：后一条可以匹配前一条产生的结果（先改类名再改调用点是常见写法）。 */
+  @Test
+  void batchEditsApplyInOrder(@TempDir Path workspace) throws IOException {
+    Files.writeString(workspace.resolve("f.txt"), "start\n");
+
+    ToolResult result =
+        new FileEditTool().execute(edits("start", "middle", "middle", "end"), context(workspace));
+
+    assertFalse(result.isError(), result.getContent());
+    assertEquals("end\n", Files.readString(workspace.resolve("f.txt")));
+  }
+
+  /** 单条 entry 也支持 replace_all。 */
+  @Test
+  void batchEditItemSupportsReplaceAll(@TempDir Path workspace) throws IOException {
+    Files.writeString(workspace.resolve("f.txt"), "x\nx\nx\n");
+    org.json.JSONArray array =
+        new org.json.JSONArray()
+            .put(
+                new JSONObject()
+                    .put("old_string", "x")
+                    .put("new_string", "y")
+                    .put("replace_all", true));
+
+    ToolResult result =
+        new FileEditTool()
+            .execute(
+                new JSONObject().put("file_path", "f.txt").put("edits", array),
+                context(workspace));
+
+    assertFalse(result.isError(), result.getContent());
+    assertEquals("y\ny\ny\n", Files.readString(workspace.resolve("f.txt")));
+  }
+
+  /** 多处匹配且没开 replace_all → 该条失败，整批不写。 */
+  @Test
+  void batchEditRejectsAmbiguousMatch(@TempDir Path workspace) throws IOException {
+    String original = "dup\ndup\n";
+    Files.writeString(workspace.resolve("f.txt"), original);
+
+    ToolResult result = new FileEditTool().execute(edits("dup", "one"), context(workspace));
+
+    assertTrue(result.isError());
+    assertEquals(original, Files.readString(workspace.resolve("f.txt")));
+  }
+
+  @Test
+  void batchEditRejectsEmptyOldString(@TempDir Path workspace) throws IOException {
+    Files.writeString(workspace.resolve("f.txt"), "abc\n");
+    ToolResult result = new FileEditTool().execute(edits("", "x"), context(workspace));
+
+    assertTrue(result.isError());
+    assertTrue(result.getContent().contains("edits[0]"), result.getContent());
+  }
+
+  /** 批量模式也要走行尾归一化：CRLF 文件不能被一次批量编辑整体转成 LF。 */
+  @Test
+  void batchEditPreservesCrlf(@TempDir Path workspace) throws IOException {
+    Files.writeString(workspace.resolve("f.txt"), "a\r\nb\r\nc\r\n");
+
+    ToolResult result =
+        new FileEditTool().execute(edits("a\n", "A\n", "c\n", "C\n"), context(workspace));
+
+    assertFalse(result.isError(), result.getContent());
+    assertEquals("A\r\nb\r\nC\r\n", Files.readString(workspace.resolve("f.txt")));
+  }
+
+  /** 批量模式仍要求 file_path（授权粒度按路径，不能靠 edits 绕过）。 */
+  @Test
+  void batchEditRequiresFilePath(@TempDir Path workspace) throws IOException {
+    org.json.JSONArray array =
+        new org.json.JSONArray()
+            .put(new JSONObject().put("old_string", "a").put("new_string", "b"));
+    ToolResult result =
+        new FileEditTool().execute(new JSONObject().put("edits", array), context(workspace));
+
+    assertTrue(result.isError());
+  }
+
+  /** 旧的单次参数仍然可用（不能因为加了批量就破坏原有调用）。 */
+  @Test
+  void singleEditStillWorksWithoutEditsArray(@TempDir Path workspace) throws IOException {
+    Files.writeString(workspace.resolve("f.txt"), "hello world\n");
+    ToolResult result =
+        new FileEditTool()
+            .execute(
+                args("file_path", "f.txt", "old_string", "world", "new_string", "there"),
+                context(workspace));
+
+    assertFalse(result.isError(), result.getContent());
+    assertEquals("hello there\n", Files.readString(workspace.resolve("f.txt")));
+  }
 }

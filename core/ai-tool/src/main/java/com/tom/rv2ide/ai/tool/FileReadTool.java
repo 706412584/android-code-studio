@@ -35,6 +35,10 @@ public final class FileReadTool extends BaseTool {
     private static final long LARGE_FILE_THRESHOLD_BYTES = 50L * 1024L;
     /** 单次 KB 读取的最大跨度（KB），防止超大的 end_kb 一次性申请过多内存。 */
     private static final int MAX_KB_RANGE = 1024;
+    /** 按行读取时未给 end_line 的默认行数。 */
+    private static final int DEFAULT_LINE_RANGE = 400;
+    /** 单次按行读取的行数上限（与 KB 上限同量级：400 行文本通常远小于 1MB）。 */
+    private static final int MAX_LINE_RANGE = 2000;
     private static final int MAX_DIRECTORY_ITEMS = 400;
 
     @Override
@@ -44,7 +48,12 @@ public final class FileReadTool extends BaseTool {
 
     @Override
     public String getDescription() {
-        return "Read file contents. Returns line-numbered content; for large files, read in segments via start_kb/end_kb (end_kb may exceed 50, up to the file size). Returns a directory tree when reading a directory. For image files (PNG/JPEG) the image itself is returned for visual inspection.";
+        return "Read file contents. Returns line-numbered content. "
+            + "Prefer start_line/end_line when you have a line number (from grep, diagnostics or lsp_navigate) "
+            + "— they are 1-based and line-accurate. "
+            + "Use start_kb/end_kb only when you have no line number and need to page through a large file. "
+            + "Returns a directory tree when reading a directory. "
+            + "For image files (PNG/JPEG) the image itself is returned for visual inspection.";
     }
 
     @Override
@@ -69,7 +78,9 @@ public final class FileReadTool extends BaseTool {
                 .put("properties", new JSONObject()
                         .put("file_path", new JSONObject().put("type", "string").put("description", "Absolute or relative file path"))
                         .put("start_kb", new JSONObject().put("type", "number").put("description", "Start position in KB, default 0"))
-                        .put("end_kb", new JSONObject().put("type", "number").put("description", "End position in KB, default 50; may exceed 50, clamped to the file size")))
+                        .put("end_kb", new JSONObject().put("type", "number").put("description", "End position in KB, default 50; may exceed 50, clamped to the file size"))
+                        .put("start_line", new JSONObject().put("type", "number").put("description", "Start line, 1-based. Use this (instead of start_kb) when you have a line number from grep/diagnostics/lsp_navigate. Takes precedence over the KB range."))
+                        .put("end_line", new JSONObject().put("type", "number").put("description", "End line, inclusive. Defaults to start_line + " + (DEFAULT_LINE_RANGE - 1) + "; capped at " + MAX_LINE_RANGE + " lines per read.")))
                 .put("required", new org.json.JSONArray().put("file_path"));
     }
 
@@ -100,6 +111,12 @@ public final class FileReadTool extends BaseTool {
             if (ImageFileSupport.hasUnsupportedImageExtension(file)) {
                 return error(ToolMessages.format(ToolMessages.FILE_READ_IMAGE_UNSUPPORTED,
                         FileToolPathPolicy.displayPath(context.getHomePath(), file)));
+            }
+
+            // 行号范围优先于 KB 范围：grep / diagnostics / lsp_navigate 返回的都是行号，
+            // 而 KB 与行号在含中文的文件里完全不成比例，靠 KB 估算经常读偏再重试。
+            if (input.has("start_line") || input.has("end_line")) {
+                return readByLine(file, context, input);
             }
 
             int startKb = Math.max(0, input.optInt("start_kb", 0));
@@ -257,6 +274,95 @@ public final class FileReadTool extends BaseTool {
             System.arraycopy(buffer, 0, trimmed, 0, offset);
             return trimmed;
         }
+    }
+
+    /**
+     * 按行号读取（1 起，含首尾）。
+     *
+     * <p><b>为什么需要它</b>：{@code grep}、{@code diagnostics}、{@code lsp_navigate} 返回的
+     * 都是行号，而 {@code file_read} 只有 KB 分页。含中文的文件里 KB 与行号完全不成比例，
+     * 模型只能估算该读哪一段，经常读偏后再重试。
+     *
+     * <p><b>实现</b>：逐行扫描以确定边界行对应的字节位置，再按字节区间读取。
+     * 不用「全部读进内存再 split」——那对大文件会 OOM，而本工具的全部意义就是分片读大文件。
+     */
+    private ToolResult readByLine(File file, ToolContext context, JSONObject input) throws Exception {
+        int startLine = (int) input.optDouble("start_line", 1);
+        if (startLine < 1) {
+            startLine = 1;
+        }
+        long totalLines = countLines(file);
+        if (startLine > totalLines) {
+            return error(ToolMessages.format(
+                    ToolMessages.FILE_READ_LINE_OUT_OF_RANGE, startLine, totalLines));
+        }
+        int endLine = (int) input.optDouble("end_line", 0);
+        boolean clamped = false;
+        if (endLine < startLine) {
+            endLine = startLine + DEFAULT_LINE_RANGE - 1;
+        }
+        if (endLine - startLine + 1 > MAX_LINE_RANGE) {
+            endLine = startLine + MAX_LINE_RANGE - 1;
+            clamped = true;
+        }
+        if (endLine > totalLines) {
+            endLine = (int) totalLines;
+        }
+
+        String extracted = readLineRange(file, startLine, endLine);
+        StringBuilder result = new StringBuilder();
+        result.append(addLineNumbers(extracted, startLine));
+        if (clamped) {
+            result.append(ToolMessages.format(
+                    ToolMessages.FILE_READ_LINE_RANGE_CLAMPED, MAX_LINE_RANGE, endLine + 1));
+        } else {
+            result.append(ToolMessages.format(
+                    ToolMessages.FILE_READ_LINE_RANGE_INFO, totalLines, startLine, endLine));
+        }
+        return ok(ToolResult.truncateContent(result.toString()));
+    }
+
+    /**
+     * 读文件的第 [startLine, endLine] 行（1 起，含首尾）。
+     *
+     * <p>逐行扫描文件，只保留目标区间的行；扫描到 endLine 即停止，不会读完整个文件。
+     */
+    private static String readLineRange(File file, int startLine, int endLine) throws Exception {
+        StringBuilder sb = new StringBuilder();
+        try (java.io.BufferedReader reader =
+                new java.io.BufferedReader(
+                        new java.io.InputStreamReader(
+                                new java.io.FileInputStream(file), StandardCharsets.UTF_8))) {
+            String line;
+            int number = 0;
+            while ((line = reader.readLine()) != null) {
+                number++;
+                if (number < startLine) {
+                    continue;
+                }
+                if (number > endLine) {
+                    break;
+                }
+                if (sb.length() > 0) {
+                    sb.append('\n');
+                }
+                sb.append(line);
+            }
+        }
+        return sb.toString();
+    }
+
+    /** 文件总行数（与 {@link #countNewlines} 的口径一致：末尾换行不算多一行）。 */
+    private static long countLines(File file) throws Exception {
+        long len = file.length();
+        if (len == 0) {
+            return 0;
+        }
+        long lines = 1 + countNewlines(file, len);
+        if (lastByteIsNewline(file)) {
+            lines--;
+        }
+        return lines;
     }
 
     private String addLineNumbers(String content, int startLine) {

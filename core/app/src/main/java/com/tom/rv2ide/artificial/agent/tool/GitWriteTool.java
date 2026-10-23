@@ -70,6 +70,9 @@ public final class GitWriteTool extends BaseTool {
     ACTIONS.put("fetch", "抓取远端更新（默认 origin），不合并");
     ACTIONS.put("pull", "拉取并合并远端分支（默认 origin 的当前分支）");
     ACTIONS.put("push", "推送本地分支到远端（默认 origin 的当前分支）");
+    ACTIONS.put("stash", "把未提交的改动存进 stash 并回到干净工作区（切换分支前清理现场）");
+    ACTIONS.put("stash_pop", "恢复最近一次 stash 的改动（冲突时保留 stash，不会丢内容）");
+    ACTIONS.put("merge", "把指定分支合并进当前分支（需 branch；冲突时会中止并还原）");
   }
 
   /** 失败时的按动作提示：GitManager 吞掉了异常细节，这里至少给出最常见的排查方向。 */
@@ -88,6 +91,9 @@ public final class GitWriteTool extends BaseTool {
     FAILURE_HINTS.put("fetch", "远端不可达、凭据缺失，或网络问题。");
     FAILURE_HINTS.put("pull", "本地有未提交改动与远端冲突，或远端/凭据问题。");
     FAILURE_HINTS.put("push", "远端不可达、凭据缺失，或本地落后于远端（先 pull）。");
+    FAILURE_HINTS.put("stash", "没有可暂存的改动，或仓库尚无提交（未出生 HEAD 时 JGit 会拒绝）。");
+    FAILURE_HINTS.put("stash_pop", "stash 为空，或恢复时与工作区冲突（冲突时内容仍在 stash 里，未丢）。");
+    FAILURE_HINTS.put("merge", "分支不存在、有冲突（已中止并还原），或工作区有未提交改动（先 stash 或 commit）。");
   }
 
   /**
@@ -179,13 +185,13 @@ public final class GitWriteTool extends BaseTool {
                     "message",
                     new JSONObject()
                         .put("type", "string")
-                        .put("description", "commit 用：提交信息"))
+                        .put("description", "commit / stash 用：提交信息或 stash 备注"))
                 .put(
                     "branch",
                     new JSONObject()
                         .put("type", "string")
                         .put("description",
-                            "checkout/branch_create/branch_delete 用：分支名；"
+                            "checkout/branch_create/branch_delete/merge 用：分支名；"
                                 + "pull/push 可选，默认当前分支"))
                 .put(
                     "remote",
@@ -266,6 +272,12 @@ public final class GitWriteTool extends BaseTool {
         return pull(input, context, manager);
       case "push":
         return push(input, context, manager);
+      case "stash":
+        return stash(input, manager);
+      case "stash_pop":
+        return stashPop(manager);
+      case "merge":
+        return merge(input, manager);
       default:
         return GitRepoSupport.err(getName(), "未实现的 action：" + action);
     }
@@ -544,6 +556,90 @@ public final class GitWriteTool extends BaseTool {
   private static String requirePath(JSONObject input, String root) {
     String path = GitRepoSupport.toRepoRelative(root, input.optString("file_path", "").trim());
     return path.isEmpty() ? null : path;
+  }
+
+  // ---- stash / merge ----
+
+  /**
+   * 把未提交的改动存进 stash。
+   *
+   * <p><b>为什么需要它</b>：此前模型遇到「工作区脏 + 要 checkout」，唯一出路是
+   * {@code discard}（不可逆，直接丢用户的修改）。stash 是可恢复的清理方式。
+   */
+  private ToolResult stash(JSONObject input, GitManager manager) {
+    if (manager.stashCount() == 0 && !hasUncommittedChanges(manager)) {
+      return GitRepoSupport.err(getName(),
+          "没有可暂存的改动（工作区是干净的）。");
+    }
+    String message = input.optString("message", "").trim();
+    String name = manager.stashChanges(message.isEmpty() ? null : message);
+    if (name == null) {
+      return failure("stash");
+    }
+    return GitRepoSupport.ok(getName(),
+        "已暂存改动到 stash" + (message.isEmpty() ? "" : "（" + message + "）")
+            + "。恢复用 action=stash_pop。");
+  }
+
+  /** 恢复最近一次 stash。 */
+  private ToolResult stashPop(GitManager manager) {
+    if (manager.stashCount() == 0) {
+      return GitRepoSupport.err(getName(), "stash 是空的，没有可恢复的改动。");
+    }
+    if (!manager.popStash(null)) {
+      // 冲突时 JGit 的 apply 返回 null 并把内容留在 stash 里——必须点明，否则
+      // 用户以为改动丢了
+      return GitRepoSupport.err(getName(),
+          "git stash_pop 失败：可能与当前工作区冲突。改动**仍在 stash 里**（没有丢），"
+              + "先手动处理冲突文件后再试，或用 shell_execute 执行 git stash show -p 查看内容。");
+    }
+    return GitRepoSupport.ok(getName(), "已恢复 stash 的改动到工作区。");
+  }
+
+  /**
+   * 把指定分支合并进当前分支。
+   *
+   * <p>冲突时 {@link GitManager#mergeBranch} 会中止合并并还原，所以这里只需报出
+   * 冲突清单——不会留下 MERGING 中间态。
+   */
+  private ToolResult merge(JSONObject input, GitManager manager) {
+    String branch = requireBranch(input);
+    if (branch == null) {
+      return GitRepoSupport.err(getName(), "merge 需要 branch（要合并进来的分支名）。");
+    }
+    String current = manager.getCurrentBranch();
+    if (branch.equals(current)) {
+      return GitRepoSupport.err(getName(), "不能把分支合并进它自己：" + branch + "。");
+    }
+    if (!manager.getAllBranches().contains(branch) && !manager.getLocalBranches().contains(branch)) {
+      return GitRepoSupport.err(getName(),
+          "分支不存在：" + branch + "。本地：" + join(manager.getLocalBranches()));
+    }
+    GitManager.MergeResult result = manager.mergeBranch(branch);
+    if (result.getMerged()) {
+      return GitRepoSupport.ok(getName(),
+          "已把 " + branch + " 合并进 " + current + "。用 git action=status 查看结果。");
+    }
+    if (result.getConflicts().isEmpty()) {
+      return failure("merge");
+    }
+    StringBuilder sb = new StringBuilder();
+    sb.append("合并 ").append(branch).append(" 遇到冲突，已中止合并并还原工作区（没有留下未完成的合并）。\n");
+    sb.append("冲突内容：\n");
+    for (String conflict : result.getConflicts()) {
+      sb.append("  - ").append(conflict).append('\n');
+    }
+    sb.append("请先处理这些差异（可先用 git action=diff 对比两个分支），再重新合并。");
+    return GitRepoSupport.err(getName(), sb.toString());
+  }
+
+  /** 工作区是否有未提交的改动（含未跟踪文件）。 */
+  private static boolean hasUncommittedChanges(GitManager manager) {
+    org.eclipse.jgit.api.Status status = manager.getStatus();
+    if (status == null) {
+      return false;
+    }
+    return !status.isClean();
   }
 
   private static String requireBranch(JSONObject input) {

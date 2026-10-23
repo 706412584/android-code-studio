@@ -78,6 +78,7 @@ import com.tom.rv2ide.artificial.agent.tool.GradleBuildTool;
 import com.tom.rv2ide.artificial.secrets.ApiKey;
 import com.tom.rv2ide.artificial.agent.tool.InstallApkTool;
 import com.tom.rv2ide.artificial.agent.tool.LayoutPreviewTool;
+import com.tom.rv2ide.artificial.agent.tool.RunTestsTool;
 import com.tom.rv2ide.artificial.agent.tool.TestCoverageTool;
 import com.tom.rv2ide.artificial.agent.tool.LaunchAppTool;
 import com.tom.rv2ide.artificial.agent.tool.LogcatReadTool;
@@ -1380,6 +1381,10 @@ public final class AgentOrchestrator {
     registry.register(new FileWriteTool());
     registry.register(new FileEditTool());
     registry.register(new FileDeleteTool());
+    // 移动/复制：此前重命名只能 read → write → delete 三步，中途失败会留下半成品。
+    // 两者分开注册是因为移动会删源（需确认）、复制不会（免打扰）。
+    registry.register(new com.tom.rv2ide.ai.tool.FileMoveTool());
+    registry.register(new com.tom.rv2ide.ai.tool.FileCopyTool());
     registry.register(new GlobTool());
     // 按内容搜索。设备自带的 BSD grep 2.5.1 不支持 | 交替、-r 行为也不可靠，
     // 而 ripgrep 没有——本工具在进程内用 java.util.regex 搜索，不依赖任何后端。
@@ -1508,6 +1513,9 @@ public final class AgentOrchestrator {
     registry.register(new InstallApkTool(appContext));
     // 测试覆盖率：改完代码后自查「哪里没被测到」（跑 kover + 解析报告，与 gradle_build 同档）。
     registry.register(new TestCoverageTool(this::lookupBuildService));
+    // 单元测试结果：覆盖率回答「测到多少」，这个回答「挂了哪几个、为什么挂」。
+    // gradle_build 只回 BUILD FAILED，模型还得自己翻 build/test-results/ 的 XML。
+    registry.register(new RunTestsTool(this::lookupBuildService));
 
     // 云编译：GitHub Actions 触发（需确认）与状态查询（只读）分成两个工具，
     // 权限分级才能各归其位（同 git / git_write 的拆分理由）。
@@ -1521,6 +1529,17 @@ public final class AgentOrchestrator {
         cloudToken, appContext.getCacheDir()));
     registry.register(
         new com.tom.rv2ide.artificial.agent.tool.GitHubActionsStatusTool(cloudToken));
+    // Issue / PR：读与写各拆成两个工具，理由同 git / git_write——权限层按工具分级，
+    // 混在一起会让「看一眼有哪些 issue」也弹确认框。四个工具共用同一个 token 提供者
+    // （懒读，真正的 keystore I/O 发生在工具执行的 IO 线程）。
+    registry.register(
+        new com.tom.rv2ide.artificial.agent.tool.GitHubIssueTool(cloudToken));
+    registry.register(
+        new com.tom.rv2ide.artificial.agent.tool.GitHubIssueWriteTool(cloudToken));
+    registry.register(
+        new com.tom.rv2ide.artificial.agent.tool.GitHubPrTool(cloudToken));
+    registry.register(
+        new com.tom.rv2ide.artificial.agent.tool.GitHubPrWriteTool(cloudToken));
     // 同 LogcatReadTool：必须传共享的 shellBackends。只传 context 会让它自建一个
     // registry（见 LaunchAppTool(Context) 构造），而自建的不知道用户选的后端——
     // 用户配好 Shizuku 时，启动应用仍会退化成「需要用户点确认」的 Intent 路径。

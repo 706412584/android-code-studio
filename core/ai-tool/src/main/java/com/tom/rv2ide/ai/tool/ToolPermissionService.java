@@ -84,7 +84,11 @@ public final class ToolPermissionService {
     }
 
     // 注册表不可用时按工具名兜底判断，避免把危险操作放过去。
-    if (ToolNames.FILE_DELETE.equals(toolName) || ToolNames.SHELL_EXECUTE.equals(toolName)) {
+    // file_move 会删除源文件，与 file_delete 同级；漏掉它等于给出一条「注册表异常时
+    // 可以静默移动用户文件」的路径。
+    if (ToolNames.FILE_DELETE.equals(toolName)
+        || ToolNames.FILE_MOVE.equals(toolName)
+        || ToolNames.SHELL_EXECUTE.equals(toolName)) {
       return true;
     }
 

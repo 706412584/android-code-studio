@@ -58,7 +58,8 @@ object AssistantActionText {
       ToolNames.FILE_READ -> context.getString(string.ai_assistant_work_reading, target)
       ToolNames.FILE_EDIT -> context.getString(string.ai_assistant_work_editing, target)
       ToolNames.FILE_WRITE -> context.getString(string.ai_assistant_work_writing, target)
-      ToolNames.FILE_DELETE -> context.getString(string.ai_assistant_work_editing, target)
+      ToolNames.FILE_DELETE, ToolNames.FILE_MOVE, ToolNames.FILE_COPY ->
+          context.getString(string.ai_assistant_work_editing, target)
       ToolNames.LIST_DIR -> context.getString(string.ai_assistant_work_listing, target)
       ToolNames.GLOB -> context.getString(string.ai_assistant_work_searching, target)
       ToolNames.SHELL_EXECUTE -> context.getString(string.ai_assistant_work_running, target)
@@ -87,6 +88,14 @@ object AssistantActionText {
           context.getString(string.ai_assistant_work_cloud_build, target)
       ToolNames.GITHUB_ACTIONS_STATUS ->
           context.getString(string.ai_assistant_work_cloud_status)
+      // 跑测试与跑构建对用户是两件事：前者是「验证」，后者是「打包」。
+      ToolNames.RUN_TESTS -> context.getString(string.ai_assistant_work_testing, target)
+      // Issue / PR：查询与写操作各一句。target 形如「#12」或「列表」，
+      // 让状态条能区分「正在读取 issue #12」与「正在查询 issue 列表」。
+      ToolNames.GITHUB_ISSUE, ToolNames.GITHUB_ISSUE_WRITE ->
+          context.getString(string.ai_assistant_work_github_issue, target)
+      ToolNames.GITHUB_PR, ToolNames.GITHUB_PR_WRITE ->
+          context.getString(string.ai_assistant_work_github_pr, target)
       // 这三个是 app 层的工具，名字常量在各自类里（不在 ToolNames 中）。
       "gradle_build" -> context.getString(string.ai_assistant_work_building)
       "install_apk" -> context.getString(string.ai_assistant_work_installing)
@@ -122,6 +131,19 @@ object AssistantActionText {
           // 省略时退到 branch（「正在云编译 main」也比「正在云编译 …」有信息量）。
           ToolNames.GITHUB_ACTIONS_BUILD ->
               opt(arguments, "workflow").ifEmpty { opt(arguments, "branch") }
+          // Issue / PR：有 number 就显示「#12」，列表类操作显示动作名
+          // （「正在读取 issue 列表」比「正在读取 issue …」有信息量）。
+          ToolNames.GITHUB_ISSUE, ToolNames.GITHUB_ISSUE_WRITE,
+          ToolNames.GITHUB_PR, ToolNames.GITHUB_PR_WRITE ->
+              opt(arguments, "number").ifEmpty { opt(arguments, "action") }
+          // 跑测试：显示模块名（「正在运行测试 core/ai-tool」），不传则是全项目
+          ToolNames.RUN_TESTS -> opt(arguments, "module").ifEmpty { "全部模块" }
+          // 移动/复制：显示「源 → 目标」，只看源会让用户以为没改位置
+          ToolNames.FILE_MOVE, ToolNames.FILE_COPY ->
+              opt(arguments, "source").let { src ->
+                val dst = opt(arguments, "target")
+                if (src.isEmpty()) dst else "$src → $dst"
+              }
           else -> opt(arguments, "file_path").ifEmpty { opt(arguments, "path") }
         }
     if (raw.isBlank()) {
@@ -136,6 +158,9 @@ object AssistantActionText {
           // 折掉换行与连续空白：命令常写成多行（`cd x &&\n ./gradlew`），
           // 直接放进单行状态条会把整行撑高。
           toolName == ToolNames.SHELL_EXECUTE -> raw.trim().replace(Regex("\\s+"), " ")
+          // 移动/复制是「源 → 目标」两段：按 '/' 切末两段会把源那侧整个丢掉
+          toolName == ToolNames.FILE_MOVE || toolName == ToolNames.FILE_COPY ->
+              raw.trim().replace(Regex("\\s+"), " ")
           else ->
               raw.trim().replace('\\', '/').split('/').filter { it.isNotEmpty() }.takeLast(2)
                   .joinToString("/")
@@ -180,9 +205,10 @@ object AssistantActionText {
     val action = opt(arguments, "action").ifEmpty { "status" }
     val detail =
         when (action) {
-          "stage", "unstage", "discard" -> opt(arguments, "file_path")
+          "stage", "unstage", "discard", "blame" -> opt(arguments, "file_path")
+              .ifEmpty { opt(arguments, "path") }
           "commit" -> opt(arguments, "message")
-          "checkout", "branch_create", "branch_delete" -> opt(arguments, "branch")
+          "checkout", "branch_create", "branch_delete", "merge" -> opt(arguments, "branch")
           "remote_add", "remote_remove", "fetch" -> opt(arguments, "remote")
           "push", "pull" ->
               listOf(opt(arguments, "remote"), opt(arguments, "branch"))

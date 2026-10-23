@@ -18,12 +18,14 @@
 package com.tom.rv2ide.artificial.agent.tool;
 
 import com.tom.rv2ide.ai.tool.BaseTool;
+import com.tom.rv2ide.ai.tool.FileToolPathPolicy;
 import com.tom.rv2ide.ai.tool.ToolContext;
 import com.tom.rv2ide.ai.tool.api.ToolCategory;
 import com.tom.rv2ide.ai.tool.api.ToolDisplayCategory;
 import com.tom.rv2ide.ai.tool.api.ToolNames;
 import com.tom.rv2ide.ai.tool.api.ToolResult;
 import java.io.ByteArrayOutputStream;
+import java.io.File;
 import java.nio.charset.StandardCharsets;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -76,7 +78,14 @@ public final class GitTool extends BaseTool {
     ACTIONS.put("log", "最近提交历史（hash/作者/时间/首行信息）");
     ACTIONS.put("branches", "本地分支列表与当前分支");
     ACTIONS.put("remotes", "已配置的远端仓库（名称与 URL）");
+    ACTIONS.put("blame", "逐行归属：每行最后一次由谁在哪次提交改的（需 path；排查「这行为什么这么写」）");
   }
+
+  /** blame 默认返回的最大行数：整个大文件逐行归属会瞬间吃满上下文。 */
+  private static final int DEFAULT_BLAME_LINES = 120;
+
+  /** blame 上限。 */
+  private static final int MAX_BLAME_LINES = 500;
 
   /** log 默认条数。 */
   private static final int DEFAULT_LOG_LIMIT = 20;
@@ -170,7 +179,20 @@ public final class GitTool extends BaseTool {
                     new JSONObject()
                         .put("type", "number")
                         .put("description",
-                            "仅 log 用：返回条数，默认 " + DEFAULT_LOG_LIMIT + "，最大 " + MAX_LOG_LIMIT)))
+                            "仅 log 用：返回条数，默认 " + DEFAULT_LOG_LIMIT + "，最大 " + MAX_LOG_LIMIT))
+                .put(
+                    "start_line",
+                    new JSONObject()
+                        .put("type", "number")
+                        .put("description",
+                            "仅 blame 用：从第几行开始（行号从 1 开始），默认 1"))
+                .put(
+                    "end_line",
+                    new JSONObject()
+                        .put("type", "number")
+                        .put("description",
+                            "仅 blame 用：到第几行结束（含）。不传时按 limit 行数取，"
+                                + "默认 " + DEFAULT_BLAME_LINES + "，上限 " + MAX_BLAME_LINES)))
         .put("required", new org.json.JSONArray());
   }
 
@@ -204,6 +226,8 @@ public final class GitTool extends BaseTool {
             return branches(git);
           case "remotes":
             return remotes(git);
+          case "blame":
+            return blame(git, root, input);
           default:
             // 白名单已挡在前面，走到这里说明 ACTIONS 与 switch 不同步（开发期错误）。
             return GitRepoSupport.err(getName(), "未实现的 action：" + action);
@@ -396,6 +420,115 @@ public final class GitTool extends BaseTool {
       sb.append('\n');
     }
     return GitRepoSupport.ok(getName(), sb.toString());
+  }
+
+  // ---- blame ----
+
+  /**
+   * 逐行归属：每行最后一次由谁在哪次提交改的。
+   *
+   * <p><b>为什么需要它</b>：此前模型只能 {@code log} 全量历史再自己猜「这行为什么这么写」。
+   * blame 是排查回归的常规入口——一眼能看到某行是哪个提交引入的，顺着 commit 找原因。
+   *
+   * <p><b>为什么默认只返回 120 行</b>：整个大文件逐行归属会瞬间吃满上下文（一个 2000 行的
+   * 文件就是 2000 行输出）。模型通常只关心某一段，因此支持 start_line/end_line 精确定位。
+   */
+  private ToolResult blame(Git git, String root, JSONObject input) throws Exception {
+    String pathArg = input.optString("path", "").trim();
+    if (pathArg.isEmpty()) {
+      return GitRepoSupport.err(getName(),
+          "blame 需要 path 参数：请指定要查看归属的文件（仓库相对路径或绝对路径）。");
+    }
+    File file = FileToolPathPolicy.resolve(
+        // blame 的路径也要过工作区策略：不然能通过 /etc/passwd 之类的绝对路径越界读
+        root, pathArg);
+    if (!file.isFile()) {
+      return GitRepoSupport.err(getName(), "文件不存在：" + pathArg);
+    }
+    // JGit 的 BlameCommand 只认仓库相对路径（不是绝对路径）
+    String relative = relativenize(root, file);
+    if (relative == null) {
+      return GitRepoSupport.err(getName(), "该文件不在仓库内：" + pathArg);
+    }
+
+    org.eclipse.jgit.blame.BlameResult result;
+    try {
+      result = git.blame().setFilePath(relative).call();
+    } catch (org.eclipse.jgit.api.errors.NoHeadException e) {
+      return GitRepoSupport.ok(getName(), "尚无提交（仓库刚初始化），没有可归属的历史。");
+    }
+    // 行文本从 getResultContents() 取：BlameResult.getSourceLine(i) 返回的是**源文件里的行号**
+    // （int），不是那一行的文本。
+    org.eclipse.jgit.diff.RawText contents = result.getResultContents();
+    int total = contents.size();
+    if (total == 0) {
+      return GitRepoSupport.ok(getName(), "文件为空：" + relative);
+    }
+
+    int start = (int) input.optDouble("start_line", 1);
+    if (start < 1) {
+      start = 1;
+    }
+    int end = (int) input.optDouble("end_line", 0);
+    if (end < start) {
+      // 没给 end_line 就按 limit 行数取
+      int limit = (int) input.optDouble("limit", DEFAULT_BLAME_LINES);
+      if (limit <= 0) {
+        limit = DEFAULT_BLAME_LINES;
+      }
+      limit = Math.min(limit, MAX_BLAME_LINES);
+      end = start + limit - 1;
+    }
+    end = Math.min(end, total);
+
+    StringBuilder sb = new StringBuilder();
+    sb.append("文件：").append(relative).append("（共 ").append(total).append(" 行）\n");
+    sb.append("行号  提交      作者  内容\n");
+    // 同一提交连续出现时只显示一次哈希：blame 输出里大段连续的同一提交很常见，
+    // 每行都重复 7 位哈希纯属噪音
+    String lastCommit = null;
+    for (int line = start; line <= end; line++) {
+      int idx = line - 1;
+      RevCommit commit = result.getSourceCommit(idx);
+      String hash = commit == null ? "未提交" : commit.getName().substring(0, 7);
+      String author = commit == null ? "-" : commit.getAuthorIdent().getName();
+      String text = contents.getString(idx);
+      sb.append(String.format(java.util.Locale.US, "%4d  ", line));
+      if (hash.equals(lastCommit)) {
+        sb.append("       ").append("      ");
+      } else {
+        sb.append(hash).append("  ").append(pad(author, 6));
+        lastCommit = hash;
+      }
+      sb.append(' ').append(text == null ? "" : text.trim()).append('\n');
+    }
+    if (end < total) {
+      sb.append("…（还有 ").append(total - end).append(" 行，可用 start_line/end_line 继续查看）\n");
+    }
+    return GitRepoSupport.ok(getName(), sb.toString());
+  }
+
+  /** 作者名对齐用（中文名按字符数补空格即可，不追求等宽精确）。 */
+  private static String pad(String text, int width) {
+    String value = text == null ? "" : text;
+    if (value.length() >= width) {
+      return value + " ";
+    }
+    StringBuilder sb = new StringBuilder(value);
+    while (sb.length() < width) {
+      sb.append(' ');
+    }
+    return sb.toString();
+  }
+
+  /** 把绝对路径转成仓库相对路径（用 / 分隔）；不在仓库内返回 null。 */
+  private static String relativenize(String repoRoot, File file) {
+    String rootPath = new File(repoRoot).getAbsolutePath();
+    String filePath = file.getAbsolutePath();
+    if (filePath.equals(rootPath) || !filePath.startsWith(rootPath + File.separator)) {
+      return null;
+    }
+    return filePath.substring(rootPath.length() + 1).replace(File.separatorChar, '/');
   }
 
   // ---- remotes ----

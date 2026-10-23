@@ -76,6 +76,18 @@ public final class ToolMessages {
   public static final String FILE_READ_FAILED =
       "Failed to read file: %1$s";
 
+  /** start_line 超出文件总行数。 */
+  public static final String FILE_READ_LINE_OUT_OF_RANGE =
+      "start_line=%1$d exceeds the file's line count (%2$d lines)";
+
+  /** 按行读取时附在末尾的范围说明。 */
+  public static final String FILE_READ_LINE_RANGE_INFO =
+      "\n\n… (total %1$d lines, showing lines %2$d-%3$d)";
+
+  /** 单次按行读取的行数上限提示。 */
+  public static final String FILE_READ_LINE_RANGE_CLAMPED =
+      "\n\n… (requested range too large; capped at %1$d lines. Use start_line to continue from line %2$d)";
+
   /** 对应上游 strings.xml 的 tool_file_read_dir_truncated。 */
   public static final String FILE_READ_DIR_TRUNCATED =
       "… (too many directory items, truncated)\n";
@@ -128,6 +140,24 @@ public final class ToolMessages {
   public static final String FILE_EDIT_FAILED =
       "Failed to edit file: %1$s";
 
+  /* ---- file_edit 批量模式（edits 数组） ---- */
+
+  /** 既没给 old_string 也没给 edits。 */
+  public static final String FILE_EDIT_EDITS_EMPTY =
+      "Provide either old_string/new_string, or an edits array";
+
+  /** edits 数组里的条目缺字段。 */
+  public static final String FILE_EDIT_ITEM_INVALID =
+      "edits[%1$d] is invalid: %2$s";
+
+  /** 批量编辑中第 N 条失败（整体已回滚，文件未改动）。 */
+  public static final String FILE_EDIT_BATCH_FAILED =
+      "Failed at edits[%1$d] (%2$s). No changes were written — the file is unchanged.";
+
+  /** 批量编辑成功。 */
+  public static final String FILE_EDIT_BATCH_SUCCESS =
+      "Successfully edited %1$s (%2$d replacements across %3$d edits)";
+
   /** 对应上游 strings.xml 的 tool_file_write_is_directory。 */
   public static final String FILE_WRITE_IS_DIRECTORY =
       "Path is a directory, cannot write file: %1$s\nTo create a file, specify the full file path.";
@@ -175,6 +205,40 @@ public final class ToolMessages {
   /** 对应上游 strings.xml 的 tool_file_delete_none。 */
   public static final String FILE_DELETE_NONE =
       "No files were deleted";
+
+  /* ---- file_move / file_copy ---- */
+
+  /** 源路径不存在。 */
+  public static final String FILE_MOVE_SOURCE_NOT_FOUND =
+      "Source not found: %1$s";
+
+  /** 目标已存在且未要求覆盖。 */
+  public static final String FILE_MOVE_TARGET_EXISTS =
+      "Target already exists: %1$s. Pass overwrite=true to replace it.";
+
+  /** 目标路径已存在且是目录、但源是文件（或反之），无法直接替换。 */
+  public static final String FILE_MOVE_TARGET_IS_DIRECTORY =
+      "Target is a directory and cannot be overwritten by a file: %1$s";
+
+  /** 源与目标是同一个路径。 */
+  public static final String FILE_MOVE_SAME_PATH =
+      "Source and target are the same path: %1$s";
+
+  /** 目标落在源目录内部（把目录移进自己）。 */
+  public static final String FILE_MOVE_INTO_SELF =
+      "Cannot move %1$s into itself (%2$s)";
+
+  /** 移动/复制失败。 */
+  public static final String FILE_MOVE_FAILED =
+      "Failed to %1$s %2$s: %3$s";
+
+  /** 移动/复制成功。 */
+  public static final String FILE_MOVE_SUCCESS =
+      "Moved %1$s to %2$s";
+
+  /** 复制成功。 */
+  public static final String FILE_COPY_SUCCESS =
+      "Copied %1$s to %2$s";
 
   /** 对应上游 strings.xml 的 tool_glob_root_not_found。 */
   public static final String GLOB_ROOT_NOT_FOUND =

@@ -28,6 +28,7 @@ import com.tom.rv2ide.ai.tool.api.ToolDisplayCategory;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.nio.charset.StandardCharsets;
+import org.json.JSONArray;
 import org.json.JSONObject;
 
 public final class FileEditTool extends BaseTool {
@@ -40,7 +41,9 @@ public final class FileEditTool extends BaseTool {
 
     @Override
     public String getDescription() {
-        return "Edit file contents. Search and replace via old_string/new_string.";
+        return "Edit file contents. Search and replace via old_string/new_string, "
+                + "or pass an edits array to apply several replacements in one atomic call "
+                + "(all-or-nothing: nothing is written if any entry fails to match).";
     }
 
     @Override
@@ -64,88 +67,199 @@ public final class FileEditTool extends BaseTool {
                 .put("type", "object")
                 .put("properties", new JSONObject()
                         .put("file_path", new JSONObject().put("type", "string").put("description", "Absolute or relative file path"))
-                        .put("old_string", new JSONObject().put("type", "string").put("description", "Original text to search for; must be unique unless replace_all is true"))
-                        .put("new_string", new JSONObject().put("type", "string").put("description", "Replacement text"))
+                        .put("old_string", new JSONObject().put("type", "string").put("description", "Original text to search for; must be unique unless replace_all is true. Omit when using edits."))
+                        .put("new_string", new JSONObject().put("type", "string").put("description", "Replacement text. Omit when using edits."))
                         .put("replace_all", new JSONObject()
                                 .put("type", "boolean")
-                                .put("description", "If true, replace every occurrence of old_string. Default false: require a unique match and replace only once.")))
-                .put("required", new org.json.JSONArray().put("file_path").put("old_string").put("new_string"));
+                                .put("description", "If true, replace every occurrence of old_string. Default false: require a unique match and replace only once."))
+                        .put("edits", new JSONObject()
+                                .put("type", "array")
+                                .put("description",
+                                        "Batch mode: apply several replacements in order, atomically. "
+                                                + "If any entry fails to match, NOTHING is written — the file stays unchanged. "
+                                                + "Use this instead of several sequential file_edit calls when renaming a "
+                                                + "symbol across many places in one file; a mid-way failure in sequential "
+                                                + "calls leaves the file half-edited.")
+                                .put("items", new JSONObject()
+                                        .put("type", "object")
+                                        .put("properties", new JSONObject()
+                                                .put("old_string", new JSONObject().put("type", "string"))
+                                                .put("new_string", new JSONObject().put("type", "string"))
+                                                .put("replace_all", new JSONObject().put("type", "boolean")))
+                                        .put("required", new org.json.JSONArray()
+                                                .put("old_string").put("new_string")))))
+                .put("required", new org.json.JSONArray().put("file_path"));
     }
 
     @Override
     public ToolResult execute(JSONObject input, ToolContext context) {
         try {
             String path = input.optString("file_path");
-            String oldString = input.optString("old_string");
-            String newString = input.optString("new_string");
-            boolean replaceAll = input.optBoolean("replace_all", false);
             ToolArgs.requireNonEmpty(path, "file_path");
-            if (oldString.length() == 0) {
-                return error(ToolMessages.FILE_EDIT_OLD_STRING_EMPTY);
-            }
-            File file = FileToolPathPolicy.resolve(context, path);
-            if (!file.exists()) {
-                return error(ToolMessages.format(ToolMessages.FILE_EDIT_NOT_FOUND, FileToolPathPolicy.displayPath(context.getHomePath(), file)));
-            }
-            if (file.isDirectory()) {
-                return error(ToolMessages.format(ToolMessages.FILE_EDIT_IS_DIRECTORY, path));
-            }
-            String content = FileIo.readUtf8(file);
 
-            // 行尾归一化后再匹配。
-            //
-            // 模型给出的 old_string 几乎总是 LF（它在训练数据里见到的就是 LF），
-            // 而工程里的文件常常是 CRLF（Windows 创建、或模板自带）。此时
-            // content.contains(oldString) 恒为 false，工具返回「No matching text found」——
-            // 但模型无法从这条消息推断出真正原因是行尾差异，只会反复重试同一段文本，
-            // 或者改用 file_write 整文件覆盖（丢掉未预期改动之外的内容）。
-            //
-            // 实测案例：Renderer.h 是 CRLF，模型三次 file_edit 全部失败，
-            // 而同一文件的 file_write 全部成功。
-            //
-            // 做法：把内容与待匹配串都折成 LF 来做「查找与替换」，然后把结果按
-            // **原文件对应位置**的行尾风格还原。这样：
-            // - 匹配不再受行尾影响
-            // - 不会因为一次编辑就把整个文件的行尾风格改掉
-            //
-            // **不能用「全文是否含 \r」判定风格**：那样对混合行尾的文件
-            // （同一文件里既有 LF 又有 CRLF——例如模型上次用 file_write 把 LF 内容
-            // 写进了 CRLF 文件）会把所有 LF 行都改成 CRLF，git 视角整个文件都变了。
-            // 也不能对含裸 CR 的文件做 replace("\n", "\r\n")——会把 \r 越加越多。
-            String normalizedContent = content.replace("\r\n", "\n");
+            // 批量模式：edits 数组，按序应用，全成功或全不写。
+            // 跨文件重命名一个符号要改 N 处，逐次调用时任何一次「匹配到 0 处/多处」
+            // 都会让前面几处已经落盘——文件处于半改状态，比不改还难收拾。
+            JSONArray edits = input.optJSONArray("edits");
+            if (edits != null && edits.length() > 0) {
+                return executeBatch(input, context, path, edits);
+            }
+            return executeSingle(input, context, path);
+        } catch (Exception e) {
+            return error(ToolMessages.format(ToolMessages.FILE_EDIT_FAILED, e.getMessage()));
+        }
+    }
+
+    /** 单次替换（原有路径）。 */
+    private ToolResult executeSingle(JSONObject input, ToolContext context, String path)
+            throws Exception {
+        String oldString = input.optString("old_string");
+        String newString = input.optString("new_string");
+        boolean replaceAll = input.optBoolean("replace_all", false);
+        ToolArgs.requireNonEmpty(path, "file_path");
+        if (oldString.length() == 0) {
+            return error(ToolMessages.FILE_EDIT_OLD_STRING_EMPTY);
+        }
+        File file = FileToolPathPolicy.resolve(context, path);
+        ToolResult notEditable = requireEditableFile(file, context, path);
+        if (notEditable != null) {
+            return notEditable;
+        }
+        String content = FileIo.readUtf8(file);
+
+        // 行尾归一化后再匹配。
+        //
+        // 模型给出的 old_string 几乎总是 LF（它在训练数据里见到的就是 LF），
+        // 而工程里的文件常常是 CRLF（Windows 创建、或模板自带）。此时
+        // content.contains(oldString) 恒为 false，工具返回「No matching text found」——
+        // 但模型无法从这条消息推断出真正原因是行尾差异，只会反复重试同一段文本，
+        // 或者改用 file_write 整文件覆盖（丢掉未预期改动之外的内容）。
+        //
+        // 实测案例：Renderer.h 是 CRLF，模型三次 file_edit 全部失败，
+        // 而同一文件的 file_write 全部成功。
+        //
+        // 做法：把内容与待匹配串都折成 LF 来做「查找与替换」，然后把结果按
+        // **原文件对应位置**的行尾风格还原。这样：
+        // - 匹配不再受行尾影响
+        // - 不会因为一次编辑就把整个文件的行尾风格改掉
+        //
+        // **不能用「全文是否含 \r」判定风格**：那样对混合行尾的文件
+        // （同一文件里既有 LF 又有 CRLF——例如模型上次用 file_write 把 LF 内容
+        // 写进了 CRLF 文件）会把所有 LF 行都改成 CRLF，git 视角整个文件都变了。
+        // 也不能对含裸 CR 的文件做 replace("\n", "\r\n")——会把 \r 越加越多。
+        String normalizedContent = content.replace("\r\n", "\n");
+        String normalizedOld = oldString.replace("\r\n", "\n");
+        String normalizedNew = newString.replace("\r\n", "\n");
+
+        if (!normalizedContent.contains(normalizedOld)) {
+            return error(ToolMessages.FILE_EDIT_NO_MATCH);
+        }
+        int count = countOccurrences(normalizedContent, normalizedOld);
+        if (count > 1 && !replaceAll) {
+            return error(ToolMessages.format(ToolMessages.FILE_EDIT_MULTIPLE_MATCHES, count));
+        }
+        String nextNormalized = replaceAll
+                ? normalizedContent.replace(normalizedOld, normalizedNew)
+                : replaceFirst(normalizedContent, normalizedOld, normalizedNew);
+        int replaced = replaceAll ? count : 1;
+        String next = restoreLineEndings(content, normalizedContent, nextNormalized);
+        writeFile(file, next);
+        String message = ToolMessages.format(
+                ToolMessages.FILE_EDIT_SUCCESS,
+                FileToolPathPolicy.displayPath(context.getHomePath(), file),
+                replaced);
+        // 通知编辑器刷新：否则打开着该文件的编辑器仍是旧内容，用户随手一改触发
+        // 自动保存会把 AI 的修改整段覆盖回磁盘（见 DocumentSyncPort）。
+        DocumentSync.notifyChanged(context, file);
+        // 搭车诊断：把改完后的编译错误直接附在结果里（高频路径，严格有界）。
+        String diagnostics = FileDiagnostics.describe(context, file);
+        return ok(diagnostics.isEmpty() ? message : message + "\n" + diagnostics);
+    }
+
+    /**
+     * 批量替换：{@code edits} 数组里每条是 {@code {old_string, new_string, replace_all?}}。
+     *
+     * <p><b>为什么是全成功或全不写</b>：跨文件重命名一个符号常有 5–10 处改动，
+     * 中途某处「匹配到 0 处」时，若前面几处已经落盘，文件就停在半改状态——
+     * 既不完整、又不容易看出改到哪了。因此全部在内存里应用完再一次性写盘。
+     *
+     * <p><b>为什么按序应用而不是并行</b>：后一条的 old_string 可能依赖前一条的结果
+     * （例如先改类名再改它的调用点）。按序是唯一符合直觉的语义。
+     */
+    private ToolResult executeBatch(
+            JSONObject input, ToolContext context, String path, JSONArray edits) throws Exception {
+        File file = FileToolPathPolicy.resolve(context, path);
+        ToolResult notEditable = requireEditableFile(file, context, path);
+        if (notEditable != null) {
+            return notEditable;
+        }
+        String content = FileIo.readUtf8(file);
+        String normalizedContent = content.replace("\r\n", "\n");
+
+        int totalReplaced = 0;
+        for (int i = 0; i < edits.length(); i++) {
+            JSONObject edit = edits.optJSONObject(i);
+            if (edit == null) {
+                return error(ToolMessages.format(
+                        ToolMessages.FILE_EDIT_ITEM_INVALID, i, "not an object"));
+            }
+            String oldString = edit.optString("old_string");
+            if (oldString.isEmpty()) {
+                return error(ToolMessages.format(
+                        ToolMessages.FILE_EDIT_ITEM_INVALID, i, "old_string is empty"));
+            }
+            boolean replaceAll = edit.optBoolean("replace_all", false);
             String normalizedOld = oldString.replace("\r\n", "\n");
-            String normalizedNew = newString.replace("\r\n", "\n");
+            String normalizedNew = edit.optString("new_string").replace("\r\n", "\n");
 
             if (!normalizedContent.contains(normalizedOld)) {
-                return error(ToolMessages.FILE_EDIT_NO_MATCH);
+                return error(ToolMessages.format(
+                        ToolMessages.FILE_EDIT_BATCH_FAILED, i, "no matching text"));
             }
             int count = countOccurrences(normalizedContent, normalizedOld);
             if (count > 1 && !replaceAll) {
-                return error(ToolMessages.format(ToolMessages.FILE_EDIT_MULTIPLE_MATCHES, count));
+                return error(ToolMessages.format(
+                        ToolMessages.FILE_EDIT_BATCH_FAILED, i,
+                        count + " matches; provide a more unique old_string or set replace_all"));
             }
-            String nextNormalized = replaceAll
+            normalizedContent = replaceAll
                     ? normalizedContent.replace(normalizedOld, normalizedNew)
                     : replaceFirst(normalizedContent, normalizedOld, normalizedNew);
-            int replaced = replaceAll ? count : 1;
-            String next = restoreLineEndings(content, normalizedContent, nextNormalized);
-            FileOutputStream output = new FileOutputStream(file, false);
-            try {
-                output.write(next.getBytes(StandardCharsets.UTF_8));
-            } finally {
-                output.close();
-            }
-            String message = ToolMessages.format(
-                    ToolMessages.FILE_EDIT_SUCCESS,
-                    FileToolPathPolicy.displayPath(context.getHomePath(), file),
-                    replaced);
-            // 通知编辑器刷新：否则打开着该文件的编辑器仍是旧内容，用户随手一改触发
-            // 自动保存会把 AI 的修改整段覆盖回磁盘（见 DocumentSyncPort）。
-            DocumentSync.notifyChanged(context, file);
-            // 搭车诊断：把改完后的编译错误直接附在结果里（高频路径，严格有界）。
-            String diagnostics = FileDiagnostics.describe(context, file);
-            return ok(diagnostics.isEmpty() ? message : message + "\n" + diagnostics);
-        } catch (Exception e) {
-            return error(ToolMessages.format(ToolMessages.FILE_EDIT_FAILED, e.getMessage()));
+            totalReplaced += replaceAll ? count : 1;
+        }
+
+        String originalNormalized = content.replace("\r\n", "\n");
+        String next = restoreLineEndings(content, originalNormalized, normalizedContent);
+        writeFile(file, next);
+        String message = ToolMessages.format(
+                ToolMessages.FILE_EDIT_BATCH_SUCCESS,
+                FileToolPathPolicy.displayPath(context.getHomePath(), file),
+                totalReplaced, edits.length());
+        DocumentSync.notifyChanged(context, file);
+        String diagnostics = FileDiagnostics.describe(context, file);
+        return ok(diagnostics.isEmpty() ? message : message + "\n" + diagnostics);
+    }
+
+    /** 文件不存在 / 是目录时的统一错误；可编辑时返回 null。 */
+    private ToolResult requireEditableFile(File file, ToolContext context, String path)
+            throws Exception {
+        if (!file.exists()) {
+            return error(ToolMessages.format(
+                    ToolMessages.FILE_EDIT_NOT_FOUND,
+                    FileToolPathPolicy.displayPath(context.getHomePath(), file)));
+        }
+        if (file.isDirectory()) {
+            return error(ToolMessages.format(ToolMessages.FILE_EDIT_IS_DIRECTORY, path));
+        }
+        return null;
+    }
+
+    private static void writeFile(File file, String content) throws Exception {
+        FileOutputStream output = new FileOutputStream(file, false);
+        try {
+            output.write(content.getBytes(StandardCharsets.UTF_8));
+        } finally {
+            output.close();
         }
     }
 

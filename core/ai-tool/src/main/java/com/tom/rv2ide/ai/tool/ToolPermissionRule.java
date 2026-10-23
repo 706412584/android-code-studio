@@ -210,11 +210,27 @@ public final class ToolPermissionRule {
     if (ToolNames.GIT_WRITE.equals(toolName)) {
       return gitWriteScope(json, arguments);
     }
+    if (ToolNames.GITHUB_ISSUE_WRITE.equals(toolName)
+        || ToolNames.GITHUB_PR_WRITE.equals(toolName)) {
+      return githubWriteScope(json, arguments);
+    }
     if (ToolNames.FILE_WRITE.equals(toolName) || ToolNames.FILE_EDIT.equals(toolName)) {
       return fallbackIfEmpty(json.optString(ARG_FILE_PATH, "").trim(), arguments);
     }
     if (ToolNames.FILE_DELETE.equals(toolName)) {
       return fallbackIfEmpty(joinedPaths(json), arguments);
+    }
+    if (ToolNames.FILE_MOVE.equals(toolName)) {
+      // 移动会删除源文件：授权必须**同时**绑定源与目标。
+      // 只按源授权会让「允许移动 a → b」顺带放行「移动 a → 任意位置」；
+      // 任一字段缺失时直接退化为参数摘要（而不是拿半个 scope 去建键）——
+      // 半个 scope 同样是放大：「允许移动 a」会匹配任何目标。
+      String moveSource = json.optString("source", "").trim();
+      String moveTarget = json.optString("target", "").trim();
+      if (moveSource.isEmpty() || moveTarget.isEmpty()) {
+        return digest(arguments);
+      }
+      return moveSource + PATH_JOINER + moveTarget;
     }
     // 其余工具（mcpx_*、agent、install_apk、gradle_build 等）没有可提取的判别字段。
     return digest(arguments);
@@ -290,6 +306,8 @@ public final class ToolPermissionRule {
       case "checkout":
       case "branch_create":
       case "branch_delete":
+      case "merge":
+        // merge 的作用对象是要合并进来的分支：放行合并 feature-a 不等于放行合并 feature-b
         discriminator = json.optString(ARG_BRANCH, "").trim();
         break;
       case "remote_add":
@@ -304,6 +322,11 @@ public final class ToolPermissionRule {
                 json.optString(ARG_REMOTE, "").trim(), json.optString(ARG_BRANCH, "").trim());
         break;
       case "commit":
+      case "stash":
+      case "stash_pop":
+        // 这三者的作用对象就是「工作区当前的改动」本身，没有可细分的判别字段。
+        // 按动作名授权：与 commit 同理——单次 stash 的爆炸半径固定（可 stash_pop 恢复），
+        // 不存在「放行一次 stash 却顺带交出远端」的提权路径。
         return action;
       default:
         // 未知动作（模型幻觉出的名字）没有可靠的作用对象概念，
@@ -314,6 +337,36 @@ public final class ToolPermissionRule {
       return digest(arguments);
     }
     return action + PATH_JOINER + discriminator;
+  }
+
+  /**
+   * github_issue_write / github_pr_write 的 scope：动作名 + 目标编号。
+   *
+   * <p><b>为什么按动作区分</b>：同一工具下不同动作的破坏力差得远。
+   * {@code comment} 只是发一条评论（可编辑），{@code close} 改变 issue 状态，
+   * 而 PR 的 {@code merge} 会把提交并进目标分支且远端无法用本地 {@code git reset}
+   * 撤回。按工具名授权会让「允许评论一次」顺带放行合并。
+   *
+   * <p><b>为什么 create 只取动作名</b>：标题/正文每次都不同，按内容建键会让
+   * 「始终允许」退化成每次照旧弹窗（与 git commit 同一取舍）。单次创建的爆炸半径
+   * 固定且可关闭，不存在「放行一次创建却顺带交出合并权」的提权路径。
+   *
+   * <p><b>为什么其余动作带上 number</b>：用户批准「关闭 #12」不应放行「关闭任意 issue」。
+   * 编号缺失时回落到参数摘要，不放大成动作级授权。
+   */
+  private static String githubWriteScope(JSONObject json, String arguments) {
+    String action = json.optString(ARG_ACTION, "").trim();
+    if (action.isEmpty()) {
+      return digest(arguments);
+    }
+    if ("create".equals(action)) {
+      return action;
+    }
+    int number = json.optInt("number", -1);
+    if (number <= 0) {
+      return digest(arguments);
+    }
+    return action + PATH_JOINER + number;
   }
 
   /** 把非空片段用 {@link #PATH_JOINER} 连接；全空时返回空串。 */

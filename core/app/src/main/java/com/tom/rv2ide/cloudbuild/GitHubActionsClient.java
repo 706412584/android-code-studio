@@ -19,10 +19,8 @@ package com.tom.rv2ide.cloudbuild;
 
 import com.tom.rv2ide.ai.protocol.SimpleHttpClient;
 import java.io.File;
-import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import org.json.JSONArray;
@@ -42,37 +40,13 @@ import org.json.JSONObject;
  * <p><b>线程模型</b>：本类的所有方法都是同步阻塞的（网络调用）。调用方负责放到
  * 后台线程执行——Android 主线程不允许网络操作，这是调用方的责任而非本类。
  */
-public final class GitHubActionsClient implements RunQueryPort {
+public final class GitHubActionsClient extends GitHubRestClient implements RunQueryPort {
 
-  private static final String API_BASE = "https://api.github.com";
-  private static final String API_VERSION = "2022-11-28";
-
-  private static final int CONNECT_TIMEOUT_MS = 15_000;
-  private static final int READ_TIMEOUT_MS = 30_000;
   /** 二进制下载（日志 zip / artifact）的超时：文件可达数百 MB，给足余量。 */
   private static final int DOWNLOAD_READ_TIMEOUT_MS = 300_000;
 
-  private final String token;
-  private final String owner;
-  private final String repo;
-
   public GitHubActionsClient(String token, String owner, String repo) {
-    this.token = token == null ? "" : token.trim();
-    this.owner = owner == null ? "" : owner.trim();
-    this.repo = repo == null ? "" : repo.trim();
-  }
-
-  public String getOwner() {
-    return owner;
-  }
-
-  public String getRepo() {
-    return repo;
-  }
-
-  /** 是否配置了 token。未配置时所有 API 调用都会失败（私有仓库）或受限于匿名配额。 */
-  public boolean hasToken() {
-    return !token.isEmpty();
+    super(token, owner, repo);
   }
 
   // ---------------------------------------------------------------------------
@@ -503,68 +477,8 @@ public final class GitHubActionsClient implements RunQueryPort {
   // 内部
   // ---------------------------------------------------------------------------
 
-  private Map<String, String> authHeaders() {
-    Map<String, String> headers = new LinkedHashMap<>();
-    headers.put("Accept", "application/vnd.github+json");
-    headers.put("X-GitHub-Api-Version", API_VERSION);
-    if (!token.isEmpty()) {
-      headers.put("Authorization", "Bearer " + token);
-    }
-    return headers;
-  }
-
-  private SimpleHttpClient.Response execute(String method, String url, String body)
-      throws Exception {
-    SimpleHttpClient.Request request = new SimpleHttpClient.Request(url, method, body);
-    request.connectTimeoutMs = CONNECT_TIMEOUT_MS;
-    request.readTimeoutMs = READ_TIMEOUT_MS;
-    if (body != null) {
-      request.headers.put("Content-Type", "application/json");
-    }
-    request.headers.putAll(authHeaders());
-    return SimpleHttpClient.execute(request);
-  }
-
-  /**
-   * 把非 2xx 响应转成带状态码的 {@link GitHubApiException}。
-   *
-   * <p>不抛裸 Exception：调用方需要按状态码分流处置（401/403 引导配 token、
-   * 404 提示 workflow 未推送）。
-   */
-  private void checkSuccess(SimpleHttpClient.Response response) throws GitHubApiException {
-    if (response.code >= 200 && response.code < 300) {
-      return;
-    }
-    String message = "HTTP " + response.code;
-    try {
-      JSONObject json = new JSONObject(response.body);
-      String apiMessage = json.optString("message", "");
-      if (!apiMessage.isEmpty()) {
-        message = apiMessage;
-      }
-    } catch (Throwable ignored) {
-      // 错误响应体不是 JSON（例如网关返回的 HTML）——保留 HTTP 状态码即可。
-    }
-    throw new GitHubApiException(response.code, message, response.body);
-  }
-
-  private static String encodePathSegment(String value) {
-    try {
-      // URLEncoder 是 form 编码（空格变 +），路径段里不出现空格，够用；
-      // 这里对常见特殊字符做最小转义。
-      return URLEncoder.encode(value, "UTF-8").replace("+", "%20");
-    } catch (java.io.UnsupportedEncodingException e) {
-      return value;
-    }
-  }
-
-  private static String encodeQueryParam(String value) {
-    try {
-      return URLEncoder.encode(value, "UTF-8");
-    } catch (java.io.UnsupportedEncodingException e) {
-      return value;
-    }
-  }
+  // authHeaders / execute / checkSuccess / encode* 已上移到 {@link GitHubRestClient}：
+  // issue/PR 客户端要用同一套，复制一份等于给安全边界留出漂移空间。
 
   private static String join(List<String> parts, String separator) {
     StringBuilder builder = new StringBuilder();

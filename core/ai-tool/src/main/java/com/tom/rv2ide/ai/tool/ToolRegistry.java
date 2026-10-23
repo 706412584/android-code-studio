@@ -75,6 +75,12 @@ public final class ToolRegistry {
     aliases.put("delete", ToolNames.FILE_DELETE);
     aliases.put("delete_file", ToolNames.FILE_DELETE);
     aliases.put("rm", ToolNames.FILE_DELETE);
+    // move/rename 同义：模型常写 rename，而两者语义完全一致（同一路径换名字）
+    aliases.put("move", ToolNames.FILE_MOVE);
+    aliases.put("mv", ToolNames.FILE_MOVE);
+    aliases.put("rename", ToolNames.FILE_MOVE);
+    aliases.put("copy", ToolNames.FILE_COPY);
+    aliases.put("cp", ToolNames.FILE_COPY);
     aliases.put("ls", ToolNames.LIST_DIR);
     aliases.put("list", ToolNames.LIST_DIR);
     aliases.put("list_files", ToolNames.LIST_DIR);

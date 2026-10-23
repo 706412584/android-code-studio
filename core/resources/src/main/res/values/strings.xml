@@ -646,6 +646,9 @@
   <string name="ai_assistant_work_project_info">Inspecting project</string>
   <string name="ai_assistant_work_cloud_build">Cloud build %1$s</string>
   <string name="ai_assistant_work_cloud_status">Checking cloud build status</string>
+  <string name="ai_assistant_work_testing">Running tests %1$s</string>
+  <string name="ai_assistant_work_github_issue">GitHub issue %1$s</string>
+  <string name="ai_assistant_work_github_pr">GitHub PR %1$s</string>
   <string name="ai_assistant_work_tool">Running %1$s</string>
 
   <!-- Bottom-fixed retry card -->

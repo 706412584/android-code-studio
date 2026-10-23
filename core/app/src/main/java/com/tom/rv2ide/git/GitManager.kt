@@ -492,6 +492,120 @@ class GitManager(private val projectPath: String) {
         }
     }
     
+    /**
+     * 把未提交的改动存进 stash。
+     *
+     * <p>JGit 6.8 用的是 `stashCreate/stashApply/stashDrop/stashList` 四个独立命令
+     * （7.x 才合并成 `stash()`），因此这里逐个别调用。
+     *
+     * @return 成功时返回 stash 的提交对象名（供 [popStash] 精确恢复）；
+     *   没有可暂存的改动、或仓库尚无提交（未出生 HEAD）时返回 null
+     */
+    fun stashChanges(message: String? = null): String? {
+        return try {
+            val command = git?.stashCreate()?.setIncludeUntracked(true)
+            if (!message.isNullOrBlank()) {
+                command?.setWorkingDirectoryMessage(message)
+            }
+            command?.call()?.name()
+        } catch (e: Exception) {
+            e.printStackTrace()
+            null
+        }
+    }
+
+    /**
+     * 恢复最近一次 stash 的内容。
+     *
+     * <p>恢复冲突时 JGit 会抛异常且**内容仍留在 stash 里**——这正是我们要的语义：
+     * 用户不会既没恢复成功又丢了存档。
+     *
+     * @return true = 已恢复并丢掉那条 stash；false = stash 为空或恢复失败（内容仍在）
+     */
+    fun popStash(stashName: String? = null): Boolean {
+        return try {
+            val apply = git?.stashApply()
+            // setApplyUntracked 返回 void（6.8 的签名），不能链式调用
+            apply?.setApplyUntracked(true)
+            if (!stashName.isNullOrBlank()) {
+                apply?.setStashRef(stashName)
+            }
+            apply?.call()
+            // 恢复成功后才丢弃：失败路径上（冲突）绝不能走到这里，否则内容就真没了
+            runCatching { git?.stashDrop()?.call() }
+            true
+        } catch (e: Exception) {
+            e.printStackTrace()
+            false
+        }
+    }
+
+    /** 当前 stash 条数（用于判断「有没有东西可恢复」）。 */
+    fun stashCount(): Int {
+        return try {
+            git?.stashList()?.call()?.size ?: 0
+        } catch (e: Exception) {
+            0
+        }
+    }
+
+    /**
+     * 把 [branchName] 合并进当前分支。
+     *
+     * @return 结果：merged = 合并成功（含 Already-up-to-date）；conflicts 非空 = 有冲突，
+     *   此时已中止合并并还原到操作前的状态（不留下 MERGING 中间态）
+     */
+    fun mergeBranch(branchName: String): MergeResult {
+        return try {
+            val result = git?.merge()?.include(getBranchRef(branchName))?.call()
+            val status = result?.mergeStatus
+            // getConflicts() 是 Map<String, int[][]>（路径 → 冲突区间），取 key 作路径清单
+            val conflictPaths: List<String> = result?.conflicts?.keys?.toList() ?: emptyList()
+            val conflicts: List<String> = if (conflictPaths.isNotEmpty()) {
+                conflictPaths
+            } else {
+                result?.checkoutConflicts ?: emptyList()
+            }
+            if (status == org.eclipse.jgit.api.MergeResult.MergeStatus.CONFLICTING
+                || conflicts.isNotEmpty()
+            ) {
+                // 有冲突就把合并中止掉：留下 MERGING 状态会让后续所有操作都变得诡异
+                abortMerge()
+                MergeResult(merged = false, conflicts = conflicts)
+            } else {
+                MergeResult(merged = true, conflicts = emptyList())
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+            abortMerge()
+            MergeResult(merged = false, conflicts = listOf(e.message ?: e.javaClass.simpleName))
+        }
+    }
+
+    /** 中止进行中的合并（有 MERGE_HEAD 时才 reset），不碰用户已提交的内容。 */
+    private fun abortMerge() {
+        runCatching {
+            val dir = repository?.directory ?: return
+            if (!File(dir, "MERGE_HEAD").exists()) return
+            git?.reset()
+                ?.setMode(org.eclipse.jgit.api.ResetCommand.ResetType.HARD)
+                ?.call()
+        }
+    }
+
+    /** 把分支名解析成可合并的 Ref（本地优先，退回远端跟踪分支）。 */
+    private fun getBranchRef(branchName: String): org.eclipse.jgit.lib.Ref {
+        val repo = repository ?: throw IllegalStateException("仓库未打开")
+        val local = repo.findRef(branchName) ?: repo.findRef("refs/heads/$branchName")
+        if (local != null) return local
+        val remote = repo.findRef("refs/remotes/$branchName")
+            ?: repo.findRef("refs/remotes/origin/$branchName")
+        return remote ?: throw org.eclipse.jgit.api.errors.RefNotFoundException(branchName)
+    }
+
+    /** 一次分支合并的结果。 */
+    data class MergeResult(val merged: Boolean, val conflicts: List<String>)
+
     fun reloadGitIgnoreAndAttributes() {
         loadGitIgnore()
         loadGitAttributes()

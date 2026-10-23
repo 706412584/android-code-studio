@@ -200,4 +200,164 @@ final class FileReadToolBehaviorTest {
     assertFalse(result.isError(), result.getContent());
     assertTrue(result.getContent().contains("中文字符串测试"), result.getContent());
   }
+
+  /* ───────────────────────── 按行号读取 ───────────────────────── */
+
+  /**
+   * 行号来自 grep / diagnostics / lsp_navigate，返回的都是 1 起的行号。
+   * KB 与行号在含中文的文件里完全不成比例，靠 KB 估算经常读偏再重试。
+   */
+  @Test
+  void lineRangeReadsExactLines(@TempDir Path workspace) throws Exception {
+    StringBuilder sb = new StringBuilder();
+    for (int i = 1; i <= 100; i++) {
+      sb.append("line").append(i).append('\n');
+    }
+    Files.writeString(workspace.resolve("a.txt"), sb.toString());
+
+    ToolResult result = tool().execute(
+        args("file_path", "a.txt", "start_line", 10, "end_line", 12), context(workspace));
+
+    assertFalse(result.isError(), result.getContent());
+    assertTrue(result.getContent().contains("10\tline10"), result.getContent());
+    assertTrue(result.getContent().contains("12\tline12"), result.getContent());
+    assertFalse(result.getContent().contains("line9"), result.getContent());
+    assertFalse(result.getContent().contains("line13"), result.getContent());
+  }
+
+  /** 行号必须与 grep 的口径一致（1 起、含首尾）。 */
+  @Test
+  void lineRangeIsOneBasedInclusive(@TempDir Path workspace) throws Exception {
+    Files.writeString(workspace.resolve("a.txt"), "first\nsecond\nthird\n");
+
+    ToolResult result = tool().execute(
+        args("file_path", "a.txt", "start_line", 1, "end_line", 1), context(workspace));
+
+    assertFalse(result.isError(), result.getContent());
+    assertTrue(result.getContent().contains("1\tfirst"), result.getContent());
+    assertFalse(result.getContent().contains("second"), result.getContent());
+  }
+
+  /** 只给 start_line 时按默认跨度向后取，并给出续读位置。 */
+  @Test
+  void startLineAloneReturnsDefaultWindow(@TempDir Path workspace) throws Exception {
+    StringBuilder sb = new StringBuilder();
+    for (int i = 1; i <= 50; i++) {
+      sb.append("l").append(i).append('\n');
+    }
+    Files.writeString(workspace.resolve("a.txt"), sb.toString());
+    // 写满 500 行才能触发默认窗口的截断信息；这里只验证能读到 start 之后的内容
+    ToolResult result = tool().execute(
+        args("file_path", "a.txt", "start_line", 45), context(workspace));
+
+    assertFalse(result.isError(), result.getContent());
+    assertTrue(result.getContent().contains("45\tl45"), result.getContent());
+    assertTrue(result.getContent().contains("50\tl50"), result.getContent());
+  }
+
+  @Test
+  void lineRangeIsClampedToFileEnd(@TempDir Path workspace) throws Exception {
+    Files.writeString(workspace.resolve("a.txt"), "a\nb\nc\n");
+    ToolResult result = tool().execute(
+        args("file_path", "a.txt", "start_line", 2, "end_line", 999), context(workspace));
+
+    assertFalse(result.isError(), result.getContent());
+    assertTrue(result.getContent().contains("2\tb"), result.getContent());
+    assertTrue(result.getContent().contains("3\tc"), result.getContent());
+    // 越界的 end_line 应被夹到文件末，而不是报错
+    assertTrue(result.getContent().contains("showing lines 2-3"), result.getContent());
+  }
+
+  @Test
+  void startLineBeyondFileIsRejected(@TempDir Path workspace) throws Exception {
+    Files.writeString(workspace.resolve("a.txt"), "a\nb\n");
+    ToolResult result = tool().execute(
+        args("file_path", "a.txt", "start_line", 50), context(workspace));
+
+    assertTrue(result.isError());
+    assertTrue(result.getContent().contains("exceeds"), result.getContent());
+  }
+
+  @Test
+  void zeroStartLineIsTreatedAsFirst(@TempDir Path workspace) throws Exception {
+    Files.writeString(workspace.resolve("a.txt"), "a\nb\n");
+    ToolResult result = tool().execute(
+        args("file_path", "a.txt", "start_line", 0, "end_line", 1), context(workspace));
+
+    assertFalse(result.isError(), result.getContent());
+    assertTrue(result.getContent().contains("1\ta"), result.getContent());
+  }
+
+  /** 行号范围必须优先于 KB 范围，否则模型传了两者会被静默按 KB 处理。 */
+  @Test
+  void lineRangeTakesPrecedenceOverKbRange(@TempDir Path workspace) throws Exception {
+    StringBuilder sb = new StringBuilder();
+    for (int i = 1; i <= 200; i++) {
+      sb.append("row").append(i).append('\n');
+    }
+    Files.writeString(workspace.resolve("a.txt"), sb.toString());
+
+    ToolResult result = tool().execute(
+        args("file_path", "a.txt", "start_line", 100, "end_line", 101, "start_kb", 0, "end_kb", 1),
+        context(workspace));
+
+    assertFalse(result.isError(), result.getContent());
+    assertTrue(result.getContent().contains("100\trow100"), result.getContent());
+  }
+
+  /**
+   * 含中文的文件里 KB 与行号严重不成比例（一个中文字 3 字节）。
+   * 行号读取必须按行扫描而不是按字节估算。
+   */
+  @Test
+  void lineRangeIsAccurateForCjkContent(@TempDir Path workspace) throws Exception {
+    StringBuilder sb = new StringBuilder();
+    for (int i = 1; i <= 60; i++) {
+      sb.append("第").append(i).append("行中文内容测试字符串\n");
+    }
+    Files.write(workspace.resolve("cjk.txt"), sb.toString().getBytes(StandardCharsets.UTF_8));
+
+    ToolResult result = tool().execute(
+        args("file_path", "cjk.txt", "start_line", 30, "end_line", 30), context(workspace));
+
+    assertFalse(result.isError(), result.getContent());
+    assertTrue(result.getContent().contains("30\t第30行中文内容测试字符串"), result.getContent());
+  }
+
+  /** 大文件按行读要能工作在 50KB 阈值之上（否则「定位到某行」对大文件仍然无解）。 */
+  @Test
+  void lineRangeWorksOnLargeFile(@TempDir Path workspace) throws Exception {
+    StringBuilder sb = new StringBuilder();
+    for (int i = 1; i <= 20000; i++) {
+      sb.append("padding line ").append(i).append(" ................\n");
+    }
+    Files.writeString(workspace.resolve("big.txt"), sb.toString());
+    assertTrue(Files.size(workspace.resolve("big.txt")) > 50 * 1024);
+
+    ToolResult result = tool().execute(
+        args("file_path", "big.txt", "start_line", 19000, "end_line", 19002), context(workspace));
+
+    assertFalse(result.isError(), result.getContent());
+    assertTrue(result.getContent().contains("19000\tpadding line 19000"), result.getContent());
+    assertTrue(result.getContent().contains("19002\tpadding line 19002"), result.getContent());
+  }
+
+  @Test
+  void lineRangeSchemaIsExposed() throws Exception {
+    JSONObject params = tool().getParameters().getJSONObject("properties");
+    assertTrue(params.has("start_line"));
+    assertTrue(params.has("end_line"));
+  }
+
+  /** 末尾换行不该被算成额外一行（否则 end_line 会多读一行空内容）。 */
+  @Test
+  void trailingNewlineDoesNotAddALine(@TempDir Path workspace) throws Exception {
+    Files.writeString(workspace.resolve("a.txt"), "only\n");
+    ToolResult result = tool().execute(
+        args("file_path", "a.txt", "start_line", 1, "end_line", 5), context(workspace));
+
+    assertFalse(result.isError(), result.getContent());
+    // 文件只有 1 行；end_line 被夹到 1
+    assertTrue(result.getContent().contains("showing lines 1-1"), result.getContent());
+  }
 }

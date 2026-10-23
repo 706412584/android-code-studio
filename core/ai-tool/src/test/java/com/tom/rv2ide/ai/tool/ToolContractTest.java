@@ -73,6 +73,8 @@ class ToolContractTest {
     tools.add(new FileOpenTool());
     tools.add(new FileReadTool());
     tools.add(new FileWriteTool());
+    tools.add(new FileMoveTool());
+    tools.add(new FileCopyTool());
     tools.add(new FormatCodeTool());
     tools.add(new GlobTool());
     tools.add(new GrepTool());

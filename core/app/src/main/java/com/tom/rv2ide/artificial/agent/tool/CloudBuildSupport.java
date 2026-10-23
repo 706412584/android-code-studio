@@ -76,25 +76,68 @@ final class CloudBuildSupport {
    * <p>全部判定发生在任何网络调用之前——因此单测可以直接覆盖这三条失败路径，
    * 不需要 mock HTTP。
    */
+  /** 只识别仓库、不构造云编译服务的结果（issue / PR 工具用）。 */
+  static final class RepoSetup {
+    final ToolResult error;
+    final GitRemoteParser.RepoSlug slug;
+    final String projectPath;
+
+    private RepoSetup(ToolResult error, GitRemoteParser.RepoSlug slug, String projectPath) {
+      this.error = error;
+      this.slug = slug;
+      this.projectPath = projectPath;
+    }
+
+    static RepoSetup failed(ToolResult error) {
+      return new RepoSetup(error, null, null);
+    }
+
+    static RepoSetup ok(GitRemoteParser.RepoSlug slug, String projectPath) {
+      return new RepoSetup(null, slug, projectPath);
+    }
+  }
+
+  /**
+   * 只做「token → 工作区 → 仓库识别」三步，返回 owner/repo 而不建服务。
+   *
+   * <p>issue / PR 工具与云编译工具需要同一套前置校验与同一套错误文案，但服务类不同。
+   * 分开一个入口比让它们各写一遍更不容易漂移（文案已经因为两处不同步踩过坑）。
+   */
+  static RepoSetup prepareRepo(String toolName, String token, ToolContext context) {
+    if (token == null || token.trim().isEmpty()) {
+      return RepoSetup.failed(err(toolName,
+          "尚未配置 GitHub Personal Access Token，无法访问 GitHub。"
+              + "请让用户配置云编译 token（需要 repo 权限；操作他人仓库还需 public_repo 或 repo）后重试。"));
+    }
+    String path = context == null ? "" : context.getHomePath();
+    if (path == null || path.trim().isEmpty()) {
+      return RepoSetup.failed(err(toolName,
+          "当前会话没有绑定工作区目录，无法识别 git 仓库。请先在编辑器中打开项目。"));
+    }
+    GitRemoteParser.RepoSlug slug = CloudBuildService.detectRepository(path);
+    if (slug == null || !slug.isValid()) {
+      return RepoSetup.failed(err(toolName,
+          "未能从项目 git remote 识别出 GitHub 仓库（owner/repo）。"
+              + "请确认项目已配置指向 github.com 的 remote（如 origin 指向"
+              + " https://github.com/owner/repo）。"));
+    }
+    return RepoSetup.ok(slug, path);
+  }
+
   static Setup prepare(String toolName, String token, ToolContext context) {
     if (token == null || token.trim().isEmpty()) {
       return Setup.failed(err(toolName,
           "尚未配置 GitHub Personal Access Token，无法访问 GitHub Actions。"
               + "请让用户配置云编译 token（需要 repo 与 workflow 权限）后重试。"));
     }
-    String path = context == null ? "" : context.getHomePath();
-    if (path == null || path.trim().isEmpty()) {
-      return Setup.failed(err(toolName,
-          "当前会话没有绑定工作区目录，无法识别 git 仓库。请先在编辑器中打开项目。"));
+    // 工作区与仓库识别复用 prepareRepo：两处文案一旦漂移，模型会看到两套说法。
+    RepoSetup repoSetup = prepareRepo(toolName, token, context);
+    if (repoSetup.error != null) {
+      return Setup.failed(repoSetup.error);
     }
-    GitRemoteParser.RepoSlug slug = CloudBuildService.detectRepository(path);
-    if (slug == null || !slug.isValid()) {
-      return Setup.failed(err(toolName,
-          "未能从项目 git remote 识别出 GitHub 仓库（owner/repo）。"
-              + "请确认项目已配置指向 github.com 的 remote（如 origin 指向"
-              + " https://github.com/owner/repo）。"));
-    }
-    return Setup.ok(new CloudBuildService(token.trim(), slug.owner, slug.repo), path);
+    return Setup.ok(
+        new CloudBuildService(token.trim(), repoSetup.slug.owner, repoSetup.slug.repo),
+        repoSetup.projectPath);
   }
 
   /**

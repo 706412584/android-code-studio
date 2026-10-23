@@ -32,6 +32,15 @@ public final class ToolNames {
     public static final String FILE_WRITE = "file_write";
     public static final String FILE_EDIT = "file_edit";
     public static final String FILE_DELETE = "file_delete";
+    /**
+     * 移动 / 重命名文件或目录。
+     *
+     * <p><b>为什么需要</b>：此前重命名只能 read → write → delete 三步，中间任一步失败
+     * 都会留下两个半成品（或丢内容）。移动是重构里最高频的动作之一，必须是一个原子操作。
+     */
+    public static final String FILE_MOVE = "file_move";
+    /** 复制文件或目录（目录递归）。 */
+    public static final String FILE_COPY = "file_copy";
     public static final String LIST_DIR = "list_dir";
     public static final String GLOB = "glob";
     /**
@@ -204,6 +213,27 @@ public final class ToolNames {
     /** 查询最近一次 Actions 运行的状态（只读，免确认）。 */
     public static final String GITHUB_ACTIONS_STATUS = "github_actions_status";
 
+    // ---- GitHub Issue / Pull Request（app 层工具，REST 在 cloudbuild 包）----
+    /**
+     * Issue 只读查询：列表 / 详情 / 评论。
+     *
+     * <p>与 {@link #GITHUB_ISSUE_WRITE} 拆开的理由同 {@link #GIT}/{@link #GIT_WRITE}：
+     * 权限层按**工具**分级，混在一起会让「看一眼有哪些 issue」也弹确认框。
+     */
+    public static final String GITHUB_ISSUE = "github_issue";
+    /** Issue 写操作：创建 / 评论 / 关闭 / 重新打开。需确认。 */
+    public static final String GITHUB_ISSUE_WRITE = "github_issue_write";
+    /** PR 只读查询：列表 / 详情。 */
+    public static final String GITHUB_PR = "github_pr";
+    /**
+     * PR 写操作：创建 / 评论 / 关闭 / 合并。需确认。
+     *
+     * <p><b>合并单独说明</b>：merge 会把提交并进目标分支且无法用本地 git 回滚，
+     * 是这几个动作里唯一不可逆的；权限规则按 action 区分，不靠「整个工具已确认」
+     * 顺带放行。
+     */
+    public static final String GITHUB_PR_WRITE = "github_pr_write";
+
     /** CodeGraph 代码知识图谱：按符号查源码 / 调用关系 / 影响面（`acs-codegraph`）。 */
     public static final String CODEGRAPH = "codegraph";
     /** 两张截图逐像素对比并生成差异图。 */
@@ -279,6 +309,15 @@ public final class ToolNames {
      * 测试任务，但只回「成功/失败 + 输出尾部」——覆盖率数字（数十万行 XML）读不到。
      */
     public static final String TEST_COVERAGE = "test_coverage";
+    /**
+     * 运行单元测试并解析 JUnit XML，返回「通过/失败数 + 失败用例的类名.方法名 + 断言消息」。
+     *
+     * <p>与 {@link #TEST_COVERAGE} 的分工：覆盖率回答「测到了多少」，本工具回答
+     * 「挂了哪几个、为什么挂」。与 {@code gradle_build} 的分工：后者的结果只带
+     * Failure 枚举与输出尾部，模型拿到「BUILD FAILED」后还得自己翻
+     * {@code build/test-results/} 下的 XML。
+     */
+    public static final String RUN_TESTS = "run_tests";
     /**
      * 代码格式化：经语言服务器格式化源文件（就地写回）。
      *

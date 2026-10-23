@@ -343,4 +343,134 @@ final class ToolPermissionRuleTest {
     // scope 内部的不可见连接符要换成可读分隔符，否则设置页会显示成一个粘连的长串
     assertEquals("git_write: stage,a.kt", described);
   }
+
+  // ---- github_issue_write / github_pr_write ----
+
+  /**
+   * PR 的 merge 是这几个动作里唯一不可逆的（提交并进目标分支，本地 reset 回滚不了）。
+   * 按工具名授权会让「允许评论一次」顺带放行合并——必须按动作分开。
+   */
+  @Test
+  void githubWriteActionsDoNotShareRules() {
+    String comment = ToolPermissionRule.keyFor(
+        "github_pr_write", "{\"action\":\"comment\",\"number\":12,\"body\":\"LGTM\"}");
+    String merge = ToolPermissionRule.keyFor(
+        "github_pr_write", "{\"action\":\"merge\",\"number\":12}");
+    String close = ToolPermissionRule.keyFor(
+        "github_pr_write", "{\"action\":\"close\",\"number\":12}");
+
+    assertNotEquals(comment, merge);
+    assertNotEquals(comment, close);
+    assertNotEquals(merge, close);
+  }
+
+  /** 放行「关闭 #12」不等于放行「关闭任意 issue」。 */
+  @Test
+  void githubWriteIsScopedToNumber() {
+    String twelve = ToolPermissionRule.keyFor(
+        "github_issue_write", "{\"action\":\"close\",\"number\":12}");
+    String thirteen = ToolPermissionRule.keyFor(
+        "github_issue_write", "{\"action\":\"close\",\"number\":13}");
+
+    assertNotEquals(twelve, thirteen);
+    assertTrue(twelve.contains("12"), twelve);
+  }
+
+  /**
+   * create 只取动作名：标题正文每次都不同，按内容建键会让「始终允许」静默失效
+   * （与 git commit 同一取舍）。单次创建的爆炸半径固定且可关闭。
+   */
+  @Test
+  void githubCreateIsScopedToActionOnly() {
+    String first = ToolPermissionRule.keyFor(
+        "github_issue_write", "{\"action\":\"create\",\"title\":\"A\"}");
+    String second = ToolPermissionRule.keyFor(
+        "github_issue_write", "{\"action\":\"create\",\"title\":\"B\"}");
+
+    assertEquals(first, second);
+    assertEquals("github_issue_write\u0000create", first);
+  }
+
+  /** number 缺失时回落参数摘要，不放大成动作级授权。 */
+  @Test
+  void githubWriteWithoutNumberFallsBackToDigest() {
+    String noNumber = ToolPermissionRule.keyFor(
+        "github_issue_write", "{\"action\":\"close\"}");
+    assertNotEquals("github_issue_write\u0000close", noNumber);
+    assertTrue(noNumber.startsWith("github_issue_write\u0000args:"), noNumber);
+  }
+
+  /** issue 与 PR 的写工具是不同工具，规则不能互相命中。 */
+  @Test
+  void issueAndPrWriteRulesAreSeparate() {
+    String issue = ToolPermissionRule.keyFor(
+        "github_issue_write", "{\"action\":\"close\",\"number\":12}");
+    String pr = ToolPermissionRule.keyFor(
+        "github_pr_write", "{\"action\":\"close\",\"number\":12}");
+    assertNotEquals(issue, pr);
+  }
+
+  // ---- file_move ----
+
+  /**
+   * 移动的作用对象是「源 + 目标」两个：只按源授权，会让「允许 a → b」顺带放行
+   * 「允许 a → 任意位置」（包括工作区外的敏感目录）。
+   */
+  @Test
+  void fileMoveIsScopedToBothSourceAndTarget() {
+    String aToB = ToolPermissionRule.keyFor(
+        "file_move", "{\"source\":\"a.kt\",\"target\":\"b.kt\"}");
+    String aToC = ToolPermissionRule.keyFor(
+        "file_move", "{\"source\":\"a.kt\",\"target\":\"c.kt\"}");
+
+    assertNotEquals(aToB, aToC);
+    assertTrue(aToB.contains("a.kt"), aToB);
+    assertTrue(aToB.contains("b.kt"), aToB);
+  }
+
+  @Test
+  void fileMoveWithoutPathsFallsBackToDigest() {
+    String key = ToolPermissionRule.keyFor("file_move", "{\"source\":\"a.kt\"}");
+    assertTrue(key.startsWith("file_move\u0000args:"), key);
+  }
+
+  // ---- git_write: stash / stash_pop / merge ----
+
+  /**
+   * stash 与 stash_pop 都是「作用在工作区当前改动上」的动作，没有可细分的判别字段，
+   * 因此按动作名授权（与 commit 同理）。但它们必须与其它动作分开：放行 commit
+   * 不该顺带放行 stash。
+   */
+  @Test
+  void gitWriteStashActionsAreScopedToActionOnly() {
+    String stash = ToolPermissionRule.keyFor("git_write", "{\"action\":\"stash\"}");
+    String pop = ToolPermissionRule.keyFor("git_write", "{\"action\":\"stash_pop\"}");
+    String commit = ToolPermissionRule.keyFor("git_write", "{\"action\":\"commit\"}");
+
+    assertEquals("git_write\u0000stash", stash);
+    assertEquals("git_write\u0000stash_pop", pop);
+    assertNotEquals(stash, pop);
+    assertNotEquals(stash, commit);
+  }
+
+  /** merge 的作用对象是要合并进来的分支：放行合并 feature-a 不等于放行合并 feature-b。 */
+  @Test
+  void gitWriteMergeIsScopedToBranch() {
+    String featureA = ToolPermissionRule.keyFor(
+        "git_write", "{\"action\":\"merge\",\"branch\":\"feature-a\"}");
+    String featureB = ToolPermissionRule.keyFor(
+        "git_write", "{\"action\":\"merge\",\"branch\":\"feature-b\"}");
+    String checkout = ToolPermissionRule.keyFor(
+        "git_write", "{\"action\":\"checkout\",\"branch\":\"feature-a\"}");
+
+    assertNotEquals(featureA, featureB);
+    assertNotEquals(featureA, checkout, "merge 与 checkout 是不同动作，不能共用规则");
+    assertTrue(featureA.contains("feature-a"), featureA);
+  }
+
+  @Test
+  void gitWriteMergeWithoutBranchFallsBackToDigest() {
+    String key = ToolPermissionRule.keyFor("git_write", "{\"action\":\"merge\"}");
+    assertTrue(key.startsWith("git_write\u0000args:"), key);
+  }
 }
