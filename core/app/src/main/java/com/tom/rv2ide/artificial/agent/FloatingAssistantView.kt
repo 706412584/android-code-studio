@@ -1656,8 +1656,13 @@ class FloatingAssistantView(
         val textAttachments0 =
             if (imagePayload0 != null) inputFeatures.attachmentContextExcludingImage()
             else inputFeatures.attachmentContext()
+        val messageAttachments0 = inputFeatures.attachmentSnapshot().map { it.toMessageAttachment() }
         inputFeatures.clearAttachments()
-        execute(request0 + textAttachments0, inputFeatures.reasoningEffort(), imagePayload0)
+        execute(
+            request0 + textAttachments0,
+            inputFeatures.reasoningEffort(),
+            imagePayload0,
+            messageAttachments0)
         return
       }
     }
@@ -1669,6 +1674,8 @@ class FloatingAssistantView(
     // 有图片时，附件文本里要剔除那一张（它已由 payload 承载），否则模型会同时
     // 收到「图片内容」和「图片路径」两份信息，可能重复处理或困惑于该用哪个。
     val textAttachments = if (imagePayload != null) inputFeatures.attachmentContextExcludingImage() else attachments
+    // 气泡缩略图的数据源，同样必须在 clearAttachments() 之前取。
+    val messageAttachments = inputFeatures.attachmentSnapshot().map { it.toMessageAttachment() }
 
     inputBar.text = ""
     inputFeatures.clearAttachments()
@@ -1677,8 +1684,27 @@ class FloatingAssistantView(
     //
     // 推理强度随请求走：它在输入区可选，而每轮都可能被改，因此每次发送都重读一次，
     // 而不是在 attach 时读一次缓存。
-    execute(request + textAttachments, inputFeatures.reasoningEffort(), imagePayload)
+    execute(
+        request + textAttachments,
+        inputFeatures.reasoningEffort(),
+        imagePayload,
+        messageAttachments)
   }
+
+  /** 输入区的附件投影 → 消息条目里的附件。两者字段同形，只做类型搬运。 */
+  private fun AssistantInputFeatures.AttachedFile.toMessageAttachment() =
+      AssistantMessageAdapter.MessageAttachment(
+          fileName = fileName,
+          localPath = localPath,
+          mimeType = mimeType,
+          sizeBytes = sizeBytes,
+          isImage = isImage,
+      )
+
+  /** 消息条目里的附件 → 落盘用的元数据。两者字段同形，只做类型搬运。 */
+  private fun AssistantMessageAdapter.MessageAttachment.toAttachmentMeta() =
+      com.tom.rv2ide.ai.protocol.AttachmentMeta(
+          fileName, localPath, mimeType, sizeBytes, isImage)
 
   /** 已安装技能投影成菜单条目（slash 与 @ 菜单共用）。每次 attach 时重读——skill 目录可能被导入更新。 */
   private fun skillSlashCommands(): List<com.tom.rv2ide.artificial.agent.compose.components.independent.InputSlashCommand> =
@@ -1811,6 +1837,7 @@ class FloatingAssistantView(
       userRequest: String,
       reasoningEffort: String? = null,
       imagePayload: String? = null,
+      attachments: List<AssistantMessageAdapter.MessageAttachment> = emptyList(),
   ) {
     // 发消息前重求一次工作区：项目打开是异步的，面板可能在初始化完成前就打开了。
     // 只在求值出非空且与当前不同时更新——避免把「确实没有项目」的情况也当成可恢复。
@@ -1843,10 +1870,10 @@ class FloatingAssistantView(
     // 判定用 orchestrator.isRunning 而不是本视图的 executionJobs：运行可能在别的
     // 入口发起（A 在跑、用户在 B 里输入），只有 orchestrator 知道全部正在跑的会话。
     if (isConversationRunning(conversationId)) {
-      enqueueSend(conversationId, userRequest, reasoningEffort, imagePayload)
+      enqueueSend(conversationId, userRequest, reasoningEffort, imagePayload, attachments)
       return
     }
-    startRun(conversationId, userRequest, reasoningEffort, imagePayload)
+    startRun(conversationId, userRequest, reasoningEffort, imagePayload, attachments)
   }
 
   /**
@@ -1872,6 +1899,7 @@ class FloatingAssistantView(
       userRequest: String,
       reasoningEffort: String?,
       imagePayload: String?,
+      attachments: List<AssistantMessageAdapter.MessageAttachment> = emptyList(),
   ) {
     // 用户在当前视图里发消息，就是要看这个会话：切显示过去，并清掉上一会话的渲染指针。
     displayedConversationId = conversationId
@@ -1890,7 +1918,14 @@ class FloatingAssistantView(
     renderSlot.conversationId = conversationId
     // 先登记回显标记再画气泡：orchestrator 广播该消息时会命中它，避免画第二遍。
     markLocalEcho(conversationId, userRequest)
-    adapter.append(AssistantMessageAdapter.Role.USER, userRequest)
+    // 有附件时把缩略图一起画进气泡：否则用户只看到正文里一行「[附件: 路径]」，
+    // 既不知道自己发了几张，也点不开。
+    if (attachments.isEmpty()) {
+      adapter.append(AssistantMessageAdapter.Role.USER, userRequest)
+    } else {
+      adapter.appendWithAttachments(
+          AssistantMessageAdapter.Role.USER, userRequest, attachments)
+    }
     val ui = uiState(conversationId)
     ui.streamingMessageId = null
     ui.streamedThisRun = false
@@ -1964,6 +1999,9 @@ class FloatingAssistantView(
                     null,
                     imagePayload,
                     reasoningEffort,
+                    // 附件元数据随用户消息落盘：不落的话重新打开会话时气泡上的
+                    // 缩略图全没了（模型那边不受影响，图片走 imagePayload）。
+                    attachments.map { it.toAttachmentMeta() },
                 )
             withContext(Dispatchers.Main) {
               // 会话可能已被切走：后台会话的结果不写控件（已落盘，切回时回放）。
@@ -2073,11 +2111,16 @@ class FloatingAssistantView(
       text: String,
       reasoningEffort: String?,
       imagePayload: String?,
+      attachments: List<AssistantMessageAdapter.MessageAttachment> = emptyList(),
   ) {
     displayedConversationId = conversationId
     lastOpenedConversationId = conversationId
     markLocalEcho(conversationId, text)
-    adapter.append(AssistantMessageAdapter.Role.USER, text)
+    if (attachments.isEmpty()) {
+      adapter.append(AssistantMessageAdapter.Role.USER, text)
+    } else {
+      adapter.appendWithAttachments(AssistantMessageAdapter.Role.USER, text, attachments)
+    }
     // 用户主动发送：无条件滚到底（否则看不到自己刚发的那条）。
     scrollToBottom(force = true)
     val agents = Agents(context)
@@ -2094,6 +2137,7 @@ class FloatingAssistantView(
             AgentOrchestrator.customBaseUrlFor(context, providerId),
             imagePayload,
             reasoningEffort,
+            attachments.map { it.toAttachmentMeta() },
         )
     // 只显示「前面还有几条」，不显示总数：用户关心的是还要等多久（前面几条），
     // 总数对「什么时候轮到我」没有信息量。
@@ -3927,8 +3971,26 @@ class FloatingAssistantView(
     val pendingToolCards = pendingReplayToolCards
     for (message in messages) {
       when (message) {
-        is com.tom.rv2ide.ai.protocol.UserModelMessage ->
+        is com.tom.rv2ide.ai.protocol.UserModelMessage -> {
+          // 历史里的附件元数据只用于画缩略图；旧日志没有这个字段，此时
+          // attachments 为空，气泡退化成纯文本（与修复前一致）。
+          val metas =
+              message.getAttachments().map {
+                AssistantMessageAdapter.MessageAttachment(
+                    fileName = it.fileName,
+                    localPath = it.localPath,
+                    mimeType = it.mimeType,
+                    sizeBytes = it.sizeBytes,
+                    isImage = it.isImage,
+                )
+              }
+          if (metas.isEmpty()) {
             adapter.append(AssistantMessageAdapter.Role.USER, message.getContent())
+          } else {
+            adapter.appendWithAttachments(
+                AssistantMessageAdapter.Role.USER, message.getContent(), metas)
+          }
+        }
         is com.tom.rv2ide.ai.protocol.AssistantModelMessage -> {
           // 顺序与实时渲染一致：先思考块，再工具卡片，最后正文。
           val reasoning = message.getReasoningContent()

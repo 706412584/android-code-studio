@@ -334,7 +334,15 @@ public final class ConversationHistory {
     if (entry instanceof UserMessageEntry) {
       UserMessageEntry user = (UserMessageEntry) entry;
       // meta 条目是系统注入，不进入模型对话
-      return user.isMeta() ? null : new UserModelMessage(user.getContent());
+      if (user.isMeta()) {
+        return null;
+      }
+      UserModelMessage message = new UserModelMessage(user.getContent());
+      // 附件元数据只供界面回放（缩略图），协议序列化不读它。
+      if (!user.getAttachments().isEmpty()) {
+        message.withAttachments(new ArrayList<>(user.getAttachments()));
+      }
+      return message;
     }
     if (entry instanceof AssistantMessageEntry) {
       AssistantMessageEntry assistant = (AssistantMessageEntry) entry;

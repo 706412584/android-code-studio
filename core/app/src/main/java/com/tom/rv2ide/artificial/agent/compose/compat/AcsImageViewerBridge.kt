@@ -52,12 +52,53 @@ fun ProvideAcsImageViewer(
   val context = LocalContext.current
   val scope = rememberCoroutineScope()
   val viewer = remember(context, fileAccess) {
-    ImageViewer { request ->
-      scope.launch {
-        // 解码是几 MB 级的 CPU 活，放 IO；showLightbox 必须回主线程跑（它会 show Dialog 并挂手势）
-        val loaded = withContext(Dispatchers.IO) { loadFirstAvailable(request.sources, fileAccess) }
-        if (loaded != null) {
-          ToolResultImageSupport.showLightbox(context, loaded.bytes, loaded.cacheKey)
+    object : ImageViewer {
+      override fun show(request: ImageViewerRequest) {
+        scope.launch {
+          // 解码是几 MB 级的 CPU 活，放 IO；showLightbox 必须回主线程跑（它会 show Dialog 并挂手势）
+          val loaded =
+              withContext(Dispatchers.IO) { loadFirstAvailable(request.sources, fileAccess) }
+          if (loaded != null) {
+            ToolResultImageSupport.showLightbox(context, loaded.bytes, loaded.cacheKey)
+          }
+        }
+      }
+
+      /**
+       * 图集：先把**全部**来源解析成字节，再一次性交给画廊。
+       *
+       * <p>逐张解析而不是懒加载：一张图几 MB，用户点开时通常只看几张，但懒加载要在
+       * 切换时异步等 IO，切换按钮会有一帧空白。多图场景最多 4 张（发送侧上限），
+       * 一次解完的内存代价可接受，换来的是切换即时。
+       *
+       * <p>解析失败的图**从图集里剔除**而不是留一个空位：留下空位会让计数器显示
+       * 「3 / 5」而实际只能翻到 4 张，用户会以为卡住了。
+       */
+      override fun showGallery(requests: List<ImageViewerRequest>, startIndex: Int) {
+        if (requests.isEmpty()) {
+          return
+        }
+        val target = startIndex.coerceIn(0, requests.lastIndex)
+        scope.launch {
+          val loaded =
+              withContext(Dispatchers.IO) {
+                val items = ArrayList<ToolResultImageSupport.LightboxImage>(requests.size)
+                // 记住目标那张在过滤后的下标：前面若有解析失败的图，下标会平移。
+                var adjusted = 0
+                requests.forEachIndexed { index, request ->
+                  val image = loadFirstAvailable(request.sources, fileAccess)
+                  if (image != null) {
+                    if (index <= target) adjusted = items.size
+                    items.add(
+                        ToolResultImageSupport.LightboxImage(image.bytes, image.cacheKey))
+                  }
+                }
+                items to adjusted
+              }
+          val (items, index) = loaded
+          if (items.isNotEmpty()) {
+            ToolResultImageSupport.showGallery(context, items, index)
+          }
         }
       }
     }

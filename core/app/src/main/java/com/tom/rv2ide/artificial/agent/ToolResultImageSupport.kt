@@ -147,8 +147,22 @@ object ToolResultImageSupport {
     return "${base64.length}:$head:$tail"
   }
 
+  /** 全屏查看器里的一张图：已解码的字节 + 它的缓存键。 */
+  class LightboxImage(val bytes: ByteArray, val cacheKey: String)
+
   /**
-   * 弹出放大查看。
+   * 弹出放大查看（单张）。等价于 [showGallery] 只传一张图。
+   *
+   * <p>保留这个重载而不是让所有调用点都改传列表：绝大多数场景（工具卡里的一张截图）
+   * 本来就只有一张，多包一层列表只是噪声。
+   */
+  @JvmStatic
+  fun showLightbox(context: android.content.Context, bytes: ByteArray, cacheKey: String) {
+    showGallery(context, listOf(LightboxImage(bytes, cacheKey)), 0)
+  }
+
+  /**
+   * 弹出放大查看（图集，可左右切换）。
    *
    * <p>手势用 `ScaleGestureDetector` + 简单的位移跟随，不引第三方库：
    * 需求只有「放大看清小字」，一个 60 行的 Dialog 足够，而引入 PhotoView
@@ -156,34 +170,34 @@ object ToolResultImageSupport {
    *
    * <p>图片从**已解码的字节**加载而不是 base64 字符串：Glide 不能把 base64 当图片源
    * （会被当作路径解析而失败），而字节可以直接交给它。
+   *
+   * <p>切图时**重置缩放矩阵**：不重置的话，在第一张上放大到 4x 再切到第二张，
+   * 第二张会以同样的倍率出现在屏幕外——用户看到一片黑，以为图没加载出来。
+   *
+   * @param startIndex 初始显示第几张；越界时夹到有效范围
    */
   @android.annotation.SuppressLint("ClickableViewAccessibility")
   @JvmStatic
-  fun showLightbox(context: android.content.Context, bytes: ByteArray, cacheKey: String) {
+  fun showGallery(
+      context: android.content.Context,
+      images: List<LightboxImage>,
+      startIndex: Int
+  ) {
+    if (images.isEmpty()) {
+      return
+    }
     val view =
         android.view.LayoutInflater.from(context)
-            .inflate(com.tom.rv2ide.R.layout.dialog_tool_image, null, false)
+            .inflate(com.tom.rv2ide.R.layout.dialog_tool_image_gallery, null, false)
     val image = view.findViewById<android.widget.ImageView>(com.tom.rv2ide.R.id.lightboxImage)
+    val prev = view.findViewById<android.view.View>(com.tom.rv2ide.R.id.lightboxPrev)
+    val next = view.findViewById<android.view.View>(com.tom.rv2ide.R.id.lightboxNext)
+    val counter = view.findViewById<android.widget.TextView>(com.tom.rv2ide.R.id.lightboxCounter)
 
     val dialog =
         android.app.Dialog(context, android.R.style.Theme_Black_NoTitleBar_Fullscreen).apply {
           setContentView(view)
         }
-    // 关闭入口：**必须有一个看得见的**。原先只有「点任意处关闭」——那对作者是显然的，
-    // 对用户不是：全屏黑底上没有任何可点的提示，用户会以为卡住了（实测反馈正是如此）。
-    // 关闭按钮 + 点背景关闭两条路都留着：前者是「找得到」，后者是「顺手」。
-    view.findViewById<android.view.View>(com.tom.rv2ide.R.id.lightboxClose)
-        .setOnClickListener { dialog.dismiss() }
-    // 点背景关闭：只认「没落在图片上」的点击。图片自己会消费事件（见下面的触摸处理），
-    // 否则点图想放大时会误关。
-    view.setOnClickListener { dialog.dismiss() }
-    // 图片本身不参与「点背景关闭」，但双击可以关（看图时最顺手的退出动作之一）。
-    image.setOnClickListener { dialog.dismiss() }
-
-    com.bumptech.glide.Glide.with(image)
-        .load(bytes)
-        .signature(com.bumptech.glide.signature.ObjectKey(cacheKey))
-        .into(image)
 
     // ---- 缩放与拖动 ----
     //
@@ -220,6 +234,46 @@ object ToolResultImageSupport {
               }
             })
 
+    var current = startIndex.coerceIn(0, images.lastIndex)
+
+    /** 显示第 [index] 张并刷新计数器；切图后缩放归位。 */
+    fun showAt(index: Int) {
+      current = index.coerceIn(0, images.lastIndex)
+      val item = images[current]
+      // 换图必须重置矩阵：否则上一张的缩放/位移会带过来（见方法注释）。
+      matrix.reset()
+      baseCaptured = false
+      image.imageMatrix = matrix
+      com.bumptech.glide.Glide.with(image)
+          .load(item.bytes)
+          .signature(com.bumptech.glide.signature.ObjectKey(item.cacheKey))
+          .into(image)
+      counter.text =
+          context.getString(
+              com.tom.rv2ide.resources.R.string.ai_assistant_image_counter,
+              current + 1,
+              images.size)
+    }
+
+    // 只有一张时不显示切换控件：一个永远点不动的箭头比没有更让人困惑。
+    val multiple = images.size > 1
+    prev.visibility = if (multiple) android.view.View.VISIBLE else android.view.View.GONE
+    next.visibility = if (multiple) android.view.View.VISIBLE else android.view.View.GONE
+    counter.visibility = if (multiple) android.view.View.VISIBLE else android.view.View.GONE
+    prev.setOnClickListener { showAt(current - 1) }
+    next.setOnClickListener { showAt(current + 1) }
+
+    // 关闭入口：**必须有一个看得见的**。原先只有「点任意处关闭」——那对作者是显然的，
+    // 对用户不是：全屏黑底上没有任何可点的提示，用户会以为卡住了（实测反馈正是如此）。
+    // 关闭按钮 + 点背景关闭两条路都留着：前者是「找得到」，后者是「顺手」。
+    view.findViewById<android.view.View>(com.tom.rv2ide.R.id.lightboxClose)
+        .setOnClickListener { dialog.dismiss() }
+    // 点背景关闭：只认「没落在图片上」的点击。图片自己会消费事件（见下面的触摸处理），
+    // 否则点图想放大时会误关。
+    view.setOnClickListener { dialog.dismiss() }
+    // 图片本身不参与「点背景关闭」，但双击可以关（看图时最顺手的退出动作之一）。
+    image.setOnClickListener { dialog.dismiss() }
+
     var lastX = 0f
     var lastY = 0f
     image.setOnTouchListener { v, event ->
@@ -244,6 +298,7 @@ object ToolResultImageSupport {
       }
     }
 
+    showAt(current)
     dialog.show()
   }
 }

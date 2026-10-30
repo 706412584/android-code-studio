@@ -358,6 +358,8 @@ public final class AgentOrchestrator {
     final String customBaseUrl;
     final String rawInputJson;
     final String reasoningEffort;
+    /** 该条消息的附件元数据（供界面回放缩略图）；无附件时为空列表。 */
+    final List<com.tom.rv2ide.ai.protocol.AttachmentMeta> attachments;
 
     QueuedRequest(
         String providerId,
@@ -366,6 +368,17 @@ public final class AgentOrchestrator {
         String customBaseUrl,
         String rawInputJson,
         String reasoningEffort) {
+      this(providerId, modelId, userRequest, customBaseUrl, rawInputJson, reasoningEffort, null);
+    }
+
+    QueuedRequest(
+        String providerId,
+        String modelId,
+        String userRequest,
+        String customBaseUrl,
+        String rawInputJson,
+        String reasoningEffort,
+        List<com.tom.rv2ide.ai.protocol.AttachmentMeta> attachments) {
       this.id = java.util.UUID.randomUUID().toString();
       this.providerId = providerId;
       this.modelId = modelId;
@@ -373,6 +386,8 @@ public final class AgentOrchestrator {
       this.customBaseUrl = customBaseUrl;
       this.rawInputJson = rawInputJson;
       this.reasoningEffort = reasoningEffort;
+      this.attachments =
+          attachments == null ? java.util.Collections.emptyList() : attachments;
     }
   }
 
@@ -566,6 +581,21 @@ public final class AgentOrchestrator {
       String customBaseUrl,
       String rawInputJson,
       String reasoningEffort) {
+    return enqueue(
+        conversationId, providerId, modelId, userRequest, customBaseUrl, rawInputJson,
+        reasoningEffort, null);
+  }
+
+  /** 带附件元数据的入队重载；[attachments] 只影响界面回放，不影响发给模型的内容。 */
+  public int enqueue(
+      String conversationId,
+      String providerId,
+      String modelId,
+      String userRequest,
+      String customBaseUrl,
+      String rawInputJson,
+      String reasoningEffort,
+      List<com.tom.rv2ide.ai.protocol.AttachmentMeta> attachments) {
     if (conversationId == null || conversationId.isEmpty()) {
       return 0;
     }
@@ -575,7 +605,13 @@ public final class AgentOrchestrator {
     synchronized (queue) {
       queue.addLast(
           new QueuedRequest(
-              providerId, modelId, userRequest, customBaseUrl, rawInputJson, reasoningEffort));
+              providerId,
+              modelId,
+              userRequest,
+              customBaseUrl,
+              rawInputJson,
+              reasoningEffort,
+              attachments));
       return queue.size();
     }
   }
@@ -659,7 +695,8 @@ public final class AgentOrchestrator {
                     // fanOut 里再广播一次。订阅方看到的文字会翻倍、工具卡片会出现两张。
                     null,
                     next.rawInputJson,
-                    next.reasoningEffort),
+                    next.reasoningEffort,
+                    next.attachments),
             "agent-queued");
     worker.setDaemon(true);
     worker.start();
@@ -1964,7 +2001,7 @@ public final class AgentOrchestrator {
       AgentEvent.Listener listener,
       String rawInputJson,
       String reasoningEffort) {
-    return runInConversation(
+    return run(
         null, providerId, modelId, userRequest, customBaseUrl, listener, rawInputJson,
         reasoningEffort);
   }
@@ -1988,9 +2025,31 @@ public final class AgentOrchestrator {
       AgentEvent.Listener listener,
       String rawInputJson,
       String reasoningEffort) {
+    return run(
+        conversationId, providerId, modelId, userRequest, customBaseUrl, listener, rawInputJson,
+        reasoningEffort, null);
+  }
+
+  /**
+   * 带附件元数据的运行重载。
+   *
+   * @param attachments 该条用户消息携带的附件元数据（供界面回放缩略图）；
+   *     {@code null} 或空表表示无附件。协议序列化不读它，模型看到的仍是
+   *     {@code rawInputJson} 里的图片。
+   */
+  public AgentRunResult run(
+      String conversationId,
+      String providerId,
+      String modelId,
+      String userRequest,
+      String customBaseUrl,
+      AgentEvent.Listener listener,
+      String rawInputJson,
+      String reasoningEffort,
+      List<com.tom.rv2ide.ai.protocol.AttachmentMeta> attachments) {
     return runInConversation(
         conversationId, providerId, modelId, userRequest, customBaseUrl, listener, rawInputJson,
-        reasoningEffort);
+        reasoningEffort, attachments);
   }
 
   private AgentRunResult runInConversation(
@@ -2001,7 +2060,8 @@ public final class AgentOrchestrator {
       String customBaseUrl,
       AgentEvent.Listener listener,
       String rawInputJson,
-      String reasoningEffort) {
+      String reasoningEffort,
+      List<com.tom.rv2ide.ai.protocol.AttachmentMeta> attachments) {
 
     // 先确定本次运行属于哪个会话，再据其 cwd 解析工作区。顺序不能反：工具作用的工作区
     // 必须**跟随会话**，而不是跟随「视图当前打开的项目」——后者会让「历史属于 A 项目、
@@ -2027,7 +2087,8 @@ public final class AgentOrchestrator {
           customBaseUrl,
           listener,
           rawInputJson,
-          reasoningEffort);
+          reasoningEffort,
+          attachments);
     } finally {
       // 保活释放必须无条件执行：嵌套 try/finally 保证下面的收尾（广播、取队列）
       // 即使抛异常也不会跳过它——否则计数永远停在 1，前台服务与 wakelock 会
@@ -2066,7 +2127,8 @@ public final class AgentOrchestrator {
       String customBaseUrl,
       AgentEvent.Listener listener,
       String rawInputJson,
-      String reasoningEffort) {
+      String reasoningEffort,
+      List<com.tom.rv2ide.ai.protocol.AttachmentMeta> attachments) {
     String sessionCwd = cwdOf(conversationId);
     File runWorkspace = resolveRunWorkspace(conversationId);
     if (runWorkspace == null) {
@@ -2334,7 +2396,7 @@ public final class AgentOrchestrator {
           broadcastExcept(broadcastConversationId, event, listener);
         };
     PersistingListener persistingListener =
-        new PersistingListener(conversationId, userRequest, fanOut);
+        new PersistingListener(conversationId, userRequest, fanOut, attachments);
     // 登记本轮的实时态持有者，供视图重建时拉快照（见 currentRunSnapshot）。
     // 先登记后执行：登记晚于首个增量会让「刚重建的视图」查不到本轮正文。
     activeListeners.put(conversationId, persistingListener);
@@ -2797,10 +2859,21 @@ public final class AgentOrchestrator {
      */
     private volatile String lastAction = "";
 
-    PersistingListener(String conversationId, String userRequest, AgentEvent.Listener downstream) {
+    PersistingListener(
+        String conversationId,
+        String userRequest,
+        AgentEvent.Listener downstream,
+        List<com.tom.rv2ide.ai.protocol.AttachmentMeta> attachments) {
       this.conversationId = conversationId;
       this.downstream = downstream;
-      appendEntry(UserMessageEntry.create(null, System.currentTimeMillis(), userRequest));
+      // 附件元数据随用户消息一起落盘：不落的话，重新打开会话时气泡上的缩略图
+      // 就全没了（模型那边不受影响——图片走 rawInputJson，与这里无关）。
+      appendEntry(
+          UserMessageEntry.create(
+              null,
+              System.currentTimeMillis(),
+              userRequest,
+              attachments == null ? java.util.Collections.emptyList() : attachments));
     }
 
     @Override

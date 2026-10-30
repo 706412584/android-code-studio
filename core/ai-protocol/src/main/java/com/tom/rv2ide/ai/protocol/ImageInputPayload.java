@@ -21,6 +21,10 @@
 
 package com.tom.rv2ide.ai.protocol;
 
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+import org.json.JSONArray;
 import org.json.JSONObject;
 
 public final class ImageInputPayload {
@@ -38,12 +42,43 @@ public final class ImageInputPayload {
     private ImageInputPayload() {
     }
 
+    /** 单图负载：与旧版线格式完全一致。 */
     public static String rawInputJson(String prompt, String mimeType, String dataBase64) throws org.json.JSONException {
         return new JSONObject()
                 .put("kind", KIND)
                 .put("prompt", safe(prompt))
                 .put("mime_type", normalizeMimeType(mimeType))
                 .put("data_base64", safe(dataBase64))
+                .toString();
+    }
+
+    /**
+     * 多图负载。
+     *
+     * <p><b>为什么不是「把单图字段改成数组」</b>：会话日志里已经存着一批单图格式的用户消息，
+     * 改动线格式会让那些历史图片在续接会话时静默消失。因此数组放在**新增的** {@code images}
+     * 字段里，同时仍把第一张写进旧的 {@code mime_type} / {@code data_base64}——
+     * 旧读取端（以及没升级的序列化路径）看到的行为与从前完全一致。
+     *
+     * @param images 按用户选择顺序排列；空列表等价于「没有图片」，调用方应改走纯文本路径
+     */
+    public static String rawInputJson(String prompt, List<ImagePart> images) throws org.json.JSONException {
+        if (images == null || images.isEmpty()) {
+            return rawInputJson(prompt, "", "");
+        }
+        ImagePart first = images.get(0);
+        JSONArray array = new JSONArray();
+        for (ImagePart part : images) {
+            array.put(new JSONObject()
+                    .put("mime_type", normalizeMimeType(part.getMimeType()))
+                    .put("data_base64", safe(part.getDataBase64())));
+        }
+        return new JSONObject()
+                .put("kind", KIND)
+                .put("prompt", safe(prompt))
+                .put("mime_type", normalizeMimeType(first.getMimeType()))
+                .put("data_base64", safe(first.getDataBase64()))
+                .put("images", array)
                 .toString();
     }
 
@@ -75,17 +110,40 @@ public final class ImageInputPayload {
                 return null;
             }
             String dataBase64 = object.optString("data_base64").trim();
-            if (dataBase64.length() == 0) {
-                return null;
+            JSONArray images = object.optJSONArray("images");
+            List<ImagePart> parts = readParts(images);
+            if (parts.isEmpty()) {
+                // 旧格式（无 images 数组）：按单图处理。
+                if (dataBase64.length() == 0) {
+                    return null;
+                }
+                parts = Collections.singletonList(
+                        new ImagePart(normalizeMimeType(object.optString("mime_type")), dataBase64));
             }
-            return new Payload(
-                    object.optString("prompt"),
-                    normalizeMimeType(object.optString("mime_type")),
-                    dataBase64
-            );
+            return new Payload(object.optString("prompt"), parts);
         } catch (Exception ignored) {
             return null;
         }
+    }
+
+    /** 读 {@code images} 数组；缺字段、类型不符或全为空时返回空列表。 */
+    private static List<ImagePart> readParts(JSONArray array) {
+        List<ImagePart> parts = new ArrayList<>();
+        if (array == null) {
+            return parts;
+        }
+        for (int i = 0; i < array.length(); i++) {
+            JSONObject item = array.optJSONObject(i);
+            if (item == null) {
+                continue;
+            }
+            String data = item.optString("data_base64").trim();
+            if (data.isEmpty()) {
+                continue;
+            }
+            parts.add(new ImagePart(normalizeMimeType(item.optString("mime_type")), data));
+        }
+        return parts;
     }
 
     /**
@@ -144,19 +202,14 @@ public final class ImageInputPayload {
         return value == null ? "" : value.trim();
     }
 
-    public static final class Payload {
-        private final String prompt;
+    /** 一张待发送的图片。 */
+    public static final class ImagePart {
         private final String mimeType;
         private final String dataBase64;
 
-        private Payload(String prompt, String mimeType, String dataBase64) {
-            this.prompt = prompt == null ? "" : prompt;
+        public ImagePart(String mimeType, String dataBase64) {
             this.mimeType = normalizeMimeType(mimeType);
             this.dataBase64 = dataBase64 == null ? "" : dataBase64;
-        }
-
-        public String getPrompt() {
-            return prompt;
         }
 
         public String getMimeType() {
@@ -169,6 +222,43 @@ public final class ImageInputPayload {
 
         public String dataUrl() {
             return "data:" + mimeType + ";base64," + dataBase64;
+        }
+    }
+
+    public static final class Payload {
+        private final String prompt;
+        private final List<ImagePart> images;
+
+        private Payload(String prompt, List<ImagePart> images) {
+            this.prompt = prompt == null ? "" : prompt;
+            this.images = Collections.unmodifiableList(new ArrayList<>(images));
+        }
+
+        private Payload(String prompt, String mimeType, String dataBase64) {
+            this(prompt, Collections.singletonList(new ImagePart(mimeType, dataBase64)));
+        }
+
+        public String getPrompt() {
+            return prompt;
+        }
+
+        /** 全部图片，按用户选择顺序；至少一张（解析不出图时整条负载为 null）。 */
+        public List<ImagePart> getImages() {
+            return images;
+        }
+
+        /** 第一张图片的 MIME。保留是为了让只关心单图的旧调用点不必改。 */
+        public String getMimeType() {
+            return images.get(0).getMimeType();
+        }
+
+        /** 第一张图片的 base64。同上。 */
+        public String getDataBase64() {
+            return images.get(0).getDataBase64();
+        }
+
+        public String dataUrl() {
+            return images.get(0).dataUrl();
         }
     }
 }

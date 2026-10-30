@@ -322,16 +322,20 @@ public final class AnthropicMessagesProtocol extends AbstractHttpModelProtocol {
                     .put("text", message.getContent()));
         }
         String prompt = payload.getPrompt().length() == 0 ? message.getContent() : payload.getPrompt();
-        return new JSONArray()
+        JSONArray blocks = new JSONArray()
                 .put(new JSONObject()
                         .put("type", "text")
-                        .put("text", prompt == null ? "" : prompt))
-                .put(new JSONObject()
-                        .put("type", "image")
-                        .put("source", new JSONObject()
-                                .put("type", "base64")
-                                .put("media_type", payload.getMimeType())
-                                .put("data", payload.getDataBase64())));
+                        .put("text", prompt == null ? "" : prompt));
+        // 多图：每张一个 image 块，顺序即用户选择顺序（同 OpenAI 路径的理由）。
+        for (ImageInputPayload.ImagePart part : payload.getImages()) {
+            blocks.put(new JSONObject()
+                    .put("type", "image")
+                    .put("source", new JSONObject()
+                            .put("type", "base64")
+                            .put("media_type", part.getMimeType())
+                            .put("data", part.getDataBase64())));
+        }
+        return blocks;
     }
 
     private JSONArray assistantContentBlocks(ModelMessage message) throws Exception {

@@ -30,6 +30,15 @@ public abstract class ModelMessage {
     private final String reasoningContent;
     private final String rawInputJson;
 
+    /**
+     * 该消息携带的附件元数据；无附件时为空列表。
+     *
+     * <p>只有 {@link UserModelMessage} 会填它——协议序列化不读这个字段（模型看到的是
+     * {@code rawInputJson} 里的图片与正文），它的用途是**界面回放**：重新打开会话时
+     * 把缩略图放回用户气泡。
+     */
+    private List<AttachmentMeta> attachments = Collections.emptyList();
+
     protected ModelMessage(String content) {
         this(content, "");
     }
@@ -54,6 +63,23 @@ public abstract class ModelMessage {
 
     public final String getRawInputJson() {
         return rawInputJson;
+    }
+
+    /** 该消息携带的附件元数据；无附件时为空列表。 */
+    public final List<AttachmentMeta> getAttachments() {
+        return attachments;
+    }
+
+    /**
+     * 设置附件元数据。只应由构造消息的一方调用一次。
+     *
+     * <p>做成可变而不是构造参数：{@code ModelMessage} 有 5 个子类、十几个构造重载，
+     * 给每个都加一个参数会波及大量无关调用点，而这里只是给 UI 回放捎带一份数据。
+     */
+    public final ModelMessage withAttachments(List<AttachmentMeta> value) {
+        this.attachments =
+                value == null ? Collections.emptyList() : Collections.unmodifiableList(value);
+        return this;
     }
 
     public List<ToolCall> getToolCalls() {

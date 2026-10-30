@@ -28,6 +28,8 @@ import android.provider.Settings
 import android.widget.Toast
 import androidx.compose.foundation.Image as ComposeImage
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -139,6 +141,50 @@ internal fun MessageAttachmentList(
       verticalArrangement = Arrangement.spacedBy(Spacing.xs)) {
         attachments.forEach { attachment ->
           MessageAttachmentRow(attachment = attachment, onClick = onClick)
+        }
+      }
+}
+
+/** 横向缩略图边长：比纵向列表的 44dp 大，因为这里图本身就是主角。 */
+private val StripThumbSize = 96.dp
+
+/**
+ * 已发送**图片**的横向缩略图条：一行放不下就横向滚动。
+ *
+ * <p><b>为什么用户气泡用横向条而不是 [MessageAttachmentList] 的纵向行</b>：用户发图时
+ * 关心的是「我发的这几张长什么样」，而不是文件名与大小；纵向列表每张占一整行，
+ * 三张图就把对话流挤出一屏。横向条把 N 张图压成一行高度，且能一眼看出张数。
+ * 非图片附件（代码文件、压缩包）仍走纵向列表——它们的价值在文件名，不在缩略图。
+ *
+ * <p>点击任意一张进入**全屏图集**（[LocalImageViewer.showGallery]），可以左右切换，
+ * 不必退回聊天列表再点下一张。
+ */
+@Composable
+internal fun MessageImageStrip(attachments: List<AgentAttachment>) {
+  if (attachments.isEmpty()) return
+  val viewer = LocalImageViewer.current
+  val requests = attachments.map { it.toViewerRequest() }
+  Row(
+      modifier =
+          Modifier.fillMaxWidth()
+              .horizontalScroll(rememberScrollState())
+              .padding(top = Spacing.xs),
+      horizontalArrangement = Arrangement.spacedBy(Spacing.xs)) {
+        attachments.forEachIndexed { index, attachment ->
+          Surface(
+              shape = RoundedCornerShape(Radius.sm),
+              color = chatMutedSurfaceColor(),
+              modifier =
+                  Modifier.size(StripThumbSize)
+                      .clip(RoundedCornerShape(Radius.sm))
+                      .clickable(
+                          onClickLabel =
+                              stringResource(R.string.compose_attachment_image_preview)) {
+                        // 一次把整组交给查看器：图集内的左右切换由它负责。
+                        viewer.showGallery(requests, index)
+                      }) {
+                AttachmentImageThumb(attachment = attachment)
+              }
         }
       }
 }

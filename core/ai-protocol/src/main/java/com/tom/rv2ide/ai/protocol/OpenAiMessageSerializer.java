@@ -129,13 +129,17 @@ final class OpenAiMessageSerializer {
             return new JSONArray().put(new JSONObject().put("type", "text").put("text", message.getContent()));
         }
         String prompt = payload.getPrompt().length() == 0 ? message.getContent() : payload.getPrompt();
-        return new JSONArray()
+        JSONArray content = new JSONArray()
                 .put(new JSONObject()
                         .put("type", "text")
-                        .put("text", prompt == null ? "" : prompt))
-                .put(new JSONObject()
-                        .put("type", "image_url")
-                        .put("image_url", new JSONObject()
-                                .put("url", payload.dataUrl())));
+                        .put("text", prompt == null ? "" : prompt));
+        // 多图：每张一个 image_url 块。**顺序即用户选择顺序**——模型按出现次序描述
+        // 「第一张/第二张」，乱序会让它的回答与用户看到的排列对不上。
+        for (ImageInputPayload.ImagePart part : payload.getImages()) {
+            content.put(new JSONObject()
+                    .put("type", "image_url")
+                    .put("image_url", new JSONObject().put("url", part.dataUrl())));
+        }
+        return content;
     }
 }

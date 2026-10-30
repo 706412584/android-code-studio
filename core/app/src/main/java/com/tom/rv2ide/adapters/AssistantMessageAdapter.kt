@@ -195,7 +195,31 @@ class AssistantMessageAdapter(
        * 自己记两个时刻即可，零协议层改动。
        */
       val durationMs: Long = 0L,
+      /**
+       * 该条用户消息携带的附件；无附件时为空表。
+       *
+       * <p><b>此前恒为空</b>：附件的存在只体现在正文里的 `[附件: 路径]` 文本行，用户
+       * 看不到自己发了哪几张图，也点不开。现在发送时把待发附件投影成 [MessageAttachment]
+       * 挂在这里，气泡据此渲染横向缩略图条。
+       *
+       * <p>只带路径不带 base64：缩略图按需从磁盘解码，条目本身保持轻量
+       * （它会进 `snapshot()` 并被 DiffUtil 比较）。
+       */
+      val attachments: List<MessageAttachment> = emptyList(),
   ) : Item()
+
+  /**
+   * 消息气泡里的一条附件（已发送状态的只读投影）。
+   *
+   * @param localPath 落盘绝对路径；为空时 UI 退化为文件图标而不是破图
+   */
+  data class MessageAttachment(
+      val fileName: String,
+      val localPath: String,
+      val mimeType: String,
+      val sizeBytes: Long,
+      val isImage: Boolean,
+  )
 
   /**
    * 一段模型推理过程（思维链）。
@@ -411,6 +435,31 @@ class AssistantMessageAdapter(
   fun append(role: Role, text: String, diffId: String?, durationMs: Long): Long {
     val id = nextId++
     items.add(Message(id, role, text, diffId, reverted = false, durationMs = durationMs))
+    notifyCompat { notifyItemInserted(items.size - 1) }
+    return id
+  }
+
+  /**
+   * 追加一条带附件的消息（用户气泡的图片/文件缩略图条用）。
+   *
+   * <p>重载而不是改 [append] 的签名：绝大多数消息没有附件，让它们都多传一个
+   * 空表只会制造噪声。
+   */
+  fun appendWithAttachments(
+      role: Role,
+      text: String,
+      attachments: List<MessageAttachment>,
+  ): Long {
+    val id = nextId++
+    items.add(
+        Message(
+            id,
+            role,
+            text,
+            diffId = null,
+            reverted = false,
+            durationMs = 0L,
+            attachments = attachments))
     notifyCompat { notifyItemInserted(items.size - 1) }
     return id
   }

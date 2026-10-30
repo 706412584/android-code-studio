@@ -1715,6 +1715,10 @@
   <string name="compose_tool_card_image_count">%1$d 张图片</string>
   <string name="compose_tool_card_tap_to_view">点击查看大图</string>
   <string name="ai_assistant_image_close">关闭</string>
+  <string name="ai_assistant_image_previous">上一张</string>
+  <string name="ai_assistant_image_next">下一张</string>
+  <!-- 全屏图集的计数器，例如「2 / 3」。 -->
+  <string name="ai_assistant_image_counter">%1$d / %2$d</string>
   <string name="sidebar_assistant_title">AI 助手</string>
   <string name="common_save">保存</string>
   <string name="common_cancel">取消</string>

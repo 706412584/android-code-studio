@@ -88,6 +88,7 @@ import com.tom.rv2ide.artificial.agent.compose.components.style.chatUserBubbleCo
 import com.tom.rv2ide.artificial.agent.compose.components.style.chatUserBubbleTextColor
 import com.tom.rv2ide.artificial.agent.compose.components.style.formatClockTime
 import com.tom.rv2ide.artificial.agent.compose.components.tools.MessageAttachmentList
+import com.tom.rv2ide.artificial.agent.compose.components.tools.MessageImageStrip
 import com.tom.rv2ide.artificial.agent.compose.components.tools.ToolMessageBody
 import com.tom.rv2ide.artificial.agent.compose.model.AgentUIMessage
 import com.tom.rv2ide.artificial.agent.compose.model.MessageRole
@@ -480,7 +481,17 @@ internal fun AgentMessageItem(
                     }
                 }
                 if ((isUser || message.role == MessageRole.ASSISTANT) && hasAttachments) {
-                    MessageAttachmentList(attachments = message.attachments)
+                    // 图片走横向缩略图条（点击进全屏图集），其余附件仍走纵向行。
+                    // 两类分开渲染：混在一条纵向列表里时，三张图的缩略图各占一行，
+                    // 会把对话流挤出一屏，而用户其实只想扫一眼自己发了哪几张。
+                    val images = message.attachments.filter { it.isImage }
+                    val files = message.attachments.filter { !it.isImage }
+                    if (images.isNotEmpty()) {
+                        MessageImageStrip(attachments = images)
+                    }
+                    if (files.isNotEmpty()) {
+                        MessageAttachmentList(attachments = files)
+                    }
                 }
                 // 气泡下方的元信息行（工具消息不显示）：用户消息每条都常驻「时间 + 复制/回退/更多」，
                 // 助手消息只挂整段会话最新的一条，避免每条回复下面都吊一排按钮把聊天记录割碎。

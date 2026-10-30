@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  灯箱的「上一张」箭头：固定白色。
+
+  为什么不复用 ic_chevron_down：那个带 `tint="?attr/colorOnSurfaceVariant"`，
+  深色主题下接近黑，压在灯箱的半透明黑底上等于看不见。灯箱背景恒为深色，
+  与主题无关，所以必须用固定色。
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+  <path
+      android:fillColor="#FFFFFFFF"
+      android:pathData="M15.41,7.41L14,6l-6,6 6,6 1.41,-1.41L10.83,12z"/>
+</vector>

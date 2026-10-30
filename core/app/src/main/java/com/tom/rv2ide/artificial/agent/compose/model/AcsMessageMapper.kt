@@ -148,6 +148,20 @@ object AcsMessageMapper {
           reverted = m.reverted,
           durationMs = m.durationMs,
           isTrace = m.role == AssistantMessageAdapter.Role.TRACE,
+          attachments = m.attachments.map { it.toUiAttachment() },
+      )
+
+  /** 已发送附件 → 渲染层附件。两边字段一一对应，只做类型搬运。 */
+  private fun AssistantMessageAdapter.MessageAttachment.toUiAttachment() =
+      AgentAttachment(
+          fileName = fileName,
+          // ACS 不走远程容器，containerPath 没有独立语义；填同一路径让它作为
+          // 查看器的兜底来源（本地文件被清理时仍有机会从别处取回）。
+          containerPath = localPath,
+          localPath = localPath,
+          mimeType = mimeType,
+          sizeBytes = sizeBytes,
+          isImage = isImage,
       )
 
   private fun fromThinking(t: AssistantMessageAdapter.Thinking) =

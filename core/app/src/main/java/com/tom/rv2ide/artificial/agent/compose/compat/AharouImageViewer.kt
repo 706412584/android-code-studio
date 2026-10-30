@@ -67,6 +67,20 @@ data class ImageViewerRequest(
 @Stable
 fun interface ImageViewer {
   fun show(request: ImageViewerRequest)
+
+  /**
+   * 打开**图集**，初始定位到第 [startIndex] 张，支持左右切换。
+   *
+   * <p>默认实现退化为只显示 [startIndex] 那一张——这样所有既有的
+   * `ImageViewer { ... }` 实现（包括默认的空实现）不必改就能编译，
+   * 而真正支持画廊的接线（[ProvideAcsImageViewer]）会覆盖它。
+   *
+   * <p>为什么不把 [show] 直接改成接收列表：单图是绝对主流（工具卡里一张截图），
+   * 强制所有调用点包一层 `listOf(...)` 只会制造噪声。
+   */
+  fun showGallery(requests: List<ImageViewerRequest>, startIndex: Int) {
+    requests.getOrNull(startIndex.coerceIn(0, (requests.size - 1).coerceAtLeast(0)))?.let { show(it) }
+  }
 }
 
 /**

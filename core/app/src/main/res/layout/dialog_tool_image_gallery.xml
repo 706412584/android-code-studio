@@ -1,0 +1,96 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  工具结果 / 用户附件图片的全屏查看。
+
+  比 dialog_tool_image.xml 多两样东西：左右切换按钮与「n / m」计数器。
+  单张图片时这两组控件由代码隐藏，因此本布局同时承担单图与多图两种形态
+  ——维护两套布局会让缩放手势与关闭逻辑各写一遍，而它们必须完全一致。
+
+  背景用半透明黑而不是主题色：看图时周围应该是「暗房」，
+  浅色主题下若用 colorSurface 会让图片显得发灰、对比度不足。
+-->
+<FrameLayout
+  xmlns:android="http://schemas.android.com/apk/res/android"
+  xmlns:tools="http://schemas.android.com/tools"
+  android:layout_width="match_parent"
+  android:layout_height="match_parent"
+  android:background="#E6000000"
+  android:clickable="true"
+  android:focusable="true">
+
+  <ImageView
+    android:id="@+id/lightboxImage"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:layout_margin="16dp"
+    android:contentDescription="@string/ai_assistant_image_open"
+    android:scaleType="fitCenter" />
+
+  <!--
+    左右切换：贴屏幕两侧垂直居中，48dp 点击区。
+    用 ImageButton 而不是 ImageView + OnClickListener：前者自带按压态与焦点处理，
+    也更容易满足无障碍的点击目标尺寸要求。
+  -->
+  <ImageButton
+    android:id="@+id/lightboxPrev"
+    android:layout_width="48dp"
+    android:layout_height="48dp"
+    android:layout_gravity="start|center_vertical"
+    android:layout_margin="8dp"
+    android:background="@drawable/bg_lightbox_close"
+    android:contentDescription="@string/ai_assistant_image_previous"
+    android:padding="12dp"
+    android:scaleType="fitCenter"
+    android:src="@drawable/ic_lightbox_prev" />
+
+  <ImageButton
+    android:id="@+id/lightboxNext"
+    android:layout_width="48dp"
+    android:layout_height="48dp"
+    android:layout_gravity="end|center_vertical"
+    android:layout_margin="8dp"
+    android:background="@drawable/bg_lightbox_close"
+    android:contentDescription="@string/ai_assistant_image_next"
+    android:padding="12dp"
+    android:scaleType="fitCenter"
+    android:src="@drawable/ic_lightbox_next" />
+
+  <!--
+    计数器：底部居中。半透明黑底 + 白字，保证在任何图片上都可读
+    （图片本身可能是浅色截图，纯白字会糊在一起）。
+  -->
+  <TextView
+    android:id="@+id/lightboxCounter"
+    android:layout_width="wrap_content"
+    android:layout_height="wrap_content"
+    android:layout_gravity="bottom|center_horizontal"
+    android:layout_marginBottom="32dp"
+    android:background="@drawable/bg_lightbox_close"
+    android:paddingStart="14dp"
+    android:paddingEnd="14dp"
+    android:paddingTop="6dp"
+    android:paddingBottom="6dp"
+    android:textColor="#FFFFFFFF"
+    android:textSize="14sp"
+    tools:ignore="HardcodedText" />
+
+  <!--
+    关闭按钮：必须有**看得见**的退出入口。
+
+    先前只提供「点任意处关闭」——对作者显然，对用户不显然：全屏黑底上没有任何可点的提示，
+    用户会以为卡住了（真机反馈正是「没有关闭按钮」）。按钮固定右上角、加半透明底，
+    保证在浅色与深色截图上都看得清；点击区用 minWidth/minHeight 撑到 48dp 的可达标准。
+  -->
+  <ImageButton
+    android:id="@+id/lightboxClose"
+    android:layout_width="48dp"
+    android:layout_height="48dp"
+    android:layout_gravity="top|end"
+    android:layout_margin="12dp"
+    android:background="@drawable/bg_lightbox_close"
+    android:contentDescription="@string/ai_assistant_image_close"
+    android:padding="12dp"
+    android:scaleType="fitCenter"
+    android:src="@drawable/ic_lightbox_close" />
+
+</FrameLayout>

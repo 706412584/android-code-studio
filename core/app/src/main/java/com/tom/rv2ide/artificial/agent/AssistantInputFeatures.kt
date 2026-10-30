@@ -87,12 +87,30 @@ class AssistantInputFeatures(
    *
    * @param bytes 选中时**当场读出**的内容（仅图片）。见 [addAttachment] 的说明——
    *   Photo Picker 的 URI 权限只在选择回调期间有效，等到发送时再读会拿到 null。
+   * @param localPath 图片落盘后的绝对路径（`filesDir/ai/attachments/<name>`）。
+   *   相册图片的 URI 拿不到可用路径，而消息气泡的缩略图与全屏查看器都需要一个
+   *   能反复读取的来源——所以选图时就把字节写一份到应用私有目录。
    */
   private data class Attachment(
       val uri: Uri,
       val name: String,
       val isImage: Boolean,
       val bytes: ByteArray? = null,
+      val localPath: String? = null,
+  )
+
+  /**
+   * 一条已发送附件（脱离待发状态后的只读投影）。
+   *
+   * <p>不带 base64，只带落盘路径：气泡缩略图按需从磁盘解码，消息条目因此保持轻量。
+   * 落盘失败时 [localPath] 为空串，UI 退化为文件图标而不是破图。
+   */
+  data class AttachedFile(
+      val fileName: String,
+      val localPath: String,
+      val mimeType: String,
+      val sizeBytes: Long,
+      val isImage: Boolean,
   )
 
   /**
@@ -240,17 +258,49 @@ class AssistantInputFeatures(
     ioScope.launch {
       val bytes = readImageBytes(uri)
       if (bytes != null) {
+        // 落一份到应用私有目录：气泡缩略图与全屏查看器需要一个能反复读取的来源，
+        // 而相册 URI 的临时授权随时可能失效（进程重启后必然失效）。
+        val localPath = persistAttachmentFile(name, bytes)
         // 替换占位条目。用索引定位而不是 remove(placeholder)：
         // Attachment 是 data class 且带 ByteArray 字段，其生成的 equals 对数组
         // 退化为引用比较——依赖它做集合操作会踩坑（见 m9 的审查意见）。
         val index = attachments.indexOfFirst { it.uri == uri }
         if (index >= 0) {
-          attachments[index] = attachments[index].copy(bytes = bytes)
+          attachments[index] = attachments[index].copy(bytes = bytes, localPath = localPath)
         }
       }
       withContext(Dispatchers.Main) { renderAttachments() }
     }
   }
+
+  /**
+   * 把图片字节写进 `filesDir/ai/attachments/`，返回绝对路径；失败返回 null。
+   *
+   * <p>不做去重与清理：同一张图被选两次会落两份（文件名带序号），这是刻意的——
+   * 去重需要比对内容摘要，而收益只是省几百 KB；清理则会让历史消息的缩略图
+   * 在用户回看时变成破图。这些文件由用户通过「清理缓存」自行回收。
+   */
+  private fun persistAttachmentFile(name: String, bytes: ByteArray): String? =
+      try {
+        val dir = File(context.filesDir, ATTACHMENTS_DIR)
+        if (!dir.exists() && !dir.mkdirs() && !dir.isDirectory) {
+          null
+        } else {
+          val safeName = name.replace(Regex("[\\\\/:*?\"<>|\\p{Cntrl}]"), "_").take(120)
+          val stem = safeName.substringBeforeLast('.', safeName).ifBlank { "image" }
+          val ext = safeName.substringAfterLast('.', "").let { if (it.isEmpty()) "jpg" else it }
+          var target = File(dir, "$stem.$ext")
+          var index = 1
+          while (target.exists()) {
+            target = File(dir, "$stem-$index.$ext")
+            index++
+          }
+          target.writeBytes(bytes)
+          target.absolutePath
+        }
+      } catch (e: Exception) {
+        null
+      }
 
   /**
    * 立刻读取图片字节；失败或超出体积上限时返回 null。
@@ -348,11 +398,12 @@ class AssistantInputFeatures(
                         attachment.bytes!!, android.util.Base64.NO_WRAP),
             )
           } else null
+      val path = attachment.localPath ?: localPathOf(attachment.uri)
       bridge.pendingAttachments.add(
           com.tom.rv2ide.artificial.agent.compose.compat.PendingUploadAttachment(
               fileName = attachment.name,
-              containerPath = localPathOf(attachment.uri) ?: attachment.uri.toString(),
-              localPath = localPathOf(attachment.uri) ?: "",
+              containerPath = path ?: attachment.uri.toString(),
+              localPath = path ?: "",
               mimeType = if (attachment.isImage) "image/*" else "application/octet-stream",
               sizeBytes = attachment.bytes?.size?.toLong() ?: 0L,
               image = image,
@@ -367,43 +418,82 @@ class AssistantInputFeatures(
    * OpenAI 兼容与 Anthropic 两条序列化路径都会把它转成 image_url / image block。
    * 这里负责把用户选的图片读成 base64 并打包。
    *
-   * <p><b>只取第一张图</b>：协议层的 payload 是**单个**图片的格式（一个 mime_type +
-   * 一份 base64）。多图需要协议层支持数组，那是独立改动。当前取第一张并如实告知其余
-   * 图片走文本路径，而不是静默丢弃。
+   * <p><b>打包全部可发送的图片</b>，不再只取第一张。此前协议层 payload 只容得下单图，
+   * 于是第 2 张起被降级成路径文本——模型实际只看到 1 张，而用户以为自己发了 3 张。
+   * 现在 payload 带 {@code images} 数组（旧单图字段仍写第一张，保持线格式兼容）。
    *
-   * <p><b>读不到内容时返回 null</b>：让调用方退化为文本路径（把路径交给模型），
+   * <p>能不能进 payload 由 [sendableImages] 统一判定，[attachmentContextExcludingImage]
+   * 用同一个函数剔除已发送的图——两处若各写一套判据，会出现「既没进 payload、也没在文本里」
+   * 的静默丢失。
+   *
+   * <p><b>一张都发不了时返回 null</b>：让调用方退化为文本路径（把路径交给模型），
    * 而不是发一个空 payload 让服务端报错——后者的错误信息对用户毫无意义。
    */
   fun imageRawInputJson(prompt: String): String? {
-    val image = attachments.firstOrNull { it.isImage } ?: return null
-    // 优先用选择时缓存的字节。**不再在这里 openInputStream**：Photo Picker 的 URI
-    // 权限只在选择回调期间有效，此刻（用户点发送）通常已失效，现场读必然拿到 null
-    // ——这正是「AI 说看不到图片」的根因（见 addAttachment 的说明）。
-    //
-    // 缓存为空（读失败/超限/旧版本添加的附件）时退回现场读一次：对 `ACTION_OPEN_DOCUMENT`
-    // 之类带持久权限的 URI 仍然有效，作为兜底而不是主路径。
-    val bytes = image.bytes ?: readImageBytes(image.uri) ?: return null
-    if (bytes.isEmpty()) {
+    val images = sendableImages()
+    if (images.isEmpty()) {
       return null
     }
-    // 图片可能有几 MB，超过上限就退化为文本路径——base64 会让体积再涨 1/3，
-    // 而多数服务商对单次请求体有硬限制，超限时报错比降级更难排查。
-    if (bytes.size > MAX_IMAGE_BYTES) {
+    val parts =
+        images.mapNotNull { image ->
+          val bytes = imageBytesFor(image) ?: return@mapNotNull null
+          com.tom.rv2ide.ai.protocol.ImageInputPayload.ImagePart(
+              mimeTypeFor(image),
+              android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP),
+          )
+        }
+    if (parts.isEmpty()) {
       return null
     }
-    val mime =
-        context.contentResolver.getType(image.uri)
-            ?: if (image.name.endsWith(".png", ignoreCase = true)) "image/png" else "image/jpeg"
     return try {
-      com.tom.rv2ide.ai.protocol.ImageInputPayload.rawInputJson(
-          prompt,
-          mime,
-          android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP),
-      )
+      com.tom.rv2ide.ai.protocol.ImageInputPayload.rawInputJson(prompt, parts)
     } catch (e: Exception) {
       null
     }
   }
+
+  /**
+   * 本次请求真正能进多模态 payload 的图片，按用户选择顺序。
+   *
+   * <p>三道闸：图片、能读到字节、单张不超 [MAX_IMAGE_BYTES]。总数与总体积另设上限
+   * ——服务商对请求体有硬限制，而 base64 会让体积再涨 1/3；一次性塞十几张会让整条
+   * 请求被拒（错误信息通常只有「400 bad request」，排查成本极高）。超出的部分仍走
+   * 文本路径，模型可以自己用 file 工具读。
+   */
+  private fun sendableImages(): List<Attachment> {
+    val out = ArrayList<Attachment>(MAX_IMAGES_PER_MESSAGE)
+    var totalBytes = 0L
+    for (attachment in attachments) {
+      if (!attachment.isImage) continue
+      if (out.size >= MAX_IMAGES_PER_MESSAGE) break
+      val bytes = imageBytesFor(attachment) ?: continue
+      if (bytes.size > MAX_IMAGE_BYTES) continue
+      if (totalBytes + bytes.size > MAX_TOTAL_IMAGE_BYTES) continue
+      totalBytes += bytes.size
+      out.add(attachment)
+    }
+    return out
+  }
+
+  /**
+   * 取一张图片的字节。
+   *
+   * <p>优先用选择时缓存的字节。**不在这里 openInputStream 作为主路径**：Photo Picker
+   * 的 URI 权限只在选择回调期间有效，此刻（用户点发送）通常已失效，现场读必然拿到 null
+   * ——这正是「AI 说看不到图片」的根因（见 addAttachment 的说明）。
+   *
+   * <p>缓存为空（读失败/超限/旧版本添加的附件）时退回现场读一次：对
+   * `ACTION_OPEN_DOCUMENT` 之类带持久权限的 URI 仍然有效，作为兜底。
+   */
+  private fun imageBytesFor(attachment: Attachment): ByteArray? {
+    val bytes = attachment.bytes ?: readImageBytes(attachment.uri) ?: return null
+    return if (bytes.isEmpty()) null else bytes
+  }
+
+  private fun mimeTypeFor(attachment: Attachment): String =
+      context.contentResolver.getType(attachment.uri)
+          ?: if (attachment.name.endsWith(".png", ignoreCase = true)) "image/png"
+          else "image/jpeg"
 
   /** 是否有可用的图片附件（决定发送时是否走多模态路径）。 */
   fun hasImageAttachment(): Boolean = attachments.any { it.isImage }
@@ -423,19 +513,21 @@ class AssistantInputFeatures(
   }
 
   /**
-   * 同 [attachmentContext]，但排除**第一张图片**——它已由多模态 payload 承载。
+   * 同 [attachmentContext]，但排除**已经进多模态 payload 的图片**。
    *
    * <p>不排除的话模型会同时收到「图片内容」与「图片路径」两份信息：可能重复处理，
    * 也可能放着图片不用、改去读文件（而相册图片的路径本来就拿不到）。
    *
-   * <p>只排除第一张：[imageRawInputJson] 也只打包第一张，两者必须一致，
-   * 否则剩下的图片既不在 payload 里也不在文本里，等于静默丢失。
+   * <p>判据必须与 [imageRawInputJson] 完全一致（同一个 [sendableImages]）：
+   * 两边各写一套，就会出现「既没进 payload、也不在文本里」的静默丢失——这正是
+   * 修复前「发 3 张只看得到 2 张」之外的另一半问题。
+   *
+   * <p>没能进 payload 的图片（超限、读不到、超出张数上限）仍以路径形式交给模型，
+   * 让它用 file 工具自己读。
    */
   fun attachmentContextExcludingImage(): String {
-    val rest = mutableListOf<Attachment>()
-    rest.addAll(attachments.filter { !it.isImage })
-    // 第 2 张起的图片仍走文本：payload 只装得下一张，丢掉它们不如让模型知道它们存在。
-    rest.addAll(attachments.filter { it.isImage }.drop(1))
+    val sent = sendableImages().mapTo(HashSet()) { it.uri }
+    val rest = attachments.filter { !it.isImage || it.uri !in sent }
     if (rest.isEmpty()) {
       return ""
     }
@@ -450,7 +542,9 @@ class AssistantInputFeatures(
    * 用户附了一张图，而不是完全丢失这个信息。
    */
   private fun describe(attachment: Attachment): String {
-    val path = localPathOf(attachment.uri)
+    // 已落盘的图片优先给那份路径：相册 URI 的临时授权会在进程重启后失效，
+    // 交给模型一个打不开的 content:// 等于没给。
+    val path = attachment.localPath ?: localPathOf(attachment.uri)
     val target = path ?: attachment.uri.toString()
     val marker = context.getString(string.ai_assistant_attachment_marker, target)
     return if (attachment.isImage && path == null) {
@@ -500,6 +594,25 @@ class AssistantInputFeatures(
 
   /** 附件的展示名，用于把「只附了文件没打字」的请求显示成有意义的消息。 */
   fun attachmentNames(): String = attachments.joinToString(", ") { it.name }
+
+  /**
+   * 待发附件的快照，供宿主挂到消息气泡上。
+   *
+   * <p>必须在 [clearAttachments] **之前**调用——清空后就读不到了。返回值里不含
+   * base64：气泡缩略图按 [AttachedFile.localPath] 从磁盘解码，比攥着几 MB 字符串
+   * 便宜得多，也不会让消息条目在 `snapshot()` 比较时反复复制大对象。
+   */
+  fun attachmentSnapshot(): List<AttachedFile> =
+      attachments.map { attachment ->
+        val path = attachment.localPath ?: localPathOf(attachment.uri)
+        AttachedFile(
+            fileName = attachment.name,
+            localPath = path.orEmpty(),
+            mimeType = if (attachment.isImage) mimeTypeFor(attachment) else "",
+            sizeBytes = attachment.bytes?.size?.toLong() ?: 0L,
+            isImage = attachment.isImage,
+        )
+      }
 
   // ---- 模型槽位 ----
 
@@ -722,6 +835,21 @@ class AssistantInputFeatures(
      * 留出提示词与历史的余量。
      */
     private const val MAX_IMAGE_BYTES = 4 * 1024 * 1024
+
+    /**
+     * 单条消息最多打包进 payload 的图片张数。
+     *
+     * <p>取 4：多数服务商对单次请求的图片数有隐性上限（实测部分 OpenAI 兼容端点
+     * 超过 4 张就开始忽略后面的），而 4 张 1536px 的 JPEG 已接近常见请求体上限。
+     * 超出的图片降级成路径文本，模型仍能自己读。
+     */
+    private const val MAX_IMAGES_PER_MESSAGE = 4
+
+    /** 单条消息所有图片的原始字节合计上限；base64 后约 ×1.33。 */
+    private const val MAX_TOTAL_IMAGE_BYTES = 12 * 1024 * 1024
+
+    /** 附件落盘目录（相对 filesDir）。与 AI 的其他持久化数据同处 `files/ai/` 下。 */
+    private const val ATTACHMENTS_DIR = "ai/attachments"
     private const val DEFAULT_REASONING =
         com.tom.rv2ide.ai.protocol.AiBehaviorSettings.REASONING_AUTO
   }

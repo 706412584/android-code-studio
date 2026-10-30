@@ -17,6 +17,7 @@
 
 package com.tom.rv2ide.ai.agent.conversation;
 
+import com.tom.rv2ide.ai.protocol.AttachmentMeta;
 import com.tom.rv2ide.ai.tool.api.ToolCall;
 import java.util.ArrayList;
 import java.util.List;
@@ -88,7 +89,8 @@ public final class ConversationCodec {
             parentUuid,
             timestamp,
             json.optString(UserMessageEntry.FIELD_CONTENT, ""),
-            json.optBoolean(UserMessageEntry.FIELD_META, false));
+            json.optBoolean(UserMessageEntry.FIELD_META, false),
+            readAttachments(json.optJSONArray(UserMessageEntry.FIELD_ATTACHMENTS)));
       case ASSISTANT:
         return new AssistantMessageEntry(
             uuid,
@@ -145,6 +147,21 @@ public final class ConversationCodec {
               item.optString(AssistantMessageEntry.FIELD_TOOL_CALL_ARGS, "{}")));
     }
     return calls;
+  }
+
+  /** 读附件元数据数组；缺字段、类型不符或全为空时返回空列表。 */
+  private static List<AttachmentMeta> readAttachments(JSONArray array) {
+    List<AttachmentMeta> values = new ArrayList<>();
+    if (array == null) {
+      return values;
+    }
+    for (int i = 0; i < array.length(); i++) {
+      AttachmentMeta meta = AttachmentMeta.fromJson(array.optJSONObject(i));
+      if (meta != null) {
+        values.add(meta);
+      }
+    }
+    return values;
   }
 
   /** 读字符串数组（步骤行）。缺字段或类型不符时返回空列表。 */
