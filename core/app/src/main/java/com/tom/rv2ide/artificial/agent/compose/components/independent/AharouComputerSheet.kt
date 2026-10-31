@@ -93,6 +93,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.tom.rv2ide.R as AppR
 import com.tom.rv2ide.artificial.agent.compose.compat.LocalBrowserOpener
+import com.tom.rv2ide.artificial.agent.compose.components.tools.ToolOutputText
 import com.tom.rv2ide.artificial.agent.compose.compat.LocalTerminalOpener
 import com.tom.rv2ide.artificial.agent.compose.compat.SessionUseCase
 import com.tom.rv2ide.artificial.agent.compose.model.AgentUIMessage
@@ -439,12 +440,13 @@ private fun TerminalCard(command: String?, output: String, isError: Boolean) {
             )
             HorizontalDivider(thickness = 0.5.dp, color = ComputerCardBorder)
         }
-        Text(
+        // 影子屏的 shell 输出可达几十万字符，走与工具卡同一套三段护栏。
+        ToolOutputText(
             text = output.ifBlank { "（无输出）" },
-            fontFamily = ComputerMono,
-            fontSize = 12.sp,
-            lineHeight = 18.sp,
             color = if (isError) ComputerRed else ComputerGreen,
+            textStyle =
+                MaterialTheme.typography.bodyMedium.copy(
+                    fontFamily = ComputerMono, fontSize = 12.sp, lineHeight = 18.sp),
         )
     }
 }
@@ -473,11 +475,11 @@ private fun BrowserCard(
         )
     }
     BrowserLivePreview(running = running)
-    Text(
+    ToolOutputText(
         text = output.ifBlank { "（无输出）" },
-        fontSize = 12.sp,
-        lineHeight = 17.sp,
         color = MaterialTheme.colorScheme.onSurface,
+        textStyle =
+            MaterialTheme.typography.bodyMedium.copy(fontSize = 12.sp, lineHeight = 17.sp),
     )
 }
 
@@ -520,12 +522,14 @@ private fun InfoCard(title: String, body: String, mono: Boolean, isError: Boolea
             fontSize = 11.sp,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
-        Text(
+        ToolOutputText(
             text = body.ifBlank { "（空）" },
-            fontFamily = if (mono) ComputerMono else FontFamily.Default,
-            fontSize = 12.sp,
-            lineHeight = 18.sp,
             color = if (isError) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
+            textStyle =
+                MaterialTheme.typography.bodyMedium.copy(
+                    fontFamily = if (mono) ComputerMono else FontFamily.Default,
+                    fontSize = 12.sp,
+                    lineHeight = 18.sp),
         )
     }
 }

@@ -23,6 +23,7 @@ package com.tom.rv2ide.artificial.agent.compose.components.style
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
+import java.util.Locale
 
 /**
  * 聊天文本的「排版有界」处理：长正文拆块，以及给「无断点长串」补断点。
@@ -176,3 +177,133 @@ internal fun withBreakOpportunities(text: String, maxRun: Int = 48): String {
  */
 @Composable
 internal fun breakableText(text: String): String = remember(text) { withBreakOpportunities(text) }
+
+// ── 有界渲染的公共工具（移植自 Aharou ExpandableOutputText.kt）────────────────
+//
+// 这三个函数解决的是同一类问题：Text 的测量成本与「最长那一行」成正比，而不是与总长度
+// 成正比。一条几十万字符的压缩 JSON（无换行）交给 Text，minikin 要一路扫到行尾才能定断点，
+// 主线程在首帧里跑满 CPU 并 ANR。所以凡是要把外部来源的长文本塞进 Text 的地方，
+// 都应先过这里：单行封顶、只读尾部窗口、按有界区间分块。
+
+/**
+ * 把 [text] 切成「每块最多 [maxLinesPerChunk] 行或 [maxCharsPerChunk] 字符」的下标区间
+ * （左闭右开，区间非空）。只记录边界、不复制文本，所以对几十万字符的输入也是 O(n) 扫描、
+ * 常数内存；超长单行（无换行可断）在这一层被硬切，并避开 UTF-16 代理对。
+ *
+ * 调用方按区间 substring 渲染，避免「一次点击就把全文拼回一个字符串」。
+ */
+internal fun boundedTextChunks(
+    text: String,
+    maxCharsPerChunk: Int,
+    maxLinesPerChunk: Int,
+): List<IntRange> {
+    if (text.isEmpty()) return emptyList()
+    require(maxCharsPerChunk > 0 && maxLinesPerChunk > 0)
+    val ranges = ArrayList<IntRange>(text.length / maxCharsPerChunk + 1)
+    var start = 0
+    while (start < text.length) {
+        val hardLimit = minOf(text.length, start + maxCharsPerChunk)
+        var end = hardLimit
+        var lines = 0
+        var i = start
+        while (i < hardLimit) {
+            if (text[i] == '\n' && ++lines == maxLinesPerChunk) {
+                end = i + 1
+                break
+            }
+            i++
+        }
+        // 落在硬上限里且不在行尾：退回本块内最后一个换行，避免把一行劈成两半；
+        // 整块都没有换行（压缩 JSON / 无空格长 token）时才按字符硬切。
+        if (end < text.length && text[end - 1] != '\n') {
+            var newline = end - 1
+            while (newline > start && text[newline] != '\n') newline--
+            end = if (newline > start) newline + 1 else surrogateSafeCut(text, end)
+        }
+        ranges.add(start until end)
+        start = end
+    }
+    return ranges
+}
+
+/** 行首的代理对不能被切掉一半，否则后半块开头会渲染成乱码方块。 */
+private fun surrogateSafeCut(text: String, at: Int): Int =
+    if (at in 1 until text.length && text[at - 1].isHighSurrogate()) at + 1 else at
+
+/**
+ * 尾部预览：只读最后 [scanChars] 个字符，取最后 [maxLines] 行，每行超过 [maxLineChars] 时
+ * 保留行尾并补前置省略号（报错信息在行尾）。被窗口截断的首行同样补省略号。
+ *
+ * 工具结果的有效信息（报错、汇总、退出码、失败用例）几乎总在末尾，而固定窗口意味着
+ * 预览的开销与全文多大完全无关。
+ */
+internal fun tailPreview(
+    text: String,
+    maxLines: Int,
+    maxLineChars: Int,
+    scanChars: Int,
+): String {
+    var start = (text.length - scanChars).coerceAtLeast(0)
+    if (start in 1 until text.length && text[start - 1].isHighSurrogate()) start++
+    val windowStart = start > 0
+    val lines = text.substring(start).split('\n')
+    val firstIndex = (lines.size - maxLines).coerceAtLeast(0)
+    val sb = StringBuilder()
+    for (index in firstIndex until lines.size) {
+        if (sb.isNotEmpty()) sb.append('\n')
+        val raw = lines[index].trimEnd('\r')
+        val cutAt = raw.length - maxLineChars
+        if (cutAt > 0) {
+            var from = cutAt
+            if (raw[from - 1].isHighSurrogate()) from++
+            sb.append('…').append(raw, from, raw.length)
+        } else {
+            if (index == firstIndex && windowStart) sb.append('…')
+            sb.append(raw)
+        }
+    }
+    return sb.toString()
+}
+
+/**
+ * 每行超过 [maxChars] 的部分截断并补行尾省略号；没有任何行超限时原样返回（不复制字符串）。
+ * 用于正常路径与占位预览，防止「一条几万字符的单行」把 Text 的测量拖成 O(n) 主线程长任务。
+ */
+internal fun capLineLengths(text: String, maxChars: Int): String {
+    if (text.length <= maxChars) return text
+    var lineStart = 0
+    var needsCut = false
+    var i = 0
+    while (i <= text.length) {
+        if (i == text.length || text[i] == '\n') {
+            if (i - lineStart > maxChars) {
+                needsCut = true
+                break
+            }
+            lineStart = i + 1
+        }
+        i++
+    }
+    if (!needsCut) return text
+    val sb = StringBuilder(text.length)
+    lineStart = 0
+    i = 0
+    while (i <= text.length) {
+        if (i == text.length || text[i] == '\n') {
+            val over = i - lineStart > maxChars
+            sb.append(text, lineStart, if (over) lineStart + maxChars else i)
+            if (over) sb.append('…')
+            if (i < text.length) sb.append('\n')
+            lineStart = i + 1
+        }
+        i++
+    }
+    return sb.toString()
+}
+
+/** 字符数折算成人读的大小提示；按 1 字符 ≈ 1 字节估算，够用即可。 */
+internal fun formatOutputSize(chars: Int): String = when {
+    chars >= 1_000_000 -> String.format(Locale.US, "%.1f MB", chars / 1_000_000.0)
+    chars >= 1_000 -> "${chars / 1_000} KB"
+    else -> "$chars B"
+}

@@ -1750,6 +1750,14 @@ This AI agent is designed to assist you in developing Android applications direc
   <string name="compose_tool_card_todo_in_progress">In progress</string>
   <string name="compose_tool_card_web_search_title">Web search</string>
   <string name="compose_tool_card_expand_remaining">Show %1$s more lines</string>
+  <string name="compose_tool_card_output_collapsed">Large output collapsed (%1$s)</string>
+  <string name="compose_tool_card_output_load_more">Load more (%1$s chunks left)</string>
+  <string name="subagent_card_title">Sub-agent</string>
+  <string name="subagent_card_pipeline_title">Sub-agent pipeline (%1$s tasks)</string>
+  <string name="subagent_card_status_running">Running</string>
+  <string name="subagent_card_status_completed">Done</string>
+  <string name="subagent_card_status_failed">Failed</string>
+  <string name="subagent_card_steps_hint">%1$s steps · %2$s</string>
   <string name="compose_tool_card_web_search_warning">Search note: %1$s</string>
   <string name="compose_tool_card_web_search_results_count">%1$s results</string>
   <string name="compose_tool_card_changed_files_summary">Changed %1$s files  +%2$s −%3$s</string>
