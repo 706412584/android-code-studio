@@ -222,6 +222,20 @@ public final class ConversationRunner {
                   new TokenUsageTracker(contextSize), estimateOverhead(systemPrompt))
               : null;
 
+      // 落盘包装：**所有事件先写 JSONL 再转发给界面**。
+      //
+      // 不做这一步的后果是会话文件只有 meta + title 两行，对话内容全丢——
+      // 实测就是如此（引擎跑通了、界面也显示了，但重开会话是空的）。
+      // 事件流的顺序不能反：先落盘再转发，才能保证「界面看到的内容」一定能被回放出来。
+      ConversationPersistingListener persisting =
+          new ConversationPersistingListener(
+              conversationId,
+              userText,
+              listener::onEvent,
+              null,
+              conversationStore,
+              null);
+
       result =
           session.run(
               config,
@@ -230,7 +244,7 @@ public final class ConversationRunner {
               history,
               toolContext,
               handle.cancellation,
-              listener::onEvent,
+              persisting,
               contextManager,
               attachmentsJson,
               null);

@@ -35,6 +35,8 @@ import com.assistant.engine.ToolSetFactory
 import com.assistant.ui.AssistantChatCallbacks
 import com.assistant.ui.AssistantChatView
 import com.assistant.ui.AssistantChatScreen
+import com.assistant.ui.AssistantSessionsDrawer
+import com.assistant.ui.SessionRow
 import com.assistant.ui.EventReducer
 import com.assistant.ui.model.MessageTimeline
 import com.tom.rv2ide.ai.agent.AgentEvent
@@ -153,10 +155,17 @@ class ChatActivity : ComponentActivity() {
                 kotlinx.coroutines.delay(120)
               }
             }
+            // 会话抽屉开关。汉堡键打开的是它（不是设置）——与参考项目一致。
+            var showDrawer by remember { mutableStateOf(false) }
+            // 会话列表。每次打开抽屉时重读磁盘，保证新建/删除后立即反映。
+            var sessions by remember { mutableStateOf(listOf<SessionRow>()) }
+
+            androidx.activity.compose.BackHandler(enabled = showDrawer) { showDrawer = false }
+
             AssistantChatScreen(
                 chatView = chatView.view,
                 modelName = modelLabel(),
-                conversationTitle = "新的对话",
+                conversationTitle = currentTitle,
                 providerIcon = {
                   com.assistant.ui.components.independent.ProviderLogoIcon(
                       provider = providerTarget(),
@@ -166,16 +175,46 @@ class ChatActivity : ComponentActivity() {
                 isBusy = busy,
                 onSend = { text -> send(text) },
                 onStop = { runner.cancel() },
-                onOpenSettings = {
-                  startActivity(
-                      android.content.Intent(this@ChatActivity, SettingsActivity::class.java))
+                onOpenSessions = {
+                  sessions = loadSessions()
+                  showDrawer = true
                 },
                 onNewChat = {
-                  // 新会话：换 id + 清空列表。历史仍留在磁盘上（会话列表属于后续步骤）。
                   conversationId = ensureConversation()
+                  currentTitle = "新的对话"
                   timeline.clear()
                   reducer = EventReducer(timeline)
+                  showDrawer = false
                 },
+                drawer = {
+                  AssistantSessionsDrawer(
+                      sessions = sessions,
+                      currentSessionId = conversationId,
+                      onSelect = { row ->
+                        openSession(row)
+                        showDrawer = false
+                      },
+                      onNewSession = {
+                        conversationId = ensureConversation()
+                        currentTitle = "新的对话"
+                        timeline.clear()
+                        reducer = EventReducer(timeline)
+                        sessions = loadSessions()
+                        showDrawer = false
+                      },
+                      onDelete = { row ->
+                        conversationStore.delete(row.id)
+                        sessions = loadSessions()
+                      },
+                      onOpenSettings = {
+                        showDrawer = false
+                        startActivity(
+                            android.content.Intent(this@ChatActivity, SettingsActivity::class.java))
+                      },
+                      onDismiss = { showDrawer = false },
+                  )
+                },
+                drawerVisible = showDrawer,
             )
           }
         }
@@ -185,6 +224,96 @@ class ChatActivity : ComponentActivity() {
       showSetupHint()
     }
     chatView.view.post { chatView.forceScrollToBottom(uiScope) }
+  }
+
+  /** 顶栏标题：当前会话名。 */
+  private var currentTitle: String = "新的对话"
+
+  /** 从磁盘读会话列表（按最近修改倒序，由 store 保证）。 */
+  private fun loadSessions(): List<com.assistant.ui.SessionRow> =
+      try {
+        conversationStore.list().map { s ->
+          com.assistant.ui.SessionRow(
+              id = s.id,
+              title = s.title,
+              updatedAt = s.modifiedAt,
+              messageCount = s.messageCount,
+          )
+        }
+      } catch (e: Exception) {
+        android.util.Log.w("ChatActivity", "会话列表读取失败", e)
+        emptyList()
+      }
+
+  /**
+   * 切到另一个会话：清空列表并从磁盘回放。
+   *
+   * <p>回放走 `ConversationHistory.fold` 的反向——这里不复用那条路径：
+   * fold 产出的是**模型消息**（给 API 用），而界面要的是**条目**（带工具卡、思考块）。
+   * 两者信息量不同，直接映射会丢掉工具调用的渲染态。
+   * 因此回放只还原用户/助手文本与工具调用结果，其余渲染态（展开、耗时）按默认值给。
+   */
+  private fun openSession(row: com.assistant.ui.SessionRow) {
+    conversationId = row.id
+    currentTitle = row.title
+    timeline.clear()
+    reducer = EventReducer(timeline)
+    try {
+      val entries = conversationStore.read(row.id)
+      for (location in entries) {
+        when (val entry = location.entry) {
+          is com.tom.rv2ide.ai.agent.conversation.UserMessageEntry -> {
+            val text = entry.content
+            if (!text.isNullOrBlank()) timeline.append(MessageTimeline.Role.USER, text)
+          }
+          is com.tom.rv2ide.ai.agent.conversation.AssistantMessageEntry -> {
+            val text = entry.content
+            if (!text.isNullOrBlank()) {
+              timeline.append(MessageTimeline.Role.ASSISTANT, text)
+            }
+            // 工具调用作为独立卡片回放：它们承载了「这一轮做了什么」。
+            entry.toolCalls.forEach { call ->
+              val id =
+                  timeline.appendToolCall(call.name, summarizeArgs(call.arguments), call.arguments)
+              timeline.completeToolCall(id, "（历史记录，输出未单独保存）", isError = false)
+            }
+          }
+          is com.tom.rv2ide.ai.agent.conversation.ToolResultEntry -> {
+            // 结果条目只补输出文本；卡片已在上一条助手消息里建好。
+            timeline.lastToolCallId()?.let { id ->
+              timeline.completeToolCall(
+                  id,
+                  entry.content.orEmpty(),
+                  isError = entry.isError,
+              )
+            }
+          }
+          else -> Unit
+        }
+      }
+    } catch (e: Exception) {
+      android.util.Log.w("ChatActivity", "会话回放失败: ${row.id}", e)
+      timeline.append(MessageTimeline.Role.TRACE, "会话回放失败：${e.message ?: "未知错误"}")
+    }
+    chatView.forceScrollToBottom(uiScope)
+  }
+
+  /** 工具参数摘要（与 EventReducer 的同名逻辑一致，这里只需短摘要）。 */
+  private fun summarizeArgs(args: String?): String {
+    if (args.isNullOrBlank()) return ""
+    return try {
+      val obj = org.json.JSONObject(args)
+      val sb = StringBuilder()
+      val keys = obj.keys()
+      while (keys.hasNext()) {
+        val key = keys.next()
+        if (sb.isNotEmpty()) sb.append(' ')
+        sb.append(key).append('=').append(obj.optString(key).take(40))
+      }
+      sb.toString()
+    } catch (e: Exception) {
+      args.take(60)
+    }
   }
 
   /** 输入栏芯片上显示的模型名。 */

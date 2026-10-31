@@ -40,6 +40,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import com.assistant.ui.compat.AppTextField
+import compose.icons.feathericons.ArrowLeft
 import com.assistant.ui.components.independent.ProviderLogoIcon
 import com.assistant.ui.components.independent.ProviderProtocol
 import com.assistant.ui.components.independent.ProviderSelectionTarget
@@ -91,25 +92,42 @@ fun AssistantModelSettingsScreen(
     onApiKeyChange: (String) -> Unit,
     onBaseUrlChange: (String) -> Unit,
     onSave: () -> Unit,
+    onBack: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
   AIEditorTheme {
+    Column(modifier = modifier.fillMaxSize().background(settingsPageBackground())) {
+      // 顶栏：返回 + 标题。窗口标题（manifest 的 android:label）在无 ActionBar 的主题下
+      // 不显示，所以这里必须有页面内标题；之前两处都写「模型设置」看起来像重复，
+      // 那是 setContentView 之外的旧布局残留，现在只有这一处。
+      Row(
+          modifier = Modifier.fillMaxWidth().padding(horizontal = Spacing.sm, vertical = Spacing.sm),
+          verticalAlignment = Alignment.CenterVertically,
+      ) {
+        androidx.compose.material3.IconButton(onClick = onBack) {
+          androidx.compose.material3.Icon(
+              compose.icons.FeatherIcons.ArrowLeft,
+              contentDescription = "返回",
+              tint = MaterialTheme.colorScheme.onBackground,
+              modifier = Modifier.size(20.dp),
+          )
+        }
+        Text(
+            text = "模型与凭据",
+            style = MaterialTheme.typography.titleLarge,
+            color = MaterialTheme.colorScheme.onBackground,
+            modifier = Modifier.padding(start = Spacing.xs),
+        )
+      }
+
     Column(
         modifier =
-            modifier
+            Modifier
                 .fillMaxSize()
-                .background(settingsPageBackground())
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = Spacing.md, vertical = Spacing.sm),
         verticalArrangement = Arrangement.spacedBy(Spacing.sm),
     ) {
-      Text(
-          text = "模型设置",
-          style = MaterialTheme.typography.titleLarge,
-          color = MaterialTheme.colorScheme.onBackground,
-          modifier = Modifier.padding(start = Spacing.xs, top = Spacing.md, bottom = Spacing.sm),
-      )
-
       // ---- 服务商 ----
       SettingsGroupHeader(text = "服务商")
       SettingsGroup {
@@ -191,6 +209,7 @@ fun AssistantModelSettingsScreen(
             onClick = onSave,
         )
       }
+    }
     }
   }
 }

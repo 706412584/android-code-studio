@@ -18,12 +18,15 @@
 package com.assistant.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -62,16 +65,21 @@ fun AssistantChatScreen(
     isBusy: Boolean,
     onSend: (String) -> Unit,
     onStop: () -> Unit,
-    onOpenSettings: () -> Unit,
+    onOpenSessions: () -> Unit,
     onNewChat: () -> Unit,
+    /**
+     * 抽屉内容（会话列表）。非 null 且 [drawerVisible] 为 true 时盖在整页之上。
+     *
+     * <p>做成插槽而不是写死 [AssistantSessionsDrawer]：宿主可能想换成别的抽屉
+     * （将来的「文件」Tab），而这一层不该替它决定。
+     */
+    drawer: (@Composable () -> Unit)? = null,
+    drawerVisible: Boolean = false,
     modifier: Modifier = Modifier,
     darkTheme: Boolean = androidx.compose.foundation.isSystemInDarkTheme(),
 ) {
-  // 沉浸阅读：隐藏顶栏与输入栏，只留消息。ACS 的「全屏」是换宿主，
-  // 本 App 本来就是全屏，所以这颗按钮改做「无干扰阅读」。
-  var immersive by remember { mutableStateOf(false) }
-
   AIEditorTheme(darkTheme = darkTheme, followHostFrame = false) {
+    Box(modifier = Modifier.fillMaxSize()) {
     Column(
         modifier =
             modifier
@@ -81,7 +89,6 @@ fun AssistantChatScreen(
                 // 否则用户打字时看不到自己输入的内容。
                 .imePadding(),
     ) {
-      if (!immersive) {
       // ---- 顶栏 ----
       // 与 ACS/Aharou 一致：汉堡 + 右侧一排图标。
       // 本 App 没有 Git / 终端 / 会话树，因此：
@@ -91,25 +98,22 @@ fun AssistantChatScreen(
       ChatHeader(
           inputTokens = 0,
           outputTokens = 0,
-          onOpenDrawer = onOpenSettings,
+          onOpenDrawer = onOpenSessions,
           onNewChat = onNewChat,
           // Git / 终端在本 App 尚不存在，传空实现而不是隐藏——
           // ChatHeader 没有「隐藏单个按钮」的参数，隐藏要改组件；
           // 空实现至少保持顶栏与参考项目同形（用户要求一比一）。
           onNavigateToTerminal = {},
           onNavigateToGit = {},
-          // 全屏按钮：ACS 的顶栏有这颗（↗）。本 App 的对话页本来就是全屏，
-          // 因此它的语义改成「进入无干扰阅读模式」——点一下隐藏顶栏与输入栏，
-          // 再点恢复。传 null 会整颗不渲染，与参考项目的顶栏形状不一致。
-          isFullscreen = immersive,
-          onToggleFullscreen = { immersive = !immersive },
+          // 全屏按钮不提供：本 App 的对话页本来就是全屏，这颗没有对应动作。
+          // 传 null 时 ChatHeader 不渲染它。
+          onToggleFullscreen = null,
           // 参考项目 Aharou 的顶栏左侧是「标题 + 模型名」两行，ACS 留空。
           // 这里按 Aharou 来：标题用会话名，副标题用模型名（带服务商 logo）。
           title = conversationTitle,
           subtitle = modelName,
           subtitleIcon = providerIcon,
       )
-      }
 
       // ---- 消息列表 ----
       Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
@@ -120,7 +124,6 @@ fun AssistantChatScreen(
       }
 
       // ---- 输入栏 ----
-      if (!immersive) {
       var text by remember { mutableStateOf("") }
       var mode by remember { mutableStateOf(AgentMode.BUILD) }
       var reasoning by remember { mutableStateOf(ReasoningEffort.DEFAULT) }
@@ -150,7 +153,30 @@ fun AssistantChatScreen(
             onTakePhoto = {},
         )
       }
+    }
+
+    // ---- 抽屉（会话列表） ----
+    // 盖在整页之上而不是并排：手机宽度放不下「抽屉 + 对话」两栏，
+    // 并排会把两边都挤到不可用（与 ACS 的侧栏判断同一取舍）。
+    if (drawerVisible && drawer != null) {
+      Box(
+          modifier =
+              Modifier.fillMaxSize()
+                  // 半透明遮罩：点空白处关闭，与系统的抽屉交互一致。
+                  .background(androidx.compose.ui.graphics.Color(0x66000000))
+                  .clickable(
+                      indication = null,
+                      interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
+                  ) {},
+      ) {
+        Surface(
+            modifier = Modifier.fillMaxSize(0.86f),
+            color = settingsPageBackground(),
+        ) {
+          drawer()
+        }
       }
+    }
     }
   }
 }
