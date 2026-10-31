@@ -248,3 +248,69 @@ Aharou 的设置页在 `desktop/` + `app/src/main/java/com/aharou/feature/settin
 第 2 步（搬 App 层）不再是「能不能做」的问题，而是「搬多少、怎么搬」的工程问题。
 
 剩余决策（见第三节）未定，第 2 步之后的分叉仍取决于它们。
+
+---
+
+## 七、第 2 步前置：修正后的真实边界 + Compose 离线验证 ✅
+
+### 7.1 修正：之前的「155 文件零依赖」偏乐观
+
+第六节那份数据只统计了**每个文件自身的 import**，没算传递依赖；而且
+「`com.tom.rv2ide.ai.*` 是内核」被误算成 ACS，同时漏了 Kotlin 顶层函数的 import
+（`import ...markdown.MarkdownContent` 指向的是 `MarkdownContent.kt` 文件而非类）。
+
+建 import 图重算（含传递闭包、正确区分内核与 ACS）后的真实数字：
+
+| 指标 | 修正前 | **修正后** |
+|---|---|---|
+| 零 ACS 依赖 | 155 | **142** |
+| 触及 ACS | 72 | **85** |
+
+`R` 引用也从 37 修正到 **49**（原先按 import 统计，漏了全限定名写法）。
+
+### 7.2 触及 ACS 的类型分布（85 个文件）
+
+| 阻塞类型 | 文件数 | 性质与处置 |
+|---|---|---|
+| `R` / `string` | **40** | 机制性——模块自带 `R` 即可，非架构耦合 |
+| `prefManager`、`DevOpsPreferences` | 7 | 设置读写 → Aharou 有对标实现 |
+| `ILanguageServer*` | 4 | 语言服务 → 按「暂不放 SDK」排除，Port 桩化 |
+| `AssistantMessageAdapter` | 3 | ACS 数据适配层 → 需重写薄层 |
+| `CloudBuildService` / `BuildService` | 5 | 构建链 → 排除 |
+| `BaseApplication` / `IdeLogBufferHolder` / `IProjectManager` | 6 | 全局单例 → 注入替换 |
+| 其余 | 各 1–2 | 端口适配器 |
+
+### 7.3 最小竖切（以 `AssistantComposePanel` 为根）
+
+`AssistantComposePanel.kt`（1034 行，渲染层入口）**自身只依赖一个 `R`**。
+按 import 图展开其传递依赖：约 **23 文件 / 9864 行**
+（若只按类名匹配会低估到 5 文件——那是脚本缺陷，不是真值）。
+
+> 静态分析的边界**只作参考**：真正可搬的最小集由编译器决定
+> （把文件拷过去编译，缺谁补谁）。这也是第 2 步的推进方式。
+
+### 7.4 Compose 依赖离线解析：已验证 ✅
+
+在 `assistant/app` 里引入与 `core/app` **完全相同**的 Compose 坐标，离线构建通过。
+这套组合是剥离的必需品，且有几个**不看就会踩**的点：
+
+| 依赖 | 为什么必须有 |
+|---|---|
+| `material-icons-extended:1.7.8` | material3 1.3.1 传递依赖 `material-icons-core:1.6.0`，而本机缓存只有 1.7.8。显式引 extended 由版本冲突顶掉 1.6.0——**core/app 能离线构建靠的就是这一行** |
+| `activity-compose:1.9.3` | 同理：不显式引会去解析未缓存的 `activity-ktx:1.7.0` / `activity-compose:1.8.2` |
+| `feather:1.1.1` | Aharou 组件直接引用 `compose.icons.FeatherIcons` |
+| markdown-renderer **0.33.0** | **不能升**。0.34+ 调用 Compose foundation 1.8 的 `TextAutoSize`，而项目钉 1.7.6——编译期完全不报错，**运行时渲染 Markdown 段落**才抛 `NoSuchMethodError` |
+
+### 7.5 三个决策已定（用户确认）
+
+- **A2**：只搬 `termux/{emulator,view}`（这两个不依赖 ACS），自建精简 service，
+  从 `termux/shared` 按需摘类 → 彻底断开 `core.projects`
+- **B2**：同仓库新模块树（内核零依赖，共享无代价；「剥离」的实质是 App 层不依赖 ACS）
+- **C**：设置界面**全要**（服务商配置 / 权限策略 / MCP / Skill / 记忆 / 主题 / 定时任务），
+  从 Aharou 移植
+
+### 7.6 下一步
+
+第 2 步按「拷文件 → 编译 → 补缺」推进，不做静态边界猜测。
+先搬 `AssistantComposePanel` 的传递闭包，跑通一个能渲染出消息面板的竖切，
+再逐批扩到完整渲染层。
