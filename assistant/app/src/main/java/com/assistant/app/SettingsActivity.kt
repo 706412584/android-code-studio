@@ -127,10 +127,11 @@ class SettingsActivity : ComponentActivity() {
                     settings.setCustomBaseUrl(providerId, it)
                   },
                   onSave = {
+                    // 只保存 + 回首页，不强制跳对话页：用户可能是来改某个配置的，
+                    // 改完还想继续看别的设置。想开对话从首页或返回键回对话页即可。
                     if (settings.isReady()) {
                       Toast.makeText(this@SettingsActivity, "配置已保存", Toast.LENGTH_SHORT).show()
-                      startActivity(Intent(this@SettingsActivity, ChatActivity::class.java))
-                      finish()
+                      showModelSettings = false
                     } else {
                       Toast.makeText(
                               this@SettingsActivity,

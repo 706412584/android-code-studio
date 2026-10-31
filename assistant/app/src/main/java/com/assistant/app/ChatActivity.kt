@@ -184,6 +184,7 @@ class ChatActivity : ComponentActivity() {
                   currentTitle = "新的对话"
                   timeline.clear()
                   reducer = EventReducer(timeline)
+                  sessions = loadSessions()
                   showDrawer = false
                 },
                 drawer = {
@@ -203,8 +204,30 @@ class ChatActivity : ComponentActivity() {
                         showDrawer = false
                       },
                       onDelete = { row ->
-                        conversationStore.delete(row.id)
+                        try {
+                          conversationStore.delete(row.id)
+                        } catch (e: Exception) {
+                          android.util.Log.w("ChatActivity", "删除会话失败: ${row.id}", e)
+                        }
+                        // 删掉的正是当前会话：不能继续停在它上面——后续消息会写进
+                        // 一个已被删除的文件（store.append 会重建文件，等于幽灵会话）。
+                        if (row.id == conversationId) {
+                          conversationId = ensureConversation()
+                          currentTitle = "新的对话"
+                          timeline.clear()
+                          reducer = EventReducer(timeline)
+                          showDrawer = false
+                        }
                         sessions = loadSessions()
+                        // 删空了就补一个新的，否则用户回到对话页面对的是一条
+                        // 「哪都不属于」的界面（再发消息会写进已删除的 id）。
+                        if (sessions.isEmpty()) {
+                          conversationId = ensureConversation()
+                          currentTitle = "新的对话"
+                          timeline.clear()
+                          reducer = EventReducer(timeline)
+                          sessions = loadSessions()
+                        }
                       },
                       onOpenSettings = {
                         showDrawer = false
@@ -215,6 +238,7 @@ class ChatActivity : ComponentActivity() {
                   )
                 },
                 drawerVisible = showDrawer,
+                onDismissDrawer = { showDrawer = false },
             )
           }
         }

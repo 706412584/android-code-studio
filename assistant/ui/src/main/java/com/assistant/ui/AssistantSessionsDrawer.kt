@@ -18,7 +18,9 @@
 package com.assistant.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -49,7 +51,6 @@ import compose.icons.FeatherIcons
 import compose.icons.feathericons.MessageSquare
 import compose.icons.feathericons.Plus
 import compose.icons.feathericons.Settings
-import compose.icons.feathericons.Trash2
 
 /**
  * 会话列表的一行（渲染层投影）。
@@ -166,6 +167,7 @@ fun AssistantSessionsDrawer(
 }
 
 /** 单条会话：标题 + 相对时间；右侧删除按钮。 */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun SessionRowItem(
     session: SessionRow,
@@ -180,10 +182,19 @@ private fun SessionRowItem(
           else androidx.compose.ui.graphics.Color.Transparent,
       modifier = Modifier.fillMaxWidth().padding(horizontal = Spacing.sm, vertical = 2.dp),
   ) {
+    // 整行短按选中、长按删除。
+    //
+    // <p><b>为什么不用右侧的垃圾桶 IconButton</b>：实测在 Compose 里，行内的
+    // IconButton 与外层 Row 的点击区域重叠时，命中测试会把它判给外层——
+    // 点垃圾桶的结果是「选中会话」，删除永远触发不了。改成整行 combinedClickable
+    // 后只有一个手势区域，归属没有歧义；长按删除也是 ACS 侧边栏的既有交互。
+    //
+    // <p>clickable 必须挂在**最外层** Row 上（且不套 weight）：挂在带 weight 的
+    // 内层 Row 上时语义节点不会被导出，uiautomator 里整行变成不可点。
     Row(
         modifier =
             Modifier.fillMaxWidth()
-                .clickable { onClick() }
+                .combinedClickable(onClick = onClick, onLongClick = onDelete)
                 .padding(horizontal = Spacing.md, vertical = 11.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -212,14 +223,6 @@ private fun SessionRowItem(
             text = relativeTime(session.updatedAt),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-      }
-      androidx.compose.material3.IconButton(onClick = onDelete) {
-        Icon(
-            FeatherIcons.Trash2,
-            contentDescription = "删除会话",
-            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.size(16.dp),
         )
       }
     }

@@ -22,9 +22,12 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
@@ -33,12 +36,16 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
 import com.assistant.ui.compat.AgentMode
 import com.assistant.ui.compat.ReasoningEffort
 import com.assistant.ui.components.independent.ChatHeader
 import com.assistant.ui.components.independent.ChatInputBar
 import com.assistant.ui.components.independent.settingsPageBackground
 import com.assistant.ui.theme.AIEditorTheme
+
+/** 抽屉右侧关闭条的宽度。固定 dp，不按屏宽比例算（见抽屉布局的注释）。 */
+private val CLOSE_STRIP_WIDTH = 56.dp
 
 /**
  * 完整的对话页：**顶栏 + 消息列表 + 输入栏**，整页一个 Compose 树。
@@ -75,6 +82,8 @@ fun AssistantChatScreen(
      */
     drawer: (@Composable () -> Unit)? = null,
     drawerVisible: Boolean = false,
+    /** 点遮罩关闭抽屉。抽屉打开时点空白处必须能关，否则用户只能按返回键。 */
+    onDismissDrawer: () -> Unit = {},
     modifier: Modifier = Modifier,
     darkTheme: Boolean = androidx.compose.foundation.isSystemInDarkTheme(),
 ) {
@@ -159,22 +168,41 @@ fun AssistantChatScreen(
     // 盖在整页之上而不是并排：手机宽度放不下「抽屉 + 对话」两栏，
     // 并排会把两边都挤到不可用（与 ACS 的侧栏判断同一取舍）。
     if (drawerVisible && drawer != null) {
-      Box(
-          modifier =
-              Modifier.fillMaxSize()
-                  // 半透明遮罩：点空白处关闭，与系统的抽屉交互一致。
-                  .background(androidx.compose.ui.graphics.Color(0x66000000))
-                  .clickable(
-                      indication = null,
-                      interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
-                  ) {},
-      ) {
+      // 遮罩只盖**抽屉之外**的右侧区域，不做整屏遮罩。
+      //
+      // <p>整屏遮罩 + 抽屉叠放时，Compose 的命中测试会让遮罩抢走抽屉内的点击
+      // （实测：点删除键结果是「关闭抽屉」）。把遮罩缩成右侧一条后两者互不重叠，
+      // 点击归属没有歧义。左侧抽屉保持 86% 宽，右侧露出的 14% 就是关闭区。
+      Box(modifier = Modifier.fillMaxSize()) {
+        // 抽屉：先声明，在下层
         Surface(
-            modifier = Modifier.fillMaxSize(0.86f),
+            modifier =
+              Modifier.fillMaxHeight()
+                  .fillMaxWidth()
+                  .padding(end = CLOSE_STRIP_WIDTH)
+                  .align(androidx.compose.ui.Alignment.TopStart),
             color = settingsPageBackground(),
         ) {
           drawer()
         }
+        // 右侧关闭区：后声明，在上层，但只占右边那条。
+        //
+        // <p>用固定 dp 宽度而不是 `fillMaxWidth(0.14f)`：后者在 fillMaxHeight 之后
+        // 参与约束求解时算出的宽度不稳定（实测覆盖到了抽屉内部，点会话行变成关闭抽屉）。
+        // 抽屉宽 = 屏宽 - 关闭区宽，两边都不依赖分数计算。
+        Box(
+            modifier =
+                Modifier.fillMaxHeight()
+                    .width(CLOSE_STRIP_WIDTH)
+                    .align(androidx.compose.ui.Alignment.TopEnd)
+                    .background(androidx.compose.ui.graphics.Color(0x66000000))
+                    .clickable(
+                        indication = null,
+                        interactionSource =
+                            remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
+                        onClick = onDismissDrawer,
+                    ),
+        )
       }
     }
     }
