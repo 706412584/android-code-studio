@@ -110,6 +110,17 @@ internal fun ChatHeader(
      */
     isFullscreen: Boolean = false,
     onToggleFullscreen: (() -> Unit)? = null,
+    /**
+     * 顶栏标题（第一行）。null 时保持 ACS 的布局（标题留空，空间全给按钮）。
+     *
+     * <p>参考项目 Aharou 的顶栏左侧是「标题 + 模型名」两行；ACS 把标题放进侧边栏，
+     * 顶栏只放按钮。两种都要支持，因此做成可选参数而不是改默认布局。
+     */
+    title: String? = null,
+    /** 标题下方的副标题（通常显示当前模型）。仅 [title] 非 null 时生效。 */
+    subtitle: String? = null,
+    /** 副标题前的图标（服务商 logo 或通用图标）。 */
+    subtitleIcon: (@Composable () -> Unit)? = null,
 ) {
     Surface(
         color = MaterialTheme.colorScheme.background
@@ -136,9 +147,21 @@ internal fun ChatHeader(
                 } else {
                     Spacer(modifier = Modifier.width(Spacing.sm))
                 }
-                // 会话标题已从顶栏移除：侧边栏可重命名，顶栏把空间留给按钮。
-                // 模型切换在输入栏（ChatInputBar 的模型芯片），顶栏不再重复放一个。
-                Spacer(modifier = Modifier.weight(1f))
+                // 标题区（可选）：参考项目 Aharou 的顶栏左侧是「会话标题 + 模型名」
+                // 两行，ACS 的顶栏把这块留空（标题在侧边栏里可重命名）。
+                // 传 null 时保持 ACS 的留空行为，传了才渲染——两种布局都能要。
+                if (title != null) {
+                    HeaderTitle(
+                        title = title,
+                        subtitle = subtitle,
+                        leadingIcon = subtitleIcon,
+                        modifier = Modifier.weight(1f),
+                    )
+                } else {
+                    // 会话标题已从顶栏移除：侧边栏可重命名，顶栏把空间留给按钮。
+                    // 模型切换在输入栏（ChatInputBar 的模型芯片），顶栏不再重复放一个。
+                    Spacer(modifier = Modifier.weight(1f))
+                }
                 HeaderIconButton(
                     icon = FeatherIcons.Plus,
                     contentDescription = stringResource(R.string.chat_new_session),
@@ -203,6 +226,46 @@ internal fun ChatHeader(
  *
  * @param active 工作台入口高亮：大屏右栏开着对应内容时，否则看不出点一下是开还是关
  */
+/**
+ * 顶栏标题区：第一行会话标题，第二行模型名（带图标）。
+ *
+ * <p>形制照参考项目 Aharou 的顶栏（标题粗体 + 下方一行小字模型名）。
+ * 两行都限单行并省略，因为顶栏高度固定，折行会把右侧图标挤下去。
+ */
+@Composable
+private fun HeaderTitle(
+    title: String,
+    subtitle: String?,
+    leadingIcon: (@Composable () -> Unit)?,
+    modifier: Modifier = Modifier,
+) {
+    Column(
+        modifier = modifier.padding(start = Spacing.xs),
+        verticalArrangement = Arrangement.Center,
+    ) {
+        Text(
+            text = title,
+            style = MaterialTheme.typography.titleMedium,
+            color = MaterialTheme.colorScheme.onBackground,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        if (!subtitle.isNullOrBlank()) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                leadingIcon?.invoke()
+                Text(
+                    text = subtitle,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(start = if (leadingIcon != null) 4.dp else 0.dp),
+                )
+            }
+        }
+    }
+}
+
 @Composable
 private fun HeaderIconButton(
     icon: ImageVector,

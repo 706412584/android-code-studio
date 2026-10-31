@@ -20,10 +20,13 @@ package com.assistant.app
 import android.os.Bundle
 import android.os.SystemClock
 import android.view.View
-import android.view.ViewGroup
-import android.widget.FrameLayout
-import android.widget.LinearLayout
 import androidx.activity.ComponentActivity
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.unit.dp
 import com.assistant.engine.AppHttpPort
 import com.assistant.engine.ConversationRunner
 import com.assistant.engine.ModelSettings
@@ -31,7 +34,7 @@ import com.assistant.engine.ProviderPresets
 import com.assistant.engine.ToolSetFactory
 import com.assistant.ui.AssistantChatCallbacks
 import com.assistant.ui.AssistantChatView
-import com.assistant.ui.AssistantInputBarView
+import com.assistant.ui.AssistantChatScreen
 import com.assistant.ui.EventReducer
 import com.assistant.ui.model.MessageTimeline
 import com.tom.rv2ide.ai.agent.AgentEvent
@@ -59,7 +62,6 @@ class ChatActivity : ComponentActivity() {
   private lateinit var timeline: MessageTimeline
   private lateinit var reducer: EventReducer
   private lateinit var chatView: AssistantChatView
-  private lateinit var inputBar: AssistantInputBarView
   private lateinit var modelSettings: ModelSettings
   private lateinit var runner: ConversationRunner
   private lateinit var conversationStore: FileConversationStore
@@ -134,46 +136,77 @@ class ChatActivity : ComponentActivity() {
             },
         )
 
-    inputBar =
-        AssistantInputBarView(
-            this,
-            onSend = { text -> send(text) },
-            onStop = { runner.cancel() },
-            isBusy = { runner.isRunning() },
-            modelName = {
-              val preset = ProviderPresets.find(modelSettings.providerId())
-              "${preset?.label ?: "未配置"} · ${modelSettings.modelId()}"
-            },
-        )
-
-    // 布局：消息区在上（占满剩余空间），输入栏贴底。
-    val root =
-        LinearLayout(this).apply {
-          orientation = LinearLayout.VERTICAL
-          addView(
-              FrameLayout(this@ChatActivity).apply {
-                addView(
-                    chatView.view,
-                    ViewGroup.LayoutParams.MATCH_PARENT,
-                    ViewGroup.LayoutParams.MATCH_PARENT,
-                )
-              },
-              LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f),
-          )
-          addView(
-              inputBar.view,
-              LinearLayout.LayoutParams(
-                  ViewGroup.LayoutParams.MATCH_PARENT,
-                  ViewGroup.LayoutParams.WRAP_CONTENT,
-              ),
-          )
+    // 整页一个 Compose 树：顶栏 + 消息列表 + 输入栏。
+    //
+    // 拆成两个 ComposeView（一个放消息、一个放输入栏）会各包一次主题——
+    // 实测结果是消息区蓝色、输入栏 M3 默认紫，割裂感明显。合成一棵树后
+    // AIEditorTheme 只在最外层包一次。
+    val rootView =
+        androidx.compose.ui.platform.ComposeView(this).apply {
+          setContent {
+            // 输入栏的忙碌态要跟着运行状态走，因此用一个 Compose 状态把它推上来。
+            var busy by remember { mutableStateOf(false) }
+            // 每帧读一次 runner 状态：运行结束由 onFinished 置 false。
+            LaunchedEffect(Unit) {
+              while (true) {
+                busy = runner.isRunning()
+                kotlinx.coroutines.delay(120)
+              }
+            }
+            AssistantChatScreen(
+                chatView = chatView.view,
+                modelName = modelLabel(),
+                conversationTitle = "新的对话",
+                providerIcon = {
+                  com.assistant.ui.components.independent.ProviderLogoIcon(
+                      provider = providerTarget(),
+                      size = 14.dp,
+                  )
+                },
+                isBusy = busy,
+                onSend = { text -> send(text) },
+                onStop = { runner.cancel() },
+                onOpenSettings = {
+                  startActivity(
+                      android.content.Intent(this@ChatActivity, SettingsActivity::class.java))
+                },
+                onNewChat = {
+                  // 新会话：换 id + 清空列表。历史仍留在磁盘上（会话列表属于后续步骤）。
+                  conversationId = ensureConversation()
+                  timeline.clear()
+                  reducer = EventReducer(timeline)
+                },
+            )
+          }
         }
-    setContentView(root)
+    setContentView(rootView)
 
     if (!modelSettings.isReady()) {
       showSetupHint()
     }
     chatView.view.post { chatView.forceScrollToBottom(uiScope) }
+  }
+
+  /** 输入栏芯片上显示的模型名。 */
+  private fun modelLabel(): String {
+    val preset = ProviderPresets.find(modelSettings.providerId())
+    return "${preset?.label ?: "未配置"} · ${modelSettings.modelId()}"
+  }
+
+  /** 顶栏副标题前的服务商 logo。 */
+  private fun providerTarget(): com.assistant.ui.components.independent.ProviderSelectionTarget? {
+    val preset = ProviderPresets.find(modelSettings.providerId()) ?: return null
+    return com.assistant.ui.components.independent.ProviderSelectionTarget(
+        id = preset.id,
+        name = preset.label,
+        protocol =
+            if (preset.protocolType ==
+                com.tom.rv2ide.ai.protocol.ModelProtocolType.ANTHROPIC_MESSAGES) {
+              com.assistant.ui.components.independent.ProviderProtocol.ANTHROPIC_MESSAGES
+            } else {
+              com.assistant.ui.components.independent.ProviderProtocol.OPENAI_COMPATIBLE
+            },
+    )
   }
 
   override fun onDestroy() {
