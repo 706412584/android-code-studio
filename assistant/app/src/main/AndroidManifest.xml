@@ -19,6 +19,16 @@
         <category android:name="android.intent.category.LAUNCHER" />
       </intent-filter>
     </activity>
+
+    <!--
+      第 2 步验证：Compose 渲染层。
+      与 ProbeActivity 并列而非替换——第 1 步（内核可独立消费）的结论仍需要可复现。
+    -->
+    <activity
+      android:name=".ChatDemoActivity"
+      android:exported="true"
+      android:label="Assistant chat (render probe)"
+      android:theme="@android:style/Theme.Material.Light.NoActionBar" />
   </application>
 
 </manifest>

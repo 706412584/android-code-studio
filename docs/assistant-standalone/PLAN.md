@@ -314,3 +314,98 @@ Aharou 的设置页在 `desktop/` + `app/src/main/java/com/aharou/feature/settin
 第 2 步按「拷文件 → 编译 → 补缺」推进，不做静态边界猜测。
 先搬 `AssistantComposePanel` 的传递闭包，跑通一个能渲染出消息面板的竖切，
 再逐批扩到完整渲染层。
+
+---
+
+## 八、第 2 步实测结果（已完成 ✅）
+
+建了 `assistant/ui`（`com.android.library`，namespace `com.assistant.ui`），
+把 `core/app/.../artificial/agent/compose` 整目录 **75 文件 / 约 24k 行**搬过来，
+包名统一改写，编译通过，并在黑鲨 SKW-A0 上跑通渲染。
+
+### 8.1 静态分析低估了多少
+
+| 项 | 静态分析估 | **实际编译错误** |
+|---|---|---|
+| 编译错误总数 | — | **699** |
+| 其中 `R` 相关 | 49 处 | **339** 处 |
+| 缺依赖（serialization / jsoup / coil / androidx.core） | 未识别 | 4 类 |
+| ACS 类型引用 | 8 类 | 6 类（`DiffResult`/`DiffLineType`/`ToolResultImageSupport`/`AssistantMessageAdapter`/`AssistantUiStyleStore`/`AssistantToolGroupSummary`） |
+
+> 静态分析只看到「文件里出现的名字」，看不到 `R.attr.*` 全限定写法、看不到
+> `RecyclerView` 这类间接依赖，也看不到「类型在但符号不在」的情况。
+> 结论仍是那条：**边界由编译器决定，不由静态分析决定。**
+
+### 8.2 六类 ACS 引用的处置
+
+| ACS 类型 | 处置 |
+|---|---|
+| `com.tom.rv2ide.resources.R` / `com.tom.rv2ide.R` | 本模块自带 `res/`：字符串 280 条（脚本按引用清单从 core/resources 抽取，非人工挑选）+ `jetbrains_mono.ttf` + 19 个 provider logo。`R.attr.colorXxx` 改为按名字 `getIdentifier` 解析（不引 material 主题依赖） |
+| `AssistantMessageAdapter`（2405 行 RecyclerView 适配器） | **重写为 `MessageTimeline`**（纯数据层，无 View 类型）。逐字搬了全部数据变更逻辑与踩坑注释，去掉 ViewHolder / ViewBinding / DiffUtil 部分 |
+| `DiffResult` / `DiffLineType` / `AssistantDiffBuilder` | 拷进 `model/AssistantDiff.kt`（原文件本身零依赖，只改包名） |
+| `ToolResultImageSupport` | **拆开**：纯判定逻辑（decode/cacheKey/上限）搬进 `compat/ToolImageSupport.kt`；XML 灯箱（`R.layout.dialog_tool_image_gallery` + `ScaleGestureDetector`）**不搬**，改用 Compose 的 `detectTransformGestures` + Coil 重写 |
+| `AssistantUiStyleStore`（272 行） | 拷进本模块（只依赖 `Context` + `SharedPreferences`） |
+| `ToolGrouping`（104 行） | 拷进 `model/`（只依赖内核的 `ToolNames`） |
+
+### 8.3 依赖闭包（关键证据）
+
+```
+:assistant:app → :assistant:ui → :core:ai-agent → {ai-protocol, ai-tool} → ai-tool-api
+```
+
+`./gradlew :assistant:app:dependencies --configuration debugRuntimeClasspath` 输出里
+**没有任何非 `ai-*` 的项目依赖**——无 `core:projects` / `editor` / `java` / `xml` /
+`tooling` / `termux` / `utilities`。
+
+库依赖全部是通用 AndroidX / Compose / Coil / jsoup / kotlinx-serialization，
+与 ACS 无关。
+
+### 8.4 真机验证（黑鲨 SKW-A0 / Android 10）
+
+APK 20 MB，装包启动 `ChatDemoActivity` 后截图确认：
+
+| 渲染项 | 结果 |
+|---|---|
+| 用户消息气泡（含行内代码） | ✅ |
+| 思考块（折叠标题 + 展开正文） | ✅ |
+| 工具组（折叠态「2 次工具调用」→ 展开列出两张卡片） | ✅ |
+| Markdown 表格（边框 + 单元格底色） | ✅ |
+| 代码块（语法高亮 + 复制按钮） | ✅ |
+| 改动汇总卡（组头 +2 文件 / +5 -1 + 逐文件撤销） | ✅ |
+| 撤销回调（点后按钮变「已撤销」灰态） | ✅ |
+
+### 8.5 新增的公开门面
+
+渲染层内部全是 `internal`。宿主（未来的 App）只需要一个入口，因此加了
+`com.assistant.ui.AssistantChatView`：
+
+```kotlin
+val timeline = MessageTimeline()
+val view = AssistantChatView(context, timeline, callbacks, fileAccess)
+container.addView(view.view)
+// 宿主往 timeline 里塞事件，面板自动重绘
+view.release()  // 销毁时释放观察者
+```
+
+`AssistantChatCallbacks` 四个动作：`onToggleExpanded` / `onToggleGroup` /
+`onRevert` / `onMoreClick`。**面板不自己持有展开态**——回写 `MessageTimeline` 后
+下一帧快照自然带上新状态。
+
+### 8.6 踩到的两个坑
+
+1. **ComposeView 必须挂在 `ComponentActivity`（或任何提供 `ViewTreeLifecycleOwner`
+   的宿主）上**。第 1 步的 `ProbeActivity` 继承 `android.app.Activity` 没问题（它只用
+   `TextView`），但 `ChatDemoActivity` 用纯框架 Activity 会抛
+   `IllegalStateException: ViewTreeLifecycleOwner not found`。这是 Compose 的硬要求，
+   与 ACS 无关，但**第 3 步之后所有宿主都必须注意**。
+2. **Kotlin 属性初始化顺序**：`AssistantChatView` 里回调对象要读 `host.view` 做菜单锚点，
+   而 host 的构造又需要回调——直接写会得到
+   `type checking has run into a recursive problem`。用 `by lazy` 声明 host 解决。
+
+### 8.7 结论
+
+**渲染层已完全脱离 ACS**。75 个文件全部编译通过并在真机上正确渲染，
+包括 Markdown / 代码高亮 / 表格 / diff 卡 / 工具组 / 思考块 / 询问面板。
+
+第 3 步（Port 桩化）不再有「搬不动」的障碍：渲染层已经不认 ACS 类型，
+桩化只需要在内核契约上提供空实现。

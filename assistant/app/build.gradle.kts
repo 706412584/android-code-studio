@@ -74,23 +74,28 @@ kotlin {
 }
 
 dependencies {
-  // 唯一的依赖：AI 内核。**没有** projects.core.* / editor / java / xml / tooling /
-  // termux / utilities —— 这正是本模块要验证的事。
+  // 项目依赖只有两个：AI 内核 + 本仓库的渲染层。
+  // **没有** projects.core.* / editor / java / xml / tooling / termux / utilities
+  // —— 这正是本模块要验证的事。
   implementation(projects.core.aiAgent)
+  implementation(projects.assistant.ui)
 
   // 只留 Kotlin 标准库：探针用的是框架自带的 android.app.Activity / TextView，
   // 不需要 appcompat / material。少引一个依赖，验证的结论就更干净一分——
   // 「内核能被独立 App 消费」不该被无关的 UI 库依赖干扰。
   implementation(libs.common.kotlin)
 
-  // ---- 第 2 步前置验证：Compose 依赖能否离线解析 ----
+  // ---- Compose 依赖 ----
   //
-  // 刻意用与 core/app 完全相同的坐标与版本（见 core/app/build.gradle.kts:269-305）。
-  // 剥离后渲染层要原样复用这套约束，尤其是 markdown 渲染器必须停在 0.33.0——
-  // 它的 0.34+ 会调用 Compose foundation 1.8 才有的 TextAutoSize 参数，编译期不报错，
-  // 运行时渲染 Markdown 段落才抛 NoSuchMethodError（详见那边的长注释）。
+  // 坐标与版本与 core/app 完全一致（见 core/app/build.gradle.kts:269-305），
+  // 渲染层（assistant:ui）内部用的也是这一套。
   //
-  // 探针阶段只验证「能解析 + 能编译」，尚未搬运渲染代码。
+  // 这里**保留显式声明而不是依赖 ui 模块传递**：`implementation` 不会把依赖透出到
+  // 编译类路径，且本模块的 `ChatDemoActivity` 直接用 `ComponentActivity` +
+  // `Dispatchers.Main`——保留显式坐标能让「App 自己需要什么」在文件里一眼可见，
+  // 也避免将来调整 ui 模块的依赖时这里静默断链。
+  //
+  // 关键的版本钉子仍在 ui 模块（markdown 渲染器必须停 0.33.0，见那边的长注释）。
   implementation("androidx.compose.runtime:runtime:1.7.6")
   implementation("androidx.compose.foundation:foundation:1.7.6")
   implementation("androidx.compose.ui:ui:1.7.6")

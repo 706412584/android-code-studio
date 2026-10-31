@@ -102,6 +102,7 @@ include(
 
   // 通用助手剥离验证模块（见 docs/assistant-standalone/PLAN.md）。
   ":assistant:app",
+  ":assistant:ui",
 
   ":external:acsprovider",
   ":external:atc",
