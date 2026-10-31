@@ -100,6 +100,9 @@ include(
   ":annotation:processors",
   ":annotation:processors-ksp",
 
+  // 通用助手剥离验证模块（见 docs/assistant-standalone/PLAN.md）。
+  ":assistant:app",
+
   ":external:acsprovider",
   ":external:atc",
   ":core:projectdata",

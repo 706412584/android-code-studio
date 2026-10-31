@@ -1,0 +1,250 @@
+# 剥离 AI 助手为独立通用助手 —— 可行性方案
+
+**分支**：`feat/assistant-standalone`（长期分支，不动 `dev`）
+**目标**：把 AI 助手从 ACS（Android Code Studio）剥离成独立的通用助手 App，
+**保留终端（Termux）能力**，**暂不移植 SDK / 构建链**（Gradle Tooling、APK 安装、
+设备控制、影子屏、云编译、CodeGraph 等）。
+**参考项目**：`D:/app/Aharou`（设置与界面可直接移植）
+
+---
+
+## 一、实测数据（本分支上量出来的，不是估算）
+
+### 1. 内核 4 模块：可直接剥离 ✅
+
+| 模块 | 项目依赖 | 库依赖 |
+|---|---|---|
+| `core/ai-tool-api` | 无 | 无（仅测试用 org.json + JUnit） |
+| `core/ai-protocol` | `ai-tool-api` | 无 |
+| `core/ai-tool` | `ai-tool-api` | 无 |
+| `core/ai-agent` | `ai-protocol` + `ai-tool` | 无 |
+
+全部是 **Java/Kotlin JVM 模块**（`build.gradle.kts` 只有 `api(projects.*)`，
+无 `android` 插件、无 androidx、无 AGP）。当前 **2177 条单元测试**在 JVM 上跑。
+
+结论：**内核剥离成本 ≈ 0**。新建 Android App 模块后直接 `implementation(projects.core.aiAgent)`
+即可。
+
+### 2. App 层：227 文件 / 73391 行，其中真耦合很少
+
+| 分类 | 文件数 | 占比 |
+|---|---|---|
+| **零 ACS 依赖**（可直接搬） | **155** | 68% |
+| 有 ACS 依赖（需适配） | 72 | 32% |
+
+而这 72 个的依赖性质分布（**注意第一项**）：
+
+| ACS 包 | 次数 | 性质 |
+|---|---|---|
+| `resources` | 37 | **全部是 `R` 类**，非真耦合 |
+| `projects` | 8 | 构建服务（可排除） |
+| `cloudbuild` | 6 | 云编译（可排除） |
+| `activities` | 5 | Activity 宿主（需替换） |
+| `lsp` | 5 | 语言服务器 Port |
+| `termux` | 4 | **要保留** |
+| 其余 | 各 1–5 | 端口适配器 |
+
+**关键结论**：37 处 `resources` 全部是 `import com.tom.rv2ide.resources.R`
+（资源 ID 表）。Android 库模块会自己生成 `R`——换一个 `R` 引用即可，
+**不是真实架构耦合**。剔除后，真正需要在剥离时处理的 ACS 依赖只剩约 **35 处**。
+
+### 3. `AgentOrchestrator`（App 层 AI 中枢，3111 行）
+
+- 顶层 `import com.tom.rv2ide.*` 中**非 AI 类型的数量 = 0**
+- 全文用全限定名引用的 ACS 类型**只有 11 处**，且**全在 Port 适配器内**：
+  `lsp.api.ILanguageServerRegistry`(4)、`projects.builder.BuildService`、
+  `services.builder.BuildConnectionRegistryHolder`、`services.builder.BackgroundBuildManager`、
+  `projects.IProjectManager`、`logging.IdeLogBufferHolder`、`utils.*`(4)
+
+也就是说：**编排器本身对 ACS 的耦合已经被 Port 模式消化干净了**——它只知道
+「诊断端口」「构建变体端口」这些中性契约，具体实现才碰 ACS 类型。
+
+### 4. 「保留终端」的真实成本
+
+`termux/*` 4 个模块自身依赖 ACS 重资产：
+
+| 模块 | 依赖 |
+|---|---|
+| `termux/shared` | `core.common`、`core.resources`、`termux.view`、`utilities.buildInfo` |
+| `termux/application` | `core.projects`、`core.common`、`core.resources`、`termux.view` |
+| `termux/view` | `termux.emulator`、`core.resources` |
+| `termux/emulator` | 无 |
+
+而 AI 侧真正只用**两个** Termux 类型：
+- `TermuxShellBackend` → `com.termux.app.TermuxService`（`termux/application`）
+- `ReportedTerminalPort` → `TermuxShellManager` + `ShellUtils`（`termux/shared`）
+
+**这就是冲突点**：`termux/application` 反向依赖 `core.projects`（Gradle 构建），
+而用户要求「暂不放 sdk」。两条路（见下方决策点 A）。
+
+### 5. 用户要求「暂不移植」的能力 → 需替换为空实现
+
+可排除的文件（23 个，按目录/文件名匹配）：
+
+```
+artificial/cloudbuild/           云编译
+artificial/hotupdate/            热更新
+artificial/agent/codegraph/      CodeGraph
+artificial/agent/tool/u2/        uiautomator2
+artificial/agent/tool/vdisplay/  影子屏
+artificial/agent/tool/device/    设备控制
+GradleBuild / InstallApk / Logcat / LogWire / GitHubActions /
+BuildVariant / PhoneTest / Vscreen / Launcher / IdeLog /
+Diagnostics / WorkspaceSymbol / CodeActions / FormatCode /
+LspNavigate / EditorState / CodeGraph / Termux / Shizuku / RootShell
+```
+
+排除后仍需搬运：**204 文件 / 66132 行**。
+
+> 这 66k 行不是全要重写——155 个文件零依赖直接拷，其余只是替换 `R` 与 Port 实现。
+
+---
+
+## 二、目标结构
+
+```
+assistant/                          # 新建独立工程（或本仓库新模块树）
+  ai-tool-api/  ai-protocol/        # 从 core/ 原样搬（零依赖）
+  ai-tool/      ai-agent/
+  app/                              # 新建 Android App
+    com.assistant.app.ui/           # 155 个零依赖 UI 文件直接拷
+    com.assistant.app.port/         # Port 的空实现 + Termux 实现
+    com.assistant.app.settings/     # 从 Aharou 移植设置界面
+core/                               # 原仓库保留，不动
+```
+
+**保留**：Compose 消息渲染全链路、会话 JSONL 持久化、工具调用循环、
+上下文裁剪/压缩、子代理与跨会话消息（刚做完的 `send_message`）。
+
+**替换为桩**：`DiagnosticsPort` / `BuildVariantPort` / `LspNavigationPort` /
+`CodeActionsPort` / `CodeFormatPort` / `EditorStatePort` / `WorkspaceSymbolPort`
+/ `IdeLogSource` / 构建类工具——全部报「当前环境未接入」，与既有降级文案一致
+（各 Port 已定义 `isAvailable()` / `unavailableReason()`，语义现成）。
+
+**保留终端**：`TermuxShellBackend` + `ReportedTerminalPort` 依赖 `termux/*` 模块。
+
+---
+
+## 三、必须由你决定的三个点
+
+### 决策点 A：Termux 怎么带？（影响最大）
+
+| 方案 | 做法 | 代价 |
+|---|---|---|
+| **A1 整体搬 termux 模块** | 把 `termux/{shared,view,emulator,application}` 连同其依赖的 `core/{common,resources,projects}` 一起搬 | 等于把「sdk 依赖」也搬进来（`termux/application` → `core.projects`），与「暂不放 sdk」冲突 |
+| **A2 只搬 emulator + view + 自建 service** | 搬 `termux/{emulator,view}`（这两不依赖 ACS），自建一个精简 `TermuxService`；`shared` 里需要的 `ShellUtils` 等按需摘取 | 中等：要摘 `termux/shared` 的少量类，但能彻底断开 `core.projects` |
+| **A3 终端用系统 shell** | 不搬 Termux，用 `Runtime.exec` / 自建 PTY | 最低成本，但**丢掉**你要求保留的「现在的 tex 终端能力」 |
+
+> 我倾向 **A2**：能同时满足「保留终端」与「不放 sdk」。但 `termux/shared` 是个
+> 大模块（113 文件），摘取需要逐类判断，是本次最大的工作量来源。
+
+### 决策点 B：独立工程 vs 同仓库新模块
+
+| 方案 | 优点 | 缺点 |
+|---|---|---|
+| **B1 独立 git 仓库** | 彻底与 ACS 解耦；不污染主分支 | 内核要复制一份，**两边修 bug 会双改**（刚修的 send_message 就是例子） |
+| **B2 同仓库新模块树** | 内核仍共享 `core/ai-*`，修一处两边受益 | 仓库继续变大；仍需保证新模块不反向依赖 ACS |
+
+> 我倾向 **B2**：内核本来就是零依赖的，共享它没有代价；而「剥离」的实质是
+> **App 层不依赖 ACS**，这靠新模块 + 构建约束就能保证。
+
+### 决策点 C：设置界面移植范围（Aharou）
+
+Aharou 的设置页在 `desktop/` + `app/src/main/java/com/aharou/feature/settings/`。
+需要你圈定要哪些：
+
+- 服务商/模型配置（14 预设 + 4 槽位）
+- 权限与确认策略
+- MCP server 管理
+- Skill / 自定义 agent / 长期记忆
+- 界面主题（4 套预设）
+- 定时任务
+
+---
+
+## 四、建议的推进顺序（每步可独立验证）
+
+| # | 内容 | 验证方式 |
+|---|---|---|
+| 1 | 新建 `assistant/app` Android 模块，接 `core/ai-agent`，跑通「发一条消息拿到回复」 | 编译 + 真机 |
+| 2 | 搬 155 个零依赖文件（Compose 渲染层），替换 `R` 引用 | 编译 + 真机看渲染 |
+| 3 | Port 桩化（9 个 Port 返回未接入），验证工具列表正确降级 | 单测 + 真机 |
+| 4 | Termux 接入（按 A2），验证能跑 shell 并读回输出 | 真机 |
+| 5 | Aharou 设置界面移植 | 真机逐项 |
+| 6 | 会话持久化 / 子代理 / 跨会话消息回归 | 既有单测搬过来 |
+
+**建议先做第 1 步**：它不动任何现有代码，能立刻证伪或证实「内核可独立构建」。
+
+---
+
+## 五、风险
+
+1. **双头维护**（若选 B1）：内核修一处要改两个仓库。B2 可规避。
+2. **Termux 摘取**：`termux/shared` 113 文件互相牵连，A2 方案需要逐类判断，
+   是本方案最不确定的部分。
+3. **`R` 类替换**：37 处集中在 strings/资源 ID，机械但量大，容易漏。
+4. **Compose 依赖版本**：ACS 被钉在 Compose 1.8（`build.gradle.kts` 有 ABI 天花板
+   注释），新工程若用更新版本，渲染层可能需要适配。
+5. **`libs.versions.toml` 共享**：若选 B2，新模块要复用同一版本目录，避免两套。
+
+---
+
+## 六、第 1 步实测结果（已完成 ✅）
+
+在 `feat/assistant-standalone` 分支上建了 `assistant/app` 模块并实测。
+
+### 构建验证
+
+```
+./gradlew :assistant:app:assembleDebug   → BUILD SUCCESSFUL
+产出 app-debug.apk（1.2 MB）
+```
+
+### 依赖闭包（关键证据）
+
+```
+:core:ai-agent  ← :core:ai-protocol  ← :core:ai-tool-api
+                ← :core:ai-tool      ← :core:ai-tool-api
+
+非 ai-* 的项目依赖：无
+```
+
+**没有任何 ACS 模块**（无 `core:projects` / `editor` / `java` / `xml` / `tooling` /
+`termux` / `utilities`）。`assistant/app/build.gradle.kts` 的 `dependencies` 里
+唯一的内核引用就是 `implementation(projects.core.aiAgent)`。
+
+### 真机运行验证（黑鲨 SKW-A0 / Android 10）
+
+装包启动后 `ProbeActivity` 报告：
+
+```
+内核独立消费：通过
+✓ ToolRegistry: 1 个工具
+✓ ToolExecutor: 构造成功
+✓ FileConversationStore: 会话存储就绪：/data/user/0/com.assistant.app/files/ai/conversations
+✓ AgentSession: 构造成功
+✓ AgentEvent 枚举: 类型数 = 14
+✓ ToolContext: 构造成功
+```
+
+**这一步比「编译通过」有意义得多**：内核是 `java-library`（JDK 17 编译、经
+`options.release = 8` 锁到 Java 8 API 面），编译过不代表真机能跑
+（`NoSuchMethodError` 只在设备上暴露）。六个内核类型全部实例化成功，说明
+内核的字节码与 API 面在 Android 上确实可用。
+
+### 过程中踩到的两个坑（后续步骤要注意）
+
+1. **不能引 appcompat / material**：`libs.androidx.appcompat` 在离线模式下缺
+   `error_prone_annotations` / `constraintlayout-core` 缓存；且 material 的
+   `Theme.Material3.*` 会让 AAPT 报资源找不到。探针改用框架自带的
+   `android.app.Activity` + `@android:style/Theme.DeviceDefault.Light` 即可——
+   结论也更干净（少一个无关依赖干扰）。
+2. **jvmTarget 必须对齐**：仓库约定是 `BuildConfig.javaVersion = 11`，
+   我最初写 17 导致 Kotlin 插件报 "Inconsistent JVM-target compatibility"。
+
+### 结论
+
+**剥离的核心前提成立**：内核可被一个完全不依赖 ACS 的 Android App 消费。
+第 2 步（搬 App 层）不再是「能不能做」的问题，而是「搬多少、怎么搬」的工程问题。
+
+剩余决策（见第三节）未定，第 2 步之后的分叉仍取决于它们。
