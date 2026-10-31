@@ -2,32 +2,53 @@
 <!--
   通用助手 App（剥离验证模块）。
 
-  只声明一个 Activity，不引任何 ACS 组件——这个模块的 manifest 里出现
-  com.tom.rv2ide.* 就说明验证失败。
+  这个模块的 manifest 里出现 com.tom.rv2ide.* 就说明剥离失败。
+  目前三个 Activity 的分工：
+  - SettingsActivity 启动页（填服务商与 API Key）
+  - ChatActivity     真正的对话界面
+  - ProbeActivity    第 1 步的内核探针（保留以便复现结论）
+  - ChatDemoActivity 第 2 步的渲染探针（假数据，保留同上）
 -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
+  <uses-permission android:name="android.permission.INTERNET" />
+  <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+
   <application
-    android:label="Assistant (standalone probe)"
+    android:label="Assistant"
     android:theme="@android:style/Theme.DeviceDefault.Light">
 
     <activity
-      android:name=".ProbeActivity"
-      android:exported="true">
+      android:name=".SettingsActivity"
+      android:exported="true"
+      android:label="模型设置">
       <intent-filter>
         <action android:name="android.intent.action.MAIN" />
         <category android:name="android.intent.category.LAUNCHER" />
       </intent-filter>
     </activity>
 
+    <!-- 对话界面。单独 exported 以便设置页跳转，也方便 adb 直接拉起调试。 -->
+    <activity
+      android:name=".ChatActivity"
+      android:exported="true"
+      android:label="Assistant"
+      android:theme="@android:style/Theme.Material.Light.NoActionBar"
+      android:windowSoftInputMode="adjustResize" />
+
     <!--
-      第 2 步验证：Compose 渲染层。
-      与 ProbeActivity 并列而非替换——第 1 步（内核可独立消费）的结论仍需要可复现。
+      第 1 步 / 第 2 步的验证入口。
+      保留而不是删除：那两步的结论仍需要可复现（内核可独立消费 / 渲染层可独立工作）。
     -->
+    <activity
+      android:name=".ProbeActivity"
+      android:exported="true"
+      android:label="内核探针" />
+
     <activity
       android:name=".ChatDemoActivity"
       android:exported="true"
-      android:label="Assistant chat (render probe)"
+      android:label="渲染探针"
       android:theme="@android:style/Theme.Material.Light.NoActionBar" />
   </application>
 

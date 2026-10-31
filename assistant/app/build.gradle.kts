@@ -78,6 +78,7 @@ dependencies {
   // **没有** projects.core.* / editor / java / xml / tooling / termux / utilities
   // —— 这正是本模块要验证的事。
   implementation(projects.core.aiAgent)
+  implementation(projects.assistant.engine)
   implementation(projects.assistant.ui)
 
   // 只留 Kotlin 标准库：探针用的是框架自带的 android.app.Activity / TextView，
