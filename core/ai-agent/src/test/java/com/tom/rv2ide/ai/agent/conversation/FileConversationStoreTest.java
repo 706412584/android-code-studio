@@ -313,4 +313,45 @@ final class FileConversationStoreTest {
         store.read(second).stream()
             .anyMatch(e -> e.getEntry() instanceof UserMessageEntry));
   }
+
+  // ── 子 agent 会话 ─────────────────────────────────────────────────────
+
+  /**
+   * 子代理会话带父会话归属，且**不影响**普通会话。
+   *
+   * <p>钉住两件事：归属字段能落盘再读回（否则会话列表无法把子代理挂在父会话下），
+   * 以及普通会话的 meta 里不出现这两个字段（否则历史文件的 diff 会平白多出空字段）。
+   */
+  @Test
+  void subAgentConversationRecordsParent(@TempDir Path dir) throws IOException {
+    FileConversationStore store = storeAt(dir);
+
+    ConversationSummary sub =
+        store.createSubAgent("调研缓存实现", "/w", "m", "confirm", "parent-1", "reviewer");
+
+    assertTrue(sub.isSubAgent());
+    assertEquals("parent-1", sub.getParentId());
+    assertEquals("reviewer", sub.getSubagentType());
+
+    // 落盘再读回：走 codec 的完整往返，而不是只看内存对象。
+    ConversationSummary reread =
+        store.list().stream().filter(s -> s.getId().equals(sub.getId())).findFirst().orElseThrow();
+    assertEquals("parent-1", reread.getParentId());
+    assertEquals("reviewer", reread.getSubagentType());
+  }
+
+  /** 普通会话不是子代理会话——parentId 为空。 */
+  @Test
+  void normalConversationIsNotSubAgent(@TempDir Path dir) throws IOException {
+    FileConversationStore store = storeAt(dir);
+    ConversationSummary normal = store.create("普通", "/w", "m", "confirm");
+
+    assertFalse(normal.isSubAgent());
+    assertTrue(normal.getParentId().isEmpty());
+
+    // meta 里不写 parentId 字段：普通会话的历史文件与改动前保持一致。
+    File log = new File(store.getDirectory(), normal.getId() + ".jsonl");
+    String raw = String.join("", Files.readAllLines(log.toPath(), StandardCharsets.UTF_8));
+    assertFalse(raw.contains("parentId"), "普通会话不应写出 parentId 字段");
+  }
 }

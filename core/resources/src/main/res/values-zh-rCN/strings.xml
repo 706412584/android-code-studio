@@ -1694,6 +1694,14 @@
   <string name="compose_tool_card_todo_in_progress">进行中</string>
   <string name="compose_tool_card_web_search_title">联网搜索</string>
   <string name="compose_tool_card_expand_remaining">展开剩余 %1$s 行</string>
+  <string name="compose_tool_card_output_collapsed">已折叠超大输出（%1$s）</string>
+  <string name="compose_tool_card_output_load_more">继续加载（还有 %1$s 块）</string>
+  <string name="subagent_card_title">子代理</string>
+  <string name="subagent_card_pipeline_title">子代理流水线（%1$s 个子任务）</string>
+  <string name="subagent_card_status_running">运行中</string>
+  <string name="subagent_card_status_completed">已完成</string>
+  <string name="subagent_card_status_failed">失败</string>
+  <string name="subagent_card_steps_hint">%1$s 步 · %2$s</string>
   <string name="compose_tool_card_web_search_warning">搜索提示：%1$s</string>
   <string name="compose_tool_card_web_search_results_count">%1$s 条结果</string>
   <string name="compose_tool_card_changed_files_summary">已修改 %1$s 个文件  +%2$s −%3$s</string>

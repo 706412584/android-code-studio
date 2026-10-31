@@ -77,15 +77,35 @@ public final class FileConversationStore implements ConversationStore {
   @Override
   public ConversationSummary create(String title, String cwd, String model, String permissionMode)
       throws IOException {
+    return createWithMeta(
+        title,
+        SessionMetaEntry.create(System.currentTimeMillis(), cwd, model, permissionMode));
+  }
+
+  @Override
+  public ConversationSummary createSubAgent(
+      String title, String cwd, String model, String permissionMode,
+      String parentId, String subagentType)
+      throws IOException {
+    return createWithMeta(
+        title,
+        SessionMetaEntry.createSubAgent(
+            System.currentTimeMillis(), cwd, model, permissionMode, parentId, subagentType));
+  }
+
+  /** 建文件 + 写首条 meta + 可选标题，返回折叠出的摘要。 */
+  private ConversationSummary createWithMeta(String title, SessionMetaEntry meta)
+      throws IOException {
     String id = newId();
-    long now = System.currentTimeMillis();
+    long now = meta.getTimestamp();
     ConversationLog log = logFor(id);
-    log.append(SessionMetaEntry.create(now, cwd, model, permissionMode));
+    log.append(meta);
     if (title != null && !title.trim().isEmpty()) {
       log.append(TitleEntry.customTitle(null, now, title.trim()));
     }
     return ConversationReducer.summarize(id, log.readAll());
   }
+
 
   @Override
   public List<ConversationLog.EntryLocation> read(String conversationId) throws IOException {

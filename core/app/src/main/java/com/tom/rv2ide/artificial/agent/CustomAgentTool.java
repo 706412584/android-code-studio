@@ -137,7 +137,9 @@ public final class CustomAgentTool extends BaseTool {
                   depth,
                   null,
                   com.tom.rv2ide.ai.tool.ToolNameFilter.unrestricted(),
-                  forward));
+                  forward,
+                  // 自定义 agent 的名字即它的寻址键（见 BuiltinAgentTool 的同一处理）。
+                  agent.getName()));
 
       if (result == null) {
         return error("自定义 agent 没有返回结果。");

@@ -247,6 +247,13 @@ internal fun ToolMessageBody(
 ) {
   val streaming = liveOutput != null
   val running = message.isToolRunning(liveOutput)
+  // 子代理派遣：命中就整行换成卡片（状态 + 任务 + 步骤 + 结论）。
+  // 判定只看工具名与参数，不看 content，所以流式追加期间不会反复重解析。
+  // 失败（isError）时不出卡：错误信息是模型要读的正文，普通工具行的结果区更合适。
+  if (message.isSubAgentDispatchCard()) {
+    SubAgentDispatchCard(message)
+    return
+  }
   // 解析结果的缓存键用 content 长度而不是整串内容：工具结果可以有几十万字符，
   // 逐次重组都拿整串做一次 O(n) 相等比较，本身就是可观的浪费。
   // 工具结果只会追加增长，长度相同即视为同一份内容。
@@ -1211,6 +1218,13 @@ internal fun ToolSection(label: String, content: String, live: Boolean = false) 
       fontWeight = FontWeight.SemiBold)
   Spacer(Modifier.height(2.dp))
 
+  // 超长输出走折叠护栏时**不进**下面的限高滚动窗：护栏态自带「预览 + 展开」动作行，
+  // 塞进 240dp 的窗口里动作行会被裁掉，用户看得到输出却点不到展开（实机验证发现）。
+  if (!live && toolOutputNeedsGuard(content)) {
+    ToolOutputText(text = content, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    return
+  }
+
   val scrollState = rememberScrollState()
   var followLive by remember { mutableStateOf(true) }
   var displayedContent by remember { mutableStateOf(content) }
@@ -1237,12 +1251,18 @@ internal fun ToolSection(label: String, content: String, live: Boolean = false) 
             Modifier.heightIn(max = ToolSectionMaxHeight)
                 .nestedScroll(rememberBoundNestedScrollConnection(scrollState))
                 .verticalScroll(scrollState)) {
+          // 到这里只可能是两种情形：流式输出，或落库后且未超阈值的短结果。
+          // 超阈值的那条已在上方提前返回、不进入本滚动窗。
+          //
+          // 流式路径不做折叠（文本每 tick 都在变，跨阈值会让正文在「徽标 ↔ 正文」间反复跳），
+          // 但单行仍要封顶——无换行的长行才是拖慢测量的主因。
+          val shown = if (live) displayedContent else content
+          val bounded = remember(shown) { capToolOutputLines(shown) }
           SelectionContainer {
             Text(
-                text = if (live) breakableText(displayedContent) else breakableText(content),
+                text = breakableText(bounded),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                style =
-                    MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace))
+                style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace))
           }
         }
     // 底部渐隐：只有还能继续往下滚时才盖一层，提示“下面还有内容”

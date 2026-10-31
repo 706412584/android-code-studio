@@ -73,6 +73,17 @@ public interface SubAgentRunner {
     private final String task;
     private final Mode mode;
 
+    /**
+     * 本次子 agent 的名字；空串表示由实现方自动生成。
+     *
+     * <p><b>为什么需要名字</b>：名字是跨会话消息的寻址键（{@code send_message} 的
+     * {@code agent:&lt;name&gt;}）。没有它，父 agent 只能说「等它跑完」——而它常常
+     * 要跑很久，期间父 agent 想追加一句约束或问一句进展时无路可走。
+     *
+     * <p>自动生成的格式由实现方决定；这里只约定同一父会话内不重复。
+     */
+    private final String name;
+
     /** 当前嵌套深度（调用方所在层）。子 agent 内部再调用时会 +1。 */
     private final int depth;
 
@@ -93,7 +104,7 @@ public interface SubAgentRunner {
     private final ProgressListener progress;
 
     public Request(String task, Mode mode, int depth) {
-      this(task, mode, depth, null, ToolNameFilter.unrestricted(), null);
+      this(task, mode, depth, null, ToolNameFilter.unrestricted(), null, "");
     }
 
     /**
@@ -105,11 +116,11 @@ public interface SubAgentRunner {
      */
     public Request(
         String task, Mode mode, int depth, String systemPrompt, ToolNameFilter toolFilter) {
-      this(task, mode, depth, systemPrompt, toolFilter, null);
+      this(task, mode, depth, systemPrompt, toolFilter, null, "");
     }
 
     /**
-     * 完整构造。
+     * 完整构造（不含名字）。
      *
      * @param progress 步骤进度接收者；null 表示不报告。实现方**必须**容忍回调抛异常
      *     （进度是尽力而为的旁路，不应让子 agent 运行失败），且回调可能来自任意线程
@@ -121,12 +132,29 @@ public interface SubAgentRunner {
         String systemPrompt,
         ToolNameFilter toolFilter,
         ProgressListener progress) {
+      this(task, mode, depth, systemPrompt, toolFilter, progress, "");
+    }
+
+    /**
+     * 完整构造（含名字）。
+     *
+     * @param name 子 agent 的名字（跨会话寻址用）；空串表示由实现方自动生成
+     */
+    public Request(
+        String task,
+        Mode mode,
+        int depth,
+        String systemPrompt,
+        ToolNameFilter toolFilter,
+        ProgressListener progress,
+        String name) {
       this.task = task == null ? "" : task;
       this.mode = mode == null ? Mode.EXPLORE : mode;
       this.depth = depth;
       this.systemPrompt = systemPrompt == null ? "" : systemPrompt;
       this.toolFilter = toolFilter == null ? ToolNameFilter.unrestricted() : toolFilter;
       this.progress = progress;
+      this.name = name == null ? "" : name.trim();
     }
 
     /** 交给子 agent 的任务描述。 */
@@ -136,6 +164,11 @@ public interface SubAgentRunner {
 
     public Mode getMode() {
       return mode;
+    }
+
+    /** 子 agent 的名字；空串表示由实现方自动生成。 */
+    public String getName() {
+      return name;
     }
 
     public int getDepth() {
@@ -175,12 +208,34 @@ public interface SubAgentRunner {
     private final String output;
     private final int turns;
     private final int toolCallCount;
+    private final String name;
+    private final String conversationId;
 
     public Result(boolean success, String output, int turns, int toolCallCount) {
+      this(success, output, turns, toolCallCount, "", "");
+    }
+
+    /**
+     * 完整构造。
+     *
+     * @param name 子 agent 的名字（跨会话寻址用）；空串表示无名字
+     * @param conversationId 子 agent 自己的会话 id；空串表示没有落盘会话
+     *     （如实现方不支持子会话，或建会话失败）。父 agent 据此把卡片挂到子会话、
+     *     以及在它停止后从该会话唤醒。
+     */
+    public Result(
+        boolean success,
+        String output,
+        int turns,
+        int toolCallCount,
+        String name,
+        String conversationId) {
       this.success = success;
       this.output = output == null ? "" : output;
       this.turns = turns;
       this.toolCallCount = toolCallCount;
+      this.name = name == null ? "" : name;
+      this.conversationId = conversationId == null ? "" : conversationId;
     }
 
     public boolean isSuccess() {
@@ -198,6 +253,16 @@ public interface SubAgentRunner {
 
     public int getToolCallCount() {
       return toolCallCount;
+    }
+
+    /** 子 agent 的名字；空串表示无名字（实现方未支持跨会话寻址）。 */
+    public String getName() {
+      return name;
+    }
+
+    /** 子 agent 自己的会话 id；空串表示没有落盘会话。 */
+    public String getConversationId() {
+      return conversationId;
     }
   }
 

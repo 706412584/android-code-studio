@@ -82,7 +82,10 @@ public final class ConversationCodec {
             timestamp,
             json.optString(SessionMetaEntry.FIELD_CWD, ""),
             json.optString(SessionMetaEntry.FIELD_MODEL, ""),
-            json.optString(SessionMetaEntry.FIELD_PERMISSION_MODE, ""));
+            json.optString(SessionMetaEntry.FIELD_PERMISSION_MODE, ""),
+            // 旧文件没有这两个字段，optString 返回空串 → 判为普通根会话。
+            json.optString(SessionMetaEntry.FIELD_PARENT_ID, ""),
+            json.optString(SessionMetaEntry.FIELD_SUBAGENT_TYPE, ""));
       case USER:
         return new UserMessageEntry(
             uuid,

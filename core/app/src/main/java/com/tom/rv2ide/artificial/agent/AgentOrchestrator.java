@@ -274,6 +274,319 @@ public final class AgentOrchestrator {
         && activeCancellations.containsKey(conversationId);
   }
 
+  // ── 跨会话消息（send_message 工具）─────────────────────────────────────
+
+  /** 目标名前缀：{@code agent:<名字>} 指向子 agent 而非会话。 */
+  static final String SEND_MESSAGE_AGENT_PREFIX = "agent:";
+
+  /**
+   * 运行中的子代理注册表。
+   *
+   * <p>进程内共享：注册发生在 {@link SubAgentRunnerImpl}（跑子代理的那一层），
+   * 查询发生在下文的 send_message 路由里——两者不在同一调用栈，只能靠共享对象传递。
+   * 进程重启后子代理也没了，与它的生命周期一致，无需持久化。
+   */
+  private final SubAgentRegistry subAgentRegistry = new SubAgentRegistry();
+
+  /**
+   * 空闲会话的**入站信箱**：消息先落这里，等该会话下次运行的开场注入。
+   *
+   * <p><b>为什么不直接落盘成用户消息</b>：那样需要排队一次运行，而排队入口
+   * （{@code enqueue}）是给「UI 发起的请求」用的——它需要 provider/model 等运行时参数，
+   * 且运行时 {@code PersistingListener} 会再追加一条**空的**用户消息（签名为
+   * {@code userRequest=""}），历史里就多出一条幽灵消息。
+   *
+   * <p>信箱只活在内存里是**刻意的**：跨会话消息的语义是「另一个 agent 现在说的话」，
+   * 进程重启后它已不新鲜，重新投递反而会让模型以为事情刚发生。真正的持久化对象是
+   * 收件方自己产生的回复。
+   */
+  private final java.util.Map<String, java.util.ArrayDeque<String>> inboundMailbox =
+      new java.util.concurrent.ConcurrentHashMap<>();
+
+  /**
+   * 跨会话/跨子代理发消息端口的实现（{@code send_message} 工具走它）。
+   *
+   * <p><b>三段路由</b>，对应 cc-haha 的 SendMessage 语义：
+   * <ol>
+   *   <li>目标正在跑 → {@link #injectIntoRun}：投进它的注入槽，在「上一轮工具执行完、
+   *       下一轮请求前」被取走。失败（恰在收尾）则退回信箱。
+   *   <li>目标空闲且会话存在 → 进 {@link #inboundMailbox}，下次该会话运行的开场注入。
+   *   <li>目标不存在 → NOT_FOUND，绝不创建孤儿信箱。
+   * </ol>
+   */
+  private final class SessionMessagePortImpl
+      implements com.tom.rv2ide.ai.tool.SessionMessagePort {
+
+    @Override
+    public List<com.tom.rv2ide.ai.tool.SessionMessagePort.Target> targets(
+        String selfConversationId) {
+      List<com.tom.rv2ide.ai.tool.SessionMessagePort.Target> out = new ArrayList<>();
+      for (ConversationSummary summary : listConversationsQuietly()) {
+        String id = summary.getId();
+        if (id == null || id.isEmpty() || id.equals(selfConversationId)) {
+          continue;
+        }
+        // 子代理会话不作为可投递的「会话」目标：它们是某个父会话的内部执行单元，
+        // 直接往里面发消息会绕过归属校验、且与 agent:<name> 语义重复。
+        // 它们经 subAgentTargets()（按名字）暴露。
+        if (summary.isSubAgent()) {
+          continue;
+        }
+        out.add(
+            new com.tom.rv2ide.ai.tool.SessionMessagePort.Target(
+                id, "session", summary.getTitle(), isRunning(id)));
+      }
+      out.addAll(subAgentTargets(selfConversationId));
+      return out;
+    }
+
+    @Override
+    public com.tom.rv2ide.ai.tool.SessionMessagePort.DeliveryResult send(
+        String targetId, String message, String fromConversationId) {
+      if (targetId == null || targetId.isEmpty()) {
+        return notFound("", "target 为空");
+      }
+      if (targetId.startsWith(SEND_MESSAGE_AGENT_PREFIX)) {
+        return sendToSubAgent(
+            targetId.substring(SEND_MESSAGE_AGENT_PREFIX.length()),
+            message,
+            fromConversationId);
+      }
+      if (!conversationStore.exists(targetId)) {
+        return notFound(targetId, "");
+      }
+      return deliverToSession(targetId, message, fromConversationId);
+    }
+  }
+
+  /**
+   * 投递到另一个会话。
+   *
+   * <p>先试注入：目标在跑时这是唯一能让它在**本轮**就看到消息的路径。注入失败
+   * （没在跑，或恰在收尾那一瞬）才落信箱——顺序不能反，反了就会让一个正在跑的
+   * 会话白等到下次运行。
+   */
+  private com.tom.rv2ide.ai.tool.SessionMessagePort.DeliveryResult deliverToSession(
+      String targetId, String message, String fromConversationId) {
+    if (injectIntoRun(targetId, message)) {
+      return com.tom.rv2ide.ai.tool.SessionMessagePort.DeliveryResult.of(
+          com.tom.rv2ide.ai.tool.SessionMessagePort.Delivery.INJECTED, targetId, "");
+    }
+    inboundMailbox
+        .computeIfAbsent(targetId, k -> new java.util.ArrayDeque<>())
+        .addLast(renderIncomingMessage(message, fromConversationId));
+    return com.tom.rv2ide.ai.tool.SessionMessagePort.DeliveryResult.of(
+        com.tom.rv2ide.ai.tool.SessionMessagePort.Delivery.QUEUED, targetId, "");
+  }
+
+  /** 取出并清空某会话的信箱（运行开场注入用；无消息时返回空列表）。 */
+  private List<String> drainInboundMailbox(String conversationId) {
+    java.util.ArrayDeque<String> box = inboundMailbox.remove(conversationId);
+    if (box == null) {
+      return new ArrayList<>();
+    }
+    List<String> out = new ArrayList<>(box);
+    box.clear();
+    return out;
+  }
+
+  /**
+   * 跨会话到达的消息在落盘/投递时的**正文**。
+   *
+   * <p>加来源前缀的理由：模型侧本来就会经 {@code wrapInjectedUserMessage} 得到包装，
+   * 但那条包装说的是「用户在你工作期间发来消息」——跨会话场景下这话是**错的**，
+   * 发消息的是另一个 agent，不是当前会话的用户。加一句来源让它能区分：
+   * 要不要据此行动、要不要回复谁。
+   *
+   * <p>同进程内无 from（不会发生，防御）时不加前缀。
+   */
+  private String renderIncomingMessage(String message, String fromConversationId) {
+    if (fromConversationId == null || fromConversationId.isEmpty()) {
+      return message;
+    }
+    String fromTitle = fromConversationId;
+    for (ConversationSummary summary : listConversationsQuietly()) {
+      if (fromConversationId.equals(summary.getId())) {
+        fromTitle = summary.getTitle();
+        break;
+      }
+    }
+    return "[来自另一个会话「" + fromTitle + "」的消息]\n" + message;
+  }
+
+  private com.tom.rv2ide.ai.tool.SessionMessagePort.DeliveryResult notFound(
+      String target, String detail) {
+    return com.tom.rv2ide.ai.tool.SessionMessagePort.DeliveryResult.of(
+        com.tom.rv2ide.ai.tool.SessionMessagePort.Delivery.NOT_FOUND, target, detail);
+  }
+
+  /**
+   * 子 agent 目标的投递：在跑就注入它的循环，已停止就从它的会话续跑。
+   *
+   * <p><b>两段路由</b>（照 cc-haha SendMessage 的 in-process 分支）：
+   * <ol>
+   *   <li>{@link SubAgentRegistry.Entry#canInject()} → 投进它的注入槽，在它下个安全点
+   *       被取走。这是最省事也最快的路径：子代理不用重启，立刻就能看到新约束。
+   *   <li>已停止 → {@link #resumeSubAgent} 从它的会话续跑。
+   *   <li>注册表里没有 → NOT_FOUND。
+   * </ol>
+   */
+  private com.tom.rv2ide.ai.tool.SessionMessagePort.DeliveryResult sendToSubAgent(
+      String name, String message, String fromConversationId) {
+    String target = SEND_MESSAGE_AGENT_PREFIX + name;
+    SubAgentRegistry.Entry entry = subAgentRegistry.find(fromConversationId, name);
+    if (entry == null) {
+      return notFound(
+          target,
+          "没有叫 " + name + " 的子代理。可以用不带 target 的调用列出当前可投递的对象。");
+    }
+
+    // 归属校验：只允许发给自己派出去的子代理。
+    //
+    // 名字是会话作用域的——每个父会话各自有一个「reviewer」。若不校验，A 会话发出的
+    // agent:reviewer 会命中的是**任意一个**同名子代理（含 B 会话的），甚至把它从
+    // B 的历史里唤醒。那等于 A 会话能向 B 的上下文注入指令，是实打实的串扰。
+    if (!conversationBelongsTo(entry.getParentId(), fromConversationId)) {
+      return notFound(
+          target,
+          "子代理「" + name + "」属于另一个会话；只能给自己派出的子代理发消息。");
+    }
+
+    // 在跑：注入它的循环。
+    if (entry.canInject() && entry.getSession().offerInject(message)) {
+      return com.tom.rv2ide.ai.tool.SessionMessagePort.DeliveryResult.of(
+          com.tom.rv2ide.ai.tool.SessionMessagePort.Delivery.INJECTED,
+          target,
+          "它是运行中的子代理，消息在它的下一个安全点被取走。");
+    }
+
+    // 已停止（或注入被拒）：从它的会话续跑。
+    if (entry.getConversationId().isEmpty()) {
+      return notFound(
+          target, "子代理「" + name + "」已停止，且它当时没有留下可续跑的会话。");
+    }
+    return resumeSubAgent(name, entry, message);
+  }
+
+  /**
+   * 判断一个子代理是否属于发消息的会话。
+   *
+   * @param ownerParentId 子代理的父会话 id
+   * @param fromConversationId 发消息方的会话 id；为空（无会话上下文，如测试）时放行
+   */
+  private static boolean conversationBelongsTo(String ownerParentId, String fromConversationId) {
+    if (fromConversationId == null || fromConversationId.isEmpty()) {
+      return true;
+    }
+    return fromConversationId.equals(ownerParentId);
+  }
+
+  /**
+   * 从一个已停止的子代理的会话续跑。
+   *
+   * <p><b>只在后台跑，不阻塞调用方</b>：续跑可能要几分钟。发消息的 agent 此刻往往
+   * 正忙着自己那轮循环，让它同步等另一条循环结束会白白占住它的工具调用。
+   * 这与 cc-haha 的 {@code resumeAgentBackground} 一致——它同样把续跑丢到后台，
+   * 完成时通知。
+   *
+   * <p><b>为什么必须复用同一个会话 id</b>：续跑的语义是「接着上次说」，历史要连上。
+   * 建新会话的话模型看不到之前的调查过程，等于从零开始——那就不是唤醒而是重开。
+   */
+  private com.tom.rv2ide.ai.tool.SessionMessagePort.DeliveryResult resumeSubAgent(
+      String name, SubAgentRegistry.Entry entry, String message) {
+    String subConversationId = entry.getConversationId();
+
+    // 续跑用的服务商/模型：取**当前设置**里的值。
+    //
+    // <p>必须显式解析，不能传 null 让下游兜底：{@code runInConversation} 会把 null
+    // 交给 {@code AgentModelConfigs.endpointFor(null, null)}，后者返回 null，于是这次
+    // 续跑以「服务商 null 未配置 API 密钥」**静默失败**——run() 返回 failed 结果而不是
+    // 抛异常，后台线程里没人看它，子会话文件一个字节都不会变。实测就是这个现象：
+    // 工具回了「已在后台继续」，而子代理从未启动。
+    //
+    // 用 UI 发起运行时的同一套来源（Agents 的偏好），保证「用户能发消息的服务商」
+    // 就是「续跑能用的服务商」。
+    final String providerId = new com.tom.rv2ide.artificial.agents.Agents(appContext).getProvider();
+    final String modelId = new com.tom.rv2ide.artificial.agents.Agents(appContext).getAgent();
+
+    // 不在调用线程读取/折叠历史：run() 内部走的就是同一条 read → fold 路径
+    // （见 executeRun 的 loadEntries）。这里先读一遍纯属白算——而且它是 O(会话大小)
+    // 的磁盘读，会拖慢 send_message 这个本该立刻返回的工具调用。
+    Thread worker =
+        new Thread(
+            () -> {
+              boolean success = false;
+              try {
+                // 复用「在指定会话里运行」的公开入口：它已处理好网络/解析/落盘/取消登记。
+                AgentRunResult result =
+                    run(
+                        subConversationId,
+                        providerId,
+                        modelId,
+                        message,
+                        null,
+                        null,
+                        null,
+                        null);
+                // 前置校验失败（未配服务商/未设工作区）与循环失败都走这里：
+                // runInConversation 对它们返回 failed=true 的结果，而不是抛异常。
+                success = result != null && !result.isFailed();
+                if (!success) {
+                  recordResumeFailure(subConversationId, result == null ? "返回空结果" : result.getOutput());
+                }
+              } catch (RuntimeException e) {
+                // 后台线程的异常不能冒出去（没人接）。但**必须留痕**：
+                // 最初这里是个空 catch，结果是「子代理没跑起来」这件事只有 429 日志里
+                // 才看得到，而工具已回「已在后台继续」——用户与调用方都被误导了。
+                recordResumeFailure(
+                    subConversationId, e.getMessage() == null ? e.toString() : e.getMessage());
+              }
+              // 通知结果。
+              //
+              // 子会话跑在**另一个**会话 id 上，它的完成事件不进父会话的事件流，
+              // 父 agent 因此无法自动感知——这就是这条通知存在的原因（与后台命令
+              // 完成时的回退分支同一处理，见 backgroundShellRunner）。
+              RunCompletionNotifier.notifyBackgroundTask(appContext, success, subConversationId);
+            },
+            "subagent-resume");
+    worker.setDaemon(true);
+    worker.start();
+
+    return com.tom.rv2ide.ai.tool.SessionMessagePort.DeliveryResult.of(
+        com.tom.rv2ide.ai.tool.SessionMessagePort.Delivery.RESUMED,
+        SEND_MESSAGE_AGENT_PREFIX + name,
+        "会话 "
+            + subConversationId
+            + " 已在后台继续。它是一条**独立运行**，结论不会自动回到本次对话——"
+            + "完成后会有系统通知，打开那个会话即可看到它的回复。");
+  }
+
+  /** 记录一次后台续跑失败（进 ErrorLog，供 logsender 与用户反馈时排查）。 */
+  private void recordResumeFailure(String subConversationId, String reason) {
+    com.tom.rv2ide.ai.tool.api.ErrorLog.record(
+        "agent", "子代理后台续跑失败（会话 " + subConversationId + "）：" + reason, null, null);
+  }
+
+  /**
+   * 子 agent 目标列表：**本会话**派出的子代理，附运行态。
+   *
+   * <p>按父会话过滤而不是列全部：名字是会话作用域的，列出别的会话的子代理既无用
+   * （发了会被归属校验拒掉），又会误导模型以为可以跨会话指挥别人的子代理。
+   */
+  private List<com.tom.rv2ide.ai.tool.SessionMessagePort.Target> subAgentTargets(
+      String selfConversationId) {
+    List<com.tom.rv2ide.ai.tool.SessionMessagePort.Target> out = new ArrayList<>();
+    for (SubAgentRegistry.Entry entry : subAgentRegistry.list(selfConversationId)) {
+      out.add(
+          new com.tom.rv2ide.ai.tool.SessionMessagePort.Target(
+              SEND_MESSAGE_AGENT_PREFIX + entry.getName(),
+              "agent",
+              entry.getSubagentType(),
+              entry.isRunning()));
+    }
+    return out;
+  }
+
   /**
    * 一次运行中**尚未落盘**的实时态快照。
    *
@@ -292,7 +605,7 @@ public final class AgentOrchestrator {
     if (conversationId == null || conversationId.isEmpty()) {
       return RunSnapshot.EMPTY;
     }
-    PersistingListener listener = activeListeners.get(conversationId);
+    ConversationPersistingListener listener = activeListeners.get(conversationId);
     if (listener == null) {
       return RunSnapshot.EMPTY;
     }
@@ -345,7 +658,7 @@ public final class AgentOrchestrator {
    * <p>只用于 {@link #currentRunSnapshot}：快照必须读**本次运行**的缓冲
    * （上一轮已清空，下一轮还没建）。运行结束时移除，因此空表 = 没有可查的运行。
    */
-  private final java.util.Map<String, PersistingListener> activeListeners =
+  private final java.util.Map<String, ConversationPersistingListener> activeListeners =
       new java.util.concurrent.ConcurrentHashMap<>();
 
   /** 一条排队的请求：完整记下发起一次运行所需的全部参数。 */
@@ -2213,10 +2526,15 @@ public final class AgentOrchestrator {
             cancellation,
             diffStore,
             // 子 agent 继承父会话 id：危险工具授权与父会话同桶，避免重复弹窗。
-            conversationId);
+            conversationId,
+            // 给子代理建独立会话：过程可回看、停止后可唤醒（见 SubAgentRegistry）。
+            conversationStore,
+            subAgentRegistry);
     registry.register(new com.tom.rv2ide.ai.tool.AgentTool(subAgentRunner));
     // 多子 agent 依赖编排（同层并行、上游输出注入下游）。
     registry.register(new com.tom.rv2ide.ai.tool.AgentPipelineTool(subAgentRunner));
+    // 跨会话/跨子 agent 发消息（照 cc-haha 的 SendMessage）。端口在 toolContext 上注入。
+    registry.register(new com.tom.rv2ide.ai.tool.SendMessageTool());
 
     // 内置子 agent：固定的角色提示词 + 受限工具集（审查/探索/定位/写测试/写文档）。
     // 模型可直接派遣它们，不必每次从零描述角色约束。
@@ -2329,6 +2647,9 @@ public final class AgentOrchestrator {
             // uiautomator2 代理端口：server 生命周期由 U2ServerManager 跨调用管理
             //（懒创建 + 复用——每次新建会丢失对已启动 server 的跟踪）。
             .u2Proxy(new com.tom.rv2ide.artificial.agent.tool.u2.ShizukuU2Proxy(u2ServerManager()))
+            // 跨会话消息端口：send_message 走它。实现是内部类，因为路由要用到
+            // 本编排器私有的 activeSessions / 队列 / 会话存储——它们都在这里。
+            .sessionMessage(new SessionMessagePortImpl())
             // 编译诊断端口：经 IDE 语言服务器做静态分析。
             // 服务器**按调用时现查**（而不是这里固化实例）：用户可能在会话中途才打开
             // 项目编辑器（语言服务器随之启动），固化会永久拿到 null。
@@ -2395,8 +2716,8 @@ public final class AgentOrchestrator {
           }
           broadcastExcept(broadcastConversationId, event, listener);
         };
-    PersistingListener persistingListener =
-        new PersistingListener(conversationId, userRequest, fanOut, attachments);
+    ConversationPersistingListener persistingListener =
+        new ConversationPersistingListener(conversationId, userRequest, fanOut, attachments, conversationStore, deliveryLock);
     // 登记本轮的实时态持有者，供视图重建时拉快照（见 currentRunSnapshot）。
     // 先登记后执行：登记晚于首个增量会让「刚重建的视图」查不到本轮正文。
     activeListeners.put(conversationId, persistingListener);
@@ -2462,6 +2783,12 @@ public final class AgentOrchestrator {
       // 登记运行中的 session，供「立即插入」投递（见 injectIntoRun）。
       // 先登记后 run：登记晚于首个请求会让「刚点插入」落进空窗、被当成没在跑。
       activeSessions.put(conversationId, session);
+      // 开场注入跨会话消息（send_message 在收件方空闲时攒下的）。
+      // 在 run 之前投进注入槽：循环首轮就会取（见 AgentSession 的「首轮时也会取」注释），
+      // 因此消息与本轮用户请求同一轮进入模型视野，而不是拖到下一轮。
+      for (String mail : drainInboundMailbox(conversationId)) {
+        session.offerInject(mail);
+      }
       try {
         return session.run(
             config,
@@ -2652,7 +2979,7 @@ public final class AgentOrchestrator {
    * <p>失败一律静默降级为不压缩：压缩是优化，不能因为它失败让用户发不出消息。
    */
   private void maybeCompact(
-      PersistingListener persistingListener,
+      ConversationPersistingListener persistingListener,
       List<ConversationLog.EntryLocation> entries,
       List<ModelMessage> history,
       ModelConfig config,
@@ -2776,247 +3103,12 @@ public final class AgentOrchestrator {
   }
 
   /**
-   * 把事件流同时写入会话日志。
+   * 事件落盘监听器：把事件流写进会话日志并向下游转发。
    *
-   * <p>用户消息在会话开始时就落盘（而非结束时），这样即使进程被杀，用户输入也不会丢。
-   * 助手消息与工具结果在各自完成时落盘。
+   * <p>实现已提取到 {@link ConversationPersistingListener}——子代理要用**同一套**逻辑
+   * 写进它自己的会话（见该类注释）。这里保留字段的原有类型与用法，避免改动订阅、
+   * 快照等既有的接线。
    */
-  private final class PersistingListener implements AgentEvent.Listener {
-
-    private final String conversationId;
-    private final AgentEvent.Listener downstream;
-
-    /**
-     * 本轮累积的推理文本。
-     *
-     * <p>模型以增量（{@code REASONING_DELTA}）给出思考过程，而 {@code AgentSession} 只转发
-     * 增量、不累积。因此要落盘完整思考，只能在这里累积——它是事件流的唯一汇聚点。
-     * 每轮 {@code TURN_FINISHED} 时写进 {@code AssistantMessageEntry.reasoningContent} 后清空。
-     */
-    private final StringBuilder reasoningBuffer = new StringBuilder();
-
-    /**
-     * 当前工具调用累积的步骤行（PROGRESS 事件）。
-     *
-     * <p>工具执行是严格串行的（TOOL_STARTED → 若干 PROGRESS → TOOL_FINISHED），
-     * 因此一个缓冲区就够：TOOL_FINISHED 时把它写进 {@code ToolResultEntry} 后清空。
-     * 不落盘的话重启后步骤区就空了——用户实测反馈过「步骤确实不见了」，
-     * 而子代理的中间过程不进主对话，这些行是回看时唯一的凭据。
-     */
-    /**
-     * 按**工具调用 id** 分桶的步骤行。
-     *
-     * <p><b>为什么必须分桶</b>：并行派遣多个子 agent 时，它们的 PROGRESS 行会交错
-     * 到达。用一个共享列表的话，所有子 agent 的步骤会混在一起，并在**第一个**
-     * TOOL_FINISHED 时被整批写进那张卡片——用户看到的是「第二个代理的进度显示在
-     * 第一个工具下面」，且另一张卡片永远停在旧轮次（实测反馈）。
-     *
-     * <p>无 id 的事件（旧路径/文本形态调用）落到 {@link #NO_CALL_ID} 桶，
-     * 行为与原来的单缓冲一致。
-     */
-    private final java.util.Map<String, java.util.List<String>> stepBuffers =
-        new java.util.HashMap<>();
-
-    /** 无调用 id 的事件（文本形态调用）使用的桶键。 */
-    private static final String NO_CALL_ID = "";
-
-    /**
-     * 正在执行中的工具调用（TOOL_STARTED 记入、TOOL_FINISHED 清空）。
-     *
-     * <p>为 [RunSnapshot.pendingToolCalls] 服务：视图切回「正在跑工具」的会话时，
-     * 靠它把那张未落盘的卡片重建出来，后续 TOOL_FINISHED / PROGRESS 才有正确落点。
-     * volatile：写方是事件线程（persist），读方是任意线程（snapshot）。
-     */
-    /**
-     * 正在执行中的工具调用，**按调用 id** 索引（并行时可能同时有多张）。
-     *
-     * <p>单槽位版本只会记住最后一个 TOOL_STARTED：视图重建时只能恢复一张卡，
-     * 其余子 agent 的后续 PROGRESS 找不到落点，全部挤到同一张卡上。
-     */
-    private final java.util.Map<String, com.tom.rv2ide.ai.tool.api.ToolCall> pendingToolCalls =
-        new java.util.LinkedHashMap<>();
-
-    /**
-     * 本轮已产生的**正文**（TEXT_DELTA 累积）。
-     *
-     * <p><b>为什么需要它</b>：正文只在 TURN_FINISHED 时落盘，而一次运行可能持续几分钟。
-     * 视图重建（切全屏、系统回收、旋转）后回放磁盘历史时，本轮尚未结束的正文没有任何
-     * 来源——用户看到的是「刚写了一半的回答消失了」。
-     *
-     * <p><b>为什么不落盘</b>：增量太碎（每个 token 一条），逐条写盘既慢又会把会话文件
-     * 撑爆。这里只作为**进程内**的实时态缓存，供新视图拉取（见
-     * {@link #currentRunSnapshot}）；运行结束（TURN_FINISHED 落盘）后即清空，
-     * 后续回放改从磁盘读。
-     */
-    private final StringBuilder textBuffer = new StringBuilder();
-
-    /**
-     * 本轮累积的**动作文案**（最近一条 PROGRESS）。
-     *
-     * <p>视图的状态条（「正在读取 xxx」）是视图本地态，重建后同样无来源。
-     * 只留最近一条：状态条表达的语义是「此刻在做什么」，历史步骤行由
-     * {@link #stepBuffer} 与工具卡片承载。
-     */
-    private volatile String lastAction = "";
-
-    PersistingListener(
-        String conversationId,
-        String userRequest,
-        AgentEvent.Listener downstream,
-        List<com.tom.rv2ide.ai.protocol.AttachmentMeta> attachments) {
-      this.conversationId = conversationId;
-      this.downstream = downstream;
-      // 附件元数据随用户消息一起落盘：不落的话，重新打开会话时气泡上的缩略图
-      // 就全没了（模型那边不受影响——图片走 rawInputJson，与这里无关）。
-      appendEntry(
-          UserMessageEntry.create(
-              null,
-              System.currentTimeMillis(),
-              userRequest,
-              attachments == null ? java.util.Collections.emptyList() : attachments));
-    }
-
-    @Override
-    public void onEvent(AgentEvent event) {
-      // 「落盘 + 转发」整体持锁，与「订阅 + 读历史」（见 subscribeWithHistory）互斥。
-      // 少了这把锁就会出现丢消息：订阅方读到的历史里没有这个事件（还没落盘）、
-      // 它又发生在订阅生效之前（收不到），于是那段内容在界面上凭空消失。
-      synchronized (deliveryLock) {
-        persist(event);
-        if (downstream != null) {
-          downstream.onEvent(event);
-        }
-      }
-    }
-
-    private void persist(AgentEvent event) {
-      if (event == null) {
-        return;
-      }
-      switch (event.getType()) {
-        case TOOL_STARTED:
-          // 记下在途调用，供视图重建时接回卡片（见 pendingToolCalls 注释）。
-          if (event.getToolCall() != null) {
-            pendingToolCalls.put(callKey(event.getToolCall()), event.getToolCall());
-          }
-          break;
-        case REASONING_DELTA:
-          // 累积本轮思考；不落盘（增量太碎），由 TURN_FINISHED 一并写入。
-          // 加锁理由同 TEXT_DELTA：快照会读它（推理流式期间切全屏同样会丢思考块）。
-          if (event.getMessage() != null) {
-            synchronized (this) {
-              reasoningBuffer.append(event.getMessage());
-            }
-          }
-          break;
-        case PROGRESS:
-          // 累积**该调用**的步骤行；由对应的 TOOL_FINISHED 一并写入（见 stepBuffers 注释）。
-          if (event.getMessage() != null && !event.getMessage().isEmpty()) {
-            String key = event.getProgressCallId() == null ? NO_CALL_ID : event.getProgressCallId();
-            stepBuffers.computeIfAbsent(key, k -> new java.util.ArrayList<>()).add(event.getMessage());
-            // 状态条文案：只留最近一条（见 lastAction 注释）。
-            lastAction = event.getMessage();
-          }
-          break;
-        case TEXT_DELTA:
-          // 正文累积：**不落盘**，只作进程内实时态（见 textBuffer 注释）。
-          // 视图重建时由 currentRunSnapshot 拉取，避免「写了一半的回答消失」。
-          // 加锁与 snapshot() 的读取互斥，否则快照可能读到 append 到一半的 StringBuilder。
-          if (event.getMessage() != null) {
-            synchronized (this) {
-              textBuffer.append(event.getMessage());
-            }
-          }
-          break;
-        case TURN_FINISHED:
-          appendEntry(
-              AssistantMessageEntry.create(
-                  null,
-                  System.currentTimeMillis(),
-                  event.getMessage(),
-                  reasoningBuffer.toString(),
-                  event.getToolCalls()));
-          // 本轮正文与推理已落盘，实时态缓冲不再需要——清空后重建视图改从磁盘回放。
-          // 不清的话快照会与磁盘历史**重复**渲染同一段内容（气泡出现两遍）。
-          synchronized (this) {
-            reasoningBuffer.setLength(0);
-            textBuffer.setLength(0);
-            lastAction = "";
-          }
-          break;
-        case TOOL_FINISHED:
-          if (event.getToolResult() != null) {
-            // 只取**这个调用**的步骤行：并行子 agent 的进度不能混进别人的卡片。
-            String key = callKey(event.getToolCall());
-            java.util.List<String> steps = stepBuffers.remove(key);
-            appendEntry(
-                ToolResultEntry.create(
-                    null,
-                    System.currentTimeMillis(),
-                    event.getToolResult(),
-                    steps == null ? new java.util.ArrayList<>() : new java.util.ArrayList<>(steps)));
-          }
-          // 并行执行时 TOOL_FINISHED 可能与另一调用的 TOOL_STARTED 交错——
-          // 按 id 精确移除，不会误清新调用。
-          if (event.getToolCall() != null) {
-            pendingToolCalls.remove(callKey(event.getToolCall()));
-          }
-          break;
-        case USER_MESSAGE:
-          // 运行中注入的用户消息（cc-haha queued_command 的落盘对应物）：
-          // 循环在检查点把它发成事件，这里落盘——不落盘的话它只活在内存里，
-          // 运行结束后的回放（切全屏/重启）就看不到这条消息，历史出现断层。
-          //
-          // 落盘**原文**（不含 "用户在你工作期间…" 包装）：包装只是给当轮请求的
-          // 瞬时增强，与 cc-haha 的 attachment 语义一致——fold 时模型看到干净消息。
-          if (event.getMessage() != null && !event.getMessage().isEmpty()) {
-            appendEntry(
-                UserMessageEntry.create(null, System.currentTimeMillis(), event.getMessage()));
-          }
-          break;
-        default:
-          break;
-      }
-    }
-
-    /** 工具调用的桶键；无 id 时返回 {@link #NO_CALL_ID}（与无 id 的 PROGRESS 同桶）。 */
-    private String callKey(com.tom.rv2ide.ai.tool.api.ToolCall call) {
-      if (call == null) {
-        return NO_CALL_ID;
-      }
-      String id = call.getId();
-      return id == null || id.isEmpty() ? NO_CALL_ID : id;
-    }
-
-    /** 见 {@link #currentRunSnapshot}。调用方可能来自任意线程，读取做最小同步。 */
-    RunSnapshot snapshot() {
-      String text;
-      String reasoning;
-      String action;
-      synchronized (this) {
-        text = textBuffer.toString();
-        reasoning = reasoningBuffer.toString();
-        action = lastAction;
-      }
-      // 在途调用按开始顺序全部带上：视图重建时逐张恢复，后续 PROGRESS 才能归位。
-      java.util.List<com.tom.rv2ide.ai.tool.api.ToolCall> pending;
-      synchronized (pendingToolCalls) {
-        pending = new java.util.ArrayList<>(pendingToolCalls.values());
-      }
-      return new RunSnapshot(text, reasoning, action, pending);
-    }
-
-    private void appendEntry(ConversationEntry entry) {
-      if (conversationId == null || conversationId.isEmpty()) {
-        return;
-      }
-      try {
-        conversationStore.append(conversationId, entry);
-      } catch (IOException | RuntimeException e) {
-        // 单条落盘失败不应中断对话；内存中的会话仍在继续。
-      }
-    }
-  }
 
   /**
    * 请求取消指定会话正在执行的循环。

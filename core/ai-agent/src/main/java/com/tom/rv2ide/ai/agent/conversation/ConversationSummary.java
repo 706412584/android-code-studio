@@ -35,15 +35,53 @@ public final class ConversationSummary {
   private final long createdAt;
   private final long modifiedAt;
   private final int messageCount;
+  private final String parentId;
+  private final String subagentType;
 
   public ConversationSummary(
       String id, String title, String cwd, long createdAt, long modifiedAt, int messageCount) {
+    this(id, title, cwd, createdAt, modifiedAt, messageCount, "", "");
+  }
+
+  /**
+   * 完整构造。
+   *
+   * @param parentId 父会话 id；空串表示普通根会话。子 agent 的会话据此挂到父会话下，
+   *     而不是在列表里平铺成无名条目。
+   * @param subagentType 子 agent 的名字/类型；空串表示非子 agent 会话
+   */
+  public ConversationSummary(
+      String id,
+      String title,
+      String cwd,
+      long createdAt,
+      long modifiedAt,
+      int messageCount,
+      String parentId,
+      String subagentType) {
     this.id = id;
     this.title = title == null || title.isEmpty() ? UNTITLED : title;
     this.cwd = cwd == null ? "" : cwd;
     this.createdAt = createdAt;
     this.modifiedAt = modifiedAt;
     this.messageCount = messageCount;
+    this.parentId = parentId == null ? "" : parentId;
+    this.subagentType = subagentType == null ? "" : subagentType;
+  }
+
+  /** 父会话 id；空串表示普通根会话。 */
+  public String getParentId() {
+    return parentId;
+  }
+
+  /** 子 agent 的名字/类型；空串表示非子 agent 会话。 */
+  public String getSubagentType() {
+    return subagentType;
+  }
+
+  /** 本会话是否属于一个子 agent。 */
+  public boolean isSubAgent() {
+    return !parentId.isEmpty();
   }
 
   public String getId() {

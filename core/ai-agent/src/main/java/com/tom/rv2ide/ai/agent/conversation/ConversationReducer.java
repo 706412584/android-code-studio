@@ -49,6 +49,8 @@ public final class ConversationReducer {
     String firstUserContent = "";
     String cwd = "";
     boolean cwdTaken = false;
+    String parentId = "";
+    String subagentType = "";
     long createdAt = 0L;
     long modifiedAt = 0L;
     int messageCount = 0;
@@ -72,7 +74,11 @@ public final class ConversationReducer {
         // 的 cwd 恰为空串时会被第二条非空 meta 顶掉，与「第一条生效」的语义不符；
         // 且那样写与适配器的 isBlank() 判据不对称，空白的 cwd 会在两边得到不同结论。
         if (!cwdTaken) {
-          cwd = ((SessionMetaEntry) entry).getCwd();
+          SessionMetaEntry meta = (SessionMetaEntry) entry;
+          cwd = meta.getCwd();
+          // 子代理归属与 cwd 同一批取：都只在首条 meta 上有意义。
+          parentId = meta.getParentId();
+          subagentType = meta.getSubagentType();
           cwdTaken = true;
         }
       } else if (entry instanceof TitleEntry) {
@@ -97,7 +103,7 @@ public final class ConversationReducer {
 
     String title = firstNonEmpty(customTitle, aiTitle, deriveFromUserMessage(firstUserContent));
     return new ConversationSummary(
-        conversationId, title, cwd, createdAt, modifiedAt, messageCount);
+        conversationId, title, cwd, createdAt, modifiedAt, messageCount, parentId, subagentType);
   }
 
   private static String firstNonEmpty(String... candidates) {

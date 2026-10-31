@@ -148,7 +148,16 @@ public final class BuiltinAgentTool extends BaseTool {
     try {
       SubAgentRunner.Result result =
           runner.run(
-              new SubAgentRunner.Request(task, mode, depth, agent.getPrompt(), filter, forward));
+              new SubAgentRunner.Request(
+                  task,
+                  mode,
+                  depth,
+                  agent.getPrompt(),
+                  filter,
+                  forward,
+                  // 用角色名当子代理的名字：父 agent 在它运行期间可以用
+                  // send_message 的 agent:<名字> 追加约束，或问一句进展。
+                  agent.getName()));
       if (result == null) {
         return error("内置 agent 没有返回结果。");
       }

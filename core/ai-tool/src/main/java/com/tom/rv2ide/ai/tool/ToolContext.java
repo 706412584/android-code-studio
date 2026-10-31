@@ -171,6 +171,9 @@ public final class ToolContext {
   /** uiautomator2 代理端口；未注入时为 null（phone_uiautomator 明确报「未接入」）。 */
   private final U2ProxyPort u2Proxy;
 
+  /** 跨会话/跨子代理发消息端口；未注入时为 null（send_message 明确报「未接入」）。 */
+  private final SessionMessagePort sessionMessage;
+
   private ToolContext(Builder builder) {
     this.homePath = builder.homePath == null ? "" : builder.homePath;
     this.openProjectPath = builder.openProjectPath == null ? "" : builder.openProjectPath;
@@ -201,6 +204,7 @@ public final class ToolContext {
     this.imageProcessing = builder.imageProcessing;
     this.ocr = builder.ocr;
     this.u2Proxy = builder.u2Proxy;
+    this.sessionMessage = builder.sessionMessage;
   }
 
   public String getHomePath() {
@@ -377,6 +381,11 @@ public final class ToolContext {
     return u2Proxy;
   }
 
+  /** 跨会话/跨子代理发消息端口；未注入时为 null（send_message 明确报「未接入」）。 */
+  public SessionMessagePort getSessionMessage() {
+    return sessionMessage;
+  }
+
   /**
    * 返回一个仅替换 {@code toolCallId} 的副本。
    *
@@ -411,6 +420,7 @@ public final class ToolContext {
         .imageProcessing(this.imageProcessing)
         .ocr(this.ocr)
         .u2Proxy(this.u2Proxy)
+        .sessionMessage(this.sessionMessage)
         .build();
   }
 
@@ -449,6 +459,7 @@ public final class ToolContext {
         .imageProcessing(this.imageProcessing)
         .ocr(this.ocr)
         .u2Proxy(this.u2Proxy)
+        .sessionMessage(this.sessionMessage)
         .build();
   }
 
@@ -510,6 +521,7 @@ public final class ToolContext {
     private ImageProcessingPort imageProcessing;
     private OcrPort ocr;
     private U2ProxyPort u2Proxy;
+    private SessionMessagePort sessionMessage;
 
     public Builder homePath(String value) {
       this.homePath = value;
@@ -655,6 +667,12 @@ public final class ToolContext {
     /** 注入 uiautomator2 代理端口（phone_uiautomator 使用）。 */
     public Builder u2Proxy(U2ProxyPort value) {
       this.u2Proxy = value;
+      return this;
+    }
+
+    /** 注入跨会话/跨子代理发消息端口（send_message 走它）。 */
+    public Builder sessionMessage(SessionMessagePort value) {
+      this.sessionMessage = value;
       return this;
     }
 
