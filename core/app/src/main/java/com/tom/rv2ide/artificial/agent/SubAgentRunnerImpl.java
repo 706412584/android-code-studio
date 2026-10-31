@@ -86,6 +86,21 @@ public final class SubAgentRunnerImpl implements SubAgentRunner {
    */
   private final String conversationId;
 
+  /**
+   * 会话存储：给每个子 agent 建一个自己的会话。
+   *
+   * <p>可空——为 null 时子代理退回「不落盘」的旧行为（只有步骤行回传父级）。
+   * 这在纯 JVM 测试或存储不可用的场合是必要的降级：子代理本身仍能跑完并给结论。
+   */
+  private final com.tom.rv2ide.ai.agent.conversation.ConversationStore conversationStore;
+
+  /** 运行中的子代理注册表，供 {@code send_message} 的 {@code agent:<name>} 寻址。可空。 */
+  private final SubAgentRegistry subAgentRegistry;
+
+  /** 自动生成名字用的序号（同一 runner 实例内单调递增）。 */
+  private final java.util.concurrent.atomic.AtomicInteger autoNameSeq =
+      new java.util.concurrent.atomic.AtomicInteger();
+
   public SubAgentRunnerImpl(
       AgentModelConfigs.ProviderEndpoint endpoint,
       String modelId,
@@ -143,6 +158,65 @@ public final class SubAgentRunnerImpl implements SubAgentRunner {
       ModelCancellationToken parentCancellation,
       com.tom.rv2ide.ai.tool.DiffStore diffStore,
       String conversationId) {
+    this(
+        endpoint,
+        modelId,
+        slot,
+        workspacePath,
+        settings,
+        parentCancellation,
+        diffStore,
+        conversationId,
+        null,
+        null);
+  }
+
+  /**
+   * 带存储与注册表的构造（槽位默认 {@code main}）。
+   *
+   * @param conversationStore 给子代理建独立会话用；null 表示不落盘（降级）
+   * @param registry 运行中的子代理注册表（供 send_message 寻址）；null 表示不登记
+   */
+  public SubAgentRunnerImpl(
+      AgentModelConfigs.ProviderEndpoint endpoint,
+      String modelId,
+      String workspacePath,
+      ToolSettingsPort settings,
+      ModelCancellationToken parentCancellation,
+      com.tom.rv2ide.ai.tool.DiffStore diffStore,
+      String conversationId,
+      com.tom.rv2ide.ai.agent.conversation.ConversationStore conversationStore,
+      SubAgentRegistry registry) {
+    this(
+        endpoint,
+        modelId,
+        ProviderConfig.SLOT_MAIN,
+        workspacePath,
+        settings,
+        parentCancellation,
+        diffStore,
+        conversationId,
+        conversationStore,
+        registry);
+  }
+
+  /**
+   * 完整构造。
+   *
+   * @param conversationStore 给子代理建独立会话用；null 表示不落盘（降级）
+   * @param registry 运行中的子代理注册表（供 send_message 寻址）；null 表示不登记
+   */
+  public SubAgentRunnerImpl(
+      AgentModelConfigs.ProviderEndpoint endpoint,
+      String modelId,
+      String slot,
+      String workspacePath,
+      ToolSettingsPort settings,
+      ModelCancellationToken parentCancellation,
+      com.tom.rv2ide.ai.tool.DiffStore diffStore,
+      String conversationId,
+      com.tom.rv2ide.ai.agent.conversation.ConversationStore conversationStore,
+      SubAgentRegistry registry) {
     this.endpoint = endpoint;
     this.modelId = modelId;
     this.slot = slot == null ? ProviderConfig.SLOT_MAIN : slot;
@@ -151,6 +225,8 @@ public final class SubAgentRunnerImpl implements SubAgentRunner {
     this.parentCancellation = parentCancellation;
     this.diffStore = diffStore;
     this.conversationId = conversationId == null ? "" : conversationId;
+    this.conversationStore = conversationStore;
+    this.subAgentRegistry = registry;
   }
 
   @Override
@@ -158,6 +234,19 @@ public final class SubAgentRunnerImpl implements SubAgentRunner {
     if (endpoint == null) {
       return new Result(false, "未配置服务商，无法运行子 agent。", 0, 0);
     }
+
+    // 名字：请求带了就用（父 agent 指定的角色名），否则自动生成。
+    // 名字是 send_message 的寻址键，必须在这个子代理开始跑之前就定下来——
+    // 否则父 agent 在它运行期间想追加一句约束时无从指定收件人。
+    String name =
+        request.getName() == null || request.getName().isEmpty()
+            ? "sub-" + autoNameSeq.incrementAndGet()
+            : request.getName();
+
+    // 子代理自己的会话：与主会话共用同一套存储与折叠，只是 meta 里带 parentId。
+    // 建失败（磁盘满/权限）时降级为无会话运行——子代理本身不该因此跑不起来，
+    // 代价只是它不可回看、不可被唤醒。
+    String subConversationId = createSubConversation(name, request);
 
     // 子 agent 用自己那一档槽位的上下文声明（当前与主 agent 同为 SLOT_MAIN）。
     ModelConfig config =
@@ -215,18 +304,110 @@ public final class SubAgentRunnerImpl implements SubAgentRunner {
             ? null
             : new SubAgentStepReporter(request.getProgress());
 
+    // 落盘监听器：子代理的会话此前是完全空的（中间过程刻意不进主对话，也没有自己的
+    // 落盘）。现在写进它**自己**的会话——主对话仍然干净（隔离性不变），
+    // 但子代理的过程可回看、可续跑。
+    //
+    // 与主会话不同，这里没有下游订阅者（子代理不向 UI 直播），因此 deliveryLock
+    // 用一把私有锁即可——它要防的不是「订阅与落盘竞态」，而是让同一会话的
+    // append 串行。
+    ConversationPersistingListener persisting =
+        subConversationId.isEmpty()
+            ? null
+            : new ConversationPersistingListener(
+                subConversationId,
+                request.getTask(),
+                childListener,
+                null,
+                conversationStore,
+                new Object());
+
     AgentSession session = new AgentSession(modelClient, registry, executor);
-    AgentRunResult result =
-        session.run(
-            config,
-            systemPrompt,
-            request.getTask(),
-            toolContext,
-            childCancellation,
-            childListener);
+    // 登记注册表：让父 agent（或用户）能在它运行期间用 send_message 追加消息。
+    // 必须**先登记再 run**：登记晚于首个请求会让「刚开始就发的消息」落进空窗。
+    if (subAgentRegistry != null) {
+      subAgentRegistry.register(
+          name, subConversationId, conversationId, name, session, childCancellation);
+    }
+
+    AgentRunResult result;
+    try {
+      result =
+          session.run(
+              config,
+              systemPrompt,
+              request.getTask(),
+              toolContext,
+              childCancellation,
+              // 落盘与步骤上报同时接收：子会话要落盘，父级要步骤行。
+              // 两者都必须被调用，故用复合监听器而不是二选一。
+              combine(childListener, persisting));
+    } finally {
+      // 无论成功/失败/取消，都要标记为已停止：send_message 据此走「唤醒」而不是
+      // 「注入」路径，否则会向一个已经没有循环在跑的 session 投递、消息石沉大海。
+      if (subAgentRegistry != null) {
+        subAgentRegistry.markStopped(conversationId, name);
+      }
+    }
 
     return new Result(
-        !result.isFailed(), result.getOutput(), result.getTurns(), result.getToolCallCount());
+        !result.isFailed(),
+        result.getOutput(),
+        result.getTurns(),
+        result.getToolCallCount(),
+        name,
+        subConversationId);
+  }
+
+  /** 把两个监听器合成一个；都为 null 时返回 null。 */
+  private static AgentEvent.Listener combine(
+      AgentEvent.Listener first, AgentEvent.Listener second) {
+    if (first == null) {
+      return second;
+    }
+    if (second == null) {
+      return first;
+    }
+    return event -> {
+      first.onEvent(event);
+      second.onEvent(event);
+    };
+  }
+
+  /**
+   * 为本次子代理建一个独立会话。
+   *
+   * <p>标题用任务描述的前若干字符——会话列表里能一眼看出这个子代理在做什么，
+   * 而不是一排「未命名会话」。
+   *
+   * @return 新会话 id；存储不可用或建失败时返回空串（降级为无会话运行）
+   */
+  private String createSubConversation(String name, Request request) {
+    if (conversationStore == null) {
+      return "";
+    }
+    try {
+      com.tom.rv2ide.ai.agent.conversation.ConversationSummary created =
+          conversationStore.createSubAgent(
+              abbreviate(request.getTask(), 60),
+              workspacePath == null ? "" : workspacePath,
+              modelId,
+              settings == null ? "" : settings.getPermissionMode(),
+              conversationId,
+              name);
+      return created == null ? "" : created.getId();
+    } catch (Exception e) {
+      return "";
+    }
+  }
+
+  /** 单行化并截断，供会话标题用。 */
+  private static String abbreviate(String value, int max) {
+    if (value == null || value.trim().isEmpty()) {
+      return "";
+    }
+    String flat = value.trim().replaceAll("\\s+", " ");
+    return flat.length() <= max ? flat : flat.substring(0, max) + "…";
   }
 
   /**

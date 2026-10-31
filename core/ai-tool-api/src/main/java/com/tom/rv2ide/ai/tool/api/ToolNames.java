@@ -75,6 +75,17 @@ public final class ToolNames {
     public static final String AGENT = "agent";
     public static final String AGENT_PIPELINE = "agent_pipeline";
     public static final String AGENT_OUTPUT = "agent_output";
+    /**
+     * 向另一个 agent 发消息（照 cc-haha 的 SendMessage 语义）。
+     *
+     * <p>两种收件人：会话 id（当前会话列表里的任意一条），或 {@code agent:<name>}
+     * ——后者指向一个子 agent：在跑就投进它正在跑的循环，已停止就从它的会话续跑。
+     *
+     * <p><b>为什么不打断</b>：收件方没有「忙」这个状态。消息进队列，在「上一轮工具
+     * 执行完、下一轮请求发出前」这个安全点被取走（见 {@code AgentSession.offerInject}
+     * 的注释：那是唯一不会破坏 tool_use/tool_result 配对的注入位置）。
+     */
+    public static final String SEND_MESSAGE = "send_message";
     public static final String TODO_UPDATE = "todo_update";
     public static final String MEMORY_UPDATE = "memory_update";
     /**

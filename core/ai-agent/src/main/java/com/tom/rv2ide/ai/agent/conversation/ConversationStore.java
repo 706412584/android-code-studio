@@ -38,6 +38,24 @@ public interface ConversationStore {
   ConversationSummary create(String title, String cwd, String model, String permissionMode)
       throws IOException;
 
+  /**
+   * 新建一个**子 agent 会话**（带父会话归属）。
+   *
+   * <p>子代理会话与普通会话共用同一套存储与折叠，只是 meta 里多带
+   * {@code parentId} / {@code subagentType} 两个字段。默认实现回落到普通
+   * {@link #create}——那是「不记录归属」的可用降级，而不是错误：会话本身仍完整可用，
+   * 只是列表里会平铺而不是挂在父会话下。
+   *
+   * @param parentId 父会话 id
+   * @param subagentType 子 agent 的名字/类型
+   */
+  default ConversationSummary createSubAgent(
+      String title, String cwd, String model, String permissionMode,
+      String parentId, String subagentType)
+      throws IOException {
+    return create(title, cwd, model, permissionMode);
+  }
+
   /** 读取一个会话的全部条目。 */
   List<ConversationLog.EntryLocation> read(String conversationId) throws IOException;
 

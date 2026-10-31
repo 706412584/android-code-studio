@@ -3717,7 +3717,10 @@ class FloatingAssistantView(
                 presetOverride = AppThemePreset.DEFAULT,
             ) {
         com.tom.rv2ide.artificial.agent.compose.components.independent.ChatDrawerContent(
-            sessions = drawerSessions.value,
+            // 子代理会话不在顶层平铺：它们经 subSessionsByParent 折到父会话下
+            // （抽屉按 parentId 分组渲染，见 groupSubSessions）。顶层只留根会话。
+            sessions = drawerSessions.value.filter { it.parentId == null },
+            subSessionsByParent = groupSubSessions(drawerSessions.value),
             currentWorkspacePath = drawerCurrentCwd.value,
             currentSessionId = drawerActiveId.value,
             agentStates = drawerAgentStates.value,
@@ -3771,8 +3774,27 @@ class FloatingAssistantView(
             createdAt = s.getCreatedAt(),
             updatedAt = s.getModifiedAt(),
             workspacePath = s.getCwd(),
+            // 子代理会话的归属：抽屉据此把它折到父会话下，而不是平铺成无名条目。
+            parentId = s.getParentId().takeIf { it.isNotEmpty() },
+            subagentType = s.getSubagentType().takeIf { it.isNotEmpty() },
         )
       }
+
+  /**
+   * 把子代理会话按父会话分组，喂给抽屉的 `subSessionsByParent`。
+   *
+   * <p>在**投影之后**做而不是让抽屉自己分：抽屉拿到的是 `ChatSession` 列表，无法区分
+   * 「父会话不在列表里（父被删了）」与「父就在这批里」——前者该让子会话降级为顶层条目，
+   * 后者才该折进去。这个判断只有持有全量列表的这一层能做。
+   */
+  private fun groupSubSessions(
+      sessions: List<com.tom.rv2ide.artificial.agent.compose.components.independent.ChatSession>
+  ): Map<String, List<com.tom.rv2ide.artificial.agent.compose.components.independent.ChatSession>> {
+    val rootIds = sessions.filter { it.parentId == null }.mapTo(HashSet()) { it.id }
+    return sessions
+        .filter { it.parentId != null && it.parentId in rootIds }
+        .groupBy { it.parentId!! }
+  }
 
   private fun toggleConversationPanel() {
     // 每次切换都递增。关闭动画的收尾回调会比对它，只有仍是最新一轮才真正隐藏——
