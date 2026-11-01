@@ -409,3 +409,78 @@ view.release()  // 销毁时释放观察者
 
 第 3 步（Port 桩化）不再有「搬不动」的障碍：渲染层已经不认 ACS 类型，
 桩化只需要在内核契约上提供空实现。
+
+---
+
+## 九、第 3 步实测结果（已完成 ✅）
+
+### 9.1 三个新模块
+
+| 模块 | 职责 | 依赖 |
+|---|---|---|
+| `assistant/engine` | 模型配置、服务商记录、工具装配、会话运行 | 只有 `core/ai-*` |
+| `assistant/ui`（扩展） | 新增事件归约器、设置/管理页 | 同上 + Compose |
+| `assistant/app` | 对话页、设置宿主 | engine + ui |
+
+engine 的关键类：
+- `ModelSettings` — 单一当前配置 + 就绪判定
+- `ProviderRecords` — 服务商记录表（与 ACS 的 `ProviderConfigStore` 同一模型）
+- `ModelCatalog` — 从 `/models` 拉取真实模型清单
+- `MediaSettings` — 图片/视频生成只存「服务商 id + 模型名」
+- `ToolSetFactory` — 只注册不依赖 ACS 基础设施的工具
+- `ConversationRunner` — 包住 `AgentSession` 的 10 参数重载
+- `ConversationPersistingListener` — 从 ACS 迁入（只依赖 core:ai-*）
+- `McpSettings` — MCP 服务端配置与工具接入
+
+### 9.2 真机验证结论
+
+完整对话链路在**黑鲨 SKW-A0（Android 10）**上跑通：
+
+| 项 | 结果 |
+|---|---|
+| 流式回复 | ✅ 用户气泡 → 思考块 → 模型回复 |
+| 工具调用 | ✅ `file_write` 卡片 + 摘要 |
+| 落盘验证 | ✅ `run-as ... cat workspace/test.txt` → `ok` |
+| 会话持久化 | ✅ 4 行（meta/title/user/assistant） |
+| 切会话回放 | ✅ 完整还原 |
+| 拉取模型 | ✅ 拉到 4 个模型 → 下拉 → 选择生效 |
+| 四处弹窗 | ✅ 服务商表单/预设选择/MCP 表单/用途选择器 |
+
+### 9.3 关键设计决策
+
+**服务商 = 记录表，预设只是填充模板**。我第一版把「预设 vs 自定义」做成两套并列，
+是错的。ACS 的做法是：预设表退化为「快速填充模板」，真正的配置是用户的服务商记录
+（id/名称/协议/baseUrl/apiKey/4 槽位）。这样每个服务商各有一份密钥、
+图片/视频生成不必重填地址密钥。
+
+**模型名必须从服务商拉取后下拉选择**。模型名要一字不差才不 404，
+而用户没法凭记忆写对。`ModelDropdownField` 是「手填 + 下拉」二合一：
+拉取前是普通输入框（有些服务商不实现 `/models`），拉取后出现下拉。
+
+**表单是弹窗，不是页面**。服务商编辑、预设选择、MCP 编辑、用途选择都是一次性操作，
+平铺成独立页会让「返回」的语义混乱（用户以为在设置里前进了一层）。
+
+### 9.4 踩坑记录
+
+1. **Compose 状态的作用域决定重组范围**。`recomposeKey` 原先只在 `route == "home"`
+   分支里被读取，子页改动后 `recomposeKey++` 完全无效（表现：「从预设新建后列表不刷新」）。
+   必须提到路由判断**之前**。
+2. **`SettingsRow` 的 onClick 套在 `SettingsGroup` 里时点击不响应**。管理页的列表行
+   改为手写 `Row + clickable`。
+3. **`LazyColumn` 放在 `Column`（scaffold 内容槽）里时高度约束异常**，点击不响应。
+   改为 `Column + verticalScroll`（列表项少，不需要虚拟化）。
+4. **`assistant/ui` 不能依赖 `assistant/engine`**。需要引擎能力时（拉取模型、读写记录）
+   由宿主通过回调注入，渲染层只认自己的数据类。
+5. **adb `input text` 无法输入含空格/`:`/`/` 的文本**，会把后续内容错位到下一个输入框。
+   验证复杂输入时改为直接写 SharedPreferences 文件。
+
+### 9.5 尚未完成
+
+- **第 3 步剩余：ACS 专属 Port 桩化**。九类 Port（Diagnostics / BuildVariant /
+  LspNavigation / CodeActions / CodeFormat / EditorState / WorkspaceSymbol /
+  IdeLog / 构建类工具）目前**都没注入**，工具集里也就没有它们——比桩化更彻底，
+  但若将来要恢复这些工具，需要实现桩。
+- **Termux 接入**（决策 A2）：当前 `ProcessShellBackend` 用 `Runtime.exec` 兜底，
+  没有 git/node/python 工具链，也没有 PTY。
+- **MCP 实际接入验证**：配置界面已完成，但没接真实 server 验证工具是否出现。
+- 会话重命名/置顶、文件 Tab、批量操作。
