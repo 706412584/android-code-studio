@@ -95,6 +95,12 @@ class AssistantSettingsState(
     var onToolStatusBarChange: (Boolean) -> Unit,
     var onCardScaleChange: (Float) -> Unit,
     var onTextColorChange: (Int) -> Unit,
+    /** 打开提示词模板管理。 */
+    var onOpenPromptTemplates: () -> Unit,
+    /** 打开长期记忆管理。 */
+    var onOpenMemories: () -> Unit,
+    /** 打开 Skill 管理。 */
+    var onOpenSkills: () -> Unit,
     var onMemoryEnabledChange: (Boolean) -> Unit,
     var onBack: () -> Unit,
 )
@@ -274,6 +280,46 @@ fun AssistantSettingsScreen(
               icon = FeatherIcons.Cpu,
               title = "技能",
               subtitle = if (state.skillCount > 0) "已安装 ${state.skillCount} 个" else "尚未安装",
+              onClick = state.onOpenSkills,
+              trailing = {
+                Text(
+                    text = "管理",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+              },
+          )
+        }
+
+        // ---- 高级 ----
+        SettingsGroupHeader(text = "高级")
+        SettingsGroup {
+          SettingsRow(
+              icon = FeatherIcons.Sliders,
+              title = "提示词模板",
+              subtitle = "自定义系统提示词的各个段落",
+              onClick = state.onOpenPromptTemplates,
+              trailing = {
+                Text(
+                    text = "编辑",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+              },
+          )
+          SettingsDivider()
+          SettingsRow(
+              icon = FeatherIcons.Zap,
+              title = "长期记忆",
+              subtitle = if (state.memoryCount > 0) "${state.memoryCount} 条" else "暂无",
+              onClick = state.onOpenMemories,
+              trailing = {
+                Text(
+                    text = "查看",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+              },
           )
         }
 

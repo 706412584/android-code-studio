@@ -83,13 +83,16 @@ class SettingsActivity : ComponentActivity() {
     val view =
         ComposeView(this).apply {
           setContent {
-            var showModelSettings by remember { mutableStateOf(false) }
+            // 页面路由：主页 / 模型与凭据 / 提示词模板 / 记忆 / Skill。
+            // 用字符串而不是多个布尔：多个布尔会出现「两个都为 true」的非法状态。
+            var route by remember { mutableStateOf("home") }
             // 偏好不是 Compose 状态，改完要让首页重新求值——用这个计数当触发器。
             var recomposeKey by remember { mutableStateOf(0) }
 
-            BackHandler(enabled = showModelSettings) { showModelSettings = false }
+            // 子页按返回键回首页，而不是退出 Activity。
+            BackHandler(enabled = route != "home") { route = "home" }
 
-            if (!showModelSettings) {
+            if (route == "home") {
               // 每次重组都从持久化读一次：设置项改动后立刻反映在界面上，
               // 不需要额外维护一份内存状态（偏好读写很轻）。
               val state =
@@ -110,7 +113,7 @@ class SettingsActivity : ComponentActivity() {
                       memoryEnabled = memoryPrefs.enabled(),
                       skillCount = countSkills(),
                       memoryCount = countMemory(),
-                      onOpenModelSettings = { showModelSettings = true },
+                      onOpenModelSettings = { route = "model" },
                       onThemePresetChange = { id ->
                         AssistantThemePrefs.setPresetId(this@SettingsActivity, id)
                         // 触发重组：偏好本身不是 Compose 状态，改完要让页面重画。
@@ -148,11 +151,89 @@ class SettingsActivity : ComponentActivity() {
                         memoryPrefs.setEnabled(enabled)
                         recomposeKey++
                       },
+                      onOpenPromptTemplates = { route = "prompts" },
+                      onOpenMemories = { route = "memories" },
+                      onOpenSkills = { route = "skills" },
                       onBack = { finish() },
                   )
               // 读一次 recomposeKey：它的变化会让这段重组，从而重新读取上面的偏好。
               @Suppress("UNUSED_EXPRESSION") recomposeKey
               AssistantSettingsScreen(state = state)
+            } else if (route == "prompts") {
+              // 提示词模板：8 个内核模板，可编辑/重置。
+              val store = com.tom.rv2ide.ai.agent.prompt.PromptTemplateStore.defaults()
+              // 用户自定义存在偏好里；resolve 会自动回退到默认。
+              val custom =
+                  object : com.tom.rv2ide.ai.agent.prompt.PromptTemplateStore {
+                    override fun read(templateId: String): String =
+                        AssistantPrefs.promptTemplate(this@SettingsActivity, templateId)
+
+                    override fun write(templateId: String, content: String) =
+                        AssistantPrefs.setPromptTemplate(this@SettingsActivity, templateId, content)
+
+                    override fun reset(templateId: String) =
+                        AssistantPrefs.setPromptTemplate(this@SettingsActivity, templateId, "")
+
+                    override fun readAll(): Map<String, String> =
+                        TEMPLATE_IDS.associateWith {
+                          AssistantPrefs.promptTemplate(this@SettingsActivity, it)
+                        }
+                  }
+              val items =
+                  TEMPLATE_LABELS.map { (id, label) ->
+                    com.assistant.ui.PromptTemplateItem(
+                        id = id,
+                        label = label,
+                        content = custom.resolve(id),
+                        customized = AssistantPrefs.isPromptTemplateCustomized(this@SettingsActivity, id),
+                    )
+                  }
+              com.assistant.ui.AssistantPromptTemplatesScreen(
+                  templates = items,
+                  onEdit = { id, text ->
+                    custom.write(id, text)
+                    route = "home"
+                  },
+                  onReset = { id -> custom.reset(id) },
+                  onBack = { route = "home" },
+              )
+            } else if (route == "memories") {
+              val store = memoryStore()
+              val items =
+                  store.all().map { entry ->
+                    com.assistant.ui.MemoryItem(
+                        id = entry.id,
+                        text = entry.text,
+                        createdAt = entry.createdAt,
+                    )
+                  }
+              com.assistant.ui.AssistantMemoriesScreen(
+                  memories = items,
+                  onDelete = { id ->
+                    store.remove(id)
+                    route = "home"
+                  },
+                  onClearAll = {
+                    store.clear()
+                    route = "home"
+                  },
+                  onBack = { route = "home" },
+              )
+            } else if (route == "skills") {
+              val registry = com.tom.rv2ide.ai.tool.skill.SkillRegistry.load(File(filesDir, "skills"))
+              val items =
+                  registry.all().map { skill ->
+                    com.assistant.ui.SkillItem(
+                        name = skill.name,
+                        description = skill.description,
+                        usable = skill.isUsable,
+                    )
+                  }
+              com.assistant.ui.AssistantSkillsScreen(
+                  skills = items,
+                  skillRoot = File(filesDir, "skills").absolutePath,
+                  onBack = { route = "home" },
+              )
             } else {
               var providerId by remember { mutableStateOf(settings.providerId()) }
               var model by remember { mutableStateOf(settings.modelId()) }
@@ -190,7 +271,7 @@ class SettingsActivity : ComponentActivity() {
                   onSave = {
                     if (settings.isReady()) {
                       Toast.makeText(this@SettingsActivity, "配置已保存", Toast.LENGTH_SHORT).show()
-                      showModelSettings = false
+                      route = "home"
                     } else {
                       Toast.makeText(
                               this@SettingsActivity,
@@ -199,7 +280,7 @@ class SettingsActivity : ComponentActivity() {
                           .show()
                     }
                   },
-                  onBack = { showModelSettings = false },
+                  onBack = { route = "home" },
               )
             }
           }
@@ -215,6 +296,10 @@ class SettingsActivity : ComponentActivity() {
     return if (model.isEmpty()) label else "$label · $model"
   }
 
+  /** 长期记忆存储（与 ConversationRunner 用同一个文件）。 */
+  private fun memoryStore() =
+      com.tom.rv2ide.ai.tool.memory.MemoryStore(File(filesDir, "memory/memory.jsonl"))
+
   private fun countSkills(): Int = File(filesDir, "skills").listFiles()?.count { it.isDirectory } ?: 0
 
   private fun countMemory(): Int {
@@ -228,6 +313,32 @@ class SettingsActivity : ComponentActivity() {
   }
 
 }
+
+/** 内核的 8 个模板 id（与 PromptTemplates 的常量一一对应）。 */
+private val TEMPLATE_IDS =
+    listOf(
+        "systemPrompt",
+        "workspaceContext",
+        "toolsContext",
+        "toolCallFormat",
+        "todoSection",
+        "guidance",
+        "chatModeAgent",
+        "notes",
+    )
+
+/** 模板 id → 界面显示名。 */
+private val TEMPLATE_LABELS: List<Pair<String, String>> =
+    listOf(
+        "systemPrompt" to "主系统提示词",
+        "workspaceContext" to "工作区上下文",
+        "toolsContext" to "工具清单段落",
+        "toolCallFormat" to "文本工具调用格式",
+        "todoSection" to "待办清单段落",
+        "guidance" to "工作准则",
+        "chatModeAgent" to "执行模式段落",
+        "notes" to "收尾注意事项",
+    )
 
 /** 权限模式偏好。 */
 class PermissionPrefs(context: android.content.Context) {
