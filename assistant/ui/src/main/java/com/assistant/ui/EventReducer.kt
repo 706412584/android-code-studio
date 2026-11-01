@@ -48,6 +48,20 @@ import com.tom.rv2ide.ai.tool.api.ToolNames
  */
 class EventReducer(private val timeline: MessageTimeline) {
 
+  /**
+   * 本轮产生的改动汇总卡：`(卡片 id, diffId)`。
+   *
+   * <p><b>为什么要交给宿主</b>：汇总卡插入时 `computing=true`（内容还没算），
+   * 而算内容要读 `DiffStore` —— 那是内核的存储，渲染层拿不到（分层约定）。
+   * 宿主拿到这份清单后去读记录、算出行级 diff、再回调
+   * [MessageTimeline.updateDiff] 填上。
+   *
+   * <p>不清空：它同时是「本轮改了哪些文件」的查询入口。宿主在下次
+   * RUN_STARTED 时自行替换。
+   */
+  var lastRunDiffCards: List<Pair<Long, String>> = emptyList()
+    private set
+
   /** 当前正在流式写入的助手气泡 id；null 表示还没有。 */
   var streamingMessageId: Long? = null
     private set
@@ -167,7 +181,15 @@ class EventReducer(private val timeline: MessageTimeline) {
     if (pendingDiffs.isEmpty()) {
       return
     }
-    timeline.appendDiffGroup(pendingDiffs.toList())
+    val entries = pendingDiffs.toList()
+    val ids = timeline.appendDiffGroup(entries)
+    // appendDiffGroup 的返回与入参一一对应，因此按下标配对成 (卡片 id, diffId)。
+    // 没拿到 diffId 的改动（工具没产生记录）不进这份清单——宿主无从回填，
+    // 列出去只会让它去查一个不存在的 id。
+    lastRunDiffCards =
+        ids.zip(entries).mapNotNull { (cardId, entry) ->
+          entry.second?.let { diffId -> cardId to diffId }
+        }
     pendingDiffs.clear()
   }
 
@@ -321,6 +343,20 @@ class EventReducer(private val timeline: MessageTimeline) {
         imageBase64 = if (result.hasImage()) result.imageBase64 else null,
         imageMimeType = result.imageMimeType ?: "",
     )
+
+    // 回填 diffId。
+    //
+    // **只能在完成时填**：`onToolStarted` 从参数里拿得到路径，但 diffId 要等工具
+    // 执行完、比较前后内容才由 ToolExecutor 生成，随 ToolResult 回来。
+    // 不回填的话汇总卡里的改动项没有可回滚的 id，回滚按钮出不来。
+    val diffId = result.diffId
+    if (!diffId.isNullOrEmpty()) {
+      // 工具是串行执行的，最后一条「只有路径、还没有 id」的就是本次调用。
+      val index = pendingDiffs.indexOfLast { it.second == null }
+      if (index >= 0) {
+        pendingDiffs[index] = pendingDiffs[index].first to diffId
+      }
+    }
   }
 
   /** 工具步骤进度：追加到当前卡片（长任务的「此刻在做什么」）。 */

@@ -208,8 +208,12 @@ internal fun ChatHeader(
                     )
                 }
             }
-            // 远程模式：左边 SSH 连接状态，右边 token 累计统计
-            if (connectionState != null) {
+            // 第二行：远程时是「连接状态 + token 统计」，本地时只有 token 统计。
+            //
+            // **token 统计不能挂在远程分支里**：本地容器会话（本 App 就是）永远没有
+            // connectionState，那样统计就永不渲染——宿主认真填了 inputTokens/
+            // outputTokens 却一个数字都看不到（实测反馈「token 数恒为空」）。
+            if (connectionState != null || inputTokens > 0 || outputTokens > 0) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -217,7 +221,13 @@ internal fun ChatHeader(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    ConnectionIndicator(state = connectionState)
+                    if (connectionState != null) {
+                        ConnectionIndicator(state = connectionState)
+                    } else {
+                        // 占位，把统计推到右边——不加的话 SpaceBetween 会把统计顶到左侧，
+                        // 与有连接状态时的位置不一致（切换视图时数字会左右跳）。
+                        Spacer(Modifier.weight(1f))
+                    }
                     TokenStats(
                         inputTokens = inputTokens,
                         outputTokens = outputTokens

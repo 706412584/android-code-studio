@@ -366,6 +366,26 @@ public final class ConversationRunner {
     } finally {
       handle.running.set(false);
       active = null;
+
+      // 广播「本轮结束」。
+      //
+      // **这一步不能省**：`AgentEvent.runFinished()` 在内核里定义了却没有任何调用点
+      // （grep 全仓库只有定义处），补发是宿主层的职责——ACS 在
+      // AgentOrchestrator.java:2419 就是这么做的。
+      //
+      // 漏掉的后果很具体：EventReducer 收到 RUN_FINISHED 才会调 flushDiffSummary()
+      // 把本轮的改动汇总成卡片。不发这个事件，diff 卡片**永远不出现**——
+      // 用户看不到「这轮改了哪些文件」，也就没有回滚的入口。
+      // 实测症状：工具卡与回答都正常，但改动汇总卡始终缺席。
+      //
+      // 必须在 onFinished 之前发：宿主在 onFinished 里要读 reducer 已归约好的
+      // 本轮改动清单（lastRunDiffCards），事件晚到就拿到空列表。
+      try {
+        listener.onEvent(AgentEvent.runFinished());
+      } catch (Throwable ignored) {
+        // 收尾事件失败不该掩盖真正的运行结果，也不该让 onFinished 不被调用。
+      }
+
       listener.onFinished(result, error);
     }
   }

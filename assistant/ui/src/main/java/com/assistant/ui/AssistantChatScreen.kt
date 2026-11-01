@@ -171,6 +171,17 @@ fun AssistantChatScreen(
     /** 长按停止键强制打断整轮。 */
     canForceStop: Boolean = false,
     onForceStop: () -> Unit = {},
+    /**
+     * 长粘贴的暂存区。
+     *
+     * <p>**不接的后果不只是输入框被撑爆**：输入框里留下的 `[Pasted#1]` 是显示标记，
+     * 发送时必须展开回原文（宿主在 send 前调 `expandPastePlaceholders`），
+     * 否则模型收到的是一串标记。
+     */
+    pastedTexts: List<com.assistant.ui.components.independent.PastedText> = emptyList(),
+    /** 把一段长文本收进暂存区，返回写进输入框的占位符。 */
+    onStashPaste: (String) -> String = { it },
+    onRemovePaste: (Int) -> Unit = {},
     /** 上下文已用占比（0..1），驱动输入栏的占用环。 */
     tokenProgress: Float = 0f,
     /**
@@ -179,6 +190,13 @@ fun AssistantChatScreen(
      * <p>是「占用环该不该显示」的判据——见 ChatInputBar 里的说明。
      */
     contextWindowSize: Int = 0,
+    /**
+     * 点击占用环时打开占用详情。
+     *
+     * <p>**不传时钟点整个不渲染**（见 ChatInputBar 里那颗按钮的注释）。不接的话用户
+     * 只看到一个环、看不出具体数值，也没有任何腾空间的入口。
+     */
+    onContextUsageClick: (() -> Unit)? = null,
 ) {
   AIEditorTheme(darkTheme = darkTheme, followHostFrame = false, style = style) {
     Box(modifier = Modifier.fillMaxSize()) {
@@ -264,6 +282,9 @@ fun AssistantChatScreen(
             onReasoningEffortChange = { reasoning = it },
             slashCommands = slashCommands,
             skills = skills,
+            pastedTexts = pastedTexts,
+            onStashPaste = onStashPaste,
+            onRemovePaste = onRemovePaste,
             queuedRequests = queuedRequests,
             onRemoveQueued = onRemoveQueued,
             onMoveQueued = onMoveQueued,
@@ -273,6 +294,7 @@ fun AssistantChatScreen(
             onForceStop = onForceStop,
             tokenProgress = tokenProgress,
             contextWindowSize = contextWindowSize,
+            onContextUsageClick = onContextUsageClick,
             pendingAttachments = attachments,
             onRemoveAttachment = onRemoveAttachment,
             onReadAttachment = onReadAttachment,

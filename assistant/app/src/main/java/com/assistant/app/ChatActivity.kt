@@ -166,6 +166,7 @@ class ChatActivity : ComponentActivity() {
 
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
+    // IPv4 偏好在 AssistantApplication 里设（必须早于任何 InetAddress 使用）。
 
     modelSettings = ModelSettings(this)
     workspace = File(filesDir, "workspace").apply { mkdirs() }
@@ -209,7 +210,14 @@ class ChatActivity : ComponentActivity() {
     toolSettings = AssistantToolSettings(this)
     val permissionService =
         com.tom.rv2ide.ai.tool.ToolPermissionService(toolSettings, registry)
-    val executor = ToolExecutor(registry, permissionService, null)
+    // diff 记录：接上它，工具写文件的改动才有记录、才能回滚。
+    //
+    // 不接的后果（此前就是）：气泡上的「Undo」按钮是个谎——它只改内存标记并把按钮变灰，
+    // **文件从未恢复**，而用户看到「Undone」会以为改动已撤销。
+    // FileDiffStore 落盘在 filesDir（进程重启后仍可回滚），不是 InMemoryDiffStore。
+    diffStore = com.tom.rv2ide.ai.tool.FileDiffStore(File(filesDir, "diffs.jsonl"))
+    val diffRecorder = com.tom.rv2ide.ai.tool.DiffRecorder(diffStore)
+    val executor = ToolExecutor(registry, permissionService, diffRecorder)
     runner =
         ConversationRunner(
             modelSettings,
@@ -244,10 +252,36 @@ class ChatActivity : ComponentActivity() {
               }
 
               override fun onRevert(messageId: Long, diffId: String) {
-                // 回滚需要工作区上下文与 IO 线程，属于后续步骤。
-                // 这里只标记状态，让用户看到「已撤销」的即时反馈。
-                timeline.markReverted(messageId)
-                timeline.markDiffReverted(messageId)
+                // **真回滚**：把文件恢复成改动前的内容。
+                //
+                // 曾只 markReverted（改内存标记 + 按钮变灰），而文件没动——
+                // 按钮文案却写着 Undone。那是明确的谎：用户以为改动撤销了，
+                // 实际上文件还是模型改过的样子。
+                uiScope.launch {
+                  val result =
+                      kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                        diffReverter.revert(diffId, revertContext())
+                      }
+                  if (result.isSuccess) {
+                    timeline.markReverted(messageId)
+                    timeline.markDiffReverted(messageId)
+                    // 工作区被改回，文件树要重读——不刷新的话用户看到的是回滚前的树。
+                    browser.refresh()
+                    android.widget.Toast.makeText(
+                            this@ChatActivity,
+                            "已还原文件",
+                            android.widget.Toast.LENGTH_SHORT)
+                        .show()
+                  } else {
+                    // 失败要如实说，且**不标记为已回滚**——标记了就再也看不到这个按钮，
+                    // 用户会以为成功了。原因由内核给出（记录不存在 / 已经回滚过 / 路径越界）。
+                    android.widget.Toast.makeText(
+                            this@ChatActivity,
+                            "还原失败：${result.message}",
+                            android.widget.Toast.LENGTH_LONG)
+                        .show()
+                  }
+                }
               }
 
               override fun onMoreClick(message: com.assistant.ui.model.AgentUIMessage) {
@@ -386,6 +420,19 @@ class ChatActivity : ComponentActivity() {
                 // 抄一份出来就会在两边分别演化（改了一边另一边就静默失效）。
                 slashCommands = slashCommands(),
                 skills = skillCommands(),
+                // ---- 长粘贴 ----
+                // 不接的话：输入框被整段粘贴撑爆，且发出去的是 [Pasted#1] 这种标记
+                // （展开动作在 send() 里做）。
+                pastedTexts = pastedTexts,
+                onStashPaste = { text ->
+                  val id = pasteSeq++
+                  pastedTexts.add(
+                      com.assistant.ui.components.independent.PastedText(id = id, text = text))
+                  com.assistant.ui.components.independent.PastedText.placeholderFor(id)
+                },
+                onRemovePaste = { index ->
+                  if (index in pastedTexts.indices) pastedTexts.removeAt(index)
+                },
                 // ---- 排队 / 强制停止 ----
                 // 忙碌时输入栏提示「回车发送将自动排队」，队列必须真的有：没有的话
                 // 那条提示就是假承诺，用户按了回车消息会静默消失。
@@ -454,6 +501,14 @@ class ChatActivity : ComponentActivity() {
                       0f
                     },
                 contextWindowSize = contextWindowTokens,
+                // 点占用环打开详情（含手动压缩入口）。
+                // 只在窗口已配置时传：未配置时组件也不渲染那颗按钮，传了是死代码。
+                onContextUsageClick =
+                    if (contextWindowTokens > 0) {
+                      { showContextUsage = true }
+                    } else {
+                      null
+                    },
                 onOpenSessions = {
                   sessions = loadSessions()
                   // 文件树可能被模型改动过（工具写了文件），每次打开重读一遍。
@@ -560,6 +615,23 @@ class ChatActivity : ComponentActivity() {
                                 ?.let { androidx.compose.ui.graphics.Color(it) },
                     ),
             )
+
+            // ---- 上下文占用详情 ----
+            if (showContextUsage) {
+              com.assistant.ui.components.independent.ContextUsageDialog(
+                  usedTokens = contextUsedTokens,
+                  windowTokens = contextWindowTokens,
+                  onCompact = {
+                    // 压缩由内核在下一轮入口做（需要条目序号、结果要落盘），
+                    // 这里只如实记一句，不假装已经压完。
+                    timeline.append(
+                        MessageTimeline.Role.TRACE,
+                        "压缩将在下一轮对话开始前执行（内核在入口处理）。")
+                    chatView.forceScrollToBottom(uiScope)
+                  },
+                  onDismiss = { showContextUsage = false },
+              )
+            }
 
             // ---- 消息操作菜单 ----
             // 放在 AssistantChatScreen 之外、同一个 setContent 作用域内：
@@ -862,8 +934,17 @@ class ChatActivity : ComponentActivity() {
 
   /** 输入栏芯片上显示的模型名。 */
   private fun modelLabel(): String {
-    val preset = ProviderPresets.find(modelSettings.providerId())
-    return "${preset?.label ?: "未配置"} · ${modelSettings.modelId()}"
+    val id = modelSettings.providerId()
+    // **查记录表，不是预设表**：预设只是「新建时的填充模板」，用户真正的配置在
+    // ProviderRecords。这里曾与 providerTarget() 犯同一个错——用「自定义」建的记录
+    // 在预设表里找不到，于是顶栏显示「未配置 · <模型名>」，而模型其实是好的。
+    val record = modelSettings.providerRecords().find(id)
+    val label =
+        record?.label?.takeIf { it.isNotBlank() }
+            ?: record?.baseUrl?.takeIf { it.isNotBlank() }
+            ?: ProviderPresets.find(id)?.label
+            ?: "未配置"
+    return "$label · ${modelSettings.modelId()}"
   }
 
   /** 顶栏副标题前的服务商 logo。 */
@@ -963,6 +1044,62 @@ class ChatActivity : ComponentActivity() {
     super.onDestroy()
   }
 
+  /**
+   * 把本轮改动汇总卡的内容算出来后填进卡片。
+   *
+   * <p><b>为什么必须做</b>：卡片插入时标的是 `computing=true`，内容由调用方随后回填。
+   * 不回填的话卡片一直停在「计算中」——用户看不到改了什么、增减多少行，
+   * 而且回滚按钮的可用性也依赖这份内容。
+   *
+   * <p>在 IO 线程算：diff 要对整个文件做行级比对，大文件上很贵。
+   */
+  private fun fillRunDiffs() {
+    val cards = reducer.lastRunDiffCards
+    if (cards.isEmpty()) {
+      return
+    }
+    uiScope.launch {
+      for ((cardId, diffId) in cards) {
+        val result =
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+              val record = runCatching { diffStore.findById(diffId) }.getOrNull()
+              if (record == null) {
+                null
+              } else {
+                // 用自带的纯 JVM 行级 diff（见 AssistantDiff 的注释：仓库里那个字符级
+                // 实现会为 3000 行文件分配 9e4×9e4 的 int 矩阵，先 OOM）。
+                com.assistant.ui.model.AssistantDiffBuilder.build(
+                    oldContent = record.oldContent.orEmpty(),
+                    newContent = record.newContent.orEmpty(),
+                    oldExists = record.isOldExists,
+                )
+              }
+            }
+        // record 找不到时传 null：卡片会退成「记录已过期」而不是永远转圈——
+        // 转圈会让用户以为还在算，实际永远不会出结果。
+        timeline.updateDiff(cardId, result)
+      }
+    }
+  }
+
+  // ---- 回滚 ----
+
+  /**
+   * 回滚用的工具上下文。
+   *
+   * <p>回滚要校验目标路径**仍在工作区内**（否则一条被篡改的 diff 记录就能把文件
+   * 写到工作区外）。`DiffReverter` 因此要求传 context；为 null 时它会直接拒绝执行。
+   *
+   * <p>只填路径相关字段：回滚不执行工具、不读权限、不弹窗，其余字段无意义。
+   */
+  private fun revertContext(): com.tom.rv2ide.ai.tool.ToolContext =
+      com.tom.rv2ide.ai.tool.ToolContext.builder()
+          .homePath(workspace.absolutePath)
+          .openProjectPath(workspace.absolutePath)
+          .conversationId(conversationId)
+          .settings(toolSettings)
+          .build()
+
   // ---- 排队 ----
 
   /**
@@ -998,6 +1135,29 @@ class ChatActivity : ComponentActivity() {
 
   /** 排队消息的自增 id（组件用它做 key 与增删标识）。 */
   private var queuedSeq = 0
+
+  /**
+   * 长粘贴的暂存区。
+   *
+   * <p>**不接的后果不只是「输入框被撑爆」**：输入框里的 `[Pasted#1]` 只是标记，
+   * 发送时必须展开回原文，否则模型收到的是一串标记而不是内容。
+   * 组件提供了 `expandPastePlaceholders`，展开动作在宿主发送前完成。
+   */
+  private val pastedTexts =
+      androidx.compose.runtime.mutableStateListOf<
+          com.assistant.ui.components.independent.PastedText>()
+
+  /** 粘贴块的自增 id。 */
+  private var pasteSeq = 1
+
+  /** 是否显示上下文占用详情（点占用环打开）。 */
+  private var showContextUsage by mutableStateOf(false)
+
+  /** 文件改动记录（落盘）。回滚按钮靠它找到旧内容。 */
+  private lateinit var diffStore: com.tom.rv2ide.ai.tool.FileDiffStore
+
+  /** 回滚执行器；用 [diffStore] 构造。 */
+  private val diffReverter by lazy { com.tom.rv2ide.ai.tool.DiffReverter(diffStore) }
 
   /**
    * 扫会话记录找匹配。
@@ -1362,7 +1522,19 @@ class ChatActivity : ComponentActivity() {
 
   // ---- 发送 ----
 
-  private fun send(text: String) {
+  private fun send(rawText: String) {
+    // 展开长粘贴的占位符：[Pasted#1] 只是输入框里的显示标记，
+    // 必须换回原文再发给模型，否则模型收到的是一串标记而不是内容。
+    // 展开是单遍扫描（未知 id 原样保留，手打的标记不会让发送失败）。
+    val expanded =
+        com.assistant.ui.components.independent.expandPastePlaceholders(rawText, pastedTexts)
+    val text = expanded.first
+    // 被消费的块从缓冲移除；用户手工删掉标记但留着 chip 的情况由组件自己的
+    // pastedIdsIn 对齐，这里只处理「本条消息用掉了哪些」。
+    if (expanded.second.isNotEmpty()) {
+      pastedTexts.removeAll { it.id in expanded.second }
+    }
+
     if (text.isBlank()) {
       return
     }
@@ -1464,6 +1636,8 @@ class ChatActivity : ComponentActivity() {
                     )
                   }
                   chatView.forceScrollToBottom(uiScope)
+                  // 回填改动汇总卡的内容（摘要、增删行数、逐行 diff）。
+                  fillRunDiffs()
                   // 本轮结束，接着发队首。
                   //
                   // 在 onFinished 里发而不是轮询 runner 状态：轮询要在「刚空闲」的
