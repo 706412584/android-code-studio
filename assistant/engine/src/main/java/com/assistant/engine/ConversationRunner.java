@@ -77,6 +77,19 @@ public final class ConversationRunner {
    */
   private final java.util.function.Supplier<String> chatModeId;
 
+  /**
+   * 推理强度提供者：返回 {@code off/low/medium/high}，或空串表示用服务商默认。
+   *
+   * <p>与 [chatModeId] 同一模式（回调而非构造期取值）：用户在输入栏随时可改档位，
+   * 改动应对下一次运行立即生效。
+   */
+  private volatile java.util.function.Supplier<String> reasoningEffortProvider = () -> "";
+
+  /** 设置推理强度提供者。 */
+  public void setReasoningEffortProvider(java.util.function.Supplier<String> provider) {
+    this.reasoningEffortProvider = provider == null ? () -> "" : provider;
+  }
+
   /** 当前运行实例；null 表示空闲。 */
   private volatile RunHandle active;
 
@@ -358,7 +371,10 @@ public final class ConversationRunner {
               persisting,
               contextManager,
               attachmentsJson,
-              null);
+              // 推理强度（off/low/medium/high）。此前恒传 null —— 输入栏那个档位
+              // 选择器点了没有任何效果：内核本来就支持，只是没人把用户的选择送进来。
+              // null 表示「用服务商默认」，不是「关掉推理」。
+              reasoningEffortProvider.get());
     } catch (Throwable t) {
       // 内核内部已经处理了 OOM 与模型异常（转成 FAILED 事件）；能到这里的是
       // 装配期异常（配置非法、工作区不可写等）。如实上报，不吞。

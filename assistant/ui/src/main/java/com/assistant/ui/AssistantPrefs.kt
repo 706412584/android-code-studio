@@ -96,6 +96,31 @@ object AssistantPrefs {
   /** 默认「执行」：与内核 `ChatMode.DEFAULT` 一致。 */
   private const val DEFAULT_CHAT_MODE = "agent"
 
+  // ---- 推理强度 ----
+
+  /**
+   * 推理强度档位名（`DEFAULT` / `NONE` / `LOW` / `MEDIUM` / `HIGH` / `XHIGH` / `MAX`）。
+   *
+   * <p>存**枚举名**而不是内核要的 `off/low/medium/high`：这一层是渲染层、对内核零依赖，
+   * 不该认识内核的词表。到内核词的映射在宿主侧做。
+   *
+   * <p>空串 = 用服务商默认（不显式指定），与内核 `reasoningEffort` 传 null 同义。
+   */
+  fun reasoningEffort(context: Context): String =
+      context
+          .getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+          .getString(KEY_REASONING, null) ?: ""
+
+  fun setReasoningEffort(context: Context, name: String) {
+    context
+        .getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        .edit()
+        .putString(KEY_REASONING, name)
+        .apply()
+  }
+
+  private const val KEY_REASONING = "reasoning_effort"
+
   // ---- 提示词模板 ----
 
   /** 读取用户自定义的模板正文；空串表示未自定义（回退内核默认）。 */

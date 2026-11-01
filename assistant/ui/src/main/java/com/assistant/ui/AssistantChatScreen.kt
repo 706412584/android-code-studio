@@ -158,6 +158,15 @@ fun AssistantChatScreen(
     /** 用户切换对话模式。宿主负责落盘（本层不碰偏好存储）。 */
     onModeChange: (AgentMode) -> Unit = {},
     /**
+     * 起始推理强度档位。
+     *
+     * <p>与 [initialMode] 同理：不传宿主值的话每次进页面都回默认，用户在输入栏
+     * 改的档位看起来「生效了」，下次进来又变回去。
+     */
+    initialReasoning: ReasoningEffort = ReasoningEffort.DEFAULT,
+    /** 用户切换推理强度。宿主落盘并把它送进请求（内核对推理强度有原生支持）。 */
+    onReasoningChange: (ReasoningEffort) -> Unit = {},
+    /**
      * 排队中的消息。
      *
      * <p>忙碌时输入栏提示「回车发送将自动排队」——那是承诺，队列必须真的有。
@@ -257,7 +266,7 @@ fun AssistantChatScreen(
         }
       }
       var mode by remember { mutableStateOf(initialMode) }
-      var reasoning by remember { mutableStateOf(ReasoningEffort.DEFAULT) }
+      var reasoning by remember { mutableStateOf(initialReasoning) }
       Box(modifier = Modifier.fillMaxWidth().navigationBarsPadding()) {
         ChatInputBar(
             value = text,
@@ -268,6 +277,12 @@ fun AssistantChatScreen(
             },
             onStop = onStop,
             isBusy = isBusy,
+            // 忙碌时回车 = 入队发送；空闲时回车 = 换行。
+            //
+            // 忙碌态的占位符写着「pressing enter will queue the message」——那是对用户的
+            // 承诺。空闲时不该这样（写长提示词时回车换行是刚需），因此按状态切换：
+            // 忙碌时兑现提示，空闲时保留换行。
+            enterToSend = isBusy,
             activeModelName = modelName,
             currentProvider = currentProvider,
             providers = providers,
@@ -279,7 +294,11 @@ fun AssistantChatScreen(
               onModeChange(newMode)
             },
             reasoningEffort = reasoning,
-            onReasoningEffortChange = { reasoning = it },
+            onReasoningEffortChange = { newEffort ->
+              reasoning = newEffort
+              // 通知宿主：内核对推理强度有原生支持，宿主把它送进下一次请求。
+              onReasoningChange(newEffort)
+            },
             slashCommands = slashCommands,
             skills = skills,
             pastedTexts = pastedTexts,
@@ -294,6 +313,10 @@ fun AssistantChatScreen(
             onForceStop = onForceStop,
             tokenProgress = tokenProgress,
             contextWindowSize = contextWindowSize,
+            // 数值是估算的：内核的 TokenUsageTracker 用「字符数 ÷ 4」粗估，
+            // 不是服务端回报的精确计数。传 true 让文案写「估算」，与数据性质一致
+            // ——不传时界面会用精确口径陈述一个估算值。
+            tokenEstimated = true,
             onContextUsageClick = onContextUsageClick,
             pendingAttachments = attachments,
             onRemoveAttachment = onRemoveAttachment,

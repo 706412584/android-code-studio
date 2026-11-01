@@ -66,6 +66,14 @@ fun AssistantSessionsDrawer(
     onDelete: (SessionRow) -> Unit,
     onRename: (SessionRow, String) -> Unit,
     onTogglePin: (SessionRow) -> Unit,
+    /**
+     * 导出某个会话。
+     *
+     * <p>**不接会露馅**：组件长按菜单里有「导出」项（`ChatDrawer.kt:1449`），
+     * 点了会关闭菜单但什么都不发生——用户以为导出成功（在别处找文件）。
+     * 要么实现，要么让组件不显示该项。
+     */
+    onExport: (SessionRow) -> Unit = {},
     onOpenSettings: () -> Unit,
     onDismiss: () -> Unit,
     /** 文件树里点文件：宿主决定怎么处理（本 App 把内容追加到输入框）。 */
@@ -120,9 +128,13 @@ fun AssistantSessionsDrawer(
         onDelete = { onDelete(it.toRow()) },
         onRename = { session, title -> onRename(session.toRow(), title) },
         onTogglePin = { onTogglePin(it.toRow()) },
-        // 导出：本 App 还没做导出（需要分享 Intent + FileProvider），传空实现。
-        onExport = {},
-        // 批量删除：同样未接入，传 null 时组件不显示批量选择入口。
+        // 导出：宿主把会话转成文本并走分享 Intent（渲染层拿不到会话正文）。
+        onExport = { onExport(it.toRow()) },
+        // 批量删除：传 null 表示「没有批量删除接口」。
+        //
+        // 注意这**不会**隐藏「批量选择」入口——那个在 ChatDrawer 的长按菜单里无条件出现
+        // （ChatDrawer.kt:481），选中后逐条走 onDelete，功能正常。传 null 只是让组件
+        // 不用批量接口而已（此前这里的注释说「不显示入口」，是错的）。
         onDeleteSessions = null,
 
         // ---- 文件树 ----

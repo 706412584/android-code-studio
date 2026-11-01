@@ -316,6 +316,11 @@ class ChatActivity : ComponentActivity() {
       }
     }
 
+    // 推理强度：每次运行前读一次偏好，用户在输入栏改档位对下一次发送立即生效。
+    // 内核原生支持这个参数（AgentSession.run 的 reasoningEffort），此前恒传 null，
+    // 于是输入栏那个选择器点了没有任何效果。
+    runner.setReasoningEffortProvider { toKernelReasoningEffort(reasoningEffortOf()) }
+
     // ---- 附件 ----
     //
     // 三个选取入口各自注册：文件走 OpenMultipleDocuments，图片走 PickMultipleVisualMedia
@@ -488,6 +493,12 @@ class ChatActivity : ComponentActivity() {
                       }
                   com.assistant.ui.AssistantPrefs.setChatMode(this@ChatActivity, kernelId)
                 },
+                // 推理强度：初值来自偏好，改动落盘并即时进请求。
+                initialReasoning = reasoningEffortOf(),
+                onReasoningChange = { effort ->
+                  com.assistant.ui.AssistantPrefs.setReasoningEffort(
+                      this@ChatActivity, effort.name)
+                },
                 // ---- 上下文用量 ----
                 // 内核只给「已用多少」，输入/输出分开的细分它没有（只有估算总量），
                 // 因此输入侧填已用量、输出侧留 0，而不是编一个数——顶栏显示的是
@@ -581,9 +592,9 @@ class ChatActivity : ComponentActivity() {
                           android.util.Log.w("ChatActivity", "重命名失败: ${row.id}", e)
                         }
                       },
-                      // 置顶：ConversationStore 没有该能力（需要新的条目类型），
-                      // 传空实现——点了没反应，但不会崩。
+                      // 置顶：存宿主 SharedPreferences（见 togglePin 的注释）。
                       onTogglePin = { row -> togglePin(row.id) },
+                      onExport = { row -> exportSession(row) },
                       onOpenSettings = {
                         showDrawer = false
                         startActivity(
@@ -949,6 +960,38 @@ class ChatActivity : ComponentActivity() {
 
   /** 顶栏副标题前的服务商 logo。 */
   /**
+   * 偏好里的推理强度档位名 → 输入栏枚举。
+   *
+   * <p>存的是枚举名（渲染层不认识内核词表），空串或未知值回落到 DEFAULT。
+   */
+  private fun reasoningEffortOf(): com.assistant.ui.compat.ReasoningEffort {
+    val name = com.assistant.ui.AssistantPrefs.reasoningEffort(this)
+    return com.assistant.ui.compat.ReasoningEffort.entries.firstOrNull { it.name == name }
+        ?: com.assistant.ui.compat.ReasoningEffort.DEFAULT
+  }
+
+  /**
+   * 输入栏枚举 → 内核要的词。
+   *
+   * <p>两套词表的差别是真的：内核只有 `off` / `low` / `medium` / `high`，
+   * 而输入栏有 7 档（含 `DEFAULT` / `XHIGH` / `MAX`）。必须显式映射：
+   * - DEFAULT → 空串（让内核用服务商默认，这是「不干预」的正确表达，不是 off）
+   * - NONE → "off"
+   * - XHIGH / MAX 都没有对应的内核档位，**上取到 high** 而不是静默降成默认
+   *   ——用户选「更强」时不该被悄悄改弱
+   */
+  private fun toKernelReasoningEffort(effort: com.assistant.ui.compat.ReasoningEffort): String =
+      when (effort) {
+        com.assistant.ui.compat.ReasoningEffort.DEFAULT -> ""
+        com.assistant.ui.compat.ReasoningEffort.NONE -> "off"
+        com.assistant.ui.compat.ReasoningEffort.LOW -> "low"
+        com.assistant.ui.compat.ReasoningEffort.MEDIUM -> "medium"
+        com.assistant.ui.compat.ReasoningEffort.HIGH -> "high"
+        com.assistant.ui.compat.ReasoningEffort.XHIGH -> "high"
+        com.assistant.ui.compat.ReasoningEffort.MAX -> "high"
+      }
+
+  /**
    * 偏好里的对话模式 id → 输入栏的三档枚举。
    *
    * <p><b>两套词汇不是一一对应</b>，必须映射：
@@ -1080,6 +1123,83 @@ class ChatActivity : ComponentActivity() {
         timeline.updateDiff(cardId, result)
       }
     }
+  }
+
+  // ---- 导出会话 ----
+
+  /**
+   * 把会话导出成纯文本并交给系统分享。
+   *
+   * <p><b>为什么导成文本而不是原始 JSONL</b>：`.jsonl` 每行一个事件对象，用户打开
+   * 看到的是 `{"type":"assistant","uuid":...}`——那不是「导出聊天记录」。转成
+   * 「谁说了什么」的可读文本才符合预期。
+   *
+   * <p>写进 `cacheDir/exports/`（与 `file_paths.xml` 的声明对齐）：分享是跨应用读文件，
+   * Android 7+ 必须经 FileProvider 换成 content://；放 cache 而不是 filesDir，
+   * 因为这些导出文件是一次性的，被系统清理掉正合适。
+   */
+  private fun exportSession(row: SessionRow) {
+    uiScope.launch {
+      val result =
+          kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            runCatching {
+              val entries = conversationStore.read(row.id)
+              val text = buildString {
+                append("# ").append(row.title).append("\n\n")
+                for (loc in entries) {
+                  when (val e = loc.entry) {
+                    is com.tom.rv2ide.ai.agent.conversation.UserMessageEntry ->
+                        append("## 我\n\n").append(e.content).append("\n\n")
+                    is com.tom.rv2ide.ai.agent.conversation.AssistantMessageEntry ->
+                        append("## 助手\n\n").append(e.content).append("\n\n")
+                    else -> Unit
+                  }
+                }
+              }
+              val dir = File(cacheDir, "exports").apply { mkdirs() }
+              // 文件名用标题（已过滤路径字符）而不是会话 id：用户分享出去后
+              // 文件名要能认出来是哪个会话。
+              val safeName = row.title.replace(Regex("""[\\/:*?"<>|\s]+"""), "_").take(40)
+              val file = File(dir, "${safeName.ifBlank { "session" }}.md")
+              file.writeText(text)
+              file
+            }
+          }
+      val file = result.getOrNull()
+      if (file == null) {
+        android.widget.Toast.makeText(
+                this@ChatActivity, "导出失败：无法读取会话", android.widget.Toast.LENGTH_LONG)
+            .show()
+        return@launch
+      }
+      shareExportedFile(file)
+    }
+  }
+
+  /** 把导出文件交给系统分享面板。 */
+  private fun shareExportedFile(file: File) {
+    val uri =
+        runCatching { FileProvider.getUriForFile(this, "$packageName.fileprovider", file) }
+            .getOrNull()
+    if (uri == null) {
+      android.widget.Toast.makeText(this, "导出失败：无法生成分享链接", android.widget.Toast.LENGTH_LONG)
+          .show()
+      return
+    }
+    val intent =
+        android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+          type = "text/markdown"
+          putExtra(android.content.Intent.EXTRA_STREAM, uri)
+          // 必须显式授权：不授权时接收方拿到 uri 也读不到内容（表现为「分享了空文件」）。
+          addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+    runCatching {
+          startActivity(android.content.Intent.createChooser(intent, "导出会话"))
+        }
+        .onFailure {
+          android.widget.Toast.makeText(this, "没有可用的分享应用", android.widget.Toast.LENGTH_SHORT)
+              .show()
+        }
   }
 
   // ---- 回滚 ----
