@@ -278,12 +278,13 @@ class SettingsActivity : ComponentActivity() {
                             id = preset.id,
                             label = preset.label,
                             models = preset.models,
+                            baseUrl = preset.baseUrl,
+                            protocol = preset.protocolType.toUi(),
                         )
                       },
-                  onAddFromPreset = { presetId ->
-                    ProviderPresets.find(presetId)?.let { records.addFromPreset(it) }
-                    recomposeKey++
-                  },
+                  // 预设只用于预填表单（见 AssistantProviderScreens 的 toDraft），
+                  // 落库统一走 onUpdate（id 为空 = 新增）。
+                  onAddFromPreset = {},
                   onAddCustom = { /* 表单里保存时走 onUpdate（id 为空） */ },
                   onUpdate = { item ->
                     if (item.id.isEmpty()) {
@@ -410,6 +411,31 @@ class SettingsActivity : ComponentActivity() {
                       "video" -> mediaSettings.clearVideo()
                     }
                     recomposeKey++
+                  },
+                  // 与「模型与凭据」页同一个拉取实现（见上面的 onFetchModels）。
+                  onFetchModels = { baseUrl, apiKey, protocol ->
+                    val engineProtocol =
+                        if (protocol ==
+                            com.assistant.ui.components.independent.ProviderProtocol
+                                .ANTHROPIC_MESSAGES) {
+                          com.tom.rv2ide.ai.protocol.ModelProtocolType.ANTHROPIC_MESSAGES
+                        } else {
+                          com.tom.rv2ide.ai.protocol.ModelProtocolType.OPENAI_COMPATIBLE
+                        }
+                    val pool = java.util.concurrent.Executors.newSingleThreadExecutor()
+                    try {
+                      pool.submit<Pair<List<String>, String>> {
+                            val r =
+                                com.assistant.engine.ModelCatalog.fetch(
+                                    baseUrl, apiKey, engineProtocol)
+                            r.models to r.error
+                          }
+                          .get()
+                    } catch (e: Exception) {
+                      emptyList<String>() to ("拉取失败：" + (e.message ?: "未知错误"))
+                    } finally {
+                      pool.shutdown()
+                    }
                   },
                   onBack = { route = "home" },
               )

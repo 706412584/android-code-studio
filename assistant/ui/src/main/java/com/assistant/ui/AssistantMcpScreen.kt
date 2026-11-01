@@ -182,13 +182,25 @@ private fun McpEditForm(
   var transport by remember { mutableStateOf(existing?.transport ?: "http") }
   var enabled by remember { mutableStateOf(existing?.enabled ?: true) }
 
+  // 表单是弹窗，不是页面（与「服务商」编辑表单同一取舍）。
+  androidx.compose.ui.window.Dialog(
+      onDismissRequest = onCancel,
+      properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false),
+  ) {
+  androidx.compose.material3.Surface(
+      shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp),
+      color = MaterialTheme.colorScheme.surface,
+      modifier = Modifier.fillMaxWidth().padding(Spacing.md),
+  ) {
   Column(
-      modifier =
-          Modifier.fillMaxSize()
-              .verticalScroll(rememberScrollState())
-              .padding(horizontal = Spacing.md),
+      modifier = Modifier.verticalScroll(rememberScrollState()).padding(Spacing.lg),
       verticalArrangement = Arrangement.spacedBy(Spacing.sm),
   ) {
+    Text(
+        text = if (existing == null) "添加 MCP 服务端" else "编辑 MCP 服务端",
+        style = MaterialTheme.typography.titleMedium,
+        color = MaterialTheme.colorScheme.onSurface,
+    )
     AppTextField(
         value = label,
         onValueChange = { label = it },
@@ -245,5 +257,7 @@ private fun McpEditForm(
           }
       TextButton(onClick = onCancel) { Text("取消") }
     }
+  }
+  }
   }
 }

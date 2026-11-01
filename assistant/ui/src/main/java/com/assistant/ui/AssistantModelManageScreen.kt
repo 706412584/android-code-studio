@@ -40,6 +40,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.assistant.ui.compat.AppTextField
 import com.assistant.ui.components.independent.ProviderLogoIcon
+import com.assistant.ui.components.independent.ProviderProtocol
 import com.assistant.ui.components.independent.ProviderSelectionTarget
 import com.assistant.ui.components.independent.SettingsDivider
 import com.assistant.ui.components.independent.SettingsGroup
@@ -81,6 +82,12 @@ fun AssistantModelManageScreen(
     selections: Map<String, Pair<String, String>>,
     onSelect: (sceneKey: String, providerId: String, model: String) -> Unit,
     onClear: (sceneKey: String) -> Unit,
+    /**
+     * 拉取某个服务商的模型清单。由宿主注入（渲染层不依赖引擎）。
+     * 返回 (模型清单, 失败原因)。
+     */
+    onFetchModels:
+        (baseUrl: String, apiKey: String, protocol: ProviderProtocol) -> Pair<List<String>, String>,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
     darkTheme: Boolean = androidx.compose.foundation.isSystemInDarkTheme(),
@@ -147,8 +154,9 @@ fun AssistantModelManageScreen(
             }
           }
 
+          // 选择面板是**弹窗**而不是行内展开：它是一次性选择（选完就关），
+          // 行内展开会把列表撑长、把其它用途挤下去（用户实测反馈「该用弹窗的地方平铺了」）。
           if (expanded == scene.key) {
-            SettingsDivider()
             ScenePicker(
                 scene = scene,
                 providers = usable,
@@ -158,6 +166,8 @@ fun AssistantModelManageScreen(
                   onSelect(scene.key, pid, m)
                   expanded = null
                 },
+                onDismiss = { expanded = null },
+                onFetchModels = onFetchModels,
                 onClear = {
                   onClear(scene.key)
                   expanded = null
@@ -178,7 +188,7 @@ private val MODEL_SCENES =
         ModelScene("video", "视频生成", "未配置 — 点按选择服务商与视频模型"),
     )
 
-/** 选中一个用途之后的小面板：列服务商 → 填模型名。 */
+/** 选中一个用途之后的弹窗：列服务商 → 填模型名。 */
 @Composable
 private fun ScenePicker(
     scene: ModelScene,
@@ -186,6 +196,9 @@ private fun ScenePicker(
     currentProviderId: String,
     currentModel: String,
     onPick: (providerId: String, model: String) -> Unit,
+    onDismiss: () -> Unit,
+    onFetchModels:
+        (baseUrl: String, apiKey: String, protocol: ProviderProtocol) -> Pair<List<String>, String>,
     onClear: () -> Unit,
 ) {
   var pickedProviderId by remember(scene.key) { mutableStateOf(currentProviderId) }
@@ -194,14 +207,34 @@ private fun ScenePicker(
         if (pickedProviderId == currentProviderId && currentModel.isNotEmpty()) currentModel
         else providers.firstOrNull { it.id == pickedProviderId }?.model.orEmpty())
   }
+  // 拉取到的候选清单 + 拉取状态。
+  var catalog by remember(scene.key, pickedProviderId) { mutableStateOf(listOf<String>()) }
+  var fetching by remember(scene.key) { mutableStateOf(false) }
+  var fetchMessage by remember(scene.key) { mutableStateOf("") }
 
-  Column(modifier = Modifier.padding(horizontal = Spacing.lg, vertical = Spacing.sm)) {
+  androidx.compose.ui.window.Dialog(
+      onDismissRequest = onDismiss,
+      properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false),
+  ) {
+  androidx.compose.material3.Surface(
+      shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp),
+      color = MaterialTheme.colorScheme.surface,
+      modifier = Modifier.fillMaxWidth().padding(Spacing.md),
+  ) {
+  Column(modifier = Modifier.padding(Spacing.lg)) {
+    Text(
+        text = "${scene.label}用哪个模型",
+        style = MaterialTheme.typography.titleMedium,
+        color = MaterialTheme.colorScheme.onSurface,
+        modifier = Modifier.padding(bottom = Spacing.sm),
+    )
     if (providers.isEmpty()) {
       Text(
           text = "还没有可用的服务商。先到「服务商」页添加一个（填好 API 地址与密钥）。",
           style = MaterialTheme.typography.bodySmall,
           color = MaterialTheme.colorScheme.onSurfaceVariant,
       )
+      TextButton(onClick = onDismiss) { Text("关闭") }
       return@Column
     }
 
@@ -251,10 +284,41 @@ private fun ScenePicker(
         color = MaterialTheme.colorScheme.onSurfaceVariant,
         modifier = Modifier.padding(top = Spacing.sm, bottom = Spacing.xs),
     )
-    AppTextField(
+    // 先拉清单再选：模型名要一字不差才不 404，手填基本靠猜。
+    Row(verticalAlignment = Alignment.CenterVertically) {
+      TextButton(
+          enabled = !fetching && pickedProviderId.isNotEmpty(),
+          onClick = {
+            val provider = providers.firstOrNull { it.id == pickedProviderId }
+            if (provider == null) return@TextButton
+            fetching = true
+            fetchMessage = ""
+            val (models, error) = onFetchModels(provider.baseUrl, provider.apiKey, provider.protocol)
+            fetching = false
+            if (error.isEmpty() && models.isNotEmpty()) {
+              catalog = models
+              fetchMessage = "拉到 ${models.size} 个模型"
+            } else {
+              fetchMessage = error.ifEmpty { "目录为空（可手填）" }
+            }
+          }) {
+            Text(if (fetching) "拉取中…" else "拉取模型")
+          }
+      if (fetchMessage.isNotEmpty()) {
+        Text(
+            text = fetchMessage,
+            style = MaterialTheme.typography.bodySmall,
+            color =
+                if (catalog.isNotEmpty()) MaterialTheme.colorScheme.primary
+                else MaterialTheme.colorScheme.error,
+        )
+      }
+    }
+    com.assistant.ui.compat.ModelDropdownField(
+        label = "${scene.label}模型",
         value = modelText,
         onValueChange = { modelText = it },
-        label = "${scene.label}模型",
+        choices = catalog,
         placeholder =
             when (scene.key) {
               "image" -> "gpt-image-1 / flux-schnell"
@@ -276,5 +340,7 @@ private fun ScenePicker(
         TextButton(onClick = onClear) { Text("清除") }
       }
     }
+  }
+  }
   }
 }
