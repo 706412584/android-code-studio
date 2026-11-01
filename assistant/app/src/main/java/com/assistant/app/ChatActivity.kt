@@ -386,6 +386,36 @@ class ChatActivity : ComponentActivity() {
                 // 抄一份出来就会在两边分别演化（改了一边另一边就静默失效）。
                 slashCommands = slashCommands(),
                 skills = skillCommands(),
+                // ---- 排队 / 强制停止 ----
+                // 忙碌时输入栏提示「回车发送将自动排队」，队列必须真的有：没有的话
+                // 那条提示就是假承诺，用户按了回车消息会静默消失。
+                queuedRequests = queuedRequests,
+                onRemoveQueued = { id -> queuedRequests.removeAll { it.id == id } },
+                onMoveQueued = { from, to ->
+                  // 上移/下移：交换相邻两项。边界由组件保证（它不会越界调）。
+                  if (from in queuedRequests.indices && to in queuedRequests.indices) {
+                    val item = queuedRequests.removeAt(from)
+                    queuedRequests.add(to, item)
+                  }
+                },
+                onEditQueued = { req ->
+                  // 取回输入框编辑：从队列移除并填进输入框，而不是就地改
+                  // ——用户要的是「改完再发」，改完立刻重发会与他的编辑动作打架。
+                  queuedRequests.removeAll { it.id == req.id }
+                  pendingInput = req.request
+                },
+                // 插队：移到队首，下一轮结束就先发它。
+                onInterjectQueued = { id ->
+                  val index = queuedRequests.indexOfFirst { it.id == id }
+                  if (index > 0) {
+                    val item = queuedRequests.removeAt(index)
+                    queuedRequests.add(0, item)
+                  }
+                },
+                // 长按停止键 = 强制打断。本 App 没有「软打断」（区分「停当前步」与
+                // 「停整轮」需要内核支持中途取消单步），因此两者是同一个动作。
+                canForceStop = busy,
+                onForceStop = { runner.cancel() },
                 // ---- 模型芯片 ----
                 // 不传的话点开是一片空白（面板读的是这两个参数）。
                 currentProvider = providerTarget(),
@@ -933,10 +963,41 @@ class ChatActivity : ComponentActivity() {
     super.onDestroy()
   }
 
+  // ---- 排队 ----
+
+  /**
+   * 取队首发出。
+   *
+   * <p>**先移除再发**：`send` 会重新走一遍完整流程（包括「忙碌时再入队」的判断），
+   * 若不移除，刚发出的这条会因为 runner 状态还是旧值而被又塞回队里，造成死循环。
+   *
+   * <p>只发一条：`send` 之后 runner 又忙了，剩下的等下一轮 onFinished 再取——这样
+   * 顺序有保证，也不会在一条内递归地把整队发完（那样会绕过排队语义）。
+   */
+  private fun drainQueue() {
+    val next = queuedRequests.firstOrNull() ?: return
+    queuedRequests.removeAt(0)
+    send(next.request)
+  }
+
   // ---- 会话搜索 / 置顶 ----
 
   /** 每个命中片段的最大长度；太长会把列表项撑高。 */
   private val SNIPPET_MAX = 80
+
+  /**
+   * 等待发送的排队消息。
+   *
+   * <p>**为什么必须有**：输入栏在忙碌时会提示「回车发送将自动排队」。没有这个队列，
+   * 那条提示就是假的——用户按了回车，消息被丢弃，界面上什么都不会发生。
+   * 要么实现队列，要么改掉那句提示；前者是用户真正需要的（长回答期间想接着说）。
+   */
+  private val queuedRequests =
+      androidx.compose.runtime.mutableStateListOf<
+          com.assistant.ui.components.independent.QueuedRequest>()
+
+  /** 排队消息的自增 id（组件用它做 key 与增删标识）。 */
+  private var queuedSeq = 0
 
   /**
    * 扫会话记录找匹配。
@@ -1315,6 +1376,25 @@ class ChatActivity : ComponentActivity() {
       showSetupHint()
       return
     }
+    // 忙碌时入队，而不是丢弃。
+    //
+    // 输入栏在忙碌时提示「回车发送将自动排队」——那是对用户的承诺。此前没有队列，
+    // 用户按了回车消息就没了，且界面上毫无反馈（最坏的一种：静默丢弃）。
+    if (runner.isRunning()) {
+      queuedRequests.add(
+          com.assistant.ui.components.independent.QueuedRequest(
+              id = "q${queuedSeq++}",
+              request = text,
+              currentFile = null,
+              selectedCode = null,
+              projectRoot = workspace.absolutePath,
+          ))
+      timeline.append(
+          MessageTimeline.Role.TRACE, "已排队（前面还有 1 轮在进行）：$text")
+      chatView.forceScrollToBottom(uiScope)
+      return
+    }
+
     // 每轮开始清掉**本会话**的运行内授权记忆。
     //
     // 内核不会自己调这个（ACS 是在 runInConversation 里调 beginRun 的，本 App 没有那层）。
@@ -1384,6 +1464,11 @@ class ChatActivity : ComponentActivity() {
                     )
                   }
                   chatView.forceScrollToBottom(uiScope)
+                  // 本轮结束，接着发队首。
+                  //
+                  // 在 onFinished 里发而不是轮询 runner 状态：轮询要在「刚空闲」的
+                  // 那一帧抢跑，与用户手动发送竞争；而这里是本轮确实结束的唯一时点。
+                  drainQueue()
                 }
               }
             },

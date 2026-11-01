@@ -157,6 +157,20 @@ fun AssistantChatScreen(
     initialMode: AgentMode = AgentMode.BUILD,
     /** 用户切换对话模式。宿主负责落盘（本层不碰偏好存储）。 */
     onModeChange: (AgentMode) -> Unit = {},
+    /**
+     * 排队中的消息。
+     *
+     * <p>忙碌时输入栏提示「回车发送将自动排队」——那是承诺，队列必须真的有。
+     */
+    queuedRequests: List<com.assistant.ui.components.independent.QueuedRequest> = emptyList(),
+    onRemoveQueued: (String) -> Unit = {},
+    onMoveQueued: (Int, Int) -> Unit = { _, _ -> },
+    onEditQueued: (com.assistant.ui.components.independent.QueuedRequest) -> Unit = {},
+    /** 插队到队首，下一轮结束就先发它。 */
+    onInterjectQueued: (String) -> Unit = {},
+    /** 长按停止键强制打断整轮。 */
+    canForceStop: Boolean = false,
+    onForceStop: () -> Unit = {},
     /** 上下文已用占比（0..1），驱动输入栏的占用环。 */
     tokenProgress: Float = 0f,
     /**
@@ -250,6 +264,13 @@ fun AssistantChatScreen(
             onReasoningEffortChange = { reasoning = it },
             slashCommands = slashCommands,
             skills = skills,
+            queuedRequests = queuedRequests,
+            onRemoveQueued = onRemoveQueued,
+            onMoveQueued = onMoveQueued,
+            onEditQueued = onEditQueued,
+            onInterjectQueued = onInterjectQueued,
+            canForceStop = canForceStop,
+            onForceStop = onForceStop,
             tokenProgress = tokenProgress,
             contextWindowSize = contextWindowSize,
             pendingAttachments = attachments,
