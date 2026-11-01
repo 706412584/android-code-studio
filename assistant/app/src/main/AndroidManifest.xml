@@ -18,11 +18,15 @@
     android:label="Assistant"
     android:theme="@android:style/Theme.DeviceDefault.Light">
 
-    <!-- 不设 android:label：继承 application 的「Assistant」。
-         设成「设置」会让系统标题栏与页面内标题重复（用户实测反馈「双标题」）。 -->
+    <!--
+      设置页用 NoActionBar 主题：系统 ActionBar 会把 application 的 label（Assistant）
+      画在顶部，与页面内自己的「设置」标题重复——用户实测反馈「设置页有 Assistant，
+      去掉」。设置页自带顶栏（返回 + 标题），不需要系统的。
+    -->
     <activity
       android:name=".SettingsActivity"
-      android:exported="true">
+      android:exported="true"
+      android:theme="@android:style/Theme.Material.Light.NoActionBar">
       <intent-filter>
         <action android:name="android.intent.action.MAIN" />
         <category android:name="android.intent.category.LAUNCHER" />
