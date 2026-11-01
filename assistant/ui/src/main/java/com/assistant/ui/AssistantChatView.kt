@@ -133,6 +133,22 @@ class AssistantChatView(
   fun cancelPendingQuestion() = host.cancelPendingQuestion()
 
   /**
+   * 弹出危险工具确认框并等待用户答复。
+   *
+   * <p>与 [askQuestion] 同为「阻塞式端口的界面侧」：内核的确认闸门在工具线程上等答案，
+   * 这里用「先记状态、等用户点完再回调」承接。
+   *
+   * <p>**必须回主线程调用。**
+   */
+  fun confirmDangerousTool(
+      pending: com.assistant.ui.components.independent.PendingDangerousTool,
+      onChoice: (com.assistant.ui.components.independent.DangerousToolChoice) -> Unit,
+  ) = host.confirmDangerousTool(pending, onChoice)
+
+  /** 面板销毁时把未决确认按「拒绝」收尾，避免工具线程一直等。 */
+  fun cancelPendingDangerousTool() = host.cancelPendingDangerousTool()
+
+  /**
    * 释放：注销时间线观察者。
    *
    * <p>不调用的话，时间线会一直持有状态对象（进而持有消息列表），面板关掉后内存不释放。
@@ -141,5 +157,6 @@ class AssistantChatView(
   fun release() {
     state.dispose()
     host.cancelPendingQuestion()
+    host.cancelPendingDangerousTool()
   }
 }

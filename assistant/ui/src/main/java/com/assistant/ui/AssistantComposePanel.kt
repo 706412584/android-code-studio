@@ -60,6 +60,9 @@ import com.assistant.ui.compat.ProvideAcsToolOpeners
 import com.assistant.ui.compat.PendingUserQuestion
 import com.assistant.ui.compat.UserQuestionAnswer
 import com.assistant.ui.components.bubbles.AgentMessageItem
+import com.assistant.ui.components.independent.DangerousToolChoice
+import com.assistant.ui.components.independent.DangerousToolConfirmDialog
+import com.assistant.ui.components.independent.PendingDangerousTool
 import com.assistant.ui.components.tools.AskUserQuestionPanel
 import com.assistant.ui.components.tools.ToolCallGroupHeader
 import com.assistant.ui.model.AgentUIMessage
@@ -202,6 +205,14 @@ internal fun AssistantComposePanel(
      *   把取消也塞成空列表会让模型把「用户没答」当成「用户选了空」继续往下做。
      */
     onQuestionDone: (UserQuestionAnswer?) -> Unit = {},
+    /** 待确认的危险工具调用；非 null 时弹确认框。由宿主驱动（见 [AssistantComposePanelHost.confirmDangerousTool]）。 */
+    dangerousTool: PendingDangerousTool? = null,
+    /** 用户允许本次调用。 */
+    onAllowOnce: () -> Unit = {},
+    /** 用户允许本次并持久化规则（「始终允许」）。 */
+    onAllowAlways: () -> Unit = {},
+    /** 用户拒绝，或点了对话框外部。 */
+    onDeny: () -> Unit = {},
 ) {
   // 把两个 compat 提供的「宿主能力」包在面板外层。**必须在组件树内、消息渲染之外**：
   //   - ProvideAcsImageViewer：消息里的图片点击走它 → ACS 已有的 ToolResultImageSupport
@@ -211,7 +222,19 @@ internal fun AssistantComposePanel(
   // 两者都由 compat 写好，本层只决定「包不包」——这正是它们设计成可选接线的原因。
   ProvideAcsImageViewer(fileAccess = fileAccess) {
     ProvideAcsToolOpeners {
-      PanelContent(state, listState, callbacks, darkTheme, modifier, conversationEpoch, question, onQuestionDone)
+      PanelContent(
+          state,
+          listState,
+          callbacks,
+          darkTheme,
+          modifier,
+          conversationEpoch,
+          question,
+          onQuestionDone,
+          dangerousTool,
+          onAllowOnce,
+          onAllowAlways,
+          onDeny)
     }
   }
 }
@@ -226,6 +249,10 @@ private fun PanelContent(
     conversationEpoch: androidx.compose.runtime.State<Int>,
     question: PendingUserQuestion?,
     onQuestionDone: (UserQuestionAnswer?) -> Unit,
+    dangerousTool: PendingDangerousTool?,
+    onAllowOnce: () -> Unit,
+    onAllowAlways: () -> Unit,
+    onDeny: () -> Unit,
 ) {
   AIEditorTheme(darkTheme = darkTheme, textScale = rememberChatTextScale()) {
     // 读一次快照：列表变化时本函数重组，而 LazyColumn 按 key 只重组变化的条目
@@ -471,6 +498,17 @@ private fun PanelContent(
             )
           }
         }
+      }
+
+      // 危险工具确认框。与上面的提问同理：工具调用在等用户答复（阻塞式端口），
+      // 答复必须先于后续内容出现，因此同样是模态 Dialog 而不是列表项。
+      if (dangerousTool != null) {
+        DangerousToolConfirmDialog(
+            pending = dangerousTool,
+            onAllowOnce = onAllowOnce,
+            onAllowAlways = onAllowAlways,
+            onDeny = onDeny,
+        )
       }
     }
   }
@@ -974,6 +1012,41 @@ internal class AssistantComposePanelHost(
     sink(answer)
   }
 
+  /** 待确认的危险工具调用；null 表示没有。同 [pendingQuestion]，必须是 Compose 状态。 */
+  private val pendingDangerousTool = mutableStateOf<PendingDangerousTool?>(null)
+
+  /** 确认回传口。同一时刻只可能有一个确认在等（确认闸门按会话串行）。 */
+  private var dangerousSink: ((DangerousToolChoice) -> Unit)? = null
+
+  /**
+   * 弹出危险工具确认框并等待用户答复。
+   *
+   * <p>与 [askQuestion] 同一套「先记下、等用户点完再回调」的做法，理由也一样：
+   * 内核的确认闸门是阻塞式端口（工具线程在等），而 Compose 组合是异步的。
+   *
+   * <p><b>必须回主线程调用</b>：内部改的是 Compose 状态。
+   */
+  fun confirmDangerousTool(
+      pending: PendingDangerousTool,
+      onChoice: (DangerousToolChoice) -> Unit,
+  ) {
+    dangerousSink = onChoice
+    pendingDangerousTool.value = pending
+  }
+
+  /** 面板销毁时把未决确认收尾（按拒绝处理），避免工具线程一直等。 */
+  fun cancelPendingDangerousTool() {
+    finishDangerousTool(DangerousToolChoice.DENY)
+  }
+
+  private fun finishDangerousTool(choice: DangerousToolChoice) {
+    val sink = dangerousSink ?: return
+    // 先清状态再回调（同 finishQuestion 的理由）。
+    dangerousSink = null
+    pendingDangerousTool.value = null
+    sink(choice)
+  }
+
   val view: ComposeView =
       ComposeView(context).apply {
         setContent {
@@ -986,6 +1059,10 @@ internal class AssistantComposePanelHost(
               fileAccess = fileAccess,
               question = pendingQuestion.value,
               onQuestionDone = { finishQuestion(it) },
+              dangerousTool = pendingDangerousTool.value,
+              onAllowOnce = { finishDangerousTool(DangerousToolChoice.ALLOW_ONCE) },
+              onAllowAlways = { finishDangerousTool(DangerousToolChoice.ALLOW_ALWAYS) },
+              onDeny = { finishDangerousTool(DangerousToolChoice.DENY) },
           )
         }
       }

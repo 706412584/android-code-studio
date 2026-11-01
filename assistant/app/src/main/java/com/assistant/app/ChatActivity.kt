@@ -28,6 +28,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.unit.dp
 import com.assistant.engine.AppHttpPort
+import com.assistant.engine.AssistantToolSettings
 import com.assistant.engine.ConversationRunner
 import com.assistant.engine.ModelSettings
 import com.assistant.engine.ProviderPresets
@@ -39,6 +40,8 @@ import com.assistant.ui.AssistantSessionsDrawer
 import com.assistant.ui.SessionRow
 import com.assistant.ui.WorkspaceBrowser
 import com.assistant.ui.EventReducer
+import com.assistant.ui.compat.toAnswerList
+import com.assistant.ui.compat.toPendingUserQuestion
 import com.assistant.ui.model.MessageTimeline
 import com.tom.rv2ide.ai.agent.AgentEvent
 import com.tom.rv2ide.ai.agent.AgentRunResult
@@ -68,6 +71,11 @@ class ChatActivity : ComponentActivity() {
   private lateinit var modelSettings: ModelSettings
   private lateinit var runner: ConversationRunner
   private lateinit var conversationStore: FileConversationStore
+
+  /**
+   * 权限闸门。字段而非局部变量：确认/提问的回调（[awaitUserDecision] 等）要用它。
+   */
+  private lateinit var toolSettings: AssistantToolSettings
 
   private val uiScope = CoroutineScope(Dispatchers.Main)
 
@@ -117,7 +125,18 @@ class ChatActivity : ComponentActivity() {
           android.util.Log.i("ChatActivity", "MCP 接入 ${result.toolCount} 个工具")
         }
         .onFailure { android.util.Log.w("ChatActivity", "MCP 接入异常", it) }
-    val executor = ToolExecutor(registry, null, null)
+    // 权限闸门：**必须显式构造并同时交给 executor 与 runner**。
+    //
+    // 两处都不能省（此前只传 null，导致默认 PERMISSION_AUTO 静默放行危险工具）：
+    //  - ToolExecutor 第 2 参为 null 时，它会自建 ToolPermissionService(defaults(), …)，
+    //    而 defaults() 的 getPermissionMode() 返回 PERMISSION_AUTO；
+    //  - ConversationRunner 的 toolSettings 决定 ToolContext.settings，
+    //    那是 Question 弹窗与「确认后执行」路径读取的那一份。
+    // 任一为 null，界面上写着「逐次确认」，实际都不问。
+    toolSettings = AssistantToolSettings(this)
+    val permissionService =
+        com.tom.rv2ide.ai.tool.ToolPermissionService(toolSettings, registry)
+    val executor = ToolExecutor(registry, permissionService, null)
     runner =
         ConversationRunner(
             modelSettings,
@@ -125,7 +144,7 @@ class ChatActivity : ComponentActivity() {
             executor,
             conversationStore,
             workspace,
-            null,
+            toolSettings,
             // 每次运行前读一次：用户在设置里改了模式，下一次发送即生效。
             { com.assistant.ui.AssistantPrefs.chatMode(this) },
         )
@@ -165,6 +184,21 @@ class ChatActivity : ComponentActivity() {
               }
             },
         )
+
+    // ---- 权限闸门接线 ----
+    //
+    // 内核的确认闸门是**阻塞式端口**（工具线程在等答案），而 Compose 的弹窗必须
+    // 在主线程异步进行。因此这里用 latch 把两边接起来：
+    //   工具线程 → confirm()（阻塞等 latch）→ post 到主线程弹窗 → 用户点击 → 唤醒
+    // 超时兜底：Activity 若已销毁或弹窗迟迟不来，不能把工具线程一直挂着。
+    toolSettings.setDangerousToolConfirmer(
+        AssistantToolSettings.DangerousToolConfirmer { toolName, args ->
+          awaitUserDecision(toolName, args)
+        })
+    toolSettings.setQuestionAsker(
+        AssistantToolSettings.QuestionAsker { questions ->
+          awaitUserAnswers(questions)
+        })
 
     // 整页一个 Compose 树：顶栏 + 消息列表 + 输入栏。
     //
@@ -339,6 +373,97 @@ class ChatActivity : ComponentActivity() {
   /** 顶栏标题：当前会话名。 */
   private var currentTitle: String = "新的对话"
 
+  /**
+   * 把工具线程的阻塞确认接到主线程弹窗。
+   *
+   * <p>工具线程在这里等 [CountDownLatch]，直到用户在确认框上点了按钮。
+   * **超时按拒绝处理**：Activity 销毁或界面卡死时不能把工具线程永久挂住，
+   * 而超时放行是绝对不能接受的（那等于绕过确认）。
+   */
+  private fun awaitUserDecision(toolName: String, args: String): Boolean {
+    val latch = java.util.concurrent.CountDownLatch(1)
+    // AtomicBoolean 而不是 var：主线程写、工具线程读，需要可见性保证
+    // （latch 只负责唤醒，不负责把值刷出去；Kotlin 的局部变量也无法加 @Volatile）。
+    val allowed = java.util.concurrent.atomic.AtomicBoolean(false)
+    runOnUiThread {
+      chatView.confirmDangerousTool(
+          com.assistant.ui.components.independent.PendingDangerousTool(
+              toolName = toolName,
+              caption = describeTool(toolName),
+              detail = args.orEmpty(),
+          ),
+      ) { choice ->
+        allowed.set(choice != com.assistant.ui.components.independent.DangerousToolChoice.DENY)
+        // 「始终允许」在这里落一条持久化规则。必须由本层写：只有这里知道
+        // 用户点的是哪个按钮（内核的 applyDecision 就是为这个分工留的）。
+        if (choice == com.assistant.ui.components.independent.DangerousToolChoice.ALLOW_ALWAYS) {
+          toolSettings.applyDecision(
+              toolName,
+              args,
+              com.tom.rv2ide.ai.tool.DangerousToolDecision.ALLOW_ALWAYS,
+          )
+        }
+        latch.countDown()
+      }
+    }
+    val answered = latch.await(CONFIRM_TIMEOUT_SECONDS, java.util.concurrent.TimeUnit.SECONDS)
+    if (!answered) {
+      android.util.Log.w("ChatActivity", "危险工具确认超时，按拒绝处理: $toolName")
+      return false
+    }
+    return allowed.get()
+  }
+
+  /**
+   * 把工具线程的阻塞提问接到主线程提问面板。
+   *
+   * <p>返回 null 表示「没有答」——内核据此告诉模型不要擅自假定答案（见
+   * {@code ToolSettingsPort.askUserQuestion} 的约定）。
+   */
+  private fun awaitUserAnswers(
+      questions: List<com.tom.rv2ide.ai.tool.ToolSettingsPort.Question>
+  ): List<String>? {
+    val latch = java.util.concurrent.CountDownLatch(1)
+    val answers = java.util.concurrent.atomic.AtomicReference<List<String>?>(null)
+    runOnUiThread {
+      val pending = questions.toPendingUserQuestion(java.util.UUID.randomUUID().toString())
+      chatView.askQuestion(pending) { answer ->
+        // 与 askUserQuestion 的分支约定对齐（见 AssistantComposePanel 的 onQuestionDone 注释）：
+        // null = 取消 → 原样回 null；否则转成内核期望的字符串列表（多选逗号连接）。
+        answers.set(
+            if (answer == null) null
+            else answer.toAnswerList())
+        latch.countDown()
+      }
+    }
+    val answered = latch.await(CONFIRM_TIMEOUT_SECONDS, java.util.concurrent.TimeUnit.SECONDS)
+    if (!answered) {
+      android.util.Log.w("ChatActivity", "提问等待超时，按未作答处理")
+    }
+    return answers.get()
+  }
+
+  /**
+   * 把工具规范名翻成一句人话，让用户看清要放行什么。
+   *
+   * <p>覆盖范围对齐内核里声明了 {@code needsConfirmation() == true} 的工具
+   * （file_delete / file_move / shell_execute / archive / http_request / task_stop）。
+   * MCP 工具名由 server 决定（动态），一律走 else——那句「执行工具 xxx」仍是可判断的。
+   */
+  private fun describeTool(toolName: String): String =
+      when (toolName) {
+        "file_delete" -> "删除文件"
+        "file_move" -> "移动 / 重命名文件"
+        "shell_execute" -> "执行 shell 命令"
+        "archive" -> "打包 / 解压"
+        "http_request" -> "发起 HTTP 请求"
+        "task_stop" -> "中断正在运行的命令"
+        "format_code" -> "格式化代码"
+        "code_actions" -> "应用代码动作"
+        "build_variant" -> "切换构建变体"
+        else -> "执行工具 $toolName"
+      }
+
   /** 从磁盘读会话列表（按最近修改倒序，由 store 保证）。 */
   private fun loadSessions(): List<com.assistant.ui.SessionRow> =
       try {
@@ -501,6 +626,13 @@ class ChatActivity : ComponentActivity() {
       showSetupHint()
       return
     }
+    // 每轮开始清掉**本会话**的运行内授权记忆。
+    //
+    // 内核不会自己调这个（ACS 是在 runInConversation 里调 beginRun 的，本 App 没有那层）。
+    // 不清的话「允许一次」会退化成「本会话内永久允许」：用户对 file_delete 点过一次
+    // 允许，之后模型删任何文件都不再问——与「允许一次」的语义相反。
+    // 只清本会话的桶，别的会话不受影响。
+    toolSettings.beginRun(conversationId)
     // 本地先画用户气泡：内核也会广播 USER_MESSAGE，EventReducer 会判重
     // （末条已是同一内容的用户消息则跳过），所以这里画是安全的。
     timeline.append(MessageTimeline.Role.USER, text)
@@ -572,5 +704,15 @@ class ChatActivity : ComponentActivity() {
         MessageTimeline.Role.TRACE,
         "还不能对话：$problem\n点左上角菜单 → 设置，填入服务商与 API Key。",
     )
+  }
+
+  private companion object {
+    /**
+     * 等待用户确认/作答的上限（秒）。
+     *
+     * <p>超时按**拒绝**处理，不按放行——工具线程不能永久挂住，但更不能因为
+     * 「等不到人」就把危险操作静默放过去。
+     */
+    const val CONFIRM_TIMEOUT_SECONDS = 300L
   }
 }
