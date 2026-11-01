@@ -90,8 +90,10 @@ fun AssistantChatScreen(
     onDismissDrawer: () -> Unit = {},
     modifier: Modifier = Modifier,
     darkTheme: Boolean = androidx.compose.foundation.isSystemInDarkTheme(),
+    /** 消息渲染区的外观（卡片缩放 / 正文颜色），来自设置页。 */
+    style: com.assistant.ui.theme.AssistantStyle = com.assistant.ui.theme.AssistantStyle(),
 ) {
-  AIEditorTheme(darkTheme = darkTheme, followHostFrame = false) {
+  AIEditorTheme(darkTheme = darkTheme, followHostFrame = false, style = style) {
     Box(modifier = Modifier.fillMaxSize()) {
     Column(
         modifier =

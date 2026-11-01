@@ -309,6 +309,13 @@ fun AIEditorTheme(
      * 消息区不传本参数，随设置走。
      */
     presetOverride: AppThemePreset? = null,
+    /**
+     * 消息渲染区的外观（卡片缩放 / 正文颜色）。
+     *
+     * <p>默认值 = 不缩放、跟随主题。设置页改完由宿主重新传入，
+     * 这里不自己读偏好——主题层不该知道偏好文件在哪。
+     */
+    style: AssistantStyle = AssistantStyle(),
     content: @Composable () -> Unit
 ) {
   val context = LocalContext.current
@@ -356,7 +363,10 @@ fun AIEditorTheme(
         if (textScale == 1f) AppTypography else AppTypography.scaledBy(textScale)
       }
 
-  CompositionLocalProvider(LocalAppSemanticColors provides semanticColors) {
+  CompositionLocalProvider(
+      LocalAppSemanticColors provides semanticColors,
+      LocalAssistantStyle provides style,
+  ) {
     MaterialTheme(colorScheme = finalScheme, typography = typography, content = content)
   }
 }

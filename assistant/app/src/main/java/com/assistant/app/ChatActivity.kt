@@ -108,10 +108,15 @@ class ChatActivity : ComponentActivity() {
             conversationStore,
             workspace,
             null,
+            // 每次运行前读一次：用户在设置里改了模式，下一次发送即生效。
+            { com.assistant.ui.AssistantPrefs.chatMode(this) },
         )
 
     // ---- 渲染 ----
     timeline = MessageTimeline()
+    // 思考折叠偏好：结束后是否自动收起。用户可在设置里改，这里每次创建时读一次。
+    timeline.autoCollapseThinking =
+        com.assistant.ui.AssistantPrefs.thinkingAutoCollapse(this)
     reducer = EventReducer(timeline)
     chatView =
         AssistantChatView(
@@ -269,6 +274,16 @@ class ChatActivity : ComponentActivity() {
                 },
                 drawerVisible = showDrawer,
                 onDismissDrawer = { showDrawer = false },
+                // 外观设置：卡片缩放与正文颜色。每次重组读一次偏好——
+                // 用户在设置页改完返回时这里会重新求值（Activity 重建）。
+                style =
+                    com.assistant.ui.theme.AssistantStyle(
+                        cardScale = com.assistant.ui.AssistantPrefs.cardScale(this@ChatActivity),
+                        textColor =
+                            com.assistant.ui.AssistantPrefs.textColor(this@ChatActivity)
+                                .takeIf { it != 0 }
+                                ?.let { androidx.compose.ui.graphics.Color(it) },
+                    ),
             )
           }
         }

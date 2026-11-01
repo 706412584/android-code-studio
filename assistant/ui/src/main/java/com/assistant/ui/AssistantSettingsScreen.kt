@@ -70,6 +70,16 @@ class AssistantSettingsState(
     var textSize: Float,
     /** 权限模式：auto / confirm / readonly。 */
     var permissionMode: String,
+    /** 对话模式 id：chat / plan / agent / control。 */
+    var chatMode: String,
+    /** 思考块结束后是否自动折叠。 */
+    var thinkingAutoCollapse: Boolean,
+    /** 是否显示工具运行状态条。 */
+    var toolStatusBar: Boolean,
+    /** 卡片缩放系数。 */
+    var cardScale: Float,
+    /** 正文颜色 ARGB；0 表示跟随主题。 */
+    var textColor: Int,
     /** 是否启用长期记忆。 */
     var memoryEnabled: Boolean,
     /** 已安装技能数（只读展示）。 */
@@ -80,6 +90,11 @@ class AssistantSettingsState(
     var onThemePresetChange: (String) -> Unit,
     var onTextSizeChange: (Float) -> Unit,
     var onPermissionModeChange: (String) -> Unit,
+    var onChatModeChange: (String) -> Unit,
+    var onThinkingAutoCollapseChange: (Boolean) -> Unit,
+    var onToolStatusBarChange: (Boolean) -> Unit,
+    var onCardScaleChange: (Float) -> Unit,
+    var onTextColorChange: (Int) -> Unit,
     var onMemoryEnabledChange: (Boolean) -> Unit,
     var onBack: () -> Unit,
 )
@@ -178,11 +193,35 @@ fun AssistantSettingsScreen(
                 TextSizeStepper(value = state.textSize, onChange = state.onTextSizeChange)
               },
           )
+          SettingsDivider()
+          SettingsRow(
+              title = "卡片缩放",
+              subtitle = "${(state.cardScale * 100).toInt()}%",
+              trailing = {
+                ScaleStepper(value = state.cardScale, onChange = state.onCardScaleChange)
+              },
+          )
+          SettingsDivider()
+          SettingsRow(
+              title = "正文颜色",
+              subtitle = if (state.textColor == 0) "跟随主题" else "自定义",
+              trailing = {
+                ColorSwatchRow(selected = state.textColor, onSelect = state.onTextColorChange)
+              },
+          )
         }
 
         // ---- 对话 ----
         SettingsGroupHeader(text = "对话")
         SettingsGroup {
+          // 对话模式放最前：它决定「助手被允许做到什么程度」，是比权限模式更上层的授权。
+          SettingsRow(
+              icon = FeatherIcons.Cpu,
+              title = "对话模式",
+              subtitle = chatModeLabel(state.chatMode),
+          )
+          ChatModeRow(selected = state.chatMode, onSelect = state.onChatModeChange)
+          SettingsDivider()
           SettingsRow(
               icon = FeatherIcons.Shield,
               title = "权限模式",
@@ -203,6 +242,30 @@ fun AssistantSettingsScreen(
                 Switch(
                     checked = state.memoryEnabled,
                     onCheckedChange = state.onMemoryEnabledChange,
+                )
+              },
+          )
+          SettingsDivider()
+          SettingsRow(
+              icon = FeatherIcons.Zap,
+              title = "思考结束后自动折叠",
+              subtitle = "流式期间展开，回答开始后收起",
+              trailing = {
+                Switch(
+                    checked = state.thinkingAutoCollapse,
+                    onCheckedChange = state.onThinkingAutoCollapseChange,
+                )
+              },
+          )
+          SettingsDivider()
+          SettingsRow(
+              icon = FeatherIcons.Zap,
+              title = "工具运行状态条",
+              subtitle = "在输入框上方显示工具实时输出",
+              trailing = {
+                Switch(
+                    checked = state.toolStatusBar,
+                    onCheckedChange = state.onToolStatusBarChange,
                 )
               },
           )
@@ -321,6 +384,107 @@ private fun PermissionModeRow(selected: String, onSelect: (String) -> Unit) {
                 else MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
         )
+      }
+    }
+  }
+}
+
+/** 对话模式四选一。 */
+@Composable
+private fun ChatModeRow(selected: String, onSelect: (String) -> Unit) {
+  val modes =
+      listOf(
+          "chat" to "对话",
+          "plan" to "计划",
+          "agent" to "执行",
+          "control" to "受控",
+      )
+  Row(
+      modifier = Modifier.fillMaxWidth().padding(horizontal = Spacing.lg, vertical = Spacing.sm),
+      horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
+  ) {
+    modes.forEach { (id, label) ->
+      val isSelected = id == selected
+      androidx.compose.material3.Surface(
+          shape = androidx.compose.foundation.shape.RoundedCornerShape(8.dp),
+          color =
+              if (isSelected) MaterialTheme.colorScheme.primaryContainer
+              else MaterialTheme.colorScheme.surfaceVariant,
+          modifier = Modifier.clickable { onSelect(id) },
+      ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.bodySmall,
+            color =
+                if (isSelected) MaterialTheme.colorScheme.primary
+                else MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+        )
+      }
+    }
+  }
+}
+
+private fun chatModeLabel(mode: String): String =
+    when (mode) {
+      "chat" -> "纯对话，不调用工具"
+      "plan" -> "只读调查，不改动文件"
+      "control" -> "可执行，但危险操作前先确认"
+      else -> "可执行任务，不逐次确认"
+    }
+
+/** 卡片缩放四档。 */
+@Composable
+private fun ScaleStepper(value: Float, onChange: (Float) -> Unit) {
+  val steps = listOf(0.85f, 1.0f, 1.15f, 1.3f)
+  Row(horizontalArrangement = Arrangement.spacedBy(Spacing.xs)) {
+    steps.forEach { scale ->
+      val isSelected = kotlin.math.abs(value - scale) < 0.02f
+      androidx.compose.material3.TextButton(onClick = { onChange(scale) }) {
+        Text(
+            text = "${(scale * 100).toInt()}",
+            style = MaterialTheme.typography.bodyMedium,
+            color =
+                if (isSelected) MaterialTheme.colorScheme.primary
+                else MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+      }
+    }
+  }
+}
+
+/** 正文颜色：跟随主题 + 四个预设色。 */
+@Composable
+private fun ColorSwatchRow(selected: Int, onSelect: (Int) -> Unit) {
+  // 0 = 跟随主题；其余是 ARGB。
+  val colors: List<Pair<Int, androidx.compose.ui.graphics.Color?>> =
+      listOf(
+          0 to null,
+          0xFF0F172A.toInt() to androidx.compose.ui.graphics.Color(0xFF0F172A),
+          0xFF6B4423.toInt() to androidx.compose.ui.graphics.Color(0xFF6B4423),
+          0xFF7C2D12.toInt() to androidx.compose.ui.graphics.Color(0xFF7C2D12),
+          0xFF1E3A5F.toInt() to androidx.compose.ui.graphics.Color(0xFF1E3A5F),
+      )
+  Row(horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
+    colors.forEach { (argb, color) ->
+      val isSelected = argb == selected
+      androidx.compose.foundation.layout.Box(
+          modifier =
+              Modifier.size(if (isSelected) 28.dp else 24.dp)
+                  .background(
+                      color ?: MaterialTheme.colorScheme.surfaceVariant,
+                      androidx.compose.foundation.shape.CircleShape,
+                  )
+                  .clickable { onSelect(argb) },
+          contentAlignment = Alignment.Center,
+      ) {
+        if (color == null) {
+          Text(
+              text = "自动",
+              style = MaterialTheme.typography.labelSmall,
+              color = MaterialTheme.colorScheme.onSurfaceVariant,
+          )
+        }
       }
     }
   }

@@ -21,6 +21,8 @@
 
 package com.assistant.ui.components.bubbles
 
+import com.assistant.ui.theme.scaled
+
 import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
@@ -439,7 +441,12 @@ internal fun AgentMessageItem(
                         } else if (isUser) {
                             // 用户消息：右对齐浅色药丸 + 深色文字（不再整块主题色反白）。
                             Surface(
-                                shape = RoundedCornerShape(ChatStyle.bubbleCorner),
+                                // 圆角跟随「卡片缩放」设置；未设置时倍率 1.0，与原来一致。
+                                shape =
+                                    RoundedCornerShape(
+                                        com.assistant.ui.theme.LocalAssistantStyle.current
+                                            .scaled(ChatStyle.bubbleCorner)
+                                    ),
                                 color = chatUserBubbleColor(),
                                 modifier = Modifier.widthIn(max = maxUserBubbleWidth)
                             ) {
@@ -471,7 +478,9 @@ internal fun AgentMessageItem(
                                 ) {
                                     MarkdownContent(
                                         text = contentSlice ?: message.content,
-                                        color = MaterialTheme.colorScheme.onSurface,
+                                        // 正文颜色：设置页可自定义；未设置时跟随主题。
+                                        color = com.assistant.ui.theme.LocalAssistantStyle.current
+                                            .textColor ?: MaterialTheme.colorScheme.onSurface,
                                         modifier = Modifier.fillMaxWidth(),
                                         cache = markdownCache,
                                     )

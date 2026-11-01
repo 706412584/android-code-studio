@@ -30,6 +30,7 @@ import com.assistant.engine.ModelSettings
 import com.assistant.engine.ProviderPresets
 import com.assistant.ui.AssistantModelSettingsScreen
 import com.assistant.ui.AssistantSettingsScreen
+import com.assistant.ui.AssistantPrefs
 import com.assistant.ui.AssistantSettingsState
 import com.assistant.ui.AssistantUiStyleStore
 import com.assistant.ui.ProviderOption
@@ -100,6 +101,12 @@ class SettingsActivity : ComponentActivity() {
                               ?: AppThemePreset.DEFAULT.id,
                       textSize = styleStore.textSize,
                       permissionMode = permissionPrefs.mode(),
+                      chatMode = AssistantPrefs.chatMode(this@SettingsActivity),
+                      thinkingAutoCollapse =
+                          AssistantPrefs.thinkingAutoCollapse(this@SettingsActivity),
+                      toolStatusBar = AssistantPrefs.toolStatusBar(this@SettingsActivity),
+                      cardScale = AssistantPrefs.cardScale(this@SettingsActivity),
+                      textColor = AssistantPrefs.textColor(this@SettingsActivity),
                       memoryEnabled = memoryPrefs.enabled(),
                       skillCount = countSkills(),
                       memoryCount = countMemory(),
@@ -115,6 +122,26 @@ class SettingsActivity : ComponentActivity() {
                       },
                       onPermissionModeChange = { mode ->
                         permissionPrefs.setMode(mode)
+                        recomposeKey++
+                      },
+                      onChatModeChange = { mode ->
+                        AssistantPrefs.setChatMode(this@SettingsActivity, mode)
+                        recomposeKey++
+                      },
+                      onThinkingAutoCollapseChange = { enabled ->
+                        AssistantPrefs.setThinkingAutoCollapse(this@SettingsActivity, enabled)
+                        recomposeKey++
+                      },
+                      onToolStatusBarChange = { enabled ->
+                        AssistantPrefs.setToolStatusBar(this@SettingsActivity, enabled)
+                        recomposeKey++
+                      },
+                      onCardScaleChange = { scale ->
+                        AssistantPrefs.setCardScale(this@SettingsActivity, scale)
+                        recomposeKey++
+                      },
+                      onTextColorChange = { argb ->
+                        AssistantPrefs.setTextColor(this@SettingsActivity, argb)
                         recomposeKey++
                       },
                       onMemoryEnabledChange = { enabled ->

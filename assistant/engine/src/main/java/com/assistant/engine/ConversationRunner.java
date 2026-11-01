@@ -69,6 +69,14 @@ public final class ConversationRunner {
   private final ToolSettingsPort toolSettings;
   private final AgentPromptBuilder promptBuilder;
 
+  /**
+   * 对话模式提供者：返回 {@code chat / plan / agent / control} 之一。
+   *
+   * <p>做成回调而不是构造参数：用户可能在设置里改模式，而 runner 是长生命周期对象
+   * （跟随 Activity）。每次运行读一次，改动立即对下一次运行生效。
+   */
+  private final java.util.function.Supplier<String> chatModeId;
+
   /** 当前运行实例；null 表示空闲。 */
   private volatile RunHandle active;
 
@@ -79,6 +87,30 @@ public final class ConversationRunner {
       ConversationStore conversationStore,
       File workspace,
       ToolSettingsPort toolSettings) {
+    this(
+        modelSettings,
+        toolRegistry,
+        toolExecutor,
+        conversationStore,
+        workspace,
+        toolSettings,
+        () -> "agent");
+  }
+
+  /**
+   * 完整构造（带对话模式）。
+   *
+   * @param chatModeId 每次运行前调用一次，返回 {@code chat/plan/agent/control}；
+   *   null 或未知值按 {@code agent}（内核 {@code ChatMode.DEFAULT}）处理
+   */
+  public ConversationRunner(
+      ModelSettings modelSettings,
+      ToolRegistry toolRegistry,
+      ToolExecutor toolExecutor,
+      ConversationStore conversationStore,
+      File workspace,
+      ToolSettingsPort toolSettings,
+      java.util.function.Supplier<String> chatModeId) {
     this.modelSettings = modelSettings;
     this.toolRegistry = toolRegistry;
     this.toolExecutor = toolExecutor;
@@ -86,6 +118,7 @@ public final class ConversationRunner {
     this.workspace = workspace;
     this.toolSettings = toolSettings == null ? ToolSettingsPort.defaults() : toolSettings;
     this.promptBuilder = new AgentPromptBuilder("Assistant");
+    this.chatModeId = chatModeId == null ? () -> "agent" : chatModeId;
   }
 
   /** 是否正在运行。 */
@@ -188,7 +221,7 @@ public final class ConversationRunner {
               new java.util.ArrayList<>(toolRegistry.getRequestableTools()),
               nativeTools,
               null,
-              null,
+              com.tom.rv2ide.ai.agent.prompt.ChatMode.fromId(chatModeId.get()),
               new AgentPromptBuilder.ModelInfo(
                   config.getId(),
                   config.getModelId(),
