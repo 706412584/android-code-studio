@@ -1,0 +1,87 @@
+/*
+ *  This file is part of AndroidCodeStudio.
+ *
+ *  AndroidCodeStudio is free software: you can redistribute it and/or modify
+ *  it under the terms of the GNU General Public License as published by
+ *  the Free Software Foundation, either version 3 of the License, or
+ *  (at your option) any later version.
+ *
+ *  AndroidCodeStudio is distributed in the hope that it will be useful,
+ *  but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *  GNU General Public License for more details.
+ *
+ *  You should have received a copy of the GNU General Public License
+ *  along with AndroidCodeStudio.  If not, see <https://www.gnu.org/licenses/>.
+ */
+
+/*
+ * 通用助手 —— 终端（PTY 渲染 + 容器执行）。
+ *
+ * **本模块不得依赖任何 ACS 模块**（与 assistant:ui 同一约束）。
+ *
+ * 终端能力由两部分组成：
+ *
+ * 1. **PTY 与渲染**：直接引 Termux 官方在 JitPack 发布的预编译 AAR
+ *    （terminal-emulator / terminal-view），其中已含各 ABI 的 libtermux.so。
+ *    不自己编译 native、也不搬那 22 个源文件——参考实现
+ *    D:/app/android/android 已验证这条路可行（见其 app/build.gradle.kts:169-171）。
+ *
+ * 2. **执行体**：proot 进 Linux 容器（rootfs 运行时下载）。
+ *    proot 全套以 lib*.so 形式放 jniLibs（nativeLibraryDir 是 App 私有目录里
+ *    唯一允许 execve 的位置，targetSdk 29+ 下 filesDir 会被 W^X 拒绝）。
+ */
+
+import com.tom.rv2ide.build.config.BuildConfig
+
+plugins {
+  id("com.android.library")
+  id("kotlin-android")
+}
+
+android {
+  namespace = "com.assistant.termux"
+
+  compileSdk = BuildConfig.compileSdk
+
+  defaultConfig {
+    minSdk = 26
+  }
+
+  compileOptions {
+    sourceCompatibility = BuildConfig.javaVersion
+    targetCompatibility = BuildConfig.javaVersion
+  }
+
+  // proot 全套走 jniLibs：必须解压（useLegacyPackaging），否则 .so 直接从 APK 映射、
+  // nativeLibraryDir 为空，execve 得到 ENOENT。
+  packaging {
+    jniLibs {
+      useLegacyPackaging = true
+      keepDebugSymbols +=
+          setOf(
+              "**/libproot.so",
+              "**/libproot-loader.so",
+              "**/libproot-loader32.so",
+              "**/libtalloc.so",
+              "**/libandroid-shmem.so",
+          )
+    }
+  }
+}
+
+kotlin {
+  compilerOptions {
+    jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_11)
+  }
+}
+
+dependencies {
+  // Termux 官方预编译 AAR：含 TerminalEmulator / TerminalView 与 libtermux.so。
+  // terminal-view 会传递带上 terminal-emulator，但显式写出更清楚。
+  api("com.github.termux.termux-app:terminal-emulator:v0.118.3")
+  api("com.github.termux.termux-app:terminal-view:v0.118.3")
+
+  implementation(libs.common.kotlin)
+  implementation(libs.androidx.annotation)
+}

@@ -104,6 +104,7 @@ include(
   ":assistant:app",
   ":assistant:engine",
   ":assistant:ui",
+  ":assistant:termux",
 
   ":external:acsprovider",
   ":external:atc",
