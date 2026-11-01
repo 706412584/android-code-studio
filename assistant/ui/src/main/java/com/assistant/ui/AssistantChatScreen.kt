@@ -70,6 +70,10 @@ fun AssistantChatScreen(
     /** 顶栏副标题前的服务商图标；null 时不显示。 */
     providerIcon: (@Composable () -> Unit)? = null,
     isBusy: Boolean,
+    /** 输入框初值。宿主在「把文件加入输入框」后靠它把内容推进来。 */
+    initialInput: String = "",
+    /** 初值被采纳后通知宿主清空（否则下次重组会再次覆盖用户的输入）。 */
+    onInitialInputConsumed: () -> Unit = {},
     onSend: (String) -> Unit,
     onStop: () -> Unit,
     onOpenSessions: () -> Unit,
@@ -133,7 +137,16 @@ fun AssistantChatScreen(
       }
 
       // ---- 输入栏 ----
-      var text by remember { mutableStateOf("") }
+      var text by remember { mutableStateOf(initialInput) }
+      // 宿主推来新初值时同步进输入框（文件加入 / 引用历史消息）。
+      // 用 LaunchedEffect(initialInput) 而不是直接把 initialInput 当 value：
+      // 后者会让输入框变成受控组件，用户打字立刻被宿主值覆盖。
+      androidx.compose.runtime.LaunchedEffect(initialInput) {
+        if (initialInput.isNotEmpty()) {
+          text = initialInput
+          onInitialInputConsumed()
+        }
+      }
       var mode by remember { mutableStateOf(AgentMode.BUILD) }
       var reasoning by remember { mutableStateOf(ReasoningEffort.DEFAULT) }
       Box(modifier = Modifier.fillMaxWidth().navigationBarsPadding()) {

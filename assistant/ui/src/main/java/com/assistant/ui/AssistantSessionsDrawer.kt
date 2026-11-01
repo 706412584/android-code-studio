@@ -17,235 +17,151 @@
 
 package com.assistant.ui
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.combinedClickable
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.dp
-import com.assistant.ui.compat.SegmentedTabs
-import com.assistant.ui.components.independent.SettingsGroupHeader
-import com.assistant.ui.components.independent.settingsPageBackground
+import com.assistant.ui.components.independent.AgentUIState
+import com.assistant.ui.components.independent.ChatDrawerContent
+import com.assistant.ui.components.independent.ChatSearchHit
+import com.assistant.ui.components.independent.ChatSearchState
+import com.assistant.ui.components.independent.ChatSession
+import com.assistant.ui.components.independent.FileBrowseState
+import com.assistant.ui.components.independent.Workspace
+import com.assistant.ui.components.independent.WorkspaceType
 import com.assistant.ui.theme.AIEditorTheme
-import com.assistant.ui.theme.Spacing
-import compose.icons.FeatherIcons
-import compose.icons.feathericons.MessageSquare
-import compose.icons.feathericons.Plus
-import compose.icons.feathericons.Settings
+import java.io.File
 
 /**
- * 会话列表的一行（渲染层投影）。
- *
- * <p>与引擎的 `ConversationSummary` 字段一一对应，但不直接引用它——
- * 渲染层不依赖引擎（见 `assistant/engine/build.gradle.kts` 的说明）。
+ * 侧边栏的一行会话（渲染层投影，避免宿主直接构造 15 个字段的 [ChatSession]）。
  */
 data class SessionRow(
     val id: String,
     val title: String,
     /** 最后修改时间（epoch 毫秒）。 */
     val updatedAt: Long,
-    /** 消息条数；0 表示空会话。 */
     val messageCount: Int = 0,
 )
 
 /**
- * 会话抽屉：**顶栏汉堡键打开的就是这一页**。
+ * 侧边栏：**会话 + 文件** 两个 Tab。
  *
- * <p>参考项目 Aharou 的抽屉分「会话 / 文件」两个 Tab。本 App 还没有工作区文件树
- * （模型的工作区在私有目录里，用户没必要浏览），因此只保留「会话」一页，
- * 文件 Tab 的位置留给「设置」入口——用户需要它，而抽屉是唯一能稳定到达的地方。
+ * <p><b>为什么直接用 [ChatDrawerContent] 而不是自写一个</b>：它本来就是从参考项目
+ * Aharou 移植过来的完整实现（会话列表 / 文件树 / 两个搜索 / 批量选择 / 长按菜单 /
+ * 剪切板）。之前自写简化版是因为它参数多（40 个），但那样等于把「项目分类」和
+ * 「查看文件」这两个能力丢了——用户明确要求要。
  *
- * @param currentSessionId 当前打开的会话 id，用于高亮
+ * <p>本文件只做三件事：把宿主的窄接口翻译成它的参数、把 [WorkspaceBrowser] 的状态
+ * 接上、给未实现的能力传安全的空实现。
+ *
+ * @param workspace 模型的工作区根目录（文件 Tab 的树根）
+ * @param browser 文件树状态持有者；null 时文件 Tab 显示「读取失败」
  */
 @Composable
 fun AssistantSessionsDrawer(
     sessions: List<SessionRow>,
     currentSessionId: String?,
+    workspace: File?,
+    browser: WorkspaceBrowser?,
     onSelect: (SessionRow) -> Unit,
     onNewSession: () -> Unit,
     onDelete: (SessionRow) -> Unit,
+    onRename: (SessionRow, String) -> Unit,
+    onTogglePin: (SessionRow) -> Unit,
     onOpenSettings: () -> Unit,
     onDismiss: () -> Unit,
+    /** 文件树里点文件：宿主决定怎么处理（本 App 把内容追加到输入框）。 */
+    onOpenFile: (path: String) -> Unit,
+    onAddToInput: (path: String) -> Unit,
     modifier: Modifier = Modifier,
     darkTheme: Boolean = androidx.compose.foundation.isSystemInDarkTheme(),
 ) {
   AIEditorTheme(darkTheme = darkTheme, followHostFrame = false) {
-    Column(
-        modifier = modifier.fillMaxSize().background(settingsPageBackground()),
-        verticalArrangement = Arrangement.spacedBy(Spacing.sm),
-    ) {
-      // ---- 顶部：标题 + 新建 ----
-      Row(
-          modifier =
-              Modifier.fillMaxWidth()
-                  .padding(start = Spacing.lg, end = Spacing.sm, top = Spacing.lg),
-          verticalAlignment = Alignment.CenterVertically,
-      ) {
-        Text(
-            text = "会话",
-            style = MaterialTheme.typography.titleLarge,
-            color = MaterialTheme.colorScheme.onBackground,
-            modifier = Modifier.weight(1f),
-        )
-        androidx.compose.material3.IconButton(onClick = onNewSession) {
-          Icon(
-              FeatherIcons.Plus,
-              contentDescription = "新建会话",
-              tint = MaterialTheme.colorScheme.onBackground,
-              modifier = Modifier.size(20.dp),
-          )
-        }
-      }
+    val workspacePath = workspace?.absolutePath.orEmpty()
 
-      // ---- 会话列表 ----
-      if (sessions.isEmpty()) {
-        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-          Text(
-              text = "还没有会话",
-              style = MaterialTheme.typography.bodyMedium,
-              color = MaterialTheme.colorScheme.onSurfaceVariant,
-          )
-        }
-      } else {
-        LazyColumn(modifier = Modifier.weight(1f).fillMaxWidth()) {
-          items(sessions, key = { it.id }) { session ->
-            SessionRowItem(
-                session = session,
-                selected = session.id == currentSessionId,
-                onClick = { onSelect(session) },
-                onDelete = { onDelete(session) },
-            )
-          }
-        }
-      }
+    ChatDrawerContent(
+        // ---- 会话 ----
+        sessions = sessions.map { it.toChatSession(workspacePath) },
+        workspaces =
+            if (workspace != null) {
+              listOf(
+                  Workspace(
+                      name = workspace.name.ifBlank { "workspace" },
+                      path = workspacePath,
+                      type = WorkspaceType.INTERNAL,
+                  ))
+            } else {
+              emptyList()
+            },
+        currentWorkspacePath = workspacePath,
+        currentSessionId = currentSessionId,
+        // 运行态：本 App 没有多会话并行，恒为 Idle。
+        agentStates = emptyMap<String, AgentUIState>(),
+        awaitingPermissionSessionIds = emptySet(),
+        onSelect = { onSelect(it.toRow()) },
+        onDelete = { onDelete(it.toRow()) },
+        onRename = { session, title -> onRename(session.toRow(), title) },
+        onTogglePin = { onTogglePin(it.toRow()) },
+        // 导出：本 App 还没做导出（需要分享 Intent + FileProvider），传空实现。
+        onExport = {},
+        // 批量删除：同样未接入，传 null 时组件不显示批量选择入口。
+        onDeleteSessions = null,
 
-      // ---- 底部：设置入口 ----
-      // 放在这里而不是顶栏：抽屉是「去哪」的清单，设置属于其中之一；
-      // 顶栏那颗汉堡键的语义是「打开清单」，不是「打开设置」。
-      HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-      Row(
-          modifier =
-              Modifier.fillMaxWidth()
-                  .clickable { onOpenSettings() }
-                  .padding(horizontal = Spacing.lg, vertical = 14.dp),
-          verticalAlignment = Alignment.CenterVertically,
-      ) {
-        Icon(
-            FeatherIcons.Settings,
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.size(18.dp),
-        )
-        Text(
-            text = "设置",
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurface,
-            modifier = Modifier.weight(1f).padding(start = Spacing.md),
-        )
-      }
-    }
+        // ---- 文件树 ----
+        browseState = browser?.state ?: FileBrowseState.Error(null),
+        expandedPaths = browser?.expandedPaths ?: emptySet(),
+        expandingPath = browser?.expandingPath,
+        fileOpPaths = emptySet(),
+        clipboard = browser?.clipboard,
+        onToggleExpand = { browser?.toggleExpand(it) },
+        onOpenFile = { onOpenFile(it) },
+        onRefreshBrowse = { browser?.refresh() },
+        onCreateFile = { dir, name -> browser?.createFile(dir, name) },
+        onCreateFolder = { dir, name -> browser?.createFolder(dir, name) },
+        onRenameEntry = { path, name -> browser?.rename(path, name) },
+        onDeleteEntry = { path -> browser?.delete(path) },
+        onCopyEntry = { src, dst -> browser?.copy(src, dst, cut = false) },
+        onCutEntry = { src, dst -> browser?.copy(src, dst, cut = true) },
+        onAddToInput = { onAddToInput(it) },
+        onPasteEntry = { dir, _ ->
+          // 本 App 的 copy 遇到同名直接拒绝（见 WorkspaceBrowser.copy），
+          // 不弹覆盖确认，因此冲突回调永不触发。
+          browser?.clipboard?.let { clip -> browser?.copy(clip.sourcePath, dir, cut = clip.isCut) }
+        },
+        onPasteOverwrite = {},
+        onCancelPasteOverwrite = {},
+        onClearClipboard = { browser?.clearClipboard() },
+
+        // ---- 底部入口 ----
+        // 本 App 没有内置浏览器，传 null 时该行不渲染。
+        onNavigateToBrowser = null,
+        onNavigateToSettings = onOpenSettings,
+
+        // ---- 会话搜索 ----
+        // 全文搜索需要扫 JSONL，属于后续步骤；空状态时搜索框仍显示但无结果。
+        searchQuery = "",
+        searchState = ChatSearchState(),
+        onSearchQueryChange = {},
+        onClearSearch = {},
+        onOpenSearchHit = { _: ChatSearchHit -> },
+
+        // ---- 文件搜索 ----
+        // null 时组件内部用一个不存在的根，文件搜索结果恒空（行为安全）。
+        fileSearchEngine = null,
+
+        modifier = modifier,
+    )
   }
 }
 
-/** 单条会话：标题 + 相对时间；右侧删除按钮。 */
-@OptIn(ExperimentalFoundationApi::class)
-@Composable
-private fun SessionRowItem(
-    session: SessionRow,
-    selected: Boolean,
-    onClick: () -> Unit,
-    onDelete: () -> Unit,
-) {
-  Surface(
-      shape = RoundedCornerShape(10.dp),
-      color =
-          if (selected) MaterialTheme.colorScheme.primaryContainer
-          else androidx.compose.ui.graphics.Color.Transparent,
-      modifier = Modifier.fillMaxWidth().padding(horizontal = Spacing.sm, vertical = 2.dp),
-  ) {
-    // 整行短按选中、长按删除。
-    //
-    // <p><b>为什么不用右侧的垃圾桶 IconButton</b>：实测在 Compose 里，行内的
-    // IconButton 与外层 Row 的点击区域重叠时，命中测试会把它判给外层——
-    // 点垃圾桶的结果是「选中会话」，删除永远触发不了。改成整行 combinedClickable
-    // 后只有一个手势区域，归属没有歧义；长按删除也是 ACS 侧边栏的既有交互。
-    //
-    // <p>clickable 必须挂在**最外层** Row 上（且不套 weight）：挂在带 weight 的
-    // 内层 Row 上时语义节点不会被导出，uiautomator 里整行变成不可点。
-    Row(
-        modifier =
-            Modifier.fillMaxWidth()
-                .combinedClickable(onClick = onClick, onLongClick = onDelete)
-                .padding(horizontal = Spacing.md, vertical = 11.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-      Icon(
-          FeatherIcons.MessageSquare,
-          contentDescription = null,
-          tint =
-              if (selected) MaterialTheme.colorScheme.primary
-              else MaterialTheme.colorScheme.onSurfaceVariant,
-          modifier = Modifier.size(16.dp),
-      )
-      Column(
-          modifier = Modifier.weight(1f).padding(start = Spacing.md),
-          verticalArrangement = Arrangement.spacedBy(2.dp),
-      ) {
-        Text(
-            text = session.title.ifBlank { "未命名会话" },
-            style = MaterialTheme.typography.bodyMedium,
-            color =
-                if (selected) MaterialTheme.colorScheme.primary
-                else MaterialTheme.colorScheme.onSurface,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
-        Text(
-            text = relativeTime(session.updatedAt),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-      }
-    }
-  }
-}
+/** 会话投影 → 抽屉组件认的完整模型。 */
+private fun SessionRow.toChatSession(workspacePath: String): ChatSession =
+    ChatSession(
+        id = id,
+        title = title,
+        createdAt = updatedAt,
+        updatedAt = updatedAt,
+        workspacePath = workspacePath,
+    )
 
-/**
- * 相对时间：刚刚 / N 分钟前 / N 小时前 / N 天前 / 日期。
- *
- * <p>不引 `DateUtils`：它按系统 locale 输出「3 分钟前」，但中英文混排时长度差异大，
- * 而会话行只有一行宽度。手写反而可控。
- */
-private fun relativeTime(epochMs: Long): String {
-  if (epochMs <= 0L) return ""
-  val delta = System.currentTimeMillis() - epochMs
-  return when {
-    delta < 60_000L -> "刚刚"
-    delta < 3_600_000L -> "${delta / 60_000L} 分钟前"
-    delta < 86_400_000L -> "${delta / 3_600_000L} 小时前"
-    delta < 7 * 86_400_000L -> "${delta / 86_400_000L} 天前"
-    else -> {
-      val fmt = java.text.SimpleDateFormat("MM-dd", java.util.Locale.getDefault())
-      fmt.format(java.util.Date(epochMs))
-    }
-  }
-}
+/** 反向投影。 */
+private fun ChatSession.toRow(): SessionRow =
+    SessionRow(id = id, title = title, updatedAt = updatedAt)

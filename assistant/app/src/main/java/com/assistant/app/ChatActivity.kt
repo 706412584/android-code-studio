@@ -37,6 +37,7 @@ import com.assistant.ui.AssistantChatView
 import com.assistant.ui.AssistantChatScreen
 import com.assistant.ui.AssistantSessionsDrawer
 import com.assistant.ui.SessionRow
+import com.assistant.ui.WorkspaceBrowser
 import com.assistant.ui.EventReducer
 import com.assistant.ui.model.MessageTimeline
 import com.tom.rv2ide.ai.agent.AgentEvent
@@ -76,11 +77,15 @@ class ChatActivity : ComponentActivity() {
   /** 工作区：模型能访问的文件范围。 */
   private lateinit var workspace: File
 
+  /** 侧边栏「文件」Tab 的状态持有者（目录树 / 展开 / 剪切板）。 */
+  private lateinit var browser: WorkspaceBrowser
+
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
 
     modelSettings = ModelSettings(this)
     workspace = File(filesDir, "workspace").apply { mkdirs() }
+    browser = WorkspaceBrowser(workspace)
     conversationStore = FileConversationStore(File(filesDir, "conversations"))
 
     conversationId = ensureConversation()
@@ -173,10 +178,15 @@ class ChatActivity : ComponentActivity() {
                   )
                 },
                 isBusy = busy,
+                // 文件加入输入框后自动填进去；清空由输入栏在发送时完成。
+                initialInput = pendingInput,
+                onInitialInputConsumed = { pendingInput = "" },
                 onSend = { text -> send(text) },
                 onStop = { runner.cancel() },
                 onOpenSessions = {
                   sessions = loadSessions()
+                  // 文件树可能被模型改动过（工具写了文件），每次打开重读一遍。
+                  browser.refresh()
                   showDrawer = true
                 },
                 onNewChat = {
@@ -191,6 +201,8 @@ class ChatActivity : ComponentActivity() {
                   AssistantSessionsDrawer(
                       sessions = sessions,
                       currentSessionId = conversationId,
+                      workspace = workspace,
+                      browser = browser,
                       onSelect = { row ->
                         openSession(row)
                         showDrawer = false
@@ -209,8 +221,6 @@ class ChatActivity : ComponentActivity() {
                         } catch (e: Exception) {
                           android.util.Log.w("ChatActivity", "删除会话失败: ${row.id}", e)
                         }
-                        // 删掉的正是当前会话：不能继续停在它上面——后续消息会写进
-                        // 一个已被删除的文件（store.append 会重建文件，等于幽灵会话）。
                         if (row.id == conversationId) {
                           conversationId = ensureConversation()
                           currentTitle = "新的对话"
@@ -219,8 +229,6 @@ class ChatActivity : ComponentActivity() {
                           showDrawer = false
                         }
                         sessions = loadSessions()
-                        // 删空了就补一个新的，否则用户回到对话页面对的是一条
-                        // 「哪都不属于」的界面（再发消息会写进已删除的 id）。
                         if (sessions.isEmpty()) {
                           conversationId = ensureConversation()
                           currentTitle = "新的对话"
@@ -229,12 +237,34 @@ class ChatActivity : ComponentActivity() {
                           sessions = loadSessions()
                         }
                       },
+                      onRename = { row, title ->
+                        try {
+                          conversationStore.rename(row.id, title)
+                          if (row.id == conversationId) currentTitle = title
+                          sessions = loadSessions()
+                        } catch (e: Exception) {
+                          android.util.Log.w("ChatActivity", "重命名失败: ${row.id}", e)
+                        }
+                      },
+                      // 置顶：ConversationStore 没有该能力（需要新的条目类型），
+                      // 传空实现——点了没反应，但不会崩。
+                      onTogglePin = {},
                       onOpenSettings = {
                         showDrawer = false
                         startActivity(
                             android.content.Intent(this@ChatActivity, SettingsActivity::class.java))
                       },
                       onDismiss = { showDrawer = false },
+                      // 文件树里点文件：把内容读出来追加到输入框。
+                      // 本 App 没有编辑器，这是「查看文件」在本环境下的合理落点。
+                      onOpenFile = { path ->
+                        appendFileToInput(path)
+                        showDrawer = false
+                      },
+                      onAddToInput = { path ->
+                        appendFileToInput(path)
+                        showDrawer = false
+                      },
                   )
                 },
                 drawerVisible = showDrawer,
@@ -339,6 +369,40 @@ class ChatActivity : ComponentActivity() {
       args.take(60)
     }
   }
+
+  /**
+   * 把文件内容追加到输入框。
+   *
+   * <p><b>为什么是「追加到输入框」而不是打开编辑器</b>：本 App 没有代码编辑器
+   * （编辑器属于 ACS 的资产，不在剥离范围内）。用户点文件多半是想「让模型看这个」
+   * 或「我自己看一眼」——前者追加到输入框最直接，后者靠系统的分享/查看器。
+   * 这里读文本并加一行说明，超过 256KB 会截断（见 [WorkspaceBrowser.readText]）。
+   */
+  private fun appendFileToInput(path: String) {
+    val file = File(path)
+    if (file.isDirectory) {
+      return
+    }
+    val text = browser.readText(path)
+    if (text == null) {
+      android.widget.Toast.makeText(this, "读取失败：${file.name}", android.widget.Toast.LENGTH_SHORT)
+          .show()
+      return
+    }
+    pendingInput =
+        buildString {
+          if (pendingInput.isNotEmpty()) {
+            append(pendingInput).append("\n\n")
+          }
+          append("以下是我选中的文件 `").append(file.name).append("`：\n```\n")
+          append(text)
+          append("\n```")
+        }
+    android.widget.Toast.makeText(this, "已加入输入框", android.widget.Toast.LENGTH_SHORT).show()
+  }
+
+  /** 待发送的输入内容（文件加入后由输入栏读取）。 */
+  private var pendingInput: String = ""
 
   /** 输入栏芯片上显示的模型名。 */
   private fun modelLabel(): String {

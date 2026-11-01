@@ -17,7 +17,6 @@
 
 package com.assistant.app
 
-import android.content.Intent
 import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.ComponentActivity
@@ -31,27 +30,36 @@ import com.assistant.engine.ModelSettings
 import com.assistant.engine.ProviderPresets
 import com.assistant.ui.AssistantModelSettingsScreen
 import com.assistant.ui.AssistantSettingsScreen
+import com.assistant.ui.AssistantSettingsState
+import com.assistant.ui.AssistantUiStyleStore
 import com.assistant.ui.ProviderOption
 import com.assistant.ui.components.independent.ProviderProtocol
+import com.assistant.ui.theme.AppThemePreset
+import com.assistant.ui.theme.AssistantThemePrefs
+import java.io.File
 
 /**
  * 设置页宿主。
  *
- * <p><b>两级结构</b>（与参考项目 Aharou 一致）：
- * 首页是分组清单（模型 / 对话 / 关于），点「模型与凭据」进子页。
- * 之前只有一页模型配置——用户进「设置」看到的是服务商清单，
- * 找不到权限、外观、关于，会以为这个 App 没有设置。
+ * <p><b>两级结构</b>（与参考项目 Aharou 一致）：首页是分组清单
+ * （模型 / 外观 / 对话 / 关于），点「模型与凭据」进子页。
  *
  * <p>Activity 只做三件事：把引擎的 [ProviderPresets] 投影成渲染层的 [ProviderOption]、
- * 读写 [ModelSettings]、保存后跳转对话页。界面逻辑全在渲染层。
+ * 读写各项偏好、处理子页导航。界面逻辑全在渲染层。
  */
 class SettingsActivity : ComponentActivity() {
 
   private lateinit var settings: ModelSettings
+  private lateinit var styleStore: AssistantUiStyleStore
+  private lateinit var permissionPrefs: PermissionPrefs
+  private lateinit var memoryPrefs: MemoryPrefs
 
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
     settings = ModelSettings(this)
+    styleStore = AssistantUiStyleStore(this)
+    permissionPrefs = PermissionPrefs(this)
+    memoryPrefs = MemoryPrefs(this)
 
     // 引擎的预设表 → 渲染层的投影。
     val providerOptions: List<ProviderOption> =
@@ -74,29 +82,55 @@ class SettingsActivity : ComponentActivity() {
     val view =
         ComposeView(this).apply {
           setContent {
-            /** 当前是否在「模型与凭据」子页。 */
             var showModelSettings by remember { mutableStateOf(false) }
+            // 偏好不是 Compose 状态，改完要让首页重新求值——用这个计数当触发器。
+            var recomposeKey by remember { mutableStateOf(0) }
 
-            // 子页按返回键回首页，而不是退出 Activity——否则用户点返回会直接
-            // 离开设置，得重新进来才能改别的项。
             BackHandler(enabled = showModelSettings) { showModelSettings = false }
 
             if (!showModelSettings) {
-              AssistantSettingsScreen(
-                  modelSummary = modelSummary(),
-                  readinessProblem = settings.readinessProblem(),
-                  onOpenModelSettings = { showModelSettings = true },
-                  onBack = { finish() },
-              )
+              // 每次重组都从持久化读一次：设置项改动后立刻反映在界面上，
+              // 不需要额外维护一份内存状态（偏好读写很轻）。
+              val state =
+                  AssistantSettingsState(
+                      modelSummary = modelSummary(),
+                      readinessProblem = settings.readinessProblem(),
+                      themePresetId =
+                          AssistantThemePrefs.presetId(this@SettingsActivity)
+                              ?: AppThemePreset.DEFAULT.id,
+                      textSize = styleStore.textSize,
+                      permissionMode = permissionPrefs.mode(),
+                      memoryEnabled = memoryPrefs.enabled(),
+                      skillCount = countSkills(),
+                      memoryCount = countMemory(),
+                      onOpenModelSettings = { showModelSettings = true },
+                      onThemePresetChange = { id ->
+                        AssistantThemePrefs.setPresetId(this@SettingsActivity, id)
+                        // 触发重组：偏好本身不是 Compose 状态，改完要让页面重画。
+                        recomposeKey++
+                      },
+                      onTextSizeChange = { sp ->
+                        styleStore.textSize = sp
+                        recomposeKey++
+                      },
+                      onPermissionModeChange = { mode ->
+                        permissionPrefs.setMode(mode)
+                        recomposeKey++
+                      },
+                      onMemoryEnabledChange = { enabled ->
+                        memoryPrefs.setEnabled(enabled)
+                        recomposeKey++
+                      },
+                      onBack = { finish() },
+                  )
+              // 读一次 recomposeKey：它的变化会让这段重组，从而重新读取上面的偏好。
+              @Suppress("UNUSED_EXPRESSION") recomposeKey
+              AssistantSettingsScreen(state = state)
             } else {
-              // 这些状态每次进入子页从持久化读一次初值；改动立刻写回，
-              // 因此「切换服务商 → Key 输入框跟着换」是天然正确的。
               var providerId by remember { mutableStateOf(settings.providerId()) }
               var model by remember { mutableStateOf(settings.modelId()) }
               var apiKey by remember { mutableStateOf(settings.apiKey(providerId)) }
               var baseUrl by remember { mutableStateOf(settings.customBaseUrl(providerId)) }
-
-              val problem = settings.readinessProblem()
 
               AssistantModelSettingsScreen(
                   providers = providerOptions,
@@ -104,7 +138,7 @@ class SettingsActivity : ComponentActivity() {
                   selectedModel = model,
                   apiKey = apiKey,
                   customBaseUrl = baseUrl,
-                  readinessProblem = problem,
+                  readinessProblem = settings.readinessProblem(),
                   onSelectProvider = { id ->
                     providerId = id
                     settings.setProviderId(id)
@@ -127,8 +161,6 @@ class SettingsActivity : ComponentActivity() {
                     settings.setCustomBaseUrl(providerId, it)
                   },
                   onSave = {
-                    // 只保存 + 回首页，不强制跳对话页：用户可能是来改某个配置的，
-                    // 改完还想继续看别的设置。想开对话从首页或返回键回对话页即可。
                     if (settings.isReady()) {
                       Toast.makeText(this@SettingsActivity, "配置已保存", Toast.LENGTH_SHORT).show()
                       showModelSettings = false
@@ -140,7 +172,6 @@ class SettingsActivity : ComponentActivity() {
                           .show()
                     }
                   },
-                  // 子页顶栏的返回键回到设置首页。
                   onBack = { showModelSettings = false },
               )
             }
@@ -155,5 +186,46 @@ class SettingsActivity : ComponentActivity() {
     val label = ProviderPresets.labelFor(settings.providerId())
     val model = settings.modelId()
     return if (model.isEmpty()) label else "$label · $model"
+  }
+
+  private fun countSkills(): Int = File(filesDir, "skills").listFiles()?.count { it.isDirectory } ?: 0
+
+  private fun countMemory(): Int {
+    val file = File(filesDir, "memory/memory.jsonl")
+    if (!file.isFile) return 0
+    return try {
+      file.useLines { lines -> lines.count { it.isNotBlank() } }
+    } catch (e: Exception) {
+      0
+    }
+  }
+
+}
+
+/** 权限模式偏好。 */
+class PermissionPrefs(context: android.content.Context) {
+  private val prefs =
+      context.applicationContext.getSharedPreferences("ai_agent_tools", android.content.Context.MODE_PRIVATE)
+
+  fun mode(): String = prefs.getString(KEY, "confirm") ?: "confirm"
+
+  fun setMode(mode: String) = prefs.edit().putString(KEY, mode).apply()
+
+  private companion object {
+    const val KEY = "permission_mode"
+  }
+}
+
+/** 长期记忆开关偏好。 */
+class MemoryPrefs(context: android.content.Context) {
+  private val prefs =
+      context.applicationContext.getSharedPreferences("ai_agent_tools", android.content.Context.MODE_PRIVATE)
+
+  fun enabled(): Boolean = prefs.getBoolean(KEY, true)
+
+  fun setEnabled(enabled: Boolean) = prefs.edit().putBoolean(KEY, enabled).apply()
+
+  private companion object {
+    const val KEY = "memory_enabled"
   }
 }

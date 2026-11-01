@@ -18,10 +18,11 @@
     android:label="Assistant"
     android:theme="@android:style/Theme.DeviceDefault.Light">
 
+    <!-- 不设 android:label：继承 application 的「Assistant」。
+         设成「设置」会让系统标题栏与页面内标题重复（用户实测反馈「双标题」）。 -->
     <activity
       android:name=".SettingsActivity"
-      android:exported="true"
-      android:label="Assistant">
+      android:exported="true">
       <intent-filter>
         <action android:name="android.intent.action.MAIN" />
         <category android:name="android.intent.category.LAUNCHER" />
