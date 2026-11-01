@@ -146,8 +146,14 @@ internal interface AssistantPanelCallbacks {
   /** 回滚一次文件改动。锚点是宿主注入的 ComposeView（弹出菜单需要给 PopupMenu 一个锚）。 */
   fun onRevert(messageId: Long, diffId: String)
 
-  /** 长按/更多菜单（复制原文、复制纯文、引用提问等），复用 XML 路径已有的菜单。 */
-  fun onMoreClick(messageId: Long)
+  /**
+   * 长按/更多菜单（编辑 / 复制 / 重新生成 / 删除）。
+   *
+   * <p>**带上消息本体**而不是只给 id：操作菜单要的是消息内容与角色，
+   * 宿主若只拿到 id 就得回头再查一次时间线——多一次查找、多一处可能对不上的映射。
+   * 组件（`AgentMessageItem`）本来就把 `AgentUIMessage` 传上来了，这里不该丢掉。
+   */
+  fun onMoreClick(message: com.assistant.ui.model.AgentUIMessage)
 
   /**
    * 切换一个**工具分组**的展开/折叠。
@@ -884,7 +890,7 @@ private fun MessageRow(
           callbacks.onToggleExpanded(id)
         }
       },
-      onMoreClick = { if (id != null) callbacks.onMoreClick(id) },
+      onMoreClick = { msg -> callbacks.onMoreClick(msg) },
       // 推理（思考）块的展开态走同一条通道。映射层为 Thinking 条目填的就是
       // AgentUIMessage.expanded，所以这里与工具行共用同一个字段与同一个回调——
       // 宿主的 onToggleExpanded 会依次尝试三种翻转，只有类型匹配的那个生效。

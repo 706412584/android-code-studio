@@ -81,9 +81,13 @@ class ChatDemoActivity : ComponentActivity() {
                 timeline.markDiffReverted(messageId)
               }
 
-              override fun onMoreClick(messageId: Long, anchor: View) {
+              override fun onMoreClick(message: com.assistant.ui.model.AgentUIMessage) {
+                // 探针只验证渲染：真菜单在 ChatActivity。这里弹一句带内容的提示，
+                // 至少能确认「更多」这条链路真的把消息本体传到了宿主。
                 android.widget.Toast.makeText(
-                        this@ChatDemoActivity, "更多操作（演示）", android.widget.Toast.LENGTH_SHORT)
+                        this@ChatDemoActivity,
+                        "更多操作（演示）：${message.content.take(12)}",
+                        android.widget.Toast.LENGTH_SHORT)
                     .show()
               }
             },

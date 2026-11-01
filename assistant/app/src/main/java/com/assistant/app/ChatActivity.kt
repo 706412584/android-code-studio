@@ -122,6 +122,12 @@ class ChatActivity : ComponentActivity() {
   /** 上下文窗口大小；0 = 模型未声明（此时占用环不显示）。 */
   private var contextWindowTokens by mutableStateOf(0)
 
+  /** 正在操作的消息（长按「更多」时置入）；null = 不显示菜单。 */
+  private var messageForActions by mutableStateOf<com.assistant.ui.model.AgentUIMessage?>(null)
+
+  /** 正在编辑的消息；null = 不显示编辑框。与 [messageForActions] 互斥（编辑时先关菜单）。 */
+  private var messageForEdit by mutableStateOf<com.assistant.ui.model.AgentUIMessage?>(null)
+
   private val uiScope = CoroutineScope(Dispatchers.Main)
 
   /** 当前会话 id。本步骤固定一个会话（多会话属于后续步骤）。 */
@@ -222,10 +228,9 @@ class ChatActivity : ComponentActivity() {
                 timeline.markDiffReverted(messageId)
               }
 
-              override fun onMoreClick(messageId: Long, anchor: View) {
-                android.widget.Toast.makeText(
-                        this@ChatActivity, "更多操作尚未接入", android.widget.Toast.LENGTH_SHORT)
-                    .show()
+              override fun onMoreClick(message: com.assistant.ui.model.AgentUIMessage) {
+                // 由一个 Compose 状态驱动弹窗（见 setContent 里的 MessageActionDialog）。
+                messageForActions = message
               }
             },
         )
@@ -469,6 +474,62 @@ class ChatActivity : ComponentActivity() {
                                 ?.let { androidx.compose.ui.graphics.Color(it) },
                     ),
             )
+
+            // ---- 消息操作菜单 ----
+            // 放在 AssistantChatScreen 之外、同一个 setContent 作用域内：
+            // 它们是模态弹窗，不属于对话页的布局，但必须能读到同一份状态。
+            messageForActions?.let { target ->
+              com.assistant.ui.components.independent.MessageActionDialog(
+                  message = target,
+                  onDismiss = { messageForActions = null },
+                  onAction = { action ->
+                    when (action) {
+                      com.assistant.ui.components.independent.MessageAction.COPY -> {
+                        val cm =
+                            getSystemService(android.content.Context.CLIPBOARD_SERVICE) as
+                                android.content.ClipboardManager
+                        cm.setPrimaryClip(
+                            android.content.ClipData.newPlainText("assistant", target.content))
+                        android.widget.Toast.makeText(
+                                this@ChatActivity, "已复制", android.widget.Toast.LENGTH_SHORT)
+                            .show()
+                      }
+                      com.assistant.ui.components.independent.MessageAction.EDIT -> {
+                        messageForActions = null
+                        messageForEdit = target
+                      }
+                      com.assistant.ui.components.independent.MessageAction.REGENERATE -> {
+                        messageForActions = null
+                        regenerate()
+                      }
+                    }
+                  },
+              )
+            }
+
+            messageForEdit?.let { target ->
+              com.assistant.ui.components.independent.EditMessageContentDialog(
+                  initialText = target.content,
+                  onDismiss = { messageForEdit = null },
+                  onConfirm = { newText ->
+                    messageForEdit = null
+                    // 编辑用户消息 = 改写后重发；编辑助手回答没有重发生效的对象，
+                    // 只把界面上的文本改掉（并如实提示，不假装模型重答了）。
+                    if (target.role == com.assistant.ui.model.MessageRole.USER) {
+                      send(newText)
+                    } else {
+                      // 界面上改掉文本。**如实提示不会重答**——用户改的是显示，
+                      // 磁盘上的会话记录没变，重开会话还是原文。
+                      timeline.update(target.id.toLongOrNull() ?: return@EditMessageContentDialog, newText)
+                      android.widget.Toast.makeText(
+                              this@ChatActivity,
+                              "已修改显示内容（不会重新生成回答）",
+                              android.widget.Toast.LENGTH_LONG)
+                          .show()
+                    }
+                  },
+              )
+            }
           }
         }
     setContentView(rootView)
@@ -742,6 +803,34 @@ class ChatActivity : ComponentActivity() {
     mcpClients.clear()
     chatView.release()
     super.onDestroy()
+  }
+
+  // ---- 消息操作 ----
+
+  /**
+   * 重新生成：用最后一条用户消息再跑一次。
+   *
+   * <p><b>为什么取「时间线里最后一条 USER」而不是界面消息列表</b>：重发的语义是
+   * 「同一个问题再答一遍」。界面列表受展开态、思考块拆条等渲染细节影响；
+   * 时间线里的 `Role.USER` 条目才是真正发出过的那句话。
+   *
+   * <p>**不删除旧回答**：新回答追加在其后。变体切换（`‹ 1/2 ›`）要求内核支持
+   * 「同一条消息的多个版本」，那是另一件事——这里如实追加，不假装有变体。
+   */
+  private fun regenerate() {
+    // 用 snapshot() 而不是内部列表：时间线的 items 是私有的，快照是它公开的读取入口。
+    val lastUser =
+        timeline
+            .snapshot()
+            .filterIsInstance<MessageTimeline.Message>()
+            .lastOrNull { it.role == MessageTimeline.Role.USER }
+    if (lastUser == null) {
+      android.widget.Toast.makeText(
+              this, "找不到可重新生成的用户消息", android.widget.Toast.LENGTH_SHORT)
+          .show()
+      return
+    }
+    send(lastUser.text)
   }
 
   // ---- 斜杠命令 / @ 技能 ----

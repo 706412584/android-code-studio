@@ -55,11 +55,12 @@ interface AssistantChatCallbacks {
   fun onRevert(messageId: Long, diffId: String)
 
   /**
-   * 消息长按/「更多」菜单（复制原文、复制纯文、引用提问等）。
+   * 消息长按/「更多」菜单（编辑 / 复制 / 重新生成 / 删除）。
    *
-   * @param anchor 可用来锚定弹出菜单的 View（面板自身的 ComposeView）
+   * <p>带消息本体而非只给 id：菜单要的是内容与角色，宿主不该回头再查一次时间线。
+   * 组装好的菜单由宿主弹出（本层不决定用底栏还是弹窗）。
    */
-  fun onMoreClick(messageId: Long, anchor: View)
+  fun onMoreClick(message: com.assistant.ui.model.AgentUIMessage)
 }
 
 /**
@@ -98,8 +99,8 @@ class AssistantChatView(
         override fun onRevert(messageId: Long, diffId: String) =
             callbacks.onRevert(messageId, diffId)
 
-        override fun onMoreClick(messageId: Long) {
-          callbacks.onMoreClick(messageId, host.view)
+        override fun onMoreClick(message: com.assistant.ui.model.AgentUIMessage) {
+          callbacks.onMoreClick(message)
         }
       }
 
