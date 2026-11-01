@@ -111,6 +111,9 @@ dependencies {
   // ComposeView 嵌入宿主所需；同时把 activity-ktx / activity-compose 的传递版本
   // 顶到已缓存的那一档（1.9.3），否则会去解析未缓存的 1.7.0 / 1.8.2。
   implementation("androidx.activity:activity-compose:1.9.3")
+  // FileProvider：拍照输出必须走 content://（Android 7+ 禁止 file:// 跨进程传递）。
+  // 版本与 ui 模块同一档，避免两处解析出不同版本。
+  implementation(libs.androidx.core.ktx)
 
   // org.json：Android 框架自带，编译期需要。
   compileOnly(libs.org.json)

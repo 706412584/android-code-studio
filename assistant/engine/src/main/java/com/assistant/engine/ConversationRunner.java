@@ -128,11 +128,14 @@ public final class ConversationRunner {
   }
 
   /**
-   * 发起一次运行。
+   * 发起一次运行（带附件元数据）。
    *
    * @param conversationId 会话 id（决定历史与持久化落点）
    * @param userText 用户输入
    * @param attachmentsJson 多模态输入 JSON（图片）；null 表示纯文本
+   * @param attachmentMeta 附件元数据，随用户消息落盘（重开会话时气泡上的缩略图靠它）；
+   *     null 或空表示无附件。**与 attachmentsJson 是两件事**：这个只管界面回放，
+   *     真正送给模型的是 attachmentsJson。
    * @param listener 事件接收者
    * @return 本次运行的句柄；配置不完整时返回 null（调用方应提示用户去设置）
    */
@@ -140,6 +143,7 @@ public final class ConversationRunner {
       String conversationId,
       String userText,
       String attachmentsJson,
+      List<com.tom.rv2ide.ai.protocol.AttachmentMeta> attachmentMeta,
       Listener listener) {
     if (isRunning()) {
       // 并发运行会让同一会话的历史交错写入（两条 run 各自 fold 出不同的起点），
@@ -154,12 +158,55 @@ public final class ConversationRunner {
     active = handle;
     Thread worker =
         new Thread(
-            () -> execute(handle, conversationId, userText, attachmentsJson, config, listener),
+            () ->
+                execute(
+                    handle,
+                    conversationId,
+                    userText,
+                    attachmentsJson,
+                    attachmentMeta,
+                    config,
+                    listener),
             "assistant-run");
     worker.setDaemon(true);
     handle.thread = worker;
     worker.start();
     return handle;
+  }
+
+  /**
+   * 无附件元数据的重载（保留给不需要回放缩略图的调用方）。
+   */
+  public RunHandle start(
+      String conversationId, String userText, String attachmentsJson, Listener listener) {
+    return start(conversationId, userText, attachmentsJson, null, listener);
+  }
+
+  /**
+   * 把待发附件拼成内核要的多模态 JSON。
+   *
+   * <p><b>为什么不放在界面层拼</b>：格式由 {@code ImageInputPayload.rawInputJson} 定义，
+   * 那是内核的线格式；界面层照抄一份就会在两边分别演化。放这里，界面只负责传图片数据。
+   *
+   * <p><b>只带图片</b>：普通文件（含目录）没有多模态表示，它们通过文本里的路径清单
+   * 传达给模型（见界面层的附件文案）。空列表返回 null —— 内核据此走纯文本路径，
+   * 而不是发一个「有附件字段但为空」的请求。
+   *
+   * @param prompt 用户输入（写进 JSON 的 prompt 字段）
+   * @param images 图片：mimeType + base64
+   * @return 多模态 JSON；没有图片时 null
+   */
+  public static String buildAttachmentsJson(
+      String prompt, List<com.tom.rv2ide.ai.protocol.ImageInputPayload.ImagePart> images) {
+    if (images == null || images.isEmpty()) {
+      return null;
+    }
+    try {
+      return com.tom.rv2ide.ai.protocol.ImageInputPayload.rawInputJson(prompt, images);
+    } catch (org.json.JSONException e) {
+      // 构造失败不该让整条消息发不出去：退回纯文本，用户至少还能对话。
+      return null;
+    }
   }
 
   /** 取消当前运行。幂等；无运行时不做事。 */
@@ -190,6 +237,7 @@ public final class ConversationRunner {
       String conversationId,
       String userText,
       String attachmentsJson,
+      List<com.tom.rv2ide.ai.protocol.AttachmentMeta> attachmentMeta,
       ModelConfig config,
       Listener listener) {
     Throwable error = null;
@@ -265,7 +313,9 @@ public final class ConversationRunner {
               conversationId,
               userText,
               listener::onEvent,
-              null,
+              // 附件元数据随用户消息一起落盘：不落的话重开会话时气泡上的缩略图全没了
+              // （模型那边不受影响——图片走 attachmentsJson 的 base64，与这里无关）。
+              attachmentMeta,
               conversationStore,
               null);
 

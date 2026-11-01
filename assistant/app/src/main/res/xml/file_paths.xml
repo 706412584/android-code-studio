@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  FileProvider 暴露的路径。
+
+  只暴露 cacheDir 下的 camera-photos/ 子目录，而不是整块 cacheDir：
+  拍的临时照片与 App 其它缓存混在一个目录里时，任何拿到授权 uri 的相机应用
+  理论上都能顺着目录构造兄弟路径。给一个专属子目录是最小授权。
+-->
+<paths>
+  <cache-path name="camera_photos" path="camera-photos/" />
+</paths>

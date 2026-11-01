@@ -92,6 +92,24 @@ fun AssistantChatScreen(
     darkTheme: Boolean = androidx.compose.foundation.isSystemInDarkTheme(),
     /** 消息渲染区的外观（卡片缩放 / 正文颜色），来自设置页。 */
     style: com.assistant.ui.theme.AssistantStyle = com.assistant.ui.theme.AssistantStyle(),
+    /**
+     * 待发送附件（由宿主持有）。
+     *
+     * <p><b>为什么附件状态在宿主而不在这里</b>：选取动作（SAF 启动器）必须由 Activity
+     * 注册——`rememberLauncherForActivityResult` 拿不到 Activity 之外的结果回调。
+     * 因此这里只负责渲染与转发，选取与落盘在 [ChatActivity]。
+     */
+    attachments: List<com.assistant.ui.compat.PendingUploadAttachment> = emptyList(),
+    onRemoveAttachment: (Int) -> Unit = {},
+    /** 读取附件正文（消息气泡点开附件时用）。 */
+    onReadAttachment: suspend (String) -> String? = { null },
+    /** 是否还能再加附件（到上限时灰掉入口）。 */
+    canUploadFiles: Boolean = false,
+    /** 能否选图片；与 [canUploadFiles] 分开：图片要额外做 base64。 */
+    canUploadImages: Boolean = false,
+    onUploadFile: () -> Unit = {},
+    onUploadImage: () -> Unit = {},
+    onTakePhoto: () -> Unit = {},
 ) {
   AIEditorTheme(darkTheme = darkTheme, followHostFrame = false, style = style) {
     Box(modifier = Modifier.fillMaxSize()) {
@@ -167,14 +185,16 @@ fun AssistantChatScreen(
             onToggleMode = { mode = it },
             reasoningEffort = reasoning,
             onReasoningEffortChange = { reasoning = it },
-            pendingAttachments = emptyList(),
-            onRemoveAttachment = {},
-            onReadAttachment = { null },
-            canUploadFiles = false,
-            canUploadImages = false,
-            onUploadFile = {},
-            onUploadImage = {},
-            onTakePhoto = {},
+            pendingAttachments = attachments,
+            onRemoveAttachment = onRemoveAttachment,
+            onReadAttachment = onReadAttachment,
+            // 忙碌时不允许再加：附加的图片会随"当前这条"发出，而这条已在跑，
+            // 加进去只会让人以为它属于本轮（ChatInputBar 内部也会再按 isBusy 收一道）。
+            canUploadFiles = canUploadFiles && !isBusy,
+            canUploadImages = canUploadImages && !isBusy,
+            onUploadFile = onUploadFile,
+            onUploadImage = onUploadImage,
+            onTakePhoto = onTakePhoto,
         )
       }
     }

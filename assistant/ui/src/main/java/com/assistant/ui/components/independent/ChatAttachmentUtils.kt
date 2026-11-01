@@ -71,7 +71,7 @@ private fun List<PendingUploadAttachment>.toAttachmentText(context: Context): St
     }
 }
 
-internal fun appendAttachmentsToRequest(
+fun appendAttachmentsToRequest(
     context: Context,
     request: String,
     attachments: List<PendingUploadAttachment>
@@ -122,21 +122,21 @@ private fun attachmentImageBase64(file: File, fallbackMime: String): Pair<String
     return ImageCompressor.rawBase64(file.readBytes()) to fallbackMime
 }
 
-internal fun maxAttachmentMessage(context: Context, max: Int): String =
+fun maxAttachmentMessage(context: Context, max: Int): String =
     context.getString(R.string.chat_attachment_max, max)
 
-internal fun uploadSuccessMessage(context: Context, count: Int): String =
+fun uploadSuccessMessage(context: Context, count: Int): String =
     context.getString(R.string.chat_attachment_uploaded, count)
 
-internal fun partialUploadMessage(context: Context, count: Int): String =
+fun partialUploadMessage(context: Context, count: Int): String =
     context.getString(R.string.chat_attachment_uploaded_partial, count)
 
-internal fun selectedAttachments(
+fun selectedAttachments(
     uris: List<Uri>,
     currentCount: Int
 ): List<Uri> = uris.take((MAX_PENDING_ATTACHMENTS - currentCount).coerceAtLeast(0))
 
-internal fun hasAttachmentSlots(currentCount: Int): Boolean =
+fun hasAttachmentSlots(currentCount: Int): Boolean =
     currentCount < MAX_PENDING_ATTACHMENTS
 
 private fun imageLimitError(context: Context): String =
@@ -148,10 +148,10 @@ private fun pickedFileToastPath(context: Context, path: String): String =
 internal fun emptyWorkspaceMessage(context: Context): String =
     context.getString(R.string.chat_select_workspace_first)
 
-internal fun unreadableFileMessage(context: Context): String =
+fun unreadableFileMessage(context: Context): String =
     context.getString(R.string.chat_read_file_failed)
 
-internal fun uploadFallbackError(context: Context): String =
+fun uploadFallbackError(context: Context): String =
     context.getString(R.string.chat_upload_failed)
 
 private fun unsupportedImageTypeError(context: Context): String =
@@ -174,7 +174,7 @@ private fun fileMimeType(context: Context, uri: Uri, fileName: String): String =
             else -> "application/octet-stream"
         }
 
-internal suspend fun copyUriToWorkspace(
+suspend fun copyUriToWorkspace(
     context: Context,
     uri: Uri,
     fileAccess: FileAccessProvider,
@@ -289,9 +289,9 @@ private val SUPPORTED_IMAGE_MIME_TYPES = setOf(
 )
 
 private const val MAX_IMAGE_UPLOAD_BYTES = 5L * 1024 * 1024
-internal const val MAX_PENDING_ATTACHMENTS = 8
+const val MAX_PENDING_ATTACHMENTS = 8
 
-internal fun formatBytes(bytes: Long): String {
+fun formatBytes(bytes: Long): String {
     val kb = 1024.0
     val mb = kb * 1024.0
     return when {

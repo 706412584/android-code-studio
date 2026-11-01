@@ -21,12 +21,17 @@ import android.os.Bundle
 import android.os.SystemClock
 import android.view.View
 import androidx.activity.ComponentActivity
+import androidx.activity.result.ActivityResultLauncher
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.unit.dp
+import androidx.core.content.FileProvider
 import com.assistant.engine.AppHttpPort
 import com.assistant.engine.AssistantToolSettings
 import com.assistant.engine.ConversationRunner
@@ -40,8 +45,19 @@ import com.assistant.ui.AssistantSessionsDrawer
 import com.assistant.ui.SessionRow
 import com.assistant.ui.WorkspaceBrowser
 import com.assistant.ui.EventReducer
+import com.assistant.ui.compat.HostFileAccessProvider
+import com.assistant.ui.compat.PendingUploadAttachment
+import com.assistant.ui.compat.isImage
+import com.assistant.ui.compat.toPendingAttachment
 import com.assistant.ui.compat.toAnswerList
 import com.assistant.ui.compat.toPendingUserQuestion
+import com.assistant.ui.components.independent.MAX_PENDING_ATTACHMENTS
+import com.assistant.ui.components.independent.appendAttachmentsToRequest
+import com.assistant.ui.components.independent.copyUriToWorkspace
+import com.assistant.ui.components.independent.maxAttachmentMessage
+import com.assistant.ui.components.independent.partialUploadMessage
+import com.assistant.ui.components.independent.uploadFallbackError
+import com.assistant.ui.components.independent.uploadSuccessMessage
 import com.assistant.ui.model.MessageTimeline
 import com.tom.rv2ide.ai.agent.AgentEvent
 import com.tom.rv2ide.ai.agent.AgentRunResult
@@ -51,6 +67,7 @@ import com.tom.rv2ide.ai.tool.ToolRegistry
 import java.io.File
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 
 /**
  * 真正能对话的界面：消息列表 + 输入栏 + 引擎。
@@ -76,6 +93,28 @@ class ChatActivity : ComponentActivity() {
    * 权限闸门。字段而非局部变量：确认/提问的回调（[awaitUserDecision] 等）要用它。
    */
   private lateinit var toolSettings: AssistantToolSettings
+
+  /** 宿主的文件访问实现：附件落盘与缩略图读取都经它（容器路径 ↔ 本地文件）。 */
+  private lateinit var fileAccess: com.assistant.ui.compat.FileAccessProvider
+
+  /**
+   * 待发附件。用 SnapshotStateList 而不是普通 MutableList：
+   * 它是可观察的，选取落盘后 add 会直接触发 Compose 重组（列表里出现附件芯片）。
+   */
+  private val pendingAttachments =
+      mutableStateListOf<
+          PendingUploadAttachment>()
+
+  private var filePickerLauncher:
+      ActivityResultLauncher<Array<String>>? = null
+  private var imagePickerLauncher:
+      ActivityResultLauncher<
+          PickVisualMediaRequest>? = null
+  private var takePictureLauncher:
+      ActivityResultLauncher<android.net.Uri>? = null
+
+  /** 拍照输出的临时 uri（FileProvider 授权）；拍照回调里取回。 */
+  private var cameraPhotoUri: android.net.Uri? = null
 
   private val uiScope = CoroutineScope(Dispatchers.Main)
 
@@ -200,6 +239,36 @@ class ChatActivity : ComponentActivity() {
           awaitUserAnswers(questions)
         })
 
+    // ---- 附件 ----
+    //
+    // 三个选取入口各自注册：文件走 OpenMultipleDocuments，图片走 PickMultipleVisualMedia
+    // （它会返回可读的图片 uri），拍照走 TakePicture。**必须在这里注册**——
+    // ActivityResultContracts 的回调只能投到注册者，Compsoe 层拿不到。
+    fileAccess = HostFileAccessProvider(workspace)
+    filePickerLauncher =
+        registerForActivityResult(
+            ActivityResultContracts.OpenMultipleDocuments()) {
+                uris ->
+              // 普通文件不读 base64，只把内容落盘 + 路径告诉模型。
+              handlePickedUris(uris, includeImageData = false)
+            }
+    imagePickerLauncher =
+        registerForActivityResult(
+            ActivityResultContracts.PickMultipleVisualMedia(
+                MAX_PENDING_ATTACHMENTS)) { uris ->
+              handlePickedUris(uris, includeImageData = true)
+            }
+    takePictureLauncher =
+        registerForActivityResult(
+            ActivityResultContracts.TakePicture()) { success ->
+          val uri = cameraPhotoUri
+          cameraPhotoUri = null
+          // 用户取消拍照时 success=false，那时 uri 已无意义，直接丢弃。
+          if (success && uri != null) {
+            handlePickedUris(listOf(uri), includeImageData = true)
+          }
+        }
+
     // 整页一个 Compose 树：顶栏 + 消息列表 + 输入栏。
     //
     // 拆成两个 ComposeView（一个放消息、一个放输入栏）会各包一次主题——
@@ -244,6 +313,24 @@ class ChatActivity : ComponentActivity() {
                 onInitialInputConsumed = { pendingInput = "" },
                 onSend = { text -> send(text) },
                 onStop = { runner.cancel() },
+                // ---- 附件 ----
+                // pendingAttachments 是 SnapshotStateList，本身可观察：选取落盘后 add
+                // 即触发重组，不需要额外通知。
+                attachments = pendingAttachments,
+                onRemoveAttachment = { index ->
+                  if (index in pendingAttachments.indices) pendingAttachments.removeAt(index)
+                },
+                onReadAttachment = { path -> readAttachmentText(path) },
+                // 上限由 MAX_PENDING_ATTACHMENTS 统一决定，界面与落盘用同一个数。
+                canUploadFiles =
+                    pendingAttachments.size <
+                        MAX_PENDING_ATTACHMENTS,
+                canUploadImages =
+                    pendingAttachments.size <
+                        MAX_PENDING_ATTACHMENTS,
+                onUploadFile = { launchFilePicker() },
+                onUploadImage = { launchImagePicker() },
+                onTakePhoto = { takePhoto() },
                 onOpenSessions = {
                   sessions = loadSessions()
                   // 文件树可能被模型改动过（工具写了文件），每次打开重读一遍。
@@ -616,6 +703,128 @@ class ChatActivity : ComponentActivity() {
     super.onDestroy()
   }
 
+  // ---- 附件 ----
+
+  /** 打开文件选择器（多选）。MIME 通配：附件本来就是任意类型。 */
+  private fun launchFilePicker() {
+    filePickerLauncher?.launch(arrayOf("*/*"))
+  }
+
+  /** 打开图片选择器（多选）。 */
+  private fun launchImagePicker() {
+    imagePickerLauncher?.launch(
+        PickVisualMediaRequest(
+            ActivityResultContracts.PickVisualMedia
+                .ImageOnly))
+  }
+
+  /**
+   * 拍照：先建临时文件并取 FileProvider uri，再交给系统相机。
+   *
+   * <p>没有 FileProvider 授权时相机应用写不进我们的 cacheDir（Android 7+ 禁止
+   * `file://` 直传），因此必须走 `${pkg}.fileprovider`（见 AndroidManifest 与
+   * res/xml/file_paths.xml）。
+   */
+  private fun takePhoto() {
+    // 目录必须与 res/xml/file_paths.xml 的 cache-path 对齐（camera-photos/），
+    // 否则 getUriForFile 会因为「路径不在已声明范围内」直接抛 IllegalArgumentException。
+    val photoDir = File(cacheDir, "camera-photos").apply { mkdirs() }
+    val photoFile = File(photoDir, "camera_${System.currentTimeMillis()}.jpg")
+    val uri =
+        runCatching { FileProvider.getUriForFile(this, "$packageName.fileprovider", photoFile) }
+            .getOrNull()
+    if (uri == null) {
+      android.widget.Toast.makeText(this, "无法创建拍照文件", android.widget.Toast.LENGTH_SHORT)
+          .show()
+      return
+    }
+    cameraPhotoUri = uri
+    takePictureLauncher?.launch(uri)
+  }
+
+  /**
+   * 把选中的 uri 落盘进工作区并挂到待发附件上。
+   *
+   * <p><b>串行落盘</b>：并发上传会在 `uniqueUploadName` 的「查重名 → 写入」之间竞态，
+   * 两个同名文件同时进来会各自看到「不存在」然后互相覆盖。串行是最省事的正确做法
+   * （附件数量本来就少，用户感知不到）。
+   *
+   * <p><b>上限截断要告知</b>：超过上限的静默丢弃会让用户以为「选了但没生效」，
+   * 因此走 [partialUploadMessage] 提示。
+   */
+  private fun handlePickedUris(
+      uris: List<android.net.Uri>,
+      includeImageData: Boolean,
+  ) {
+    if (uris.isEmpty()) {
+      return
+    }
+    // 先按剩余槽位截断，避免白读一堆文件再丢掉。
+    val room =
+        (MAX_PENDING_ATTACHMENTS - pendingAttachments.size)
+            .coerceAtLeast(0)
+    val selected = uris.take(room)
+    if (selected.isEmpty()) {
+      android.widget.Toast.makeText(
+              this,
+              maxAttachmentMessage(
+                  this, MAX_PENDING_ATTACHMENTS),
+              android.widget.Toast.LENGTH_LONG)
+          .show()
+      return
+    }
+
+    uiScope.launch {
+      var ok = 0
+      val failures = mutableListOf<String>()
+      for (uri in selected) {
+        runCatching {
+              copyUriToWorkspace(
+                  this@ChatActivity, uri, fileAccess, includeImageData = includeImageData)
+            }
+            .onSuccess { uploaded ->
+              pendingAttachments.add(uploaded.toPendingAttachment())
+              ok += 1
+            }
+            .onFailure { error ->
+              failures +=
+                  (error.message
+                      ?: uploadFallbackError(this@ChatActivity))
+            }
+      }
+      val skipped = uris.size - selected.size
+      when {
+        // 全失败：把第一条原因显示出来，用户才知道是权限、格式还是大小问题。
+        ok == 0 && failures.isNotEmpty() ->
+            android.widget.Toast.makeText(this@ChatActivity, failures.first(), android.widget.Toast.LENGTH_LONG)
+                .show()
+        skipped > 0 || failures.isNotEmpty() ->
+            android.widget.Toast.makeText(
+                    this@ChatActivity,
+                    partialUploadMessage(this@ChatActivity, ok),
+                    android.widget.Toast.LENGTH_LONG)
+                .show()
+        else ->
+            android.widget.Toast.makeText(
+                    this@ChatActivity,
+                    uploadSuccessMessage(this@ChatActivity, ok),
+                    android.widget.Toast.LENGTH_SHORT)
+                .show()
+      }
+    }
+  }
+
+  /**
+   * 读取附件正文，供消息气泡上点开附件时预览。
+   *
+   * <p>读的是落盘后的本地文件（`localPath`）；路径失效（用户清了缓存）时返回 null，
+   * 界面据此提示「无法读取」而不是显示空白。
+   */
+  private suspend fun readAttachmentText(path: String): String? =
+      kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+        runCatching { File(path).takeIf { it.isFile }?.readText() }.getOrNull()
+      }
+
   // ---- 发送 ----
 
   private fun send(text: String) {
@@ -633,16 +842,51 @@ class ChatActivity : ComponentActivity() {
     // 允许，之后模型删任何文件都不再问——与「允许一次」的语义相反。
     // 只清本会话的桶，别的会话不受影响。
     toolSettings.beginRun(conversationId)
+
+    // 把附件快照下来：下面要清空列表（附件只属于这一条消息），
+    // 而请求文本要用清理前的数据拼。
+    val attachmentsForThisSend = pendingAttachments.toList()
+
+    // 普通附件（非图片）没有多模态表示：把「文件名 + 工作区路径」清单追加到请求文本末尾，
+    // 模型据此知道有哪些文件、去哪读它们（它有 file_read 工具）。
+    val requestText =
+        if (attachmentsForThisSend.isEmpty()) text
+        else
+            appendAttachmentsToRequest(
+                this, text, attachmentsForThisSend)
+
+    // 图片另走多模态 JSON（base64 直送模型，不靠模型自己读文件）。
+    // 只带 image != null 的那些；普通文件在上面已并入文本。
+    val images =
+        attachmentsForThisSend.mapNotNull { attachment ->
+          attachment.image?.let {
+            com.tom.rv2ide.ai.protocol.ImageInputPayload.ImagePart(it.mimeType, it.base64Data)
+          }
+        }
+    val attachmentsJson =
+        com.assistant.engine.ConversationRunner.buildAttachmentsJson(requestText, images)
+
+    // 附件元数据随用户消息落盘，重开会话时气泡上的缩略图靠它回放。
+    val attachmentMeta =
+        attachmentsForThisSend.map {
+          com.tom.rv2ide.ai.protocol.AttachmentMeta(
+              it.fileName, it.localPath, it.mimeType, it.sizeBytes, it.isImage)
+        }
+
     // 本地先画用户气泡：内核也会广播 USER_MESSAGE，EventReducer 会判重
     // （末条已是同一内容的用户消息则跳过），所以这里画是安全的。
     timeline.append(MessageTimeline.Role.USER, text)
     chatView.forceScrollToBottom(uiScope)
 
+    // 附件已交给本轮，从输入栏清掉。
+    pendingAttachments.clear()
+
     val handle =
         runner.start(
             conversationId,
-            text,
-            null,
+            requestText,
+            attachmentsJson,
+            attachmentMeta,
             object : ConversationRunner.Listener {
               override fun onEvent(event: AgentEvent) {
                 runOnUiThread {

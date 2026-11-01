@@ -60,6 +60,23 @@
       android:exported="true"
       android:label="渲染探针"
       android:theme="@android:style/Theme.Material.Light.NoActionBar" />
+
+    <!--
+      拍照输出的中转文件提供者。
+      Android 7+ 禁止把 file:// 交给别的应用（相机写不进我们的私有目录），
+      必须经 FileProvider 换成 content:// 并临时授权。
+      paths 只暴露 cacheDir 下的 camera-photos/：给整块 cache 目录太大，
+      而拍照只需要这一个子目录。
+    -->
+    <provider
+      android:name="androidx.core.content.FileProvider"
+      android:authorities="${applicationId}.fileprovider"
+      android:exported="false"
+      android:grantUriPermissions="true">
+      <meta-data
+        android:name="android.support.FILE_PROVIDER_PATHS"
+        android:resource="@xml/file_paths" />
+    </provider>
   </application>
 
 </manifest>
