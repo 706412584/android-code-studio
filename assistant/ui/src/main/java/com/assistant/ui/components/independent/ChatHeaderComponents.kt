@@ -92,8 +92,16 @@ internal fun ChatHeader(
     sessionId: String? = null,
     onOpenDrawer: () -> Unit,
     onNewChat: () -> Unit,
-    onNavigateToTerminal: () -> Unit,
-    onNavigateToGit: () -> Unit,
+    /**
+     * 终端按钮；null 时**不渲染**。
+     *
+     * <p>独立助手（assistant）与 ACS 的差别就在这：ACS 里终端必然存在，所以原来是
+     * 非空参数、按钮恒显示。剥离出来后宿主可能没有终端能力，此时必须让按钮消失——
+     * 一颗点了没反应的按钮会被当成「坏了」，比不显示更糟。
+     */
+    onNavigateToTerminal: (() -> Unit)? = null,
+    /** Git 按钮；null 时不渲染（独立助手的工作区不是 git 仓库）。 */
+    onNavigateToGit: (() -> Unit)? = null,
     connectionState: ConnectionState? = null,
     showMenuButton: Boolean = true,
     terminalActive: Boolean = false,
@@ -167,18 +175,24 @@ internal fun ChatHeader(
                     contentDescription = stringResource(R.string.chat_new_session),
                     onClick = onNewChat,
                 )
-                HeaderIconButton(
-                    icon = FeatherIcons.GitBranch,
-                    contentDescription = stringResource(R.string.chat_open_git),
-                    active = gitActive,
-                    onClick = onNavigateToGit,
-                )
-                HeaderIconButton(
-                    icon = FeatherIcons.Terminal,
-                    contentDescription = stringResource(R.string.chat_open_terminal),
-                    active = terminalActive,
-                    onClick = onNavigateToTerminal,
-                )
+                // Git / 终端：null = 宿主没有这个能力，不渲染。
+                // 与下面全屏按钮同一模式（也是 `?.let`）。
+                onNavigateToGit?.let { openGit ->
+                    HeaderIconButton(
+                        icon = FeatherIcons.GitBranch,
+                        contentDescription = stringResource(R.string.chat_open_git),
+                        active = gitActive,
+                        onClick = openGit,
+                    )
+                }
+                onNavigateToTerminal?.let { openTerminal ->
+                    HeaderIconButton(
+                        icon = FeatherIcons.Terminal,
+                        contentDescription = stringResource(R.string.chat_open_terminal),
+                        active = terminalActive,
+                        onClick = openTerminal,
+                    )
+                }
                 // 全屏 / 最小化二选一：同一颗按钮，按当前状态换图标与动作。
                 onToggleFullscreen?.let { toggle ->
                     HeaderIconButton(

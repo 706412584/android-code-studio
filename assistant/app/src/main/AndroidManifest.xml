@@ -62,6 +62,19 @@
       android:theme="@android:style/Theme.Material.Light.NoActionBar" />
 
     <!--
+      终端页：Termux 的 TerminalView + proot 进 Ubuntu 容器。
+      configChanges 必须包含 orientation|screenSize：旋转时若重建 Activity，
+      进程内的 TerminalSession（连同 PTY）会一起销毁，用户正在跑的命令凭空消失。
+      keyboardHidden 同理（软键盘弹出会触发配置变化）。
+    -->
+    <activity
+      android:name=".TerminalActivity"
+      android:exported="false"
+      android:label="终端"
+      android:configChanges="orientation|screenSize|keyboardHidden"
+      android:theme="@style/Theme.Assistant.Terminal" />
+
+    <!--
       拍照输出的中转文件提供者。
       Android 7+ 禁止把 file:// 交给别的应用（相机写不进我们的私有目录），
       必须经 FileProvider 换成 content:// 并临时授权。

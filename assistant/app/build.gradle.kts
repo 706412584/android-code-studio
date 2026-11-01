@@ -57,6 +57,17 @@ android {
     compose = true
   }
 
+  // **必须**：proot 要 execve 自己的 .so，而未解压的 .so 在 APK 里不可执行。
+  //
+  // 关键点：这是 application 级的打包选项，写在 library 模块（assistant/termux）
+  // 里不生效——实测那里设了之后 APK 的 extractNativeLibs 仍是 0（false），
+  // 安装后 lib/arm64/ 是空目录，proot 全套都找不到。
+  packaging {
+    jniLibs {
+      useLegacyPackaging = true
+    }
+  }
+
   // 与仓库约定一致（BuildConfig.javaVersion = 11）：Java 与 Kotlin 的 jvmTarget
   // 必须对齐，否则 Kotlin 插件报 "Inconsistent JVM-target compatibility"。
   compileOptions {
@@ -74,12 +85,15 @@ kotlin {
 }
 
 dependencies {
-  // 项目依赖只有两个：AI 内核 + 本仓库的渲染层。
-  // **没有** projects.core.* / editor / java / xml / tooling / termux / utilities
+  // 项目依赖只有三个：AI 内核 + 渲染层 + 终端。
+  // **没有** projects.core.* / editor / java / xml / tooling / utilities
   // —— 这正是本模块要验证的事。
   implementation(projects.core.aiAgent)
   implementation(projects.assistant.engine)
   implementation(projects.assistant.ui)
+  // 终端（Termux AAR + proot 容器）。它同样不依赖任何 ACS 模块，
+  // 加进来不破坏「App 层不依赖 ACS」这条判定标准。
+  implementation(projects.assistant.termux)
 
   // 只留 Kotlin 标准库：探针用的是框架自带的 android.app.Activity / TextView，
   // 不需要 appcompat / material。少引一个依赖，验证的结论就更干净一分——

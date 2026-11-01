@@ -79,6 +79,13 @@ fun AssistantChatScreen(
     onOpenSessions: () -> Unit,
     onNewChat: () -> Unit,
     /**
+     * 顶栏的终端按钮。
+     *
+     * <p>为 null 时**整颗按钮不渲染**——独立助手若没接终端能力（或用户设备不支持），
+     * 显示一颗点了没反应的按钮比不显示更糟：用户会以为是坏的。
+     */
+    onOpenTerminal: (() -> Unit)? = null,
+    /**
      * 抽屉内容（会话列表）。非 null 且 [drawerVisible] 为 true 时盖在整页之上。
      *
      * <p>做成插槽而不是写死 [AssistantSessionsDrawer]：宿主可能想换成别的抽屉
@@ -133,11 +140,11 @@ fun AssistantChatScreen(
           outputTokens = 0,
           onOpenDrawer = onOpenSessions,
           onNewChat = onNewChat,
-          // Git / 终端在本 App 尚不存在，传空实现而不是隐藏——
-          // ChatHeader 没有「隐藏单个按钮」的参数，隐藏要改组件；
-          // 空实现至少保持顶栏与参考项目同形（用户要求一比一）。
-          onNavigateToTerminal = {},
-          onNavigateToGit = {},
+          // 终端：宿主没接能力时传 null，按钮整个不渲染（见参数注释）。
+          onNavigateToTerminal = onOpenTerminal,
+          // Git 在独立助手里没有对应物（工作区是普通目录，不是 git 仓库），
+          // 同理传 null 让按钮消失，而不是留一颗点了没反应的按钮。
+          onNavigateToGit = null,
           // 全屏按钮不提供：本 App 的对话页本来就是全屏，这颗没有对应动作。
           // 传 null 时 ChatHeader 不渲染它。
           onToggleFullscreen = null,

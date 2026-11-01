@@ -313,6 +313,12 @@ class ChatActivity : ComponentActivity() {
                 onInitialInputConsumed = { pendingInput = "" },
                 onSend = { text -> send(text) },
                 onStop = { runner.cancel() },
+                // 终端页：Termux 的 TerminalView + proot 进 Ubuntu。
+                // `this@ChatActivity` 不能省——lambda 里的 `this` 是 Compose 作用域。
+                onOpenTerminal = {
+                  startActivity(
+                      android.content.Intent(this@ChatActivity, TerminalActivity::class.java))
+                },
                 // ---- 附件 ----
                 // pendingAttachments 是 SnapshotStateList，本身可观察：选取落盘后 add
                 // 即触发重组，不需要额外通知。
