@@ -117,6 +117,15 @@ fun AssistantChatScreen(
     onUploadFile: () -> Unit = {},
     onUploadImage: () -> Unit = {},
     onTakePhoto: () -> Unit = {},
+    /**
+     * 斜杠命令清单（输入 `/` 时弹出）。
+     *
+     * <p>为空时 `/` 不会有任何反应——空列表被组件当成「没有命令」，不弹菜单。
+     * 因此宿主必须传真实数据（内核的 `SlashCommandCatalog.definitions()`）。
+     */
+    slashCommands: List<com.assistant.ui.components.independent.InputSlashCommand> = emptyList(),
+    /** 已安装技能（输入 `@` 时弹出）。同样不能为空，否则 `@` 无反应。 */
+    skills: List<com.assistant.ui.components.independent.InputSlashCommand> = emptyList(),
 ) {
   AIEditorTheme(darkTheme = darkTheme, followHostFrame = false, style = style) {
     Box(modifier = Modifier.fillMaxSize()) {
@@ -192,6 +201,8 @@ fun AssistantChatScreen(
             onToggleMode = { mode = it },
             reasoningEffort = reasoning,
             onReasoningEffortChange = { reasoning = it },
+            slashCommands = slashCommands,
+            skills = skills,
             pendingAttachments = attachments,
             onRemoveAttachment = onRemoveAttachment,
             onReadAttachment = onReadAttachment,

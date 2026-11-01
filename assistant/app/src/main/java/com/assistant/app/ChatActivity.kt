@@ -337,6 +337,12 @@ class ChatActivity : ComponentActivity() {
                 onUploadFile = { launchFilePicker() },
                 onUploadImage = { launchImagePicker() },
                 onTakePhoto = { takePhoto() },
+                // ---- 斜杠命令 / @ 技能 ----
+                // 数据源来自内核，不在这里自造：命令集与解析规则必须与
+                // ConversationRunner 里 SlashCommandCatalog.parse 的判定一致，
+                // 抄一份出来就会在两边分别演化（改了一边另一边就静默失效）。
+                slashCommands = slashCommands(),
+                skills = skillCommands(),
                 onOpenSessions = {
                   sessions = loadSessions()
                   // 文件树可能被模型改动过（工具写了文件），每次打开重读一遍。
@@ -709,6 +715,118 @@ class ChatActivity : ComponentActivity() {
     super.onDestroy()
   }
 
+  // ---- 斜杠命令 / @ 技能 ----
+
+  /**
+   * 内核的命令定义 → 输入栏要的投影。
+   *
+   * <p>`acceptsArgs` 一律 true：内核的命令表里每一条都可能带参数
+   * （`/mode plan`、`/model xxx`），点选后补一个空格正好接着打参数。
+   */
+  private fun slashCommands(): List<com.assistant.ui.components.independent.InputSlashCommand> =
+      com.tom.rv2ide.ai.agent.command.SlashCommandCatalog.definitions().map { def ->
+        com.assistant.ui.components.independent.InputSlashCommand(
+            name = def.name,
+            description = def.description,
+            acceptsArgs = true,
+        )
+      }
+
+  /**
+   * 已安装技能 → `@` 菜单条目。
+   *
+   * <p>每次重组都重读磁盘：技能可以通过文件树或外部工具新增，缓存住会让新技能
+   * 一直不出现（用户会以为装失败了）。
+   */
+  private fun skillCommands(): List<com.assistant.ui.components.independent.InputSlashCommand> =
+      runCatching {
+            com.tom.rv2ide.ai.tool.skill.SkillRegistry.load(File(filesDir, "skills"))
+                .all()
+                .map { skill ->
+                  com.assistant.ui.components.independent.InputSlashCommand(
+                      name = skill.name,
+                      description = skill.description,
+                      acceptsArgs = true,
+                  )
+                }
+          }
+          .getOrDefault(emptyList())
+
+  /**
+   * 若输入是斜杠命令则执行它，返回 true（调用方据此跳过发送）。
+   *
+   * <p><b>为什么命令不能直接当消息发出去</b>：`/mode plan` 发给模型只是一句普通文本，
+   * 模型会回一句「好的，已切换到计划模式」——而实际模式没变。用户看到的是「命令生效了」
+   * 的假象。命令必须在本地解释。
+   *
+   * <p>命令集与解析规则全部取自内核 `SlashCommandCatalog`，不在界面层另写一份
+   * ——两份实现必然在改动后分离。
+   */
+  private fun tryHandleSlashCommand(text: String): Boolean {
+    val parsed = com.tom.rv2ide.ai.agent.command.SlashCommandCatalog.parse(text)
+    if (!parsed.isCommand) {
+      return false
+    }
+    if (!parsed.isExecutable) {
+      // 参数illegal：把原因直接说出来，别让用户以为是命令没生效。
+      timeline.append(
+          MessageTimeline.Role.TRACE,
+          "命令参数有误：${parsed.error}\n输入 /help 查看用法。")
+      chatView.forceScrollToBottom(uiScope)
+      return true
+    }
+    when (parsed.kind) {
+      com.tom.rv2ide.ai.agent.command.SlashCommandCatalog.Kind.MODE -> {
+        val mode = parsed.modeOrNull()
+        if (mode == null) {
+          timeline.append(MessageTimeline.Role.TRACE, "未知模式：${parsed.argument}")
+        } else {
+          // 写偏好即可：runner 每次运行前重读（见 ConversationRunner 的 chatModeId 回调）。
+          com.assistant.ui.AssistantPrefs.setChatMode(this, mode.id)
+          timeline.append(MessageTimeline.Role.TRACE, "已切换到 ${mode.id} 模式")
+        }
+      }
+      com.tom.rv2ide.ai.agent.command.SlashCommandCatalog.Kind.MODEL -> {
+        val model = parsed.argument
+        if (model.isBlank()) {
+          timeline.append(MessageTimeline.Role.TRACE, "用法：/model <模型名>")
+        } else {
+          modelSettings.setModelId(model)
+          timeline.append(MessageTimeline.Role.TRACE, "已切换到模型 $model")
+        }
+      }
+      com.tom.rv2ide.ai.agent.command.SlashCommandCatalog.Kind.NEW_CONVERSATION -> {
+        conversationId = ensureConversation()
+        currentTitle = "新的对话"
+        timeline.clear()
+        reducer = EventReducer(timeline)
+        timeline.append(MessageTimeline.Role.TRACE, "已新建会话")
+      }
+      com.tom.rv2ide.ai.agent.command.SlashCommandCatalog.Kind.CLEAR -> {
+        // 只清屏、不删盘：会话文件仍在，重开能看到历史。
+        // 真正的「删会话」在会话抽屉里做——两件事的破坏性不同，不该共用一条命令。
+        timeline.clear()
+        reducer = EventReducer(timeline)
+        timeline.append(MessageTimeline.Role.TRACE, "已清空显示（会话记录仍保留在磁盘）")
+      }
+      com.tom.rv2ide.ai.agent.command.SlashCommandCatalog.Kind.COMPACT -> {
+        // 压缩由内核在下一轮入口做（需要条目序号且结果要落盘），
+        // 这里只把请求记下来并说明——不能假装「已经压缩完了」。
+        timeline.append(
+            MessageTimeline.Role.TRACE,
+            "压缩将在下一轮对话开始前执行（内核在入口处理，需要读写会话记录）。")
+      }
+      com.tom.rv2ide.ai.agent.command.SlashCommandCatalog.Kind.HELP -> {
+        timeline.append(
+            MessageTimeline.Role.TRACE,
+            com.tom.rv2ide.ai.agent.command.SlashCommandCatalog.helpText())
+      }
+      else -> return false
+    }
+    chatView.forceScrollToBottom(uiScope)
+    return true
+  }
+
   // ---- 附件 ----
 
   /** 打开文件选择器（多选）。MIME 通配：附件本来就是任意类型。 */
@@ -835,6 +953,12 @@ class ChatActivity : ComponentActivity() {
 
   private fun send(text: String) {
     if (text.isBlank()) {
+      return
+    }
+    // 斜杠命令在本地解释，不发给模型（见 tryHandleSlashCommand 的注释）。
+    // **放在 isReady 检查之前**：/help 这类命令不需要 API Key 就能用，
+    // 而被「还没配置」挡回去会让人以为命令坏了。
+    if (tryHandleSlashCommand(text)) {
       return
     }
     if (!modelSettings.isReady()) {
