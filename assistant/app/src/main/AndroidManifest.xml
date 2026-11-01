@@ -4,8 +4,8 @@
 
   这个模块的 manifest 里出现 com.tom.rv2ide.* 就说明剥离失败。
   目前三个 Activity 的分工：
-  - SettingsActivity 启动页（填服务商与 API Key）
-  - ChatActivity     真正的对话界面
+  - ChatActivity     启动页（对话界面）
+  - SettingsActivity 设置页（服务商 / 模型 / 外观 / 对话…）
   - ProbeActivity    第 1 步的内核探针（保留以便复现结论）
   - ChatDemoActivity 第 2 步的渲染探针（假数据，保留同上）
 -->
@@ -15,40 +15,45 @@
   <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
   <application
-    android:label="Assistant"
+    android:icon="@mipmap/ic_launcher"
+    android:roundIcon="@mipmap/ic_launcher_round"
+    android:label="@string/app_name"
     android:theme="@android:style/Theme.DeviceDefault.Light">
 
     <!--
-      设置页用 NoActionBar 主题：系统 ActionBar 会把 application 的 label（Assistant）
-      画在顶部，与页面内自己的「设置」标题重复——用户实测反馈「设置页有 Assistant，
-      去掉」。设置页自带顶栏（返回 + 标题），不需要系统的。
+      启动页是**对话页**，不是设置页。
+      助手 App 的主界面是对话，设置是配置阶段才去的地方；把设置设为启动页会让
+      每次开 App 都先落在「配密钥」上（实测反馈）。未配置时由 ChatActivity
+      自动跳一次设置页（见那边的 firstRun 处理）。
     -->
     <activity
-      android:name=".SettingsActivity"
+      android:name=".ChatActivity"
       android:exported="true"
-      android:theme="@android:style/Theme.Material.Light.NoActionBar">
+      android:label="@string/app_name"
+      android:theme="@android:style/Theme.Material.Light.NoActionBar"
+      android:windowSoftInputMode="adjustResize">
       <intent-filter>
         <action android:name="android.intent.action.MAIN" />
         <category android:name="android.intent.category.LAUNCHER" />
       </intent-filter>
     </activity>
 
-    <!-- 对话界面。单独 exported 以便设置页跳转，也方便 adb 直接拉起调试。 -->
+    <!--
+      设置页：从对话页的侧边抽屉进入。不需要 MAIN/LAUNCHER。
+      用 NoActionBar 主题：系统 ActionBar 会把 application 的 label 画在顶部，
+      与页面内自己的「设置」标题重复——用户实测反馈「设置页有 Assistant，去掉」。
+    -->
     <activity
-      android:name=".ChatActivity"
+      android:name=".SettingsActivity"
       android:exported="true"
-      android:label="Assistant"
-      android:theme="@android:style/Theme.Material.Light.NoActionBar"
-      android:windowSoftInputMode="adjustResize" />
+      android:label="@string/app_name"
+      android:theme="@android:style/Theme.Material.Light.NoActionBar" />
 
     <!--
       第 1 步 / 第 2 步的验证入口。
       保留而不是删除：那两步的结论仍需要可复现（内核可独立消费 / 渲染层可独立工作）。
     -->
-    <activity
-      android:name=".ProbeActivity"
-      android:exported="true"
-      android:label="内核探针" />
+    <activity android:name=".ProbeActivity" android:exported="true" android:label="内核探针" />
 
     <activity
       android:name=".ChatDemoActivity"

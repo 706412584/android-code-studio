@@ -188,6 +188,10 @@ class ChatActivity : ComponentActivity() {
             // 会话列表。每次打开抽屉时重读磁盘，保证新建/删除后立即反映。
             var sessions by remember { mutableStateOf(listOf<SessionRow>()) }
 
+            // 读一次刷新触发计数：设置页改了模型后返回，这里重新求值。
+            // 必须在 modelLabel() 之前读——Compose 只让读过该状态的作用域重组。
+            @Suppress("UNUSED_EXPRESSION") headerRefresh
+
             androidx.activity.compose.BackHandler(enabled = showDrawer) { showDrawer = false }
 
             AssistantChatScreen(
@@ -309,9 +313,30 @@ class ChatActivity : ComponentActivity() {
 
     if (!modelSettings.isReady()) {
       showSetupHint()
+      // 全新启动且没配置过：直接送去设置页，用户装完点图标就能填密钥。
+      // **只在全新启动时跳**（savedInstanceState == null）：用户可能想先看看界面，
+      // 从设置页返回后不该被反复弹走。
+      if (savedInstanceState == null) {
+        startActivity(android.content.Intent(this, SettingsActivity::class.java))
+      }
     }
     chatView.view.post { chatView.forceScrollToBottom(uiScope) }
   }
+
+  /**
+   * 从设置页返回时刷新顶栏（模型名/服务商 logo）。
+   *
+   * <p>不刷新的话，用户在设置里换了模型、返回对话页，顶栏还显示旧模型——
+   * 只有杀掉重进才更新。Compose 树不会因为 Activity 恢复而自动重组，
+   * 得踢一下状态。
+   */
+  override fun onResume() {
+    super.onResume()
+    headerRefresh++
+  }
+
+  /** 顶栏重算触发器（见 [onResume]）。 */
+  private var headerRefresh by mutableStateOf(0)
 
   /** 顶栏标题：当前会话名。 */
   private var currentTitle: String = "新的对话"
