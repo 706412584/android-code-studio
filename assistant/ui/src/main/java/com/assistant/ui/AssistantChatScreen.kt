@@ -126,6 +126,18 @@ fun AssistantChatScreen(
     slashCommands: List<com.assistant.ui.components.independent.InputSlashCommand> = emptyList(),
     /** 已安装技能（输入 `@` 时弹出）。同样不能为空，否则 `@` 无反应。 */
     skills: List<com.assistant.ui.components.independent.InputSlashCommand> = emptyList(),
+    /** 本轮已用的输入 token（内核统计）。0 时顶栏不显示统计段。 */
+    inputTokens: Int = 0,
+    /** 本轮产生的输出 token。 */
+    outputTokens: Int = 0,
+    /** 上下文已用占比（0..1），驱动输入栏的占用环。 */
+    tokenProgress: Float = 0f,
+    /**
+     * 上下文窗口大小（token）；0 = 模型未声明。
+     *
+     * <p>是「占用环该不该显示」的判据——见 ChatInputBar 里的说明。
+     */
+    contextWindowSize: Int = 0,
 ) {
   AIEditorTheme(darkTheme = darkTheme, followHostFrame = false, style = style) {
     Box(modifier = Modifier.fillMaxSize()) {
@@ -145,8 +157,10 @@ fun AssistantChatScreen(
       //   - +    → 新会话
       //   - 全屏 → 沉浸阅读（隐藏顶栏与输入栏）
       ChatHeader(
-          inputTokens = 0,
-          outputTokens = 0,
+          // 本次运行的输入/输出 token。由宿主从内核的用量回调取；
+          // 未接时传 0——顶栏那一段整体不显示（见 ChatHeader 的 TokenStats）。
+          inputTokens = inputTokens,
+          outputTokens = outputTokens,
           onOpenDrawer = onOpenSessions,
           onNewChat = onNewChat,
           // 终端：宿主没接能力时传 null，按钮整个不渲染（见参数注释）。
@@ -203,6 +217,8 @@ fun AssistantChatScreen(
             onReasoningEffortChange = { reasoning = it },
             slashCommands = slashCommands,
             skills = skills,
+            tokenProgress = tokenProgress,
+            contextWindowSize = contextWindowSize,
             pendingAttachments = attachments,
             onRemoveAttachment = onRemoveAttachment,
             onReadAttachment = onReadAttachment,

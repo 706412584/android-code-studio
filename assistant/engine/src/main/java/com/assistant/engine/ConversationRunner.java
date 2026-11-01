@@ -80,6 +80,23 @@ public final class ConversationRunner {
   /** 当前运行实例；null 表示空闲。 */
   private volatile RunHandle active;
 
+  /**
+   * 上下文用量回调：{@code (已用 token, 上下文窗口大小)}。
+   *
+   * <p>由宿主注入（顶栏的占用环与 token 统计要用）。**可为 null**——
+   * 没有界面消费时不必付出这个开销。可能来自非主线程，实现方自行切线程。
+   */
+  private volatile UsageListener usageListener;
+
+  /** 上下文用量回调。 */
+  public interface UsageListener {
+    void onUsage(int usedTokens, int contextWindowSize);
+  }
+
+  public void setUsageListener(UsageListener listener) {
+    this.usageListener = listener;
+  }
+
   public ConversationRunner(
       ModelSettings modelSettings,
       ToolRegistry toolRegistry,
@@ -296,11 +313,22 @@ public final class ConversationRunner {
               .build();
 
       // 上下文管理器：裁剪在循环内做（消息随轮次增长），压缩在入口做。
+      //
+      // 顺带把用量回调接出来：TokenUsageTracker 一直都在统计（compaction 的触发条件
+      // 就靠它），但此前没传 usageListener，于是顶栏的占用环与 token 数恒为 0——
+      // 数据有，只是没人取。
       int contextSize = config.getContextSize();
       RunContextManager contextManager =
           contextSize > 0
               ? new RunContextManager(
-                  new TokenUsageTracker(contextSize), estimateOverhead(systemPrompt))
+                  new TokenUsageTracker(contextSize),
+                  estimateOverhead(systemPrompt),
+                  (used, total) -> {
+                    UsageListener sink = usageListener;
+                    if (sink != null) {
+                      sink.onUsage(used, total);
+                    }
+                  })
               : null;
 
       // 落盘包装：**所有事件先写 JSONL 再转发给界面**。

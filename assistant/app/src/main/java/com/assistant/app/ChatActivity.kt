@@ -116,6 +116,12 @@ class ChatActivity : ComponentActivity() {
   /** 拍照输出的临时 uri（FileProvider 授权）；拍照回调里取回。 */
   private var cameraPhotoUri: android.net.Uri? = null
 
+  /** 上下文已用 token（内核回调）。Compose 状态：改了要重绘顶栏与占用环。 */
+  private var contextUsedTokens by mutableStateOf(0)
+
+  /** 上下文窗口大小；0 = 模型未声明（此时占用环不显示）。 */
+  private var contextWindowTokens by mutableStateOf(0)
+
   private val uiScope = CoroutineScope(Dispatchers.Main)
 
   /** 当前会话 id。本步骤固定一个会话（多会话属于后续步骤）。 */
@@ -239,6 +245,16 @@ class ChatActivity : ComponentActivity() {
           awaitUserAnswers(questions)
         })
 
+    // 上下文用量：内核的 TokenUsageTracker 一直在统计（压缩触发条件就靠它），
+    // 但此前没接出来，顶栏的 token 数与占用环恒为 0。
+    // 回调可能来自工具线程，必须切主线程——它写的是 Compose 状态。
+    runner.setUsageListener { used, total ->
+      runOnUiThread {
+        contextUsedTokens = used
+        contextWindowTokens = total
+      }
+    }
+
     // ---- 附件 ----
     //
     // 三个选取入口各自注册：文件走 OpenMultipleDocuments，图片走 PickMultipleVisualMedia
@@ -343,6 +359,19 @@ class ChatActivity : ComponentActivity() {
                 // 抄一份出来就会在两边分别演化（改了一边另一边就静默失效）。
                 slashCommands = slashCommands(),
                 skills = skillCommands(),
+                // ---- 上下文用量 ----
+                // 内核只给「已用多少」，输入/输出分开的细分它没有（只有估算总量），
+                // 因此输入侧填已用量、输出侧留 0，而不是编一个数——顶栏显示的是
+                // 「上下文占了多少」，这才是用户要看的。
+                inputTokens = contextUsedTokens,
+                outputTokens = 0,
+                tokenProgress =
+                    if (contextWindowTokens > 0) {
+                      (contextUsedTokens.toFloat() / contextWindowTokens).coerceIn(0f, 1f)
+                    } else {
+                      0f
+                    },
+                contextWindowSize = contextWindowTokens,
                 onOpenSessions = {
                   sessions = loadSessions()
                   // 文件树可能被模型改动过（工具写了文件），每次打开重读一遍。
