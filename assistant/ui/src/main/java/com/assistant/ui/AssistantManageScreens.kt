@@ -89,7 +89,9 @@ fun AssistantManageScaffold(
             modifier = Modifier.padding(start = Spacing.xs),
         )
       }
-      content()
+      // 内容必须占剩余高度：不给 weight 时，内部用 fillMaxSize 的列表会按
+      // 无限高度测量，滚出屏幕外的部分无法点击（实测点「从预设新建」无响应）。
+      Box(modifier = Modifier.weight(1f)) { content() }
     }
   }
 }

@@ -54,6 +54,8 @@ class SettingsActivity : ComponentActivity() {
   private lateinit var styleStore: AssistantUiStyleStore
   private lateinit var permissionPrefs: PermissionPrefs
   private lateinit var memoryPrefs: MemoryPrefs
+  private lateinit var mediaSettings: com.assistant.engine.MediaSettings
+  private lateinit var mcpSettings: com.assistant.engine.McpSettings
 
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
@@ -61,6 +63,8 @@ class SettingsActivity : ComponentActivity() {
     styleStore = AssistantUiStyleStore(this)
     permissionPrefs = PermissionPrefs(this)
     memoryPrefs = MemoryPrefs(this)
+    mediaSettings = com.assistant.engine.MediaSettings(this)
+    mcpSettings = com.assistant.engine.McpSettings(this)
 
     // 引擎的预设表 → 渲染层的投影。
     val providerOptions: List<ProviderOption> =
@@ -89,6 +93,13 @@ class SettingsActivity : ComponentActivity() {
             // 偏好不是 Compose 状态，改完要让首页重新求值——用这个计数当触发器。
             var recomposeKey by remember { mutableStateOf(0) }
 
+            // 读一次 recomposeKey，**必须在路由判断之前**：
+            // Compose 只让「读过该状态的作用域」重组。原先放在 home 分支里时，
+            // 子页（服务商/记忆/…）改动数据后 recomposeKey++ 不会让子页重组，
+            // 表现就是「从预设新建后列表不刷新」（用户实测反馈）。
+            // 放在最外层，任何一页改动都会让整个 setContent 重新求值。
+            @Suppress("UNUSED_EXPRESSION") recomposeKey
+
             // 子页按返回键回首页，而不是退出 Activity。
             BackHandler(enabled = route != "home") { route = "home" }
 
@@ -113,7 +124,9 @@ class SettingsActivity : ComponentActivity() {
                       memoryEnabled = memoryPrefs.enabled(),
                       skillCount = countSkills(),
                       memoryCount = countMemory(),
-                      onOpenModelSettings = { route = "model" },
+                      // 「模型与凭据」入口已移除：它和服务商页是同一件事
+                      // （服务商记录里就含密钥），两个入口会让用户不知道该去哪配。
+                      onOpenModelSettings = { route = "providers" },
                       onThemePresetChange = { id ->
                         AssistantThemePrefs.setPresetId(this@SettingsActivity, id)
                         // 触发重组：偏好本身不是 Compose 状态，改完要让页面重画。
@@ -154,10 +167,19 @@ class SettingsActivity : ComponentActivity() {
                       onOpenPromptTemplates = { route = "prompts" },
                       onOpenMemories = { route = "memories" },
                       onOpenSkills = { route = "skills" },
+                      onOpenProviders = { route = "providers" },
+                      onOpenMcp = { route = "mcp" },
+                      onOpenModelManage = { route = "modelManage" },
+                      providerCount = settings.providerRecords().all().size,
+                      mcpServerCount = mcpSettings.all().size,
+                      configuredSceneCount =
+                          listOf(
+                                  mediaSettings.imageProviderId(),
+                                  mediaSettings.videoProviderId(),
+                              )
+                              .count { it.isNotEmpty() },
                       onBack = { finish() },
                   )
-              // 读一次 recomposeKey：它的变化会让这段重组，从而重新读取上面的偏好。
-              @Suppress("UNUSED_EXPRESSION") recomposeKey
               AssistantSettingsScreen(state = state)
             } else if (route == "prompts") {
               // 提示词模板：8 个内核模板，可编辑/重置。
@@ -232,6 +254,163 @@ class SettingsActivity : ComponentActivity() {
               com.assistant.ui.AssistantSkillsScreen(
                   skills = items,
                   skillRoot = File(filesDir, "skills").absolutePath,
+                  onBack = { route = "home" },
+              )
+            } else if (route == "providers") {
+              val records = settings.providerRecords()
+              val items =
+                  records.all().map { record ->
+                    com.assistant.ui.ProviderRecordItem(
+                        id = record.id,
+                        label = record.label,
+                        baseUrl = record.baseUrl,
+                        apiKey = record.apiKey,
+                        slots = record.slotModels.toList(),
+                        protocol = record.protocolType.toUi(),
+                        usable = record.isUsable,
+                    )
+                  }
+              com.assistant.ui.AssistantProvidersScreen(
+                  records = items,
+                  presets =
+                      ProviderPresets.all().map { preset ->
+                        com.assistant.ui.PresetTemplate(
+                            id = preset.id,
+                            label = preset.label,
+                            models = preset.models,
+                        )
+                      },
+                  onAddFromPreset = { presetId ->
+                    ProviderPresets.find(presetId)?.let { records.addFromPreset(it) }
+                    recomposeKey++
+                  },
+                  onAddCustom = { /* 表单里保存时走 onUpdate（id 为空） */ },
+                  onUpdate = { item ->
+                    if (item.id.isEmpty()) {
+                      records.addCustom(
+                          item.label,
+                          item.baseUrl,
+                          item.apiKey,
+                          item.protocol.toEngine(),
+                          item.model,
+                      )
+                    } else {
+                      records.update(
+                          item.id,
+                          item.label,
+                          item.baseUrl,
+                          item.apiKey,
+                          item.protocol.toEngine(),
+                          arrayOf(item.model, "", "", ""),
+                      )
+                    }
+                    recomposeKey++
+                  },
+                  onDelete = { id ->
+                    records.remove(id)
+                    recomposeKey++
+                  },
+                  // 拉取模型清单。**必须切线程**：ui 模块同步调用本回调，
+                  // 网络请求跑在主线程会 ANR。
+                  onFetchModels = { baseUrl, apiKey, protocol ->
+                    val engineProtocol =
+                        if (protocol ==
+                            com.assistant.ui.components.independent.ProviderProtocol
+                                .ANTHROPIC_MESSAGES) {
+                          com.tom.rv2ide.ai.protocol.ModelProtocolType.ANTHROPIC_MESSAGES
+                        } else {
+                          com.tom.rv2ide.ai.protocol.ModelProtocolType.OPENAI_COMPATIBLE
+                        }
+                    // 用单线程池 + Future.get() 同步等结果：**必须切线程**，
+                    // 因为 ui 模块的回调是同步的，网络请求跑主线程会 ANR。
+                    // 用标准库而不是 Guava（仓库里没有 guava 依赖）。
+                    val pool = java.util.concurrent.Executors.newSingleThreadExecutor()
+                    try {
+                      pool.submit<Pair<List<String>, String>> {
+                            val r =
+                                com.assistant.engine.ModelCatalog.fetch(
+                                    baseUrl, apiKey, engineProtocol)
+                            r.models to r.error
+                          }
+                          .get()
+                    } catch (e: Exception) {
+                      emptyList<String>() to ("拉取失败：" + (e.message ?: "未知错误"))
+                    } finally {
+                      pool.shutdown()
+                    }
+                  },
+                  onBack = { route = "home" },
+              )
+            } else if (route == "mcp") {
+              val items =
+                  mcpSettings.all().map { server ->
+                    com.assistant.ui.McpServerItem(
+                        id = server.id,
+                        label = server.label,
+                        target = server.target,
+                        transport = server.transport,
+                        enabled = server.enabled,
+                    )
+                  }
+              com.assistant.ui.AssistantMcpScreen(
+                  servers = items,
+                  onAdd = { label, target, transport ->
+                    mcpSettings.add(label, target, transport)
+                    recomposeKey++
+                  },
+                  onUpdate = { id, label, target, transport, enabled ->
+                    mcpSettings.update(id, label, target, transport, enabled)
+                    recomposeKey++
+                  },
+                  onDelete = { id ->
+                    mcpSettings.remove(id)
+                    recomposeKey++
+                  },
+                  onBack = { route = "home" },
+              )
+            } else if (route == "modelManage") {
+              val providerItems =
+                  settings.providerRecords().all().map { record ->
+                    com.assistant.ui.ProviderRecordItem(
+                        id = record.id,
+                        label = record.label,
+                        baseUrl = record.baseUrl,
+                        apiKey = record.apiKey,
+                        slots = record.slotModels.toList(),
+                        protocol = record.protocolType.toUi(),
+                        usable = record.isUsable,
+                    )
+                  }
+              com.assistant.ui.AssistantModelManageScreen(
+                  providers = providerItems,
+                  selections =
+                      mapOf(
+                          "chat" to (settings.providerId() to settings.modelId()),
+                          "image" to
+                              (mediaSettings.imageProviderId() to mediaSettings.imageModel()),
+                          "video" to
+                              (mediaSettings.videoProviderId() to mediaSettings.videoModel()),
+                      ),
+                  onSelect = { sceneKey, providerId, model ->
+                    when (sceneKey) {
+                      "chat" -> {
+                        settings.setProviderId(providerId)
+                        settings.setModelId(model)
+                      }
+                      "image" ->
+                          mediaSettings.setImage(providerId, model, mediaSettings.imageOutputDir())
+                      "video" ->
+                          mediaSettings.setVideo(providerId, model, mediaSettings.videoOutputDir())
+                    }
+                    recomposeKey++
+                  },
+                  onClear = { sceneKey ->
+                    when (sceneKey) {
+                      "image" -> mediaSettings.clearImage()
+                      "video" -> mediaSettings.clearVideo()
+                    }
+                    recomposeKey++
+                  },
                   onBack = { route = "home" },
               )
             } else {
@@ -313,6 +492,22 @@ class SettingsActivity : ComponentActivity() {
   }
 
 }
+
+/** 引擎的协议类型 → 渲染层的协议枚举。 */
+private fun com.tom.rv2ide.ai.protocol.ModelProtocolType.toUi(): ProviderProtocol =
+    if (this == com.tom.rv2ide.ai.protocol.ModelProtocolType.ANTHROPIC_MESSAGES) {
+      ProviderProtocol.ANTHROPIC_MESSAGES
+    } else {
+      ProviderProtocol.OPENAI_COMPATIBLE
+    }
+
+/** 渲染层的协议枚举 → 引擎的协议类型。 */
+private fun ProviderProtocol.toEngine(): com.tom.rv2ide.ai.protocol.ModelProtocolType =
+    if (this == ProviderProtocol.ANTHROPIC_MESSAGES) {
+      com.tom.rv2ide.ai.protocol.ModelProtocolType.ANTHROPIC_MESSAGES
+    } else {
+      com.tom.rv2ide.ai.protocol.ModelProtocolType.OPENAI_COMPATIBLE
+    }
 
 /** 内核的 8 个模板 id（与 PromptTemplates 的常量一一对应）。 */
 private val TEMPLATE_IDS =

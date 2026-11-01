@@ -101,6 +101,18 @@ class AssistantSettingsState(
     var onOpenMemories: () -> Unit,
     /** 打开 Skill 管理。 */
     var onOpenSkills: () -> Unit,
+    /** 打开服务商管理（记录表 + 从预设新建）。 */
+    var onOpenProviders: () -> Unit,
+    /** 打开 MCP 服务端管理。 */
+    var onOpenMcp: () -> Unit,
+    /** 打开模型管理（按用途分配模型）。 */
+    var onOpenModelManage: () -> Unit,
+    /** 自定义服务商数量（副标题用）。 */
+    var providerCount: Int,
+    /** 已接入的 MCP server 数量。 */
+    var mcpServerCount: Int,
+    /** 已配置了用途的模型数量（副标题用）。 */
+    var configuredSceneCount: Int,
     var onMemoryEnabledChange: (Boolean) -> Unit,
     var onBack: () -> Unit,
 )
@@ -155,15 +167,17 @@ fun AssistantSettingsScreen(
         // ---- 模型 ----
         SettingsGroupHeader(text = "模型")
         SettingsGroup {
+          // 只有「服务商」一项：服务商记录里就含 baseUrl 与密钥，
+          // 再放一个「模型与凭据」是同一件事的两个入口（用户实测反馈重复）。
           SettingsRow(
-              title = "模型与凭据",
+              title = "服务商",
               subtitle =
-                  if (state.readinessProblem.isEmpty()) state.modelSummary
-                  else "还差：${state.readinessProblem}",
-              onClick = state.onOpenModelSettings,
+                  if (state.providerCount > 0) "${state.providerCount} 个已配置 · ${state.modelSummary}"
+                  else "从预设新建，或手填中转站 / 自建网关 · 还差：${state.readinessProblem}",
+              onClick = state.onOpenProviders,
               trailing = {
                 Text(
-                    text = "配置",
+                    text = "管理",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.primary,
                 )
@@ -281,6 +295,44 @@ fun AssistantSettingsScreen(
               title = "技能",
               subtitle = if (state.skillCount > 0) "已安装 ${state.skillCount} 个" else "尚未安装",
               onClick = state.onOpenSkills,
+              trailing = {
+                Text(
+                    text = "管理",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+              },
+          )
+        }
+
+        // ---- 能力 ----
+        SettingsGroupHeader(text = "能力")
+        SettingsGroup {
+          SettingsRow(
+              icon = FeatherIcons.Zap,
+              title = "MCP 服务端",
+              subtitle =
+                  if (state.mcpServerCount > 0) "已接入 ${state.mcpServerCount} 个"
+                  else "接入外部 MCP 工具服务",
+              onClick = state.onOpenMcp,
+              trailing = {
+                Text(
+                    text = "管理",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+              },
+          )
+          SettingsDivider()
+          // 图片/视频生成合到一页：它们与对话同属「哪个用途用哪个模型」，
+          // 拆成两页会各自重填一遍地址密钥（用户实测反馈：太重）。
+          SettingsRow(
+              icon = FeatherIcons.Cpu,
+              title = "模型管理",
+              subtitle =
+                  if (state.configuredSceneCount > 0) "已配置 ${state.configuredSceneCount} 个用途"
+                  else "为对话 / 图片 / 视频分别指定模型",
+              onClick = state.onOpenModelManage,
               trailing = {
                 Text(
                     text = "管理",

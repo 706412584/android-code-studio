@@ -45,8 +45,68 @@ public final class ModelSettings {
 
   private final SharedPreferences prefs;
 
+  /** 服务商记录表（与 ACS 的 ProviderConfigStore 同一模型）。 */
+  private final ProviderRecords records;
+
   public ModelSettings(Context context) {
     this.prefs = context.getApplicationContext().getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
+    this.records = new ProviderRecords(context);
+  }
+
+  /** 服务商记录表（供设置页增删改）。 */
+  public ProviderRecords providerRecords() {
+    return records;
+  }
+
+  /**
+   * 解析服务商的展示名与协议：**先查预设，再查自定义**。
+   *
+   * <p>两者统一成一个内部视图，避免 {@link #toModelConfig()} 里出现两套分支。
+   */
+  private Resolved resolve(String providerId) {
+    // 记录表是唯一真相：预设只在「新建记录」时当模板用。
+    ProviderRecords.Record record = records.find(providerId);
+    if (record != null) {
+      // 是否要密钥看预设（本地模型不需要）；记录本身不区分。
+      ProviderPresets.Preset preset = ProviderPresets.find(providerId);
+      boolean requiresKey = preset == null || preset.isRequiresApiKey();
+      return new Resolved(
+          record.label, record.baseUrl, record.protocolType, requiresKey, record.apiKey);
+    }
+    // 没有记录时退回预设的默认值（用户还没点「添加」就开始对话的场景）。
+    ProviderPresets.Preset preset = ProviderPresets.find(providerId);
+    if (preset != null) {
+      return new Resolved(
+          preset.getLabel(),
+          preset.getBaseUrl(),
+          preset.getProtocolType(),
+          preset.isRequiresApiKey(),
+          apiKey(providerId));
+    }
+    return null;
+  }
+
+  /** 解析后的服务商视图。 */
+  private static final class Resolved {
+    final String label;
+    final String baseUrl;
+    final ModelProtocolType protocolType;
+    final boolean requiresApiKey;
+    /** 记录里的密钥；空串表示回退到按服务商存的旧键。 */
+    final String recordApiKey;
+
+    Resolved(
+        String label,
+        String baseUrl,
+        ModelProtocolType protocolType,
+        boolean requiresApiKey,
+        String recordApiKey) {
+      this.label = label;
+      this.baseUrl = baseUrl;
+      this.protocolType = protocolType;
+      this.requiresApiKey = requiresApiKey;
+      this.recordApiKey = recordApiKey == null ? "" : recordApiKey;
+    }
   }
 
   /** 当前服务商 id；未配置时为 {@link ProviderPresets#DEFAULT_PROVIDER_ID}。 */
@@ -69,6 +129,10 @@ public final class ModelSettings {
     String value = prefs.getString(KEY_MODEL, null);
     if (value != null && !value.isEmpty()) {
       return value;
+    }
+    ProviderRecords.Record record = records.find(providerId());
+    if (record != null) {
+      return record.mainModel();
     }
     ProviderPresets.Preset preset = ProviderPresets.find(providerId());
     return preset == null ? "" : preset.getDefaultModel();
@@ -112,13 +176,13 @@ public final class ModelSettings {
    */
   public ModelConfig toModelConfig() {
     String providerId = providerId();
-    ProviderPresets.Preset preset = ProviderPresets.find(providerId);
-    if (preset == null) {
+    Resolved resolved = resolve(providerId);
+    if (resolved == null) {
       return null;
     }
     String baseUrl = customBaseUrl(providerId);
     if (baseUrl.isEmpty()) {
-      baseUrl = preset.getBaseUrl();
+      baseUrl = resolved.baseUrl;
     }
     if (baseUrl.isEmpty()) {
       // 自定义端点必须由用户提供 baseUrl，预设里是空的。
@@ -129,11 +193,12 @@ public final class ModelSettings {
       return null;
     }
     ModelProtocolType protocol =
-        preset.getProtocolType() == null
-            ? ModelProtocolType.OPENAI_COMPATIBLE
-            : preset.getProtocolType();
+        resolved.protocolType == null ? ModelProtocolType.OPENAI_COMPATIBLE : resolved.protocolType;
+    // 密钥优先用记录里的（ACS 模型：密钥随服务商记录走）；
+    // 记录里没有时回退到旧的分服务商键（兼容升级前配过的用户）。
+    String key = resolved.recordApiKey.isEmpty() ? apiKey(providerId) : resolved.recordApiKey;
     return ModelConfig.builder(
-            providerId, preset.getLabel(), protocol, preset.getLabel(), baseUrl, apiKey(providerId), model)
+            providerId, resolved.label, protocol, resolved.label, baseUrl, key, model)
         .build();
   }
 
@@ -144,21 +209,21 @@ public final class ModelSettings {
       return false;
     }
     // 需要密钥的服务商必须有密钥；本地模型不需要。
-    ProviderPresets.Preset preset = ProviderPresets.find(providerId());
-    boolean requiresKey = preset == null || preset.isRequiresApiKey();
+    Resolved resolved = resolve(providerId());
+    boolean requiresKey = resolved == null || resolved.requiresApiKey;
     return !requiresKey || !config.getApiKey().isEmpty();
   }
 
   /** 面向用户的「还差什么」说明；已就绪时为空串。 */
   public String readinessProblem() {
     String providerId = providerId();
-    ProviderPresets.Preset preset = ProviderPresets.find(providerId);
-    if (preset == null) {
+    Resolved resolved = resolve(providerId);
+    if (resolved == null) {
       return "未知服务商：" + providerId;
     }
     String baseUrl = customBaseUrl(providerId);
     if (baseUrl.isEmpty()) {
-      baseUrl = preset.getBaseUrl();
+      baseUrl = resolved.baseUrl;
     }
     if (baseUrl.isEmpty()) {
       return "请填写 API 地址";
@@ -166,8 +231,8 @@ public final class ModelSettings {
     if (modelId().isEmpty()) {
       return "请选择模型";
     }
-    if (preset.isRequiresApiKey() && apiKey(providerId).isEmpty()) {
-      return "请填写 " + preset.getLabel() + " 的 API Key";
+    if (resolved.requiresApiKey && apiKey(providerId).isEmpty()) {
+      return "请填写 " + resolved.label + " 的 API Key";
     }
     return "";
   }

@@ -68,6 +68,22 @@ public final class ToolSetFactory {
    */
   public static ToolRegistry create(
       File home, File memoryFile, File skillRoot, AppHttpPort http) {
+    return create(home, memoryFile, skillRoot, http, null, null);
+  }
+
+  /**
+   * 带生成端点的完整版本。
+   *
+   * @param imageEndpoint 图片生成端点；null 时不注册 image_generation
+   * @param videoEndpoint 视频生成端点；null 时不注册 video_generation
+   */
+  public static ToolRegistry create(
+      File home,
+      File memoryFile,
+      File skillRoot,
+      AppHttpPort http,
+      com.tom.rv2ide.ai.tool.ImageGenerationEndpoint imageEndpoint,
+      com.tom.rv2ide.ai.tool.VideoGenerationEndpoint videoEndpoint) {
     ToolRegistry registry = new ToolRegistry();
 
     // ---- 文件读写 ----
@@ -123,6 +139,16 @@ public final class ToolSetFactory {
     // ---- 提问 ----
     // 必须注册：模型在需求有歧义时需要它，否则只能瞎猜或反复确认文本。
     registry.register(new AskUserQuestionTool());
+
+    // ---- 生成类 ----
+    // 端点未配置齐全时不注册：注册了但调用必然报「未配置」，模型会反复尝试，
+    // 浪费轮次。不注册时模型根本看不到这两个工具。
+    if (http != null && imageEndpoint != null) {
+      registry.register(new com.tom.rv2ide.ai.tool.ImageGenerationTool(http, http));
+    }
+    if (http != null && videoEndpoint != null) {
+      registry.register(new com.tom.rv2ide.ai.tool.VideoGenerationTool(http));
+    }
 
     // ---- 工具检索 ----
     // 工具数一多，模型容易被工具清单淹没。tool_search 让它按需查工具用法。

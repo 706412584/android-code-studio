@@ -80,6 +80,9 @@ class ChatActivity : ComponentActivity() {
   /** 侧边栏「文件」Tab 的状态持有者（目录树 / 展开 / 剪切板）。 */
   private lateinit var browser: WorkspaceBrowser
 
+  /** 本次运行的 MCP 连接；Activity 销毁时逐个关闭。 */
+  private val mcpClients = ArrayList<com.tom.rv2ide.ai.tool.mcp.McpClient>()
+
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
 
@@ -92,13 +95,28 @@ class ChatActivity : ComponentActivity() {
 
     // ---- 引擎 ----
     val http = AppHttpPort()
+    val media = com.assistant.engine.MediaSettings(this)
+    val mcpSettings = com.assistant.engine.McpSettings(this)
     val registry: ToolRegistry =
         ToolSetFactory.create(
             workspace,
             File(filesDir, "memory/memory.jsonl"),
             File(filesDir, "skills"),
             http,
+            // 生成端点未配置时传 null，工具就不注册（模型看不到它）。
+            media.imageEndpoint(),
+            media.videoEndpoint(),
         )
+    // MCP：把已启用的 server 的工具接进来。失败只记日志、不阻断——
+    // 某个 server 连不上不该让整个对话不可用。连接存进字段，onDestroy 时关闭。
+    runCatching {
+          val result = mcpSettings.attach(http, registry, mcpClients)
+          if (result.failures.isNotEmpty()) {
+            android.util.Log.w("ChatActivity", "MCP 接入失败: ${result.failures.joinToString("; ")}")
+          }
+          android.util.Log.i("ChatActivity", "MCP 接入 ${result.toolCount} 个工具")
+        }
+        .onFailure { android.util.Log.w("ChatActivity", "MCP 接入异常", it) }
     val executor = ToolExecutor(registry, null, null)
     runner =
         ConversationRunner(
@@ -443,6 +461,9 @@ class ChatActivity : ComponentActivity() {
 
   override fun onDestroy() {
     runner.cancel()
+    // 关闭 MCP 长连接：不关的话 SSE 传输会一直挂着，进程退出前都不释放。
+    mcpClients.forEach { runCatching { it.close() } }
+    mcpClients.clear()
     chatView.release()
     super.onDestroy()
   }
