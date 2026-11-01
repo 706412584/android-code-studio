@@ -312,13 +312,11 @@ class ChatActivity : ComponentActivity() {
     setContentView(rootView)
 
     if (!modelSettings.isReady()) {
+      // 只给一句提示 + 一个按钮，**不自动跳转**。
+      // 曾试过自动跳设置页，实测是：冷启动 1 秒后界面突然跳走，
+      // 用户来不及看清就离开了对话页（「点击还是会跳转设置 你看看 几秒后」）。
+      // 去哪由用户自己决定——提示条上就有入口。
       showSetupHint()
-      // 全新启动且没配置过：直接送去设置页，用户装完点图标就能填密钥。
-      // **只在全新启动时跳**（savedInstanceState == null）：用户可能想先看看界面，
-      // 从设置页返回后不该被反复弹走。
-      if (savedInstanceState == null) {
-        startActivity(android.content.Intent(this, SettingsActivity::class.java))
-      }
     }
     chatView.view.post { chatView.forceScrollToBottom(uiScope) }
   }
@@ -569,9 +567,10 @@ class ChatActivity : ComponentActivity() {
   /** 配置不完整时给一句可操作的提示（而不是静默什么都不发生）。 */
   private fun showSetupHint() {
     val problem = modelSettings.readinessProblem()
+    // 说清入口在哪：不自动跳转之后，用户需要知道去哪配。
     timeline.append(
         MessageTimeline.Role.TRACE,
-        "还不能对话：$problem\n请在设置里配置服务商与 API Key。",
+        "还不能对话：$problem\n点左上角菜单 → 设置，填入服务商与 API Key。",
     )
   }
 }
