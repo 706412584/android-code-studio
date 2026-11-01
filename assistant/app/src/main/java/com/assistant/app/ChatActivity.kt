@@ -128,6 +128,28 @@ class ChatActivity : ComponentActivity() {
   /** 正在编辑的消息；null = 不显示编辑框。与 [messageForActions] 互斥（编辑时先关菜单）。 */
   private var messageForEdit by mutableStateOf<com.assistant.ui.model.AgentUIMessage?>(null)
 
+  /** 会话搜索词（抽屉）。改了要重算 searchHits。 */
+  private var sessionSearchQuery by mutableStateOf("")
+
+  /** 搜索命中的会话 id 集合 → 置顶/高亮用；搜索结果本身在 searchHitsOf() 里算。 */
+  private var sessionSearchHits by
+      mutableStateOf(listOf<com.assistant.ui.components.independent.ChatSearchHit>())
+
+  /**
+   * 置顶的会话 id。
+   *
+   * <p>存 SharedPreferences 而不是走内核：`ConversationStore` 只能 append
+   * 已定义的条目类型（meta/title/消息），加「置顶」要么扩内核接口、要么借 title
+   * 条目塞私货——两种都比在宿主侧存一份差。置顶是纯粹的界面偏好，不该进会话记录。
+   *
+   * <p>用 SnapshotStateList 而不是普通 Set：切换置顶要立刻重排列表。
+   */
+  private val pinnedSessionIds =
+      androidx.compose.runtime.mutableStateListOf<String>().also { list ->
+        // 启动时从磁盘读一次。放在 also 里是为了让声明与初始化在同一处。
+        list.addAll(readPinnedIds())
+      }
+
   private val uiScope = CoroutineScope(Dispatchers.Main)
 
   /** 当前会话 id。本步骤固定一个会话（多会话属于后续步骤）。 */
@@ -364,6 +386,31 @@ class ChatActivity : ComponentActivity() {
                 // 抄一份出来就会在两边分别演化（改了一边另一边就静默失效）。
                 slashCommands = slashCommands(),
                 skills = skillCommands(),
+                // ---- 模型芯片 ----
+                // 不传的话点开是一片空白（面板读的是这两个参数）。
+                currentProvider = providerTarget(),
+                providers = providerTargets(),
+                onSelectModel = { providerId, model ->
+                  modelSettings.setProviderId(providerId)
+                  modelSettings.setModelId(model)
+                  // 触发重组：顶栏副标题与芯片都显示模型名，改了要立刻反映。
+                  headerRefresh++
+                },
+                // 对话模式：初值来自偏好（设置页/斜杠命令改的就是它），
+                // 在输入栏切换后写回——不写回则每次进页面都回到默认。
+                initialMode = chatModeOf(),
+                onModeChange = { newMode ->
+                  // 反向映射必须显式写：内核只认 chat/plan/agent/control，
+                  // 直接 name.lowercase() 会写出 "build"，内核按未知值回退成默认
+                  // ——用户切了档却没有任何变化。
+                  val kernelId =
+                      when (newMode) {
+                        com.assistant.ui.compat.AgentMode.PLAN -> "plan"
+                        com.assistant.ui.compat.AgentMode.BUILD -> "chat"
+                        com.assistant.ui.compat.AgentMode.AUTO -> "agent"
+                      }
+                  com.assistant.ui.AssistantPrefs.setChatMode(this@ChatActivity, kernelId)
+                },
                 // ---- 上下文用量 ----
                 // 内核只给「已用多少」，输入/输出分开的细分它没有（只有估算总量），
                 // 因此输入侧填已用量、输出侧留 0，而不是编一个数——顶栏显示的是
@@ -397,6 +444,15 @@ class ChatActivity : ComponentActivity() {
                       currentSessionId = conversationId,
                       workspace = workspace,
                       browser = browser,
+                      // ---- 搜索 / 置顶 ----
+                      // 搜索在宿主侧做（渲染层拿不到会话正文），结果以 hits 回传。
+                      searchQuery = sessionSearchQuery,
+                      onSearchQueryChange = { q ->
+                        sessionSearchQuery = q
+                        searchSessions(q)
+                      },
+                      pinnedSessionIds = pinnedSessionIds.toSet(),
+                      searchHits = sessionSearchHits,
                       onSelect = { row ->
                         openSession(row)
                         showDrawer = false
@@ -442,7 +498,7 @@ class ChatActivity : ComponentActivity() {
                       },
                       // 置顶：ConversationStore 没有该能力（需要新的条目类型），
                       // 传空实现——点了没反应，但不会崩。
-                      onTogglePin = {},
+                      onTogglePin = { row -> togglePin(row.id) },
                       onOpenSettings = {
                         showDrawer = false
                         startActivity(
@@ -781,20 +837,92 @@ class ChatActivity : ComponentActivity() {
   }
 
   /** 顶栏副标题前的服务商 logo。 */
+  /**
+   * 偏好里的对话模式 id → 输入栏的三档枚举。
+   *
+   * <p><b>两套词汇不是一一对应</b>，必须映射：
+   * 内核/设置页有 4 档（`chat` / `plan` / `agent` / `control`），
+   * 而输入栏的芯片只有 3 个（`BUILD` / `PLAN` / `AUTO`）。
+   *
+   * <p>映射取舍：
+   * - `plan` → PLAN（同名同义）
+   * - `chat` → BUILD：两者都是「不改文件」的保守档，语义最接近
+   * - `agent` / `control` → AUTO：都是「可执行」；两者在权限门（是否逐次确认）上
+   *   的差别由设置页的权限模式单独管，不该挤进这个三档芯片
+   *
+   * <p>反向映射见 [onModeChange]：芯片切档写回时用 `agent` / `plan` / `chat`，
+   * 不写 `control`——`control` 与 `agent` 的区别已在权限设置里表达，
+   * 芯片无法表达它，写回它会丢掉用户原本的设置。
+   */
+  private fun chatModeOf(): com.assistant.ui.compat.AgentMode =
+      when (com.assistant.ui.AssistantPrefs.chatMode(this)) {
+        "plan" -> com.assistant.ui.compat.AgentMode.PLAN
+        "chat" -> com.assistant.ui.compat.AgentMode.BUILD
+        // agent / control / 未知值 → AUTO（保守：至少是可执行档）
+        else -> com.assistant.ui.compat.AgentMode.AUTO
+      }
+
+  /**
+   * 当前服务商（含它的模型清单），投影成渲染层的形状。
+   *
+   * <p><b>必须查 ProviderRecords 而不是 ProviderPresets</b>：用户真正的配置存在记录表里，
+   * 预设只是「新建时的填充模板」。此前这里查预设表，用户用「自定义」建的记录在预设里
+   * 找不到 → 返回 null → 输入栏的模型芯片没有服务商 → 点开是一片空白
+   * （用户实测「点击编辑框的模型图标是空的」）。
+   */
   private fun providerTarget(): com.assistant.ui.components.independent.ProviderSelectionTarget? {
-    val preset = ProviderPresets.find(modelSettings.providerId()) ?: return null
+    val id = modelSettings.providerId()
+    val record = modelSettings.providerRecords().find(id)
+    if (record != null) {
+      return com.assistant.ui.components.independent.ProviderSelectionTarget(
+          id = record.id,
+          name = record.label.ifBlank { record.baseUrl },
+          models = record.slotModels.filter { it.isNotBlank() },
+          protocol = record.protocolType.toUiProtocol(),
+          effectiveModel = modelSettings.modelId(),
+      )
+    }
+    // 记录里没有（用户还没配过、或配置被清）时退化到预设表——至少能显示个名字，
+    // 而不是让整个芯片空白。
+    val preset = ProviderPresets.find(id) ?: return null
     return com.assistant.ui.components.independent.ProviderSelectionTarget(
         id = preset.id,
         name = preset.label,
-        protocol =
-            if (preset.protocolType ==
-                com.tom.rv2ide.ai.protocol.ModelProtocolType.ANTHROPIC_MESSAGES) {
-              com.assistant.ui.components.independent.ProviderProtocol.ANTHROPIC_MESSAGES
-            } else {
-              com.assistant.ui.components.independent.ProviderProtocol.OPENAI_COMPATIBLE
-            },
+        models = preset.models,
+        protocol = preset.protocolType.toUiProtocol(),
+        effectiveModel = modelSettings.modelId(),
     )
   }
+
+  /**
+   * 全部可选服务商（供模型芯片的弹出面板）。
+   *
+   * <p>只给**可用**的（baseUrl 与主模型都非空）：把残缺的配置也列出来，
+   * 用户选中后发不出消息，还得回去查为什么。
+   */
+  private fun providerTargets():
+      List<com.assistant.ui.components.independent.ProviderSelectionTarget> =
+      modelSettings
+          .providerRecords()
+          .all()
+          .filter { it.isUsable() }
+          .map { record ->
+            com.assistant.ui.components.independent.ProviderSelectionTarget(
+                id = record.id,
+                name = record.label.ifBlank { record.baseUrl },
+                models = record.slotModels.filter { it.isNotBlank() },
+                protocol = record.protocolType.toUiProtocol(),
+                effectiveModel = modelSettings.modelId(),
+            )
+          }
+
+  /** 协议类型 → 渲染层枚举（渲染层不依赖内核，因此要显式映射）。 */
+  private fun com.tom.rv2ide.ai.protocol.ModelProtocolType.toUiProtocol() =
+      if (this == com.tom.rv2ide.ai.protocol.ModelProtocolType.ANTHROPIC_MESSAGES) {
+        com.assistant.ui.components.independent.ProviderProtocol.ANTHROPIC_MESSAGES
+      } else {
+        com.assistant.ui.components.independent.ProviderProtocol.OPENAI_COMPATIBLE
+      }
 
   override fun onDestroy() {
     runner.cancel()
@@ -803,6 +931,110 @@ class ChatActivity : ComponentActivity() {
     mcpClients.clear()
     chatView.release()
     super.onDestroy()
+  }
+
+  // ---- 会话搜索 / 置顶 ----
+
+  /** 每个命中片段的最大长度；太长会把列表项撑高。 */
+  private val SNIPPET_MAX = 80
+
+  /**
+   * 扫会话记录找匹配。
+   *
+   * <p><b>在 IO 线程做</b>：每个会话要整读一遍 JSONL，会话多时是几十 MB 的顺序读。
+   * 在主线程做会明显卡住抽屉输入。
+   *
+   * <p><b>匹配标题与正文</b>：只匹配标题的话，「我记得说过某个词」就搜不到——
+   * 那正是用户最需要搜索的场景。
+   */
+  private fun searchSessions(query: String) {
+    val q = query.trim()
+    if (q.isEmpty()) {
+      sessionSearchHits = emptyList()
+      return
+    }
+    val targets = loadSessions()
+    kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+      val hits = mutableListOf<com.assistant.ui.components.independent.ChatSearchHit>()
+      for (row in targets) {
+        // 会话记录读失败（文件被外部删了等）不该让整次搜索失败：跳过它继续。
+        val entries =
+            runCatching { conversationStore.read(row.id) }.getOrNull() ?: continue
+        // 标题命中：给一条以标题为内容的命中，用户能看出「是这个会话」。
+        if (row.title.contains(q, ignoreCase = true)) {
+          hits +=
+              com.assistant.ui.components.independent.ChatSearchHit(
+                  sessionId = row.id,
+                  sessionTitle = row.title,
+                  messageId = "title",
+                  snippet = row.title,
+                  timestamp = row.updatedAt,
+              )
+        }
+        for (loc in entries) {
+          val text =
+              when (val e = loc.entry) {
+                is com.tom.rv2ide.ai.agent.conversation.UserMessageEntry -> e.content
+                is com.tom.rv2ide.ai.agent.conversation.AssistantMessageEntry -> e.content
+                else -> null
+              } ?: continue
+          if (text.isBlank() || !text.contains(q, ignoreCase = true)) {
+            continue
+          }
+          hits +=
+              com.assistant.ui.components.independent.ChatSearchHit(
+                  sessionId = row.id,
+                  sessionTitle = row.title,
+                  messageId = loc.ordinal.toString(),
+                  snippet = snippetAround(text, q),
+                  timestamp = row.updatedAt,
+              )
+          // 每个会话最多给 3 条：命中太多会把抽屉塞满，反而找不到是哪个会话。
+          if (hits.count { it.sessionId == row.id } >= 3) break
+        }
+      }
+      runOnUiThread { sessionSearchHits = hits }
+    }
+  }
+
+  /** 取命中词周围的片段，两端按需加省略号。 */
+  private fun snippetAround(text: String, query: String): String {
+    val index = text.indexOf(query, ignoreCase = true)
+    if (index < 0) {
+      return text.take(SNIPPET_MAX)
+    }
+    val half = (SNIPPET_MAX - query.length).coerceAtLeast(10) / 2
+    val start = (index - half).coerceAtLeast(0)
+    val end = (index + query.length + half).coerceAtMost(text.length)
+    val body = text.substring(start, end).replace('\n', ' ')
+    val prefix = if (start > 0) "…" else ""
+    val suffix = if (end < text.length) "…" else ""
+    return prefix + body + suffix
+  }
+
+  /** 从磁盘读置顶集合。 */
+  private fun readPinnedIds(): List<String> =
+      runCatching {
+            getSharedPreferences(PREFS_UI, MODE_PRIVATE)
+                .getStringSet(KEY_PINNED, emptySet())
+                ?.toList()
+                .orEmpty()
+          }
+          .getOrDefault(emptyList())
+
+  /** 切换某会话的置顶并落盘。 */
+  private fun togglePin(sessionId: String) {
+    if (sessionId in pinnedSessionIds) {
+      pinnedSessionIds.remove(sessionId)
+    } else {
+      pinnedSessionIds.add(sessionId)
+    }
+    // 必须写一份新集合：getStringSet 返回的实例不保证是拷贝，
+    // 改原集合再 put 同一引用可能不触发落盘。
+    getSharedPreferences(PREFS_UI, MODE_PRIVATE)
+        .edit()
+        .putStringSet(KEY_PINNED, LinkedHashSet(pinnedSessionIds))
+        .apply()
   }
 
   // ---- 消息操作 ----
@@ -1206,5 +1438,11 @@ class ChatActivity : ComponentActivity() {
      * 「等不到人」就把危险操作静默放过去。
      */
     const val CONFIRM_TIMEOUT_SECONDS = 300L
+
+    /** 界面偏好的 prefs 名（置顶等纯界面状态存在这里，不进会话记录）。 */
+    const val PREFS_UI = "assistant_ui"
+
+    /** 置顶会话 id 集合的键。 */
+    const val KEY_PINNED = "pinned_sessions"
   }
 }

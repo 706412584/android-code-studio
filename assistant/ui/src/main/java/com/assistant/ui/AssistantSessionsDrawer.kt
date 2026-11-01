@@ -71,6 +71,24 @@ fun AssistantSessionsDrawer(
     /** 文件树里点文件：宿主决定怎么处理（本 App 把内容追加到输入框）。 */
     onOpenFile: (path: String) -> Unit,
     onAddToInput: (path: String) -> Unit,
+    /**
+     * 会话搜索词。
+     *
+     * <p><b>按标题过滤，不做全文检索</b>：全文要顺序扫每个会话的 JSONL（几十 MB），
+     * 是另一个量级的开销，需要索引或后台任务。标题过滤是用户最常见的用途
+     * （「上次那个叫 X 的会话在哪」），且零成本。
+     */
+    searchQuery: String = "",
+    onSearchQueryChange: (String) -> Unit = {},
+    /** 会话置顶状态（宿主持久化）；默认全不置顶。 */
+    pinnedSessionIds: Set<String> = emptySet(),
+    /**
+     * 搜索结果（由宿主扫会话记录得到）。
+     *
+     * <p>宿主负责搜：渲染层不依赖内核的 `ConversationStore`，
+     * 拿不到会话正文（见 engine 与 ui 的分层约定）。
+     */
+    searchHits: List<ChatSearchHit> = emptyList(),
     modifier: Modifier = Modifier,
     darkTheme: Boolean = androidx.compose.foundation.isSystemInDarkTheme(),
 ) {
@@ -79,7 +97,9 @@ fun AssistantSessionsDrawer(
 
     ChatDrawerContent(
         // ---- 会话 ----
-        sessions = sessions.map { it.toChatSession(workspacePath) },
+        // 置顶状态由宿主给（组件自己的 isPinned 是数据字段，这里把它填上），
+        // 这样组件的排序逻辑（置顶优先）才能生效。
+        sessions = sessions.map { it.toChatSession(workspacePath, it.id in pinnedSessionIds) },
         workspaces =
             if (workspace != null) {
               listOf(
@@ -136,12 +156,19 @@ fun AssistantSessionsDrawer(
         onNavigateToSettings = onOpenSettings,
 
         // ---- 会话搜索 ----
-        // 全文搜索需要扫 JSONL，属于后续步骤；空状态时搜索框仍显示但无结果。
-        searchQuery = "",
-        searchState = ChatSearchState(),
-        onSearchQueryChange = {},
-        onClearSearch = {},
-        onOpenSearchHit = { _: ChatSearchHit -> },
+        // 组件在 searchQuery 非空时切到**全文结果视图**（ChatSearchResults），
+        // 读的是 searchState.hits。因此这里必须给出真实结果，不能传空
+        // ——传空会表现为「输入后列表消失且没有任何结果」。
+        searchQuery = searchQuery,
+        searchState = ChatSearchState(query = searchQuery, hits = searchHits),
+        onSearchQueryChange = onSearchQueryChange,
+        onClearSearch = { onSearchQueryChange("") },
+        onOpenSearchHit = { hit ->
+          // 点搜索结果 = 打开那个会话。这里只做「切过去」，
+          // 不定位到具体消息——渲染层没有「滚动到某条消息」的能力，
+          // 假装能定位会让用户以为跳错了地方。
+          sessions.firstOrNull { it.id == hit.sessionId }?.let(onSelect)
+        },
 
         // ---- 文件搜索 ----
         // null 时组件内部用一个不存在的根，文件搜索结果恒空（行为安全）。
@@ -153,13 +180,15 @@ fun AssistantSessionsDrawer(
 }
 
 /** 会话投影 → 抽屉组件认的完整模型。 */
-private fun SessionRow.toChatSession(workspacePath: String): ChatSession =
+private fun SessionRow.toChatSession(workspacePath: String, pinned: Boolean): ChatSession =
     ChatSession(
         id = id,
         title = title,
         createdAt = updatedAt,
         updatedAt = updatedAt,
         workspacePath = workspacePath,
+        // 置顶来自宿主的持久化集合；组件据此把它排在未置顶之前。
+        isPinned = pinned,
     )
 
 /** 反向投影。 */

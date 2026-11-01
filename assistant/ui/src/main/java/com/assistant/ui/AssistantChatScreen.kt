@@ -130,6 +130,33 @@ fun AssistantChatScreen(
     inputTokens: Int = 0,
     /** 本轮产生的输出 token。 */
     outputTokens: Int = 0,
+    /**
+     * 当前服务商。
+     *
+     * <p>null 时模型芯片退化成只有模型名的占位（组件自带兜底）。
+     * 但**不能长期传 null**：芯片点开是选模型的入口，没有服务商与模型清单
+     * 就弹不出任何东西（点了是空的）。这正是「模型图标点了没反应」的原因。
+     */
+    currentProvider: com.assistant.ui.components.independent.ProviderSelectionTarget? = null,
+    /**
+     * 可选服务商清单（含各自模型）。
+     *
+     * <p>**不可传空**：空面板会显示为一张空白卡片。
+     */
+    providers: List<com.assistant.ui.components.independent.ProviderSelectionTarget> =
+        emptyList(),
+    /** 选中某个服务商的某个模型（服务商 id, 模型名）。 */
+    onSelectModel: (String, String) -> Unit = { _, _ -> },
+    /**
+     * 起始对话模式。
+     *
+     * <p>组件内的 `mode` 是**受控初值**：用户在输入栏切模式后只改组件内状态，
+     * 由 [onModeChange] 通知宿主落盘。不传宿主值的话，每次进对话页都回到默认模式
+     * ——用户在设置里选的模式看不到效果。
+     */
+    initialMode: AgentMode = AgentMode.BUILD,
+    /** 用户切换对话模式。宿主负责落盘（本层不碰偏好存储）。 */
+    onModeChange: (AgentMode) -> Unit = {},
     /** 上下文已用占比（0..1），驱动输入栏的占用环。 */
     tokenProgress: Float = 0f,
     /**
@@ -197,7 +224,7 @@ fun AssistantChatScreen(
           onInitialInputConsumed()
         }
       }
-      var mode by remember { mutableStateOf(AgentMode.BUILD) }
+      var mode by remember { mutableStateOf(initialMode) }
       var reasoning by remember { mutableStateOf(ReasoningEffort.DEFAULT) }
       Box(modifier = Modifier.fillMaxWidth().navigationBarsPadding()) {
         ChatInputBar(
@@ -210,9 +237,15 @@ fun AssistantChatScreen(
             onStop = onStop,
             isBusy = isBusy,
             activeModelName = modelName,
-            providers = emptyList(),
+            currentProvider = currentProvider,
+            providers = providers,
+            onSelectModel = onSelectModel,
             currentMode = mode,
-            onToggleMode = { mode = it },
+            onToggleMode = { newMode ->
+              mode = newMode
+              // 通知宿主落盘：runner 每次运行前重读偏好，因此下一次发送即生效。
+              onModeChange(newMode)
+            },
             reasoningEffort = reasoning,
             onReasoningEffortChange = { reasoning = it },
             slashCommands = slashCommands,
