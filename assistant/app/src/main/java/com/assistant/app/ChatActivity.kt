@@ -184,16 +184,24 @@ class ChatActivity : ComponentActivity() {
     browser = WorkspaceBrowser(workspace)
     conversationStore = FileConversationStore(File(filesDir, "conversations"))
 
-    // 重建（如切换工作区后的 recreate）时沿用原会话：不恢复的话，切换工作区会把
-    // 用户当前正在看的对话换成一个空会话——他只是去改了个目录设置。
-    val restoredId = savedInstanceState?.getString(STATE_CONVERSATION_ID)
-    if (restoredId != null && conversationStore.read(restoredId).isNotEmpty()) {
-      conversationId = restoredId
+    // 会话 id 的三种来源，优先级从高到低：
+    //  1. pendingSessionToOpen —— 用户点了「别的项目」的会话，切工作区后要打开的就是它
+    //  2. savedInstanceState —— 因切换工作区/改设置而重建，沿用原会话
+    //  3. 都没有 —— 新开一个
+    // 1 必须压过 2：recreate() 保存的 STATE_CONVERSATION_ID 是**旧**会话，
+    // 照它恢复的话用户点了新会话却会看到旧的。
+    val wantedId = pendingSessionToOpen ?: savedInstanceState?.getString(STATE_CONVERSATION_ID)
+    pendingSessionToOpen = null
+    if (wantedId != null && conversationStore.read(wantedId).isNotEmpty()) {
+      conversationId = wantedId
       currentTitle =
-          conversationStore.list().firstOrNull { it.id == restoredId }?.title ?: "新的对话"
+          conversationStore.list().firstOrNull { it.id == wantedId }?.title ?: "新的对话"
     } else {
       conversationId = ensureConversation()
     }
+    // 记录本次是否来自恢复（决定下面是否回放）。用局部变量而不是再判 savedInstanceState：
+    // pendingSessionToOpen 那条路径同样需要回放。
+    val restoredId = conversationId.takeIf { wantedId != null && it == wantedId }
 
     // ---- 引擎 ----
     val http = AppHttpPort()
@@ -312,7 +320,7 @@ class ChatActivity : ComponentActivity() {
         )
 
     // 重建后回放当前会话，让用户看到的还是同一个对话（见上面恢复 conversationId）。
-    if (savedInstanceState != null && restoredId != null && restoredId == conversationId) {
+    if (restoredId != null) {
       replayCurrentSession()
     }
 
@@ -740,10 +748,14 @@ class ChatActivity : ComponentActivity() {
 
   /**
    * 保存当前会话 id，供 recreate / 进程重建后恢复（见 onCreate 的恢复逻辑）。
+   *
+   * <p>还没被消费的 [pendingSessionToOpen] 单独带一份：它是「切工作区时要打开的
+   * 那条会话」，与当前会话不同（见 [openSession]）。
    */
   override fun onSaveInstanceState(outState: Bundle) {
     super.onSaveInstanceState(outState)
     outState.putString(STATE_CONVERSATION_ID, conversationId)
+    pendingSessionToOpen?.let { outState.putString(STATE_PENDING_SESSION, it) }
   }
 
   /**
@@ -788,6 +800,15 @@ class ChatActivity : ComponentActivity() {
 
   /** 因本轮仍在运行而推迟的工作区切换（见 [maybeRebuildForWorkspaceChange]）。 */
   private var workspaceChangePending = false
+
+  /**
+   * 「切工作区时必须打开这条会话」的待办（见 [openSession] / [recreateWithSession]）。
+   *
+   * <p>**不能用 recreate() + savedInstanceState 的当前会话 id 代替**：那保存的是
+   * 旧会话，用户点的是新会话却会看到旧的。recreate 会换掉 Activity 实例，因此这个值
+   * 必须经 [onSaveInstanceState] 传下去（见那边）。
+   */
+  private var pendingSessionToOpen: String? = null
 
   /** 顶栏标题：当前会话名。 */
   private var currentTitle: String = "新的对话"
@@ -892,6 +913,10 @@ class ChatActivity : ComponentActivity() {
               title = s.title,
               updatedAt = s.modifiedAt,
               messageCount = s.messageCount,
+              // **必须带会话自己的工作区**（来自 meta 的 cwd）：抽屉按它把会话
+              // 分到各个工作区文件夹。统一填当前工作区的话，历史会话会全部挤进
+              // 一个文件夹、标签还跟着当前目录走，看起来像「会话被迁移了」。
+              workspacePath = s.cwd,
           )
         }
       } catch (e: Exception) {
@@ -899,8 +924,39 @@ class ChatActivity : ComponentActivity() {
         emptyList()
       }
 
-  /** 切到另一个会话：清空列表并从磁盘回放。 */
+  /** 切到另一个会话：必要时先切工作区，再清空列表并从磁盘回放。 */
   private fun openSession(row: com.assistant.ui.SessionRow) {
+    // 会话属于别的工作区时，工作区要跟着切（ACS 同语义：FloatingAssistantView 的
+    // doOpenConversation 会用会话的 cwd 调 setWorkspace）。
+    //
+    // **不切的话分类就是误导**：抽屉里明明把会话归到了 A 目录，点开却在 B 目录的
+    // 上下文里继续跑——模型写文件会写错地方，而用户以为自己打开的是 A 的会话。
+    //
+    // 走「改偏好 + recreate」：工具注册表/runner/文件树都绑在工作区上，和设置页改
+    // 工作区同一条路径才不会漏一处。recreate 前把目标会话记进 pendingSessionToOpen
+    // （经 onSaveInstanceState 传下去），否则重建后恢复的是**旧**会话。
+    if (row.workspacePath.isNotBlank() && row.workspacePath != workspace.absolutePath) {
+      val target = File(row.workspacePath)
+      if (target.isDirectory) {
+        if (runner.isRunning()) {
+          // 正在跑的一轮绑着当前工作区，中途重建会丢掉它的输出。
+          android.widget.Toast.makeText(
+                  this,
+                  "当前对话还在运行，等它结束再打开别的项目的会话",
+                  android.widget.Toast.LENGTH_LONG)
+              .show()
+          return
+        }
+        WorkspacePrefs.save(this, target)
+        // recreate 会重新读偏好；两步之间不留「偏好改了但实例还是旧工作区」的空档。
+        recreateWithSession(row.id)
+        return
+      }
+      // 目录不存在（外部存储被拔/目录被删）：如实说，并留在本工作区。
+      android.widget.Toast.makeText(
+              this, "该会话的工作区已不存在：${row.workspacePath}", android.widget.Toast.LENGTH_LONG)
+          .show()
+    }
     conversationId = row.id
     currentTitle = row.title
     timeline.clear()
@@ -909,6 +965,18 @@ class ChatActivity : ComponentActivity() {
       timeline.append(MessageTimeline.Role.TRACE, "会话回放失败：$error")
     }
     chatView.forceScrollToBottom(uiScope)
+  }
+
+  /**
+   * 带着「要打开的会话」重建。
+   *
+   * <p>不能用 `recreate()` 直接走：那会保存**当前**会话 id，重建后恢复的是旧会话，
+   * 用户点了新会话却看到旧的。先把目标 id 记进 [pendingSessionToOpen]，重建完成后
+   * 在 [onCreate] 里取用。
+   */
+  private fun recreateWithSession(sessionId: String) {
+    pendingSessionToOpen = sessionId
+    recreate()
   }
 
   /** 工具参数摘要（与 EventReducer 的同名逻辑一致，这里只需短摘要）。 */
@@ -1910,6 +1978,9 @@ class ChatActivity : ComponentActivity() {
 
     /** 保存/恢复当前会话 id（见 onCreate 的恢复逻辑）。 */
     const val STATE_CONVERSATION_ID = "assistant_conversation_id"
+
+    /** 切工作区时待打开的会话 id（见 openSession / recreateWithSession）。 */
+    const val STATE_PENDING_SESSION = "assistant_pending_session"
 
     /** 置顶会话 id 集合的键。 */
     const val KEY_PINNED = "pinned_sessions"

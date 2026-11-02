@@ -39,6 +39,14 @@ data class SessionRow(
     /** 最后修改时间（epoch 毫秒）。 */
     val updatedAt: Long,
     val messageCount: Int = 0,
+    /**
+     * 该会话绑定的工作区绝对路径。
+     *
+     * <p>来自会话自己的 meta 条目（`ConversationSummary.getCwd()`），**不随当前工作区变化**
+     * ——组件据此把会话分到各工作区文件夹。宿主若统一填当前工作区，历史会话会全部挤进
+     * 一个文件夹、且文件夹标签跟着当前目录走，看起来像「会话被迁移过去了」。
+     */
+    val workspacePath: String = "",
 )
 
 /**
@@ -107,18 +115,25 @@ fun AssistantSessionsDrawer(
         // ---- 会话 ----
         // 置顶状态由宿主给（组件自己的 isPinned 是数据字段，这里把它填上），
         // 这样组件的排序逻辑（置顶优先）才能生效。
-        sessions = sessions.map { it.toChatSession(workspacePath, it.id in pinnedSessionIds) },
+        sessions =
+            sessions.map { it.toChatSession(workspaceFallback = workspacePath, it.id in pinnedSessionIds) },
+        // 工作区清单 = 当前工作区 + 会话里出现过的历史工作区。
+        //
+        // <p>组件只用它取文件夹**显示名**（`names[path] ?: path.substringAfterLast('/')`），
+        // 分组本身是按 `session.workspacePath` 做的。因此把历史工作区也列进来，
+        // 抽屉才会同时出现「当前目录」和「别的目录」两个文件夹——用户能一眼看出
+        // 哪些会话属于哪个目录，而不是以为历史会话丢了或被迁移了。
         workspaces =
-            if (workspace != null) {
-              listOf(
+            (listOfNotNull(workspace?.absolutePath) + sessions.map { it.workspacePath })
+                .filter { it.isNotBlank() }
+                .distinct()
+                .map { path ->
                   Workspace(
-                      name = workspace.name.ifBlank { "workspace" },
-                      path = workspacePath,
+                      name = File(path).name.ifBlank { path.substringAfterLast('/') },
+                      path = path,
                       type = WorkspaceType.INTERNAL,
-                  ))
-            } else {
-              emptyList()
-            },
+                  )
+                },
         currentWorkspacePath = workspacePath,
         currentSessionId = currentSessionId,
         // 运行态：本 App 没有多会话并行，恒为 Idle。
@@ -192,17 +207,24 @@ fun AssistantSessionsDrawer(
 }
 
 /** 会话投影 → 抽屉组件认的完整模型。 */
-private fun SessionRow.toChatSession(workspacePath: String, pinned: Boolean): ChatSession =
+private fun SessionRow.toChatSession(workspaceFallback: String, pinned: Boolean): ChatSession =
     ChatSession(
         id = id,
         title = title,
         createdAt = updatedAt,
         updatedAt = updatedAt,
-        workspacePath = workspacePath,
+        // 用**会话自己记录的**工作区（创建时写进 meta，之后不变）。
+        // 缺失（极老的记录没有 meta）才退回当前工作区，免得它落进空名字的文件夹。
+        workspacePath = workspacePath.ifBlank { workspaceFallback },
         // 置顶来自宿主的持久化集合；组件据此把它排在未置顶之前。
         isPinned = pinned,
     )
 
 /** 反向投影。 */
 private fun ChatSession.toRow(): SessionRow =
-    SessionRow(id = id, title = title, updatedAt = updatedAt)
+    SessionRow(
+        id = id,
+        title = title,
+        updatedAt = updatedAt,
+        workspacePath = workspacePath,
+    )
