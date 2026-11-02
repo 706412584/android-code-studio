@@ -152,8 +152,17 @@ class ChatActivity : ComponentActivity() {
 
   private val uiScope = CoroutineScope(Dispatchers.Main)
 
-  /** 当前会话 id。本步骤固定一个会话（多会话属于后续步骤）。 */
-  private lateinit var conversationId: String
+  /**
+   * 当前会话 id；**null 表示「草稿态」**——还没发过任何消息，磁盘上不存在这个会话。
+   *
+   * <p><b>为什么允许为 null</b>：会话应当**首次发送时才创建**（与 ACS 一致，见
+   * `AgentOrchestrator.newConversation` 的调用时机）。此前在 onCreate 里就
+   * `ensureConversation()`，于是每次冷启动都落下一个空会话文件——用户看到列表里
+   * 堆着几十条没有一条消息的「新的对话」。
+   *
+   * <p>创建点只有一处：[ensureConversationForSend]（[send] 里落盘前调）。
+   */
+  private var conversationId: String? = null
 
   /** 工作区：模型能访问的文件范围。 */
   private lateinit var workspace: File
@@ -187,7 +196,7 @@ class ChatActivity : ComponentActivity() {
     // 会话 id 的三种来源，优先级从高到低：
     //  1. pendingSessionToOpen —— 用户点了「别的项目」的会话，切工作区后要打开的就是它
     //  2. savedInstanceState —— 因切换工作区/改设置而重建，沿用原会话
-    //  3. 都没有 —— 新开一个
+    //  3. 都没有 —— 保持**草稿态**（conversationId = null），首次发送才建
     // 1 必须压过 2：recreate() 保存的 STATE_CONVERSATION_ID 是**旧**会话，
     // 照它恢复的话用户点了新会话却会看到旧的。
     val wantedId = pendingSessionToOpen ?: savedInstanceState?.getString(STATE_CONVERSATION_ID)
@@ -197,11 +206,13 @@ class ChatActivity : ComponentActivity() {
       currentTitle =
           conversationStore.list().firstOrNull { it.id == wantedId }?.title ?: "新的对话"
     } else {
-      conversationId = ensureConversation()
+      // **不建会话**：草稿态。见 conversationId 的注释——启动就建会在列表里堆空会话。
+      conversationId = null
+      currentTitle = "新的对话"
     }
     // 记录本次是否来自恢复（决定下面是否回放）。用局部变量而不是再判 savedInstanceState：
     // pendingSessionToOpen 那条路径同样需要回放。
-    val restoredId = conversationId.takeIf { wantedId != null && it == wantedId }
+    val restoredId = conversationId?.takeIf { wantedId != null && it == wantedId }
 
     // ---- 引擎 ----
     val http = AppHttpPort()
@@ -406,6 +417,10 @@ class ChatActivity : ComponentActivity() {
             // 会话列表。每次打开抽屉时重读磁盘，保证新建/删除后立即反映。
             var sessions by remember { mutableStateOf(listOf<SessionRow>()) }
 
+            // 「新建会话」时的目录选择框读的是 Activity 字段（见 newChatWorkspaces）：
+            // 它既要能被 Compose 读到、又要能被 newChat() 写入，因此做成字段。
+            @Suppress("UNUSED_EXPRESSION") newChatWorkspaces
+
             // 读一次刷新触发计数：设置页改了模型后返回，这里重新求值。
             // 必须在 modelLabel() 之前读——Compose 只让读过该状态的作用域重组。
             @Suppress("UNUSED_EXPRESSION") headerRefresh
@@ -559,14 +574,7 @@ class ChatActivity : ComponentActivity() {
                   browser.refresh()
                   showDrawer = true
                 },
-                onNewChat = {
-                  conversationId = ensureConversation()
-                  currentTitle = "新的对话"
-                  timeline.clear()
-                  reducer = EventReducer(timeline)
-                  sessions = loadSessions()
-                  showDrawer = false
-                },
+                onNewChat = { newChat() },
                 drawer = {
                   AssistantSessionsDrawer(
                       sessions = sessions,
@@ -586,14 +594,7 @@ class ChatActivity : ComponentActivity() {
                         openSession(row)
                         showDrawer = false
                       },
-                      onNewSession = {
-                        conversationId = ensureConversation()
-                        currentTitle = "新的对话"
-                        timeline.clear()
-                        reducer = EventReducer(timeline)
-                        sessions = loadSessions()
-                        showDrawer = false
-                      },
+                      onNewSession = { newChat() },
                       onDelete = { row ->
                         try {
                           conversationStore.delete(row.id)
@@ -601,7 +602,8 @@ class ChatActivity : ComponentActivity() {
                           android.util.Log.w("ChatActivity", "删除会话失败: ${row.id}", e)
                         }
                         if (row.id == conversationId) {
-                          conversationId = ensureConversation()
+                          // 删的是当前会话 → 回到草稿态（不急着再建一个空会话）。
+                          conversationId = null
                           currentTitle = "新的对话"
                           timeline.clear()
                           reducer = EventReducer(timeline)
@@ -609,7 +611,7 @@ class ChatActivity : ComponentActivity() {
                         }
                         sessions = loadSessions()
                         if (sessions.isEmpty()) {
-                          conversationId = ensureConversation()
+                          conversationId = null
                           currentTitle = "新的对话"
                           timeline.clear()
                           reducer = EventReducer(timeline)
@@ -659,6 +661,20 @@ class ChatActivity : ComponentActivity() {
                                 ?.let { androidx.compose.ui.graphics.Color(it) },
                     ),
             )
+
+            // ---- 新建会话：选择工作区 ----
+            // 多个候选目录时出现（见 newChat 的注释）。选中目录后切到草稿态。
+            newChatWorkspaces?.let { paths ->
+              com.assistant.ui.components.independent.NewSessionWorkspaceDialog(
+                  paths = paths,
+                  currentPath = workspace.absolutePath,
+                  onPick = { path ->
+                    newChatWorkspaces = null
+                    startNewChatIn(File(path))
+                  },
+                  onDismiss = { newChatWorkspaces = null },
+              )
+            }
 
             // ---- 上下文占用详情 ----
             if (showContextUsage) {
@@ -754,7 +770,8 @@ class ChatActivity : ComponentActivity() {
    */
   override fun onSaveInstanceState(outState: Bundle) {
     super.onSaveInstanceState(outState)
-    outState.putString(STATE_CONVERSATION_ID, conversationId)
+    // 草稿态（null）不写：重建后会重新落在草稿态，不需要一条「空 id」记录。
+    conversationId?.let { outState.putString(STATE_CONVERSATION_ID, it) }
     pendingSessionToOpen?.let { outState.putString(STATE_PENDING_SESSION, it) }
   }
 
@@ -800,6 +817,15 @@ class ChatActivity : ComponentActivity() {
 
   /** 因本轮仍在运行而推迟的工作区切换（见 [maybeRebuildForWorkspaceChange]）。 */
   private var workspaceChangePending = false
+
+  /**
+   * 「新建会话」的目录选择框：非 null 时显示，元素是候选目录绝对路径。
+   *
+   * <p>做成 Activity 字段而不是 Compose 内的 `remember`：写入方在 [newChat]（普通
+   * 方法），读取方在 Compose 树里，局部状态两边够不着。用 Compose 状态是为了让
+   * 赋值能触发重组。
+   */
+  private var newChatWorkspaces by mutableStateOf<List<String>?>(null)
 
   /**
    * 「切工作区时必须打开这条会话」的待办（见 [openSession] / [recreateWithSession]）。
@@ -968,14 +994,96 @@ class ChatActivity : ComponentActivity() {
   }
 
   /**
-   * 带着「要打开的会话」重建。
+   * 新建对话。
    *
-   * <p>不能用 `recreate()` 直接走：那会保存**当前**会话 id，重建后恢复的是旧会话，
-   * 用户点了新会话却看到旧的。先把目标 id 记进 [pendingSessionToOpen]，重建完成后
-   * 在 [onCreate] 里取用。
+   * <p><b>与 ACS 对齐的两点</b>（见 `FloatingAssistantView.startNewConversation`）：
+   *
+   * 1. **不立刻落盘**，只把界面切到草稿态。会话在首次发送时才创建——否则每点一次
+   *    「+」就多一个空会话，列表很快被「新的对话」淹没（本 App 此前就是这样）。
+   * 2. **多工作区时先让用户选目录**：会话绑定哪个工作区决定了模型能改哪些文件，
+   *    猜错会写错地方。只有一个候选（就是当前工作区）时不弹窗，直接用它。
+   *
+   * <p>候选目录 = 当前工作区 + 已有会话出现过的工作区（去重）。这与抽屉里文件夹的
+   * 来源一致，用户看到的就是他真能用到的那些。
+   */
+  private fun newChat() {
+    clearToDraft()
+    val candidates = selectableWorkspaces()
+    if (candidates.size <= 1) {
+      // 只有当前工作区：不用问，直接切成草稿（目录不变）。
+      return
+    }
+    newChatWorkspaces = candidates.map { it.absolutePath }
+  }
+
+  /**
+   * 重建，并让重建后的实例打开 [sessionId]。
+   *
+   * <p>直接 `recreate()` 恢复的是 savedInstanceState 里的**当前**会话，点开别的项目
+   * 的会话时会变成「点了新的却停在旧的」。目标 id 经 [pendingSessionToOpen] 走
+   * onSaveInstanceState 传下去（recreate 会换掉 Activity 实例）。
    */
   private fun recreateWithSession(sessionId: String) {
     pendingSessionToOpen = sessionId
+    recreate()
+  }
+
+  /**
+   * 回到草稿态：清空界面，不建会话。
+   *
+   * <p>**不重置工作区**：用户只是要开一条新会话，不是要换项目。
+   */
+  private fun clearToDraft() {
+    conversationId = null
+    currentTitle = "新的对话"
+    timeline.clear()
+    reducer = EventReducer(timeline)
+    chatView.forceScrollToBottom(uiScope)
+  }
+
+  /**
+   * 可选的会话工作区：当前工作区优先，其后是历史会话用过且仍存在的目录。
+   *
+   * <p>过滤掉不存在的目录：选了也访问不到，列出来只会让用户白点一次。
+   */
+  private fun selectableWorkspaces(): List<File> {
+    val current = workspace
+    val seen = linkedSetOf(current.absolutePath)
+    val result = mutableListOf(current)
+    for (row in loadSessions()) {
+      val path = row.workspacePath
+      if (path.isBlank() || !seen.add(path)) {
+        continue
+      }
+      val dir = File(path)
+      if (dir.isDirectory) {
+        result += dir
+      }
+    }
+    return result
+  }
+
+  /**
+   * 在指定目录开一条新会话（草稿态）。
+   *
+   * <p>目标目录与当前工作区不同时走「改偏好 + recreate」——与设置页切换工作区、
+   * 从抽屉打开别的项目的会话是同一条路径，工具注册表/runner/文件树才会一起换。
+   * 重建时不带会话 id（[pendingSessionToOpen] 保持 null），于是 onCreate 落在草稿态。
+   */
+  private fun startNewChatIn(target: File) {
+    if (target.absolutePath == workspace.absolutePath) {
+      clearToDraft()
+      return
+    }
+    if (runner.isRunning()) {
+      android.widget.Toast.makeText(
+              this, "当前对话还在运行，等它结束再切到别的项目", android.widget.Toast.LENGTH_LONG)
+          .show()
+      return
+    }
+    WorkspacePrefs.save(this, target)
+    // 目标会话 id 不设：重建后落到草稿态（见 onCreate 的 wantedId 分支）。
+    pendingSessionToOpen = null
     recreate()
   }
 
@@ -1304,7 +1412,7 @@ class ChatActivity : ComponentActivity() {
       com.tom.rv2ide.ai.tool.ToolContext.builder()
           .homePath(workspace.absolutePath)
           .openProjectPath(workspace.absolutePath)
-          .conversationId(conversationId)
+          .conversationId(conversationId.orEmpty())
           .settings(toolSettings)
           .build()
 
@@ -1575,7 +1683,8 @@ class ChatActivity : ComponentActivity() {
         }
       }
       com.tom.rv2ide.ai.agent.command.SlashCommandCatalog.Kind.NEW_CONVERSATION -> {
-        conversationId = ensureConversation()
+        // 只是切到草稿态，下次发送才落盘（见 newChat 的注释）。
+        conversationId = null
         currentTitle = "新的对话"
         timeline.clear()
         reducer = EventReducer(timeline)
@@ -1775,13 +1884,18 @@ class ChatActivity : ComponentActivity() {
       return
     }
 
+    // 草稿态 → 现在真的要说第一句话了，这才落盘建会话。
+    // **必须在这个位置**（排队判断之后、所有落盘动作之前）：排队中的消息不该建会话
+    // 文件（那又变回「空会话堆积」），而本轮一旦开始就一定会写用户消息与回复。
+    val activeConversationId = ensureConversationForSend()
+
     // 每轮开始清掉**本会话**的运行内授权记忆。
     //
     // 内核不会自己调这个（ACS 是在 runInConversation 里调 beginRun 的，本 App 没有那层）。
     // 不清的话「允许一次」会退化成「本会话内永久允许」：用户对 file_delete 点过一次
     // 允许，之后模型删任何文件都不再问——与「允许一次」的语义相反。
     // 只清本会话的桶，别的会话不受影响。
-    toolSettings.beginRun(conversationId)
+    toolSettings.beginRun(activeConversationId)
 
     // 把附件快照下来：下面要清空列表（附件只属于这一条消息），
     // 而请求文本要用清理前的数据拼。
@@ -1823,7 +1937,7 @@ class ChatActivity : ComponentActivity() {
 
     val handle =
         runner.start(
-            conversationId,
+            activeConversationId,
             requestText,
             attachmentsJson,
             attachmentMeta,
@@ -1925,33 +2039,41 @@ class ChatActivity : ComponentActivity() {
    * 从 savedInstanceState 恢复，再走 openSession 会多做一次 `list()` 读盘。
    */
   private fun replayCurrentSession() {
-    replayEntries(conversationId)?.let { error ->
+    val id = conversationId ?: return
+    replayEntries(id)?.let { error ->
       timeline.append(MessageTimeline.Role.TRACE, "会话回放失败：$error")
     }
   }
 
   /**
-   * 取一个可用的会话 id。
+   * 取本轮要写进去的会话 id：草稿态则**现在**建，已有则直接用。
    *
-   * <p>本步骤固定「每次启动新开一个会话」——会话列表（历史切换、重命名、删除）
-   * 属于后续步骤，先把「发一条消息能收到回复」跑通。
+   * <p>这是全 App 唯一的会话创建点（见 [conversationId] 的注释）。放在发送路径上
+   * 而不是启动/新建时，就不会留下一条消息都没有的空会话。
+   *
+   * <p>创建成功后立刻回写 [conversationId] 并刷新抽屉数据：不刷新的话，用户发完
+   * 第一句话再打开抽屉会看不到这条会话（列表是上次读盘的结果）。
    */
-  private fun ensureConversation(): String {
-    return try {
-      val created =
-          conversationStore.create(
-              "新的对话",
-              workspace.absolutePath,
-              modelSettings.modelId(),
-              com.tom.rv2ide.ai.tool.ToolSettingsPort.PERMISSION_CONFIRM,
-          )
-      created.id
-    } catch (e: Exception) {
-      // 存储不可用时退化成纯内存会话：id 仍需合法（FileConversationStore 校验），
-      // 用固定的合法串，落盘会失败但不影响本轮对话。
-      android.util.Log.w("ChatActivity", "会话创建失败，退化为内存会话", e)
-      "00000000-0000-0000-0000-000000000000"
-    }
+  private fun ensureConversationForSend(): String {
+    conversationId?.let { return it }
+    val id =
+        try {
+          conversationStore
+              .create(
+                  "新的对话",
+                  workspace.absolutePath,
+                  modelSettings.modelId(),
+                  com.tom.rv2ide.ai.tool.ToolSettingsPort.PERMISSION_CONFIRM,
+              )
+              .id
+        } catch (e: Exception) {
+          // 存储不可用时退化成纯内存会话：id 仍需合法（FileConversationStore 校验），
+          // 用固定的合法串，落盘会失败但不影响本轮对话。
+          android.util.Log.w("ChatActivity", "会话创建失败，退化为内存会话", e)
+          "00000000-0000-0000-0000-000000000000"
+        }
+    conversationId = id
+    return id
   }
 
   /** 配置不完整时给一句可操作的提示（而不是静默什么都不发生）。 */
