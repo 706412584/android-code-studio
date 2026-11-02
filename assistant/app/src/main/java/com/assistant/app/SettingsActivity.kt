@@ -57,6 +57,23 @@ class SettingsActivity : ComponentActivity() {
   private lateinit var mediaSettings: com.assistant.engine.MediaSettings
   private lateinit var mcpSettings: com.assistant.engine.McpSettings
 
+  /**
+   * 存储权限申请（Android 10 及以下）。Android 11+ 走系统设置页，见
+   * [ensureStoragePermission]。
+   */
+  private var storagePermissionLauncher:
+      androidx.activity.result.ActivityResultLauncher<Array<String>>? = null
+
+  /**
+   * 是否显示目录选择对话框。
+   *
+   * <p>必须是 **Compose 状态**：`setContent` 的 lambda 里读它，非状态变量改了不会重组。
+   */
+  private var showWorkspacePicker by mutableStateOf(false)
+
+  /** 「去设置页授权后回来要弹选择器」的标记（Android 11+）；只在主线程读写。 */
+  private var pendingWorkspacePick = false
+
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
     settings = ModelSettings(this)
@@ -65,6 +82,19 @@ class SettingsActivity : ComponentActivity() {
     memoryPrefs = MemoryPrefs(this)
     mediaSettings = com.assistant.engine.MediaSettings(this)
     mcpSettings = com.assistant.engine.McpSettings(this)
+
+    storagePermissionLauncher =
+        registerForActivityResult(
+            androidx.activity.result.contract.ActivityResultContracts
+                .RequestMultiplePermissions()) {
+              // 权限弹窗不是 Activity，回来后 onResume 不一定会触发，
+              // 因此这里直接开选择器，而不是复用 pendingWorkspacePick。
+              if (StoragePermission.granted(this)) {
+                showWorkspacePicker = true
+              } else {
+                Toast.makeText(this, "没有存储权限，只能选应用私有目录", Toast.LENGTH_LONG).show()
+              }
+            }
 
     // 引擎的预设表 → 渲染层的投影。
     val providerOptions: List<ProviderOption> =
@@ -124,6 +154,10 @@ class SettingsActivity : ComponentActivity() {
                       memoryEnabled = memoryPrefs.enabled(),
                       skillCount = countSkills(),
                       memoryCount = countMemory(),
+                      // 工作区：resolve() 会把失效路径清掉并回退默认，
+                      // 因此这里显示的永远是「当前真的会用的那个目录」。
+                      workspacePath = WorkspacePrefs.resolve(this@SettingsActivity).absolutePath,
+                      workspaceIsDefault = !WorkspacePrefs.isCustomized(this@SettingsActivity),
                       // 「模型与凭据」入口已移除：它和服务商页是同一件事
                       // （服务商记录里就含密钥），两个入口会让用户不知道该去哪配。
                       onOpenModelSettings = { route = "providers" },
@@ -170,6 +204,16 @@ class SettingsActivity : ComponentActivity() {
                       onOpenProviders = { route = "providers" },
                       onOpenMcp = { route = "mcp" },
                       onOpenModelManage = { route = "modelManage" },
+                      onPickWorkspace = { ensureStoragePermission() },
+                      onResetWorkspace = {
+                        WorkspacePrefs.clear(this@SettingsActivity)
+                        recomposeKey++
+                        Toast.makeText(
+                                this@SettingsActivity,
+                                "已恢复默认工作区",
+                                Toast.LENGTH_SHORT)
+                            .show()
+                      },
                       providerCount = settings.providerRecords().all().size,
                       mcpServerCount = mcpSettings.all().size,
                       configuredSceneCount =
@@ -488,10 +532,92 @@ class SettingsActivity : ComponentActivity() {
                   onBack = { route = "home" },
               )
             }
+
+            // ---- 工作区目录选择 ----
+            // 用自写的目录浏览器而不是 SAF：SAF 只给 content:// uri，
+            // 拿不到 proot 与 File 工具需要的真实路径（见组件的注释）。
+            if (showWorkspacePicker) {
+              com.assistant.ui.components.independent.WorkspaceDirectoryPickerDialog(
+                  start = WorkspacePrefs.resolve(this@SettingsActivity),
+                  ceiling = externalStorageRoot(),
+                  onPick = { dir ->
+                    showWorkspacePicker = false
+                    // 选到外部目录但权限不在（用户上次拒绝过）时如实说清楚，
+                    // 而不是存下一个读不了的路径让模型静默写失败。
+                    val permitted =
+                        !StoragePermission.requiresExternalPermission(this@SettingsActivity, dir) ||
+                            StoragePermission.granted(this@SettingsActivity)
+                    if (!permitted) {
+                      Toast.makeText(
+                              this@SettingsActivity,
+                              "没有存储权限，无法访问该目录",
+                              Toast.LENGTH_LONG)
+                          .show()
+                    } else {
+                      WorkspacePrefs.save(this@SettingsActivity, dir)
+                      recomposeKey++
+                      Toast.makeText(
+                              this@SettingsActivity,
+                              "工作区已设为 ${dir.absolutePath}",
+                              Toast.LENGTH_LONG)
+                          .show()
+                    }
+                  },
+                  onDismiss = { showWorkspacePicker = false },
+              )
+            }
           }
         }
 
     setContentView(view)
+  }
+
+  /**
+   * 申请存储权限；已有时直接开选择器。
+   *
+   * <p>两个分支的路径完全不同：
+   * - Android 11+：「所有文件访问」只能去系统设置页授权，没有运行时弹窗。
+   * - Android 10 及以下：走标准运行时权限弹窗。
+   */
+  private fun ensureStoragePermission() {
+    if (StoragePermission.granted(this)) {
+      showWorkspacePicker = true
+      return
+    }
+    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
+      // 去设置页前记一笔：用户回来时在 onResume 里补开选择器。
+      pendingWorkspacePick = true
+      runCatching { startActivity(StoragePermission.manageAllFilesIntent(this)) }
+          .onFailure {
+            pendingWorkspacePick = false
+            Toast.makeText(this, "无法打开授权页，请在系统设置里手动开启存储权限", Toast.LENGTH_LONG).show()
+          }
+    } else {
+      storagePermissionLauncher?.launch(StoragePermission.runtimePermissions())
+    }
+  }
+
+  /**
+   * 外部存储根，目录选择器的上溯上限。
+   *
+   * <p>取 `Environment.getExternalStorageDirectory()` 而不是写死 `/sdcard`：后者在
+   * 工作资料 / 多用户设备上指向的位置不同，写死会让上限判据失效（用户能一路点到 `/`）。
+   */
+  private fun externalStorageRoot(): File =
+      runCatching { android.os.Environment.getExternalStorageDirectory() }
+          .getOrDefault(File("/storage/emulated/0"))
+
+  override fun onResume() {
+    super.onResume()
+    // 从「所有文件访问」授权页回来：这时才有结果可判（见 ensureStoragePermission）。
+    if (pendingWorkspacePick) {
+      pendingWorkspacePick = false
+      if (StoragePermission.granted(this)) {
+        showWorkspacePicker = true
+      } else {
+        Toast.makeText(this, "未获得存储权限，只能选应用私有目录", Toast.LENGTH_LONG).show()
+      }
+    }
   }
 
   /** 首页「模型与凭据」行的副标题。 */

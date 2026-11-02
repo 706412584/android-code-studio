@@ -47,6 +47,7 @@ import com.assistant.ui.theme.Spacing
 import compose.icons.FeatherIcons
 import compose.icons.feathericons.ArrowLeft
 import compose.icons.feathericons.Cpu
+import compose.icons.feathericons.Folder
 import compose.icons.feathericons.Info
 import compose.icons.feathericons.Shield
 import compose.icons.feathericons.Sliders
@@ -86,6 +87,10 @@ class AssistantSettingsState(
     var skillCount: Int,
     /** 已记录的记忆条数（只读展示）。 */
     var memoryCount: Int,
+    /** 当前工作区绝对路径（模型与终端能访问的文件范围）。 */
+    var workspacePath: String,
+    /** 工作区是否为默认私有目录（用于显示「恢复默认」入口）。 */
+    var workspaceIsDefault: Boolean,
     var onOpenModelSettings: () -> Unit,
     var onThemePresetChange: (String) -> Unit,
     var onTextSizeChange: (Float) -> Unit,
@@ -107,6 +112,10 @@ class AssistantSettingsState(
     var onOpenMcp: () -> Unit,
     /** 打开模型管理（按用途分配模型）。 */
     var onOpenModelManage: () -> Unit,
+    /** 选择工作区目录（宿主弹目录选择器）。 */
+    var onPickWorkspace: () -> Unit,
+    /** 恢复默认工作区（应用私有目录）。 */
+    var onResetWorkspace: () -> Unit,
     /** 自定义服务商数量（副标题用）。 */
     var providerCount: Int,
     /** 已接入的 MCP server 数量。 */
@@ -182,6 +191,35 @@ fun AssistantSettingsScreen(
                     color = MaterialTheme.colorScheme.primary,
                 )
               },
+          )
+        }
+
+        // ---- 工作区 ----
+        // 放在「模型」之后、「外观」之前：它决定模型能碰到哪些文件，
+        // 是继「用哪个模型」之后最影响行为的一项配置。
+        SettingsGroupHeader(text = "工作区")
+        SettingsGroup {
+          SettingsRow(
+              icon = FeatherIcons.Folder,
+              title = "工作区目录",
+              subtitle = state.workspacePath,
+              onClick = state.onPickWorkspace,
+              trailing = {
+                Text(
+                    text = "更改",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+              },
+          )
+          SettingsDivider()
+          SettingsRow(
+              title = "恢复默认",
+              subtitle =
+                  if (state.workspaceIsDefault) "当前就是默认（应用私有目录）"
+                  else "改回应用私有的 workspace 目录",
+              enabled = !state.workspaceIsDefault,
+              onClick = if (state.workspaceIsDefault) null else state.onResetWorkspace,
           )
         }
 

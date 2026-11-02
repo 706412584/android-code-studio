@@ -63,7 +63,9 @@ class TerminalActivity : ComponentActivity() {
 
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
-    container = LinuxContainer(this)
+    // 工作区由宿主解析后注入：用户在设置里选的外部目录必须与助手用同一个，
+    // 否则容器内 /root/workspace 与文件树 / 模型改的文件不是同一处。
+    container = LinuxContainer(this, WorkspacePrefs.resolve(this))
 
     val root = FrameLayout(this)
     setupLayer = buildSetupLayer()

@@ -158,6 +158,15 @@ class ChatActivity : ComponentActivity() {
   /** 工作区：模型能访问的文件范围。 */
   private lateinit var workspace: File
 
+  /**
+   * 本实例**已生效**的工作区路径。
+   *
+   * <p>用来在 [onResume] 里判断用户在设置页是否换了工作区。工具注册表、runner、
+   * 文件树、`fileAccess` 都绑在 `workspace` 这个 File 上，逐个换新对象容易漏一处
+   * 而留下「一半指向新目录」的隐蔽 bug，因此改变时整体 recreate。
+   */
+  private var appliedWorkspacePath: String = ""
+
   /** 侧边栏「文件」Tab 的状态持有者（目录树 / 展开 / 剪切板）。 */
   private lateinit var browser: WorkspaceBrowser
 
@@ -169,11 +178,22 @@ class ChatActivity : ComponentActivity() {
     // IPv4 偏好在 AssistantApplication 里设（必须早于任何 InetAddress 使用）。
 
     modelSettings = ModelSettings(this)
-    workspace = File(filesDir, "workspace").apply { mkdirs() }
+    // 工作区来自偏好（用户可在设置里选外部目录），失效路径由 resolve 回退默认。
+    workspace = WorkspacePrefs.resolve(this)
+    appliedWorkspacePath = workspace.absolutePath
     browser = WorkspaceBrowser(workspace)
     conversationStore = FileConversationStore(File(filesDir, "conversations"))
 
-    conversationId = ensureConversation()
+    // 重建（如切换工作区后的 recreate）时沿用原会话：不恢复的话，切换工作区会把
+    // 用户当前正在看的对话换成一个空会话——他只是去改了个目录设置。
+    val restoredId = savedInstanceState?.getString(STATE_CONVERSATION_ID)
+    if (restoredId != null && conversationStore.read(restoredId).isNotEmpty()) {
+      conversationId = restoredId
+      currentTitle =
+          conversationStore.list().firstOrNull { it.id == restoredId }?.title ?: "新的对话"
+    } else {
+      conversationId = ensureConversation()
+    }
 
     // ---- 引擎 ----
     val http = AppHttpPort()
@@ -290,6 +310,11 @@ class ChatActivity : ComponentActivity() {
               }
             },
         )
+
+    // 重建后回放当前会话，让用户看到的还是同一个对话（见上面恢复 conversationId）。
+    if (savedInstanceState != null && restoredId != null && restoredId == conversationId) {
+      replayCurrentSession()
+    }
 
     // ---- 权限闸门接线 ----
     //
@@ -714,6 +739,14 @@ class ChatActivity : ComponentActivity() {
   }
 
   /**
+   * 保存当前会话 id，供 recreate / 进程重建后恢复（见 onCreate 的恢复逻辑）。
+   */
+  override fun onSaveInstanceState(outState: Bundle) {
+    super.onSaveInstanceState(outState)
+    outState.putString(STATE_CONVERSATION_ID, conversationId)
+  }
+
+  /**
    * 从设置页返回时刷新顶栏（模型名/服务商 logo）。
    *
    * <p>不刷新的话，用户在设置里换了模型、返回对话页，顶栏还显示旧模型——
@@ -723,10 +756,38 @@ class ChatActivity : ComponentActivity() {
   override fun onResume() {
     super.onResume()
     headerRefresh++
+    maybeRebuildForWorkspaceChange()
+  }
+
+  /**
+   * 工作区变了就重建 Activity。
+   *
+   * <p><b>为什么不就地换</b>：工作区被至少五处持有——工具注册表（ToolSetFactory 把
+   * 路径烘进文件工具）、[ConversationRunner]、[browser]、`fileAccess`、以及
+   * `revertContext()`。逐个替换要求每处都提供「换根」入口，漏一处就会出现
+   * 「模型写到了新目录、而文件树还显示旧目录」这类难以察觉的错位。
+   * recreate 是唯一能保证一致的做法（历史仍在磁盘，重建后照常回放）。
+   *
+   * <p><b>忙碌时不打断</b>：正在跑的一轮绑着当前工作区，中途重建会把它的输出丢掉。
+   * 提示用户等本轮结束后自动生效——`onFinished` 里补一次检查。
+   */
+  private fun maybeRebuildForWorkspaceChange() {
+    val resolved = WorkspacePrefs.resolve(this).absolutePath
+    if (resolved == appliedWorkspacePath) {
+      return
+    }
+    if (runner.isRunning()) {
+      workspaceChangePending = true
+      return
+    }
+    recreate()
   }
 
   /** 顶栏重算触发器（见 [onResume]）。 */
   private var headerRefresh by mutableStateOf(0)
+
+  /** 因本轮仍在运行而推迟的工作区切换（见 [maybeRebuildForWorkspaceChange]）。 */
+  private var workspaceChangePending = false
 
   /** 顶栏标题：当前会话名。 */
   private var currentTitle: String = "新的对话"
@@ -838,55 +899,14 @@ class ChatActivity : ComponentActivity() {
         emptyList()
       }
 
-  /**
-   * 切到另一个会话：清空列表并从磁盘回放。
-   *
-   * <p>回放走 `ConversationHistory.fold` 的反向——这里不复用那条路径：
-   * fold 产出的是**模型消息**（给 API 用），而界面要的是**条目**（带工具卡、思考块）。
-   * 两者信息量不同，直接映射会丢掉工具调用的渲染态。
-   * 因此回放只还原用户/助手文本与工具调用结果，其余渲染态（展开、耗时）按默认值给。
-   */
+  /** 切到另一个会话：清空列表并从磁盘回放。 */
   private fun openSession(row: com.assistant.ui.SessionRow) {
     conversationId = row.id
     currentTitle = row.title
     timeline.clear()
     reducer = EventReducer(timeline)
-    try {
-      val entries = conversationStore.read(row.id)
-      for (location in entries) {
-        when (val entry = location.entry) {
-          is com.tom.rv2ide.ai.agent.conversation.UserMessageEntry -> {
-            val text = entry.content
-            if (!text.isNullOrBlank()) timeline.append(MessageTimeline.Role.USER, text)
-          }
-          is com.tom.rv2ide.ai.agent.conversation.AssistantMessageEntry -> {
-            val text = entry.content
-            if (!text.isNullOrBlank()) {
-              timeline.append(MessageTimeline.Role.ASSISTANT, text)
-            }
-            // 工具调用作为独立卡片回放：它们承载了「这一轮做了什么」。
-            entry.toolCalls.forEach { call ->
-              val id =
-                  timeline.appendToolCall(call.name, summarizeArgs(call.arguments), call.arguments)
-              timeline.completeToolCall(id, "（历史记录，输出未单独保存）", isError = false)
-            }
-          }
-          is com.tom.rv2ide.ai.agent.conversation.ToolResultEntry -> {
-            // 结果条目只补输出文本；卡片已在上一条助手消息里建好。
-            timeline.lastToolCallId()?.let { id ->
-              timeline.completeToolCall(
-                  id,
-                  entry.content.orEmpty(),
-                  isError = entry.isError,
-              )
-            }
-          }
-          else -> Unit
-        }
-      }
-    } catch (e: Exception) {
-      android.util.Log.w("ChatActivity", "会话回放失败: ${row.id}", e)
-      timeline.append(MessageTimeline.Role.TRACE, "会话回放失败：${e.message ?: "未知错误"}")
+    replayEntries(row.id)?.let { error ->
+      timeline.append(MessageTimeline.Role.TRACE, "会话回放失败：$error")
     }
     chatView.forceScrollToBottom(uiScope)
   }
@@ -1758,6 +1778,12 @@ class ChatActivity : ComponentActivity() {
                   chatView.forceScrollToBottom(uiScope)
                   // 回填改动汇总卡的内容（摘要、增删行数、逐行 diff）。
                   fillRunDiffs()
+                  // 本轮结束后补做被推迟的工作区切换（见 maybeRebuildForWorkspaceChange）。
+                  if (workspaceChangePending) {
+                    workspaceChangePending = false
+                    recreate()
+                    return@runOnUiThread
+                  }
                   // 本轮结束，接着发队首。
                   //
                   // 在 onFinished 里发而不是轮询 runner 状态：轮询要在「刚空闲」的
@@ -1774,6 +1800,67 @@ class ChatActivity : ComponentActivity() {
   }
 
   // ---- 会话 ----
+
+  /**
+   * 把某个会话的磁盘记录回放进时间线。
+   *
+   * <p><b>为什么不复用 `ConversationHistory.fold`</b>：fold 产出的是**模型消息**
+   * （给 API 用），而界面要的是**条目**（带工具卡）。两者信息量不同，直接映射会丢掉
+   * 工具调用的渲染态。因此这里只还原用户/助手文本与工具调用结果，其余渲染态
+   * （展开、耗时）按默认值给。
+   *
+   * <p>会话切换（[openSession]）与重建后恢复（[replayCurrentSession]）共用这一套规则：
+   * 各写一份的话，将来新增条目类型时必有一边漏改。
+   *
+   * @return 失败原因；null 表示回放成功
+   */
+  private fun replayEntries(conversationId: String): String? {
+    return try {
+      for (location in conversationStore.read(conversationId)) {
+        when (val entry = location.entry) {
+          is com.tom.rv2ide.ai.agent.conversation.UserMessageEntry -> {
+            val text = entry.content
+            if (!text.isNullOrBlank()) timeline.append(MessageTimeline.Role.USER, text)
+          }
+          is com.tom.rv2ide.ai.agent.conversation.AssistantMessageEntry -> {
+            val text = entry.content
+            if (!text.isNullOrBlank()) {
+              timeline.append(MessageTimeline.Role.ASSISTANT, text)
+            }
+            // 工具调用作为独立卡片回放：它们承载了「这一轮做了什么」。
+            entry.toolCalls.forEach { call ->
+              val id =
+                  timeline.appendToolCall(call.name, summarizeArgs(call.arguments), call.arguments)
+              timeline.completeToolCall(id, "（历史记录，输出未单独保存）", isError = false)
+            }
+          }
+          is com.tom.rv2ide.ai.agent.conversation.ToolResultEntry -> {
+            // 结果条目只补输出文本；卡片已在上一条助手消息里建好。
+            timeline.lastToolCallId()?.let { id ->
+              timeline.completeToolCall(id, entry.content.orEmpty(), entry.isError)
+            }
+          }
+          else -> Unit
+        }
+      }
+      null
+    } catch (e: Exception) {
+      android.util.Log.w("ChatActivity", "会话回放失败: $conversationId", e)
+      e.message ?: "未知错误"
+    }
+  }
+
+  /**
+   * 重建后回放当前会话。
+   *
+   * <p>与 [openSession] 的区别只是**不改动会话 id 与标题**——那两项已在 onCreate 里
+   * 从 savedInstanceState 恢复，再走 openSession 会多做一次 `list()` 读盘。
+   */
+  private fun replayCurrentSession() {
+    replayEntries(conversationId)?.let { error ->
+      timeline.append(MessageTimeline.Role.TRACE, "会话回放失败：$error")
+    }
+  }
 
   /**
    * 取一个可用的会话 id。
@@ -1820,6 +1907,9 @@ class ChatActivity : ComponentActivity() {
 
     /** 界面偏好的 prefs 名（置顶等纯界面状态存在这里，不进会话记录）。 */
     const val PREFS_UI = "assistant_ui"
+
+    /** 保存/恢复当前会话 id（见 onCreate 的恢复逻辑）。 */
+    const val STATE_CONVERSATION_ID = "assistant_conversation_id"
 
     /** 置顶会话 id 集合的键。 */
     const val KEY_PINNED = "pinned_sessions"

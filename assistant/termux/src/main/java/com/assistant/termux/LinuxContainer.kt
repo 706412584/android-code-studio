@@ -34,7 +34,18 @@ import java.io.File
  * 照抄只会引入无法验证的代码。这里只保留**让 shell 能起来**的最小集，
  * 并在每一处说明「为什么这一条不能省」。
  */
-class LinuxContainer(private val context: Context) {
+class LinuxContainer(
+    private val context: Context,
+    /**
+     * 工作区目录：容器内 `/root/workspace` 绑定到它。
+     *
+     * <p>由宿主注入而不是在这里写死 `filesDir/workspace`：宿主的工作区是可配置的
+     * （用户能在设置里选外部目录），终端必须与助手看到同一份文件。默认值只为
+     * 「没传参数」的调用点兜底，正常路径应由宿主传 [com.assistant.app.WorkspacePrefs]
+     * 解析出的目录——本模块不依赖宿主模块，因此只能这样对接。
+     */
+    private val workspaceOverride: File? = null,
+) {
 
   companion object {
     /** Ubuntu LTS 系列。点版本动态取（见 [resolveArchiveNames]）。 */
@@ -81,9 +92,15 @@ class LinuxContainer(private val context: Context) {
   val rootfs: File
     get() = File(rootfsDir, "ubuntu-$UBUNTU_SERIES")
 
-  /** 工作区：与助手的 filesDir/workspace 是同一个目录，容器内外看到同一份文件。 */
+  /**
+   * 工作区：与助手是**同一个目录**，容器内外看到同一份文件。
+   *
+   * <p>路径由宿主注入（见构造参数）；未注入时回退到 `filesDir/workspace`。
+   * **不在这里 mkdirs 注入的目录**：那是用户选的已有目录，凭空创建会掩盖
+   * 「这个路径其实不可访问」；只在回退路径上创建。
+   */
   val workspace: File
-    get() = File(context.filesDir, "workspace").apply { mkdirs() }
+    get() = workspaceOverride ?: File(context.filesDir, "workspace").apply { mkdirs() }
 
   /** proot 本体所在目录（= nativeLibraryDir）。 */
   private val prootDir: File

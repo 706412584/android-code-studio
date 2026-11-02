@@ -14,6 +14,26 @@
   <uses-permission android:name="android.permission.INTERNET" />
   <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
+  <!--
+    外部工作区所需的存储权限。
+
+    **为什么需要**：工作区要交给 proot 的 `-b` 绑定、交给 agent 工具用 File 直读写，
+    两者都要真实路径，无法走 SAF 的 content:// uri。默认工作区在应用私有目录
+    （filesDir/workspace）不需要任何权限，只有用户选了外部目录才需要。
+
+    - READ/WRITE_EXTERNAL_STORAGE：Android 10 及以下（本 App targetSdk=28，
+      在 Android 10 上按旧行为运行，这两个权限即可）。
+    - MANAGE_EXTERNAL_STORAGE：Android 11+ 的「所有文件访问」。用 maxSdkVersion 限定
+      READ/WRITE 到 32，避免在新系统上申请已被废弃、必被拒绝的权限。
+  -->
+  <uses-permission
+    android:name="android.permission.READ_EXTERNAL_STORAGE"
+    android:maxSdkVersion="32" />
+  <uses-permission
+    android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+    android:maxSdkVersion="32" />
+  <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />
+
   <application
     android:icon="@mipmap/ic_launcher"
     android:roundIcon="@mipmap/ic_launcher_round"
