@@ -282,51 +282,27 @@ class FloatingAssistantView(
    */
   private val renderSlot by lazy { ChatRenderStore.slotFor(orchestrator) }
 
-  /** 本视图自建的适配器；接管槽位里的既有适配器时为 null。 */
-  private var localAdapter: AssistantMessageAdapter? = null
+  /** 本视图持有的渲染状态；首次取用时才接管或新建（见 [renderState]）。 */
+  private var acquiredRenderState: ChatRenderStore.RenderState? = null
 
   /**
-   * 消息列表的数据源。
+   * 本视图的适配器与只对它成立的渲染指针（见 [ChatRenderStore.RenderState]）。
    *
-   * <p>**优先接管槽位里的既有适配器**：视图重建时上一个视图已 dispose，槽位里的适配器
-   * 仍然装着全部消息与正确的 id 计数器，直接复用即可——这是「切后台回来不重绘」的全部机制。
-   *
-   * <p>三种情形自建：槽位为空（首个视图）、槽位里的适配器属于**另一个会话**
-   * （共享 orchestrator 时用户在别的入口切了会话）、槽位已被另一个存活视图占用
-   * （一个 `RecyclerView.Adapter` 不能同时挂在两个列表上）。
-   *
-   * <p>自建的那份**写回槽位**——否则下一次重建时槽位里还是旧的那份，接管不到最新内容。
+   * <p>**优先接管槽位里的既有状态**：视图重建时上一个视图已 dispose，那份适配器仍然装着
+   * 全部消息与正确的 id 计数器，指针也与它配套——这是「切后台回来不重绘」的全部机制。
+   * 槽位被另一个存活视图占用（侧栏仍在、又进了真全屏）时新建一份，两边互不干扰。
    */
+  private val renderState: ChatRenderStore.RenderState
+    get() =
+        acquiredRenderState
+            ?: ChatRenderStore.acquire(renderSlot, this, orchestrator.activeConversationId) {
+                  newAdapter()
+                }
+                .also { acquiredRenderState = it }
+
+  /** 消息列表的数据源。 */
   private val adapter: AssistantMessageAdapter
-    get() {
-      localAdapter?.let {
-        return it
-      }
-      val slot = renderSlot
-      val existing = slot.adapter
-      // 复用判据刻意宽松：只排除「确定属于别的会话」这一种情况。
-      //
-      // 不能拿 orchestrator.activeConversationId 来判——attach() 时它可能还是 null
-      // （首个视图尚未 open），拿 null 去比会把「同一会话」误判成「不同会话」而丢弃列表。
-      // 真正决定该不该换适配器的是 restoreConversationIfNeeded / doOpenConversation 里
-      // 的会话切换，它们在切会话时会显式清空适配器（见 [clearSlotAdapterIfOtherConversation]）。
-      val displayed = slot.displayedConversationId ?: orchestrator.activeConversationId
-      val reusable =
-          existing != null &&
-              slot.owner?.get() == null &&
-              (slot.conversationId == null || slot.conversationId == displayed)
-      if (reusable) {
-        localAdapter = existing
-        slot.owner = java.lang.ref.WeakReference(this)
-        return existing!!
-      }
-      return newAdapter().also {
-        localAdapter = it
-        slot.adapter = it
-        slot.conversationId = displayed
-        slot.owner = java.lang.ref.WeakReference(this)
-      }
-    }
+    get() = renderState.adapter
 
   /** 造一个配好外观与折叠策略的适配器。 */
   private fun newAdapter(): AssistantMessageAdapter =
@@ -387,7 +363,7 @@ class FloatingAssistantView(
    * （同样主线程），因此用普通 MutableMap 即可，不需要并发容器。
    */
   private val pendingDiffs: MutableMap<String, MutableList<Pair<String, String?>>>
-    get() = renderSlot.pendingDiffs
+    get() = renderState.pendingDiffs
 
   /**
    * 正在运行的工具的实时输出累积（键 = 工具卡片 id）。
@@ -397,14 +373,14 @@ class FloatingAssistantView(
    * 写入只在主线程（与 pendingDiffs 同一纪律）。
    */
   private val runningToolOutput: MutableMap<Long, StringBuilder>
-    get() = renderSlot.runningToolOutput
+    get() = renderState.runningToolOutput
 
   /** 当前正在运行的工具卡片 id；无运行中工具时为 null。与 ui.lastToolCardId 的区别：
    * 它跨会话全局唯一——PROGRESS 不带会话校验也能安全找到目标。 */
   private var runningToolCardId: Long?
-    get() = renderSlot.runningToolCardId
+    get() = renderState.runningToolCardId
     set(value) {
-      renderSlot.runningToolCardId = value
+      renderState.runningToolCardId = value
     }
 
   /**
@@ -419,7 +395,7 @@ class FloatingAssistantView(
    * 不移除条目：迟到的 PROGRESS（网络抖动重排）仍能找到目标卡片，条目随会话回放清空。
    */
   private val toolCardIdByCallId: MutableMap<String, Long>
-    get() = renderSlot.toolCardIdByCallId
+    get() = renderState.toolCardIdByCallId
 
   /**
    * 每个会话最近一次事件流写到哪张卡片。
@@ -430,12 +406,12 @@ class FloatingAssistantView(
   /**
    * 按会话的渲染指针。
    *
-   * <p>**委托到 [renderSlot]**：这些指针记录「流式气泡 / 最近卡片」的 id，跨视图重建必须
+   * <p>**委托到 [renderState]**：这些指针记录「流式气泡 / 最近卡片」的 id，跨视图重建必须
    * 存活——只留列表、丢掉指针的话，重建后到达的 `TEXT_DELTA` 找不到 `streamingMessageId`
    * 会另起一段气泡，正文被劈成两条。类型定义见 [SessionUiState]。
    */
   private val sessionUi: MutableMap<String, SessionUiState>
-    get() = renderSlot.sessionUi
+    get() = renderState.sessionUi
 
   private fun uiState(conversationId: String): SessionUiState =
       sessionUi.getOrPut(conversationId) { SessionUiState() }
@@ -505,15 +481,15 @@ class FloatingAssistantView(
    * orchestrator 的 PersistingListener 落盘（不丢内容），只是不渲染。用户切回该会话时
    * 走 [doOpenConversation] 从日志回放。
    *
-   * <p>赋值同步到 [renderSlot] 的 `displayedConversationId`（视图认为在看什么）。
+   * <p>赋值同步到 [renderState] 的 `displayedConversationId`（视图认为在看什么）。
    * **不**同步 `conversationId`——那个描述的是「适配器里装的是什么」，两者在切会话时
    * 会短暂不一致（先标记显示、再由回放换掉内容）。混用会让重建时把旧内容当新会话复用。
    * `conversationId` 只在适配器内容真正换成该会话后更新（见 [replayMessages] / [startRun]）。
    */
   private var displayedConversationId: String?
-    get() = renderSlot.displayedConversationId
+    get() = renderState.displayedConversationId
     set(value) {
-      renderSlot.displayedConversationId = value
+      renderState.displayedConversationId = value
     }
 
   private var workspace: java.io.File? = null
@@ -1409,20 +1385,24 @@ class FloatingAssistantView(
     // 注销服务商变更监听：与 attach 的注册对称。不注销会让静态监听表持有
     // 已销毁的视图（及其 binding）。
     ProviderConfigStore.unregisterOnChanged(providerConfigListener)
-    // **不清 pendingDiffs**：它现在归 [renderSlot]（跨重建存活），清掉会让重建后
+    // **不清 pendingDiffs**：它归 [renderState]（跨重建存活），清掉会让重建后
     // 汇总不出本轮改动。真正该清的是「会话被删除」与「本轮结束已汇总」两处，各在那里清。
     //
-    // **不断开槽位里的适配器**：正是靠它存活，新视图才能接管。只把 owner 让出来，
+    // **不断开适配器**：正是靠它存活，新视图才能接管。只把 owner 让出来，
     // 使新视图可以接手（重建顺序是「旧 dispose → 新 attach」）。
-    renderSlot.owner?.let { if (it.get() === this) renderSlot.owner = null }
+    // 已在上方 detachFromLiveSet，因此 liveViews 里剩下的都是其它存活视图。
+    acquiredRenderState?.let { state ->
+      val successor = liveViews[orchestrator]?.firstNotNullOfOrNull { it.acquiredRenderState }
+      ChatRenderStore.release(renderSlot, state, successor)
+    }
     // 注销 Compose 面板对适配器的数据观察者。适配器是本类的字段、(可能)与其它视图共享
     // orchestrator 的生命周期，不注销会让它继续持有面板的 mutableStateOf 与消息快照。
     // 未决提问同样要收尾，否则提问方一直等到超时（见 uninstallComposePanel）。
     composePanel?.cancelPendingQuestion()
     composePanel?.state?.dispose()
     composePanel = null
-    // 本视图自建的适配器随视图回收；接管来的那份仍归槽位（不能置空 localAdapter 之外的引用）。
-    localAdapter = null
+    // **不置空 acquiredRenderState**：置空后，销毁后仍在途的回调一旦取用 adapter 会重新
+    // acquire，把一个已销毁的视图登记成槽位主人。保留引用只让迟到的写入落回同一份状态。
   }
 
   /**
@@ -1911,11 +1891,11 @@ class FloatingAssistantView(
     //
     // 放在这里而不是 execute()：execute 在该会话已运行时直接入队返回，那种情况下
     // 不该动列表（用户看的是它正在跑的内容）。
-    if (renderSlot.conversationId != null && renderSlot.conversationId != conversationId) {
+    if (renderState.conversationId != null && renderState.conversationId != conversationId) {
       adapter.clear()
     }
     // 本次运行的内容即将写进适配器：此刻起适配器属于本会话。
-    renderSlot.conversationId = conversationId
+    renderState.conversationId = conversationId
     // 先登记回显标记再画气泡：orchestrator 广播该消息时会命中它，避免画第二遍。
     markLocalEcho(conversationId, userRequest)
     // 有附件时把缩略图一起画进气泡：否则用户只看到正文里一行「[附件: 路径]」，
@@ -3941,7 +3921,7 @@ class FloatingAssistantView(
     // 此刻起适配器里装的就是当前显示的会话：更新槽位的会话标记，供重建时判断能否复用。
     // **必须在这里而不是 displayedConversationId 的 setter 里**：setter 在切会话时先跑，
     // 那会儿适配器还是**上一个会话**的内容，提前标记会让重建复用旧内容（显示错会话）。
-    renderSlot.conversationId = displayedConversationId
+    renderState.conversationId = displayedConversationId
     // 重置**当前显示会话**的渲染指针（不是全局字段——那些已按会话隔离）。
     displayedConversationId?.let { id ->
       val ui = uiState(id)
@@ -4242,11 +4222,11 @@ class FloatingAssistantView(
     // 槽位里那个适配器若正显示被删的会话，把它标记为「无会话」：适配器随后会被
     // clear()（见下方 withContext），但标记必须一起清，否则重建时会把一个空适配器
     // 当成「该会话已有内容」而复用，列表停在空白。
-    if (renderSlot.conversationId == deletedId) {
-      renderSlot.conversationId = null
+    if (renderState.conversationId == deletedId) {
+      renderState.conversationId = null
     }
-    if (renderSlot.displayedConversationId == deletedId) {
-      renderSlot.displayedConversationId = null
+    if (renderState.displayedConversationId == deletedId) {
+      renderState.displayedConversationId = null
     }
     // 被删的正是订阅中的会话时要退订：它的文件已不存在，继续收它的增量没有意义，
     // 且 handleEvent 会往一个已清空的列表里写。
