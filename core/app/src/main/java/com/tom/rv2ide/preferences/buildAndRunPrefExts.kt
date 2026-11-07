@@ -114,13 +114,11 @@ private class SdkVersionPreference(
     val candidates = (SdkVersion.entries.map { it.version } + installed).distinct().sorted()
     return candidates
         .map { v ->
+          // 已安装的直接显示版本号（summary 已写「已安装：…」，逐项再标是冗余）；
+          // 只有**未安装**的标「（可安装）」——那才是用户需要知道的新信息。
           val label =
-              if (v in installedSet) {
-                ctx.getString(string.idepref_sdk_entry_installed, v)
-              } else {
-                ctx.getString(string.idepref_sdk_entry_available, v)
-              }
-          // data 放原始版本号：label 现在带后缀，不能再拿 label 当版本用。
+              if (v in installedSet) v else ctx.getString(string.idepref_sdk_entry_available, v)
+          // data 放原始版本号：label 可能带后缀，不能拿 label 当版本用。
           PreferenceChoices.Entry(label, v == current, v)
         }
         .toTypedArray()

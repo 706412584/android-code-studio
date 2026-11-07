@@ -1072,7 +1072,6 @@
   <string name="idepref_sdk_installed">Installed: %s</string>
   <string name="idepref_sdk_not_installed">Not installed</string>
   <string name="idepref_sdk_already_installed">SDK %s is already installed</string>
-  <string name="idepref_sdk_entry_installed">%s  (installed)</string>
   <string name="idepref_sdk_entry_available">%s  (available)</string>
   <string name="configure">Configure</string>
   <string name="about">About</string>
