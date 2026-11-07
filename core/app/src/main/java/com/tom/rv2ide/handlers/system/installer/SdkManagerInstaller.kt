@@ -41,6 +41,38 @@ class SdkManagerInstaller {
           it.exists()
         }
 
+    /**
+     * sdkmanager 是否**可用**（存在 + 本进程可读可执行）。
+     *
+     * <p><b>为什么不能只看 `exists()`</b>：`File.exists()` 在父目录不可穿越时也返回 false，
+     * 与「确实没装」无法区分。实测踩过：设备上 `cmdline-tools/latest/bin/` 是
+     * `0700 属主 system`（异常安装留下的），app 以别的 uid 运行 → 读不进去 →
+     * `exists()` 为 false → 报「未安装」，而真相是**权限问题**，用户按提示去装 cmdline-tools
+     * 也修不好。这里显式区分二者，让报错可行动。
+     *
+     * <p>返回 null 表示可用；否则返回给用户看的原因。
+     */
+    @JvmStatic
+    fun unavailableReason(): String? {
+      val sm = File(Environment.ANDROID_HOME, "cmdline-tools/latest/bin/sdkmanager")
+      if (!sm.exists()) {
+        // 再探一层父目录：能列出 bin/ 说明是"确实没有该文件"，列不出则是权限问题。
+        val bin = sm.parentFile
+        return if (bin != null && bin.isDirectory && !bin.canRead()) {
+          "cmdline-tools 目录不可读（权限问题）：${bin.absolutePath}"
+        } else {
+          "未找到 sdkmanager（cmdline-tools 未安装）"
+        }
+      }
+      if (!sm.canRead()) return "sdkmanager 不可读：${sm.absolutePath}"
+      if (!sm.canExecute()) return "sdkmanager 不可执行：${sm.absolutePath}"
+      if (javaHome() == null) return "未找到 JDK（sdkmanager 需要 JAVA_HOME）"
+      return null
+    }
+
+    /** 是否可用（供 UI / AI 工具快速判断，不产生副作用）。 */
+    @JvmStatic fun isAvailable(): Boolean = unavailableReason() == null
+
     /** 随 IDE 分发的 JDK；找不到返回 null（调用方据此报错而非静默失败）。 */
     @JvmStatic
     fun javaHome(): File? {
@@ -139,12 +171,13 @@ class SdkManagerInstaller {
   ): Int {
     val sm = sdkManagerFile()
     if (sm == null) {
-      onOutput("[错误] 找不到 sdkmanager（cmdline-tools 未安装）。请先完成首次设置。")
+      // 区分「没装」与「权限不可读」——两者都表现为 exists()==false，但修法完全不同。
+      onOutput("[错误] ${unavailableReason() ?: "sdkmanager 不可用"}")
       return -1
     }
     val jdk = javaHome()
     if (jdk == null) {
-      onOutput("[错误] 找不到 JDK，无法运行 sdkmanager。")
+      onOutput("[错误] ${unavailableReason() ?: "找不到 JDK，无法运行 sdkmanager。"}")
       return -1
     }
     val sh = shell()
