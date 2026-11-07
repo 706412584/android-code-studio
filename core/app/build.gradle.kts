@@ -90,6 +90,12 @@ val cnMirror = providers.gradleProperty("cnMirror").orNull == "true"
 
 android {
   namespace = BuildConfig.packageName
+  // compileSdk 由 convention 插件统一设置，这里显式重申以免被后续改动漂移。
+  // material3 1.4.0-alpha10 的 M3 Expressive 组件要求 compileSdk >= 35；
+  // 平台目录名带 minor（android-37.2），故必须同时给 compileSdkMinor——
+  // 只写 37 时 AGP 会去找不存在的 android-37。
+  compileSdk = BuildConfig.compileSdk
+  compileSdkMinor = BuildConfig.compileSdkMinor
 
   defaultConfig {
     applicationId = BuildConfig.packageName
@@ -272,7 +278,10 @@ dependencies {
   implementation("androidx.compose.runtime:runtime:1.7.6")
   implementation("androidx.compose.foundation:foundation:1.7.6")
   implementation("androidx.compose.ui:ui:1.7.6")
-  implementation("androidx.compose.material3:material3:1.3.1")
+  // 1.4.0-alpha10：最早公开 LoadingIndicator / ButtonGroup / FloatingToolbar / SplitButton /
+  // MaterialShapes 的版本里，唯一仍只依赖 Compose 1.7.5 的一档（alpha14 起要 1.8.1，
+  // beta 起这些组件被收回，1.5.0-rc01 要 compileSdk 37 + AGP 9.1 + Kotlin 2.2）。
+  implementation("androidx.compose.material3:material3:1.4.0-alpha10")
   // ComposeView 嵌入现有 View 树所需（ComposeView 本身在 ui 里，但 Activity 集成在此）
   implementation("androidx.activity:activity-compose:1.9.3")
   // 图标：Aharou 的组件引用 compose.icons.FeatherIcons，直接引入它的来源库，

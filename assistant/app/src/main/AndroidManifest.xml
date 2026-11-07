@@ -1,0 +1,115 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  通用助手 App（剥离验证模块）。
+
+  这个模块的 manifest 里出现 com.tom.rv2ide.* 就说明剥离失败。
+  目前三个 Activity 的分工：
+  - ChatActivity     启动页（对话界面）
+  - SettingsActivity 设置页（服务商 / 模型 / 外观 / 对话…）
+  - ProbeActivity    第 1 步的内核探针（保留以便复现结论）
+  - ChatDemoActivity 第 2 步的渲染探针（假数据，保留同上）
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+  <uses-permission android:name="android.permission.INTERNET" />
+  <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+
+  <!--
+    外部工作区所需的存储权限。
+
+    **为什么需要**：工作区要交给 proot 的 `-b` 绑定、交给 agent 工具用 File 直读写，
+    两者都要真实路径，无法走 SAF 的 content:// uri。默认工作区在应用私有目录
+    （filesDir/workspace）不需要任何权限，只有用户选了外部目录才需要。
+
+    - READ/WRITE_EXTERNAL_STORAGE：Android 10 及以下（本 App targetSdk=28，
+      在 Android 10 上按旧行为运行，这两个权限即可）。
+    - MANAGE_EXTERNAL_STORAGE：Android 11+ 的「所有文件访问」。用 maxSdkVersion 限定
+      READ/WRITE 到 32，避免在新系统上申请已被废弃、必被拒绝的权限。
+  -->
+  <uses-permission
+    android:name="android.permission.READ_EXTERNAL_STORAGE"
+    android:maxSdkVersion="32" />
+  <uses-permission
+    android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+    android:maxSdkVersion="32" />
+  <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />
+
+  <application
+    android:icon="@mipmap/ic_launcher"
+    android:roundIcon="@mipmap/ic_launcher_round"
+    android:label="@string/app_name"
+    android:theme="@android:style/Theme.DeviceDefault.Light">
+
+    <!--
+      启动页是**对话页**，不是设置页。
+      助手 App 的主界面是对话，设置是配置阶段才去的地方；把设置设为启动页会让
+      每次开 App 都先落在「配密钥」上（实测反馈）。未配置时由 ChatActivity
+      自动跳一次设置页（见那边的 firstRun 处理）。
+    -->
+    <activity
+      android:name=".ChatActivity"
+      android:exported="true"
+      android:label="@string/app_name"
+      android:theme="@android:style/Theme.Material.Light.NoActionBar"
+      android:windowSoftInputMode="adjustResize">
+      <intent-filter>
+        <action android:name="android.intent.action.MAIN" />
+        <category android:name="android.intent.category.LAUNCHER" />
+      </intent-filter>
+    </activity>
+
+    <!--
+      设置页：从对话页的侧边抽屉进入。不需要 MAIN/LAUNCHER。
+      用 NoActionBar 主题：系统 ActionBar 会把 application 的 label 画在顶部，
+      与页面内自己的「设置」标题重复——用户实测反馈「设置页有 Assistant，去掉」。
+    -->
+    <activity
+      android:name=".SettingsActivity"
+      android:exported="true"
+      android:label="@string/app_name"
+      android:theme="@android:style/Theme.Material.Light.NoActionBar" />
+
+    <!--
+      第 1 步 / 第 2 步的验证入口。
+      保留而不是删除：那两步的结论仍需要可复现（内核可独立消费 / 渲染层可独立工作）。
+    -->
+    <activity android:name=".ProbeActivity" android:exported="true" android:label="内核探针" />
+
+    <activity
+      android:name=".ChatDemoActivity"
+      android:exported="true"
+      android:label="渲染探针"
+      android:theme="@android:style/Theme.Material.Light.NoActionBar" />
+
+    <!--
+      终端页：Termux 的 TerminalView + proot 进 Ubuntu 容器。
+      configChanges 必须包含 orientation|screenSize：旋转时若重建 Activity，
+      进程内的 TerminalSession（连同 PTY）会一起销毁，用户正在跑的命令凭空消失。
+      keyboardHidden 同理（软键盘弹出会触发配置变化）。
+    -->
+    <activity
+      android:name=".TerminalActivity"
+      android:exported="false"
+      android:label="终端"
+      android:configChanges="orientation|screenSize|keyboardHidden"
+      android:theme="@style/Theme.Assistant.Terminal" />
+
+    <!--
+      拍照输出的中转文件提供者。
+      Android 7+ 禁止把 file:// 交给别的应用（相机写不进我们的私有目录），
+      必须经 FileProvider 换成 content:// 并临时授权。
+      paths 只暴露 cacheDir 下的 camera-photos/：给整块 cache 目录太大，
+      而拍照只需要这一个子目录。
+    -->
+    <provider
+      android:name="androidx.core.content.FileProvider"
+      android:authorities="${applicationId}.fileprovider"
+      android:exported="false"
+      android:grantUriPermissions="true">
+      <meta-data
+        android:name="android.support.FILE_PROVIDER_PATHS"
+        android:resource="@xml/file_paths" />
+    </provider>
+  </application>
+
+</manifest>

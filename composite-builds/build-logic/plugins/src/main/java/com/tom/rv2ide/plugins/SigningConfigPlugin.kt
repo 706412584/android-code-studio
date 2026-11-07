@@ -17,7 +17,7 @@
 
 package com.tom.rv2ide.plugins
 
-import com.android.build.gradle.BaseExtension
+import com.android.build.api.dsl.CommonExtension
 import com.tom.rv2ide.build.config.SigningConfig
 import com.tom.rv2ide.build.config.loadSigningProperties
 import org.gradle.api.Plugin
@@ -43,8 +43,11 @@ class SigningConfigPlugin : Plugin<Project> {
         return
       }
 
-      // Create and apply the signing config
-      extensions.getByType(BaseExtension::class.java).let { extension ->
+      // Create and apply the signing config。
+      // AGP 9 里 BaseExtension 不再是注册的扩展类型（注册的是 LibraryExtensionImpl /
+      // ApplicationExtensionImpl），改用 CommonExtension——getSigningConfigs() /
+      // getBuildTypes() 两版都有。
+      extensions.getByType(CommonExtension::class.java).let { extension ->
         val config =
             extension.signingConfigs.create("common") {
               storeFile = signingKey
@@ -53,7 +56,26 @@ class SigningConfigPlugin : Plugin<Project> {
               keyPassword = signing.keyPassword
             }
 
-        extension.buildTypes.forEach { buildType -> buildType.signingConfig = config }
+        // 给每个 buildType 设签名。**必须走反射**：AGP 9 把 `signingConfig` 从其
+        // 公开接口 `com.android.build.api.dsl.BuildType` 移除了（只剩模块级的
+        // ApplicationVariantDimension/LibraryVariantDimension 有），而
+        // `extension.buildTypes` 在编译期返回的是那个公开接口，直接写
+        // `buildType.signingConfig = config` 会报 Unresolved reference。
+        // 但运行时实现类（android.build.gradle.internal.dsl.BuildType，旧 DSL，
+        // 因 android.newDsl=false 仍在用）**仍有** setSigningConfig——两版 AGP 都有。
+        // 故反射调用，兼容 AGP 8 与 9。
+        extension.buildTypes.forEach { buildType ->
+          val setter =
+              buildType.javaClass.methods.firstOrNull {
+                it.name == "setSigningConfig" && it.parameterCount == 1
+              }
+          if (setter != null) {
+            setter.invoke(buildType, config)
+          } else {
+            logger.warn(
+                "buildType '${buildType.name}' 无 setSigningConfig 方法，跳过（AGP 变更？）")
+          }
+        }
 
         logger.lifecycle("Signing configured successfully for all build types")
         logger.lifecycle("Key store: ${signingKey.absolutePath}")

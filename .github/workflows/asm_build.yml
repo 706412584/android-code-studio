@@ -109,6 +109,25 @@ jobs:
       - name: Change Gradle wrapper permissions
         run: chmod +x ./gradlew
 
+      # 安装 compileSdk 对应的平台与 build-tools。
+      #
+      # ubuntu-latest 预装的 SDK 不含 android-37.2；而 build-logic 的 SdkUtils 会按
+      # platforms/<compileSdkPlatform> 直接拼 android.jar 路径、缺失即 check 失败
+      # （表现为 `Failed to find target with hash string 'android-37'`）。
+      # AGP **不会**自动下载缺失平台，因此必须显式安装。
+      #
+      # 包名带 minor 后缀：SDK 管理器把 37.2 作为独立包发布，没有无后缀的
+      # platforms;android-37。build-tools 至少要 BuildConfig.buildToolsVersion
+      # 声明的 35.0.0（预装镜像可能落后）。
+      - name: Install required Android platforms and build-tools
+        run: |
+          set -e
+          SDKMANAGER=$(find "$ANDROID_HOME/cmdline-tools" -name sdkmanager -type f | sort -V | tail -1)
+          echo "sdkmanager: $SDKMANAGER"
+          yes | "$SDKMANAGER" --licenses > /dev/null 2>&1 || true
+          "$SDKMANAGER" "platforms;android-37.2" "build-tools;35.0.0" "platform-tools"
+          ls "$ANDROID_HOME/platforms"
+
       - name: Restore cache
         uses: actions/cache@v4
         with:

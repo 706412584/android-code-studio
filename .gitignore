@@ -138,3 +138,7 @@ tools/jieba-translate/__pycache__/
 patch-cli.jar
 patch-work*/
 apk-staging/
+
+# assistant/ 各子模块的构建产物（同 external/* 与 composite-builds/* 的理由：
+# 根级 /build/ 只覆盖根目录，子模块必须显式通配）。
+assistant/*/build/

@@ -20,7 +20,10 @@ import com.tom.rv2ide.build.config.BuildConfig
 
 @Suppress("JavaPluginLanguageLevel")
 plugins {
-  id("com.github.johnrengelman.shadow") version "8.1.1"
+  // shadow 插件已由 johnrengelman 移交 gradleup；旧坐标 8.1.1 与 Gradle 9 不兼容
+  // （shadowJar 报 Groovy MissingPropertyException: No such property: mode
+  //  —— Gradle 9 内部 FileCopyDetails API 变更所致）。改用新坐标。
+  id("com.gradleup.shadow") version "9.6.1"
   id("java-library")
   id("kotlin-kapt")
   id("org.jetbrains.kotlin.jvm")

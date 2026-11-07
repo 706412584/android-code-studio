@@ -12,6 +12,19 @@ plugins {
 
 android {
     namespace = "io.github.mohammedbaqernull.logger.logwire"
+    // **必须固定 36，不能跟随主项目的 BuildConfig.compileSdk（37）。**
+    //
+    // 原因：本模块产出的 `logger-runtime.aar` 由 AndroidIDEAssetsPlugin 打包进 APK，
+    // 运行期再由 Gradle 构建服务解出，通过 init script 以 `implementation files(...)`
+    // 注入**每一个用户项目**。因此这里的 compileSdk 会成为所有用户工程 compileSdk 的下限
+    // ——而新建模板工程默认 `compileSdk 36` + AGP 8.13.0（其 HIGHEST_SUPPORTED_API 也是 36）。
+    //
+    // 实测把这里改成 37 后，新建模板工程同步报：
+    //   checkDebugAarMetadata: Dependency 'logger-runtime.aar' requires ... compile
+    //   against version 37 or later. :app is currently compiled against android-36.
+    // 即整个新建项目流程失效。
+    //
+    // 本 AAR 只依赖 androidx.annotation:1.7.0，36 完全够用，没有任何 API 需要 37。
     compileSdk = 36
     buildToolsVersion = "35.0.0"
 
@@ -34,7 +47,6 @@ android {
 
     buildFeatures { aidl = true }
 
-    kotlinOptions { jvmTarget = "11" }
 }
 
 dependencies {
@@ -75,4 +87,27 @@ plugins.withId("com.android.library") {
             finalizedBy("fixAarName")
         }
     }
+}
+
+// 同上：Kotlin 2.3 移除了 android 块内的 kotlinOptions。
+//
+// **languageVersion 必须锁 2.1，不能跟随构建本项目的 Kotlin 2.3.21。**
+//
+// 本模块产出的 `logger-runtime.aar` 里带 Kotlin 元数据（`logwire_release.kotlin_module`），
+// 而该 AAR 由 init script 以 `implementation files(...)` 注入**每一个用户项目**
+// （见 GradleBuildService 的 getLoggerRuntimeAar / init script）。默认 languageVersion
+// 会让元数据版本随编译器走：实测 Kotlin 2.3.21 编出 `mv = 2.3.0`，而新建模板工程用
+// `templates-api/constants.kt` 的 KOTLIN_VERSION = 2.1.0，编译时报
+//   Module was compiled with an incompatible version of Kotlin.
+//   The binary version of its metadata is 2.3.0, expected version is 2.1.0.
+// 即所有新建项目的 Kotlin 编译直接失败。
+//
+// 锁到 2.1 后元数据为 2.1.0，2.1.0 与 2.3.x 两端都能读。本模块 5 个源文件只用
+// 基础 Kotlin（无 2.2/2.3 新语法），降级不损失任何东西。
+// 全仓暂无此先例可循，故此处以注释固化理由。
+kotlin {
+  compilerOptions {
+    jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_11)
+    languageVersion.set(org.jetbrains.kotlin.gradle.dsl.KotlinVersion.KOTLIN_2_1)
+  }
 }

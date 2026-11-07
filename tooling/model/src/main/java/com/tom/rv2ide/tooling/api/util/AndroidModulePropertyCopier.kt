@@ -145,6 +145,9 @@ object AndroidModulePropertyCopier {
       resourcesDirectories = provider.resourcesDirectories
       shadersDirectories = provider.shadersDirectories
       baselineProfileDirectories = provider.baselineProfileDirectories
+      // AGP 9 给 SourceProvider 新增的 R8 keep 规则目录；漏拷会让模型往返后静默变 null。
+      keepRulesDirectories = provider.keepRulesDirectories
+      aarKeepRulesDirectories = provider.aarKeepRulesDirectories
     }
   }
 

@@ -26,8 +26,10 @@ object SdkUtils {
 
   fun AndroidComponentsExtension<*, *, *>.getAndroidJar(assertExists: Boolean = true): File {
     val sdkDirectory = sdkComponents.sdkDirectory
+    // 用 compileSdkPlatform（如 android-37.2）而不是裸的 compileSdk：
+    // SDK 平台目录名带 minor 后缀，拼成 android-37 会指向不存在的目录。
     val androidJar =
-        File(sdkDirectory.get().asFile, "platforms/android-${BuildConfig.compileSdk}/android.jar")
+        File(sdkDirectory.get().asFile, "platforms/${BuildConfig.compileSdkPlatform}/android.jar")
 
     if (assertExists) {
       check(androidJar.exists() && androidJar.isFile) {

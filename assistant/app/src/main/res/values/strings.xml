@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  应用名。此前 manifest 用的是硬编码 label="Assistant"，中文界面下显示成英文；
+  改成资源后可与界面语言一致，也便于将来做多语言。
+-->
+<resources>
+  <string name="app_name">ACS助手</string>
+</resources>

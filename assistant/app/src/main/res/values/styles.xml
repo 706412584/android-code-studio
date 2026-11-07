@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  终端页主题。
+
+  为什么单独定义：系统自带的 Theme.Material.Light 底色是浅色，而终端配色是深色
+  （黑底白字），两者叠加时窗口背景会在终端内容之外露出来——上下留白处是白的，
+  与终端的黑底割裂。这里把窗口背景也设成黑，整页才是一整块终端。
+-->
+<resources>
+  <style name="Theme.Assistant.Terminal" parent="@android:style/Theme.Material.NoActionBar">
+    <item name="android:windowBackground">@android:color/black</item>
+    <item name="android:statusBarColor">@android:color/black</item>
+    <item name="android:navigationBarColor">@android:color/black</item>
+    <item name="android:windowLightStatusBar">false</item>
+  </style>
+</resources>

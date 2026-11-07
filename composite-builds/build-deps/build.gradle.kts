@@ -15,7 +15,7 @@
  *   along with AndroidIDE.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-import com.android.build.gradle.BaseExtension
+import com.android.build.api.dsl.CommonExtension
 import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
 
 plugins {
@@ -26,17 +26,21 @@ plugins {
 
 subprojects {
   plugins.withId("com.android.library") {
-    extensions.getByType(BaseExtension::class.java).apply {
+    // AGP 9：BaseExtension 不再是注册的扩展类型，且其 compileSdkVersion(int) 旧 API
+    // 无法表达 minor。改用 CommonExtension + getter/属性（AGP 8/9 通用）。
+    // 这里固定 compileSdk=34（vendored 依赖的 AAR 只需这么高），不需要 minor 后缀，
+    // 因为 android-34 是标准包名（无 minor）——见 SDK 平台目录名。
+    extensions.getByType(CommonExtension::class.java).apply {
       buildToolsVersion = "34.0.0"
-      compileSdkVersion(34)
+      compileSdk = 34
 
-      defaultConfig {
+      defaultConfig.apply {
         minSdk = 26
-        //noinspection ExpiredTargetSdkVersion
-        targetSdk = 28
+        // targetSdk 只存在于 ApplicationBaseFlavor；本 block 只作用于 com.android.library
+        // 子项目（见上面的 plugins.withId），故不设 targetSdk（AGP 9 起会报 Unresolved）。
       }
 
-      compileOptions {
+      compileOptions.apply {
         sourceCompatibility = JavaVersion.VERSION_11
         targetCompatibility = JavaVersion.VERSION_11
       }

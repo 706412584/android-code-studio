@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  FileProvider 暴露的路径。
+
+  只暴露两个专属子目录，而不是整块 cacheDir：任何拿到授权 uri 的应用理论上能顺着
+  目录构造兄弟路径，给专属目录是最小授权。
+  - camera-photos/：拍照的临时输出
+  - exports/：导出的会话文本（分享给别的应用读取）
+-->
+<paths>
+  <cache-path name="camera_photos" path="camera-photos/" />
+  <cache-path name="exports" path="exports/" />
+</paths>
+
