@@ -145,9 +145,17 @@ object AndroidModulePropertyCopier {
       resourcesDirectories = provider.resourcesDirectories
       shadersDirectories = provider.shadersDirectories
       baselineProfileDirectories = provider.baselineProfileDirectories
-      // AGP 9 给 SourceProvider 新增的 R8 keep 规则目录；漏拷会让模型往返后静默变 null。
-      keepRulesDirectories = provider.keepRulesDirectories
-      aarKeepRulesDirectories = provider.aarKeepRulesDirectories
+      // AGP 9 给 SourceProvider 新增的 R8 keep 规则目录。**必须容错读取**。
+      //
+      // provider 来自**被连接工程所用的 AGP**，不一定是我们编译期依赖的那版：
+      // 本仓库内置模板生成的工程固定 AGP 8.13.0（templates-api 的
+      // ANDROID_GRADLE_PLUGIN_VERSION），而 AGP 8 的 SourceProvider 实现**没有**
+      // 这两个方法，直接读会抛
+      //   UnsupportedMethodException: Unsupported method: SourceProvider.getKeepRulesDirectories()
+      // 实测后果：模板工程「同步项目」整个失败（Project Setup Failed），即所有新建
+      // 项目不可用。老版本没有这些目录，保持 null 即可。
+      keepRulesDirectories = runCatching { provider.keepRulesDirectories }.getOrNull()
+      aarKeepRulesDirectories = runCatching { provider.aarKeepRulesDirectories }.getOrNull()
     }
   }
 
