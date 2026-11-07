@@ -38,7 +38,6 @@ import android.widget.ArrayAdapter
 import androidx.core.content.getSystemService
 import androidx.core.view.isVisible
 import com.github.appintro.SlidePolicy
-import com.tom.rv2ide.BuildConfig
 import com.tom.rv2ide.R
 import com.tom.rv2ide.databinding.LayoutOnboardngSetupConfigBinding
 import com.tom.rv2ide.models.IdeSetupArgument
@@ -175,12 +174,14 @@ class IdeSetupConfigurationFragment : OnboardingFragment(), SlidePolicy {
         IdeSetupArgument.NDK_VERSION,
         NdkVersion.fromDisplayName(content.ndkVersion.text).version,
     )
-    // CN 版传 Gitee manifest：build-tools 的下载 URL 指向 Gitee（上游 GitHub 国内
-    // 实测超时，首装卡死；镜像实测 1.6MB/s）。其余条目保持上游。
-    // 常规版不传 —— idesetup 走内建默认源（= 已发布 r08 行为）。
-    if (BuildConfig.CN_MIRROR) {
-      args.setArgument(IdeSetupArgument.MANIFEST, IDE_SETUP_MANIFEST_URL)
-    }
+    // **始终传 Gitee manifest**（不再区分 CN 版）。
+    //
+    // idesetup 的默认 manifest 在 GitHub（androidide-tools），设备上实测间歇不可达：
+    //   curl: (35) Recv failure: Connection reset by peer
+    // → manifest 拿不到 → 下载 URL 为空 → 首装卡死。原先仅 CN 版传 manifest、常规版
+    // 走内建默认源，等于常规版首装必失败。镜像 manifest 是完整镜像（android_sdk/
+    // cmdline_tools/build_tools/platform_tools/jdk_11 五项齐全），实测下载 1.6MB/s。
+    args.setArgument(IdeSetupArgument.MANIFEST, IDE_SETUP_MANIFEST_URL)
     args.setArgument(IdeSetupArgument.ASSUME_YES)
     if (content.installGit.isChecked) {
       args.setArgument(IdeSetupArgument.WITH_GIT)
