@@ -1024,6 +1024,11 @@
   <string name="msg_use_regex">使用正则表达式</string>
   <string name="idepref_buildnrun_summary">Gradle 构建配置。</string>
   <string name="idepref_sdk_version_title">Android SDK 版本</string>
+  <string name="idepref_build_tools_title">Build-tools 版本</string>
+  <string name="idepref_platform_title">平台版本（compileSdk）</string>
+  <string name="idepref_sdk_installing">正在安装 %s…</string>
+  <string name="idepref_sdk_install_ok">已安装 %s</string>
+  <string name="idepref_sdk_install_failed">安装 %s 失败</string>
   <string name="idepref_sdk_installed">已安装：%s</string>
   <string name="idepref_sdk_not_installed">未安装</string>
   <string name="idepref_sdk_already_installed">SDK %s 已安装</string>

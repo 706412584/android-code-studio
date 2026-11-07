@@ -1069,6 +1069,11 @@
   <string name="msg_use_regex">Use regex</string>
   <string name="idepref_buildnrun_summary">Configure the Gradle build.</string>
   <string name="idepref_sdk_version_title">Android SDK version</string>
+  <string name="idepref_build_tools_title">Build-tools version</string>
+  <string name="idepref_platform_title">Platform version (compileSdk)</string>
+  <string name="idepref_sdk_installing">Installing %s…</string>
+  <string name="idepref_sdk_install_ok">Installed %s</string>
+  <string name="idepref_sdk_install_failed">Failed to install %s</string>
   <string name="idepref_sdk_installed">Installed: %s</string>
   <string name="idepref_sdk_not_installed">Not installed</string>
   <string name="idepref_sdk_already_installed">SDK %s is already installed</string>

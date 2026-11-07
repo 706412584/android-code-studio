@@ -18,17 +18,12 @@
 package com.tom.rv2ide.preferences
 
 import android.content.Context
-import android.content.Intent
+import android.widget.TextView
 import android.widget.Toast
 import androidx.preference.Preference
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.textfield.TextInputLayout
 import com.tom.rv2ide.R as MainR
-import com.tom.rv2ide.activities.TerminalActivity
-import com.tom.rv2ide.fragments.onboarding.IdeSetupConfigurationFragment
-import com.tom.rv2ide.fragments.onboarding.SdkVersion
-import com.tom.rv2ide.models.IdeSetupArgument
-import com.tom.rv2ide.utils.Environment
 import com.tom.rv2ide.app.configuration.IJdkDistributionProvider
 import com.tom.rv2ide.models.JdkDistribution
 import com.tom.rv2ide.preferences.internal.BuildPreferences.CUSTOM_GRADLE_INSTALLATION
@@ -56,11 +51,16 @@ import com.tom.rv2ide.preferences.internal.BuildPreferences.javaHome
 import com.tom.rv2ide.preferences.internal.BuildPreferences.launchAppAfterInstall
 import com.tom.rv2ide.resources.R.drawable
 import com.tom.rv2ide.resources.R.string
+import com.tom.rv2ide.handlers.system.installer.SdkManagerInstaller
 import com.tom.rv2ide.tasks.executeAsync
 import com.tom.rv2ide.utils.Environment.GRADLE_USER_HOME
 import com.tom.rv2ide.utils.flashError
 import com.tom.rv2ide.utils.flashSuccess
 import java.io.File
+import java.util.concurrent.atomic.AtomicBoolean
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlin.reflect.KMutableProperty0
 import kotlinx.parcelize.Parcelize
 
@@ -79,45 +79,51 @@ class BuildAndRunPreferences(
 }
 
 /**
- * Android SDK 版本（构建工具链）。
+ * SDK 组件版本（build-tools / platforms 共用）。
  *
- * <p>此前 SDK 版本的选择/安装状态**只在首次引导**（`IdeSetupConfigurationFragment`）出现——
- * 装完进去后就再也看不到、也改不了（用户报的「构建和运行里看不到安卓 sdk 版本」）。
- * 这里把它补进设置，与「JDK 版本」并列放在 Gradle 组内（同属构建工具链）。
+ * <p>此前这两项只在首次引导出现，装完就再也改不了（用户报的「看不到安卓 sdk 版本」）。
  *
- * <p>显示当前已装的 build-tools 版本（列 `ANDROID_HOME/build-tools` 目录，即 idesetup
- * `--sdk ver` 装的那一项），点开可从 [SdkVersion] 里选一个装/换；对话框里每个版本都
- * 标注「已安装 / 可安装」。
+ * <p><b>两条独立的链路，不要混为一谈</b>：
+ * - **build-tools**（aapt2/d8/zipalign）：AGP 最低要求（AGP 9.2.0 要 ≥36.0.0）
+ * - **platforms**（android-XX 的 android.jar）：`compileSdk` 的目标
  *
- * <p>安装复用引导页那套：以 [TerminalActivity] 跑 `idesetup --sdk <ver>`（原生安装器，
- * 见 `IdesetupSession`）。不走复制的脚本——idesetup 是 ELF 可执行，含下载/校验逻辑。
+ * <p>安装改用官方 **`sdkmanager`**（见 [SdkManagerInstaller]），不再走 `idesetup --sdk`：
+ * 后者依赖 AndroidIDE 镜像 manifest，其 build-tools **最高只到 35.0.1**（上游从未构建
+ * 更高版本），给不了 AGP 9 要的 36；而 sdkmanager 直连 Google 仓库，实测可装
+ * build-tools 至 37.0.0、platforms 至 android-36。
  *
- * <p><b>可选版本的上限由 manifest 决定</b>：`--sdk` 装的是 **build-tools**，而
- * build-tools 包在上游与 CN 镜像里都只到 35.0.1（[SdkVersion] 即其镜像）。compileSdk
- * 能到 37 是另一条链路（platforms 目录），与这里无关。
+ * <p>可选列表来自 `sdkmanager --list`（慢，走网络），故**在 create 时后台预热缓存**；
+ * 用户点开对话框时通常已就绪（未就绪则先显示已安装项，下次打开补全）。
  */
 @Parcelize
-private class SdkVersionPreference(
+class SdkPackagePreference(
     override val key: String = "idepref_build_sdk_version",
     override val title: Int = string.idepref_sdk_version_title,
     override val icon: Int? = drawable.ic_android,
+    /** sdkmanager 的包前缀：`build-tools` 或 `platforms`。 */
+    private val packageId: String = "build-tools",
+    /** 版本项在列表里的显示前缀：platforms 用 "android-"，build-tools 用 ""。 */
+    private val entryPrefix: String = "",
 ) : SingleChoicePreference() {
 
   override fun getEntries(preference: Preference): Array<PreferenceChoices.Entry> {
     val ctx = preference.context
-    val installed = installedSdkVersions()
+    val installed = installedVersions()
     val installedSet = installed.toSet()
     val current = installed.lastOrNull()
-    // 枚举里没有的「已装但非枚举版本」（如设备上的 33.0.0）也列出来，
-    // 否则「已安装」显示与实际对不上。
-    val candidates = (SdkVersion.entries.map { it.version } + installed).distinct().sorted()
+    // 可用列表来自缓存（后台预热）；没有缓存时只列已安装的，别让对话框空着。
+    val available = availableVersions()
+    val candidates = (available + installed).distinct().sortedWith(sdkVersionComparator)
     return candidates
         .map { v ->
           // 已安装的直接显示版本号（summary 已写「已安装：…」，逐项再标是冗余）；
           // 只有**未安装**的标「（可安装）」——那才是用户需要知道的新信息。
           val label =
-              if (v in installedSet) v else ctx.getString(string.idepref_sdk_entry_available, v)
-          // data 放原始版本号：label 可能带后缀，不能拿 label 当版本用。
+              if (v in installedSet) {
+                v
+              } else {
+                ctx.getString(string.idepref_sdk_entry_available, v)
+              }
           PreferenceChoices.Entry(label, v == current, v)
         }
         .toTypedArray()
@@ -129,9 +135,9 @@ private class SdkVersionPreference(
       position: Int,
   ) {
     super.onChoiceConfirmed(preference, entry, position)
-    // 取 data 里的原始版本号：label 现在带「已安装/可安装」后缀，不能用它当版本。
+    // 取 data 里的原始版本号：label 可能带「（可安装）」后缀，不能用它当版本。
     val version = entry?.data?.toString() ?: return
-    if (version in installedSdkVersions()) {
+    if (version in installedVersions()) {
       Toast.makeText(
               preference.context,
               preference.context.getString(string.idepref_sdk_already_installed, version),
@@ -139,15 +145,16 @@ private class SdkVersionPreference(
           .show()
       return
     }
-    installSdk(preference.context, version)
+    installPackage(preference, version)
   }
 
   override fun onCreatePreference(context: Context): Preference {
+    ensureAvailableLoaded()
     return super.onCreatePreference(context).also { updateSummary(it, context) }
   }
 
   private fun updateSummary(preference: Preference, context: Context) {
-    val installed = installedSdkVersions()
+    val installed = installedVersions()
     preference.summary =
         if (installed.isEmpty()) {
           context.getString(string.idepref_sdk_not_installed)
@@ -156,37 +163,110 @@ private class SdkVersionPreference(
         }
   }
 
-  private fun installSdk(context: Context, version: String) {
-    val args = mutableListOf<String>()
-    args.add(IdeSetupArgument.INSTALL_DIR.argumentName)
-    args.add(Environment.HOME.absolutePath)
-    args.add(IdeSetupArgument.SDK_VERSION.argumentName)
-    args.add(version)
-    args.add(IdeSetupArgument.ASSUME_YES.argumentName)
-    // **始终传 Gitee manifest**（不再区分 CN 版）。
-    //
-    // idesetup 的默认 manifest 在 GitHub（androidide-tools），本机实测该地址在设备上
-    // 间歇性不可达——表现为 `curl: (35) Recv failure: Connection reset by peer`，
-    // 于是 manifest 拿不到、下载 URL 为空、报
-    //   "The downloaded file Android SDK does not exist. Cannot proceed..."
-    // 即常规版装 SDK 必失败。Gitee 镜像 manifest（androidide-manifest.json）是完整
-    // 镜像（android_sdk/cmdline_tools/build_tools/platform_tools/jdk_11 五项齐全），
-    // 实测用它可正常装（build-tools/34.0.4 装上了）。
-    args.add(IdeSetupArgument.MANIFEST.argumentName)
-    args.add(IdeSetupConfigurationFragment.IDE_SETUP_MANIFEST_URL)
+  /**
+   * 在后台跑 `sdkmanager --install <pkg>` 并弹出实时输出。
+   *
+   * <p>输出弹窗是一块可滚动的 [TextView]，逐行追加——安装要下几十 MB，没有输出用户会
+   * 以为卡死。完成后刷新本项 summary。
+   */
+  private fun installPackage(preference: Preference, version: String) {
+    val context = preference.context
+    val fullId =
+        if (entryPrefix.isEmpty()) "$packageId;$version" else "$packageId;$entryPrefix$version"
 
-    val intent = Intent(context, TerminalActivity::class.java).apply {
-      putExtra(TerminalActivity.EXTRA_ONBOARDING_RUN_IDESETUP, true)
-      putExtra(TerminalActivity.EXTRA_ONBOARDING_RUN_IDESETUP_ARGS, args.toTypedArray())
+    val output = TextView(context).apply {
+      textSize = 12f
+      setPadding(24, 16, 24, 0)
+      typeface = android.graphics.Typeface.MONOSPACE
     }
-    context.startActivity(intent)
+    val scroll =
+        android.widget.ScrollView(context).apply {
+          addView(output)
+          // 限高：sdkmanager 输出可能很长。
+          post { scrollTo(0, output.height) }
+        }
+    val dialog =
+        MaterialAlertDialogBuilder(context)
+            .setTitle(context.getString(string.idepref_sdk_installing, version))
+            .setView(scroll)
+            .setNegativeButton(android.R.string.cancel, null)
+            .setCancelable(false)
+            .create()
+    dialog.show()
+
+    val cancelled = AtomicBoolean(false)
+    dialog.setOnDismissListener { cancelled.set(true) }
+
+    val ctx = context.applicationContext
+    CoroutineScope(Dispatchers.IO).launch {
+      val installer = SdkManagerInstaller()
+      val ok =
+          installer.install(fullId) { line ->
+            CoroutineScope(Dispatchers.Main).launch {
+              if (!cancelled.get()) {
+                output.append(line + "\n")
+                scroll.post { scroll.fullScroll(android.view.View.FOCUS_DOWN) }
+              }
+            }
+          }
+      CoroutineScope(Dispatchers.Main).launch {
+        if (!cancelled.get()) {
+          dialog.dismiss()
+          Toast.makeText(
+                  ctx,
+                  if (ok) {
+                    ctx.getString(string.idepref_sdk_install_ok, version)
+                  } else {
+                    ctx.getString(string.idepref_sdk_install_failed, version)
+                  },
+                  Toast.LENGTH_LONG)
+              .show()
+          updateSummary(preference, ctx)
+        }
+      }
+    }
   }
 
-  /** 已安装的 build-tools 版本（即 idesetup `--sdk` 的产物），升序。 */
-  private fun installedSdkVersions(): List<String> {
-    val dir = File(Environment.ANDROID_HOME, "build-tools")
-    if (!dir.isDirectory) return emptyList()
-    return dir.listFiles()?.filter { it.isDirectory }?.map { it.name }?.sorted() ?: emptyList()
+  /** 已安装版本（读磁盘目录），升序。 */
+  private fun installedVersions(): List<String> =
+      if (packageId == "platforms") {
+        SdkManagerInstaller.installedPlatforms().map { it.removePrefix(entryPrefix) }
+      } else {
+        SdkManagerInstaller.installedBuildTools()
+      }
+
+  /** 可安装版本（来自后台预热的缓存；未就绪时为空）。 */
+  private fun availableVersions(): List<String> {
+    val sdk = cachedAvailable ?: return emptyList()
+    return if (packageId == "platforms") sdk.platforms else sdk.buildTools
+  }
+
+  private fun ensureAvailableLoaded() {
+    if (cachedAvailable != null || loadingAvailable) return
+    loadingAvailable = true
+    CoroutineScope(Dispatchers.IO).launch {
+      val result = runCatching { SdkManagerInstaller().listAvailable() }.getOrNull()
+      if (result != null) cachedAvailable = result
+      loadingAvailable = false
+    }
+  }
+
+  private companion object {
+    /** 进程级缓存：`sdkmanager --list` 走网络、耗时较长，避免每次开对话框都跑。 */
+    @Volatile var cachedAvailable: SdkManagerInstaller.AvailableSdk? = null
+
+    @Volatile var loadingAvailable = false
+
+    /** 版本号比较：按月分段数字比，避免 "9" > "10" 这类字符串排序错误。 */
+    val sdkVersionComparator = Comparator<String> { a, b ->
+      val pa = a.split('.', '-').map { it.toIntOrNull() ?: 0 }
+      val pb = b.split('.', '-').map { it.toIntOrNull() ?: 0 }
+      for (i in 0 until maxOf(pa.size, pb.size)) {
+        val c = pa.getOrElse(i) { 0 }.compareTo(pb.getOrElse(i) { 0 })
+        if (c != 0) return@Comparator c
+      }
+      0
+    }
   }
 }
 
@@ -240,7 +320,23 @@ private class GradleOptions(
     addPreference(GradleCommands())
     addPreference(GradleDistrubution())
     addPreference(GradleJDKVersionPreference())
-    addPreference(SdkVersionPreference())
+    // build-tools 与 platforms 是两个独立概念，各一项：
+    // 前者是 aapt2/d8 那套工具（AGP 有最低版本要求），后者是 compileSdk 的目标。
+    addPreference(
+        SdkPackagePreference(
+            key = "idepref_build_tools_version",
+            title = string.idepref_build_tools_title,
+            packageId = "build-tools",
+        )
+    )
+    addPreference(
+        SdkPackagePreference(
+            key = "idepref_platform_version",
+            title = string.idepref_platform_title,
+            packageId = "platforms",
+            entryPrefix = "android-",
+        )
+    )
     addPreference(GradleClearCache())
   }
 }
