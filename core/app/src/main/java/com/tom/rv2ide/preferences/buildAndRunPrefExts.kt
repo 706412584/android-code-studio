@@ -23,7 +23,6 @@ import android.widget.Toast
 import androidx.preference.Preference
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.textfield.TextInputLayout
-import com.tom.rv2ide.BuildConfig
 import com.tom.rv2ide.R as MainR
 import com.tom.rv2ide.activities.TerminalActivity
 import com.tom.rv2ide.fragments.onboarding.IdeSetupConfigurationFragment
@@ -164,12 +163,17 @@ private class SdkVersionPreference(
     args.add(IdeSetupArgument.SDK_VERSION.argumentName)
     args.add(version)
     args.add(IdeSetupArgument.ASSUME_YES.argumentName)
-    // CN 版传 Gitee manifest（与引导页一致）：默认 manifest 的 build-tools 走 GitHub，
-    // 国内实测超时。常规版不传，走内建默认源。
-    if (BuildConfig.CN_MIRROR) {
-      args.add(IdeSetupArgument.MANIFEST.argumentName)
-      args.add(IdeSetupConfigurationFragment.IDE_SETUP_MANIFEST_URL)
-    }
+    // **始终传 Gitee manifest**（不再区分 CN 版）。
+    //
+    // idesetup 的默认 manifest 在 GitHub（androidide-tools），本机实测该地址在设备上
+    // 间歇性不可达——表现为 `curl: (35) Recv failure: Connection reset by peer`，
+    // 于是 manifest 拿不到、下载 URL 为空、报
+    //   "The downloaded file Android SDK does not exist. Cannot proceed..."
+    // 即常规版装 SDK 必失败。Gitee 镜像 manifest（androidide-manifest.json）是完整
+    // 镜像（android_sdk/cmdline_tools/build_tools/platform_tools/jdk_11 五项齐全），
+    // 实测用它可正常装（build-tools/34.0.4 装上了）。
+    args.add(IdeSetupArgument.MANIFEST.argumentName)
+    args.add(IdeSetupConfigurationFragment.IDE_SETUP_MANIFEST_URL)
 
     val intent = Intent(context, TerminalActivity::class.java).apply {
       putExtra(TerminalActivity.EXTRA_ONBOARDING_RUN_IDESETUP, true)
