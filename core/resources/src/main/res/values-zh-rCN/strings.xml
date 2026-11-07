@@ -1027,6 +1027,8 @@
   <string name="idepref_sdk_installed">已安装：%s</string>
   <string name="idepref_sdk_not_installed">未安装</string>
   <string name="idepref_sdk_already_installed">SDK %s 已安装</string>
+  <string name="idepref_sdk_entry_installed">%s（已安装）</string>
+  <string name="idepref_sdk_entry_available">%s（可安装）</string>
   <string name="configure">配置</string>
   <string name="about">关于</string>
   <string name="idepref_github_summary">Android Code Studio 是开源的！</string>

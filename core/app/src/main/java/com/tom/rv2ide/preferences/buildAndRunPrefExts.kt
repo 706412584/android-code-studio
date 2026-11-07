@@ -76,7 +76,6 @@ class BuildAndRunPreferences(
   init {
     addPreference(GradleOptions())
     addPreference(RunOptions())
-    addPreference(SdkVersionPreference())
   }
 }
 
@@ -85,28 +84,45 @@ class BuildAndRunPreferences(
  *
  * <p>此前 SDK 版本的选择/安装状态**只在首次引导**（`IdeSetupConfigurationFragment`）出现——
  * 装完进去后就再也看不到、也改不了（用户报的「构建和运行里看不到安卓 sdk 版本」）。
- * 这里把它补进设置。
+ * 这里把它补进设置，与「JDK 版本」并列放在 Gradle 组内（同属构建工具链）。
  *
  * <p>显示当前已装的 build-tools 版本（列 `ANDROID_HOME/build-tools` 目录，即 idesetup
- * `--sdk ver` 装的那一项），点开可从 [SdkVersion] 里选一个装/换。
+ * `--sdk ver` 装的那一项），点开可从 [SdkVersion] 里选一个装/换；对话框里每个版本都
+ * 标注「已安装 / 可安装」。
  *
  * <p>安装复用引导页那套：以 [TerminalActivity] 跑 `idesetup --sdk <ver>`（原生安装器，
  * 见 `IdesetupSession`）。不走复制的脚本——idesetup 是 ELF 可执行，含下载/校验逻辑。
+ *
+ * <p><b>可选版本的上限由 manifest 决定</b>：`--sdk` 装的是 **build-tools**，而
+ * build-tools 包在上游与 CN 镜像里都只到 35.0.1（[SdkVersion] 即其镜像）。compileSdk
+ * 能到 37 是另一条链路（platforms 目录），与这里无关。
  */
 @Parcelize
 private class SdkVersionPreference(
     override val key: String = "idepref_build_sdk_version",
     override val title: Int = string.idepref_sdk_version_title,
-    override val icon: Int? = null,
+    override val icon: Int? = drawable.ic_android,
 ) : SingleChoicePreference() {
 
   override fun getEntries(preference: Preference): Array<PreferenceChoices.Entry> {
+    val ctx = preference.context
     val installed = installedSdkVersions()
+    val installedSet = installed.toSet()
     val current = installed.lastOrNull()
-    // 枚举里没有的「已装但非枚举版本」也列出来（标为已装），避免显示与实际不符。
+    // 枚举里没有的「已装但非枚举版本」（如设备上的 33.0.0）也列出来，
+    // 否则「已安装」显示与实际对不上。
     val candidates = (SdkVersion.entries.map { it.version } + installed).distinct().sorted()
     return candidates
-        .map { v -> PreferenceChoices.Entry(v, v == current, v) }
+        .map { v ->
+          val label =
+              if (v in installedSet) {
+                ctx.getString(string.idepref_sdk_entry_installed, v)
+              } else {
+                ctx.getString(string.idepref_sdk_entry_available, v)
+              }
+          // data 放原始版本号：label 现在带后缀，不能再拿 label 当版本用。
+          PreferenceChoices.Entry(label, v == current, v)
+        }
         .toTypedArray()
   }
 
@@ -116,7 +132,8 @@ private class SdkVersionPreference(
       position: Int,
   ) {
     super.onChoiceConfirmed(preference, entry, position)
-    val version = entry?.label?.toString() ?: return
+    // 取 data 里的原始版本号：label 现在带「已安装/可安装」后缀，不能用它当版本。
+    val version = entry?.data?.toString() ?: return
     if (version in installedSdkVersions()) {
       Toast.makeText(
               preference.context,
@@ -221,6 +238,7 @@ private class GradleOptions(
     addPreference(GradleCommands())
     addPreference(GradleDistrubution())
     addPreference(GradleJDKVersionPreference())
+    addPreference(SdkVersionPreference())
     addPreference(GradleClearCache())
   }
 }
