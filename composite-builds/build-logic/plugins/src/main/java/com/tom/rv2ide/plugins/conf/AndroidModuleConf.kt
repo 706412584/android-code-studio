@@ -56,11 +56,23 @@ fun Project.configureAndroidModule(coreLibDesugDep: Provider<MinimalExternalModu
         it.parentFile.mkdirs()
       }
 
+  // 该 jar 被 gitignore（每次在干净检出上从真实 SDK 拷贝），供 java:lsp 当框架面资源用。
+  // 注意：**只在文件不存在时拷贝**，所以升级 compileSdk 后本机旧快照不会自动刷新——
+  // 想同步（例如从 34 换到 37）需先删掉 utilities/framework-stubs/libs/android.jar。
+  // 它只影响 LSP 的框架 stub，不参与 APK 编译，故不刷新也不会构建出错。
   if (!(frameworkStubsJar.exists() && frameworkStubsJar.isFile)) {
     androidJar.copyTo(frameworkStubsJar)
   }
 
   extensions.getByType(CommonExtension::class.java).run {
+    // compileSdk 只能在这里设，不能放到下面 BaseExtension 那一段：
+    // `BaseExtension.compileSdkVersion(int)` 是旧 API，**无法表达 minor 版本**，
+    // 而本项目需要的平台是 android-37.2（只写 37 时 AGP 会找 android-37 并报
+    // Failed to find target）。CommonExtension 才有 setCompileSdkMinor。
+    // 父模块（core:app 等）在自身 build.gradle.kts 里覆盖同名字段，不受影响。
+    compileSdk = BuildConfig.compileSdk
+    compileSdkMinor = BuildConfig.compileSdkMinor
+
     lint { checkDependencies = true }
 
     packaging {
@@ -92,7 +104,7 @@ fun Project.configureAndroidModule(coreLibDesugDep: Provider<MinimalExternalModu
   }
 
   extensions.getByType(BaseExtension::class.java).run {
-    compileSdkVersion(BuildConfig.compileSdk)
+    // compileSdk/compileSdkMinor 已在上面 CommonExtension 段设置（旧 API 无法表达 minor）。
     buildToolsVersion = BuildConfig.buildToolsVersion
 
     defaultConfig {

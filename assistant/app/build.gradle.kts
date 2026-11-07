@@ -38,6 +38,8 @@ android {
   namespace = "com.assistant.app"
 
   compileSdk = BuildConfig.compileSdk
+  // 平台目录带 minor（android-37.2），只写 37 会被 AGP 解析成不存在的 android-37。
+  compileSdkMinor = BuildConfig.compileSdkMinor
 
   defaultConfig {
     applicationId = "com.assistant.app"

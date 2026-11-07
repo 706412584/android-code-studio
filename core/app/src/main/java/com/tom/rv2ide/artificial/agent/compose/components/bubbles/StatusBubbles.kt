@@ -50,7 +50,9 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -227,6 +229,7 @@ internal fun AgentBusyIndicator(
  * [label] 由调用方决定说「正在思考」还是更具体的场景（模型已在吐某次工具调用的参数时，
  * 说「正在编辑文件」）。
  */
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 internal fun ThinkingBubble(label: String, retry: RetryBadgeUi? = null) {
     var expanded by rememberSaveable { mutableStateOf(false) }
@@ -237,6 +240,9 @@ internal fun ThinkingBubble(label: String, retry: RetryBadgeUi? = null) {
                 .heightIn(min = ChatStyle.toolRowMinHeight),
             verticalAlignment = Alignment.CenterVertically
         ) {
+            // M3 Expressive 试验：形状变形的加载指示器（material3 1.4.0-alpha10）。
+            LoadingIndicator(modifier = Modifier.size(24.dp))
+            Spacer(Modifier.width(Spacing.sm))
             AgentBusyIndicator(
                 label = label,
                 modifier = Modifier.weight(1f),
