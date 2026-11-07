@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?><!--
+  ~  This file is part of AndroidIDE.
+  ~
+  ~  AndroidIDE is free software: you can redistribute it and/or modify
+  ~  it under the terms of the GNU General Public License as published by
+  ~  the Free Software Foundation, either version 3 of the License, or
+  ~  (at your option) any later version.
+  -->
+<!--
+  热更新补丁偏好行的右侧 widget：「回退」按钮。
+
+  合并自原先的两行（补丁状态 + 回退）。状态作为该行的 summary 显示，
+  回退操作收成这个按钮——不再单独占一行。
+-->
+<com.google.android.material.button.MaterialButton xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/patch_revert_button"
+    style="@style/Widget.Material3.Button.TextButton"
+    android:layout_width="wrap_content"
+    android:layout_height="wrap_content"
+    android:insetTop="0dp"
+    android:insetBottom="0dp"
+    android:minWidth="0dp"
+    android:minHeight="0dp"
+    android:text="@string/pref_patch_revert"
+    android:textAppearance="@style/TextAppearance.Material3.LabelLarge"
+    app:icon="@drawable/ic_delete"
+    app:iconPadding="4dp" />

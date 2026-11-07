@@ -19,12 +19,13 @@ package com.tom.rv2ide.preferences
 
 import android.content.Context
 import android.content.Intent
+import android.widget.Button
 import androidx.preference.Preference
+import androidx.preference.PreferenceViewHolder
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.orange.update.HotUpdateHelper
 import com.tom.rv2ide.activities.AboutActivity
 import com.tom.rv2ide.activities.TomIDEUpdater
-import com.tom.rv2ide.app.IDEApplication
 import com.tom.rv2ide.resources.R
 import kotlinx.parcelize.Parcelize
 
@@ -32,7 +33,6 @@ private const val KEY_CHANGELOG = "idepref_changelog"
 private const val KEY_ABOUT = "idepref_about"
 private const val KEY_CHECK_UPDATE = "idepref_check_update"
 private const val KEY_PATCH_STATUS = "idepref_patch_status"
-private const val KEY_PATCH_REVERT = "idepref_patch_revert"
 
 val changelog =
     SimpleClickablePreference(
@@ -40,7 +40,8 @@ val changelog =
         title = R.string.pref_changelog,
         summary = R.string.idepref_changelog_summary,
     ) {
-      IDEApplication.instance.showChangelog()
+      // 应用内弹窗展示本版更新内容（不跳转浏览器——国内设备常挂代理，一跳就白屏）。
+      TomIDEUpdater(it.context).showChangelogDialog()
       true
     }
 
@@ -70,10 +71,14 @@ val about =
     }
 
 /**
- * 热更新补丁状态（只读展示）。
+ * 热更新补丁：状态 + 回退，合并为一行。
  *
- * <p>此前应用了补丁后没有任何地方能看到「当前跑的是补丁版本」——用户遇到补丁引起的
- * 问题（如资源 ID 错位导致界面文字错乱）时，既不知道原因，也没有恢复手段。
+ * <p>原先拆成两行（只读的补丁状态 + 单独的回退入口），占位多且回退那行没有独立信息。
+ * 现在状态作为本行 summary（「已应用补丁 rNN」/「未应用补丁」），回退收成右侧一个按钮
+ * （[pref_patch_widget]），未装补丁时按钮禁用。
+ *
+ * <p>保留回退能力的理由不变：补丁是 DEX 注入 + 资源替换，出问题时用户此前**没有任何
+ * 自救手段**——只能卸载重装（丢掉设备上的项目数据）。
  */
 @Parcelize
 class PatchStatusPreference(
@@ -86,11 +91,33 @@ class PatchStatusPreference(
   override val summary: Int? = null
 
   override fun onCreatePreference(context: Context): Preference {
-    return super.onCreatePreference(context).apply { summary = describe(context) }
+    // 用自定义 Preference 子类：只有它能在 onBindViewHolder 里拿到 widget 视图，
+    // 把右侧「回退」按钮的状态与点击挂上（IPreference 接口没有绑定钩子）。
+    return object : Preference(context) {
+      override fun onBindViewHolder(holder: PreferenceViewHolder) {
+        super.onBindViewHolder(holder)
+        val button = holder.itemView.findViewById<Button>(R.id.patch_revert_button) ?: return
+        val ctx = holder.itemView.context
+        val applied = hotUpdateHelper(ctx)?.hasAppliedPatch() == true
+        button.isEnabled = applied
+        // 未装补丁时禁用并压暗：点它没有意义，但仍要占位（避免整行左右跳动）。
+        button.alpha = if (applied) 1f else 0.4f
+        button.setOnClickListener { confirmRevert(ctx) }
+      }
+    }.apply {
+      widgetLayoutResource = R.layout.pref_patch_widget
+      summary = describe(context)
+    }
   }
 
+  /**
+   * 整行点击只刷新状态（回退动作只由右侧按钮触发）。
+   *
+   * <p>注意必须覆写这里而不是在 [onCreatePreference] 里 setOnPreferenceClickListener：
+   * [BasePreference.onCreateView] 在本方法返回后会**再设一次**点击监听来调用本方法，
+   * 在里面设的监听会被覆盖。
+   */
   override fun onPreferenceClick(preference: Preference): Boolean {
-    // 刷新一次：用户可能刚打完补丁回来看状态。
     preference.summary = describe(preference.context)
     return true
   }
@@ -110,36 +137,24 @@ class PatchStatusPreference(
       context.getString(R.string.idepref_patch_none)
     }
   }
-}
 
-/**
- * 回退已应用的热更新补丁。
- *
- * <p>补丁是 DEX 注入 + 资源替换，出问题时用户此前**没有任何自救手段**——只能卸载重装
- * （丢掉设备上的项目数据）。这个入口调 SDK 的 `clearPatch()` 清掉补丁并重启。
- */
-@Parcelize
-class PatchRevertPreference(
-    override val key: String = KEY_PATCH_REVERT,
-    override val title: Int = R.string.pref_patch_revert,
-    override val summary: Int = R.string.idepref_patch_revert_summary,
-) : SimplePreference() {
+  private fun hotUpdateHelper(context: Context): HotUpdateHelper? {
+    return try {
+      HotUpdateHelper.getInstance(context)
+    } catch (e: Throwable) {
+      null
+    }
+  }
 
-  override fun onPreferenceClick(preference: Preference): Boolean {
-    val context = preference.context
-    val helper =
-        try {
-          HotUpdateHelper.getInstance(context)
-        } catch (e: Throwable) {
-          null
-        }
+  private fun confirmRevert(context: Context) {
+    val helper = hotUpdateHelper(context)
     if (helper == null || !helper.hasAppliedPatch()) {
       MaterialAlertDialogBuilder(context)
           .setTitle(R.string.idepref_patch_revert_title)
           .setMessage(R.string.idepref_patch_none)
           .setPositiveButton(android.R.string.ok, null)
           .show()
-      return true
+      return
     }
 
     MaterialAlertDialogBuilder(context)
@@ -165,7 +180,6 @@ class PatchRevertPreference(
         }
         .setNegativeButton(android.R.string.cancel, null)
         .show()
-    return true
   }
 
   /**

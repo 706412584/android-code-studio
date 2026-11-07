@@ -77,10 +77,10 @@ class AboutPreferences(
   init {
     addPreference(changelog)
     addPreference(checkUpdate)
-    // 补丁状态与回退：补丁出问题（如资源 ID 错位导致界面文字错乱）时，
-    // 用户此前没有任何自救手段，只能卸载重装（会丢设备上的项目数据）。
+    // 补丁状态 + 回退，合并为一行（状态在 summary，回退是右侧按钮）：
+    // 补丁出问题（如资源 ID 错位导致界面文字错乱）时用户需要自救手段，
+    // 否则只能卸载重装（会丢设备上的项目数据）。
     addPreference(PatchStatusPreference())
-    addPreference(PatchRevertPreference())
     addPreference(about)
   }
 }

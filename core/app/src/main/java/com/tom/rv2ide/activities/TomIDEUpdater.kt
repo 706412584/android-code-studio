@@ -32,6 +32,8 @@ import androidx.core.content.FileProvider
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.progressindicator.LinearProgressIndicator
 import com.tom.rv2ide.BuildConfig
+import com.tom.rv2ide.buildinfo.BuildInfo
+import com.tom.rv2ide.contributors.GITHUB_RAW_API_REPO_BRANCH_URL
 import com.tom.rv2ide.resources.R
 import java.io.*
 import java.net.HttpURLConnection
@@ -252,6 +254,64 @@ class TomIDEUpdater(private val context: Context) {
       android.widget.Toast.makeText(context, context.getString(resId), android.widget.Toast.LENGTH_SHORT)
           .show()
     }
+  }
+
+  /**
+   * 显示「本版更新内容」（设置 → 关于 → 变更日志）。
+   *
+   * <p>**在应用内渲染，不跳转浏览器**。此前该入口用 `Intent.ACTION_VIEW` 打开
+   * GitHub Release 页——国内设备常挂代理，一跳就白屏/超时，用户看不到任何内容。
+   *
+   * <p>内容来源与更新弹窗**同一份**：清单里的 `changelog`（当前版本对应的
+   * whatsnew markdown 的 raw 地址）。正文用 [buildInfoDialogView] 渲染（同样的
+   * 限高滚动），markdown 转纯文本复用 [parseMarkdownToPlainText]。
+   *
+   * <p>先拉清单拿到 changelog 地址，再拉正文——两步都在 IO 线程，失败时用
+   * 占位文案而非弹错误框（离线时用户点了也只是看不到内容，不该被判成出错）。
+   */
+  fun showChangelogDialog() {
+    CoroutineScope(Dispatchers.IO).launch {
+      val updateInfo = try {
+        fetchUpdateInfo()
+      } catch (e: Exception) {
+        Log.e(TAG, "Error fetching update info for changelog", e)
+        null
+      }
+
+      // 清单拿不到就直接拉「当前版本」的 whatsnew（比更新清单更贴近本版内容）。
+      val changelog =
+          if (updateInfo != null) {
+            fetchChangelog(updateInfo.changelogUrl)
+          } else {
+            fetchChangelog(currentVersionChangelogUrl())
+          }
+
+      val header =
+          context.getString(R.string.updater_current_version, BuildInfo.VERSION_NAME_SIMPLE)
+      withContext(Dispatchers.Main) {
+        MaterialAlertDialogBuilder(context)
+            .setTitle(context.getString(R.string.pref_changelog))
+            .setView(buildInfoDialogView(header, changelog, null))
+            .setPositiveButton(android.R.string.ok, null)
+            .setCancelable(true)
+            .show()
+      }
+    }
+  }
+
+  /**
+   * 当前安装版本对应的 whatsnew markdown raw 地址。
+   *
+   * <p>用 `BuildInfo.REPO_OWNER/REPO_NAME` 拼（而非硬编码），与 updater.json 的
+   * changelog 字段同源（都是 `whatsnew/<versionName>.md`）。版本名去掉可能的 `v`
+   * 前缀——文件名是 `1.0.0+gh.r18.md` 这种，不带 v。
+   */
+  private fun currentVersionChangelogUrl(): String {
+    var version = BuildInfo.VERSION_NAME_SIMPLE
+    if (version.startsWith('v')) {
+      version = version.substring(1)
+    }
+    return "$GITHUB_RAW_API_REPO_BRANCH_URL/whatsnew/$version.md"
   }
 
   /**

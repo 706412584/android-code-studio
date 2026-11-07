@@ -20,7 +20,6 @@ package com.tom.rv2ide.app
 
 import android.content.Context
 import android.content.Intent
-import android.net.Uri
 import android.os.StrictMode
 import android.util.Log
 import androidx.appcompat.app.AppCompatDelegate
@@ -39,7 +38,6 @@ import com.termux.shared.reflection.ReflectionUtils
 import com.tom.rv2ide.BuildConfig
 import com.tom.rv2ide.activities.CrashHandlerActivity
 import com.tom.rv2ide.activities.editor.IDELogcatReader
-import com.tom.rv2ide.buildinfo.BuildInfo
 import com.tom.rv2ide.editor.schemes.IDEColorSchemeProvider
 import com.tom.rv2ide.eventbus.events.preferences.PreferenceChangeEvent
 import com.tom.rv2ide.events.AppEventsIndex
@@ -62,7 +60,6 @@ import com.tom.rv2ide.utils.Environment
 import com.tom.rv2ide.utils.MemoryManager
 import com.tom.rv2ide.utils.RecyclableObjectPool
 import com.tom.rv2ide.utils.VMUtils
-import com.tom.rv2ide.utils.flashError
 import com.tom.rv2ide.utils.MemoryProfiler
 import io.github.mohammedbaqernull.seasonal.SeasonalEffects
 import io.github.miyazkaori.silentinstaller.SilentInstaller
@@ -195,22 +192,9 @@ class IDEApplication : TermuxApplication() {
     val endDate = java.time.LocalDate.of(2026, 1, 5)
     return currentDate.isBefore(endDate) || currentDate.isEqual(endDate)
   }
-  
-  fun showChangelog() {
-    val intent = Intent(Intent.ACTION_VIEW)
-    var version = BuildInfo.VERSION_NAME_SIMPLE
-    if (!version.startsWith('v')) {
-      version = "v${version}"
-    }
-    intent.data = Uri.parse("${BuildInfo.REPO_URL}/releases/tag/${version}")
-    intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-    try {
-      startActivity(intent)
-    } catch (th: Throwable) {
-      log.error("Unable to start activity to show changelog", th)
-      flashError("Unable to start activity")
-    }
-  }
+
+  // showChangelog() 已移除：它用 Intent.ACTION_VIEW 打开 GitHub Release 页，国内设备
+  // 常挂代理、一跳就白屏。变更日志改在应用内渲染（TomIDEUpdater.showChangelogDialog）。
 
   fun reportStatsIfNecessary() {
 

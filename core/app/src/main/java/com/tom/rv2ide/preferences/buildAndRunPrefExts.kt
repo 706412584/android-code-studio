@@ -18,10 +18,18 @@
 package com.tom.rv2ide.preferences
 
 import android.content.Context
+import android.content.Intent
+import android.widget.Toast
 import androidx.preference.Preference
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.textfield.TextInputLayout
+import com.tom.rv2ide.BuildConfig
 import com.tom.rv2ide.R as MainR
+import com.tom.rv2ide.activities.TerminalActivity
+import com.tom.rv2ide.fragments.onboarding.IdeSetupConfigurationFragment
+import com.tom.rv2ide.fragments.onboarding.SdkVersion
+import com.tom.rv2ide.models.IdeSetupArgument
+import com.tom.rv2ide.utils.Environment
 import com.tom.rv2ide.app.configuration.IJdkDistributionProvider
 import com.tom.rv2ide.models.JdkDistribution
 import com.tom.rv2ide.preferences.internal.BuildPreferences.CUSTOM_GRADLE_INSTALLATION
@@ -68,6 +76,98 @@ class BuildAndRunPreferences(
   init {
     addPreference(GradleOptions())
     addPreference(RunOptions())
+    addPreference(SdkVersionPreference())
+  }
+}
+
+/**
+ * Android SDK 版本（构建工具链）。
+ *
+ * <p>此前 SDK 版本的选择/安装状态**只在首次引导**（`IdeSetupConfigurationFragment`）出现——
+ * 装完进去后就再也看不到、也改不了（用户报的「构建和运行里看不到安卓 sdk 版本」）。
+ * 这里把它补进设置。
+ *
+ * <p>显示当前已装的 build-tools 版本（列 `ANDROID_HOME/build-tools` 目录，即 idesetup
+ * `--sdk ver` 装的那一项），点开可从 [SdkVersion] 里选一个装/换。
+ *
+ * <p>安装复用引导页那套：以 [TerminalActivity] 跑 `idesetup --sdk <ver>`（原生安装器，
+ * 见 `IdesetupSession`）。不走复制的脚本——idesetup 是 ELF 可执行，含下载/校验逻辑。
+ */
+@Parcelize
+private class SdkVersionPreference(
+    override val key: String = "idepref_build_sdk_version",
+    override val title: Int = string.idepref_sdk_version_title,
+    override val icon: Int? = null,
+) : SingleChoicePreference() {
+
+  override fun getEntries(preference: Preference): Array<PreferenceChoices.Entry> {
+    val installed = installedSdkVersions()
+    val current = installed.lastOrNull()
+    // 枚举里没有的「已装但非枚举版本」也列出来（标为已装），避免显示与实际不符。
+    val candidates = (SdkVersion.entries.map { it.version } + installed).distinct().sorted()
+    return candidates
+        .map { v -> PreferenceChoices.Entry(v, v == current, v) }
+        .toTypedArray()
+  }
+
+  override fun onChoiceConfirmed(
+      preference: Preference,
+      entry: PreferenceChoices.Entry?,
+      position: Int,
+  ) {
+    super.onChoiceConfirmed(preference, entry, position)
+    val version = entry?.label?.toString() ?: return
+    if (version in installedSdkVersions()) {
+      Toast.makeText(
+              preference.context,
+              preference.context.getString(string.idepref_sdk_already_installed, version),
+              Toast.LENGTH_SHORT)
+          .show()
+      return
+    }
+    installSdk(preference.context, version)
+  }
+
+  override fun onCreatePreference(context: Context): Preference {
+    return super.onCreatePreference(context).also { updateSummary(it, context) }
+  }
+
+  private fun updateSummary(preference: Preference, context: Context) {
+    val installed = installedSdkVersions()
+    preference.summary =
+        if (installed.isEmpty()) {
+          context.getString(string.idepref_sdk_not_installed)
+        } else {
+          context.getString(string.idepref_sdk_installed, installed.joinToString(", "))
+        }
+  }
+
+  private fun installSdk(context: Context, version: String) {
+    val args = mutableListOf<String>()
+    args.add(IdeSetupArgument.INSTALL_DIR.argumentName)
+    args.add(Environment.HOME.absolutePath)
+    args.add(IdeSetupArgument.SDK_VERSION.argumentName)
+    args.add(version)
+    args.add(IdeSetupArgument.ASSUME_YES.argumentName)
+    // CN 版传 Gitee manifest（与引导页一致）：默认 manifest 的 build-tools 走 GitHub，
+    // 国内实测超时。常规版不传，走内建默认源。
+    if (BuildConfig.CN_MIRROR) {
+      args.add(IdeSetupArgument.MANIFEST.argumentName)
+      args.add(IdeSetupConfigurationFragment.IDE_SETUP_MANIFEST_URL)
+    }
+
+    val intent = Intent(context, TerminalActivity::class.java).apply {
+      putExtra(TerminalActivity.EXTRA_ONBOARDING_RUN_IDESETUP, true)
+      putExtra(TerminalActivity.EXTRA_ONBOARDING_RUN_IDESETUP_ARGS, args.toTypedArray())
+    }
+    context.startActivity(intent)
+  }
+
+  /** 已安装的 build-tools 版本（即 idesetup `--sdk` 的产物），升序。 */
+  private fun installedSdkVersions(): List<String> {
+    val dir = File(Environment.ANDROID_HOME, "build-tools")
+    if (!dir.isDirectory) return emptyList()
+    return dir.listFiles()?.filter { it.isDirectory }?.map { it.name }?.sorted() ?: emptyList()
   }
 }
 

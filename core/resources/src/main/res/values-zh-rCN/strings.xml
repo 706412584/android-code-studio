@@ -11,6 +11,7 @@
   <string name="updater_check_failed">检查更新失败</string>
   <string name="updater_changelog_failed">加载更新日志失败</string>
   <string name="updater_changelog_error">获取变更日志时出错</string>
+  <string name="updater_current_version">当前版本：%s</string>
   <string name="updater_no_compatible_update">找不到适合您的设备的兼容更新</string>
   <string name="updater_download_failed">下载失败</string>
   <string name="updater_download_failed_with_error">下载失败：%s</string>
@@ -1022,6 +1023,10 @@
   <string name="msg_ignore_case">忽略大小写</string>
   <string name="msg_use_regex">使用正则表达式</string>
   <string name="idepref_buildnrun_summary">Gradle 构建配置。</string>
+  <string name="idepref_sdk_version_title">Android SDK 版本</string>
+  <string name="idepref_sdk_installed">已安装：%s</string>
+  <string name="idepref_sdk_not_installed">未安装</string>
+  <string name="idepref_sdk_already_installed">SDK %s 已安装</string>
   <string name="configure">配置</string>
   <string name="about">关于</string>
   <string name="idepref_github_summary">Android Code Studio 是开源的！</string>

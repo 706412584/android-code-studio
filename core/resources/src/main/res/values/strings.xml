@@ -11,6 +11,7 @@
   <string name="updater_check_failed">Failed to check for updates</string>
   <string name="updater_changelog_failed">Failed to load changelog</string>
   <string name="updater_changelog_error">Error fetching changelog</string>
+  <string name="updater_current_version">Current version: %s</string>
   <string name="updater_no_compatible_update">No compatible update found for your device</string>
   <string name="updater_download_failed">Download failed</string>
   <string name="updater_download_failed_with_error">Download failed: %s</string>
@@ -1067,6 +1068,10 @@
   <string name="msg_ignore_case">Ignore case</string>
   <string name="msg_use_regex">Use regex</string>
   <string name="idepref_buildnrun_summary">Configure the Gradle build.</string>
+  <string name="idepref_sdk_version_title">Android SDK version</string>
+  <string name="idepref_sdk_installed">Installed: %s</string>
+  <string name="idepref_sdk_not_installed">Not installed</string>
+  <string name="idepref_sdk_already_installed">SDK %s is already installed</string>
   <string name="configure">Configure</string>
   <string name="about">About</string>
   <string name="idepref_github_summary">AndroidIDE is open source!</string>
