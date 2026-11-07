@@ -8,7 +8,10 @@ plugins {
 
 android {
     namespace = "com.tom.androidcodestudio.acsprovider"
-    compileSdk = 36
+    // 与主项目统一（core:common 等已升到 37.2，AAR metadata 要求依赖方
+    // compileSdk 不低于它）；用 BuildConfig 避免以后再漂移。
+    compileSdk = com.tom.rv2ide.build.config.BuildConfig.compileSdk
+    compileSdkMinor = com.tom.rv2ide.build.config.BuildConfig.compileSdkMinor
 
 }
 

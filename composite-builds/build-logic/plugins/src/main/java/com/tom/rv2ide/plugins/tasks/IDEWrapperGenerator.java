@@ -58,8 +58,6 @@ import org.gradle.api.tasks.options.Option;
 import org.gradle.api.tasks.options.OptionValues;
 import org.gradle.api.tasks.wrapper.Wrapper.DistributionType;
 import org.gradle.api.tasks.wrapper.Wrapper.PathBase;
-import org.gradle.api.tasks.wrapper.WrapperVersionsResources;
-import org.gradle.api.tasks.wrapper.internal.DefaultWrapperVersionsResources;
 import org.gradle.util.GradleVersion;
 import org.gradle.util.internal.GUtil;
 import org.gradle.util.internal.WrapperDistributionUrlConverter;
@@ -236,19 +234,11 @@ public class IDEWrapperGenerator {
     this.distributionPath = distributionPath;
   }
 
-  /**
-   * Set Wrapper versions resources.
-   *
-   * @since 8.1
-   */
-  @Incubating
-  public void setWrapperVersionsResources(WrapperVersionsResources wrapperVersionsResources) {
-    DefaultWrapperVersionsResources defaultWrapperVersionsResources = (DefaultWrapperVersionsResources) wrapperVersionsResources;
-    gradleVersionResolver.setTextResources(defaultWrapperVersionsResources.getLatest(),
-        defaultWrapperVersionsResources.getReleaseCandidate(),
-        defaultWrapperVersionsResources.getNightly(),
-        defaultWrapperVersionsResources.getReleaseNightly());
-  }
+  // 已删除 setWrapperVersionsResources(WrapperVersionsResources)：
+  // 它和 org.gradle.api.tasks.wrapper.WrapperVersionsResources / .internal
+  // .DefaultWrapperVersionsResources 一起在 Gradle 9 被移除。该方法在本仓库
+  // **没有任何调用点**（GradleWrapperGeneratorTask 直接 setGradleVersion("7.4.2")），
+  // 因此直接删掉而不是搬移到 Gradle 9 的新 API。
 
   /**
    * Returns the gradle version for the wrapper.

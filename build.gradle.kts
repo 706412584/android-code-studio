@@ -33,10 +33,17 @@ plugins {
   alias(libs.plugins.benchmark) apply false
   // 覆盖率插件：只在根声明版本，由 ai-* / app 模块按需 apply（见各模块 build.gradle.kts）。
   alias(libs.plugins.kover) apply false
+  // 编译器插件的字面量版本号**不是**实际生效版本，不要照字面理解。
+  //
+  // 实际生效的是 kotlin-gradle-plugins-bom 里的 constraint：Kotlin 升到 2.3.21 后
+  // `./gradlew buildEnvironment` 实测 compose-compiler-gradle-plugin 解析为
+  // `2.3.21 (c)`、kotlin-serialization 同样被提升，与 Kotlin 版本自动对齐。
+  // 这里的字面量只用于让 Gradle 解析 plugins{} 块（需要一个存在的 marker 版本）。
+  //
+  // 因此**不要**为了"与 Kotlin 一致"把下面两个字面量手动改成 2.3.21：那样做要求
+  // 本机 Gradle 缓存里存在对应 marker（实测本机缓存仅有 compose marker 2.0.21/
+  // 2.1.0/2.2.21，无 2.3.21），离机构建会直接失败。保持现状即可。
   id("org.jetbrains.kotlin.plugin.serialization") version "1.9.10" apply false
-  // Compose 编译器插件。版本必须与 Kotlin 一致（libs.versions.toml 的 kotlin = 2.1.0），
-  // 否则编译器会报版本不匹配。子模块用不带版本的 `id(...)` 引用此处声明的插件。
-  // 版本号写字面量：plugins {} 块里访问不到版本目录的 libs。
   id("org.jetbrains.kotlin.plugin.compose") version "2.1.0" apply false
 
   // ── 构建健康（2026-10-17 接入，见 gradle/libs.versions.toml 同名注释）─────────
@@ -76,6 +83,17 @@ subprojects {
       group = "${group}.${project.parent!!.name}"
     }
     project.group = group
+  }
+
+  // 全局排除 kotlin-android-extensions-runtime。
+  //
+  // 它由 `com.blankj:utilcodex:1.31.1` 传递引入（版本 1.3.72，Kotlin 1.3 时代的产物），
+  // 其中的 kotlinx.android.parcel.* 与 Kotlin 2.3 的 kotlin-parcelize-runtime 重名。
+  // 必须**全局**排除：core:common 用 `api(libs.common.utilcode)` 暴露了它，在单个模块
+  // 里 exclude 挡不住传递路径；而 AGP 9 的 checkDuplicateClasses 对此是硬错误
+  // （旧版仅警告）。这些类在本项目无处使用。
+  configurations.configureEach {
+    exclude(group = "org.jetbrains.kotlin", module = "kotlin-android-extensions-runtime")
   }
 
   // 测试重试：失败测试自动重试 ≤2 次，仍失败才算失败；重试通过则构建通过并打印报告。

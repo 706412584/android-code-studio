@@ -46,9 +46,14 @@ dependencyResolutionManagement {
 include(
   ":common",
   ":desugaring",
-  ":desugaring-core",
   ":plugins",
   ":properties-parser"
 )
+
+// 注意：这里**不能**再 include ":desugaring-core"。
+// 它由上面的 includeBuild("../build-deps-common") + dependencySubstitution 提供
+// （真实目录在 composite-builds/build-deps-common/desugaring-core，不在 build-logic 下）。
+// 历史上这里多写过一个 ":desugaring-core"，指向不存在的目录；Gradle 8 静默容忍，
+// Gradle 9 直接报 "Configuring project ':desugaring-core' without an existing directory"。
 
 rootProject.name = "build-logic"

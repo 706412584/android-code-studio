@@ -37,6 +37,9 @@ class DefaultSourceProvider() : SourceProvider, Serializable {
   override var resourcesDirectories: Collection<File> = emptyList()
   override var shadersDirectories: Collection<File>? = null
   override var baselineProfileDirectories: Collection<File>? = null
+  // AGP 9 新增：R8 keep 规则目录（库自身的与被依赖 AAR 的）。
+  override var keepRulesDirectories: Collection<File>? = null
+  override var aarKeepRulesDirectories: Collection<File>? = null
 
   companion object {
     @JvmStatic val NoFile = File("<does-not-exist>")

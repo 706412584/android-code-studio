@@ -30,7 +30,8 @@ import com.tom.rv2ide.build.config.BuildConfig
 plugins {
   id("com.android.application")
   id("kotlin-android")
-  // Compose 编译器插件：版本必须与仓库 Kotlin（2.1.0）一致，否则编译器报版本不匹配。
+  // Compose 编译器插件：版本跟随仓库 Kotlin（当前 2.3.21），由根项目 plugins{} 声明的
+  // kotlin-gradle-plugins-bom constraint 统一提升，这里不写版本。
   id("org.jetbrains.kotlin.plugin.compose")
 }
 

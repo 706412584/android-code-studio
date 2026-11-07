@@ -33,70 +33,58 @@
 
 package com.tom.rv2ide.plugins.tasks;
 
-import static org.gradle.api.tasks.wrapper.internal.DefaultWrapperVersionsResources.LATEST;
-import static org.gradle.api.tasks.wrapper.internal.DefaultWrapperVersionsResources.NIGHTLY;
-import static org.gradle.api.tasks.wrapper.internal.DefaultWrapperVersionsResources.RELEASE_CANDIDATE;
-import static org.gradle.api.tasks.wrapper.internal.DefaultWrapperVersionsResources.RELEASE_NIGHTLY;
-
-import com.google.gson.Gson;
-import com.google.gson.reflect.TypeToken;
-import java.lang.reflect.Type;
-import java.util.Map;
+import java.util.Arrays;
+import java.util.List;
 import org.gradle.api.GradleException;
-import org.gradle.api.resources.TextResource;
-import org.gradle.api.tasks.wrapper.internal.DefaultWrapperVersionsResources;
 import org.gradle.util.GradleVersion;
 
 class GradleVersionResolver {
 
-  private TextResource latest;
-  private TextResource releaseCandidate;
-  private TextResource nightly;
-  private TextResource releaseNightly;
+  /**
+   * 动态版本占位符常量。
+   *
+   * <p>原先从 Gradle 内部类 {@code org.gradle.api.tasks.wrapper.internal
+   * .DefaultWrapperVersionsResources} 静态导入。**Gradle 9 删除了该类**（连
+   * `org.gradle.api.tasks.wrapper.WrapperVersionsResources` 接口一起），其动态版本
+   * 解析改由内置的 `org.gradle.api.tasks.wrapper.internal.GradleVersionResolver`
+   * 承担，占位符收进 `DynamicVersion` 枚举。
+   *
+   * <p>这里改为内联字面量：值与 Gradle 8 的常量逐字相同（实测 javap 读出
+   * latest / nightly / release-candidate / release-nightly），语义不变。
+   * 本类只被 [IDEWrapperGenerator] 使用，而调用方传的是硬编码版本号（"7.4.2"），
+   * 这些占位符分支在我们的构建里不会被走到。
+   */
+  private static final String LATEST = "latest";
+
+  private static final String NIGHTLY = "nightly";
+  private static final String RELEASE_NIGHTLY = "release-nightly";
+  private static final String RELEASE_CANDIDATE = "release-candidate";
+
+  /** 与 Gradle 8 `DefaultWrapperVersionsResources.PLACE_HOLDERS` 对应的集合。 */
+  private static final List<String> PLACE_HOLDERS =
+      Arrays.asList(LATEST, RELEASE_CANDIDATE, NIGHTLY, RELEASE_NIGHTLY);
 
   private GradleVersion gradleVersion;
   private String gradleVersionString = GradleVersion.current().getVersion();
-
-  void setTextResources(TextResource latest, TextResource releaseCandidate, TextResource nightly,
-      TextResource releaseNightly) {
-    this.latest = latest;
-    this.releaseCandidate = releaseCandidate;
-    this.nightly = nightly;
-    this.releaseNightly = releaseNightly;
-  }
 
   String resolve(String version) {
     if (version == null) {
       return GradleVersion.current().getVersion();
     }
-    switch (version) {
-      case LATEST:
-        return getVersion(latest.asString(), version);
-      case NIGHTLY:
-        return getVersion(nightly.asString(), version);
-      case RELEASE_NIGHTLY:
-        return getVersion(releaseNightly.asString(), version);
-      case RELEASE_CANDIDATE:
-        return getVersion(releaseCandidate.asString(), version);
-      default:
-        return version;
-    }
-  }
-
-  static String getVersion(String json, String placeHolder) {
-    Type type = new TypeToken<Map<String, String>>() {
-    }.getType();
-    Map<String, String> map = new Gson().fromJson(json, type);
-    String version = map.get("version");
-    if (version == null) {
+    if (PLACE_HOLDERS.contains(version)) {
+      // 占位符（latest / nightly / release-candidate / release-nightly）过去由
+      // Gradle 注入的 TextResource 提供实际版本号，而该注入机制（WrapperVersionsResources）
+      // 在 Gradle 9 已移除。本仓库的调用方传的始终是硬编码版本号（"7.4.2"），
+      // 因此这里直接报错而不是静默返回占位符——宁可失败得明确。
       throw new GradleException(
-          "There is currently no version information available for '" + placeHolder + "'.");
+          "Gradle 占位符版本 '" + version + "' 已不再支持（Gradle 9 移除了 WrapperVersionsResources"
+              + " 注入机制）。请在 GradleWrapperGeneratorTask 里传入具体版本号。");
     }
     return version;
   }
 
   static boolean isPlaceHolder(String version) {
-    return DefaultWrapperVersionsResources.PLACE_HOLDERS.contains(version);
+    return PLACE_HOLDERS.contains(version);
   }
 
   GradleVersion getGradleVersion() {

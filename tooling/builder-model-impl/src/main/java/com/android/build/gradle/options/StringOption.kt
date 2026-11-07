@@ -66,8 +66,10 @@ enum class StringOption(
     // Profiler plugin
     IDE_ANDROID_CUSTOM_CLASS_TRANSFORMS("android.advanced.profiling.transforms", ApiStage.Stable),
 
-    // The exact version of Android Support plugin used, e.g. 2.4.0.6
-    IDE_ANDROID_STUDIO_VERSION(AndroidProject.PROPERTY_ANDROID_SUPPORT_VERSION, ApiStage.Stable),
+    // The exact version of Android Studio used, e.g. 2.4.0.6
+    // AGP 9 的 builder-model 把常量从 PROPERTY_ANDROID_SUPPORT_VERSION 更名为
+    // PROPERTY_ANDROID_STUDIO_VERSION（值 "android.studio.version"）。
+    IDE_ANDROID_STUDIO_VERSION(AndroidProject.PROPERTY_ANDROID_STUDIO_VERSION, ApiStage.Stable),
 
     // The version of Android Game Development Extension used to orchestrate the build
     IDE_AGDE_VERSION("agde.version", ApiStage.Stable),

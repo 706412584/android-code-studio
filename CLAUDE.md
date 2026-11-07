@@ -123,7 +123,12 @@ grep -rn "<候选类名>" --include=*.java core/ | grep -v "\.java:"
 
 ## 构建
 
-- AGP 8.13.0 / Kotlin 2.1.0 / Gradle 8.13 / JDK 17
+- AGP 9.2.0 / Kotlin 2.3.21 / Gradle 9.6.1 / JDK 21（AGP 9.2.0 原生支持 compileSdk 37）
+- AGP 9 兼容开关：根与两个 composite build 各自设 `android.builtInKotlin=false` +
+  `android.newDsl=false`，以保留既有 `kotlin-android` + `kapt` 写法（详见 `gradle.properties`）
+- **`external/logwire` 的 compileSdk 必须钉 36、`languageVersion` 必须钉 2.1**：
+  它的 AAR 被 init script 注入每个用户项目，跟随主项目（37 / 2.3）会让所有新建项目的
+  编译与 Kotlin 编译双双失败（见该模块 `build.gradle.kts` 注释）
 - 依赖版本集中在 `gradle/libs.versions.toml`
 - 本机无 Android SDK 完整环境时，优先依赖 CodeGraph 静态分析而非实际编译验证
 - 构建命令必须带 `JAVA_HOME="C:/Users/70641/.gradle/jdks/eclipse_adoptium-21-amd64-windows.2"`
@@ -189,7 +194,7 @@ Git Bash 下 adb 的远端路径会被 MSYS 改写，涉及 `/sdcard` 等路径�
 | 黑鲨 SKW-A0 | `9c18cb30` | Android 10 / SDK 29（**实机测试用这台**） |
 | 另一台 | `adb-ad843de-OS8vOG._adb-tls-connect._tcp` | Android 16 / SDK 36 |
 
-`minSdk=26`，`targetSdk=28`，`compileSdk=34`。
+`minSdk=26`，`targetSdk=28`，`compileSdk=37`（+`compileSdkMinor=2`，平台目录名 `android-37.2`）。
 
 ## 仓库与推送
 
