@@ -35,4 +35,19 @@ data class PackageEntry(
      * 为空则走原有的单 URL 下载。两者最终产物完全一致（sha256 相同）。
      */
     val parts: List<String> = emptyList(),
+    /**
+     * 该条目是否为**加密自解压 bundle**（可选，默认 false）。
+     *
+     * <p>manifest 里 `encrypted: true` 的条目指向的不是 tar.xz，而是一个
+     * ARM ELF 自解压程序（约 10MB，内部嵌 xz）。它带启动密码校验，只能由
+     * **官方 App 的 native 安装器**执行解包；本仓库没有任何对应的解包/解密
+     * 实现（`INdk`/`ICMake` 的 `process*Install` 是无 native 实现的废弃桩），
+     * 直接交给 tar 必然报 `This does not look like a tar archive`。
+     *
+     * <p>镜像 manifest 曾把同一 (包名, 架构, 版本) 同时列出 bundle 与 tar.xz
+     * 两条，而 bundle 排在前面——[ACSProvider.findPackageEntry] 按顺序取
+     * 第一条，于是稳定选中无法解包的 bundle（CN 版装 CMake 必失败）。
+     * 选包逻辑据此字段跳过 bundle，见 `findPackageEntry`。
+     */
+    val encrypted: Boolean = false,
 )

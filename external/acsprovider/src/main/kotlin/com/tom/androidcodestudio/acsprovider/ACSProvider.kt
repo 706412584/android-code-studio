@@ -151,22 +151,53 @@ class ACSProvider(
 
     // Second pass: filter by version if specified
     if (!config.version.isNullOrEmpty()) {
-      matchingPackages
-          .find { it.version == config.version }
-          ?.let {
-            return it
-          }
-
-      var errorMsg =
-          "Version '${config.version}' not found for architecture '${config.architecture}'"
-      if (!config.packageId.isNullOrEmpty()) {
-        errorMsg += " with ID '${config.packageId}'"
-      }
-      throw IllegalArgumentException(errorMsg)
+      return pickUsable(
+          matchingPackages.filter { it.version == config.version },
+          config,
+          "Version '${config.version}' not found for architecture '${config.architecture}'",
+      )
     }
 
     // Return first match if no version specified
-    return matchingPackages[0]
+    return pickUsable(matchingPackages, config, null)
+  }
+
+  /**
+   * 从同一 (包名, 架构, 版本) 的候选里挑一个真正能用的条目。
+   *
+   * <p>镜像 manifest 曾给同一个 (android-cmake, arm64-v8a, 4.1.2) 同时列出
+   * 「加密自解压 bundle」与「普通 tar.xz」两条，而 bundle 排在数组前面。原实现
+   * 直接取第一条，于是稳定选中无法解包的 bundle，CN 版装 CMake 必报
+   * `This does not look like a tar archive`（见 [PackageEntry.encrypted]）。
+   *
+   * <p>因此这里优先返回**非 encrypted** 的条目；只有整组都是 encrypted 时
+   * 才退回原始顺序取第一条——那种情况下确实没有可用替代，交给上层按原有
+   * 错误路径报错即可。上游 manifest 不存在同组合混排，故该偏好不会改变
+   * 非 CN 版的选包结果。
+   *
+   * @param candidates 已按 manifest 顺序排列的候选（可能为空）
+   * @param errorMessage 候选为空时的报错文案；为 null 表示「不指定版本」路径，
+   *     此时候选实际来自已完成架构/包名过滤的非空集合，走下面的兜底检查。
+   */
+  private fun pickUsable(
+      candidates: List<PackageEntry>,
+      config: ACSConfig,
+      errorMessage: String?,
+  ): PackageEntry {
+    fun message(): String {
+      if (errorMessage != null) return errorMessage
+      var msg = "Architecture '${config.architecture}'"
+      if (!config.packageId.isNullOrEmpty()) {
+        msg += " with ID '${config.packageId}'"
+      }
+      return "$msg not found in packages"
+    }
+
+    if (candidates.isEmpty()) {
+      throw IllegalArgumentException(message())
+    }
+
+    return candidates.firstOrNull { !it.encrypted } ?: candidates.first()
   }
 
   private fun parsePackageEntry(jsonObject: JsonObject): PackageEntry {
@@ -183,6 +214,7 @@ class ACSProvider(
             } else {
               emptyList()
             },
+        encrypted = jsonObject.has("encrypted") && jsonObject.get("encrypted").asBoolean,
     )
   }
 
