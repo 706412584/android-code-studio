@@ -65,6 +65,16 @@ doctor {
   javaHome {
     failOnError.set(false)
   }
+  // 放行「一次构建多个 Android app 模块」。
+  //
+  // 本仓库有 core:app 与 assistant:app 两个应用模块，而 CI 为了覆盖全部变体走
+  // 根级 `./gradlew assembleDebug`（而非显式 :core:app:assembleDebug）。doctor 默认
+  // 会把这判为误用并**直接报错**：
+  //   * What went wrong: Did you really mean to run all these?
+  //   [task ':assistant:app:assembleDebug', task ':core:app:assembleDebug']
+  // 实测该错误会让 CI 的 Assemble APK 步骤失败（r17/r18 时 dev 尚无 assistant 模块，
+  // 故当时未暴露）。CI 只分发 core:app 的产物，跑 assistant 的 assemble 无副作用。
+  allowBuildingAllAndroidAppsSimultaneously.set(true)
 }
 
 buildscript {
