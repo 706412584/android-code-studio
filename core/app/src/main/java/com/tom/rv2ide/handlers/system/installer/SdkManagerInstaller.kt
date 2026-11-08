@@ -34,6 +34,9 @@ class SdkManagerInstaller {
   companion object {
     private const val TAG = "SdkManagerInstaller"
 
+    /** 递归 chown 整个 SDK 目录的超时（2.3G、上万个文件，给足时间）。 */
+    private const val CHOWN_TIMEOUT_MS = 5 * 60 * 1000L
+
     /** sdkmanager 可执行文件（随 cmdline-tools 安装；不存在说明还没做过首次引导）。 */
     @JvmStatic
     fun sdkManagerFile(): File? =
@@ -67,6 +70,10 @@ class SdkManagerInstaller {
       if (!sm.canRead()) return "sdkmanager 不可读：${sm.absolutePath}"
       if (!sm.canExecute()) return "sdkmanager 不可执行：${sm.absolutePath}"
       if (javaHome() == null) return "未找到 JDK（sdkmanager 需要 JAVA_HOME）"
+      // 这里**刻意不检写权限**：`--list` 只需要读，目录不可写时列版本照样能用。
+      // 把写检查并进来会让「列出可用版本」在只需读的场景下被误报为不可用
+      // （实测：SDK 目录属主是 u1_i7610、app 不可写，但 sdk_list 工作正常）。
+      // 写检查由 install()/uninstall() 与 UI 各自按需调用 writeBlockedReason()。
       return null
     }
 
@@ -82,6 +89,40 @@ class SdkManagerInstaller {
       return File(Environment.PREFIX, "lib/jvm")
           .listFiles()
           ?.firstOrNull { it.isDirectory && it.name.contains("jdk") }
+    }
+
+    /**
+     * `$ANDROID_HOME` 是否可写；不可写时返回可行动的原因，可写返回 null。
+     *
+     * <p><b>为什么单独检这个</b>：sdkmanager 读得到、跑得起来，但写不进 SDK 目录时
+     * 只在 10% 处甩一句 `Failed to read or create install properties file` 就中止——
+     * 那句话指向 sdkmanager 自己的属性文件，看不出真因是**目录属主不是本 app**。
+     * 与其让用户拿到一段莫名其妙的警告，不如安装前直接说清。
+     *
+     * <p>实测（黑鲨，2026-11-08）：SDK 目录属主是 `u1_i7610` / `system:system`
+     * （设备数据从备份还原、跨 Android 用户/uid 留下），app uid 10304 对这些目录
+     * 全无写权限，于是**任何**组件的安装都必然卡在 10%。
+     * 对照实验：`--sdk_root` 指向 app 自有目录时，同样的包安装 100% 成功。
+     *
+     * <p>只用于安装/卸载/修复路径，**不要**放进 {@link #unavailableReason()}。
+     */
+    @JvmStatic
+    fun writeBlockedReason(): String? {
+      val home = Environment.ANDROID_HOME
+      if (!home.isDirectory) return "SDK 目录不存在：${home.absolutePath}"
+      // 直接试探写：比比对 uid/gid 可靠——目录可能用 ACL 或 setgid 放开，
+      // 只看属主会误判成"不可写"。
+      val probe = File(home, ".acs-write-probe")
+      val writable = try {
+        probe.createNewFile()
+      } catch (e: Exception) {
+        false
+      }
+      if (writable) {
+        probe.delete()
+        return null
+      }
+      return "SDK 目录不可写（属主不是本应用）：${home.absolutePath}"
     }
 
     /** platforms 目录里已安装的 API level（如 "android-36"）。 */
@@ -189,10 +230,100 @@ class SdkManagerInstaller {
    * sdkmanager 时若许可未接受会直接失败。
    */
   fun install(packageId: String, onOutput: (String) -> Unit): Boolean {
+    // 目录不可写时**提前**报真因。否则 sdkmanager 会跑到 10% 再甩一句
+    // "Failed to read or create install properties file"——那句话指向它自己的属性文件，
+    // 用户完全看不出是 SDK 目录属主不对（见 writeBlockedReason 的实测记录）。
+    writeBlockedReason()?.let {
+      onOutput("[错误] $it")
+      onOutput("可在「设置 → 构建与运行 → SDK 管理器」里用「修复权限」一键处理（需 root）。")
+      return false
+    }
     acceptLicenses(onOutput)
     val code = runSdkManager(listOf("--install", packageId), packageId) { onOutput(it) }
     Log.d(TAG, "install $packageId exit=$code")
     return code == 0
+  }
+
+  /**
+   * 卸载一个包（如 `build-tools;35.0.1`）。
+   *
+   * <p>破坏性操作：调用方必须先经用户确认。卸载前同样检目录可写性——
+   * `--uninstall` 要删目录，不可写时同样会以难懂的方式失败。
+   */
+  fun uninstall(packageId: String, onOutput: (String) -> Unit): Boolean {
+    writeBlockedReason()?.let {
+      onOutput("[错误] $it")
+      return false
+    }
+    val code = runSdkManager(listOf("--uninstall", packageId), null) { onOutput(it) }
+    Log.d(TAG, "uninstall $packageId exit=$code")
+    return code == 0
+  }
+
+  /**
+   * 把 `$ANDROID_HOME` 递归改为本应用的 uid/gid（需 root）。
+   *
+   * <p><b>为什么需要它</b>：设备数据从备份还原时，SDK 目录可能仍属旧设备的 Android
+   * 用户（实测黑鲨上是 `u1_i7610`）或 `system:system`，而本 app 是 `u0_a304`。
+   * 于是 sdkmanager 读得到、跑得起来，却**写不进**，所有安装都卡在 10%。这不是代码能绕过的
+   * 问题——只能改属主。
+   *
+   * <p><b>为什么用 `su`</b>：改属主要 uid 0。设备已 root（Magisk）时可直接做；
+   * 未 root 时明确失败并说明，而不是静默降级。
+   *
+   * @param onOutput 逐行输出（含失败原因）
+   * @return 是否成功（chown 后重新探测可写性，不只看退出码）
+   */
+  fun fixPermissions(onOutput: (String) -> Unit): Boolean {
+    val home = Environment.ANDROID_HOME
+    if (!home.isDirectory) {
+      onOutput("[错误] SDK 目录不存在：${home.absolutePath}")
+      return false
+    }
+    if (writeBlockedReason() == null) {
+      onOutput("SDK 目录本就可写，无需修复。")
+      return true
+    }
+
+    val uid = android.os.Process.myUid()
+    onOutput("将把 ${home.absolutePath} 递归改为 uid $uid（需要 root）…")
+
+    // 复用 RootShellBackend：它已实现 su 候选路径探测、Magisk 授权等待、
+    // 超时与「不抛异常、以结果表示失败」的契约，并有单测。自己拼 ProcessBuilder
+    // 会重复这些边界处理。
+    val backend = com.tom.rv2ide.ai.tool.RootShellBackend.shared()
+    if (!backend.isAvailable()) {
+      onOutput("[错误] root 不可用：${backend.unavailableReason()}")
+      onOutput("请先在 Magisk 里授予本应用 root 权限，再重试。")
+      return false
+    }
+
+    val quoted = home.absolutePath.replace("'", "'\\''")
+    // chown 改属主；chmod u+rwX 兜底（有文件可能原本就没有属主写位）。
+    // 两条串在一起：任一条失败都不算成功。
+    val cmd = "chown -R $uid:$uid '$quoted' && chmod -R u+rwX '$quoted'"
+    val result =
+        backend.execute(
+            com.tom.rv2ide.ai.tool.ShellRequest(
+                cmd, home.absolutePath, CHOWN_TIMEOUT_MS, null),
+            com.tom.rv2ide.ai.tool.ShellRequest.ShellOutputSink.NOOP,
+        )
+    if (!result.stdout.isNullOrEmpty()) onOutput(result.stdout.trim())
+    if (!result.stderr.isNullOrEmpty()) onOutput(result.stderr.trim())
+    if (!result.isSuccess) {
+      onOutput("[错误] 修复命令失败（exit=${result.exitCode}）")
+      return false
+    }
+
+    // 以「现在真能写」为准，不只看退出码——chown 成功但目录仍不可写（如挂载只读）时
+    // 报成功会让用户以为修好了，下次安装再撞同样的墙。
+    val still = writeBlockedReason()
+    if (still != null) {
+      onOutput("[错误] 修复后仍不可写：$still")
+      return false
+    }
+    onOutput("修复完成，SDK 目录现在可写。")
+    return true
   }
 
   private fun acceptLicenses(onOutput: (String) -> Unit) {

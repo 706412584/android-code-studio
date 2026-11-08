@@ -1039,6 +1039,17 @@
   <string name="sdk_component_platform_tools_title">Platform-tools</string>
   <string name="sdk_component_platform_tools_desc">adb 等主机侧工具</string>
   <string name="sdk_platform_tools_action">安装</string>
+  <string name="sdk_uninstall_confirm_title">卸载 %1$s？</string>
+  <string name="sdk_uninstall_confirm_message">将从 SDK 目录删除该组件。卸载不可撤销，需要重新下载才能恢复。</string>
+  <string name="sdk_uninstalling">正在卸载 %s…</string>
+  <string name="sdk_uninstall_ok">已卸载 %s</string>
+  <string name="sdk_uninstall_failed">卸载 %s 失败</string>
+  <string name="sdk_fix_perms_action">修复权限（需 root）</string>
+  <string name="sdk_fix_perms_confirm_title">修复 SDK 目录权限？</string>
+  <string name="sdk_fix_perms_confirm_message">SDK 目录的属主是旧设备的用户 ID，本应用没有写权限，因此任何组件的安装都会卡在 10% 失败。将以 root 身份对整个 SDK 目录执行 chown/chmod（约 2.3G，可能需要一会儿）。</string>
+  <string name="sdk_fix_perms_running">正在修复 SDK 目录权限…</string>
+  <string name="sdk_fix_perms_ok">SDK 目录权限已修复</string>
+  <string name="sdk_fix_perms_failed">无法修复 SDK 目录权限</string>
   <string name="sdk_show_more">更多（%1$d）</string>
   <string name="sdk_show_less">收起</string>
   <string name="sdk_install_confirm_title">安装 %1$s？</string>

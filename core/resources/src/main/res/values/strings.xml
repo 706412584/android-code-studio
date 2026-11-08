@@ -1084,6 +1084,17 @@
   <string name="sdk_component_platform_tools_title">Platform-tools</string>
   <string name="sdk_component_platform_tools_desc">adb and other host-side tools.</string>
   <string name="sdk_platform_tools_action">Install</string>
+  <string name="sdk_uninstall_confirm_title">Uninstall %1$s?</string>
+  <string name="sdk_uninstall_confirm_message">This deletes the component from the SDK directory. Uninstalling is irreversible — you must download it again to restore it.</string>
+  <string name="sdk_uninstalling">Uninstalling %s…</string>
+  <string name="sdk_uninstall_ok">Uninstalled %s</string>
+  <string name="sdk_uninstall_failed">Failed to uninstall %s</string>
+  <string name="sdk_fix_perms_action">Fix permissions (needs root)</string>
+  <string name="sdk_fix_perms_confirm_title">Fix SDK directory permissions?</string>
+  <string name="sdk_fix_perms_confirm_message">The SDK directory belongs to an old UID, so this app cannot write to it and every install fails at 10%. This will run chown/chmod on the whole SDK directory as root (about 2.3 GB, may take a while).</string>
+  <string name="sdk_fix_perms_running">Fixing SDK directory permissions…</string>
+  <string name="sdk_fix_perms_ok">SDK directory permissions fixed</string>
+  <string name="sdk_fix_perms_failed">Could not fix SDK directory permissions</string>
   <string name="sdk_show_more">Show more (%1$d)</string>
   <string name="sdk_show_less">Show less</string>
   <string name="sdk_install_confirm_title">Install %1$s?</string>

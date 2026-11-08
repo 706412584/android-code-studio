@@ -102,6 +102,7 @@ public final class ToolRegistry {
     aliases.put("install_sdk", ToolNames.SDK_INSTALL);
     aliases.put("sdkmanager", ToolNames.SDK_INSTALL);
     aliases.put("list_sdk", ToolNames.SDK_LIST);
+    aliases.put("uninstall_sdk", ToolNames.SDK_UNINSTALL);
     ALIASES = Collections.unmodifiableMap(aliases);
   }
 

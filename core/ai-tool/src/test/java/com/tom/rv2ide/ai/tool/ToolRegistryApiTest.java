@@ -95,6 +95,7 @@ final class ToolRegistryApiTest {
     assertEquals(ToolNames.SDK_INSTALL, ToolRegistry.canonicalName("install_sdk"));
     assertEquals(ToolNames.SDK_INSTALL, ToolRegistry.canonicalName("sdkmanager"));
     assertEquals(ToolNames.SDK_LIST, ToolRegistry.canonicalName("list_sdk"));
+    assertEquals(ToolNames.SDK_UNINSTALL, ToolRegistry.canonicalName("uninstall_sdk"));
     assertEquals("custom_tool", ToolRegistry.canonicalName("custom_tool"));
     assertNull(ToolRegistry.canonicalName(null));
   }

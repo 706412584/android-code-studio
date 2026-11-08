@@ -109,18 +109,18 @@ class SdkManagerActivity : EdgeToEdgeIDEActivity() {
     super.onCreate(savedInstanceState)
 
     binding.toolbar.setNavigationOnClickListener { onBackPressedDispatcher.onBackPressed() }
+    binding.fixPermsButton.setOnClickListener { fixPermissions() }
 
     // 后端不可用（未装 sdkmanager / cmdline-tools 目录权限异常）时**明确告知**，
     // 而不是让界面空着——实测踩过：目录不可读时 exists() 也是 false，用户会误以为没装。
-    val reason = SdkManagerInstaller.unavailableReason()
-    if (reason != null) {
-      binding.statusText.visibility = View.VISIBLE
-      binding.statusText.text = reason
-    } else {
+    // 目录不可写（备份还原留下旧 uid）时给「修复权限」入口，否则用户装什么都只看到
+    // 卡在 10% 加一句看不懂的 sdkmanager 警告。
+    if (SdkManagerInstaller.unavailableReason() == null) {
       loadAvailable()
     }
 
     buildCards()
+    refreshStatusAndCards()
   }
 
   private fun buildCards() {
@@ -147,6 +147,22 @@ class SdkManagerActivity : EdgeToEdgeIDEActivity() {
         } else {
           getString(R.string.idepref_sdk_installed, installed.joinToString(", "))
         }
+
+    // 已装版本各给一个可卸载的 chip（点即弹确认）。platform-tools 是单包，
+    // 卸载后组件会整块消失，风险最高，但同样是合法需求（省几十 MB），故也允许。
+    card.installedChips.removeAllViews()
+    for (version in installed) {
+      val chip =
+          Chip(this).apply {
+            text = version
+            isCheckable = false
+            isCloseIconVisible = true
+            // chip 本身仍可点（与可装 chip 一致：点 = 动作），动作是卸载而非安装。
+            setOnClickListener { confirmUninstall(component, version) }
+            setOnCloseIconClickListener { confirmUninstall(component, version) }
+          }
+      card.installedChips.addView(chip)
+    }
 
     card.availableChips.removeAllViews()
     val availableNow = available
@@ -233,6 +249,22 @@ class SdkManagerActivity : EdgeToEdgeIDEActivity() {
         .show()
   }
 
+  /**
+   * 二次确认后才卸载。
+   *
+   * <p>卸载是**破坏性且不可逆**的（SDK 目录在 app 私有空间，用户删不掉也恢复不了），
+   * 因此这里比安装更强调后果：确认文案会点名包名，并说明需要重新下载才能恢复。
+   */
+  private fun confirmUninstall(component: Component, version: String) {
+    val fullId = packageId(component, version)
+    MaterialAlertDialogBuilder(this)
+        .setTitle(getString(R.string.sdk_uninstall_confirm_title, fullId))
+        .setMessage(R.string.sdk_uninstall_confirm_message)
+        .setPositiveButton(android.R.string.ok) { _, _ -> startUninstall(component, version) }
+        .setNegativeButton(android.R.string.cancel, null)
+        .show()
+  }
+
   /** 版本号比较（按月分段数字比，避免 "9" > "10" 这类字符串排序错误）。 */
   private fun sdkVersionGreaterThan(a: String, b: String): Boolean {
     val pa = a.split('.', '-').map { it.toIntOrNull() ?: 0 }
@@ -287,6 +319,87 @@ class SdkManagerActivity : EdgeToEdgeIDEActivity() {
       for (c in components) {
         cards[c.id]?.let { bindCard(it, c) }
       }
+    }
+  }
+
+  /** 卸载一个组件，输出实时显示在底部面板。 */
+  private fun startUninstall(component: Component, version: String) {
+    val fullId = packageId(component, version)
+
+    binding.outputCard.visibility = View.VISIBLE
+    binding.outputTitle.text = getString(R.string.sdk_uninstalling, fullId)
+    binding.outputText.text = ""
+    binding.scrollView.smoothScrollTo(0, binding.outputCard.top)
+
+    scope.launch {
+      val ok =
+          withContextIo {
+            installer.uninstall(fullId) { line ->
+              scope.launch {
+                binding.outputText.append("$line\n")
+                binding.outputScroll.post { binding.outputScroll.fullScroll(View.FOCUS_DOWN) }
+              }
+            }
+          }
+      binding.outputTitle.text =
+          getString(if (ok) R.string.sdk_uninstall_ok else R.string.sdk_uninstall_failed, fullId)
+      for (c in components) {
+        cards[c.id]?.let { bindCard(it, c) }
+      }
+    }
+  }
+
+  /**
+   * 一键修复 SDK 目录权限（需 root）。
+   *
+   * <p>仅在检测到目录不可写时提供——成因是设备数据从备份还原后 SDK 目录仍属旧 uid
+   * （见 `SdkManagerInstaller.writeBlockedReason`）。正常安装的设备用不到这条。
+   */
+  private fun fixPermissions() {
+    MaterialAlertDialogBuilder(this)
+        .setTitle(R.string.sdk_fix_perms_confirm_title)
+        .setMessage(R.string.sdk_fix_perms_confirm_message)
+        .setPositiveButton(android.R.string.ok) { _, _ ->
+          binding.outputCard.visibility = View.VISIBLE
+          binding.outputTitle.setText(R.string.sdk_fix_perms_running)
+          binding.outputText.text = ""
+          binding.scrollView.smoothScrollTo(0, binding.outputCard.top)
+          scope.launch {
+            val ok =
+                withContextIo {
+                  installer.fixPermissions { line ->
+                    scope.launch {
+                      binding.outputText.append("$line\n")
+                      binding.outputScroll.post { binding.outputScroll.fullScroll(View.FOCUS_DOWN) }
+                    }
+                  }
+                }
+            binding.outputTitle.setText(
+                if (ok) R.string.sdk_fix_perms_ok else R.string.sdk_fix_perms_failed)
+            refreshStatusAndCards()
+          }
+        }
+        .setNegativeButton(android.R.string.cancel, null)
+        .show()
+  }
+
+  /** 重读「后端是否可用」并整体刷新：修复权限后、或要恢复错误提示时调用。 */
+  private fun refreshStatusAndCards() {
+    val reason = SdkManagerInstaller.unavailableReason()
+    val blocked = SdkManagerInstaller.writeBlockedReason()
+    // 状态区同时承担两件事：后端不可用（致命）与目录不可写（可修复）。
+    val message = reason ?: blocked
+    if (message != null) {
+      binding.statusText.visibility = View.VISIBLE
+      binding.statusText.text = message
+    } else {
+      binding.statusText.visibility = View.GONE
+    }
+    // 只有「目录不可写」才值得提供修复入口；后端不可用给 root 也没用。
+    binding.fixPermsButton.visibility =
+        if (reason == null && blocked != null) View.VISIBLE else View.GONE
+    for (c in components) {
+      cards[c.id]?.let { bindCard(it, c) }
     }
   }
 

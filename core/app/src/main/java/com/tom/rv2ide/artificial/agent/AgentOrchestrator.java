@@ -91,6 +91,7 @@ import com.tom.rv2ide.artificial.agent.tool.PhoneActionCaptureTool;
 import com.tom.rv2ide.artificial.agent.tool.ProjectInfoTool;
 import com.tom.rv2ide.artificial.agent.tool.SdkInstallTool;
 import com.tom.rv2ide.artificial.agent.tool.SdkListTool;
+import com.tom.rv2ide.artificial.agent.tool.SdkUninstallTool;
 import com.tom.rv2ide.artificial.agent.tool.PhoneBaselineTool;
 import com.tom.rv2ide.artificial.agent.tool.PhoneClearDataTool;
 import com.tom.rv2ide.artificial.agent.tool.PhoneClickTool;
@@ -1761,6 +1762,8 @@ public final class AgentOrchestrator {
     // 替代原来走 IDE 镜像的 idesetup --sdk（镜像 build-tools 最高只到 35.0.1，AGP 9 要 ≥36）。
     registry.register(new SdkListTool());
     registry.register(new SdkInstallTool());
+    // 卸载单独成工具：不可逆，权限层要能只对「装」放行而对「卸」收紧（同 file_delete）。
+    registry.register(new SdkUninstallTool());
 
     // ---- 编辑器会话（与用户编辑器状态交互，通用编码 agent 无法获得）----
     // 三个工具共享同一端口（EditorSessionPort）：读状态 / 打开定位 / 保存全部。

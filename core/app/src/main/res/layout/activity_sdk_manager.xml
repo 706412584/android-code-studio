@@ -43,7 +43,7 @@
       android:layout_height="wrap_content"
       android:orientation="vertical">
 
-      <!-- 状态提示：sdkmanager 不可用 / 正在拉取可用版本等，正常时隐藏 -->
+      <!-- 状态提示：sdkmanager 不可用 / SDK 目录不可写 / 正在拉取可用版本等，正常时隐藏 -->
       <com.google.android.material.textview.MaterialTextView
         android:id="@+id/status_text"
         android:layout_width="match_parent"
@@ -54,6 +54,19 @@
         android:textColor="?attr/colorError"
         android:visibility="gone"
         tools:text="未找到 sdkmanager（cmdline-tools 未安装）"
+        tools:visibility="visible" />
+
+      <!-- 修复权限：仅在检测到 SDK 目录不可写时显示（备份还原留下旧 uid 的设备）。
+           走 su 递归 chown，故需 root；正常安装的设备看不到这个按钮。 -->
+      <com.google.android.material.button.MaterialButton
+        android:id="@+id/fix_perms_button"
+        style="@style/Widget.Material3.Button.TonalButton"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginHorizontal="16dp"
+        android:layout_marginTop="8dp"
+        android:text="@string/sdk_fix_perms_action"
+        android:visibility="gone"
         tools:visibility="visible" />
 
       <!-- 组件卡片由代码动态填充 -->

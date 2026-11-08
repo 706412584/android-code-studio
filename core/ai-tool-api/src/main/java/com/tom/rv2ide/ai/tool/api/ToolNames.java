@@ -397,6 +397,13 @@ public final class ToolNames {
      * 而 AGP 9 要求 ≥ 36，那条链路给不了。
      */
     public static final String SDK_INSTALL = "sdk_install";
+    /**
+     * 卸载一个 Android SDK 组件包（如 {@code build-tools;35.0.1}）。
+     *
+     * <p><b>破坏性且不可逆</b>：SDK 目录在 app 私有空间，删掉后用户无法手动恢复，
+     * 只能重新下载。因此与安装分开、单独一个工具，并逐次确认（同 {@code file_delete}）。
+     */
+    public static final String SDK_UNINSTALL = "sdk_uninstall";
 
     private static final String CUSTOM_AGENT_PREFIX = "agentx_";
     private static final String CUSTOM_MCP_PREFIX = "mcpx_";

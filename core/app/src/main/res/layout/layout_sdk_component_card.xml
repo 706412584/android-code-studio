@@ -43,6 +43,16 @@
       android:textAppearance="@style/TextAppearance.Material3.BodyMedium"
       tools:text="已安装：35.0.1, 36.0.0" />
 
+    <!-- 已安装版本：每个一个带删除图标的 chip，点图标即卸载（先二次确认）。
+         单独成组而不是把按钮塞进上一行的文本里——版本多时文本行换行会导致按钮错位。 -->
+    <com.google.android.material.chip.ChipGroup
+      android:id="@+id/installed_chips"
+      android:layout_width="match_parent"
+      android:layout_height="wrap_content"
+      android:layout_marginTop="4dp"
+      app:chipSpacingVertical="4dp"
+      tools:ignore="MissingConstraints" />
+
     <!-- 可安装版本：横向 chip 流式排列，点一个即装 -->
     <com.google.android.material.chip.ChipGroup
       android:id="@+id/available_chips"
