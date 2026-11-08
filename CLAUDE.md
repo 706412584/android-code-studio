@@ -97,6 +97,35 @@ grep -rn "<候选类名>" --include=*.java core/ | grep -v "\.java:"
 
 ## 已知陷阱
 
+### UI 验证：用 `android-ui-test` 技能，别手写 adb
+
+任何「点界面元素 / 断言界面状态 / 模拟用户操作」的活，**先调 `.claude/skills/android-ui-test`**
+（uiautomator2，venv 在 `D:/android/u2-venv`，已就绪）。不要自己拼
+`adb shell input tap x y` + `uiautomator dump` + 正则解析。
+
+代价实例（2026-11-09）：验证模板创建流程时手写脚本折腾 **20 轮**——坐标猜错点到终端、
+`sed` 改 shared_prefs 被 SELinux 拒、MSYS 改写路径、`\u` 转义被 bash 吞。
+换 uiautomator2 后**一次成功**（按文本定位，不猜坐标）：
+
+```bash
+export MSYS_NO_PATHCONV=1 MSYS2_ARG_CONV_EXCL='*'
+PYTHONIOENCODING=utf-8 "D:/android/u2-venv/Scripts/python.exe" - <<'PYEOF'
+import uiautomator2 as u2
+d = u2.connect("9c18cb30")
+d(text="创建项目").click()
+assert d(text="项目配置").wait(timeout=10)
+PYEOF
+```
+
+⚠️ `send_keys` 会把默认输入法切成 AdbKeyboard 且**不切回**，用完要
+`adb shell ime set com.baidu.input_heisha/.ImeService` 恢复。
+
+### 设备上「回主屏」不容易
+
+ACS 会恢复上次的编辑器/侧栏会话（**不是** `ide_last_project` 单独决定，改那个偏好没用）。
+`force-stop` + `am start` 后仍停在编辑器或 AI 面板，导致所有「点创建项目」的脚本点空。
+**可靠做法**：先连按 3-4 次 `back` 退到系统桌面结束会话，**再** force-stop + 冷启 + 轮询确认。
+
 ### vendored 依赖污染检索结果
 
 `composite-builds/` 下约 3814 个文件是 vendored 的第三方源码

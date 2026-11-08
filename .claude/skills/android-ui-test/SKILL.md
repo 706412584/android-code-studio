@@ -1,6 +1,6 @@
 ---
 name: android-ui-test
-description: 用 uiautomator2 在黑鲨实机上做 ACS 的 UI 自动化测试——按控件文本/id 找元素、点击、断言界面状态、绕过中文输入法打字。当需要复现/验证纯 UI 交互类 bug（如「停止按钮需多次点击」「卡片残留不消失」）、或 adb 深链到不了、需要模拟真实点击时使用。
+description: 用 uiautomator2 在黑鲨实机上做 ACS 的 UI 自动化——按控件文本/id 定位、点击、断言界面状态、绕过中文输入法打字。**任何需要点击 App 界面元素或断言界面状态的活都先用它**，别手写 `adb shell input tap x y` + `uiautomator dump` + 正则解析（实测：手写折腾 20 轮，用它一次成功）。适用于：复现/验证纯 UI 交互 bug（「停止按钮需多次点击」「卡片残留不消失」）、跑完整 UI 流程做端到端验收（如创建模板并检查结果）、adb 深链到不了、需要模拟真实点击的场景。不适用于无需 UI 的诊断/构建链路（那些走 tools/ai-diagnostics-device-test.sh）。
 ---
 
 # Android UI 自动化测试（uiautomator2）
@@ -74,6 +74,24 @@ PYEOF
 | 截图 | `d.screenshot(r"D:/path/x.png")` | 本地路径用 Windows 格式 |
 
 ## 坑（实测，别重踩）
+
+### 0. 回到主屏先按 back 退桌面 ⚠️（最容易卡住的一步）
+
+ACS 会**恢复上次的编辑器/侧栏会话**——这一点不是 `ide_last_project` 单独决定的，
+改那个偏好**没用**。表现：`app_stop` + `app_start` 之后仍停在编辑器或 AI 面板，
+于是所有「点创建项目」的脚本都点空、你以为按钮找不到。
+
+**可靠做法**：先连按 3-4 次 `back` 退到系统桌面（**结束会话**），再冷启 + 轮询确认：
+
+```python
+for _ in range(4):
+    d.press("back"); time.sleep(1)
+d.app_stop("com.tom.rv2ide"); time.sleep(2)
+d.app_start("com.tom.rv2ide"); time.sleep(12)
+if d(text="否").exists:      # 「打开上一次的项目？」弹窗
+    d(text="否").click(); time.sleep(2)
+assert d(text="创建项目").exists, "没回到主屏"
+```
 
 ### 1. send_keys 会把默认输入法切走且不恢复 ⚠️
 
