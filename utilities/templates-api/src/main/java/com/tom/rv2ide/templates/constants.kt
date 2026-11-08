@@ -17,11 +17,27 @@
 
 package com.tom.rv2ide.templates
 
-/** @author Akash Yadav */
-const val ANDROID_GRADLE_PLUGIN_VERSION = "8.13.0"
-const val GRADLE_DISTRIBUTION_VERSION = "8.13.0"
-const val GRADLE_WRAPPER_DISTRIBUTION_VERSION = "8.13"
-const val KOTLIN_VERSION = "2.1.0"
+/**
+ * 模板工程的构建栈版本，**必须与主仓库 `gradle/libs.versions.toml` 保持一致**。
+ *
+ * <p>此前模板钉在 AGP 8.13.0 / Gradle 8.13，而 ACS 自身已升到 AGP 9.2.0 / Gradle 9.6.1。
+ * 落后一整个大版本有两个实际后果：
+ * <ul>
+ *   <li>新建项目的构建行为与 IDE 自身不一致，模板验证结论无法代表真实使用；</li>
+ *   <li>AGP 9 起要求 build-tools ≥ 36，旧配置按 35.x 选，用户一升级 AGP 就构建失败。</li>
+ * </ul>
+ *
+ * <p><b>改这里不够</b>：原生模板的 wrapper 是从 `assets/&lt;模板&gt;/gradle/wrapper/`
+ * **拷贝**的（不走本文件的 [GRADLE_WRAPPER_DISTRIBUTION_VERSION]），
+ * 换 Gradle 版本时必须同步改那 10 份 properties，否则 AGP 9.2 会报
+ * 「Minimum supported Gradle version is 9.4.1」。
+ *
+ * @author Akash Yadav
+ */
+const val ANDROID_GRADLE_PLUGIN_VERSION = "9.2.0"
+const val GRADLE_DISTRIBUTION_VERSION = "9.6.1"
+const val GRADLE_WRAPPER_DISTRIBUTION_VERSION = "9.6.1"
+const val KOTLIN_VERSION = "2.3.21"
 
 // Template creation has been migrated to ATC as of v1.0.0+gh.r2.
 // The following dependency versions are recommended for use in sample templates.

@@ -198,6 +198,14 @@ object GradlePropertiesPresets {
           # resources declared in the library itself and none from the library's dependencies,
           # thereby reducing the size of the R class for that library
           android.nonTransitiveRClass=true
+
+          # AGP 9 默认启用内置 Kotlin（builtInKotlin）与新 DSL（newDsl），这两项会禁掉
+          # `org.jetbrains.kotlin.android` 插件与 `kotlin-kapt`——而模板生成的工程正是
+          # 用这套写法。不加这两行，AGP 9 下所有模板项目在配置阶段就失败。
+          # 官方在报错信息里给出的绕过方式即为此（主仓库 gradle.properties 同款）。
+          # 待日后做 kapt→KSP 迁移时再一并去掉。
+          android.builtInKotlin=false
+          android.newDsl=false
       """
           .trimIndent()
 
@@ -207,6 +215,8 @@ object GradlePropertiesPresets {
           org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8
           android.useAndroidX=true
           android.nonTransitiveRClass=true
+          android.builtInKotlin=false
+          android.newDsl=false
       """
           .trimIndent()
 
