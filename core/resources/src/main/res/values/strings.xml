@@ -1080,7 +1080,7 @@
   <string name="sdk_component_ndk_title">NDK</string>
   <string name="sdk_component_ndk_desc">Native development kit; needed by projects with C/C++ code.</string>
   <string name="sdk_component_cmake_title">CMake</string>
-  <string name="sdk_component_cmake_desc">Native build system; used by CMake-based native projects.</string>
+  <string name="sdk_component_cmake_desc">Native build system. Note: the official repo only ships x86-64 CMake, which cannot run on arm64 devices (the usable 4.1.2 ships with the IDE).</string>
   <string name="sdk_component_platform_tools_title">Platform-tools</string>
   <string name="sdk_component_platform_tools_desc">adb and other host-side tools.</string>
   <string name="sdk_platform_tools_action">Install</string>

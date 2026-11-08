@@ -1035,7 +1035,7 @@
   <string name="sdk_component_ndk_title">NDK</string>
   <string name="sdk_component_ndk_desc">原生开发套件；含 C/C++ 代码的项目需要</string>
   <string name="sdk_component_cmake_title">CMake</string>
-  <string name="sdk_component_cmake_desc">原生代码构建系统；CMake 类型的原生项目使用</string>
+  <string name="sdk_component_cmake_desc">原生代码构建系统。注意：官方仓库的 CMake 只有 x86-64，arm64 设备装了也跑不了（本机能用的是随 IDE 分发的 4.1.2）</string>
   <string name="sdk_component_platform_tools_title">Platform-tools</string>
   <string name="sdk_component_platform_tools_desc">adb 等主机侧工具</string>
   <string name="sdk_platform_tools_action">安装</string>

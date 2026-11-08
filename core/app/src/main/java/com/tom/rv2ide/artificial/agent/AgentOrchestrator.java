@@ -89,6 +89,8 @@ import com.tom.rv2ide.artificial.agent.tool.LogWireSetEnabledTool;
 import com.tom.rv2ide.artificial.agent.tool.LogWireStatusTool;
 import com.tom.rv2ide.artificial.agent.tool.PhoneActionCaptureTool;
 import com.tom.rv2ide.artificial.agent.tool.ProjectInfoTool;
+import com.tom.rv2ide.artificial.agent.tool.SdkInstallTool;
+import com.tom.rv2ide.artificial.agent.tool.SdkListTool;
 import com.tom.rv2ide.artificial.agent.tool.PhoneBaselineTool;
 import com.tom.rv2ide.artificial.agent.tool.PhoneClearDataTool;
 import com.tom.rv2ide.artificial.agent.tool.PhoneClickTool;
@@ -1753,6 +1755,12 @@ public final class AgentOrchestrator {
     registry.register(new com.tom.rv2ide.ai.tool.FormatCodeTool());
     // 项目结构查询：模块/变体/真实任务名（app 层工具，直接读 IWorkspace）。
     registry.register(new ProjectInfoTool());
+
+    // Android SDK 组件：查询（只读）与安装分成两个工具，理由同 git / git_write——权限层按
+    // 工具分级，装需要确认而查询不该被确认门挡住。后端是官方 sdkmanager（直连 Google 仓库），
+    // 替代原来走 IDE 镜像的 idesetup --sdk（镜像 build-tools 最高只到 35.0.1，AGP 9 要 ≥36）。
+    registry.register(new SdkListTool());
+    registry.register(new SdkInstallTool());
 
     // ---- 编辑器会话（与用户编辑器状态交互，通用编码 agent 无法获得）----
     // 三个工具共享同一端口（EditorSessionPort）：读状态 / 打开定位 / 保存全部。

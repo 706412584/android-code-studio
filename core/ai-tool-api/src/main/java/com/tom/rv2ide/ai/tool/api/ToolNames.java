@@ -380,6 +380,24 @@ public final class ToolNames {
      */
     public static final String WORKSPACE_SYMBOL = "workspace_symbol";
 
+    // ---- Android SDK 组件（官方 sdkmanager，直连 Google 仓库）----
+
+    /**
+     * 列出 Android SDK 组件的已装与可装版本（build-tools / platforms / NDK / CMake / platform-tools）。
+     *
+     * <p>只读。与 {@link #SDK_INSTALL} 拆开的理由同 {@link #GIT}/{@link #GIT_WRITE}：
+     * 权限层按工具分级，装需要确认而查询不该被确认门挡住。
+     */
+    public static final String SDK_LIST = "sdk_list";
+    /**
+     * 安装一个 Android SDK 组件包（如 {@code build-tools;36.0.0}）。
+     *
+     * <p>走官方 {@code sdkmanager} 直连 Google 仓库，不依赖镜像。装 SDK 一律用它，
+     * 不要再用 {@code idesetup --sdk} 或镜像源——镜像的 build-tools 最高只到 35.0.1，
+     * 而 AGP 9 要求 ≥ 36，那条链路给不了。
+     */
+    public static final String SDK_INSTALL = "sdk_install";
+
     private static final String CUSTOM_AGENT_PREFIX = "agentx_";
     private static final String CUSTOM_MCP_PREFIX = "mcpx_";
 

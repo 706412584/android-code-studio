@@ -98,6 +98,10 @@ public final class ToolRegistry {
     // 晦涩错误。也不登记裸 "git"——它必须指向只读查询工具，否则一次查询会被
     // 解析成待确认的写操作。
     aliases.put("git_write", ToolNames.GIT_WRITE);
+    // SDK 组件：模型常写成 install_sdk / sdkmanager。
+    aliases.put("install_sdk", ToolNames.SDK_INSTALL);
+    aliases.put("sdkmanager", ToolNames.SDK_INSTALL);
+    aliases.put("list_sdk", ToolNames.SDK_LIST);
     ALIASES = Collections.unmodifiableMap(aliases);
   }
 
