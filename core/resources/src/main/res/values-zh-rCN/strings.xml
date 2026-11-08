@@ -1050,6 +1050,7 @@
   <string name="sdk_fix_perms_running">正在修复 SDK 目录权限…</string>
   <string name="sdk_fix_perms_ok">SDK 目录权限已修复</string>
   <string name="sdk_fix_perms_failed">无法修复 SDK 目录权限</string>
+  <string name="sdk_output_toggle">展开或收起日志</string>
   <string name="sdk_show_more">更多（%1$d）</string>
   <string name="sdk_show_less">收起</string>
   <string name="sdk_install_confirm_title">安装 %1$s？</string>

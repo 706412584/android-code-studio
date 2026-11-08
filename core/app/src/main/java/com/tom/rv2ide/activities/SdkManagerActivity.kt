@@ -110,6 +110,8 @@ class SdkManagerActivity : EdgeToEdgeIDEActivity() {
 
     binding.toolbar.setNavigationOnClickListener { onBackPressedDispatcher.onBackPressed() }
     binding.fixPermsButton.setOnClickListener { fixPermissions() }
+    // 整行可点切换日志折叠；装/卸过程中也能手动收起。
+    binding.outputHeader.setOnClickListener { toggleOutput() }
 
     // 后端不可用（未装 sdkmanager / cmdline-tools 目录权限异常）时**明确告知**，
     // 而不是让界面空着——实测踩过：目录不可读时 exists() 也是 false，用户会误以为没装。
@@ -294,14 +296,36 @@ class SdkManagerActivity : EdgeToEdgeIDEActivity() {
     }
   }
 
+  /**
+   * 打开输出面板并开始一次操作（安装/卸载/修复权限共用）。
+   *
+   * <p>**每次操作开始时自动展开**（`setOutputExpanded(true)`）：用户此刻要看进度；
+   * 操作结束后由调用方折叠——完成后的日志只剩一行结果，留着 120dp 的空白没意义。
+   * 期间用户可随时手动折叠/展开（见 `toggleOutput`）。
+   */
+  private fun beginOutput(titleRes: Int, vararg titleArgs: Any) {
+    binding.outputCard.visibility = View.VISIBLE
+    binding.outputTitle.text = getString(titleRes, *titleArgs)
+    binding.outputText.text = ""
+    setOutputExpanded(true)
+    binding.scrollView.smoothScrollTo(0, binding.outputCard.top)
+  }
+
+  /** 折叠/展开输出正文。 */
+  private fun setOutputExpanded(expanded: Boolean) {
+    binding.outputScroll.visibility = if (expanded) View.VISIBLE else View.GONE
+    binding.outputToggleIcon.setImageResource(
+        if (expanded) R.drawable.ic_chevron_down else R.drawable.ic_chevron_right)
+  }
+
+  private fun toggleOutput() {
+    setOutputExpanded(binding.outputScroll.visibility != View.VISIBLE)
+  }
+
   /** 装一个组件，输出实时显示在底部面板。 */
   private fun startInstall(component: Component, version: String) {
     val fullId = packageId(component, version)
-
-    binding.outputCard.visibility = View.VISIBLE
-    binding.outputTitle.text = getString(R.string.sdk_installing, fullId)
-    binding.outputText.text = ""
-    binding.scrollView.smoothScrollTo(0, binding.outputCard.top)
+    beginOutput(R.string.sdk_installing, fullId)
 
     scope.launch {
       val ok =
@@ -315,6 +339,8 @@ class SdkManagerActivity : EdgeToEdgeIDEActivity() {
           }
       binding.outputTitle.text =
           getString(if (ok) R.string.sdk_install_ok else R.string.sdk_install_failed, fullId)
+      // 成功才折叠：失败时日志里有 sdkmanager 的原因，折叠掉等于让用户自己再点开找。
+      setOutputExpanded(!ok)
       // 装完重新读磁盘刷新卡片。
       for (c in components) {
         cards[c.id]?.let { bindCard(it, c) }
@@ -325,11 +351,7 @@ class SdkManagerActivity : EdgeToEdgeIDEActivity() {
   /** 卸载一个组件，输出实时显示在底部面板。 */
   private fun startUninstall(component: Component, version: String) {
     val fullId = packageId(component, version)
-
-    binding.outputCard.visibility = View.VISIBLE
-    binding.outputTitle.text = getString(R.string.sdk_uninstalling, fullId)
-    binding.outputText.text = ""
-    binding.scrollView.smoothScrollTo(0, binding.outputCard.top)
+    beginOutput(R.string.sdk_uninstalling, fullId)
 
     scope.launch {
       val ok =
@@ -343,6 +365,7 @@ class SdkManagerActivity : EdgeToEdgeIDEActivity() {
           }
       binding.outputTitle.text =
           getString(if (ok) R.string.sdk_uninstall_ok else R.string.sdk_uninstall_failed, fullId)
+      setOutputExpanded(!ok)
       for (c in components) {
         cards[c.id]?.let { bindCard(it, c) }
       }
@@ -360,10 +383,7 @@ class SdkManagerActivity : EdgeToEdgeIDEActivity() {
         .setTitle(R.string.sdk_fix_perms_confirm_title)
         .setMessage(R.string.sdk_fix_perms_confirm_message)
         .setPositiveButton(android.R.string.ok) { _, _ ->
-          binding.outputCard.visibility = View.VISIBLE
-          binding.outputTitle.setText(R.string.sdk_fix_perms_running)
-          binding.outputText.text = ""
-          binding.scrollView.smoothScrollTo(0, binding.outputCard.top)
+          beginOutput(R.string.sdk_fix_perms_running)
           scope.launch {
             val ok =
                 withContextIo {
@@ -376,6 +396,8 @@ class SdkManagerActivity : EdgeToEdgeIDEActivity() {
                 }
             binding.outputTitle.setText(
                 if (ok) R.string.sdk_fix_perms_ok else R.string.sdk_fix_perms_failed)
+            // 出错时保留展开——失败原因就在日志里，折叠掉用户得自己再点开。
+            setOutputExpanded(!ok)
             refreshStatusAndCards()
           }
         }

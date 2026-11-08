@@ -1095,6 +1095,7 @@
   <string name="sdk_fix_perms_running">Fixing SDK directory permissions…</string>
   <string name="sdk_fix_perms_ok">SDK directory permissions fixed</string>
   <string name="sdk_fix_perms_failed">Could not fix SDK directory permissions</string>
+  <string name="sdk_output_toggle">Expand or collapse the log</string>
   <string name="sdk_show_more">Show more (%1$d)</string>
   <string name="sdk_show_less">Show less</string>
   <string name="sdk_install_confirm_title">Install %1$s?</string>
