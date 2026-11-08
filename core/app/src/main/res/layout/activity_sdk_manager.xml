@@ -1,0 +1,106 @@
+<?xml version="1.0" encoding="utf-8"?><!--
+  ~  This file is part of AndroidIDE.
+  ~
+  ~  SDK 管理器：一行一个 SDK 组件（build-tools / platforms / …），
+  ~  各显示已安装版本与可安装版本。用独立界面而非默认单选弹窗——
+  ~  版本项动辄十几个，弹窗既难看又难选。
+  -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+  xmlns:app="http://schemas.android.com/apk/res-auto"
+  xmlns:tools="http://schemas.android.com/tools"
+  android:id="@+id/root_layout"
+  android:layout_width="match_parent"
+  android:layout_height="match_parent"
+  android:fitsSystemWindows="true"
+  android:orientation="vertical">
+
+  <com.google.android.material.appbar.AppBarLayout
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:background="@android:color/transparent"
+    android:fitsSystemWindows="true">
+
+    <com.google.android.material.appbar.MaterialToolbar
+      android:id="@+id/toolbar"
+      android:layout_width="match_parent"
+      android:layout_height="?attr/actionBarSize"
+      app:subtitle="@string/idepref_sdk_manager_subtitle"
+      app:subtitleCentered="true"
+      app:title="@string/idepref_sdk_manager_title"
+      app:titleCentered="true" />
+  </com.google.android.material.appbar.AppBarLayout>
+
+  <androidx.core.widget.NestedScrollView
+    android:id="@+id/scroll_view"
+    android:layout_width="match_parent"
+    android:layout_height="0dp"
+    android:layout_weight="1"
+    android:clipToPadding="false"
+    android:paddingBottom="16dp">
+
+    <LinearLayout
+      android:layout_width="match_parent"
+      android:layout_height="wrap_content"
+      android:orientation="vertical">
+
+      <!-- 状态提示：sdkmanager 不可用 / 正在拉取可用版本等，正常时隐藏 -->
+      <com.google.android.material.textview.MaterialTextView
+        android:id="@+id/status_text"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginHorizontal="16dp"
+        android:layout_marginTop="8dp"
+        android:textAppearance="@style/TextAppearance.Material3.BodyMedium"
+        android:textColor="?attr/colorError"
+        android:visibility="gone"
+        tools:text="未找到 sdkmanager（cmdline-tools 未安装）"
+        tools:visibility="visible" />
+
+      <!-- 组件卡片由代码动态填充 -->
+      <LinearLayout
+        android:id="@+id/component_container"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical" />
+    </LinearLayout>
+  </androidx.core.widget.NestedScrollView>
+
+  <!-- 安装输出面板：安装时展开，逐行追加 sdkmanager 输出 -->
+  <com.google.android.material.card.MaterialCardView
+    android:id="@+id/output_card"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:layout_margin="8dp"
+    android:visibility="gone"
+    app:cardCornerRadius="12dp"
+    tools:visibility="visible">
+
+    <LinearLayout
+      android:layout_width="match_parent"
+      android:layout_height="wrap_content"
+      android:orientation="vertical"
+      android:padding="12dp">
+
+      <com.google.android.material.textview.MaterialTextView
+        android:id="@+id/output_title"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:textAppearance="@style/TextAppearance.Material3.TitleSmall"
+        tools:text="正在安装 build-tools;36.0.0…" />
+
+      <ScrollView
+        android:id="@+id/output_scroll"
+        android:layout_width="match_parent"
+        android:layout_height="120dp"
+        android:layout_marginTop="8dp">
+
+        <com.google.android.material.textview.MaterialTextView
+          android:id="@+id/output_text"
+          android:layout_width="match_parent"
+          android:layout_height="wrap_content"
+          android:fontFamily="monospace"
+          android:textSize="11sp" />
+      </ScrollView>
+    </LinearLayout>
+  </com.google.android.material.card.MaterialCardView>
+</LinearLayout>

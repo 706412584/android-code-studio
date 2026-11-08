@@ -103,13 +103,49 @@ class SdkManagerInstaller {
             ?.map { it.name }
             ?.sorted()
             ?: emptyList()
+
+    /** ndk 目录里已安装的版本（如 "26.1.10909125"）。 */
+    @JvmStatic
+    fun installedNdk(): List<String> = installedDirs("ndk")
+
+    /** cmake 目录里已安装的版本（如 "3.22.1"）。 */
+    @JvmStatic
+    fun installedCmake(): List<String> = installedDirs("cmake")
+
+    /**
+     * platform-tools 是否已安装。
+     *
+     * <p>它没有版本目录（就一个包），以 `adb` 可执行文件是否存在为准——装了就有 adb。
+     */
+    @JvmStatic
+    fun isPlatformToolsInstalled(): Boolean =
+        File(Environment.ANDROID_HOME, "platform-tools/adb").exists()
+
+    /** 读 `$ANDROID_HOME/<name>/` 下的版本目录名（升序）。 */
+    private fun installedDirs(name: String): List<String> =
+        File(Environment.ANDROID_HOME, name)
+            .listFiles()
+            ?.filter { it.isDirectory }
+            ?.map { it.name }
+            ?.sortedWith(versionComparator)
+            ?: emptyList()
+
+    /** 按数字段比较版本号（"9" > "10" 这类字符串排序错误由此避免）。 */
+    private val versionComparator = Comparator<String> { a, b ->
+      val pa = a.split('.').map { it.toIntOrNull() ?: 0 }
+      val pb = b.split('.').map { it.toIntOrNull() ?: 0 }
+      for (i in 0 until maxOf(pa.size, pb.size)) {
+        val c = pa.getOrElse(i) { 0 }.compareTo(pb.getOrElse(i) { 0 })
+        if (c != 0) return@Comparator c
+      }
+      0
+    }
   }
 
   /**
-   * 跑 `sdkmanager --list` 拉**可用**包，解析成 build-tools / platforms 两个列表。
+   * 跑 `sdkmanager --list` 拉**可用**包，解析成各组件列表。
    *
-   * <p>只用正式版（过滤掉 `-rc` 与 `build-tools;34.0.0` 这种无小版本的同名项由调用方去重）。
-   * 网络不通时返回 null（调用方回退到"只显示已安装"）。
+   * <p>只用正式版（过滤掉 `-rc`）。网络不通时返回 null（调用方回退到"只显示已安装"）。
    */
   fun listAvailable(onOutput: ((String) -> Unit)? = null): AvailableSdk? {
     val lines = mutableListOf<String>()
@@ -122,22 +158,28 @@ class SdkManagerInstaller {
       return null
     }
     val text = lines.joinToString("\n")
-    val buildTools =
-        Regex("""build-tools;([0-9][0-9.]*)""")
+    fun versions(prefix: String, idPattern: String): List<String> =
+        Regex("$prefix;($idPattern)")
             .findAll(text)
             .map { it.groupValues[1] }
             .filterNot { it.contains("rc") }
             .distinct()
             .sortedWith(versionComparator)
             .toList()
-    val platforms =
-        Regex("""platforms;android-([0-9]+)""")
-            .findAll(text)
-            .map { it.groupValues[1] }
-            .distinct()
-            .sortedBy { it.toIntOrNull() ?: 0 }
-            .toList()
-    return AvailableSdk(buildTools, platforms)
+
+    return AvailableSdk(
+        buildTools = versions("build-tools", """[0-9][0-9.]*"""),
+        platforms =
+            versions("platforms", """android-[0-9]+""")
+                .map { it.removePrefix("android-") }
+                .sortedBy { it.toIntOrNull() ?: 0 },
+        // NDK / CMake 同样由 sdkmanager 管理（实测可列到 ndk;26.x、cmake;4.1.2），
+        // 因此把它们也收进同一个界面，替代 IDE 配置里那套走镜像的安装。
+        ndk = versions("ndk", """[0-9][0-9.]*"""),
+        cmake = versions("cmake", """[0-9][0-9.]*"""),
+        // platform-tools 无版本尾巴（就一个包），用固定占位表示"可安装"。
+        platformTools = if (text.contains("platform-tools")) listOf("latest") else emptyList(),
+    )
   }
 
   /**
@@ -224,16 +266,18 @@ class SdkManagerInstaller {
         else -> File("/system/bin/sh")
       }
 
-  /** `sdkmanager --list` 解析结果。 */
-  data class AvailableSdk(val buildTools: List<String>, val platforms: List<String>)
-
-  private val versionComparator = Comparator<String> { a, b ->
-    val pa = a.split('.').map { it.toIntOrNull() ?: 0 }
-    val pb = b.split('.').map { it.toIntOrNull() ?: 0 }
-    for (i in 0 until maxOf(pa.size, pb.size)) {
-      val c = pa.getOrElse(i) { 0 }.compareTo(pb.getOrElse(i) { 0 })
-      if (c != 0) return@Comparator c
-    }
-    0
-  }
+  /**
+   * `sdkmanager --list` 解析结果。
+   *
+   * <p>这些包都由官方 sdkmanager 管理，因此都收进同一个界面：装 build-tools / platforms
+   * 是编译必需，ndk / cmake 是原生项目（Native C++）必需，platform-tools 提供 adb。
+   */
+  data class AvailableSdk(
+      val buildTools: List<String>,
+      val platforms: List<String>,
+      val ndk: List<String>,
+      val cmake: List<String>,
+      /** platform-tools 无版本号（就一个包），非空即"可安装"。 */
+      val platformTools: List<String>,
+  )
 }

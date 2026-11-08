@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="utf-8"?><!--
+  ~  This file is part of AndroidIDE.
+  ~
+  ~  SDK 管理器里的一张组件卡片：标题 + 已安装版本 + 可安装版本（点选即装）。
+  -->
+<com.google.android.material.card.MaterialCardView xmlns:android="http://schemas.android.com/apk/res/android"
+  xmlns:app="http://schemas.android.com/apk/res-auto"
+  xmlns:tools="http://schemas.android.com/tools"
+  android:layout_width="match_parent"
+  android:layout_height="wrap_content"
+  android:layout_marginHorizontal="16dp"
+  android:layout_marginTop="12dp"
+  app:cardCornerRadius="16dp"
+  app:cardElevation="0dp">
+
+  <LinearLayout
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:padding="16dp">
+
+    <com.google.android.material.textview.MaterialTextView
+      android:id="@+id/component_title"
+      android:layout_width="match_parent"
+      android:layout_height="wrap_content"
+      android:textAppearance="@style/TextAppearance.Material3.TitleMedium"
+      tools:text="Build-tools" />
+
+    <com.google.android.material.textview.MaterialTextView
+      android:id="@+id/component_description"
+      android:layout_width="match_parent"
+      android:layout_height="wrap_content"
+      android:layout_marginTop="2dp"
+      android:textAppearance="@style/TextAppearance.Material3.BodySmall"
+      android:textColor="?android:attr/textColorSecondary"
+      tools:text="打包工具（aapt2 / d8 / zipalign）；AGP 有最低版本要求" />
+
+    <com.google.android.material.textview.MaterialTextView
+      android:id="@+id/component_installed"
+      android:layout_width="match_parent"
+      android:layout_height="wrap_content"
+      android:layout_marginTop="8dp"
+      android:textAppearance="@style/TextAppearance.Material3.BodyMedium"
+      tools:text="已安装：35.0.1, 36.0.0" />
+
+    <!-- 可安装版本：横向 chip 流式排列，点一个即装 -->
+    <com.google.android.material.chip.ChipGroup
+      android:id="@+id/available_chips"
+      android:layout_width="match_parent"
+      android:layout_height="wrap_content"
+      android:layout_marginTop="8dp"
+      app:chipSpacingVertical="4dp"
+      tools:ignore="MissingConstraints" />
+
+    <com.google.android.material.textview.MaterialTextView
+      android:id="@+id/component_hint"
+      android:layout_width="match_parent"
+      android:layout_height="wrap_content"
+      android:layout_marginTop="6dp"
+      android:textAppearance="@style/TextAppearance.Material3.BodySmall"
+      android:textColor="?android:attr/textColorSecondary"
+      android:visibility="gone"
+      tools:text="正在获取可安装版本…"
+      tools:visibility="visible" />
+  </LinearLayout>
+</com.google.android.material.card.MaterialCardView>
