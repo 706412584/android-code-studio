@@ -1,0 +1,87 @@
+<?xml version="1.0" encoding="utf-8"?><!--
+  ~  This file is part of AndroidCodeStudio.
+  ~
+  ~  JDK 管理器里的一张卡：标题（JDK 版本）+ 状态 + 动作按钮（使用/安装/卸载）。
+  ~  与 SDK 管理器的卡片不同：JDK 的候选是**固定几个版本**（apt 源里有的），
+  ~  每个版本的状态只有「已装/未装」且最多一个「使用中」，所以不用 chip 列表。
+  -->
+<com.google.android.material.card.MaterialCardView xmlns:android="http://schemas.android.com/apk/res/android"
+  xmlns:app="http://schemas.android.com/apk/res-auto"
+  xmlns:tools="http://schemas.android.com/tools"
+  android:layout_width="match_parent"
+  android:layout_height="wrap_content"
+  android:layout_marginHorizontal="16dp"
+  android:layout_marginTop="12dp"
+  app:cardCornerRadius="16dp"
+  app:cardElevation="0dp">
+
+  <LinearLayout
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:padding="16dp">
+
+    <com.google.android.material.textview.MaterialTextView
+      android:id="@+id/jdk_title"
+      android:layout_width="match_parent"
+      android:layout_height="wrap_content"
+      android:textAppearance="@style/TextAppearance.Material3.TitleMedium"
+      tools:text="JDK 21" />
+
+    <com.google.android.material.textview.MaterialTextView
+      android:id="@+id/jdk_status"
+      android:layout_width="match_parent"
+      android:layout_height="wrap_content"
+      android:layout_marginTop="2dp"
+      android:textAppearance="@style/TextAppearance.Material3.BodySmall"
+      android:textColor="?android:attr/textColorSecondary"
+      tools:text="已安装 · 使用中" />
+
+    <com.google.android.material.textview.MaterialTextView
+      android:id="@+id/jdk_path"
+      android:layout_width="match_parent"
+      android:layout_height="wrap_content"
+      android:layout_marginTop="6dp"
+      android:fontFamily="monospace"
+      android:textSize="11sp"
+      android:textColor="?android:attr/textColorSecondary"
+      tools:text="$PREFIX/lib/jvm/java-21-openjdk" />
+
+    <!-- 动作区：按状态显示「使用」/「安装」/「卸载」，由代码决定可见性 -->
+    <LinearLayout
+      android:layout_width="match_parent"
+      android:layout_height="wrap_content"
+      android:layout_marginTop="10dp"
+      android:gravity="end"
+      android:orientation="horizontal">
+
+      <com.google.android.material.button.MaterialButton
+        android:id="@+id/jdk_use_button"
+        style="@style/Widget.Material3.Button.TonalButton"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="@string/jdk_use_action"
+        android:visibility="gone"
+        tools:visibility="visible" />
+
+      <com.google.android.material.button.MaterialButton
+        android:id="@+id/jdk_install_button"
+        style="@style/Widget.Material3.Button.TonalButton"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="@string/jdk_install_action"
+        android:visibility="gone"
+        tools:visibility="visible" />
+
+      <com.google.android.material.button.MaterialButton
+        android:id="@+id/jdk_uninstall_button"
+        style="@style/Widget.Material3.Button.TextButton"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="8dp"
+        android:text="@string/jdk_uninstall_action"
+        android:visibility="gone"
+        tools:visibility="visible" />
+    </LinearLayout>
+  </LinearLayout>
+</com.google.android.material.card.MaterialCardView>

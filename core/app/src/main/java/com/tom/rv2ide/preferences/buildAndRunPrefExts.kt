@@ -25,6 +25,7 @@ import androidx.preference.Preference
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.textfield.TextInputLayout
 import com.tom.rv2ide.R as MainR
+import com.tom.rv2ide.activities.JdkManagerActivity
 import com.tom.rv2ide.activities.SdkManagerActivity
 import com.tom.rv2ide.app.configuration.IJdkDistributionProvider
 import com.tom.rv2ide.models.JdkDistribution
@@ -153,7 +154,7 @@ private class GradleOptions(
     addPreference(KotlinIndexingNotification())
     addPreference(GradleCommands())
     addPreference(GradleDistrubution())
-    addPreference(GradleJDKVersionPreference())
+    addPreference(JdkManagerEntryPreference())
     addPreference(SdkManagerEntryPreference())
     addPreference(GradleClearCache())
   }
@@ -268,42 +269,22 @@ private class LaunchAppAfterInstall(
         getValue = ::launchAppAfterInstall::get,
     )
 
-@Parcelize
-class GradleJDKVersionPreference(
-    override val key: String = PREF_JAVA_HOME,
-    override val title: Int = R.string.idepref_jdkVersion_title,
-    override val icon: Int? = R.drawable.ic_language_java,
-) : SingleChoicePreference() {
-
-  override fun getEntries(preference: Preference): Array<PreferenceChoices.Entry> {
-    val distributions = IJdkDistributionProvider.getInstance().installedDistributions
-    check(distributions.isNotEmpty()) { "No JDK installations are available." }
-
-    return distributions
-        .map { dist -> PreferenceChoices.Entry(dist.javaVersion, javaHome == dist.javaHome, dist) }
-        .toTypedArray()
-  }
-
-  override fun onChoiceConfirmed(
-      preference: Preference,
-      entry: PreferenceChoices.Entry?,
-      position: Int,
-  ) {
-    super.onChoiceConfirmed(preference, entry, position)
-    javaHome = (entry?.data as? JdkDistribution?)?.javaHome ?: ""
-    updatePreference(preference)
-  }
-
-  override fun onCreatePreference(context: Context): Preference {
-    return super.onCreatePreference(context).also { preference -> updatePreference(preference) }
-  }
-
-  private fun updatePreference(preference: Preference) {
-    val jdkDistProvider = IJdkDistributionProvider.getInstance()
-    val javaVersion = jdkDistProvider.forJavaHome(javaHome)?.javaVersion ?: "<unknown>"
-
-    preference.summary =
-        preference.context.getString(R.string.idepref_jdkVersion_summary, javaVersion)
-    preference.isEnabled = jdkDistProvider.installedDistributions.size > 1
-  }
-}
+/**
+ * 「JDK 管理器」入口。
+ *
+ * <p>此前这里是单选弹窗，且 `isEnabled = installedDistributions.size > 1`——只有一个 JDK 时
+ * 整行灰掉，用户看不出为什么不能点。现在改为独立页面（见 [JdkManagerActivity]）：
+ * 既能看/切，也能装/卸（走 Termux 的 apt），并明确标出哪个在用。
+ */
+private fun JdkManagerEntryPreference(): SimpleClickablePreference =
+    SimpleClickablePreference(
+        key = "idepref_jdk_manager",
+        title = string.idepref_jdk_manager_title,
+        summary = string.idepref_jdk_manager_summary,
+        icon = drawable.ic_language_java,
+    ) { preference ->
+      preference.context.startActivity(
+          Intent(preference.context, JdkManagerActivity::class.java)
+      )
+      true
+    }
