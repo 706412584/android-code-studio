@@ -17,6 +17,7 @@
 
 package com.tom.rv2ide.utils
 
+import android.util.Log
 import java.io.File
 import java.util.concurrent.TimeUnit
 
@@ -43,14 +44,91 @@ class JdkInstaller {
     /** 读线程 join 的上限：进程已结束，读线程应立刻收尾；给个上限避免卡住。 */
     private const val READER_JOIN_MS = 2_000L
 
-    /** 可安装的 JDK 版本 → apt 包名。 */
-    @JvmField
-    val AVAILABLE: List<Pair<String, String>> =
-        listOf("17" to "openjdk-17", "21" to "openjdk-21")
+    /** 查询可用包列表的超时（走 apt-cache，是本地索引，正常不到 1 秒）。 */
+    private const val QUERY_TIMEOUT_MS = 30_000L
 
-    /** 已安装的 apt JDK 包名（用于「卸掉哪个」）。 */
-    fun packageFor(javaVersion: String): String? =
-        AVAILABLE.firstOrNull { it.first == javaVersion }?.second
+    /** 包名前缀（apt 包名 = `openjdk-<大版本>`）。 */
+    private const val PACKAGE_PREFIX = "openjdk-"
+
+    /**
+     * 兜底版本列表。
+     *
+     * <p>**只在运行时查询失败时用**（如 apt 索引还没建、仓库临时不可达）。
+     * 正常路径是 [discoverAvailable]——实测源里到底有几个版本是会变的，
+     * 写死会让「仓库加了 JDK 25」必须发新版才支持。这两个值来自 2026-11-08
+     * 在 ACS 包源（`acs-packages-arm64-64c907.gitlab.io`）上的实测结果。
+     */
+    @JvmField val FALLBACK_VERSIONS: List<String> = listOf("17", "21")
+
+    /**
+     * 从 apt 源动态发现可安装的 JDK 大版本（升序），如 `["17", "21"]`。
+     *
+     * <p>用 `apt-cache pkgnames openjdk-` + 过滤纯数字后缀：排除 `openjdk-17-source`
+     * （源码包）、`openjdk-17-x`（X11 部分）这些**不是 JDK 本体**的包。
+     *
+     * <p>失败（命令跑不起来 / 查不到任何版本）时回退到 [FALLBACK_VERSIONS]，
+     * 而不是返回空——空列表会让界面一张卡都不显示，比「可能少一个版本」更糟。
+     */
+    @JvmStatic
+    fun discoverAvailable(): List<String> {
+      val out = runApt(listOf("apt-cache", "pkgnames", PACKAGE_PREFIX), QUERY_TIMEOUT_MS)
+      if (out == null) {
+        Log.w(TAG, "apt-cache pkgnames 失败，用兜底版本列表 $FALLBACK_VERSIONS")
+        return FALLBACK_VERSIONS
+      }
+      val versions =
+          out.lineSequence()
+              .map { it.trim() }
+              .filter { it.startsWith(PACKAGE_PREFIX) }
+              .map { it.removePrefix(PACKAGE_PREFIX) }
+              .filter { it.isNotEmpty() && it.all(Char::isDigit) }
+              .distinct()
+              .sortedBy { it.toIntOrNull() ?: 0 }
+              .toList()
+      if (versions.isEmpty()) {
+        Log.w(TAG, "apt-cache 未列出任何 JDK，用兜底版本列表 $FALLBACK_VERSIONS")
+        return FALLBACK_VERSIONS
+      }
+      return versions
+    }
+
+    /** 大版本号 → apt 包名（如 "21" → "openjdk-21"）。 */
+    @JvmStatic fun packageFor(javaVersion: String): String = "$PACKAGE_PREFIX$javaVersion"
+
+    /**
+     * 跑一条 apt 工具命令并取回 stdout；失败返回 null。
+     *
+     * <p>与 [apt] 不同：这里只要输出、不要逐行回调，且失败要能与「输出为空」区分开，
+     * 所以单独一条路径而不是复用。
+     */
+    private fun runApt(argv: List<String>, timeoutMs: Long): String? {
+      if (Environment.PREFIX?.isDirectory != true) return null
+      val prefix = Environment.PREFIX.absolutePath
+      val script =
+          "export PREFIX='$prefix'; " +
+              "export PATH=\"\$PREFIX/bin:\$PATH\"; " +
+              "export LD_LIBRARY_PATH=\"\$PREFIX/lib\"; " +
+              "export HOME='${Environment.HOME.absolutePath}'; " +
+              argv.joinToString(" ") { "'" + it.replace("'", "'\\''") + "'" } +
+              " 2>/dev/null"
+      return try {
+        val process = ProcessBuilder("/system/bin/sh", "-c", script).redirectErrorStream(true).start()
+        // 与 apt() 同样的顾虑：读线程 + 带超时的 waitFor，两条缺一不可。
+        val out = StringBuilder()
+        val reader = Thread { runCatching { process.inputStream.bufferedReader().forEachLine { out.append(it).append('\n') } } }
+        reader.start()
+        if (!process.waitFor(timeoutMs, TimeUnit.MILLISECONDS)) {
+          process.destroyForcibly()
+          reader.join(READER_JOIN_MS)
+          return null
+        }
+        reader.join(READER_JOIN_MS)
+        if (process.exitValue() != 0) null else out.toString()
+      } catch (e: Exception) {
+        Log.w(TAG, "apt 命令失败：${argv.joinToString(" ")}", e)
+        null
+      }
+    }
   }
 
   /**

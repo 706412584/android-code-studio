@@ -55,6 +55,9 @@ class JdkManagerActivity : EdgeToEdgeIDEActivity() {
   /** 版本 → 卡片 binding（刷新用）。 */
   private val cards = LinkedHashMap<String, JdkManagerCardBinding>()
 
+  /** apt 源里可安装的 JDK 大版本；由 [JdkInstaller.discoverAvailable] 动态查出。 */
+  private var versions: List<String> = emptyList()
+
   /** 磁盘上真实存在的 JDK；键是 javaHome 绝对路径，来源是 `JdkUtils` 扫描结果。 */
   private var installed: Map<String, JdkDistribution> = emptyMap()
 
@@ -69,14 +72,31 @@ class JdkManagerActivity : EdgeToEdgeIDEActivity() {
     binding.outputHeader.setOnClickListener {
       setOutputExpanded(binding.outputScroll.visibility != View.VISIBLE)
     }
-    buildCards()
-    refresh()
+    loadVersionsThenBuild()
   }
 
-  /** 候选版本 = apt 源里有的（固定几个），不随已装状态变化。 */
+  /**
+   * 先查出 apt 源里有哪些 JDK 版本，再据此建卡。
+   *
+   * <p>**动态查而不是写死**：实测源里到底有几个版本会变（2026-11-08 是 17 与 21），
+   * 写死会让「仓库加了 JDK 25」必须发新版才支持。
+   */
+  private fun loadVersionsThenBuild() {
+    scope.launch {
+      versions =
+          withContext(Dispatchers.IO) { runCatching { JdkInstaller.discoverAvailable() }.getOrNull() }
+              ?: JdkInstaller.FALLBACK_VERSIONS
+      buildCards()
+      refresh()
+    }
+  }
+
+  /** 每个可用版本一张卡。 */
   private fun buildCards() {
     val inflater = LayoutInflater.from(this)
-    for ((version, _) in JdkInstaller.AVAILABLE) {
+    binding.jdkContainer.removeAllViews()
+    cards.clear()
+    for (version in versions) {
       val card = JdkManagerCardBinding.inflate(inflater, binding.jdkContainer, false)
       card.jdkUseButton.setOnClickListener { use(version) }
       card.jdkInstallButton.setOnClickListener { confirmInstall(version) }
@@ -106,7 +126,7 @@ class JdkManagerActivity : EdgeToEdgeIDEActivity() {
       installed = dists.associateBy { File(it.javaHome).name }
 
       val currentHome = BuildPreferences.javaHome
-      for ((version, _) in JdkInstaller.AVAILABLE) {
+      for (version in versions) {
         val card = cards[version] ?: continue
         val dir = installer.jvmDir(version)
         val dist = installed[dir?.name]
