@@ -91,6 +91,10 @@ final class ToolRegistryApiTest {
   void canonicalNameNormalizesKnownAliasesAndPassesThroughUnknown() {
     assertEquals(ToolNames.FILE_WRITE, ToolRegistry.canonicalName("write"));
     assertEquals(ToolNames.SHELL_EXECUTE, ToolRegistry.canonicalName("bash"));
+    // SDK 组件：模型常写成 install_sdk / sdkmanager。
+    assertEquals(ToolNames.SDK_INSTALL, ToolRegistry.canonicalName("install_sdk"));
+    assertEquals(ToolNames.SDK_INSTALL, ToolRegistry.canonicalName("sdkmanager"));
+    assertEquals(ToolNames.SDK_LIST, ToolRegistry.canonicalName("list_sdk"));
     assertEquals("custom_tool", ToolRegistry.canonicalName("custom_tool"));
     assertNull(ToolRegistry.canonicalName(null));
   }
