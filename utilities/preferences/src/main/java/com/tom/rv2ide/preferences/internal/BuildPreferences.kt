@@ -32,6 +32,7 @@ object BuildPreferences {
   const val GRADLE_COMMANDS = "idepref_build_gradleCommands"
   const val GRADLE_CLEAR_CACHE = "idepref_build_gradleClearCache"
   const val CUSTOM_GRADLE_INSTALLATION = "idepref_build_customGradleInstallation"
+  const val GRADLE_MIRROR_ID = "ide.build.gradleMirrorId"
   const val LAUNCH_APP_AFTER_INSTALL = "ide.build.run.launchAppAfterInstall"
   const val INSTALL_VIA_SHIZUKU = "ide.build.run.installViaShizuku"
   const val PREF_JAVA_HOME = "ide.build.javaHome"
@@ -106,6 +107,19 @@ object BuildPreferences {
     get() = prefManager.getString(CUSTOM_GRADLE_INSTALLATION, "")
     set(value) {
       prefManager.putString(CUSTOM_GRADLE_INSTALLATION, value)
+    }
+
+  /**
+   * 新建项目时优先使用的 Gradle 下载镜像 id（取值见 `GradleMirror.ALL`）。
+   *
+   * <p>空串表示「未显式选择」→ 调用方按发行版取默认（CN 版国内镜像、国际版官方源）。
+   * 存 id 而不是 URL：镜像地址将来可能调整，存 id 才能跟着变，
+   * 且换地址不会让用户的旧偏好失效。
+   */
+  var gradleMirrorId: String
+    get() = prefManager.getString(GRADLE_MIRROR_ID, "")
+    set(value) {
+      prefManager.putString(GRADLE_MIRROR_ID, value)
     }
 
   /** Whether the app should be launched automatically after installation (after build). */

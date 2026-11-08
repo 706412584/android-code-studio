@@ -6,6 +6,7 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
 import android.os.Environment as AndroidEnvironment
+import android.util.Log
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -28,6 +29,7 @@ import com.tom.rv2ide.R
 import com.tom.rv2ide.activities.FolderPickerActivity
 import com.tom.rv2ide.activities.IDEConfigurations
 import com.tom.rv2ide.databinding.DialogAtcWizardBinding
+import com.tom.rv2ide.preferences.internal.BuildPreferences
 import com.tom.rv2ide.templates.android.Template
 import com.tom.rv2ide.templates.android.TemplateOptions
 import com.tom.rv2ide.templates.android.TemplateRegistry
@@ -42,6 +44,10 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 class AtcWizardDialog : BottomSheetDialogFragment() {
+
+  private companion object {
+    const val TAG = "AtcWizardDialog"
+  }
 
   private var listener: AtcInterface.TemplateCreationListener? = null
   private var selectedTemplate: Template? = null
@@ -452,6 +458,11 @@ class AtcWizardDialog : BottomSheetDialogFragment() {
                 message: String,
                 projectDir: File?,
             ) {
+              // 创建成功后统一把 wrapper 的 Gradle 下载源换成可达的镜像。
+              // 放在这里（而不是各模板内部）是因为：13 个模板的 assets 各有自己的
+              // distributionUrl，逐个改既漏又难维护；而所有模板都要经过这个回调。
+              // 只改一行（见 GradleMirror.rewriteWrapper），失败不影响创建结果。
+              if (success && projectDir != null) applyGradleMirror(projectDir)
               notifyResult(success, message, projectDir)
             }
           }
@@ -470,6 +481,40 @@ class AtcWizardDialog : BottomSheetDialogFragment() {
     } ?: listener?.onCreationCancelled()
 
     dismiss()
+  }
+
+  /**
+   * 把工程 wrapper 的 Gradle 下载源换成可达的镜像。
+   *
+   * <p><b>为什么后台跑</b>：这个回调在主线程（模板里 `withContext(Dispatchers.Main)` 后调用），
+   * 而挑镜像要发 HTTP HEAD 探测——最坏情况（三个镜像全不通）会阻塞 15 秒，界面直接冻住。
+   *
+   * <p><b>为什么不阻塞创建结果</b>：换源只是优化首次构建的下载体验，失败（全都不可达、
+   * 或工程形态特殊没有 wrapper 文件）不该让用户觉得「项目创建失败了」——
+   * [GradleMirror.rewriteWrapper] 内部只打日志。
+   */
+  private fun applyGradleMirror(projectDir: File) {
+    // 用户显式选的优先；没选过用默认（国内镜像）。
+    // 注意默认值不是硬编码限制——pickReachable 会预检并依次试其它候选。
+    val preferred =
+        BuildPreferences.gradleMirrorId.takeIf { it.isNotBlank() } ?: GradleMirror.defaultMirrorId()
+    CoroutineScope(Dispatchers.IO).launch {
+      // 从工程当前 wrapper 里读出 Gradle 版本，据此探测（不同版本可用性可能不同）。
+      val version =
+          GradleMirror.readGradleVersion(projectDir)
+              ?: run {
+                Log.d(TAG, "工程里读不到 Gradle 版本，跳过镜像改写：${projectDir.name}")
+                return@launch
+              }
+      val mirror =
+          GradleMirror.pickReachable(version, preferred)
+              ?: run {
+                Log.w(TAG, "所有 Gradle 镜像都不可达，保持模板原有 distributionUrl")
+                return@launch
+              }
+      GradleMirror.rewriteWrapper(projectDir, mirror)
+      Log.i(TAG, "已为 ${projectDir.name} 选用 Gradle 镜像：${mirror.label}")
+    }
   }
 
   private fun requireAcsHomeProjectsDir() {
