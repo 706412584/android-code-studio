@@ -113,15 +113,20 @@ class TemplateListFragment :
               }
 
               override fun onTemplateCreated(success: Boolean, message: String) {
-                // Navigate back to main after attempt; success/failure toasts are handled inside
-                // ATC
                 viewModel.setScreen(MainViewModel.SCREEN_MAIN)
+                // 失败必须**显式告知**：此前只跳回首页、把 message 丢掉，于是创建失败时
+                // 用户看到的是「点一下、回到首页、什么都没发生」，完全不知道出了什么事。
+                if (!success) {
+                  com.tom.rv2ide.templates.TemplateCreateFailure.show(context, message)
+                }
               }
 
               override fun onTemplateCreated(success: Boolean, message: String, projectDir: File?) {
                 viewModel.setScreen(MainViewModel.SCREEN_MAIN)
                 if (success && projectDir != null) {
                   (requireActivity() as MainActivity).openProject(projectDir)
+                } else if (!success) {
+                  com.tom.rv2ide.templates.TemplateCreateFailure.show(context, message)
                 }
               }
             },

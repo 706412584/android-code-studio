@@ -53,6 +53,29 @@ class AtcWizardDialog : BottomSheetDialogFragment() {
     this.listener = listener
   }
 
+  /**
+   * 报告一次创建结果。
+   *
+   * <p><b>为什么需要兜底</b>：调用方可以完全不传 listener——实测
+   * `MainActivity.kt:168` 就是 `AtcInterface().create(this)`（无 listener）。
+   * 那样失败回调无处可去，用户看到的是「点创建 → 回到首页 → 什么都没发生」，
+   * 完全不知道出了什么事（跨平台模板的「静默失败」报告就是这么来的）。
+   *
+   * <p>所以 listener 为 null 时兜底弹窗，不依赖调用方配合。
+   * 成功时不提示——成功路径是「自动打开新项目」，本身已是反馈。
+   */
+  private fun notifyResult(success: Boolean, message: String, projectDir: File? = null) {
+    val l = listener
+    if (l != null) {
+      if (projectDir != null) l.onTemplateCreated(success, message, projectDir)
+      else l.onTemplateCreated(success, message)
+      return
+    }
+    if (!success) {
+      TemplateCreateFailure.show(context, message)
+    }
+  }
+
   override fun onCreateDialog(savedInstanceState: Bundle?): Dialog {
     val dialog = BottomSheetDialog(requireContext(), theme)
     val ctx = requireContext()
@@ -91,8 +114,7 @@ class AtcWizardDialog : BottomSheetDialogFragment() {
 
   private fun setupInputs(ctx: Context) {
     val lastSaveLocation = WizardPreferences.getLastSaveLocation(ctx)
-    binding.saveLocationInput.setText(lastSaveLocation ?: Environment.PROJECTS_DIR.absolutePath)
-
+    // 先注册监听再赋值：反过来的话这次 setText 不触发校验（见下方 forceValidate 注释）。
     binding.projectNameInput.addTextChangedListener(
         SimpleTextWatcher {
           updatePackageNameFromProject(it)
@@ -101,6 +123,8 @@ class AtcWizardDialog : BottomSheetDialogFragment() {
     )
 
     binding.saveLocationInput.addTextChangedListener(SimpleTextWatcher { validateProjectName() })
+
+    binding.saveLocationInput.setText(lastSaveLocation ?: Environment.PROJECTS_DIR.absolutePath)
 
     binding.saveLocationLayout.setEndIconOnClickListener {
       (activity as? FragmentActivity)?.let { act ->
@@ -310,6 +334,14 @@ class AtcWizardDialog : BottomSheetDialogFragment() {
       binding.projectNameInput.setText(templateName)
       binding.packageNameInput.setText("com.example.$packageSuffix")
 
+      // 强制跑一次校验。理由：上面两处 setText 虽然会触发监听器，但**不保证**一定
+      // 跑过 validate——`setText` 相同的文本时 TextWatcher 可能不回调；而
+      // `projectNameLayout.error` 与 `createButton.isEnabled` 是**视图级状态**，
+      // 向导（BottomSheet）复用时不自动清，会残留上一轮的错误标记：用户打开向导、
+      // 什么都不改就点创建，看到的是「项目已存在」这类陈旧报错、按钮还是灰的。
+      // 在这里显式重算，保证 UI 与本轮的实际目录状态一致。
+      validateProjectName()
+
       // Quick Develop 只生成 Java 源码，把语言下拉锁到 Java。
       // 不锁的话，下拉默认是 Kotlin，用户不动它就会显示「Kotlin」，
       // 而 createProject 里又强制 Java——UI 显示值与实际生成值不一致。
@@ -398,15 +430,41 @@ class AtcWizardDialog : BottomSheetDialogFragment() {
         lang = LanguageType.JAVA
       }
 
+      // 传**包装 listener**而不是原始 listener：模板内部用的是 `listener?.xxx`，
+      // 原始 listener 为 null 时回调直接消失（失败静默）。包装后始终非 null，
+      // 结果一律经 notifyResult 走「转发 or 自弹 Flashbar」的判定。
+      val bridge =
+          object : AtcInterface.TemplateCreationListener {
+            override fun onTemplateSelected(templateName: String) {
+              listener?.onTemplateSelected(templateName)
+            }
+
+            override fun onCreationCancelled() {
+              listener?.onCreationCancelled()
+            }
+
+            override fun onTemplateCreated(success: Boolean, message: String) {
+              notifyResult(success, message)
+            }
+
+            override fun onTemplateCreated(
+                success: Boolean,
+                message: String,
+                projectDir: File?,
+            ) {
+              notifyResult(success, message, projectDir)
+            }
+          }
+
       CoroutineScope(Dispatchers.Main).launch {
         try {
           t.create(
               ctx,
-              listener,
+              bridge,
               TemplateOptions(proj, pkg, lang, sdkApi, Options.OPT_USE_GRADLE_KTS, File(savePath)),
           )
         } catch (e: Exception) {
-          listener?.onTemplateCreated(false, "Error: ${e.message}")
+          notifyResult(false, "Error: ${e.message}")
         }
       }
     } ?: listener?.onCreationCancelled()

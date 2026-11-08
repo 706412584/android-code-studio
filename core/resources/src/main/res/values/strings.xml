@@ -1072,6 +1072,8 @@
   <string name="idepref_build_tools_title">Build-tools version</string>
   <string name="idepref_platform_title">Platform version (compileSdk)</string>
   <string name="idepref_sdk_installing">Installing %s…</string>
+  <string name="template_create_failed">Project creation failed.</string>
+  <string name="template_create_failed_title">Project creation failed</string>
   <string name="idepref_sdk_manager_title">SDK Manager</string>
   <string name="idepref_sdk_manager_summary">Install and manage SDK components (build-tools, platforms).</string>
   <string name="idepref_sdk_manager_subtitle">Manage SDK components</string>

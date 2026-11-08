@@ -587,7 +587,9 @@ class MainFragment : BaseFragment() {
               }
 
               override fun onTemplateCreated(success: Boolean, message: String) {
-                /* handled in projectDir overload or via toasts */
+                // 失败必须显式告知：此前这里是空实现，TemplateListFragment 那份又把
+                // message 丢掉，于是创建失败时用户只看到「点一下、回到首页、什么都没发生」。
+                if (!success) showCreateFailure(message)
               }
 
               override fun onTemplateCreated(
@@ -597,10 +599,25 @@ class MainFragment : BaseFragment() {
               ) {
                 if (success && projectDir != null) {
                   openProject(projectDir)
+                } else if (!success) {
+                  showCreateFailure(message)
                 }
               }
             },
         )
+  }
+
+  /**
+   * 告知模板创建失败。
+   *
+   * <p><b>为什么用弹窗而不是 Flashbar</b>：失败后宿主会 `setScreen(SCREEN_MAIN)`，
+   * 用 `TransitionManager` 重建整个视图树，挂在上面的浮条会被一并回收
+   * （实测日志 `Toast already killed`，提示一闪即没）。对话框是独立窗口，
+   * 不受宿主视图重建影响；错误信息（如 FileNotFoundException 的路径）较长，
+   * 弹窗也比浮条好读。
+   */
+  private fun showCreateFailure(message: String) {
+    com.tom.rv2ide.templates.TemplateCreateFailure.show(context, message)
   }
 
   fun openProject(root: File) {
