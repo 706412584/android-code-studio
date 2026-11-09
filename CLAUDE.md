@@ -120,6 +120,18 @@ PYEOF
 ⚠️ `send_keys` 会把默认输入法切成 AdbKeyboard 且**不切回**，用完要
 `adb shell ime set com.baidu.input_heisha/.ImeService` 恢复。
 
+### 每次编译完释放 Java 内存
+
+本机常同时跑多个 Claude 会话，每个 gradle 调用都会留驻一个 daemon（默认 1.5G+ 堆），
+反复编译会堆到几个 GB 甚至拖慢整机。**一次编译结束后收尾**：
+
+```bash
+./gradlew --stop          # 停掉本机 gradle daemon（释放自身的）
+```
+
+另外注意 `kapt`/`kotlin-daemon` 也是独立常驻进程，`--stop` 不回收它们；
+内存紧张时用任务管理器结束 `KotlinCompileDaemon` / `GradleDaemon`。
+清理完再开始下一轮编译，不要并行留着多个 daemon。
 ### 设备上「回主屏」不容易
 
 ACS 会恢复上次的编辑器/侧栏会话（**不是** `ide_last_project` 单独决定，改那个偏好没用）。
