@@ -87,4 +87,13 @@ dependencies {
 
 
   runtimeOnly(libs.tooling.slf4j)
+
+  testImplementation(libs.tests.junit.jupiter)
+  testRuntimeOnly(libs.tests.junit.platformLauncher)
+}
+
+// 与本模块源码一致：源码里有非 ASCII 字面量，单测断言的是同一批字符串。
+tasks.withType<Test>().configureEach {
+  useJUnitPlatform()
+  systemProperty("file.encoding", "UTF-8")
 }

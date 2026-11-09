@@ -140,6 +140,11 @@ internal class ToolingApiServerImpl(private val project: ProjectImpl) : ITooling
         // Ensure Gradle sees UTF-8/locale early via project gradle.properties
         ensureProjectGradleProperties(projectDirectory)
 
+        // 修掉历史版本写坏的空 buildToolsVersion（411 之前生成的项目里可能有）。
+        // 放在连接之前：那行会让 AGP 在配置阶段就抛 `Invalid revision:`，
+        // 连项目模型都读不出来，必须在交给 Gradle 之前清掉。
+        healEmptyBuildToolsVersion(projectDirectory)
+
         val stopWatch = StopWatch("Connection to project")
         val isReinitializing = connector != null && connection != null && params == lastInitParams
 
@@ -252,6 +257,45 @@ internal class ToolingApiServerImpl(private val project: ProjectImpl) : ITooling
       }
     } catch (_: Throwable) {
       // best-effort; ignore
+    }
+  }
+
+  /**
+   * 清掉工程里 `buildToolsVersion ''`（空值）那一行。
+   *
+   * <p><b>为什么需要</b>：某个版本的模板会在 `app/build.gradle` 里写出
+   * `buildToolsVersion ''`——空串不是合法的 build-tools 版本，AGP 直接抛
+   * `Invalid revision:`，**整个项目初始化失败**（不是构建失败，是连项目模型都
+   * 读不出来）。生成侧已修（空值不再落盘），但**已经生成出来的工程**不会自己好，
+   * 每次打开都失败。这里在初始化前就地清掉，用户无感。
+   *
+   * <p><b>为什么敢自动改用户文件</b>：① 空串是 bug 产物，不可能是用户手写的
+   * 有效值；② 删掉这行等于恢复「不指定 buildToolsVersion」的原语义（由 AGP
+   * 自挑要求的最低版本），不会改变工程的既有行为；③ 只动这一行，其余内容一字不碰。
+   *
+   * <p>失败时静默（best-effort）：改不动就让 Gradle 去报真实错误，不在这里抛。
+   */
+  private fun healEmptyBuildToolsVersion(projectDir: File) {
+    try {
+      // 两个位置都试：模块级 build.gradle 可能在根目录（老布局）或 app/ 子目录。
+      val candidates =
+          listOf(
+              File(projectDir, "app/build.gradle"),
+              File(projectDir, "app/build.gradle.kts"),
+              File(projectDir, "build.gradle"),
+              File(projectDir, "build.gradle.kts"),
+          )
+      for (file in candidates) {
+        if (!file.isFile) continue
+        val original = file.readText()
+        val healed = stripEmptyBuildToolsVersion(original)
+        if (healed != original) {
+          file.writeText(healed)
+          log.info("Removed empty buildToolsVersion from {}", file.absolutePath)
+        }
+      }
+    } catch (e: Throwable) {
+      log.warn("Failed to heal empty buildToolsVersion in {}", projectDir.absolutePath, e)
     }
   }
 
@@ -464,4 +508,21 @@ internal class ToolingApiServerImpl(private val project: ProjectImpl) : ITooling
   fun connect(client: IToolingApiClient) {
     this.client = client
   }
+}
+
+/**
+ * 从 build.gradle 文本里删掉空值的 `buildToolsVersion` 行（Groovy 或 KTS 写法）。
+ *
+ * <p>只匹配**空值**：`buildToolsVersion ''` / `buildToolsVersion ""` /
+ * `buildToolsVersion = ""`（KTS）。有值的行原样保留——用户显式指定过的不该被改。
+ *
+ * <p>抽成顶层纯函数以便 JVM 单测（不碰文件系统）。行为细节：
+ * - 连同该行**行尾换行**一起删，不留空行；
+ * - 行内其它内容（注释、缩进）不匹配，避免误删。
+ */
+internal fun stripEmptyBuildToolsVersion(source: String): String {
+  // 行首到 buildToolsVersion，值为空串，行尾可选注释/空白。
+  val pattern =
+      Regex("""^[ \t]*buildToolsVersion[ \t]*(=[ \t]*)?(['"]{2})[ \t]*$(?:\r?\n)?""", RegexOption.MULTILINE)
+  return pattern.replace(source, "")
 }
