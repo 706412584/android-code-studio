@@ -7,7 +7,7 @@
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:background="@color/red_400"
+        android:background="?attr/colorError"
         android:paddingStart="24dp"
         android:paddingTop="16dp"
         android:paddingEnd="24dp"
@@ -16,8 +16,8 @@
             android:id="@+id/dialog_title"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:textAppearance="@style/TextAppearance.AppCompat.Title"
-            android:textColor="@android:color/white"/>
+            android:textAppearance="?attr/textAppearanceHeadlineSmall"
+            android:textColor="?attr/colorOnError"/>
     </LinearLayout>
 
     <ScrollView
@@ -31,14 +31,16 @@
                 android:paddingEnd="24dp"
                 android:paddingBottom="16dp"
                 android:scrollbars="vertical">
+            <!-- 颜色全部走主题属性：此前正文用 @android:color/tab_indicator_text、
+                 链接写死黑色，深色主题下正文发灰、链接几乎看不见。 -->
             <TextView
                 android:id="@+id/dialog_message"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:autoLink="web|email"
-                android:textSize="14sp"
-                android:textColor="@android:color/tab_indicator_text"
-                android:textColorLink="@android:color/black"/>
+                android:textAppearance="?attr/textAppearanceBodyMedium"
+                android:textColor="?attr/colorOnSurface"
+                android:textColorLink="?attr/colorPrimary"/>
         </LinearLayout>
     </ScrollView>
 

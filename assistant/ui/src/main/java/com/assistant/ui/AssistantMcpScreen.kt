@@ -17,6 +17,7 @@
 
 package com.assistant.ui
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -81,87 +82,95 @@ fun AssistantMcpScreen(
 ) {
   // null = 列表；"" = 新增；其它 = 编辑该 id。
   var editingId by remember { mutableStateOf<String?>(null) }
+  // 待删除确认的 id。
+  var pendingDelete by remember { mutableStateOf<String?>(null) }
+
+  if (editingId != null) {
+    val existing = servers.firstOrNull { it.id == editingId }
+    McpEditForm(
+        existing = existing,
+        onCancel = { editingId = null },
+        onSave = { label, target, transport, enabled ->
+          if (existing == null) {
+            onAdd(label, target, transport)
+          } else {
+            onUpdate(existing.id, label, target, transport, enabled)
+          }
+          editingId = null
+        },
+    )
+    return
+  }
 
   AssistantManageScaffold("MCP 服务端", onBack, modifier, darkTheme) {
-    if (editingId != null) {
-      val existing = servers.firstOrNull { it.id == editingId }
-      McpEditForm(
-          existing = existing,
-          onCancel = { editingId = null },
-          onSave = { label, target, transport, enabled ->
-            if (existing == null) {
-              onAdd(label, target, transport)
-            } else {
-              onUpdate(existing.id, label, target, transport, enabled)
-            }
-            editingId = null
-          },
-      )
-    } else {
-      Column(
-          modifier =
-              Modifier.fillMaxSize()
-                  .verticalScroll(rememberScrollState())
-                  .padding(horizontal = Spacing.md),
+    Column(
+        modifier =
+            Modifier.fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = Spacing.md),
+    ) {
+      Row(
+          modifier = Modifier.fillMaxWidth().padding(vertical = Spacing.sm),
+          horizontalArrangement = Arrangement.End,
       ) {
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(vertical = Spacing.sm),
-            horizontalArrangement = Arrangement.End,
-        ) {
-          TextButton(onClick = { editingId = "" }) {
-            Icon(
-                FeatherIcons.Plus,
-                contentDescription = null,
-                modifier = Modifier.size(16.dp),
-                tint = MaterialTheme.colorScheme.primary,
-            )
-            Text("添加", modifier = Modifier.padding(start = 4.dp))
-          }
-        }
-
-        if (servers.isEmpty()) {
-          Text(
-              text =
-                  "还没有接入 MCP server。\n\n" +
-                      "MCP（Model Context Protocol）让你把外部工具服务接进助手：\n" +
-                      "· HTTP / SSE：填服务端 URL\n" +
-                      "· stdio：填启动命令（本 App 用内置 shell 启动）\n\n" +
-                      "接入后 server 的工具会出现在模型的工具清单里。",
-              style = MaterialTheme.typography.bodyMedium,
-              color = MaterialTheme.colorScheme.onSurfaceVariant,
-              modifier = Modifier.padding(vertical = Spacing.lg),
+        TextButton(onClick = { editingId = "" }) {
+          Icon(
+              FeatherIcons.Plus,
+              contentDescription = null,
+              modifier = Modifier.size(16.dp),
+              tint = MaterialTheme.colorScheme.primary,
           )
-        } else {
-          SettingsGroupHeader(text = "已配置 ${servers.size} 个")
-          servers.forEach { item ->
-            SettingsGroup(modifier = Modifier.padding(bottom = Spacing.xs)) {
-              Row(
-                  modifier =
-                      Modifier.fillMaxWidth()
-                          .clickable { editingId = item.id }
-                          .padding(horizontal = Spacing.lg, vertical = 11.dp),
-                  verticalAlignment = Alignment.CenterVertically,
-              ) {
-                Column(modifier = Modifier.weight(1f)) {
-                  Text(
-                      text = item.label.ifBlank { item.target },
-                      style = MaterialTheme.typography.bodyMedium,
-                      color = MaterialTheme.colorScheme.onSurface,
-                  )
-                  Text(
-                      text = "${item.transport.uppercase()} · ${item.target}",
-                      style = MaterialTheme.typography.bodySmall,
-                      color = MaterialTheme.colorScheme.onSurfaceVariant,
-                  )
-                }
-                androidx.compose.material3.IconButton(onClick = { onDelete(item.id) }) {
-                  Icon(
-                      FeatherIcons.Trash2,
-                      contentDescription = "删除",
-                      tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                      modifier = Modifier.size(16.dp),
-                  )
-                }
+          Text("添加", modifier = Modifier.padding(start = 4.dp))
+        }
+      }
+
+      if (servers.isEmpty()) {
+        Text(
+            text =
+                "还没有接入 MCP server。\n\n" +
+                    "MCP（Model Context Protocol）让你把外部工具服务接进助手：\n" +
+                    "· HTTP / SSE：填服务端 URL\n" +
+                    "· stdio：填启动命令（本 App 用内置 shell 启动）\n\n" +
+                    "接入后 server 的工具会出现在模型的工具清单里。",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(vertical = Spacing.lg),
+        )
+      } else {
+        SettingsGroupHeader(text = "已配置 ${servers.size} 个")
+        servers.forEach { item ->
+          SettingsGroup(modifier = Modifier.padding(bottom = Spacing.xs)) {
+            Row(
+                modifier =
+                    Modifier.fillMaxWidth()
+                        .clickable { editingId = item.id }
+                        .padding(start = Spacing.lg, end = Spacing.xs, top = 4.dp, bottom = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+              Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = item.label.ifBlank { item.target },
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+                Text(
+                    text = "${item.transport.uppercase()} · ${item.target}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+              }
+              // 行内启停：不必进编辑页就能开关一个 server。
+              Switch(
+                  checked = item.enabled,
+                  onCheckedChange = { onUpdate(item.id, item.label, item.target, item.transport, it) },
+              )
+              androidx.compose.material3.IconButton(onClick = { pendingDelete = item.id }) {
+                Icon(
+                    FeatherIcons.Trash2,
+                    contentDescription = "删除",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(16.dp),
+                )
               }
             }
           }
@@ -169,95 +178,139 @@ fun AssistantMcpScreen(
       }
     }
   }
+
+  val deleteId = pendingDelete
+  if (deleteId != null) {
+    val name = servers.firstOrNull { it.id == deleteId }?.let { it.label.ifBlank { it.target } } ?: deleteId
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = { pendingDelete = null },
+        title = { Text("移除 MCP 服务端") },
+        text = { Text("将移除「$name」。其工具会立即从模型清单里消失。") },
+        confirmButton = {
+          TextButton(
+              onClick = {
+                onDelete(deleteId)
+                pendingDelete = null
+              }) {
+                Text("移除", color = MaterialTheme.colorScheme.error)
+              }
+        },
+        dismissButton = { TextButton(onClick = { pendingDelete = null }) { Text("取消") } },
+    )
+  }
 }
 
+/**
+ * MCP 服务端编辑**页面**（不再是 Dialog）。
+ *
+ * <p>与「服务商」编辑同一取舍：多字段表单改页面，标题固定、保存/取消固定底栏、
+ * 正文独立滚动。切换编辑目标时以记录 id 为 key 重建草稿，不串数据。
+ */
 @Composable
 private fun McpEditForm(
     existing: McpServerItem?,
     onCancel: () -> Unit,
     onSave: (String, String, String, Boolean) -> Unit,
 ) {
-  var label by remember { mutableStateOf(existing?.label ?: "") }
-  var target by remember { mutableStateOf(existing?.target ?: "") }
-  var transport by remember { mutableStateOf(existing?.transport ?: "http") }
-  var enabled by remember { mutableStateOf(existing?.enabled ?: true) }
+  val key = existing?.id ?: "new"
+  var label by remember(key) { mutableStateOf(existing?.label ?: "") }
+  var target by remember(key) { mutableStateOf(existing?.target ?: "") }
+  var transport by remember(key) { mutableStateOf(existing?.transport ?: "http") }
+  var enabled by remember(key) { mutableStateOf(existing?.enabled ?: true) }
+  var targetError by remember(key) { mutableStateOf<String?>(null) }
 
-  // 表单是弹窗，不是页面（与「服务商」编辑表单同一取舍）。
-  androidx.compose.ui.window.Dialog(
-      onDismissRequest = onCancel,
-      properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false),
-  ) {
-  androidx.compose.material3.Surface(
-      shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp),
-      color = MaterialTheme.colorScheme.surface,
-      modifier = Modifier.fillMaxWidth().padding(Spacing.md),
-  ) {
-  Column(
-      modifier = Modifier.verticalScroll(rememberScrollState()).padding(Spacing.lg),
-      verticalArrangement = Arrangement.spacedBy(Spacing.sm),
-  ) {
-    Text(
-        text = if (existing == null) "添加 MCP 服务端" else "编辑 MCP 服务端",
-        style = MaterialTheme.typography.titleMedium,
-        color = MaterialTheme.colorScheme.onSurface,
-    )
-    AppTextField(
-        value = label,
-        onValueChange = { label = it },
-        label = "名称",
-        placeholder = "例如：图像生成服务",
-    )
-    AppTextField(
-        value = target,
-        onValueChange = { target = it },
-        label = if (transport == "stdio") "启动命令" else "服务端 URL",
-        placeholder =
-            if (transport == "stdio") "npx -y @modelcontextprotocol/server-filesystem"
-            else "https://host/mcp",
-    )
-
-    SettingsGroupHeader(text = "传输方式")
-    Row(horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
-      listOf("http" to "HTTP", "sse" to "SSE", "stdio" to "stdio")
-          .forEach { (id, name) ->
-            val selected = id == transport
-            androidx.compose.material3.Surface(
-                shape = androidx.compose.foundation.shape.RoundedCornerShape(8.dp),
-                color =
-                    if (selected) MaterialTheme.colorScheme.primaryContainer
-                    else MaterialTheme.colorScheme.surfaceVariant,
-                modifier = Modifier.clickable { transport = id },
-            ) {
-              Text(
-                  text = name,
-                  style = MaterialTheme.typography.bodySmall,
-                  color =
-                      if (selected) MaterialTheme.colorScheme.primary
-                      else MaterialTheme.colorScheme.onSurfaceVariant,
-                  modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-              )
-            }
-          }
-    }
-
-    Row(verticalAlignment = Alignment.CenterVertically) {
-      Switch(checked = enabled, onCheckedChange = { enabled = it })
-      Text(
-          text = "启用",
-          style = MaterialTheme.typography.bodyMedium,
-          color = MaterialTheme.colorScheme.onSurface,
-          modifier = Modifier.padding(start = Spacing.sm),
-      )
-    }
-
-    Row(horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
-      TextButton(
-          onClick = { onSave(label.trim(), target.trim(), transport, enabled) }) {
+  AssistantManageScaffold(
+      title = if (existing == null) "添加 MCP 服务端" else "编辑 MCP 服务端",
+      onBack = onCancel,
+      bottomBar = {
+        Row(
+            modifier =
+                Modifier.fillMaxWidth()
+                    .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+                    .padding(horizontal = Spacing.md, vertical = Spacing.sm),
+            horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
+        ) {
+          TextButton(onClick = onCancel) { Text("取消") }
+          androidx.compose.material3.Button(
+              onClick = {
+                if (target.isBlank()) {
+                  targetError = "请填写" + if (transport == "stdio") "启动命令" else "服务端 URL"
+                  return@Button
+                }
+                onSave(label.trim(), target.trim(), transport, enabled)
+              },
+              modifier = Modifier.weight(1f),
+          ) {
             Text("保存")
           }
-      TextButton(onClick = onCancel) { Text("取消") }
+        }
+      },
+  ) {
+    Column(
+        modifier =
+            Modifier.fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = Spacing.md, vertical = Spacing.sm),
+        verticalArrangement = Arrangement.spacedBy(Spacing.sm),
+    ) {
+      AppTextField(
+          value = label,
+          onValueChange = { label = it },
+          label = "名称",
+          placeholder = "例如：图像生成服务",
+      )
+      AppTextField(
+          value = target,
+          onValueChange = {
+            target = it
+            targetError = null
+          },
+          label = if (transport == "stdio") "启动命令" else "服务端 URL",
+          placeholder =
+              if (transport == "stdio") "npx -y @modelcontextprotocol/server-filesystem"
+              else "https://host/mcp",
+          isError = targetError != null,
+          supportingText = targetError?.let { { Text(it) } },
+      )
+
+      SettingsGroupHeader(text = "传输方式")
+      Row(horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
+        listOf("http" to "HTTP", "sse" to "SSE", "stdio" to "stdio")
+            .forEach { (id, name) ->
+              val selected = id == transport
+              androidx.compose.material3.Surface(
+                  shape = androidx.compose.foundation.shape.RoundedCornerShape(8.dp),
+                  color =
+                      if (selected) MaterialTheme.colorScheme.primaryContainer
+                      else MaterialTheme.colorScheme.surfaceVariant,
+                  modifier =
+                      Modifier.clickable {
+                        // 只切传输方式，不清空已填 target（切换后用户可能仍要改）。
+                        transport = id
+                        targetError = null
+                      },
+              ) {
+                Text(
+                    text = name,
+                    style = MaterialTheme.typography.bodySmall,
+                    color =
+                        if (selected) MaterialTheme.colorScheme.primary
+                        else MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                )
+              }
+            }
+      }
+
+      Row(verticalAlignment = Alignment.CenterVertically) {
+        Switch(checked = enabled, onCheckedChange = { enabled = it })
+        Text(
+            text = "启用",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurface,
+            modifier = Modifier.padding(start = Spacing.sm),
+        )
+      }
     }
-  }
-  }
   }
 }

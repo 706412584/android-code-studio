@@ -34,7 +34,7 @@ import android.text.Editable
 import android.text.TextWatcher
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.appcompat.app.AlertDialog
+import com.tom.rv2ide.utils.DialogUtils
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.tom.rv2ide.R
 import com.tom.rv2ide.adapters.ColorPresetAdapter
@@ -642,7 +642,7 @@ class AssetStudioActivity : EdgeToEdgeIDEActivity() {
 
   private fun showColorPickerDialog() {
     val dialogBinding = DialogColorPickerBinding.inflate(layoutInflater)
-    val dialog = AlertDialog.Builder(this).setView(dialogBinding.root).create()
+    val dialog = DialogUtils.newMaterialDialogBuilder(this).setView(dialogBinding.root).create()
 
     
     dialogBinding.currentColorPreview.setBackgroundColor(currentBackgroundColor)
@@ -696,7 +696,7 @@ class AssetStudioActivity : EdgeToEdgeIDEActivity() {
 
   private fun showCustomColorDialog() {
     val dialogBinding = DialogColorPickerBinding.inflate(layoutInflater)
-    val dialog = AlertDialog.Builder(this).setView(dialogBinding.root).create()
+    val dialog = DialogUtils.newMaterialDialogBuilder(this).setView(dialogBinding.root).create()
 
     
     dialogBinding.currentColorPreview.setBackgroundColor(currentBackgroundColor)
@@ -907,7 +907,7 @@ class AssetStudioActivity : EdgeToEdgeIDEActivity() {
             getString(R.string.asset_studio_browse_in_app),
             getString(R.string.asset_studio_paste_vector_xml),
         )
-    AlertDialog.Builder(this)
+    DialogUtils.newMaterialDialogBuilder(this)
         .setTitle(R.string.asset_studio_material_icons)
         .setItems(options) { dialog, which ->
           when (which) {
@@ -922,48 +922,50 @@ class AssetStudioActivity : EdgeToEdgeIDEActivity() {
   }
 
   private fun showPasteXmlDialog() {
-    val input =
-        android.widget.EditText(this).apply {
-          setText("")
-          hint = getString(R.string.asset_studio_paste_xml_hint)
-          setPadding(32, 24, 32, 24)
-          minLines = 6
-          maxLines = 16
-          isSingleLine = false
-          setHorizontallyScrolling(false)
-          layoutParams =
-              android.widget.LinearLayout.LayoutParams(
-                  android.widget.LinearLayout.LayoutParams.MATCH_PARENT,
-                  android.widget.LinearLayout.LayoutParams.WRAP_CONTENT,
-              )
-        }
-    AlertDialog.Builder(this)
-        .setTitle(R.string.asset_studio_import_vector_xml)
-        .setView(input)
-        .setPositiveButton(R.string.asset_studio_import) { d, _ ->
-          val xml = input.text?.toString()?.trim()
-          if (!xml.isNullOrEmpty()) {
-            selectedXmlDrawable = loadVectorDrawableFromXml(xml)
-            selectedImage = null
-            isXmlMode = true
-            updatePreview()
-            if (selectedXmlDrawable != null) {
-              Toast.makeText(this, R.string.asset_studio_vector_imported, Toast.LENGTH_SHORT).show()
-            } else {
-              Toast.makeText(this, R.string.asset_studio_failed_parse_vector, Toast.LENGTH_SHORT)
-                  .show()
+    // 用统一的 Material 多行字段：裸 EditText 自己 setPadding 在深浅色/大字号下会错位，
+    // 且标签不浮动、看不出这是哪个框。
+    val field =
+        com.tom.rv2ide.preferences.dialogMultilineField(
+            context = this,
+            labelText = getString(R.string.asset_studio_paste_xml_hint),
+            initialText = "",
+            monospace = true,
+            minLines = 6,
+        )
+    val column = com.tom.rv2ide.preferences.dialogFieldColumn(this, field)
+    val dialog =
+        DialogUtils.newMaterialDialogBuilder(this)
+            .setTitle(R.string.asset_studio_import_vector_xml)
+            .setView(column)
+            .setPositiveButton(R.string.asset_studio_import) { d, _ ->
+              val xml = field.editText?.text?.toString()?.trim()
+              if (!xml.isNullOrEmpty()) {
+                selectedXmlDrawable = loadVectorDrawableFromXml(xml)
+                selectedImage = null
+                isXmlMode = true
+                updatePreview()
+                if (selectedXmlDrawable != null) {
+                  Toast.makeText(this, R.string.asset_studio_vector_imported, Toast.LENGTH_SHORT)
+                      .show()
+                } else {
+                  Toast.makeText(
+                          this, R.string.asset_studio_failed_parse_vector, Toast.LENGTH_SHORT)
+                      .show()
+                }
+              }
+              d.dismiss()
             }
-          }
-          d.dismiss()
-        }
-        .setNegativeButton(android.R.string.cancel, null)
-        .show()
+            .setNegativeButton(android.R.string.cancel, null)
+            .create()
+    // 粘贴的 XML 可能有几百行：不限高会把「导入」按钮挤出窗口。
+    com.tom.rv2ide.preferences.clampDialogScrollHeight(dialog, column, this)
+    dialog.show()
   }
 
   private fun promptSaveLocationAndGenerate(sourceBitmap: Bitmap, iconName: String) {
     val locations = arrayOf("drawable", "mipmap")
     var selected = 0
-    AlertDialog.Builder(this)
+    DialogUtils.newMaterialDialogBuilder(this)
         .setTitle(R.string.asset_studio_save_to)
         .setSingleChoiceItems(locations, selected) { _, which -> selected = which }
         .setPositiveButton(R.string.asset_studio_generate) { dialog, _ ->

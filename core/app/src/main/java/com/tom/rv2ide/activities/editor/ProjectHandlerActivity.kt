@@ -49,7 +49,6 @@ import com.tom.rv2ide.services.builder.GradleBuildService
 import com.tom.rv2ide.services.builder.GradleBuildServiceConnnection
 import com.tom.rv2ide.services.builder.gradleDistributionParams
 import com.tom.rv2ide.tasks.executeAsyncProvideError
-import com.tom.rv2ide.tasks.executeWithProgress
 import com.tom.rv2ide.tooling.api.messages.AndroidInitializationParams
 import com.tom.rv2ide.tooling.api.messages.InitializeProjectParams
 import com.tom.rv2ide.tooling.api.messages.result.InitializeResult
@@ -311,19 +310,18 @@ abstract class ProjectHandlerActivity : BaseEditorActivity() {
    *   build variants. This function is called asynchronously.
    */
   fun initializeProject(buildVariantsProvider: () -> Map<String, String>) {
-    executeWithProgress { progress ->
-      executeAsyncProvideError(buildVariantsProvider::invoke) { result, error ->
-        com.tom.rv2ide.tasks.runOnUiThread { progress.dismiss() }
-
-        if (result == null || error != null) {
-          val msg = getString(string.msg_build_variants_fetch_failed)
-          flashError(msg)
-          log.error(msg, error)
-          return@executeAsyncProvideError
-        }
-
-        com.tom.rv2ide.tasks.runOnUiThread { initializeProject(result) }
+    // 不再用阻塞式 ProgressDialog 包住准备阶段：准备 build variants 是编辑器启动的一部分，
+    // 进度改由既有构建状态区承担，用户不会被一个不可取消的模态框挡住。
+    setStatus(getString(string.preparing))
+    executeAsyncProvideError(buildVariantsProvider::invoke) { result, error ->
+      if (result == null || error != null) {
+        val msg = getString(string.msg_build_variants_fetch_failed)
+        flashError(msg)
+        log.error(msg, error)
+        return@executeAsyncProvideError
       }
+
+      com.tom.rv2ide.tasks.runOnUiThread { initializeProject(result) }
     }
   }
 

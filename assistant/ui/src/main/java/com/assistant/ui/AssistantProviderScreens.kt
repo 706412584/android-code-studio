@@ -17,6 +17,7 @@
 
 package com.assistant.ui
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -35,6 +36,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -51,6 +53,7 @@ import com.assistant.ui.theme.Spacing
 import compose.icons.FeatherIcons
 import compose.icons.feathericons.Plus
 import compose.icons.feathericons.Trash2
+import kotlinx.coroutines.launch
 
 /** 一条服务商记录（渲染层投影）。 */
 data class ProviderRecordItem(
@@ -103,24 +106,35 @@ data class PresetTemplate(
 fun AssistantProvidersScreen(
     records: List<ProviderRecordItem>,
     presets: List<PresetTemplate>,
-    onAddFromPreset: (presetId: String) -> Unit,
-    onAddCustom: () -> Unit,
-    onUpdate: (ProviderRecordItem) -> Unit,
+    /**
+     * 保存一条记录。**suspend**：宿主在 IO 线程写存储，返回值非空表示失败原因
+     * （用于就地提示并保留编辑页），null 表示保存成功。
+     *
+     * <p>改成 suspend 返回错误而不是 fire-and-forget：此前保存是同步 void，校验失败
+     * 后仍会关窗，用户以为存上了。现在只有真正成功才退回列表。
+     */
+    onSave: suspend (ProviderRecordItem) -> String?,
     onDelete: (id: String) -> Unit,
-    onFetchModels: (baseUrl: String, apiKey: String, protocol: ProviderProtocol) -> Pair<List<String>, String>,
+    /**
+     * 拉取模型清单。**suspend**：宿主在 IO 线程发起网络请求。
+     * 返回 (模型清单, 失败原因)；成功时失败原因为空串。
+     */
+    onFetchModels:
+        suspend (baseUrl: String, apiKey: String, protocol: ProviderProtocol) ->
+            Pair<List<String>, String>,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
     darkTheme: Boolean = androidx.compose.foundation.isSystemInDarkTheme(),
 ) {
-  // null = 列表；"preset" = 选预设；"newFromPreset" = 预设预填表单；
-  // "custom" = 空表单；其它 = 编辑该 id。
+  // null = 列表；"preset" = 选预设（短弹层）；"newFromPreset" = 预设预填表单页；
+  // "custom" = 空表单页；其它 = 编辑该 id 的页面。
   var mode by remember { mutableStateOf<String?>(null) }
   // 从预设进入表单时的模板（保存时才转成记录）。
   var prefilled by remember { mutableStateOf<PresetTemplate?>(null) }
 
-  AssistantManageScaffold("服务商", onBack, modifier, darkTheme) {
-    when (mode) {
-      null ->
+  when (mode) {
+    null ->
+        AssistantManageScaffold("服务商", onBack, modifier, darkTheme) {
           ProviderList(
               records = records,
               onEdit = { mode = it.id },
@@ -128,54 +142,46 @@ fun AssistantProvidersScreen(
               onAddFromPreset = { mode = "preset" },
               onAddCustom = { mode = "custom" },
           )
-      "preset" ->
+        }
+    // 选预设是**一次性选择**：留在短弹层里，选定后进入编辑页面（不叠 Dialog）。
+    "preset" ->
+        AssistantManageScaffold("从预设新建", { mode = null }, modifier, darkTheme) {
           PresetPicker(
               presets = presets,
               onPick = { presetId ->
                 // **不直接落库**：选预设只是「填好草稿」，用户可能还要改名称或填密钥。
-                // 直接添加会让用户以为预设就是最终配置，也想不通密钥该去哪填。
                 prefilled = presets.firstOrNull { it.id == presetId }
                 mode = "newFromPreset"
               },
               onCancel = { mode = null },
           )
-      "newFromPreset" ->
-          ProviderEditForm(
-              // 用预设值预填：名称、地址、主模型都有了，用户只需补密钥。
-              existing = prefilled?.toDraft(),
-              onCancel = {
-                prefilled = null
-                mode = null
-              },
-              onSave = {
-                onUpdate(it)
-                prefilled = null
-                mode = null
-              },
-              onFetchModels = onFetchModels,
-          )
-      "custom" ->
-          ProviderEditForm(
-              existing = null,
-              onCancel = { mode = null },
-              onSave = {
-                onUpdate(it)
-                mode = null
-              },
-              onFetchModels = onFetchModels,
-          )
-      else -> {
-        val existing = records.firstOrNull { it.id == mode }
-        ProviderEditForm(
-            existing = existing,
-            onCancel = { mode = null },
-            onSave = {
-              onUpdate(it)
+        }
+    else -> {
+      val existing =
+          when (mode) {
+            "newFromPreset" -> prefilled?.toDraft()
+            "custom" -> null
+            else -> records.firstOrNull { it.id == mode }
+          }
+      val isNew = existing == null || existing.id.isEmpty()
+      val title = if (isNew) "添加服务商" else "编辑服务商"
+      ProviderEditForm(
+          title = title,
+          existing = existing,
+          onCancel = {
+            prefilled = null
+            mode = null
+          },
+          onSave = { item ->
+            val error = onSave(item)
+            if (error == null) {
+              prefilled = null
               mode = null
-            },
-            onFetchModels = onFetchModels,
-        )
-      }
+            }
+            error
+          },
+          onFetchModels = onFetchModels,
+      )
     }
   }
 }
@@ -339,151 +345,78 @@ private fun PresetPicker(
   }
 }
 
+/**
+ * 服务商编辑**页面**（不再是 Dialog）。
+ *
+ * <p><b>为什么从弹窗改页面</b>：这是「连接信息 + 协议 + 4 个模型槽 + 拉取按钮」的多字段
+ * 长表单，弹窗里整表单与按钮一起滚动、长内容会把保存按钮顶出屏幕；而且它与列表在同一个
+ * 视觉层级，用户看不出「我在编辑」。改页面后：标题栏固定、保存/取消固定在底栏、
+ * 正文独立滚动。
+ *
+ * <p><b>草稿用 remember(existing?.id) 隔离</b>：切换编辑目标（或新建）时重置为那条记录的
+ * 初值，不会沿用上一条的输入。API Key 只留在本组合内存里，不进 saved state / Bundle。
+ *
+ * <p><b>保存失败留在页面</b>：onSave 返回非空即错误文案，就地显示、不退出；成功（返回 null）
+ * 才由调用方退回列表。
+ */
 @Composable
 private fun ProviderEditForm(
+    title: String,
     existing: ProviderRecordItem?,
     onCancel: () -> Unit,
-    onSave: (ProviderRecordItem) -> Unit,
-    /**
-     * 拉取模型清单。由宿主注入——渲染层不依赖引擎（见 engine/build.gradle.kts 的说明）。
-     * 返回 (模型清单, 失败原因)；成功时失败原因为空串。
-     */
+    onSave: suspend (ProviderRecordItem) -> String?,
     onFetchModels:
-        (baseUrl: String, apiKey: String, protocol: ProviderProtocol) -> Pair<List<String>, String>,
+        suspend (baseUrl: String, apiKey: String, protocol: ProviderProtocol) ->
+            Pair<List<String>, String>,
 ) {
-  var label by remember { mutableStateOf(existing?.label ?: "") }
-  var baseUrl by remember { mutableStateOf(existing?.baseUrl ?: "") }
-  var apiKey by remember { mutableStateOf(existing?.apiKey ?: "") }
-  var protocol by remember {
+  // 以记录 id 为 key：换记录/从列表重进即重建 draft，避免串数据。
+  val draftKey = existing?.id ?: "new"
+  var label by remember(draftKey) { mutableStateOf(existing?.label ?: "") }
+  var baseUrl by remember(draftKey) { mutableStateOf(existing?.baseUrl ?: "") }
+  var apiKey by remember(draftKey) { mutableStateOf(existing?.apiKey ?: "") }
+  var protocol by remember(draftKey) {
     mutableStateOf(existing?.protocol ?: ProviderProtocol.OPENAI_COMPATIBLE)
   }
-  // 4 个槽位。默认只有 main 有值，其余空串表示「与 main 相同」。
-  var slots by remember { mutableStateOf(List(4) { i -> existing?.slots?.getOrNull(i).orEmpty() }) }
-  // 拉取到的模型清单：拉取成功后每个槽位都能从这里直选。
-  var catalog by remember { mutableStateOf(listOf<String>()) }
-  var fetching by remember { mutableStateOf(false) }
-  var fetchMessage by remember { mutableStateOf("") }
+  var slots by remember(draftKey) {
+    mutableStateOf(List(4) { i -> existing?.slots?.getOrNull(i).orEmpty() })
+  }
 
-  // 弹窗而不是平铺一页：**这是表单，不是页面**。
-  // 平铺成独立页会把「返回」的语义搞混（用户以为在设置里前进了一层），
-  // 且列表页与表单页的视觉层级相同，看不出「我在编辑一项」。
-  androidx.compose.ui.window.Dialog(
-      onDismissRequest = onCancel,
-      properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false),
-  ) {
-    androidx.compose.material3.Surface(
-        shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp),
-        color = MaterialTheme.colorScheme.surface,
-        modifier = Modifier.fillMaxWidth().padding(Spacing.md),
-    ) {
-      Column(
-          modifier = Modifier.verticalScroll(rememberScrollState()).padding(Spacing.lg),
-          verticalArrangement = Arrangement.spacedBy(Spacing.sm),
-      ) {
-        Text(
-            text = if (existing == null) "添加服务商" else "编辑服务商",
-            style = MaterialTheme.typography.titleMedium,
-            color = MaterialTheme.colorScheme.onSurface,
-        )
-        AppTextField(
-            value = label,
-            onValueChange = { label = it },
-            label = "名称",
-            placeholder = "例如：DeepSeek",
-        )
-        AppTextField(
-            value = baseUrl,
-            onValueChange = { baseUrl = it },
-            label = "API 地址",
-            placeholder = "https://api.deepseek.com/v1",
-        )
-        AppTextField(
-            value = apiKey,
-            onValueChange = { apiKey = it },
-            label = "API Key",
-            visualTransformation = PasswordVisualTransformation(),
-        )
+  // 拉取状态属于「一次请求」，不进保存配置。
+  var catalog by remember(draftKey) { mutableStateOf(listOf<String>()) }
+  var fetching by remember(draftKey) { mutableStateOf(false) }
+  var fetchMessage by remember(draftKey) { mutableStateOf("") }
 
-        SettingsGroupHeader(text = "协议")
-        Row(horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
-          listOf(
-                  ProviderProtocol.OPENAI_COMPATIBLE to "OpenAI 兼容",
-                  ProviderProtocol.ANTHROPIC_MESSAGES to "Anthropic Messages",
-              )
-              .forEach { (p, name) ->
-                val selected = p == protocol
-                androidx.compose.material3.Surface(
-                    shape = androidx.compose.foundation.shape.RoundedCornerShape(8.dp),
-                    color =
-                        if (selected) MaterialTheme.colorScheme.primaryContainer
-                        else MaterialTheme.colorScheme.surfaceVariant,
-                    modifier = Modifier.clickable { protocol = p },
-                ) {
-                  Text(
-                      text = name,
-                      style = MaterialTheme.typography.bodySmall,
-                      color =
-                          if (selected) MaterialTheme.colorScheme.primary
-                          else MaterialTheme.colorScheme.onSurfaceVariant,
-                      modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                  )
-                }
-              }
-        }
+  var labelError by remember(draftKey) { mutableStateOf<String?>(null) }
+  var urlError by remember(draftKey) { mutableStateOf<String?>(null) }
+  var mainModelError by remember(draftKey) { mutableStateOf<String?>(null) }
+  var saveError by remember(draftKey) { mutableStateOf<String?>(null) }
+  var saving by remember(draftKey) { mutableStateOf(false) }
 
-        SettingsGroupHeader(text = "模型")
-        Text(
-            text =
-                "主模型用于对话；其余三个留空表示「与主模型相同」。" +
-                    "点「拉取模型」从服务商的 /models 取真实清单。",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
+  val scope = rememberCoroutineScope()
 
-        Row(verticalAlignment = Alignment.CenterVertically) {
-          TextButton(
-              enabled = !fetching && baseUrl.isNotBlank(),
+  AssistantManageScaffold(
+      title = title,
+      onBack = onCancel,
+      bottomBar = {
+        Row(
+            modifier =
+                Modifier.fillMaxWidth()
+                    .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+                    .padding(horizontal = Spacing.md, vertical = Spacing.sm),
+            horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
+        ) {
+          TextButton(onClick = onCancel, enabled = !saving) { Text("取消") }
+          androidx.compose.material3.Button(
               onClick = {
-                fetching = true
-                fetchMessage = ""
-                // 宿主负责切线程（它知道该在哪个作用域里跑）。
-                val (models, error) = onFetchModels(baseUrl, apiKey, protocol)
-                fetching = false
-                if (error.isEmpty() && models.isNotEmpty()) {
-                  catalog = models
-                  fetchMessage = "拉到 ${models.size} 个模型"
-                } else {
-                  // 失败原因要分开：网络不通与目录为空是两种问题，
-                  // 混成一句「没有模型」会把用户引向改模型名。
-                  fetchMessage = error.ifEmpty { "目录为空（可手填模型名）" }
-                }
-              }) {
-                Text(if (fetching) "拉取中…" else "拉取模型")
-              }
-          if (fetchMessage.isNotEmpty()) {
-            Text(
-                text = fetchMessage,
-                style = MaterialTheme.typography.bodySmall,
-                color =
-                    if (catalog.isNotEmpty()) MaterialTheme.colorScheme.primary
-                    else MaterialTheme.colorScheme.error,
-            )
-          }
-        }
-
-        SLOT_LABELS.forEachIndexed { index, slotLabel ->
-          SlotField(
-              label = slotLabel,
-              value = slots[index],
-              choices = catalog,
-              onValueChange = { value -> slots = slots.toMutableList().also { it[index] = value } },
-          )
-        }
-
-        Row(horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
-          TextButton(
-              onClick = {
-                onSave(
+                // 就地校验：都不通过则不进 IO。
+                labelError = if (label.isBlank()) "请填写名称" else null
+                urlError =
+                    if (baseUrl.isBlank()) "请填写 API 地址"
+                    else if (!baseUrl.trim().startsWith("http")) "地址需以 http(s):// 开头"
+                    else null
+                mainModelError = if (slots.firstOrNull().isNullOrBlank()) "请填写主模型" else null
+                if (labelError != null || urlError != null || mainModelError != null) return@Button
+                val item =
                     ProviderRecordItem(
                         // 新建时给空 id，由引擎生成；编辑时沿用原 id。
                         id = existing?.id ?: "",
@@ -493,12 +426,150 @@ private fun ProviderEditForm(
                         slots = slots.map { it.trim() },
                         protocol = protocol,
                         usable = baseUrl.isNotBlank() && slots.first().isNotBlank(),
-                    ))
-              }) {
-                Text("保存")
-              }
-          TextButton(onClick = onCancel) { Text("取消") }
+                    )
+                saving = true
+                saveError = null
+                scope.launch {
+                  val error = onSave(item)
+                  saving = false
+                  // 只有返回 null（成功）时调用方才会让我们退出；非空则留在本页。
+                  if (error != null) saveError = error
+                }
+              },
+              enabled = !saving,
+              modifier = Modifier.weight(1f),
+          ) {
+            Text(if (saving) "保存中…" else "保存")
+          }
         }
+      },
+  ) {
+    Column(
+        modifier =
+            Modifier.fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = Spacing.md, vertical = Spacing.sm),
+        verticalArrangement = Arrangement.spacedBy(Spacing.sm),
+    ) {
+      AppTextField(
+          value = label,
+          onValueChange = {
+            label = it
+            labelError = null
+          },
+          label = "名称",
+          placeholder = "例如：DeepSeek",
+          isError = labelError != null,
+          supportingText = labelError?.let { { Text(it) } },
+      )
+      AppTextField(
+          value = baseUrl,
+          onValueChange = {
+            baseUrl = it
+            urlError = null
+          },
+          label = "API 地址",
+          placeholder = "https://api.deepseek.com/v1",
+          isError = urlError != null,
+          supportingText = urlError?.let { { Text(it) } },
+      )
+      AppTextField(
+          value = apiKey,
+          onValueChange = { apiKey = it },
+          label = "API Key",
+          visualTransformation = PasswordVisualTransformation(),
+      )
+
+      SettingsGroupHeader(text = "协议")
+      Row(horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
+        listOf(
+                ProviderProtocol.OPENAI_COMPATIBLE to "OpenAI 兼容",
+                ProviderProtocol.ANTHROPIC_MESSAGES to "Anthropic Messages",
+            )
+            .forEach { (p, name) ->
+              val selected = p == protocol
+              androidx.compose.material3.Surface(
+                  shape = androidx.compose.foundation.shape.RoundedCornerShape(8.dp),
+                  color =
+                      if (selected) MaterialTheme.colorScheme.primaryContainer
+                      else MaterialTheme.colorScheme.surfaceVariant,
+                  modifier = Modifier.clickable { protocol = p },
+              ) {
+                Text(
+                    text = name,
+                    style = MaterialTheme.typography.bodySmall,
+                    color =
+                        if (selected) MaterialTheme.colorScheme.primary
+                        else MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                )
+              }
+            }
+      }
+
+      SettingsGroupHeader(text = "模型")
+      Text(
+          text =
+              "主模型用于对话；其余三个留空表示「与主模型相同」。" +
+                  "点「拉取模型」从服务商的 /models 取真实清单。",
+          style = MaterialTheme.typography.bodySmall,
+          color = MaterialTheme.colorScheme.onSurfaceVariant,
+      )
+
+      Row(verticalAlignment = Alignment.CenterVertically) {
+        TextButton(
+            enabled = !fetching && baseUrl.isNotBlank(),
+            onClick = {
+              fetching = true
+              fetchMessage = ""
+              // suspend 调用在 IO 由宿主完成；这里只关心结果。
+              scope.launch {
+                val (models, error) = onFetchModels(baseUrl.trim(), apiKey, protocol)
+                fetching = false
+                if (error.isEmpty() && models.isNotEmpty()) {
+                  catalog = models
+                  fetchMessage = "拉到 ${models.size} 个模型"
+                } else {
+                  // 失败原因分开：网络不通与目录为空是两种问题，
+                  // 混成一句「没有模型」会把用户引向改模型名。
+                  fetchMessage = error.ifEmpty { "目录为空（可手填模型名）" }
+                }
+              }
+            }) {
+              Text(if (fetching) "拉取中…" else "拉取模型")
+            }
+        if (fetchMessage.isNotEmpty()) {
+          Text(
+              text = fetchMessage,
+              style = MaterialTheme.typography.bodySmall,
+              color =
+                  if (catalog.isNotEmpty()) MaterialTheme.colorScheme.primary
+                  else MaterialTheme.colorScheme.error,
+          )
+        }
+      }
+
+      SLOT_LABELS.forEachIndexed { index, slotLabel ->
+        SlotField(
+            label = slotLabel,
+            value = slots[index],
+            choices = catalog,
+            isError = index == 0 && mainModelError != null,
+            supportingText = if (index == 0) mainModelError else null,
+            onValueChange = { value ->
+              slots = slots.toMutableList().also { it[index] = value }
+              if (index == 0) mainModelError = null
+            },
+        )
+      }
+
+      if (saveError != null) {
+        Text(
+            text = saveError!!,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.error,
+            modifier = Modifier.padding(top = Spacing.xs),
+        )
       }
     }
   }
@@ -520,14 +591,26 @@ private fun SlotField(
     value: String,
     choices: List<String>,
     onValueChange: (String) -> Unit,
+    isError: Boolean = false,
+    supportingText: String? = null,
 ) {
-  // 用下拉框而不是「输入框 + 候选行」：候选行会把对话框撑得很长，
+  // 用下拉框而不是「输入框 + 候选行」：候选行会把页面撑得很长，
   // 而下拉是同类交互的既有形制（ACS 用 MaterialAutoCompleteTextView）。
-  com.assistant.ui.compat.ModelDropdownField(
-      label = label,
-      value = value,
-      onValueChange = onValueChange,
-      choices = choices,
-      placeholder = if (label == SLOT_LABELS[0]) "必填" else "留空 = 与主模型相同",
-  )
+  Column {
+    com.assistant.ui.compat.ModelDropdownField(
+        label = label,
+        value = value,
+        onValueChange = onValueChange,
+        choices = choices,
+        placeholder = if (label == SLOT_LABELS[0]) "必填" else "留空 = 与主模型相同",
+    )
+    if (isError && supportingText != null) {
+      Text(
+          text = supportingText,
+          style = MaterialTheme.typography.bodySmall,
+          color = MaterialTheme.colorScheme.error,
+          modifier = Modifier.padding(start = Spacing.sm, top = 2.dp),
+      )
+    }
+  }
 }

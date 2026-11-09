@@ -66,6 +66,7 @@
 
   <string name="action_kill_process">Kill process (%d)</string>
   <string name="title_confirm_kill_process">Really kill this session?</string>
+  <string name="action_confirm_kill">Kill</string>
 
   <string name="action_toggle_keep_screen_on">Keep screen on</string>
   <string name="action_open_help">Help</string>

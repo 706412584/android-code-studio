@@ -16,10 +16,7 @@
  */
 package com.tom.rv2ide.tasks
 
-import android.app.ProgressDialog
-import android.content.Context
 import com.blankj.utilcode.util.ThreadUtils
-import com.tom.rv2ide.common.R
 import java.util.concurrent.Callable
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.CompletionException
@@ -76,19 +73,6 @@ object TaskExecutor {
 
 fun <R : Any?> executeAsync(callable: () -> R?) {
   executeAsync(callable) {}
-}
-
-@JvmOverloads
-@Suppress("DEPRECATION")
-inline fun <T> Context.executeWithProgress(
-    cancellable: Boolean = false,
-    block: (ProgressDialog) -> T,
-): T {
-  val dialog = ProgressDialog(this)
-  dialog.setMessage(getString(R.string.please_wait))
-  dialog.setCancelable(cancellable)
-  dialog.show()
-  return block(dialog)
 }
 
 fun <R : Any?> executeAsync(callable: () -> R?, callback: (R?) -> Unit): CompletableFuture<R?> =

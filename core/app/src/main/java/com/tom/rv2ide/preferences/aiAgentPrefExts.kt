@@ -949,10 +949,16 @@ private abstract class MediaGenerationPreference(
           }
         }
         .setNegativeButton(android.R.string.cancel, null)
-        // 清除入口：显式出口，避免只能改不能撤。
+        // 清除入口：显式出口，避免只能改不能撤。清空后要重走一遍选择流程，故确认一次。
         .setNeutralButton(s.clear) { _, _ ->
-          clear(settings)
-          preference.summary = currentSummary(context)
+          com.google.android.material.dialog.MaterialAlertDialogBuilder(context)
+              .setMessage(s.clearConfirm)
+              .setPositiveButton(s.clear) { _, _ ->
+                clear(settings)
+                preference.summary = currentSummary(context)
+              }
+              .setNegativeButton(android.R.string.cancel, null)
+              .show()
         }
         .show()
     return true
@@ -991,15 +997,36 @@ private abstract class MediaGenerationPreference(
           return@withContext
         }
         val checked = models.indexOf(model(settings))
-        com.google.android.material.dialog.MaterialAlertDialogBuilder(context)
-            .setTitle(context.getString(s.pickModel, record.getLabel()))
-            .setSingleChoiceItems(models.toTypedArray(), checked) { dialog, which ->
-              setProviderModel(settings, record.getId(), models[which])
-              preference.summary = currentSummary(context)
-              dialog.dismiss()
-            }
-            .setNegativeButton(android.R.string.cancel, null)
-            .show()
+        // 单选先记在局部，点「确定」才落库。此前是点一下就写入并关闭：
+        // 模型清单往往二三十条，滑动手感不稳时会误选，而误选会直接改变生图用的模型，
+        // 用户要再走一遍「选服务商 → 等网络 → 选模型」才能改回来。
+        var selected = if (checked >= 0) checked else -1
+        var confirmButton: android.widget.Button? = null
+        val dialog =
+            com.google.android.material.dialog.MaterialAlertDialogBuilder(context)
+                .setTitle(context.getString(s.pickModel, record.getLabel()))
+                .setSingleChoiceItems(models.toTypedArray(), checked) { _, which ->
+                  selected = which
+                  confirmButton?.isEnabled = true
+                }
+                .setPositiveButton(android.R.string.ok) { _, _ ->
+                  val index = selected
+                  if (index in models.indices) {
+                    setProviderModel(settings, record.getId(), models[index])
+                    preference.summary = currentSummary(context)
+                  }
+                }
+                .setNegativeButton(android.R.string.cancel, null)
+                .create()
+        dialog.setOnShowListener {
+          // 当前没有已选模型时先禁用「确定」：否则用户不选就点确定，弹窗无声关闭、
+          // 什么都没写入，看起来像「点了没反应」。选中一项后自动启用。
+          confirmButton =
+              dialog.getButton(android.content.DialogInterface.BUTTON_POSITIVE).apply {
+                isEnabled = selected in models.indices
+              }
+        }
+        dialog.show()
       }
     }
   }
@@ -1035,6 +1062,7 @@ private abstract class MediaGenerationPreference(
       val noProviders: Int,
       val noModels: Int,
       val clear: Int,
+      val clearConfirm: Int,
       val outputDirRow: Int,
       val outputDirDefault: Int,
   )
@@ -1078,6 +1106,7 @@ private class ImageGenerationPreference(
           noProviders = R.string.ai_agent_image_gen_no_providers,
           noModels = R.string.ai_agent_image_gen_no_models,
           clear = R.string.ai_agent_image_gen_clear,
+          clearConfirm = R.string.ai_agent_image_gen_clear_confirm,
           outputDirRow = R.string.ai_agent_image_gen_output_dir_row,
           outputDirDefault = R.string.ai_agent_image_gen_output_dir_default,
       )
@@ -1120,6 +1149,7 @@ private class VideoGenerationPreference(
           noProviders = R.string.ai_agent_video_gen_no_providers,
           noModels = R.string.ai_agent_video_gen_no_models,
           clear = R.string.ai_agent_video_gen_clear,
+          clearConfirm = R.string.ai_agent_video_gen_clear_confirm,
           outputDirRow = R.string.ai_agent_video_gen_output_dir_row,
           outputDirDefault = R.string.ai_agent_video_gen_output_dir_default,
       )
@@ -1210,34 +1240,6 @@ private class ChatModePreference(
         .setNegativeButton(android.R.string.cancel, null)
         .show()
     return true
-  }
-}
-
-/**
- * 把「内容可长的滚动区」限制为屏幕高度的固定比例。
- *
- * <p><b>必须在 dialog.show() 之后调用</b>：{@code AlertController.setupCustomContent}
- * 会把自定义视图的 layoutParams 覆盖成 {@code (MATCH_PARENT, WRAP_CONTENT)}，
- * 在 setView 之前设的任何固定高度都会被丢弃。WRAP_CONTENT 下的 ScrollView 随内容
- * 长高——粘贴长文时对话框被撑爆、底部按钮栏被挤出窗口（用户报的「保存按钮不见了」
- * 与「好像有字数限制」都源于此，实际并没有长度限制）。
- *
- * <p>用屏幕高度的 45%：标题 + 提示 + 按钮都留在可见区，正文超出部分在框内滚动。
- *
- * <p>放文件顶层而非某个 Preference 类里：提示词模板、内置 agent、自定义 agent
- * 三处编辑对话框都有多行长文本字段，共用这一个实现。
- */
-private fun clampDialogScrollHeight(
-    dialog: android.app.Dialog,
-    scroll: android.widget.ScrollView,
-    context: Context,
-) {
-  dialog.setOnShowListener {
-    scroll.layoutParams =
-        android.widget.FrameLayout.LayoutParams(
-            android.widget.FrameLayout.LayoutParams.MATCH_PARENT,
-            (context.resources.displayMetrics.heightPixels * 0.45f).toInt(),
-        )
   }
 }
 
@@ -1341,60 +1343,52 @@ private class PromptTemplatePreference(
         store.read(templateId)?.takeIf { it.isNotBlank() }
             ?: com.tom.rv2ide.ai.agent.prompt.PromptTemplates.defaultFor(templateId)
     val unknown = com.tom.rv2ide.ai.agent.prompt.PromptRenderer.unknownPlaceholders(current)
-    val dp = { value: Int -> (value * context.resources.displayMetrics.density).toInt() }
 
-    val editText =
-        android.widget.EditText(context).apply {
-          setText(current)
-          // 多行 + 等宽：提示词是带换行的结构化文本，单行输入框没法用。
-          inputType =
-              android.text.InputType.TYPE_CLASS_TEXT or
-                  android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE
-          gravity = android.view.Gravity.TOP or android.view.Gravity.START
-          minLines = 8
-          typeface = android.graphics.Typeface.MONOSPACE
-          setHorizontallyScrolling(false)
-        }
-
-    // 完整占位符清单挂到输入框的长按上，**不能放进对话框正文**：
-    // 正文里那十几行会把 AlertDialog 顶到满屏，底部按钮栏被挤出窗口——
-    // 用户看到的就是「能编辑，但找不到保存按钮」。
+    // 占位符清单放在输入框**下方**一块独立文本里，而不是塞进 TextInputLayout 的
+// helperText：helperText 的样式是为一句短提示设计的，十几行清单显示成极小字号、
+// 且与错误提示挤在同一行，可读性差。放进内容列则随对话框一起滚动，用户直接看得到
+// （旧的"长按输入框"隐藏交互发现性太差）。
+    // 未知占位符必须单独成段并置顶——拼错的占位符会静默变空串，保存前得看见。
     val placeholders = com.tom.rv2ide.ai.agent.prompt.PromptPlaceholders.all()
-    editText.setOnLongClickListener {
-      com.google.android.material.dialog.MaterialAlertDialogBuilder(context)
-          .setTitle(R.string.ai_agent_prompt_template_placeholders)
-          .setMessage(placeholders.joinToString("\n") { "{{$it}}" })
-          .setPositiveButton(android.R.string.ok, null)
-          .show()
-      true
-    }
-
-    val scroll =
-        android.widget.ScrollView(context).apply {
-          addView(editText)
-          setPadding(dp(4), dp(4), dp(4), dp(4))
+    val helper =
+        android.widget.TextView(context).apply {
+          setTextAppearance(com.google.android.material.R.style.TextAppearance_Material3_BodySmall)
+          setTextColor(
+              com.google.android.material.color.MaterialColors.getColor(
+                  this, com.google.android.material.R.attr.colorOnSurfaceVariant))
+          text =
+              buildString {
+                if (unknown.isNotEmpty()) {
+                  append(context.getString(R.string.ai_agent_prompt_template_unknown))
+                  append('\n')
+                  append(unknown.joinToString("  ") { "{{$it}}" })
+                  append("\n\n")
+                }
+                append(context.getString(R.string.ai_agent_prompt_template_placeholders_hint))
+                append('\n')
+                append(placeholders.joinToString("  ") { "{{$it}}" })
+              }
         }
 
-    // 正文只留短提示与**校验警告**：拼错的占位符会静默变空串，必须在保存前可见。
-    val hint =
-        buildString {
-          append(context.getString(R.string.ai_agent_prompt_template_placeholders_hint))
-          if (unknown.isNotEmpty()) {
-            append("\n\n")
-            append(context.getString(R.string.ai_agent_prompt_template_unknown))
-            append('\n')
-            append(unknown.joinToString("  ") { "{{$it}}" })
-          }
-        }
+    val field = dialogMultilineField(
+        context = context,
+        labelText = templateId,
+        initialText = current,
+        monospace = true,
+        minLines = 8,
+    )
+
+    // 提示放在输入框**上方**：多行输入框本身可滚动，手指在框内滑动只会滚动文本、
+// 不会带动外层 ScrollView，放在下方的辅助文本实际够不到。
+    val column = dialogFieldColumn(context, helper, field)
 
     val dialog =
         com.google.android.material.dialog.MaterialAlertDialogBuilder(context)
-            .setTitle(templateId)
-            .setMessage(hint)
-            .setView(scroll)
+            .setTitle(R.string.ai_agent_prompt_template_title)
+            .setView(column)
             // 显式写「保存」而不是「确定」：用户要的就是一个明确的保存入口。
             .setPositiveButton(R.string.ai_agent_prompt_template_save) { _, _ ->
-              store.write(templateId, editText.text?.toString().orEmpty())
+              store.write(templateId, field.editText?.text?.toString().orEmpty())
               preference.summary = describe(context)
             }
             .setNeutralButton(R.string.ai_agent_prompt_template_reset) { _, _ ->
@@ -1404,10 +1398,9 @@ private class PromptTemplatePreference(
             .setNegativeButton(android.R.string.cancel, null)
             .create()
 
-    // 高度限制见 clampDialogScrollHeight：setView 时设的固定高度会被 AlertController
-    // 覆盖成 WRAP_CONTENT，长文会把对话框撑爆、保存按钮被挤出窗口。
-    // 这不是字数限制（存储层与输入框都没有长度限制），是布局问题。
-    clampDialogScrollHeight(dialog, scroll, context)
+    // dialogFieldColumn 自带 ScrollView：长提示词在有限高度内滚动，按钮栏留在底部。
+    // 这里的 45% 不是字数限制（存储层与输入框都没有长度限制），是布局问题。
+    com.tom.rv2ide.preferences.clampDialogScrollHeight(dialog, column, context)
     dialog.show()
   }
 }
@@ -1561,25 +1554,20 @@ private class AgentsPreference(
       existing: com.tom.rv2ide.ai.agent.builtin.BuiltinAgent,
       preference: Preference,
   ) {
-    val container = android.widget.LinearLayout(context).apply {
-      orientation = android.widget.LinearLayout.VERTICAL
-      setPadding(48, 24, 48, 0)
-    }
-    val descriptionField = com.google.android.material.textfield.TextInputEditText(context).apply {
-      hint = context.getString(R.string.ai_agent_custom_agents_description_hint)
-      setText(existing.description)
-    }
-    val promptField = com.google.android.material.textfield.TextInputEditText(context).apply {
-      hint = context.getString(R.string.ai_agent_custom_agents_prompt_hint)
-      setText(existing.prompt)
-      inputType =
-          android.text.InputType.TYPE_CLASS_TEXT or
-              android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE
-      gravity = android.view.Gravity.TOP or android.view.Gravity.START
-      minLines = 8
-    }
-    container.addView(descriptionField)
-    container.addView(promptField)
+    val descriptionField =
+        dialogEditTextField(
+            context,
+            context.getString(R.string.ai_agent_custom_agents_description_hint),
+            existing.description,
+        )
+    val promptField =
+        dialogMultilineField(
+            context,
+            context.getString(R.string.ai_agent_custom_agents_prompt_hint),
+            existing.prompt,
+            monospace = false,
+            minLines = 8,
+        )
 
     // 工具白名单：这是硬边界（不在白名单里的工具根本不会注册给子 agent），不是建议，
     // 因此必须可编辑——例如把「审查员」从只读改成可写以允许它顺手修一处笔误。
@@ -1588,22 +1576,24 @@ private class AgentsPreference(
                 com.tom.rv2ide.ai.agent.builtin.BuiltinAgents.writeTools())
             .distinct()
     val checks = LinkedHashMap<String, android.widget.CheckBox>()
-    container.addView(
-        android.widget.TextView(context).apply {
-          text = context.getString(R.string.ai_agent_agents_tools_label)
-          setPadding(0, 24, 0, 4)
-        })
+    val toolsGroup =
+        android.widget.LinearLayout(context).apply {
+          orientation = android.widget.LinearLayout.VERTICAL
+          addView(
+              android.widget.TextView(context).apply {
+                text = context.getString(R.string.ai_agent_agents_tools_label)
+              })
+        }
     for (tool in allTools) {
       val box = android.widget.CheckBox(context).apply {
         text = tool
         isChecked = existing.tools.contains(tool)
       }
       checks[tool] = box
-      container.addView(box)
+      toolsGroup.addView(box)
     }
 
-    val scroll =
-        android.widget.ScrollView(context).apply { addView(container) }
+    val scroll = dialogFieldColumn(context, descriptionField, promptField, toolsGroup)
     val dialog =
         com.google.android.material.dialog.MaterialAlertDialogBuilder(context)
             .setTitle(existing.name)
@@ -1613,8 +1603,8 @@ private class AgentsPreference(
                   com.tom.rv2ide.ai.agent.builtin.BuiltinAgent(
                       existing.id,
                       existing.name,
-                      descriptionField.text?.toString().orEmpty(),
-                      promptField.text?.toString().orEmpty(),
+                      descriptionField.editText?.text?.toString().orEmpty(),
+                      promptField.editText?.text?.toString().orEmpty(),
                       checks.filter { it.value.isChecked }.keys.toList(),
                       existing.isEnabled,
                   )
@@ -1626,7 +1616,7 @@ private class AgentsPreference(
             }
             .setNegativeButton(android.R.string.cancel, null)
             .create()
-    clampDialogScrollHeight(dialog, scroll, context)
+    com.tom.rv2ide.preferences.clampDialogScrollHeight(dialog, scroll, context)
     dialog.show()
   }
 
@@ -1672,47 +1662,54 @@ private class AgentsPreference(
       existing: com.tom.rv2ide.ai.agent.command.CustomAgent?,
       preference: Preference,
   ) {
-    val container = android.widget.LinearLayout(context).apply {
-      orientation = android.widget.LinearLayout.VERTICAL
-      setPadding(48, 24, 48, 0)
-    }
-    val nameField = com.google.android.material.textfield.TextInputEditText(context).apply {
-      hint = context.getString(R.string.ai_agent_custom_agents_name_hint)
-      setText(existing?.name.orEmpty())
-      isEnabled = existing == null // 名字是工具的标识，改名等于换一个工具
-    }
-    val descriptionField = com.google.android.material.textfield.TextInputEditText(context).apply {
-      hint = context.getString(R.string.ai_agent_custom_agents_description_hint)
-      setText(existing?.description.orEmpty())
-    }
-    val promptField = com.google.android.material.textfield.TextInputEditText(context).apply {
-      hint = context.getString(R.string.ai_agent_custom_agents_prompt_hint)
-      setText(existing?.prompt.orEmpty())
-      inputType =
-          android.text.InputType.TYPE_CLASS_TEXT or
-              android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE
-      gravity = android.view.Gravity.TOP or android.view.Gravity.START
-      minLines = 6
-    }
-    container.addView(nameField)
-    container.addView(descriptionField)
-    container.addView(promptField)
+    val nameField =
+        dialogEditTextField(
+            context,
+            context.getString(R.string.ai_agent_custom_agents_name_hint),
+            existing?.name.orEmpty(),
+        )
+    // 名字是工具的标识，改名等于换一个工具。
+    nameField.editText?.isEnabled = existing == null
+    val descriptionField =
+        dialogEditTextField(
+            context,
+            context.getString(R.string.ai_agent_custom_agents_description_hint),
+            existing?.description.orEmpty(),
+        )
+    val promptField =
+        dialogMultilineField(
+            context,
+            context.getString(R.string.ai_agent_custom_agents_prompt_hint),
+            existing?.prompt.orEmpty(),
+            monospace = false,
+            minLines = 6,
+        )
 
     val scroll =
-        android.widget.ScrollView(context).apply { addView(container) }
+        dialogFieldColumn(
+            context,
+            nameField,
+            descriptionField,
+            promptField,
+            android.widget.TextView(context).apply {
+              setText(R.string.ai_agent_custom_agents_hint)
+              setTextColor(
+                  com.google.android.material.color.MaterialColors.getColor(
+                      this, com.google.android.material.R.attr.colorOnSurfaceVariant))
+            },
+        )
     val dialog =
         com.google.android.material.dialog.MaterialAlertDialogBuilder(context)
             .setTitle(
                 if (existing == null) R.string.ai_agent_agents_add
                 else R.string.ai_agent_agents_edit)
-            .setMessage(R.string.ai_agent_custom_agents_hint)
             .setView(scroll)
             .setPositiveButton(android.R.string.ok) { _, _ ->
               val agent =
                   com.tom.rv2ide.ai.agent.command.CustomAgent(
-                      nameField.text?.toString().orEmpty(),
-                      descriptionField.text?.toString().orEmpty(),
-                      promptField.text?.toString().orEmpty(),
+                      nameField.editText?.text?.toString().orEmpty(),
+                      descriptionField.editText?.text?.toString().orEmpty(),
+                      promptField.editText?.text?.toString().orEmpty(),
                       existing?.isEnabled ?: true,
                   )
               val error = store.save(agent)
@@ -1723,7 +1720,7 @@ private class AgentsPreference(
             }
             .setNegativeButton(android.R.string.cancel, null)
             .create()
-    clampDialogScrollHeight(dialog, scroll, context)
+    com.tom.rv2ide.preferences.clampDialogScrollHeight(dialog, scroll, context)
     dialog.show()
   }
 }
@@ -2030,12 +2027,46 @@ private class MemoriesPreference(
     com.google.android.material.dialog.MaterialAlertDialogBuilder(context)
         .setTitle(R.string.ai_agent_memory_title)
         .setItems(labels) { _, which ->
-          // 点选即删除。记忆条目通常很短，选中即意味着「这条不对」，
-          // 再弹一层确认只会多一次点击。
-          store.remove(entries[which].getId())
-          preference.summary = refreshSummary(context)
+          // 点选**先确认再删**。此前是点选即删：记忆是列表里唯一一个「点一下就永久
+          // 消失」的条目，误触没有任何挽回余地，而确认只多一次点击。
+          confirmDelete(context, store, entries[which], preference)
         }
         .setNeutralButton(R.string.ai_agent_memory_clear_all) { _, _ ->
+          confirmClearAll(context, store, preference)
+        }
+        .setNegativeButton(android.R.string.cancel, null)
+        .show()
+  }
+
+  /** 删除单条记忆前确认，正文点名要删的内容。 */
+  private fun confirmDelete(
+      context: Context,
+      store: com.tom.rv2ide.ai.tool.memory.MemoryStore,
+      entry: com.tom.rv2ide.ai.tool.memory.MemoryEntry,
+      preference: Preference,
+  ) {
+    com.google.android.material.dialog.MaterialAlertDialogBuilder(context)
+        .setTitle(R.string.ai_agent_memory_delete)
+        .setMessage(entry.toLine())
+        .setPositiveButton(R.string.ai_agent_memory_delete) { _, _ ->
+          store.remove(entry.getId())
+          preference.summary = refreshSummary(context)
+          showList(context, preference)
+        }
+        .setNegativeButton(android.R.string.cancel, null)
+        .show()
+  }
+
+  /** 清空全部记忆前确认——这是不可撤销的批量删除。 */
+  private fun confirmClearAll(
+      context: Context,
+      store: com.tom.rv2ide.ai.tool.memory.MemoryStore,
+      preference: Preference,
+  ) {
+    com.google.android.material.dialog.MaterialAlertDialogBuilder(context)
+        .setTitle(R.string.ai_agent_memory_clear_all)
+        .setMessage(R.string.ai_agent_memory_clear_all_confirm)
+        .setPositiveButton(R.string.ai_agent_memory_clear_all) { _, _ ->
           store.clear()
           preference.summary = refreshSummary(context)
         }
@@ -2159,28 +2190,23 @@ private class ProjectRulesPreference(
   ) {
     val existing = if (file.isFile) runCatching { file.readText() }.getOrDefault("") else ""
 
-    val field = com.google.android.material.textfield.TextInputEditText(context).apply {
-      setText(existing.ifEmpty { ProjectRulesLoader.template() })
-      inputType =
-          android.text.InputType.TYPE_CLASS_TEXT or
-              android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE
-      gravity = android.view.Gravity.TOP or android.view.Gravity.START
-      minLines = 10
-    }
-    val container = android.widget.LinearLayout(context).apply {
-      orientation = android.widget.LinearLayout.VERTICAL
-      setPadding(48, 24, 48, 0)
-      addView(field)
-    }
-    val scroll = android.widget.ScrollView(context).apply { addView(container) }
+    val field =
+        dialogMultilineField(
+            context,
+            file.name,
+            existing.ifEmpty { ProjectRulesLoader.template() },
+            monospace = false,
+            minLines = 10,
+            helperText = file.parentFile?.absolutePath,
+        )
+    val scroll = dialogFieldColumn(context, field)
 
     val dialog =
         MaterialAlertDialogBuilder(context)
-            .setTitle(file.name)
-            .setMessage(file.parentFile?.absolutePath)
+            .setTitle(R.string.ai_agent_project_rules_title)
             .setView(scroll)
             .setPositiveButton(android.R.string.ok) { _, _ ->
-              val text = field.text?.toString().orEmpty()
+              val text = field.editText?.text?.toString().orEmpty()
               try {
                 file.writeText(text)
                 Toast.makeText(
@@ -2200,7 +2226,7 @@ private class ProjectRulesPreference(
             }
             .setNegativeButton(android.R.string.cancel, null)
             .create()
-    clampDialogScrollHeight(dialog, scroll, context)
+    com.tom.rv2ide.preferences.clampDialogScrollHeight(dialog, scroll, context)
     dialog.show()
   }
 
@@ -2280,243 +2306,11 @@ private class McpServersPreference(
   }
 
   override fun onPreferenceClick(preference: Preference): Boolean {
-    showList(preference.context, preference)
+    // 打开 MCP 管理**页面**（取代「列表弹窗 → 动作弹窗 → 表单弹窗」三层链）。
+    com.tom.rv2ide.artificial.agent.manage.AssistantManageActivity.start(
+        preference.context,
+        com.tom.rv2ide.artificial.agent.manage.AssistantManageActivity.SECTION_MCP)
     return true
-  }
-
-  private fun showList(
-      context: Context,
-      preference: Preference,
-  ) {
-    val store = com.tom.rv2ide.artificial.agent.McpServers(context)
-    val servers = store.all()
-
-    val labels =
-        servers
-            .map { server ->
-              val state = if (server.enabled) "✓" else "✗"
-              // 标出传输类型：http/sse/stdio 连不通时表现完全不同（HTTP 无响应、
-              // SSE 打不开长连接、stdio 起不了进程），出问题时需要一眼看到用的是哪个。
-              val type =
-                  when (server.type) {
-                    com.tom.rv2ide.artificial.agent.McpServers.TYPE_SSE -> "SSE"
-                    com.tom.rv2ide.artificial.agent.McpServers.TYPE_STDIO -> "STDIO"
-                    else -> "HTTP"
-                  }
-              "$state [$type] ${server.displayName()}"
-            }
-            .toMutableList()
-    labels.add(context.getString(R.string.ai_agent_mcp_add))
-
-    com.google.android.material.dialog.MaterialAlertDialogBuilder(context)
-        .setTitle(R.string.ai_agent_mcp_title)
-        .setItems(labels.toTypedArray()) { _, which ->
-          if (which == servers.size) {
-            showAddDialog(context, preference)
-          } else {
-            showServerActions(context, preference, servers[which])
-          }
-        }
-        .setNegativeButton(android.R.string.cancel, null)
-        .show()
-  }
-
-  private fun showServerActions(
-      context: Context,
-      preference: Preference,
-      server: com.tom.rv2ide.artificial.agent.McpServers.Server,
-  ) {
-    val store = com.tom.rv2ide.artificial.agent.McpServers(context)
-    val actions =
-        arrayOf(
-            context.getString(
-                if (server.enabled) R.string.ai_agent_mcp_disable
-                else R.string.ai_agent_mcp_enable),
-            context.getString(R.string.ai_agent_mcp_remove),
-        )
-
-    com.google.android.material.dialog.MaterialAlertDialogBuilder(context)
-        .setTitle(server.displayName())
-        .setItems(actions) { _, which ->
-          when (which) {
-            0 -> {
-              val updated = store.all()
-              val next = mutableListOf<com.tom.rv2ide.artificial.agent.McpServers.Server>()
-              for (item in updated) {
-                next.add(
-                    if (item.url == server.url)
-                        // 必须带上 item.type 与 stdio 三字段：七参构造器之外的重载会把
-                        // 它们默认清空，漏了会让切换启用状态时把 stdio 配置静默降级成 http。
-                        com.tom.rv2ide.artificial.agent.McpServers.Server(
-                            item.url,
-                            item.label,
-                            !item.enabled,
-                            item.type,
-                            item.args,
-                            item.env,
-                            item.cwd)
-                    else item)
-              }
-              store.save(next)
-            }
-            1 -> store.remove(server.url)
-          }
-          preference.summary = refreshSummary(context)
-        }
-        .setNegativeButton(android.R.string.cancel, null)
-        .show()
-  }
-
-  private fun showAddDialog(
-      context: Context,
-      preference: Preference,
-  ) {
-    val container = android.widget.LinearLayout(context).apply {
-      orientation = android.widget.LinearLayout.VERTICAL
-      setPadding(48, 24, 48, 0)
-    }
-    val urlField = com.google.android.material.textfield.TextInputEditText(context).apply {
-      hint = "https://mcp.example.com/mcp"
-      inputType =
-          android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_URI
-    }
-    val labelField = com.google.android.material.textfield.TextInputEditText(context).apply {
-      hint = context.getString(R.string.ai_agent_mcp_label_hint)
-    }
-    container.addView(urlField)
-    container.addView(labelField)
-
-    // 传输类型选择。默认选中 http：三种传输的地址形态不同（http 是消息端点、
-    // sse 是事件流端点、stdio 是本地命令），选错时连接会以很难归因的方式失败，
-    // 因此必须让用户显式选择而不是靠地址猜。
-    val typeLabels =
-        arrayOf(
-            context.getString(R.string.ai_agent_mcp_type_http),
-            context.getString(R.string.ai_agent_mcp_type_sse),
-            context.getString(R.string.ai_agent_mcp_type_stdio))
-    container.addView(
-        android.widget.TextView(context).apply {
-          text = context.getString(R.string.ai_agent_mcp_type_label)
-          setPadding(0, 24, 0, 4)
-        })
-    val typePicker =
-        android.widget.Spinner(context).apply {
-          adapter =
-              android.widget.ArrayAdapter(
-                  context, android.R.layout.simple_spinner_dropdown_item, typeLabels)
-        }
-    container.addView(typePicker)
-
-    // stdio 专属字段：命令参数（空格分隔）、附加环境变量（KEY=VALUE 每行一个）、工作目录。
-    val argsField = com.google.android.material.textfield.TextInputEditText(context).apply {
-      hint = "--port 8080 --verbose"
-      inputType = android.text.InputType.TYPE_CLASS_TEXT
-    }
-    val envField = com.google.android.material.textfield.TextInputEditText(context).apply {
-      hint = "API_KEY=xxx\nLOG_LEVEL=debug"
-      inputType =
-          android.text.InputType.TYPE_CLASS_TEXT or
-              android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE
-    }
-    val cwdField = com.google.android.material.textfield.TextInputEditText(context).apply {
-      hint = "/data/data/com.termux/files/home（留空继承）"
-      inputType = android.text.InputType.TYPE_CLASS_TEXT
-    }
-    val stdioViews = listOf(argsField, envField, cwdField)
-    container.addView(
-        android.widget.TextView(context).apply {
-          text = context.getString(R.string.ai_agent_mcp_stdio_args)
-          setPadding(0, 24, 0, 4)
-        })
-    container.addView(argsField)
-    container.addView(
-        android.widget.TextView(context).apply {
-          text = context.getString(R.string.ai_agent_mcp_stdio_env)
-          setPadding(0, 16, 0, 4)
-        })
-    container.addView(envField)
-    container.addView(
-        android.widget.TextView(context).apply {
-          text = context.getString(R.string.ai_agent_mcp_stdio_cwd)
-          setPadding(0, 16, 0, 4)
-        })
-    container.addView(cwdField)
-    // 非 stdio 类型隐藏三字段：url 输入时它们没有意义，只会干扰。
-    fun syncStdioVisibility() {
-      val isStdio = typePicker.selectedItemPosition == 2
-      stdioViews.forEach { it.visibility = if (isStdio) View.VISIBLE else View.GONE }
-      (stdioViews[0].parent as? android.view.ViewGroup)?.let { group ->
-        // 提示行与输入框同显隐：按 idx 反查（args 提示行在 argsField 前 1 位）。
-        val idx = group.indexOfChild(argsField)
-        group.getChildAt(idx - 1).visibility = if (isStdio) View.VISIBLE else View.GONE
-      }
-      (stdioViews[1].parent as? android.view.ViewGroup)?.let { group ->
-        val idx = group.indexOfChild(envField)
-        group.getChildAt(idx - 1).visibility = if (isStdio) View.VISIBLE else View.GONE
-      }
-      (stdioViews[2].parent as? android.view.ViewGroup)?.let { group ->
-        val idx = group.indexOfChild(cwdField)
-        group.getChildAt(idx - 1).visibility = if (isStdio) View.VISIBLE else View.GONE
-      }
-    }
-    typePicker.onItemSelectedListener =
-        object : android.widget.AdapterView.OnItemSelectedListener {
-          override fun onItemSelected(parent: android.widget.AdapterView<*>?, view: android.view.View?, position: Int, id: Long) =
-              syncStdioVisibility()
-
-          override fun onNothingSelected(parent: android.widget.AdapterView<*>?) = Unit
-        }
-
-    com.google.android.material.dialog.MaterialAlertDialogBuilder(context)
-        .setTitle(R.string.ai_agent_mcp_add)
-        .setMessage(R.string.ai_agent_mcp_add_hint)
-        .setView(container)
-        .setPositiveButton(android.R.string.ok) { _, _ ->
-          val url = urlField.text?.toString()?.trim().orEmpty()
-          if (url.isNotEmpty()) {
-            val type =
-                when (typePicker.selectedItemPosition) {
-                  1 -> com.tom.rv2ide.artificial.agent.McpServers.TYPE_SSE
-                  2 -> com.tom.rv2ide.artificial.agent.McpServers.TYPE_STDIO
-                  else -> com.tom.rv2ide.artificial.agent.McpServers.TYPE_HTTP
-                }
-            if (type == com.tom.rv2ide.artificial.agent.McpServers.TYPE_STDIO) {
-              // stdio：url 槽位存命令名；args 按空白切分（不支持带空格的参数——
-              // 键值对场景够用，引号解析的复杂度不值得）。
-              val args = argsField.text?.toString()?.trim()?.split(Regex("\\s+"))?.filter { it.isNotEmpty() } ?: emptyList()
-              val env =
-                  envField.text?.toString()?.trim()?.lines()
-                      ?.mapNotNull { line ->
-                        val kv = line.split('=', limit = 2)
-                        if (kv.size == 2 && kv[0].trim().isNotEmpty()) {
-                          kv[0].trim() to kv[1].trim()
-                        } else null
-                      }
-                      ?.toMap()
-                      ?: emptyMap()
-              val cwd = cwdField.text?.toString()?.trim().orEmpty()
-              com.tom.rv2ide.artificial.agent.McpServers(context)
-                  .add(
-                      com.tom.rv2ide.artificial.agent.McpServers.Server(
-                          url, labelField.text?.toString()?.trim().orEmpty(), true,
-                          type, args, env, cwd))
-            } else {
-              com.tom.rv2ide.artificial.agent.McpServers(context)
-                  .add(
-                      com.tom.rv2ide.artificial.agent.McpServers.Server(
-                          url, labelField.text?.toString()?.trim().orEmpty(), true, type))
-            }
-            preference.summary = refreshSummary(context)
-          }
-        }
-        .setNegativeButton(android.R.string.cancel, null)
-        .show()
-  }
-
-  private fun refreshSummary(context: Context): String {
-    val servers = com.tom.rv2ide.artificial.agent.McpServers(context).all()
-    return if (servers.isEmpty()) context.getString(R.string.ai_agent_mcp_none)
-    else context.getString(R.string.ai_agent_mcp_count, servers.count { it.enabled }, servers.size)
   }
 }
 
@@ -2563,18 +2357,56 @@ private class AuthorizedToolsPreference(
         .setTitle(R.string.ai_agent_authorized_title)
         .setItems(shown) { _, which ->
           // 单条撤销：不提供「全部清空」之外的批量操作，避免误触清掉全部授权后
-          // 用户不知道哪些被清掉了。
-          com.tom.rv2ide.artificial.agent.AgentToolSettings(context)
-              .forgetDangerousToolRule(rules[which])
-          preference.summary = context.getString(R.string.ai_agent_authorized_count, rules.size - 1)
+          // 用户不知道哪些被清掉了。撤销前确认——这是安全边界，误触会让下一次
+          // 同命令重新走授权流程（本意可能是保留）。
+          confirmRevoke(context, preference, rules[which], shown[which])
         }
         .setNeutralButton(R.string.ai_agent_authorized_clear_all) { _, _ ->
-          com.tom.rv2ide.artificial.agent.AgentToolSettings(context).clearDangerousToolRules()
-          preference.summary = context.getString(R.string.ai_agent_authorized_none)
+          confirmClearAll(context, preference)
         }
         .setNegativeButton(android.R.string.cancel, null)
         .show()
     return true
+  }
+
+  /** 撤销单条持久授权前确认。 */
+  private fun confirmRevoke(
+      context: Context,
+      preference: Preference,
+      rule: String,
+      description: String,
+  ) {
+    com.google.android.material.dialog.MaterialAlertDialogBuilder(context)
+        .setTitle(R.string.ai_agent_authorized_revoke)
+        .setMessage(description)
+        .setPositiveButton(R.string.ai_agent_authorized_revoke) { _, _ ->
+          com.tom.rv2ide.artificial.agent.AgentToolSettings(context)
+              .forgetDangerousToolRule(rule)
+          preference.summary = describe(context)
+          onPreferenceClick(preference)
+        }
+        .setNegativeButton(android.R.string.cancel, null)
+        .show()
+  }
+
+  /** 清空全部持久授权前确认——撤销后所有危险命令都要重新确认。 */
+  private fun confirmClearAll(context: Context, preference: Preference) {
+    com.google.android.material.dialog.MaterialAlertDialogBuilder(context)
+        .setTitle(R.string.ai_agent_authorized_clear_all)
+        .setMessage(R.string.ai_agent_authorized_clear_all_confirm)
+        .setPositiveButton(R.string.ai_agent_authorized_clear_all) { _, _ ->
+          com.tom.rv2ide.artificial.agent.AgentToolSettings(context).clearDangerousToolRules()
+          preference.summary = describe(context)
+        }
+        .setNegativeButton(android.R.string.cancel, null)
+        .show()
+  }
+
+  /** 当前持久授权条数 → 摘要（复用于撤销后刷新）。 */
+  private fun describe(context: Context): String {
+    val count = persistedRules(context).size
+    return if (count == 0) context.getString(R.string.ai_agent_authorized_none)
+    else context.getString(R.string.ai_agent_authorized_count, count)
   }
 
   private fun persistedRules(context: Context): List<String> {
@@ -2864,60 +2696,6 @@ private class ShellBackendPreference(
   }
 }
 
-/**
- * 自定义 OpenAI 兼容端点的一个可编辑字段。
- *
- * 三个字段（baseUrl / key / model）的读写逻辑完全相同，只有 key、标题与提示语不同，
- * 因此把差异作为构造参数传入，而不是复制三份实现。
- */
-@Parcelize
-private class CustomEndpointField(
-    override val key: String,
-    override val title: Int,
-    override val summary: Int? = R.string.ai_agent_custom_hint,
-    private val hint: String = "",
-) : BasePreference() {
-
-  override fun onCreatePreference(context: Context): Preference {
-    return androidx.preference.Preference(context).apply {
-      key = this@CustomEndpointField.key
-      title = context.getString(this@CustomEndpointField.title)
-      summary = fieldSummary(context, this@CustomEndpointField.key)
-    }
-  }
-
-  override fun onPreferenceClick(preference: Preference): Boolean {
-    val context = preference.context
-    val fieldKey = this@CustomEndpointField.key
-    val editText =
-        android.widget.EditText(context).apply {
-          setText(agentPrefs(context).getString(fieldKey, ""))
-          hint = this@CustomEndpointField.hint
-          setSingleLine(true)
-        }
-    com.google.android.material.dialog.MaterialAlertDialogBuilder(context)
-        .setTitle(this@CustomEndpointField.title)
-        .setView(editText)
-        .setPositiveButton(android.R.string.ok) { _, _ ->
-          agentPrefs(context).edit().putString(fieldKey, editText.text.toString().trim()).apply()
-          preference.summary = fieldSummary(context, fieldKey)
-        }
-        .setNegativeButton(android.R.string.cancel, null)
-        .show()
-    return true
-  }
-
-  private fun fieldSummary(context: Context, fieldKey: String): String {
-    val value = agentPrefs(context).getString(fieldKey, "")
-    if (value.isNullOrBlank()) {
-      return context.getString(R.string.ai_agent_custom_hint)
-    }
-    // API key 只显示前 8 位，避免在设置界面完整暴露
-    return if (fieldKey.endsWith("api_key")) "API Key: ${value.take(8)}..." else value
-  }
-}
-
-
 @Parcelize
 private class AIAgentEnabled(
     override val key: String = "ai_agent_enabled",
@@ -2941,339 +2719,6 @@ private class AIAgentEnabled(
   }
 }
 
-
-/**
- * 通用 OpenAI 兼容服务商的密钥（Groq / 智谱 / Kimi / 通义千问 / MiniMax / 硅基流动 / OpenRouter）。
- *
- * <p>它们讲同一种协议，只是 baseUrl 与模型名不同，因此共用一个密钥槽位。为每个服务商
- * 各开一个偏好键会让「加一个服务商」变成「改三处代码」——而这正是预设表要消除的成本。
- * 当前使用哪个服务商由 {@code ai_provider_name} 决定。
- */
-@Parcelize
-private class OpenAiCompatibleApiKey(
-    override val key: String = "ai_agent_openai_compatible_api_key",
-    override val title: Int = R.string.ai_agent_openai_compatible_api_key,
-) : BasePreference() {
-
-  @IgnoredOnParcel private var preference: Preference? = null
-
-  override fun onCreatePreference(context: Context): Preference {
-    preference =
-        androidx.preference.Preference(context).apply {
-          key = "ai_agent_openai_compatible_api_key"
-          title = context.getString(R.string.ai_agent_openai_compatible_api_key)
-          summary = getSummaryText(context)
-          isEnabled = prefManager.getBoolean("ai_agent_enabled", false)
-        }
-    return preference!!
-  }
-
-  override fun onPreferenceClick(preference: Preference): Boolean {
-    val context = preference.context
-
-    val editText = android.widget.EditText(context)
-    editText.setText(prefManager.getString("ai_agent_openai_compatible_api_key", ""))
-    editText.hint = context.getString(R.string.ai_agent_openai_compatible_api_key_hint)
-
-    com.google.android.material.dialog.MaterialAlertDialogBuilder(context)
-        .setTitle(R.string.ai_agent_openai_compatible_api_key)
-        .setMessage(R.string.ai_agent_openai_compatible_api_key_summary)
-        .setView(editText)
-        .setPositiveButton(android.R.string.ok) { _, _ ->
-          prefManager.putString(
-              "ai_agent_openai_compatible_api_key",
-              editText.text.toString().trim(),
-          )
-          preference.summary = getSummaryText(context)
-        }
-        .setNegativeButton(android.R.string.cancel, null)
-        .show()
-    return true
-  }
-
-  fun setEnabled(enabled: Boolean) {
-    preference?.isEnabled = enabled
-  }
-
-  private fun getSummaryText(context: Context): String {
-    val apiKey = prefManager.getString("ai_agent_openai_compatible_api_key", "")
-    return if (apiKey.isBlank()) {
-      context.getString(R.string.ai_agent_api_key_unset)
-    } else {
-      context.getString(R.string.ai_agent_api_key_set, apiKey.take(8))
-    }
-  }
-}
-
-@Parcelize
-private class GrokApiKey(
-    override val key: String = "ai_agent_grok_api_key",
-    override val title: Int = R.string.ai_agent_grok_api_key,
-) : BasePreference() {
-
-  @IgnoredOnParcel private var preference: Preference? = null
-
-  override fun onCreatePreference(context: Context): Preference {
-    preference =
-        androidx.preference.Preference(context).apply {
-          key = "ai_agent_grok_api_key"
-          title = context.getString(R.string.ai_agent_grok_api_key)
-          summary = getSummaryText()
-          isEnabled = prefManager.getBoolean("ai_agent_enabled", false)
-        }
-    return preference!!
-  }
-
-  override fun onPreferenceClick(preference: Preference): Boolean {
-    val context = preference.context
-
-    val editText = android.widget.EditText(context)
-    editText.setText(prefManager.getString("ai_agent_grok_api_key", ""))
-    editText.hint = "Enter your xAI Grok API key"
-
-    val dialog =
-        com.google.android.material.dialog
-            .MaterialAlertDialogBuilder(context)
-            .setTitle("Grok API Key")
-            .setMessage("Enter your xAI Grok API key")
-            .setView(editText)
-            .setPositiveButton("Save") { _, _ ->
-              val apiKey = editText.text.toString().trim()
-              prefManager.putString("ai_agent_grok_api_key", apiKey)
-              preference.summary = getSummaryText()
-            }
-            .setNegativeButton("Cancel", null)
-            .create()
-
-    dialog.show()
-    return true
-  }
-
-  fun setEnabled(enabled: Boolean) {
-    preference?.isEnabled = enabled
-  }
-
-  private fun getSummaryText(): String {
-    val apiKey = prefManager.getString("ai_agent_grok_api_key", "")
-    return if (apiKey.isBlank()) "Click to set API key" else "API Key: ${apiKey.take(8)}..."
-  }
-}
-
-@Parcelize
-private class GeminiApiKey(
-    override val key: String = "ai_agent_gemini_api_key",
-    override val title: Int = R.string.ai_agent_api_key,
-) : BasePreference() {
-
-  @IgnoredOnParcel private var preference: Preference? = null
-
-  override fun onCreatePreference(context: Context): Preference {
-    preference =
-        androidx.preference.Preference(context).apply {
-          key = "ai_agent_gemini_api_key"
-          title = context.getString(R.string.ai_agent_api_key)
-          summary = getSummaryText()
-          isEnabled = prefManager.getBoolean("ai_agent_enabled", false)
-        }
-    return preference!!
-  }
-
-  override fun onPreferenceClick(preference: Preference): Boolean {
-    val context = preference.context
-
-    val editText = android.widget.EditText(context)
-    editText.setText(prefManager.getString("ai_agent_gemini_api_key", ""))
-    editText.hint = "Enter your Google Gemini API key"
-
-    val dialog =
-        com.google.android.material.dialog
-            .MaterialAlertDialogBuilder(context)
-            .setTitle("Gemini API Key")
-            .setMessage("Enter your Google Gemini API key")
-            .setView(editText)
-            .setPositiveButton("Save") { _, _ ->
-              val apiKey = editText.text.toString().trim()
-              prefManager.putString("ai_agent_gemini_api_key", apiKey)
-              preference.summary = getSummaryText()
-            }
-            .setNegativeButton("Cancel", null)
-            .create()
-
-    dialog.show()
-    return true
-  }
-
-  fun setEnabled(enabled: Boolean) {
-    preference?.isEnabled = enabled
-  }
-
-  private fun getSummaryText(): String {
-    val apiKey = prefManager.getString("ai_agent_gemini_api_key", "")
-    return if (apiKey.isBlank()) "Click to set API key" else "API Key: ${apiKey.take(8)}..."
-  }
-}
-
-@Parcelize
-private class DeepseekApiKey(
-    override val key: String = "ai_agent_deepseek_api_key",
-    override val title: Int = R.string.ai_agent_deepseek_api_key,
-) : BasePreference() {
-
-  @IgnoredOnParcel private var preference: Preference? = null
-
-  override fun onCreatePreference(context: Context): Preference {
-    preference =
-        androidx.preference.Preference(context).apply {
-          key = "ai_agent_deepseek_api_key"
-          title = context.getString(R.string.ai_agent_deepseek_api_key)
-          summary = getSummaryText()
-          isEnabled = prefManager.getBoolean("ai_agent_enabled", false)
-        }
-    return preference!!
-  }
-
-  override fun onPreferenceClick(preference: Preference): Boolean {
-    val context = preference.context
-
-    val editText = android.widget.EditText(context)
-    editText.setText(prefManager.getString("ai_agent_deepseek_api_key", ""))
-    editText.hint = "Enter your Deepseek API key"
-
-    val dialog =
-        com.google.android.material.dialog
-            .MaterialAlertDialogBuilder(context)
-            .setTitle("Deepseek API Key")
-            .setMessage("Enter your Deepseek API key")
-            .setView(editText)
-            .setPositiveButton("Save") { _, _ ->
-              val apiKey = editText.text.toString().trim()
-              prefManager.putString("ai_agent_deepseek_api_key", apiKey)
-              preference.summary = getSummaryText()
-            }
-            .setNegativeButton("Cancel", null)
-            .create()
-
-    dialog.show()
-    return true
-  }
-
-  fun setEnabled(enabled: Boolean) {
-    preference?.isEnabled = enabled
-  }
-
-  private fun getSummaryText(): String {
-    val apiKey = prefManager.getString("ai_agent_deepseek_api_key", "")
-    return if (apiKey.isBlank()) "Click to set API key" else "API Key: ${apiKey.take(8)}..."
-  }
-}
-
-@Parcelize
-private class OpenAIApiKey(
-    override val key: String = "ai_agent_openai_api_key",
-    override val title: Int = R.string.ai_agent_openai_api_key,
-) : BasePreference() {
-
-  @IgnoredOnParcel private var preference: Preference? = null
-
-  override fun onCreatePreference(context: Context): Preference {
-    preference =
-        androidx.preference.Preference(context).apply {
-          key = "ai_agent_openai_api_key"
-          title = context.getString(R.string.ai_agent_openai_api_key)
-          summary = getSummaryText()
-          isEnabled = prefManager.getBoolean("ai_agent_enabled", false)
-        }
-    return preference!!
-  }
-
-  override fun onPreferenceClick(preference: Preference): Boolean {
-    val context = preference.context
-
-    val editText = android.widget.EditText(context)
-    editText.setText(prefManager.getString("ai_agent_openai_api_key", ""))
-    editText.hint = "Enter your OpenAI API key"
-
-    val dialog =
-        com.google.android.material.dialog
-            .MaterialAlertDialogBuilder(context)
-            .setTitle("OpenAI API Key")
-            .setMessage("Enter your OpenAI API key")
-            .setView(editText)
-            .setPositiveButton("Save") { _, _ ->
-              val apiKey = editText.text.toString().trim()
-              prefManager.putString("ai_agent_openai_api_key", apiKey)
-              preference.summary = getSummaryText()
-            }
-            .setNegativeButton("Cancel", null)
-            .create()
-
-    dialog.show()
-    return true
-  }
-
-  fun setEnabled(enabled: Boolean) {
-    preference?.isEnabled = enabled
-  }
-
-  private fun getSummaryText(): String {
-    val apiKey = prefManager.getString("ai_agent_openai_api_key", "")
-    return if (apiKey.isBlank()) "Click to set API key" else "API Key: ${apiKey.take(8)}..."
-  }
-}
-
-@Parcelize
-private class AnthropicApiKey(
-    override val key: String = "ai_agent_anthropic_api_key",
-    override val title: Int = R.string.ai_agent_anthropic_api_key,
-) : BasePreference() {
-
-  @IgnoredOnParcel private var preference: Preference? = null
-
-  override fun onCreatePreference(context: Context): Preference {
-    preference =
-        androidx.preference.Preference(context).apply {
-          key = "ai_agent_anthropic_api_key"
-          title = context.getString(R.string.ai_agent_anthropic_api_key)
-          summary = getSummaryText()
-          isEnabled = prefManager.getBoolean("ai_agent_enabled", false)
-        }
-    return preference!!
-  }
-
-  override fun onPreferenceClick(preference: Preference): Boolean {
-    val context = preference.context
-
-    val editText = android.widget.EditText(context)
-    editText.setText(prefManager.getString("ai_agent_anthropic_api_key", ""))
-    editText.hint = "Enter your Anthropic API key"
-
-    val dialog =
-        com.google.android.material.dialog
-            .MaterialAlertDialogBuilder(context)
-            .setTitle("Anthropic API Key")
-            .setMessage("Enter your Anthropic API key")
-            .setView(editText)
-            .setPositiveButton("Save") { _, _ ->
-              val apiKey = editText.text.toString().trim()
-              prefManager.putString("ai_agent_anthropic_api_key", apiKey)
-              preference.summary = getSummaryText()
-            }
-            .setNegativeButton("Cancel", null)
-            .create()
-
-    dialog.show()
-    return true
-  }
-
-  fun setEnabled(enabled: Boolean) {
-    preference?.isEnabled = enabled
-  }
-
-  private fun getSummaryText(): String {
-    val apiKey = prefManager.getString("ai_agent_anthropic_api_key", "")
-    return if (apiKey.isBlank()) "Click to set API key" else "API Key: ${apiKey.take(8)}..."
-  }
-}
 
 /**
  * CodeGraph 语义索引：安装、状态、卸载。
@@ -3390,24 +2835,29 @@ private class CodeGraphPreference(
     // 三个位置（卸载已占 neutral），硬塞第 4 个会被 Material 的 ButtonBarLayout 判定放不下
     // 而**整体竖排**——4 个按钮各占一行，对话框又高又难看。放进内容区既是弹窗里的按钮，
     // 又不动按钮栏的布局。未安装时不显示（没有程序时建索引必然失败）。
-    val content =
-        android.widget.LinearLayout(context).apply {
-          orientation = android.widget.LinearLayout.VERTICAL
-          val pad = (context.resources.displayMetrics.density * 24).toInt()
-          setPadding(pad, pad / 2, pad, 0)
-          addView(
-              android.widget.TextView(context).apply {
-                setText(R.string.ai_agent_codegraph_about)
-                setTextAppearance(com.google.android.material.R.style.TextAppearance_Material3_BodyMedium)
-              })
-          if (installed) {
-            addView(
-                android.widget.Button(context, null, android.R.attr.borderlessButtonStyle).apply {
-                  setText(R.string.ai_agent_codegraph_index_title)
-                  setOnClickListener { CodeGraphIndexActions.start(context, preference) }
-                })
-          }
+    val about =
+        android.widget.TextView(context).apply {
+          setText(R.string.ai_agent_codegraph_about)
+          setTextAppearance(com.google.android.material.R.style.TextAppearance_Material3_BodyMedium)
         }
+    val content =
+        dialogFieldColumn(
+            context,
+            about,
+            *(
+                if (installed) {
+                  arrayOf(
+                      android.widget.Button(context, null, android.R.attr.borderlessButtonStyle)
+                          .apply {
+                            setText(R.string.ai_agent_codegraph_index_title)
+                            setOnClickListener {
+                              CodeGraphIndexActions.start(context, preference)
+                            }
+                          })
+                } else {
+                  emptyArray()
+                }),
+        )
     val dialog =
         MaterialAlertDialogBuilder(context)
             .setTitle(R.string.ai_agent_codegraph_title)

@@ -1,7 +1,6 @@
 package com.termux.app;
 
 import android.annotation.SuppressLint;
-import android.app.AlertDialog;
 import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
@@ -753,14 +752,16 @@ public class TermuxActivity extends BaseIDEActivity implements ServiceConnection
     private void showKillSessionDialog(TerminalSession session) {
         if (session == null) return;
 
-        final AlertDialog.Builder b = new AlertDialog.Builder(this);
-        b.setIcon(android.R.drawable.ic_dialog_alert);
+        final com.google.android.material.dialog.MaterialAlertDialogBuilder b =
+            new com.google.android.material.dialog.MaterialAlertDialogBuilder(this);
+        // 不设 icon：M3 弹窗规范里没有标题左侧图标，且此处只有一句正文，
+        // 一个红色感叹号反而喧宾夺主。按钮改成具体动作，不再问「是/否」。
         b.setMessage(R.string.title_confirm_kill_process);
-        b.setPositiveButton(android.R.string.yes, (dialog, id) -> {
+        b.setPositiveButton(R.string.action_confirm_kill, (dialog, id) -> {
             dialog.dismiss();
             session.finishIfRunning();
         });
-        b.setNegativeButton(android.R.string.no, null);
+        b.setNegativeButton(android.R.string.cancel, null);
         b.show();
     }
 

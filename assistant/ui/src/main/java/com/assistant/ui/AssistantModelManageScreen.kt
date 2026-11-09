@@ -23,6 +23,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
@@ -34,6 +35,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -46,6 +48,7 @@ import com.assistant.ui.components.independent.SettingsDivider
 import com.assistant.ui.components.independent.SettingsGroup
 import com.assistant.ui.components.independent.SettingsGroupHeader
 import com.assistant.ui.theme.Spacing
+import kotlinx.coroutines.launch
 
 /**
  * 一个用途（scene）的模型分配。
@@ -84,10 +87,11 @@ fun AssistantModelManageScreen(
     onClear: (sceneKey: String) -> Unit,
     /**
      * 拉取某个服务商的模型清单。由宿主注入（渲染层不依赖引擎）。
-     * 返回 (模型清单, 失败原因)。
+     * **suspend**：宿主在 IO 线程发起请求。返回 (模型清单, 失败原因)。
      */
     onFetchModels:
-        (baseUrl: String, apiKey: String, protocol: ProviderProtocol) -> Pair<List<String>, String>,
+        suspend (baseUrl: String, apiKey: String, protocol: ProviderProtocol) ->
+            Pair<List<String>, String>,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
     darkTheme: Boolean = androidx.compose.foundation.isSystemInDarkTheme(),
@@ -188,7 +192,8 @@ private val MODEL_SCENES =
         ModelScene("video", "视频生成", "未配置 — 点按选择服务商与视频模型"),
     )
 
-/** 选中一个用途之后的弹窗：列服务商 → 填模型名。 */
+/** 选中一个用途之后的弹层：列服务商 → 填模型名。 */
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
 private fun ScenePicker(
     scene: ModelScene,
@@ -198,9 +203,11 @@ private fun ScenePicker(
     onPick: (providerId: String, model: String) -> Unit,
     onDismiss: () -> Unit,
     onFetchModels:
-        (baseUrl: String, apiKey: String, protocol: ProviderProtocol) -> Pair<List<String>, String>,
+        suspend (baseUrl: String, apiKey: String, protocol: ProviderProtocol) ->
+            Pair<List<String>, String>,
     onClear: () -> Unit,
 ) {
+  val scope = rememberCoroutineScope()
   var pickedProviderId by remember(scene.key) { mutableStateOf(currentProviderId) }
   var modelText by remember(scene.key, pickedProviderId) {
     mutableStateOf(
@@ -212,135 +219,141 @@ private fun ScenePicker(
   var fetching by remember(scene.key) { mutableStateOf(false) }
   var fetchMessage by remember(scene.key) { mutableStateOf("") }
 
-  androidx.compose.ui.window.Dialog(
+  val sheetState = androidx.compose.material3.rememberModalBottomSheetState(skipPartiallyExpanded = true)
+
+  // 一次性选择用**有界自适应弹层**（窄屏贴底、宽屏居中限宽），而不是自绘 Dialog，
+  // 也不是行内展开——行内展开会把用途列表撑长（用户实测反馈过）。
+  com.assistant.ui.components.tools.AdaptiveModalBottomSheet(
       onDismissRequest = onDismiss,
-      properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false),
+      sheetState = sheetState,
+      containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
   ) {
-  androidx.compose.material3.Surface(
-      shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp),
-      color = MaterialTheme.colorScheme.surface,
-      modifier = Modifier.fillMaxWidth().padding(Spacing.md),
-  ) {
-  Column(modifier = Modifier.padding(Spacing.lg)) {
-    Text(
-        text = "${scene.label}用哪个模型",
-        style = MaterialTheme.typography.titleMedium,
-        color = MaterialTheme.colorScheme.onSurface,
-        modifier = Modifier.padding(bottom = Spacing.sm),
-    )
-    if (providers.isEmpty()) {
+    Column(modifier = Modifier.fillMaxWidth().padding(horizontal = Spacing.lg)) {
       Text(
-          text = "还没有可用的服务商。先到「服务商」页添加一个（填好 API 地址与密钥）。",
-          style = MaterialTheme.typography.bodySmall,
-          color = MaterialTheme.colorScheme.onSurfaceVariant,
+          text = "${scene.label}用哪个模型",
+          style = MaterialTheme.typography.titleLarge,
+          color = MaterialTheme.colorScheme.onSurface,
+          modifier = Modifier.padding(bottom = Spacing.sm),
       )
-      TextButton(onClick = onDismiss) { Text("关闭") }
-      return@Column
-    }
-
-    Text(
-        text = "服务商",
-        style = MaterialTheme.typography.labelMedium,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-        modifier = Modifier.padding(bottom = Spacing.xs),
-    )
-    providers.forEach { provider ->
-      val selected = provider.id == pickedProviderId
-      Row(
-          modifier =
-              Modifier.fillMaxWidth()
-                  .clickable {
-                    pickedProviderId = provider.id
-                    // 切换服务商时把模型名换成该服务商的主模型——大多数情况下
-                    // 用户要的就是它，省一次输入。
-                    modelText = provider.model
-                  }
-                  .padding(vertical = 8.dp),
-          verticalAlignment = Alignment.CenterVertically,
-      ) {
-        ProviderLogoIcon(
-            provider =
-                ProviderSelectionTarget(
-                    id = provider.id,
-                    name = provider.label,
-                    protocol = provider.protocol,
-                ),
-            size = 16.dp,
-        )
+      if (providers.isEmpty()) {
         Text(
-            text = provider.label,
+            text = "还没有可用的服务商。先到「服务商」页添加一个（填好 API 地址与密钥）。",
             style = MaterialTheme.typography.bodySmall,
-            color =
-                if (selected) MaterialTheme.colorScheme.primary
-                else MaterialTheme.colorScheme.onSurface,
-            modifier = Modifier.padding(start = Spacing.sm),
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
+        TextButton(onClick = onDismiss) { Text("关闭") }
+        return@Column
       }
-    }
 
-    Text(
-        text = "模型",
-        style = MaterialTheme.typography.labelMedium,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-        modifier = Modifier.padding(top = Spacing.sm, bottom = Spacing.xs),
-    )
-    // 先拉清单再选：模型名要一字不差才不 404，手填基本靠猜。
-    Row(verticalAlignment = Alignment.CenterVertically) {
-      TextButton(
-          enabled = !fetching && pickedProviderId.isNotEmpty(),
-          onClick = {
-            val provider = providers.firstOrNull { it.id == pickedProviderId }
-            if (provider == null) return@TextButton
-            fetching = true
-            fetchMessage = ""
-            val (models, error) = onFetchModels(provider.baseUrl, provider.apiKey, provider.protocol)
-            fetching = false
-            if (error.isEmpty() && models.isNotEmpty()) {
-              catalog = models
-              fetchMessage = "拉到 ${models.size} 个模型"
-            } else {
-              fetchMessage = error.ifEmpty { "目录为空（可手填）" }
+      Text(
+          text = "服务商",
+          style = MaterialTheme.typography.labelMedium,
+          color = MaterialTheme.colorScheme.onSurfaceVariant,
+          modifier = Modifier.padding(bottom = Spacing.xs),
+      )
+      // 服务商可能较多：限高内滚，操作区不随列表滚走。
+      Column(modifier = Modifier.fillMaxWidth().heightIn(max = 200.dp).verticalScroll(rememberScrollState())) {
+        providers.forEach { provider ->
+          val selected = provider.id == pickedProviderId
+          Row(
+              modifier =
+                  Modifier.fillMaxWidth()
+                      .clickable {
+                        pickedProviderId = provider.id
+                        // 切换服务商时把模型名换成该服务商的主模型——大多数情况下
+                        // 用户要的就是它，省一次输入。
+                        modelText = provider.model
+                      }
+                      .padding(vertical = 10.dp),
+              verticalAlignment = Alignment.CenterVertically,
+          ) {
+            ProviderLogoIcon(
+                provider =
+                    ProviderSelectionTarget(
+                        id = provider.id,
+                        name = provider.label,
+                        protocol = provider.protocol,
+                    ),
+                size = 16.dp,
+            )
+            Text(
+                text = provider.label,
+                style = MaterialTheme.typography.bodyMedium,
+                color =
+                    if (selected) MaterialTheme.colorScheme.primary
+                    else MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.padding(start = Spacing.sm),
+            )
+          }
+        }
+      }
+
+      Text(
+          text = "模型",
+          style = MaterialTheme.typography.labelMedium,
+          color = MaterialTheme.colorScheme.onSurfaceVariant,
+          modifier = Modifier.padding(top = Spacing.sm, bottom = Spacing.xs),
+      )
+      // 先拉清单再选：模型名要一字不差才不 404，手填基本靠猜。
+      Row(verticalAlignment = Alignment.CenterVertically) {
+        TextButton(
+            enabled = !fetching && pickedProviderId.isNotEmpty(),
+            onClick = {
+              val provider = providers.firstOrNull { it.id == pickedProviderId }
+              if (provider == null) return@TextButton
+              fetching = true
+              fetchMessage = ""
+              scope.launch {
+                val (models, error) =
+                    onFetchModels(provider.baseUrl, provider.apiKey, provider.protocol)
+                fetching = false
+                if (error.isEmpty() && models.isNotEmpty()) {
+                  catalog = models
+                  fetchMessage = "拉到 ${models.size} 个模型"
+                } else {
+                  fetchMessage = error.ifEmpty { "目录为空（可手填）" }
+                }
+              }
+            }) {
+              Text(if (fetching) "拉取中…" else "拉取模型")
             }
-          }) {
-            Text(if (fetching) "拉取中…" else "拉取模型")
-          }
-      if (fetchMessage.isNotEmpty()) {
-        Text(
-            text = fetchMessage,
-            style = MaterialTheme.typography.bodySmall,
-            color =
-                if (catalog.isNotEmpty()) MaterialTheme.colorScheme.primary
-                else MaterialTheme.colorScheme.error,
-        )
+        if (fetchMessage.isNotEmpty()) {
+          Text(
+              text = fetchMessage,
+              style = MaterialTheme.typography.bodySmall,
+              color =
+                  if (catalog.isNotEmpty()) MaterialTheme.colorScheme.primary
+                  else MaterialTheme.colorScheme.error,
+          )
+        }
       }
-    }
-    com.assistant.ui.compat.ModelDropdownField(
-        label = "${scene.label}模型",
-        value = modelText,
-        onValueChange = { modelText = it },
-        choices = catalog,
-        placeholder =
-            when (scene.key) {
-              "image" -> "gpt-image-1 / flux-schnell"
-              "video" -> "grok-imagine-video"
-              else -> "deepseek-chat"
-            },
-    )
+      com.assistant.ui.compat.ModelDropdownField(
+          label = "${scene.label}模型",
+          value = modelText,
+          onValueChange = { modelText = it },
+          choices = catalog,
+          placeholder =
+              when (scene.key) {
+                "image" -> "gpt-image-1 / flux-schnell"
+                "video" -> "grok-imagine-video"
+                else -> "deepseek-chat"
+              },
+      )
 
-    Row(
-        modifier = Modifier.padding(top = Spacing.xs),
-        horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
-    ) {
-      TextButton(
-          enabled = pickedProviderId.isNotEmpty() && modelText.isNotBlank(),
-          onClick = { onPick(pickedProviderId, modelText.trim()) }) {
-            Text("确定")
-          }
-      if (currentProviderId.isNotEmpty()) {
-        TextButton(onClick = onClear) { Text("清除") }
+      Row(
+          modifier = Modifier.padding(top = Spacing.sm, bottom = Spacing.lg),
+          horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
+      ) {
+        androidx.compose.material3.Button(
+            enabled = pickedProviderId.isNotEmpty() && modelText.isNotBlank(),
+            onClick = { onPick(pickedProviderId, modelText.trim()) }) {
+              Text("确定")
+            }
+        TextButton(onClick = onDismiss) { Text("取消") }
+        if (currentProviderId.isNotEmpty()) {
+          TextButton(onClick = onClear) { Text("清除") }
+        }
       }
     }
-  }
-  }
   }
 }

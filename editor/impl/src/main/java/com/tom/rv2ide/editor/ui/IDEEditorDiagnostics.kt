@@ -1,6 +1,5 @@
 package com.tom.rv2ide.editor.ui
 
-import androidx.appcompat.app.AlertDialog
 import com.tom.rv2ide.lsp.kotlin.KotlinLanguageServer
 import com.tom.rv2ide.lsp.models.DiagnosticItem
 import com.tom.rv2ide.models.Position
@@ -121,7 +120,9 @@ private fun IDEEditor.showImportSelectionDialog(
     range: Range,
     languageServer: KotlinLanguageServer,
 ) {
-  AlertDialog.Builder(context)
+  // 走统一 Material 弹窗（DialogUtils 取主题挂载的 M3 overlay），
+  // 不再是 AppCompat 旧样式——import 选择弹窗会出现在编辑器里，观感要与其它弹窗一致。
+  com.tom.rv2ide.utils.DialogUtils.newMaterialDialogBuilder(context)
       .setTitle("Choose Import")
       .setItems(options.toTypedArray()) { dialog, which ->
         try {

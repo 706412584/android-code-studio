@@ -32,6 +32,27 @@
     <item name="shapeAppearanceLargeComponent">@style/AppTheme.ShapeOverlay.Large</item>
     <item name="textAppearanceBodySmall">@style/TextAppearance.AndroidIDE.BodySmall</item>
     <item name="colorSuccess">@color/green_500</item>
+
+    <!--
+      全局弹窗样式挂载。
+
+      事实核对（material 1.13.0 AAR）：基主题 Theme.Material3.Light/Dark.NoActionBar
+      本就把 materialAlertDialogTheme / bottomSheetDialogTheme 指向 M3 官方 overlay，
+      所以 `MaterialAlertDialogBuilder(context)` 一直以来渲染的就是现代 M3 弹窗
+      （surfaceContainerHigh 底、圆角、标准淡入动画）——它并不“老旧”。
+
+      这里显式改成 AppTheme.* 有两个作用：
+      1) 把圆角钉在我们自己的值（见 AppTheme.MaterialAlertDialog 的说明），
+         不随 M3 库版本的 shape token 漂移；
+      2) 让 BottomSheet 取到统一半径，与弹窗是一套视觉语言。
+
+      真正“老旧”的弹窗不在这一层，而在**绕过 Material 的调用点**：
+      裸 `android.app.AlertDialog.Builder` / `androidx.appcompat.*`（走 AppCompat 旧样式）、
+      `MaterialAlertDialogBuilder(ctx, R.style.Theme_AppCompat_Light_Dialog)`（强制浅色）、
+      `android.app.ProgressDialog`、以及手搓 LinearLayout 视图。那些按计划在各自任务里改。
+    -->
+    <item name="materialAlertDialogTheme">@style/AppTheme.MaterialAlertDialog</item>
+    <item name="bottomSheetDialogTheme">@style/AppTheme.BottomSheetDialog</item>
   </style>
 
   <style name="Theme.AndroidIDE" parent="Theme.AndroidIDE.Styled">
@@ -99,15 +120,53 @@
     <item name="cornerSize">16dp</item>
   </style>
 
-  <!-- Alert Dialog -->
+  <!-- ============================================================ -->
+  <!--  弹窗样式：Material AlertDialog / BottomSheet                -->
+  <!--                                                              -->
+  <!--  这两条 overlay 由 Theme.AndroidIDE.Styled 统一挂载（见上），   -->
+  <!--  所有用带主题 context 构造的 Material builder / BottomSheet     -->
+  <!--  都会取到同一套观感。需要强制样式的场景才显式传 style 参数。      -->
+  <!-- ============================================================ -->
+
+  <!--
+    Alert Dialog。
+
+    基样式即 Material3 官方 overlay（本身就是现代规范：surfaceContainerHigh 容器、
+    标题 HeadlineSmall、正文 BodyMedium、TextButton.Dialog 按钮、标准淡入动画）。
+    唯一覆盖是圆角：M3 默认走 `?attr/shapeAppearanceCornerExtraLarge`（本仓库各主题
+    未钉它，会落到库默认值），这里显式钉 28dp，保证四套主题下弹窗圆角一致。
+  -->
   <style name="AppTheme.MaterialAlertDialog" parent="@style/ThemeOverlay.Material3.MaterialAlertDialog">
     <item name="shapeAppearanceOverlay">@style/MaterialDialog.ShapeAppearance</item>
-    <item name="android:windowEnterAnimation">@animator/dialog_in</item>
-    <item name="android:windowExitAnimation">@animator/dialog_out</item>
   </style>
 
   <style name="MaterialDialog.ShapeAppearance" parent="">
     <item name="cornerSize">28dp</item>
+  </style>
+
+  <!--
+    底部表单（Modal BottomSheet）样式。
+
+    Widget.Material3.BottomSheet.Modal 默认已带「顶部圆角」overlay，但圆角大小来自
+    `?attr/shapeAppearanceCornerExtraLarge`（同样是未钉值），且底色走 docked 色宏。
+    这份覆盖把顶部半径钉 28dp、底色设为 surfaceContainerHigh，使底部弹层与弹窗
+    是同一套圆角和层次；底部圆角保持 0（贴屏幕底边无需圆角）。
+  -->
+  <style name="AppTheme.BottomSheetDialog" parent="@style/ThemeOverlay.Material3.BottomSheetDialog">
+    <item name="bottomSheetStyle">@style/AppTheme.BottomSheet.Modal</item>
+  </style>
+
+  <style name="AppTheme.BottomSheet.Modal" parent="Widget.Material3.BottomSheet.Modal">
+    <item name="shapeAppearanceOverlay">@style/AppTheme.BottomSheet.ShapeAppearance</item>
+    <item name="backgroundTint">?attr/colorSurfaceContainerHigh</item>
+  </style>
+
+  <style name="AppTheme.BottomSheet.ShapeAppearance" parent="">
+    <item name="cornerFamily">rounded</item>
+    <item name="cornerSizeTopLeft">28dp</item>
+    <item name="cornerSizeTopRight">28dp</item>
+    <item name="cornerSizeBottomLeft">0dp</item>
+    <item name="cornerSizeBottomRight">0dp</item>
   </style>
 
   <style name="PopupAnimation">

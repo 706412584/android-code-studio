@@ -79,6 +79,11 @@ class IDEPreferencesFragment : BasePreferenceFragment() {
   override fun onResume() {
     super.onResume()
     LSPStateObserver.addListener(serverStateListener)
+    // 从服务商/MCP 管理页返回：那边改过数据就重建一次，让摘要里的计数跟上。
+    // 只在真的改过时重建，避免每次返回都重置滚动位置。
+    if (com.tom.rv2ide.artificial.agent.manage.ManageChangeSignal.consume()) {
+      refreshPreferences()
+    }
   }
 
   override fun onPause() {

@@ -155,32 +155,17 @@ class FileBrowserDialogFragment : DialogFragment() {
         }
     }
 
+    /**
+     * 入场用一次轻微淡入即可。
+     *
+     * <p>此前是 0.8 倍缩放 + 300ms 回弹、FAB 再来一次 Overshoot——两层动画叠在一起，
+     * 观感"弹跳"，与其余 Material 弹窗（官方 overlay 的淡入淡出）不是一套语言。
+     * 120ms 的淡入足够提示"内容已就位"，又不抢注意力。
+     */
     private fun animateDialogEntry() {
         binding.root.findViewById<View>(R.id.card_container)?.apply {
             alpha = 0f
-            scaleX = 0.8f
-            scaleY = 0.8f
-            animate()
-                .alpha(1f)
-                .scaleX(1f)
-                .scaleY(1f)
-                .setDuration(300)
-                .setInterpolator(android.view.animation.DecelerateInterpolator())
-                .start()
-        }
-        
-        binding.fabPaste.apply {
-            alpha = 0f
-            scaleX = 0f
-            scaleY = 0f
-            animate()
-                .alpha(1f)
-                .scaleX(1f)
-                .scaleY(1f)
-                .setDuration(400)
-                .setStartDelay(150)
-                .setInterpolator(android.view.animation.OvershootInterpolator())
-                .start()
+            animate().alpha(1f).setDuration(120).start()
         }
     }
 
@@ -200,15 +185,12 @@ class FileBrowserDialogFragment : DialogFragment() {
     private fun animateDialogExit() {
         // Disable back button during animation to prevent multiple dismissals
         backPressedCallback.isEnabled = false
-        
+
         val cardView = binding.root.findViewById<View>(R.id.card_container)
         cardView?.animate()
             ?.alpha(0f)
-            ?.scaleX(0.8f)
-            ?.scaleY(0.8f)
-            ?.setDuration(200)
-            ?.setInterpolator(android.view.animation.AccelerateInterpolator())
-            ?.withEndAction { 
+            ?.setDuration(120)
+            ?.withEndAction {
                 try {
                     if (isAdded && dialog != null) {
                         dismissNow()
@@ -218,13 +200,6 @@ class FileBrowserDialogFragment : DialogFragment() {
                 }
             }
             ?.start()
-        
-        binding.fabPaste.animate()
-            .alpha(0f)
-            .scaleX(0f)
-            .scaleY(0f)
-            .setDuration(200)
-            .start()
     }
 
     private fun setupRecyclerView() {

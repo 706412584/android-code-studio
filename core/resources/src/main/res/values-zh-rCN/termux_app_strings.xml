@@ -52,6 +52,7 @@
   <string name="msg_terminal_reset">重置终端</string>
   <string name="action_kill_process">终止进程（%d）</string>
   <string name="title_confirm_kill_process">确定结束此会话？</string>
+  <string name="action_confirm_kill">终止</string>
   <string name="action_toggle_keep_screen_on">保持屏幕开启</string>
   <string name="action_open_help">帮助</string>
   <string name="action_open_settings">设置</string>

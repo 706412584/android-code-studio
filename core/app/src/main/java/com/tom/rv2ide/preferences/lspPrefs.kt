@@ -17,9 +17,9 @@
 
 package com.tom.rv2ide.preferences
 
+import android.view.LayoutInflater
 import androidx.preference.Preference
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
-import com.google.android.material.textview.MaterialTextView
 import com.tom.rv2ide.lsp.dart.DartSdkInstaller
 import com.tom.rv2ide.lsp.kotlin.etc.LspFeatures
 import com.tom.rv2ide.lsp.typescript.TypeScriptServerInstaller
@@ -225,28 +225,19 @@ private class DartLSP(
   }
 
   private fun downloadDartSdk(ctx: android.content.Context) {
-    val progressLayout =
-        android.widget.LinearLayout(ctx).apply {
-          orientation = android.widget.LinearLayout.VERTICAL
-          setPadding(48, 32, 48, 16)
-        }
-    val progressText =
-        MaterialTextView(ctx).apply {
-          text = ctx.getString(string.dart_sdk_downloading)
-          textSize = 15f
-        }
-    val progressBar =
-        android.widget.ProgressBar(ctx, null, android.R.attr.progressBarStyleHorizontal).apply {
-          isIndeterminate = false
-          max = 100
-        }
-    progressLayout.addView(progressText)
-    progressLayout.addView(progressBar)
+    // 统一的 M3 进度弹窗（带线性进度条 + 消息），不再手搓 LinearLayout + 硬编码 px 内边距。
+    val binding = com.tom.rv2ide.common.databinding.LayoutDialogProgressBinding.inflate(LayoutInflater.from(ctx))
+    val progressText = binding.message
+    val progressBar = binding.progress
+    progressBar.isIndeterminate = false
+    progressBar.max = 100
+    progressText.visibility = android.view.View.VISIBLE
+    progressText.text = ctx.getString(string.dart_sdk_downloading)
 
     val progressDialog =
-        MaterialAlertDialogBuilder(ctx)
+        com.tom.rv2ide.utils.DialogUtils.newMaterialDialogBuilder(ctx)
             .setTitle(string.lsp_options_dart_title)
-            .setView(progressLayout)
+            .setView(binding.root)
             .setCancelable(false)
             .create()
     progressDialog.show()

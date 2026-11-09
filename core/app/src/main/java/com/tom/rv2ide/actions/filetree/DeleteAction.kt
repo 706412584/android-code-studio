@@ -17,7 +17,6 @@
 
 package com.tom.rv2ide.actions.filetree
 
-import android.app.ProgressDialog
 import android.content.Context
 import com.blankj.utilcode.util.FileUtils
 import com.tom.rv2ide.actions.ActionData
@@ -48,21 +47,14 @@ class DeleteAction(context: Context, override val order: Int) :
     val lastHeld = data.getTreeNode()
     val builder = DialogUtils.newMaterialDialogBuilder(context)
     builder
-        .setNegativeButton(R.string.no, null)
-        .setPositiveButton(R.string.yes) { dialogInterface, _ ->
+        .setNegativeButton(R.string.cancel, null)
+        // 用具体动词而不是「是/否」：确认框正文已经说明对象，按钮再说一遍动作，
+        // 用户不必回读正文就能判断自己要按哪个。
+        .setPositiveButton(R.string.delete_file) { dialogInterface, _ ->
           dialogInterface.dismiss()
-          @Suppress("DEPRECATION")
-          val progressDialog =
-              ProgressDialog.show(
-                  context,
-                  null,
-                  context.getString(R.string.please_wait),
-                  true,
-                  false,
-              )
+          // 删除一个文件/目录是很快的本地操作，不再弹阻塞式进度框——
+          // 结果已由下方 flashMessage 就地反馈（成功/失败），中间那一下进度框只是干扰。
           executeAsync({ FileUtils.delete(file) }) {
-            progressDialog.dismiss()
-
             val deleted = it ?: false
 
             flashMessage(

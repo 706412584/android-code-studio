@@ -200,16 +200,21 @@ public final class ProviderRecords {
   /** 完全自定义新建。 */
   public String addCustom(
       String label, String baseUrl, String apiKey, ModelProtocolType protocol, String mainModel) {
+    return addCustom(label, baseUrl, apiKey, protocol,
+        new String[] {mainModel == null ? "" : mainModel});
+  }
+
+  /**
+   * 完全自定义新建（**保留全部槽位**）。
+   *
+   * <p>编辑表单会同时编辑 main 与其余三个槽位；只收 main 的旧重载会把用户填的第二/三/四
+   * 槽位静默清空。本重载接收完整槽位数组并原样落库。
+   */
+  public String addCustom(
+      String label, String baseUrl, String apiKey, ModelProtocolType protocol, String[] slotModels) {
     List<Record> list = all();
     String id = "custom_" + System.currentTimeMillis();
-    list.add(
-        new Record(
-            id,
-            label,
-            protocol,
-            baseUrl,
-            apiKey,
-            new String[] {mainModel == null ? "" : mainModel, "", "", ""}));
+    list.add(new Record(id, label, protocol, baseUrl, apiKey, slotModels));
     save(list);
     return id;
   }

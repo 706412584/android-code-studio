@@ -1,7 +1,6 @@
 package com.termux.app;
 
 import android.annotation.SuppressLint;
-import android.app.AlertDialog;
 import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
@@ -674,13 +673,13 @@ public class TerminalFragment extends Fragment implements ServiceConnection {
     }
 
     protected void showKillSessionDialog(TerminalSession session) {
-        new AlertDialog.Builder(requireContext())
-            .setTitle("Confirm")
-            .setMessage("Kill this process?")
-            .setPositiveButton(android.R.string.yes, (dialog, which) -> {
-                session.finishIfRunning();
-            })
-            .setNegativeButton(android.R.string.no, null)
+        // 用已本地化的资源而不是硬编码英文「Confirm / Kill this process?」——
+        // 中文界面里这两行此前一直是英文。按钮改成具体动作，不再问「是/否」。
+        new com.google.android.material.dialog.MaterialAlertDialogBuilder(requireContext())
+            .setTitle(R.string.title_confirm_kill_process)
+            .setPositiveButton(R.string.action_confirm_kill,
+                (dialog, which) -> session.finishIfRunning())
+            .setNegativeButton(android.R.string.cancel, null)
             .show();
     }
 

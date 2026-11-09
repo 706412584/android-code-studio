@@ -1204,39 +1204,36 @@ class TomIDEUpdater(private val context: Context) {
   }
 
   private fun showProgressDialog() {
-    val dialogView =
-        LinearLayout(context).apply {
-          orientation = LinearLayout.VERTICAL
-          setPadding(64, 32, 64, 32)
-        }
-
+    // 用主题的 TitleMedium/BodyMedium 与 M3 组件，不再手搓 18sp 字号和裸 px 边距——
+    // 那套数值在其它密度/字号下比例会变。左右留白由 dialogFieldColumn 统一给。
     val titleText =
         TextView(context).apply {
-          text = context.getString(R.string.updater_downloading_update)
-          textSize = 18f
-          setPadding(0, 0, 0, 24)
+          setText(R.string.updater_downloading_update)
+          setTextAppearance(
+              com.google.android.material.R.style.TextAppearance_Material3_TitleMedium)
         }
 
-    progressIndicator =
+    val bar =
         LinearProgressIndicator(context).apply {
           isIndeterminate = false
           max = 100
           progress = 0
         }
+    progressIndicator = bar
 
-    progressText =
+    val label =
         TextView(context).apply {
-          text = context.getString(R.string.updater_preparing_download)
-          setPadding(0, 16, 0, 0)
+          setText(R.string.updater_preparing_download)
+          setTextAppearance(
+              com.google.android.material.R.style.TextAppearance_Material3_BodyMedium)
         }
-
-    dialogView.addView(titleText)
-    dialogView.addView(progressIndicator)
-    dialogView.addView(progressText)
+    progressText = label
 
     progressDialog =
         MaterialAlertDialogBuilder(context)
-            .setView(dialogView)
+            .setView(
+                com.tom.rv2ide.preferences.dialogFieldColumn(
+                    context, titleText, bar, label))
             .setNegativeButton(context.getString(R.string.updater_cancel)) { _, _ ->
               cancelDownload()
             }

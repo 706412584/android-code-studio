@@ -20,9 +20,7 @@ package com.tom.rv2ide.artificial.agent.host
 import android.content.Context
 import android.view.View
 import android.view.ViewGroup
-import androidx.appcompat.app.AlertDialog
 import androidx.lifecycle.LifecycleCoroutineScope
-import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.tom.rv2ide.artificial.agent.AssistantModelPicker
 import com.tom.rv2ide.artificial.agent.AssistantSettings
 import com.tom.rv2ide.resources.R.string
@@ -367,10 +365,12 @@ private class ActivityAttachments(private val context: Context) : AssistantAttac
 }
 
 /**
- * [ActivityHost] 的弹窗实现：直接使用 Activity 的 Context 弹 Material / AppCompat 对话框。
+ * [ActivityHost] 的弹窗实现：全部走统一的 Material 弹窗。
  *
- * <p>刻意保持与原实现相同的 builder 选择（权限与上下文用 Material，确认与危险工具用
- * AppCompat AlertDialog）：两者在主题下的圆角与配色不同，混用会让用户看到两种观感的弹窗。
+ * <p>此前这里的 builder 混用（权限/上下文用 Material，确认/危险工具用 AppCompat AlertDialog），
+ * 两者在主题下的圆角与配色不同，用户会看到两种观感的弹窗。现在全部经
+ * [com.tom.rv2ide.utils.DialogUtils.newMaterialDialogBuilder] 取主题统一挂载的 M3 overlay，
+ * 形状、底色、按钮与动画是一套。
  */
 private class ActivityDialogs(private val context: Context) : AssistantDialogs {
 
@@ -381,7 +381,7 @@ private class ActivityDialogs(private val context: Context) : AssistantDialogs {
       onChosen: (Int) -> Unit,
   ) {
     // 与原先一致：Material 单选列表，选中后先跑回调（写偏好 + 刷新标签）再关闭。
-    MaterialAlertDialogBuilder(context)
+    com.tom.rv2ide.utils.DialogUtils.newMaterialDialogBuilder(context)
         .setTitle(titleRes)
         .setSingleChoiceItems(items, checked) { dialog, which ->
           onChosen(which)
@@ -398,7 +398,7 @@ private class ActivityDialogs(private val context: Context) : AssistantDialogs {
       negativeRes: Int?,
   ) {
     val builder =
-        MaterialAlertDialogBuilder(context)
+        com.tom.rv2ide.utils.DialogUtils.newMaterialDialogBuilder(context)
             .setTitle(titleRes)
             .setMessage(message)
             .setPositiveButton(positiveRes) { _, _ -> onPositive() }
@@ -414,8 +414,9 @@ private class ActivityDialogs(private val context: Context) : AssistantDialogs {
       positiveRes: Int,
       onConfirm: () -> Unit,
   ) {
-    // 原先这两处（跨项目打开、删除会话）用的就是 AppCompat AlertDialog，保持一致。
-    AlertDialog.Builder(context)
+    // 走统一 Material 弹窗（DialogUtils 已挂到主题的 materialAlertDialogTheme）。
+    // 此前这里是 AppCompat AlertDialog，圆角/底色/动画与 Material 弹窗是两套观感。
+    com.tom.rv2ide.utils.DialogUtils.newMaterialDialogBuilder(context)
         .setTitle(titleRes)
         .setMessage(message)
         .setPositiveButton(positiveRes) { _, _ -> onConfirm() }
@@ -434,7 +435,7 @@ private class ActivityDialogs(private val context: Context) : AssistantDialogs {
     // 用户点了也没反应）。超时走 onDeny——语义与用户点「拒绝」一致：不授权、不记忆。
     val guard = DialogTimeouts.Guard { onDeny() }.start()
     val dialog =
-        AlertDialog.Builder(context)
+        com.tom.rv2ide.utils.DialogUtils.newMaterialDialogBuilder(context)
             .setTitle(string.ai_assistant_dangerous_title)
             .setMessage(
                 context.getString(
@@ -493,7 +494,7 @@ private class ActivityDialogs(private val context: Context) : AssistantDialogs {
       if (q.multiSelect) {
         val checked = BooleanArray(optionsArray.size)
         val dialog =
-            MaterialAlertDialogBuilder(context)
+            com.tom.rv2ide.utils.DialogUtils.newMaterialDialogBuilder(context)
                 .setTitle(q.header.ifBlank { context.getString(string.ai_assistant_question_title) })
                 .setMessage(q.question)
                 .setMultiChoiceItems(optionsArray, checked) { _, which, isChecked ->
@@ -518,7 +519,7 @@ private class ActivityDialogs(private val context: Context) : AssistantDialogs {
       } else {
         var selectedIndex = 0
         val dialog =
-            MaterialAlertDialogBuilder(context)
+            com.tom.rv2ide.utils.DialogUtils.newMaterialDialogBuilder(context)
                 .setTitle(q.header.ifBlank { context.getString(string.ai_assistant_question_title) })
                 .setMessage(q.question)
                 .setSingleChoiceItems(optionsArray, selectedIndex) { _, which ->
@@ -527,15 +528,18 @@ private class ActivityDialogs(private val context: Context) : AssistantDialogs {
                 .setPositiveButton(string.ai_assistant_question_submit) { _, _ ->
                   if (selectedIndex == optionsArray.size - 1) {
                     // 选了「其它」：弹简单输入框
-                    val input = android.widget.EditText(context).apply {
-                      hint = context.getString(string.ai_assistant_question_other_hint)
-                    }
+                    val input =
+                        com.tom.rv2ide.preferences.dialogEditTextField(
+                            context,
+                            context.getString(string.ai_assistant_question_other_hint),
+                        )
                     val inputDialog =
-                        MaterialAlertDialogBuilder(context)
+                        com.tom.rv2ide.utils.DialogUtils.newMaterialDialogBuilder(context)
                             .setTitle(q.question)
-                            .setView(input)
+                            .setView(
+                                com.tom.rv2ide.preferences.dialogFieldColumn(context, input))
                             .setPositiveButton(string.ai_assistant_question_submit) { _, _ ->
-                              answers.add(input.text.toString().trim())
+                              answers.add(input.editText?.text?.toString()?.trim().orEmpty())
                               askNext(index + 1)
                             }
                             .setNegativeButton(android.R.string.cancel) { _, _ ->
