@@ -163,11 +163,8 @@ class GradleBuildService :
     extraArgs.add("${com.tom.rv2ide.tooling.api.LogSenderConfig.PROPERTY_LOGSENDER_ENABLED}=" +
         "${DevOpsPreferences.logsenderEnabled}")
 
-    if (DevOpsPreferences.logsenderEnabled) {
-      connection?.setLoggerInitScriptPath(createLoggerInitScript().absolutePath)
-    } else {
-      connection?.setLoggerInitScriptPath(null)
-    }
+    // logwire 与镜像加速两份 init script 一起设置（见 syncInitScripts）。
+    connection?.let { syncInitScripts(it) }
 
     if (BuildPreferences.isStacktraceEnabled) extraArgs.add("--stacktrace")
     if (BuildPreferences.isInfoEnabled) extraArgs.add("--info")
@@ -195,7 +192,7 @@ class GradleBuildService :
   ): CompletableFuture<InitializeResult> {
     val conn = requireConnection()
     // initializeProject 会跑一次同步构建，同样需要 init script。
-    syncLoggerInitScript(conn)
+    syncInitScripts(conn)
     return conn.initializeProject(params)
   }
 
@@ -205,28 +202,54 @@ class GradleBuildService :
     // 永远不会被调用（RPC 打到连接自己的 client），于是编辑器内构建从未带上
     // `--init-script`，logwire_read 静默失效。这里在每次构建前同步一次，
     // 顺带覆盖「构建前才打开 logsender」的情况。
-    syncLoggerInitScript(conn)
+    syncInitScripts(conn)
     return conn.executeTasks(*tasks)
   }
 
   /**
-   * 每次构建前同步 init script。
+   * 每次构建前同步两份 init script：logwire 注入 + Maven 镜像加速。
    *
-   * <p>不缓存路径：init script 里嵌入了 logger-runtime.aar 的绝对路径，且
+   * <p>两者用途无关、互不影响，因此**在同一个入口设置但各自独立**——
+   * 早先共用一个路径字段，导致「关掉 logwire → 镜像加速也失效」。
+   *
+   * <p>不缓存路径：logwire 脚本里嵌入了 logger-runtime.aar 的绝对路径，且
    * `createLoggerInitScript()` 顺带负责在 AAR 缺失时重新解压；缓存路径会让
    * 「AAR 被清理后脚本仍指向不存在的文件」静默失效。脚本本身只有几百字节，
    * 重复写入的代价可以忽略。
    */
-  private fun syncLoggerInitScript(conn: ToolingConnection) {
+  private fun syncInitScripts(conn: ToolingConnection) {
+    // ---- logwire（依赖 logwire 开关）----
     if (!DevOpsPreferences.logsenderEnabled) {
       conn.setLoggerInitScriptPath(null)
-      return
+    } else {
+      try {
+        conn.setLoggerInitScriptPath(createLoggerInitScript().absolutePath)
+      } catch (e: Exception) {
+        log.warn("Failed to create logger init script", e)
+        conn.setLoggerInitScriptPath(null)
+      }
     }
-    try {
-      conn.setLoggerInitScriptPath(createLoggerInitScript().absolutePath)
+
+    // ---- Maven 镜像加速（与 logwire 无关）----
+    conn.setMirrorInitScriptPath(createMirrorInitScript()?.absolutePath)
+  }
+
+  /**
+   * 生成 Maven 镜像加速的 init script。
+   *
+   * <p>返回 null 表示没有可用镜像（如候选表为空）——调用方据此不注入，
+   * 而不是注入一个空脚本（那会让 Gradle 多解析一个无意义的文件）。
+   */
+  private fun createMirrorInitScript(): File? {
+    val content = com.tom.rv2ide.templates.GradleMirror.buildMavenInitScript()
+    if (content.isBlank()) return null
+    return try {
+      val file = File(Environment.TMP_DIR, "acs-mirror-init.gradle")
+      file.writeText(content)
+      file
     } catch (e: Exception) {
-      log.warn("Failed to create logger init script", e)
-      conn.setLoggerInitScriptPath(null)
+      log.warn("Failed to write mirror init script", e)
+      null
     }
   }
 
@@ -319,9 +342,8 @@ class GradleBuildService :
             sink = null,
             clientFactory = { this },
         )
-    if (DevOpsPreferences.logsenderEnabled) {
-      conn.setLoggerInitScriptPath(createLoggerInitScript().absolutePath)
-    }
+    // 后台连接同样要带两份 init script（logwire + 镜像加速）。
+    syncInitScripts(conn)
     registry.register(path, conn, BuildConnectionRegistry.Owner.BACKGROUND)
     return conn
   }
@@ -358,7 +380,7 @@ class GradleBuildService :
           }
         }
         reused.setEventListener(pendingEventListener)
-        syncLoggerInitScript(reused)
+        syncInitScripts(reused)
         reused.republishProjectProxy()
         connection = reused
         connectionProjectPath = projectDir
@@ -395,7 +417,7 @@ class GradleBuildService :
     fresh.setEventListener(pendingEventListener)
     // 首次连接就要带上 init script：initializeProject 本身也会跑一次同步构建，
     // 只靠 executeTasks 前同步会漏掉那一次。
-    syncLoggerInitScript(fresh)
+    syncInitScripts(fresh)
     connection = fresh
     connectionProjectPath = projectDir
     // 登记进注册表：工具层按会话 cwd 查找连接时能命中编辑器项目。

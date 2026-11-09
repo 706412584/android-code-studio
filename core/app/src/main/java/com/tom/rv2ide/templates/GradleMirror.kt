@@ -34,20 +34,64 @@ object GradleMirror {
 
   private val log = LoggerFactory.getLogger(GradleMirror::class.java)
 
-  /** 一个候选下载源。 */
-  data class Mirror(val id: String, val label: String, val baseUrl: String)
+  /**
+   * 一个候选下载源。
+   *
+   * @property baseUrl Gradle **发行包**的下载前缀（`.../gradle/`）
+   * @property mavenGoogle Google 官方件的镜像仓库（AGP、AndroidX）；null 表示该源没有
+   * @property mavenCentral Maven Central 的镜像仓库（Kotlin、第三方）；null 表示没有
+   */
+  data class Mirror(
+      val id: String,
+      val label: String,
+      val baseUrl: String,
+      val mavenGoogle: String? = null,
+      val mavenCentral: String? = null,
+  )
 
-  /** 腾讯云。实测 HTTP 206、能正常下字节（本机与设备均可用）。 */
+  /** 腾讯云。实测 HTTP 206、能正常下字节（本机与设备均可用）。无 Maven 镜像。 */
   val TENCENT = Mirror("tencent", "腾讯云", "https://mirrors.cloud.tencent.com/gradle/")
 
-  /** 阿里云。与腾讯互为备份，避免单一镜像挂掉时无源可用。 */
-  val ALIYUN = Mirror("aliyun", "阿里云", "https://mirrors.aliyun.com/macports/distfiles/gradle/")
+  /**
+   * 阿里云。Gradle 发行包与 Maven 依赖都有——**唯一两者兼备的源**，
+   * 因此 Maven 镜像固定用它（不随 Gradle 源选择变化）。
+   */
+  val ALIYUN =
+      Mirror(
+          id = "aliyun",
+          label = "阿里云",
+          baseUrl = "https://mirrors.aliyun.com/macports/distfiles/gradle/",
+          // 实测：google 下有 AGP 9.2.0（200）；central 有 Kotlin（200）。
+          mavenGoogle = "https://maven.aliyun.com/repository/google",
+          mavenCentral = "https://maven.aliyun.com/repository/central",
+      )
 
-  /** Gradle 官方源。国外网络下最快，国内实测不可达——因此排在候选末位。 */
+  /** Gradle 官方源。国外网络下最快，国内实测不可达——因此排在候选末位。无 Maven 镜像。 */
   val OFFICIAL = Mirror("official", "Gradle 官方", "https://services.gradle.org/distributions/")
 
-  /** 全部候选，**按国内可用性排序**（预检会挑第一个通的）。 */
-  val ALL: List<Mirror> = listOf(TENCENT, ALIYUN, OFFICIAL)
+  /**
+   * Maven 镜像（名称 → URL，**固定的阿里云**）。
+   *
+   * <p>返回 `List<List<String>>`（而非 Kotlin 的 `Pair`）：调用方是 init script
+   * 生成器与 Java 单测，两层列表在 Java/Kotlin 互操作下都不需要额外适配。
+   * 找不到镜像时返回空列表，调用方据此跳过 Maven 加速。
+   */
+  @JvmStatic
+  fun mavenRepositories(): List<List<String>> {
+    val m = ALIYUN
+    return listOfNotNull(
+        m.mavenGoogle?.let { listOf("m-google", it) },
+        m.mavenCentral?.let { listOf("m-central", it) },
+    )
+  }
+
+  /**
+   * 全部候选，**按国内可用性排序**（预检会挑第一个通的）。
+   *
+   * <p>`@JvmField`：给 Java 侧（设置页的单选列表、单测）直接读，
+   * 不必走 `getALL()` 这种 Kotlin object 生成的访问器。
+   */
+  @JvmField val ALL: List<Mirror> = listOf(TENCENT, ALIYUN, OFFICIAL)
 
   private const val ID_DEFAULT = "tencent"
 
@@ -171,6 +215,69 @@ object GradleMirror {
     val file = wrapperFile(projectRoot) ?: return null
     val url = Regex("distributionUrl=(\\S+)").find(file.readText())?.groupValues?.get(1) ?: return null
     return Regex("gradle-([0-9][0-9.]*)-(bin|all)\\.zip").find(url)?.groupValues?.get(1)
+  }
+
+  /**
+   * 生成「Maven 依赖加速」的 Gradle init script 内容。
+   *
+   * <p><b>为什么走 init script 而不是改用户工程</b>：这样**已存在的项目也生效**，
+   * 且不必往用户仓库里写文件（`settings.gradle` 是用户的，App 不该悄悄改）。
+   * init script 由构建时 `--init-script` 注入，对任何项目都适用。
+   *
+   * <p><b>为什么在 `settingsEvaluated` 里改</b>：实测在 `allprojects { repositories {} }`
+   * 里加会被 `FAIL_ON_PROJECT_REPOS` 直接拒绝——
+   * 「repository 'aliyun-google' was added by initialization script」。只有
+   * settings 级的仓库列表能改；而那个模式是模板与多数工程在用的。
+   *
+   * <p><b>为什么用 `reverseEach + addFirst`</b>：逐个 `addFirst` 会让顺序颠倒
+   * （实测得到 `m-central m-google`）。倒序插入才得到声明的顺序。
+   *
+   * <p><b>为什么镜像在前</b>：命中镜像走国内快路，未命中回落官方源——
+   * 对可用性零影响。追加到末尾等于不起作用。
+   */
+  @JvmStatic
+  fun buildMavenInitScript(): String {
+    val repos = mavenRepositories()
+    if (repos.isEmpty()) return ""
+    // 镜像声明行（14 空格缩进，对应 `def mirrors = [` 的下一层）。
+    //
+    // **不用模板插值也不用占位符 replace**：多行文本插进 Kotlin 原始字符串后
+    // 不受 `trimIndent()` 管辖（它只按字面行算缩进），试过 `$decl` 与
+    // `replace("__MIRRORS__")` 两种写法都出现过缩进错位。改为先用列表逐行加入、
+    // 再 join——缩进完全由这里掌握，不依赖任何后处理。
+    // 12 空格 = `        def mirrors = [`（8）之下再进一层（4）。
+    val mirrorLines =
+        repos.map { (name, url) -> "            ['$name', '$url']," }
+
+    val body =
+        listOf(
+            "// 由 Android Code Studio 生成：新建/已有项目的 Maven 依赖走国内镜像。",
+            "// 镜像前置、官方兜底——命中走快路，未命中回落，不影响可用性。",
+            "settingsEvaluated { settings ->",
+            "    def prependMirrors = { handler ->",
+            "        def mirrors = [",
+        ) +
+            mirrorLines +
+            listOf(
+                "        ]",
+                "        def existing = handler.collect { it.name }",
+                "        def added = []",
+                "        mirrors.each { n, u ->",
+                "            if (!existing.contains(n)) {",
+                "                added << handler.maven { name = n; url = u }",
+                "            }",
+                "        }",
+                "        // 倒序 addFirst 才能得到声明顺序（逐个 addFirst 会颠倒）。",
+                "        added.reverseEach { r ->",
+                "            handler.remove(r)",
+                "            handler.addFirst(r)",
+                "        }",
+                "    }",
+                "    prependMirrors(settings.pluginManagement.repositories)",
+                "    prependMirrors(settings.dependencyResolutionManagement.repositories)",
+                "}",
+            )
+    return body.joinToString("\n")
   }
 
   /**

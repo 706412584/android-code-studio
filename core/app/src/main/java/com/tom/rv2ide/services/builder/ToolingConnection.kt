@@ -115,6 +115,14 @@ internal class ToolingConnection(
   /** 构建期间注入的 init script 路径；按连接隔离，避免并发连接互相覆盖。 */
   @Volatile private var loggerInitScriptPath: String? = null
 
+  /**
+   * 镜像加速用的 init script 路径。
+   *
+   * <p>与 [loggerInitScriptPath] 分开持有：logwire 注入与镜像加速是两件独立的事，
+   * 早先共用一个字段，导致「关掉 logwire → 镜像加速也失效」。
+   */
+  @Volatile private var mirrorInitScriptPath: String? = null
+
   override fun recordRejectedBuildAttempt() {
     _lastBuildOutcome = BuildOutcome(false, System.currentTimeMillis())
   }
@@ -276,8 +284,11 @@ internal class ToolingConnection(
 
     // init script 路径由本连接持有（而不是进程级 System.setProperty），
     // 这样多个连接并发构建时不会互相覆盖。
-    val initScript = loggerInitScriptPath
-    if (initScript != null) {
+    //
+    // **允许多份**：logwire 注入与镜像加速各一份，用途无关、互不影响
+    // （早先共用一个字段，导致关掉 logwire 时镜像加速一起失效）。
+    // 顺序无要求——两份脚本改的是不同东西（依赖注入 vs 仓库列表）。
+    for (initScript in listOfNotNull(loggerInitScriptPath, mirrorInitScriptPath)) {
       args.add("--init-script")
       args.add(initScript)
     }
@@ -299,6 +310,11 @@ internal class ToolingConnection(
 
   fun setLoggerInitScriptPath(path: String?) {
     loggerInitScriptPath = path
+  }
+
+  /** 设置镜像加速的 init script 路径；null 表示不注入。 */
+  fun setMirrorInitScriptPath(path: String?) {
+    mirrorInitScriptPath = path
   }
 
   override fun metadata(): CompletableFuture<ToolingServerMetadata> {

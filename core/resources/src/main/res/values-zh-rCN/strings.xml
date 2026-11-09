@@ -1031,6 +1031,10 @@
   <string name="template_create_failed_title">项目创建失败</string>
   <string name="idepref_sdk_manager_title">SDK 管理器</string>
   <string name="idepref_sdk_manager_summary">安装与管理 SDK 组件（build-tools、平台的 compileSdk）。</string>
+  <string name="idepref_gradle_mirror_title">构建加速镜像</string>
+  <string name="idepref_gradle_mirror_summary">构建时下载 Gradle 与 Maven 依赖所用的镜像。当前：%1$s</string>
+  <string name="idepref_gradle_mirror_auto">自动（推荐）</string>
+  <string name="idepref_gradle_mirror_auto_desc">逐个探测候选镜像，用第一个可达的</string>
   <string name="idepref_sdk_manager_subtitle">管理 SDK 组件</string>
   <string name="sdk_component_build_tools_desc">打包工具（aapt2 / d8 / zipalign）；AGP 有最低版本要求</string>
   <string name="sdk_component_platforms_desc">compileSdk 的目标平台（android.jar）</string>
