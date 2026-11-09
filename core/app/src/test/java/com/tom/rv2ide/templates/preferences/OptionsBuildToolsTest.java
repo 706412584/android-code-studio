@@ -49,7 +49,8 @@ public class OptionsBuildToolsTest {
     // 用户显式选过的版本原样保留，不能被归一化吃掉。
     assertEquals("36.0.0", Options.normalizeBuildToolsVersion("36.0.0"));
     assertEquals("35.0.1", Options.normalizeBuildToolsVersion("35.0.1"));
-    // 前后空白应当去掉（偏好值理论上不会有，但 truncate 更稳）。
-    assertEquals("36.0.0", Options.normalizeBuildToolsVersion(" 36.0.0 ").trim());
+    // 前后空白应当去掉。**不要**在断言里再 .trim()——那会让「函数没去空白」
+    // 也通过，等于这条没测。
+    assertEquals("36.0.0", Options.normalizeBuildToolsVersion(" 36.0.0 "));
   }
 }

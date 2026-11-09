@@ -249,21 +249,24 @@ class JdkInstaller {
    * `apt install mesa` 之类留下的）。实测设备（PJA110，2026-11-10）就有
    * `vulkan-icd` / `vulkan-loader` 两个元包卡在这种状态。
    *
-   * <p><b>为什么是安全的自愈而不是破坏性操作</b>：`apt-get install -f` 会尝试
-   * 「修正依赖」——通常就是把缺依赖的半装包卸掉或补全。这里**只清理**、
-   * 不装新东西，所以不会动用户真正在用的包；破损包状态本身已不可用，
-   * 清掉只会让 apt 恢复工作。命令失败时**不阻断**安装（继续试装，让 apt
-   * 自己报真实原因），避免自愈本身变成新的失败点。
+   * <p><b>为什么用 `install -f` 而不是 `--no-remove`</b>：破损包的典型形态是
+   * **纯元包**（实测的 `vulkan-icd` / `vulkan-loader`：Installed-Size=4、
+   * 文件清单只有 `/.`，没有任何实体文件），而它们的依赖在自举源里装不上。
+   * 这种状态**只能靠移除来修**——加 `--no-remove` 会让 apt 继续报
+   * `E: Unmet dependencies`，自愈彻底失效。
    *
-   * <p>输出里会打印 `apt -f` 的动作（`Remv ...` / `Conf ...`），用户能看见发生了什么。
+   * <p><b>影响面</b>：`install -f` 只会处理**处在破损依赖链上**的包，健康的独立包
+   * 不会被它删。理论上若某个用户包恰好依赖一个修不好的包，apt 可能选择移除该用户包
+   * ——但那时那个包本身也已因依赖断裂而不可用。为让用户看得见，apt 的动作
+   * （`Remv ...` / `Conf ...`）会原样打印到输出面板。
+   *
+   * <p>失败**不阻断**安装（继续试装，让 apt 报真实原因），避免自愈本身变成新失败点。
    */
   private fun healBrokenPackages(onOutput: (String) -> Unit) {
     val audit = runApt(listOf("dpkg", "--audit"), QUERY_TIMEOUT_MS)
     // dpkg --audit 无输出 = 没有破损包，直接跳过（省一次 apt 解析）。
     if (audit.isNullOrBlank()) return
     onOutput("检测到未配置完成的包，先自动修复 apt 状态…")
-    // -f（fix-broken）只对已记录的破损关系做修正，不会顺带装别的包。
-    // 失败也不返回 false：安装阶段会再次尝试并给出 apt 的原始报错，更具信息量。
     apt(listOf("install", "-f", "-y"), onOutput)
   }
 

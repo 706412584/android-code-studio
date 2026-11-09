@@ -140,7 +140,7 @@ internal class ToolingApiServerImpl(private val project: ProjectImpl) : ITooling
         // Ensure Gradle sees UTF-8/locale early via project gradle.properties
         ensureProjectGradleProperties(projectDirectory)
 
-        // 修掉历史版本写坏的空 buildToolsVersion（411 之前生成的项目里可能有）。
+        // 修掉历史版本写坏的空 buildToolsVersion（r19 及更早生成的项目里可能有）。
         // 放在连接之前：那行会让 AGP 在配置阶段就抛 `Invalid revision:`，
         // 连项目模型都读不出来，必须在交给 Gradle 之前清掉。
         healEmptyBuildToolsVersion(projectDirectory)
@@ -290,8 +290,17 @@ internal class ToolingApiServerImpl(private val project: ProjectImpl) : ITooling
         val original = file.readText()
         val healed = stripEmptyBuildToolsVersion(original)
         if (healed != original) {
-          file.writeText(healed)
-          log.info("Removed empty buildToolsVersion from {}", file.absolutePath)
+          // 原子写：先写同目录临时文件再改名。直接 writeText 是先截断再写，
+          // 中途失败（磁盘满/IO 错）会留下**截断的 build.gradle**——那比原来的
+          // 空值 bug 更糟（整个工程语法都坏了）。改名在同分区是原子的。
+          val tmp = File(file.parentFile, "${file.name}.heal-tmp")
+          tmp.writeText(healed)
+          if (!tmp.renameTo(file)) {
+            tmp.delete()
+            log.warn("Could not replace {} while healing buildToolsVersion", file.absolutePath)
+          } else {
+            log.info("Removed empty buildToolsVersion from {}", file.absolutePath)
+          }
         }
       }
     } catch (e: Throwable) {
@@ -521,7 +530,8 @@ internal class ToolingApiServerImpl(private val project: ProjectImpl) : ITooling
  * - 行内其它内容（注释、缩进）不匹配，避免误删。
  */
 internal fun stripEmptyBuildToolsVersion(source: String): String {
-  // 行首到 buildToolsVersion，值为空串，行尾可选注释/空白。
+  // 行首空白 → buildToolsVersion → 可选的 "=" (KTS) → 空引号 → 行尾只允许空白。
+  // 行尾**不**容忍 `// 注释`：模板不会写那种形态，多一层容忍反而增加误伤面。
   val pattern =
       Regex("""^[ \t]*buildToolsVersion[ \t]*(=[ \t]*)?(['"]{2})[ \t]*$(?:\r?\n)?""", RegexOption.MULTILINE)
   return pattern.replace(source, "")

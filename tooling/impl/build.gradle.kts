@@ -92,7 +92,8 @@ dependencies {
   testRuntimeOnly(libs.tests.junit.platformLauncher)
 }
 
-// 与本模块源码一致：源码里有非 ASCII 字面量，单测断言的是同一批字符串。
+// 单测跑在中文 Windows 上，默认字符集是 GBK；测试源码与断言消息含中文，
+// 固定成 UTF-8 免得断言消息乱码（不影响通过与否，但便于读失败原因）。
 tasks.withType<Test>().configureEach {
   useJUnitPlatform()
   systemProperty("file.encoding", "UTF-8")
