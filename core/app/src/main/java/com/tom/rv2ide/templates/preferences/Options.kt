@@ -120,9 +120,25 @@ object Options {
     // build-tools 是**设备级**设置，默认取 SDK 管理器里的全局偏好
     // （用户没设过就是 null = 不写进 build.gradle，由 AGP 自挑）。
     // 不写死 null：否则用户在 SDK 管理器设的默认值一到模板里就被抹掉了。
-    OPT_BUILD_TOOLS_VERSION = BuildPreferences.defaultBuildToolsVersion
+    OPT_BUILD_TOOLS_VERSION = normalizeBuildToolsVersion(BuildPreferences.defaultBuildToolsVersion)
     OPT_COMPILE_SDK = PROJECTS_COMPILE_SDK_VERSION
     OPT_COMPILE_SDK_MINOR = null
     OPT_MIN_SDK = 21
   }
+
+  /**
+   * 把偏好里的 build-tools 值归一化成「写进 build.gradle 的值」。
+   *
+   * <p><b>为什么需要它</b>：偏好里「不指定」存的是**空串**（见 `BuildPreferences`
+   * 的 `defaultBuildToolsVersion`，默认值与 SDK 管理器的「自动」项都是 `""`），
+   * 而生成模板要的是 **null**（`buildToolsVersion(null)` = 不写这一行）。
+   * 空串直落会生成 `buildToolsVersion ''`，AGP 报 `Invalid revision:` 且
+   * **整个项目初始化失败**——不是构建失败，是连项目模型都读不出来
+   * （2026-11-10 PJA110 实机复现，daemon 日志 `FAILURE ... Invalid revision:`）。
+   *
+   * <p>抽成纯函数（不碰偏好、不碰 Android）以便 JVM 单测钉死：这里错一次就是
+   * 「新建项目点开即坏」这种级别的故障。
+   */
+  @JvmStatic
+  fun normalizeBuildToolsVersion(raw: String?): String? = raw?.trim()?.takeIf { it.isNotEmpty() }
 }

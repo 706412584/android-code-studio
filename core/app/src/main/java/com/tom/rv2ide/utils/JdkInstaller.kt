@@ -51,46 +51,91 @@ class JdkInstaller {
     private const val PACKAGE_PREFIX = "openjdk-"
 
     /**
-     * 兜底版本列表。
+     * 只认 `sources.list`（ACS 自举源）、忽略 `sources.list.d/` 的 apt 选项。
+     *
+     * <p>取值含义：`sourceparts=-` 是 apt 约定的「禁用该目录」。为什么必须加，
+     * 见 [discoverAvailable] 的 KDoc——一句话：用户可能手工加了官方 Termux 源，
+     * 那里的 deb 在本应用下**装不上**，还会留下破损包。
+     */
+    private const val ONE_SOURCE_OPT = "Dir::Etc::sourceparts=-"
+
+    /**
+     * 兜底版本列表，与 [discoverAvailable] 的查询范围一致（ACS 自举源实测值）。
      *
      * <p>**只在运行时查询失败时用**（如 apt 索引还没建、仓库临时不可达）。
-     * 正常路径是 [discoverAvailable]——实测源里到底有几个版本是会变的，
-     * 写死会让「仓库加了 JDK 25」必须发新版才支持。这两个值来自 2026-11-08
-     * 在 ACS 包源（`acs-packages-arm64-64c907.gitlab.io`）上的实测结果。
      */
     @JvmField val FALLBACK_VERSIONS: List<String> = listOf("17", "21")
 
     /**
-     * 从 apt 源动态发现可安装的 JDK 大版本（升序），如 `["17", "21"]`。
+     * 从 **ACS 自举源**动态发现可安装的 JDK 大版本（升序），如 `["17", "21"]`。
      *
      * <p>用 `apt-cache pkgnames openjdk-` + 过滤纯数字后缀：排除 `openjdk-17-source`
      * （源码包）、`openjdk-17-x`（X11 部分）这些**不是 JDK 本体**的包。
+     *
+     * <p><b>为什么必须钉在自举源上查</b>（`-o Dir::Etc::sourceparts=-` 忽略
+     * `sources.list.d/`）：ACS 自举只写一个源（`acs-packages-*.gitlab.io`，
+     * 地址在 `libtermux-bootstrap.so` 里），其 deb 的安装路径已被改写成
+     * `com.tom.rv2ide`，**装得上**。而用户可能手工加了官方 Termux 源
+     * （`packages-cf.termux.dev`）——那里的 deb 安装路径写死
+     * `./data/data/com.termux`，在本应用（包名 `com.tom.rv2ide`）下
+     * `dpkg` 报 `error creating directory './data/data/com.termux': Permission denied`，
+     * **根本装不上**，而且半途会留下「已解包未配置」的破损包，把**之后所有**
+     * apt 安装都堵死。
+     *
+     * <p>不加这个限定就会出现：列表里列出官方源的 JDK 25/26，用户点了安装却必然失败，
+     * 还顺带把 apt 弄坏。实测原版 `idesetup -j` 的帮助也明说只支持 `17` 或 `21`——
+     * 与这里只认自举源得到的列表一致。
      *
      * <p>失败（命令跑不起来 / 查不到任何版本）时回退到 [FALLBACK_VERSIONS]，
      * 而不是返回空——空列表会让界面一张卡都不显示，比「可能少一个版本」更糟。
      */
     @JvmStatic
     fun discoverAvailable(): List<String> {
-      val out = runApt(listOf("apt-cache", "pkgnames", PACKAGE_PREFIX), QUERY_TIMEOUT_MS)
+      val out = runApt(discoverQueryArgs(), QUERY_TIMEOUT_MS)
       if (out == null) {
         Log.w(TAG, "apt-cache pkgnames 失败，用兜底版本列表 $FALLBACK_VERSIONS")
         return FALLBACK_VERSIONS
       }
-      val versions =
-          out.lineSequence()
-              .map { it.trim() }
-              .filter { it.startsWith(PACKAGE_PREFIX) }
-              .map { it.removePrefix(PACKAGE_PREFIX) }
-              .filter { it.isNotEmpty() && it.all(Char::isDigit) }
-              .distinct()
-              .sortedBy { it.toIntOrNull() ?: 0 }
-              .toList()
+      val versions = parsePackageNames(out)
       if (versions.isEmpty()) {
         Log.w(TAG, "apt-cache 未列出任何 JDK，用兜底版本列表 $FALLBACK_VERSIONS")
         return FALLBACK_VERSIONS
       }
       return versions
     }
+
+    /**
+     * [discoverAvailable] 用的 apt-cache 参数。
+     *
+     * <p>抽成函数只为**可测**：`Dir::Etc::sourceparts=-`（只认自举源）是这条链路
+     * 的命门，一旦被人图省事删掉，界面上就会重新冒出装不上的 25/26，而设备上
+     * 什么都不报（列表照常显示）。用它把「限定源」钉死在单测里。
+     */
+    @JvmStatic
+    fun discoverQueryArgs(): List<String> =
+        listOf("apt-cache", "-o", ONE_SOURCE_OPT, "pkgnames", PACKAGE_PREFIX)
+
+    /**
+     * 从 `apt-cache pkgnames openjdk-` 的逐行输出里解析出 JDK 大版本（升序去重）。
+     *
+     * <p>只认**纯数字后缀**的包名：`openjdk-17` → `"17"`；而 `openjdk-17-source`
+     * （源码包）、`openjdk-17-x`（X11 部分）这些不是 JDK 本体，必须排除——
+     * 否则界面上会出现「JDK 17-source」这种点不动的卡。
+     *
+     * <p>抽成 `@JvmStatic` 函数而非留在私有方法里：解析规则是这里唯一容易写错的
+     * 地方（后缀过滤 + 排序），而它**不碰设备**，可用 JVM 单测钉死。
+     */
+    @JvmStatic
+    fun parsePackageNames(output: String): List<String> =
+        output
+            .lineSequence()
+            .map { it.trim() }
+            .filter { it.startsWith(PACKAGE_PREFIX) }
+            .map { it.removePrefix(PACKAGE_PREFIX) }
+            .filter { it.isNotEmpty() && it.all(Char::isDigit) }
+            .distinct()
+            .sortedBy { it.toIntOrNull() ?: 0 }
+            .toList()
 
     /** 大版本号 → apt 包名（如 "21" → "openjdk-21"）。 */
     @JvmStatic fun packageFor(javaVersion: String): String = "$PACKAGE_PREFIX$javaVersion"
@@ -154,6 +199,7 @@ class JdkInstaller {
       onOutput("JDK $javaVersion 已安装，无需重复安装。")
       return true
     }
+    healBrokenPackages(onOutput)
     onOutput("正在安装 $pkg（走 Termux 的 apt，需要联网）…")
     val ok = apt(listOf("install", "-y", pkg), onOutput)
     if (!ok) return false
@@ -195,6 +241,33 @@ class JdkInstaller {
   }
 
   /**
+   * 安装前自愈：清掉「已解包但未配置」的半装破损包。
+   *
+   * <p><b>为什么需要它</b>：设备上只要存在**任何**半装破损包，apt 会拒绝执行
+   * 除 `-f` 以外的所有安装——报 `E: Unmet dependencies. Try 'apt --fix-broken install'`，
+   * 用户看到的是「装 JDK 失败」，真正的原因却在别处（往往是某次失败的
+   * `apt install mesa` 之类留下的）。实测设备（PJA110，2026-11-10）就有
+   * `vulkan-icd` / `vulkan-loader` 两个元包卡在这种状态。
+   *
+   * <p><b>为什么是安全的自愈而不是破坏性操作</b>：`apt-get install -f` 会尝试
+   * 「修正依赖」——通常就是把缺依赖的半装包卸掉或补全。这里**只清理**、
+   * 不装新东西，所以不会动用户真正在用的包；破损包状态本身已不可用，
+   * 清掉只会让 apt 恢复工作。命令失败时**不阻断**安装（继续试装，让 apt
+   * 自己报真实原因），避免自愈本身变成新的失败点。
+   *
+   * <p>输出里会打印 `apt -f` 的动作（`Remv ...` / `Conf ...`），用户能看见发生了什么。
+   */
+  private fun healBrokenPackages(onOutput: (String) -> Unit) {
+    val audit = runApt(listOf("dpkg", "--audit"), QUERY_TIMEOUT_MS)
+    // dpkg --audit 无输出 = 没有破损包，直接跳过（省一次 apt 解析）。
+    if (audit.isNullOrBlank()) return
+    onOutput("检测到未配置完成的包，先自动修复 apt 状态…")
+    // -f（fix-broken）只对已记录的破损关系做修正，不会顺带装别的包。
+    // 失败也不返回 false：安装阶段会再次尝试并给出 apt 的原始报错，更具信息量。
+    apt(listOf("install", "-f", "-y"), onOutput)
+  }
+
+  /**
    * 跑一次 apt。
    *
    * <p>用 `/system/bin/sh -c` + 显式导出的 Termux 环境变量，而不是
@@ -204,6 +277,10 @@ class JdkInstaller {
    */
   private fun apt(args: List<String>, onOutput: (String) -> Unit): Boolean {
     val prefix = Environment.PREFIX.absolutePath
+    // ONE_SOURCE_OPT：只认 sources.list（ACS 自举源）。理由见 [discoverAvailable]：
+    // 官方源的 deb 安装路径写死 `com.termux`，在本应用下 dpkg 直接 Permission denied，
+    // 不但装不上，还会留下半装破损包把后续安装全堵死。
+    //
     // DEBIAN_FRONTEND 为非交互：apt 有时会弹 debconf 提示，无 tty 时会挂住。
     val script =
         "export PREFIX='$prefix'; " +
@@ -211,7 +288,7 @@ class JdkInstaller {
             "export LD_LIBRARY_PATH=\"\$PREFIX/lib\"; " +
             "export HOME='${Environment.HOME.absolutePath}'; " +
             "export DEBIAN_FRONTEND=noninteractive; " +
-            "apt-get ${args.joinToString(" ")} 2>&1"
+            "apt-get -o $ONE_SOURCE_OPT ${args.joinToString(" ")} 2>&1"
     return try {
       val pb = ProcessBuilder("/system/bin/sh", "-c", script)
       pb.redirectErrorStream(true)
