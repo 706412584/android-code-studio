@@ -1080,6 +1080,12 @@
   <string name="idepref_gradle_mirror_summary">Mirror used to download Gradle and Maven dependencies for builds. Currently: %1$s</string>
   <string name="idepref_gradle_mirror_auto">Auto (recommended)</string>
   <string name="idepref_gradle_mirror_auto_desc">Probes candidates and picks a reachable one</string>
+  <string name="compile_sdk_version">Build SDK (compileSdk)</string>
+  <string name="sdk_default_version_auto">Default for new projects: auto (AGP decides)</string>
+  <string name="sdk_default_version">Default for new projects: %1$s</string>
+  <string name="sdk_default_version_title">Default build-tools for new projects</string>
+  <string name="build_tools_version">Build-tools version</string>
+  <string name="build_tools_auto">Auto (AGP decides)</string>
   <string name="idepref_sdk_manager_subtitle">Manage SDK components</string>
   <string name="sdk_component_build_tools_desc">Build tools (aapt2 / d8 / zipalign); AGP enforces a minimum.</string>
   <string name="sdk_component_platforms_desc">Platform for compileSdk (android.jar).</string>

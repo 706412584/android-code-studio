@@ -20,23 +20,27 @@ package com.tom.rv2ide.actions.sidebar
 import android.content.Context
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.Fragment
+import androidx.fragment.app.FragmentActivity
 import com.tom.rv2ide.R
+import com.tom.rv2ide.actions.ActionData
+import com.tom.rv2ide.actions.requireContext
+import com.tom.rv2ide.activities.editor.AssistantFullscreenActivity
 import com.tom.rv2ide.fragments.sidebar.AssistantSidebarFragment
 import kotlin.reflect.KClass
 
 /**
- * 侧栏的 AI 助手入口。
+ * 侧栏的 AI 助手入口：**点一下直接进全屏**。
  *
- * <p><b>为什么回到侧栏</b>：助手此前是编辑界面上的悬浮窗（可拖拽 FAB + 贴边面板）。
- * 悬浮形态的问题是它与编辑器争空间、且入口是一个飘在代码上的图标；而 ACS 的侧栏本就承担
- * 「与编辑器并列的工具面板」（文件树、Git 客户端、构建变体…），助手属于同一类。
- * 移进侧栏后它与 Git 客户端形态一致，且不再遮挡代码。
+ * <p><b>为什么不再开侧栏页</b>：原先点击是切到侧栏里的助手 Fragment，用户还得再点一次
+ * 面板上的全屏键才能全屏——两步操作，而侧栏窄、对话区更窄，实际用起来几乎总会立刻全屏。
+ * 现在入口直达 [AssistantFullscreenActivity]，少一步。
  *
- * <p><b>与历史上那一版侧栏助手的区别</b>：早先侧栏里曾有一份助手页（旧路径：单次生成 +
- * `FILE_TO_MODIFY` 标记），后来因为「与悬浮助手界面重复」被移除（见
- * [com.tom.rv2ide.utils.EditorSidebarActions.registerActions] 的历史注释）。
- * 本次不同：悬浮形态**已被移除**，侧栏成为唯一入口，因此不存在两份界面并存的问题；
- * 且侧栏内跑的是新的 Compose 渲染路径，不是旧路径。
+ * <p>实现沿用 [CloudBuildSidebarAction] 的既有模式：`fragmentClass = null` 时侧栏不切页、
+ * 而是执行 [execAction]（见 `EditorSidebarActions` 的 onItemClick）。
+ * **图标仍在侧栏**，只是点击行为从「切页」变成「开窗口」。
+ *
+ * <p>[AssistantSidebarFragment] 保留在代码里未删——侧栏形态（编辑器旁竖着聊）在宽屏下
+ * 仍有价值，将来若要恢复只需把 `fragmentClass` 改回去。
  */
 class AssistantSidebarAction(context: Context, override val order: Int) :
     AbstractSidebarAction() {
@@ -46,11 +50,27 @@ class AssistantSidebarAction(context: Context, override val order: Int) :
   }
 
   override val id: String = ID
-  override val fragmentClass: KClass<out Fragment> = AssistantSidebarFragment::class
+
+  /**
+   * null = 侧栏不切页，改为执行 [execAction]（与「云编译」「关闭项目」同类）。
+   *
+   * 类型仍需 `KClass<out Fragment>?`：接口如此声明。
+   */
+  override val fragmentClass: KClass<out Fragment>? = null
 
   init {
     label = context.getString(R.string.sidebar_assistant_title)
     icon = ContextCompat.getDrawable(context, R.drawable.ic_ai_agent)
     iconRes = R.drawable.ic_ai_agent
+  }
+
+  override suspend fun execAction(data: ActionData): Any {
+    // requiresUIThread = true（基类默认），此处可直接 startActivity。
+    // 侧栏的 ActionData 携带编辑器 Activity 上下文。
+    val activity = data.requireContext() as? FragmentActivity ?: return false
+    // FLAG_ACTIVITY_NEW_TASK 不必要（从 Activity 启动），但无害；
+    // 不加它反而在某些 ROM 上因 task 归属问题被拒。
+    activity.startActivity(android.content.Intent(activity, AssistantFullscreenActivity::class.java))
+    return true
   }
 }

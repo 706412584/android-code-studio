@@ -370,7 +370,9 @@ class ComposeMultiplatform : Template {
       addPlugin(GradlePlugin("alias", "libs.plugins.kotlin.android"))
       addPlugin(GradlePlugin("alias", "libs.plugins.kotlin.compose"))
       namespace(packageId)
-      compileSdk(PROJECTS_COMPILE_SDK_VERSION)
+      compileSdk(Options.OPT_COMPILE_SDK)
+      // build-tools 版本：用户没选就不写这一行（由 AGP 自挑）。
+      buildToolsVersion(Options.OPT_BUILD_TOOLS_VERSION)
       defaultConfig(
           com.tom.androidcodestudio.project.manager.builder.module.DefaultConfig(
               applicationId = packageId,

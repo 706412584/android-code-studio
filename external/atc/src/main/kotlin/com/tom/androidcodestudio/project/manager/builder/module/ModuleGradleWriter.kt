@@ -158,6 +158,14 @@ data class ModuleGradleConfig(
     val dependencies: List<GradleDependency> = emptyList(),
     val externalNativeBuild: ExternalNativeBuild? = null,
     val ndkVersion: String? = null,
+    /**
+     * build-tools 版本（如 `"36.0.0"`）。
+     *
+     * <p>null 表示**不写这一行**，交给 AGP 自己挑——这是模板长期以来的行为，
+     * 也是「不指定就用 AGP 要求的最低版本」的语义。只有用户在向导里明确选了
+     * 版本才落盘。
+     */
+    val buildToolsVersion: String? = null,
 )
 
 /**
@@ -247,6 +255,9 @@ class MLGradleWriter : IMLGradleWriter {
     builder.appendLine("android {")
     builder.appendLine("    namespace '${config.namespace}'")
     builder.appendLine("    compileSdk ${config.compileSdk}")
+    // 只在用户显式选了版本时才写。不写时 AGP 自己挑「要求的最低版本」，
+    // 这与模板长期行为一致，也是文档推荐的用法。
+    config.buildToolsVersion?.let { builder.appendLine("    buildToolsVersion '$it'") }
 
     // NDK version (top-level in android block)
     config.ndkVersion?.let { builder.appendLine("    ndkVersion '$it'") }
@@ -391,6 +402,8 @@ class MLGradleWriter : IMLGradleWriter {
     builder.appendLine("android {")
     builder.appendLine("    namespace = \"${config.namespace}\"")
     builder.appendLine("    compileSdk = ${config.compileSdk}")
+    // 同 Groovy 版：不指定就不写，交给 AGP。
+    config.buildToolsVersion?.let { builder.appendLine("    buildToolsVersion = \"$it\"") }
 
     // NDK version (top-level in android block)
     config.ndkVersion?.let { builder.appendLine("    ndkVersion = \"$it\"") }
@@ -538,6 +551,8 @@ class ModuleGradleConfigBuilder {
   private val plugins = mutableListOf<GradlePlugin>()
   private var namespace: String = ""
   private var compileSdk: Int = 0
+  /** build-tools 版本；null = 不写进 build.gradle（由 AGP 自挑）。 */
+  private var buildToolsVersion: String? = null
   private var defaultConfig: DefaultConfig? = null
   private val buildFeatures = mutableListOf<BuildFeature>()
   private var javaVersion: JavaVersion = JavaVersion.VERSION_17
@@ -555,6 +570,9 @@ class ModuleGradleConfigBuilder {
   fun namespace(namespace: String) = apply { this.namespace = namespace }
 
   fun compileSdk(sdk: Int) = apply { this.compileSdk = sdk }
+
+  /** 指定 build-tools 版本；不调用则生成的 build.gradle 里不出现 `buildToolsVersion`。 */
+  fun buildToolsVersion(version: String?) = apply { this.buildToolsVersion = version }
 
   fun defaultConfig(config: DefaultConfig) = apply { this.defaultConfig = config }
 
@@ -597,6 +615,7 @@ class ModuleGradleConfigBuilder {
         dependencies = dependencies.toList(),
         externalNativeBuild = externalNativeBuild,
         ndkVersion = ndkVersion,
+        buildToolsVersion = buildToolsVersion,
     )
   }
 }

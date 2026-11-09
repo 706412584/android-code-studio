@@ -20,6 +20,7 @@ import com.tom.rv2ide.app.EdgeToEdgeIDEActivity
 import com.tom.rv2ide.databinding.ActivitySdkManagerBinding
 import com.tom.rv2ide.databinding.LayoutSdkComponentCardBinding
 import com.tom.rv2ide.handlers.system.installer.SdkManagerInstaller
+import com.tom.rv2ide.preferences.internal.BuildPreferences
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -166,6 +167,8 @@ class SdkManagerActivity : EdgeToEdgeIDEActivity() {
       card.installedChips.addView(chip)
     }
 
+    bindDefaultVersion(card, component, installed)
+
     card.availableChips.removeAllViews()
     val availableNow = available
     if (availableNow == null) {
@@ -239,6 +242,59 @@ class SdkManagerActivity : EdgeToEdgeIDEActivity() {
         "platform-tools" -> "platform-tools"
         else -> "${component.id};$version"
       }
+
+  /**
+   * 「新建项目时的默认版本」那一行（仅 build-tools 卡）。
+   *
+   * <p><b>为什么只给 build-tools</b>：它是**设备级**工具链——同一设备所有项目共享
+   * `$ANDROID_HOME/build-tools/`，让每个项目在向导里各选一次既重复又容易选出互相
+   * 冲突的版本。compileSdk 则相反，是项目级（写进各自的 build.gradle），
+   * 所以那个放在新建向导里选。
+   *
+   * <p>不设时显示「自动」= 生成的 build.gradle 里不出现 `buildToolsVersion`，
+   * 由 AGP 挑它要求的最低版本（Google 推荐做法，多数项目够用）。
+   */
+  private fun bindDefaultVersion(
+      card: LayoutSdkComponentCardBinding,
+      component: Component,
+      installed: List<String>,
+  ) {
+    if (component.id != "build-tools" || installed.isEmpty()) {
+      card.defaultVersionText.visibility = View.GONE
+      return
+    }
+    card.defaultVersionText.visibility = View.VISIBLE
+    val current = BuildPreferences.defaultBuildToolsVersion
+    card.defaultVersionText.text =
+        if (current.isBlank()) {
+          getString(R.string.sdk_default_version_auto)
+        } else {
+          getString(R.string.sdk_default_version, current)
+        }
+    card.defaultVersionText.setOnClickListener { chooseDefaultVersion(installed) }
+  }
+
+  /** 选「新建项目时的默认 build-tools 版本」（含「不指定」）。 */
+  private fun chooseDefaultVersion(installed: List<String>) {
+    val autoLabel = getString(R.string.sdk_default_version_auto)
+    val items = (listOf(autoLabel) + installed).toTypedArray()
+    val currentIdx = installed.indexOf(BuildPreferences.defaultBuildToolsVersion)
+    // 当前是「自动」（或存的版本已卸载）时选中第一项。
+    val checked = if (currentIdx >= 0) currentIdx + 1 else 0
+    MaterialAlertDialogBuilder(this)
+        .setTitle(R.string.sdk_default_version_title)
+        .setSingleChoiceItems(items, checked) { dialog, which ->
+          BuildPreferences.defaultBuildToolsVersion =
+              if (which <= 0) "" else installed[which - 1]
+          dialog.dismiss()
+          // 重画所有卡：默认版本行要跟着更新。
+          for (c in components) {
+            cards[c.id]?.let { bindCard(it, c) }
+          }
+        }
+        .setNegativeButton(android.R.string.cancel, null)
+        .show()
+  }
 
   /** 二次确认后才真正安装。 */
   private fun confirmInstall(component: Component, version: String) {

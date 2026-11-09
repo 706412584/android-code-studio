@@ -130,6 +130,25 @@
             android:focusable="false" />
         </com.google.android.material.textfield.TextInputLayout>
 
+        <!-- compileSdk：只列设备**已安装**的 platforms（选未装的会让构建报找不到平台）。
+             默认 36（BakLava），与模板长期行为一致。 -->
+        <com.google.android.material.textfield.TextInputLayout
+          android:id="@+id/compileSdkInputLayout"
+          android:layout_width="match_parent"
+          android:layout_height="wrap_content"
+          android:layout_marginTop="8dp"
+          android:layout_marginBottom="8dp"
+          android:hint="@string/compile_sdk_version"
+          style="@style/Widget.Material3.TextInputLayout.FilledBox.ExposedDropdownMenu">
+
+          <com.google.android.material.textfield.MaterialAutoCompleteTextView
+            android:id="@+id/compileSdkInput"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:inputType="none"
+            android:focusable="false" />
+        </com.google.android.material.textfield.TextInputLayout>
+
         <com.google.android.material.textfield.TextInputLayout
           android:id="@+id/nativeLanguageInputLayout"
           android:layout_width="match_parent"

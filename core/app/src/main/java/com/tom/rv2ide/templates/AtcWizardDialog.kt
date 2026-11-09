@@ -29,6 +29,7 @@ import com.tom.rv2ide.R
 import com.tom.rv2ide.activities.FolderPickerActivity
 import com.tom.rv2ide.activities.IDEConfigurations
 import com.tom.rv2ide.databinding.DialogAtcWizardBinding
+import com.tom.rv2ide.handlers.system.installer.SdkManagerInstaller
 import com.tom.rv2ide.preferences.internal.BuildPreferences
 import com.tom.rv2ide.templates.android.Template
 import com.tom.rv2ide.templates.android.TemplateOptions
@@ -167,6 +168,8 @@ class AtcWizardDialog : BottomSheetDialogFragment() {
       }
     }
 
+    setupCompileSdkDropdown(ctx)
+
     val nativeLangValues = arrayOf("C++", "C")
     binding.nativeLanguageInput.apply {
       setSimpleItems(nativeLangValues)
@@ -177,6 +180,56 @@ class AtcWizardDialog : BottomSheetDialogFragment() {
       }
     }
   }
+
+  /**
+   * compileSdk 下拉：**只列设备已安装的 platforms**。
+   *
+   * <p><b>为什么只列已装的</b>：compileSdk 对应 `$ANDROID_HOME/platforms/android-NN/`
+   * 里的 android.jar，选一个没装的会让构建直接报「找不到 platform」。
+   * 想装新平台请用 设置 → 构建与运行 → SDK 管理器。
+   *
+   * <p><b>为什么是项目级而非全局</b>：compileSdk 决定「能用哪些 API」，
+   * 写进项目的 build.gradle，不同项目可以不同——这与 build-tools（设备级工具链）
+   * 是两类东西。后者放在 SDK 管理器里设默认（见 `SdkManagerActivity`）。
+   *
+   * <p>默认取 `PROJECTS_COMPILE_SDK_VERSION`（36）——模板长期行为；设备上恰好没装
+   * 该平台时退到已装列表中的最高版本，而不是硬写一个用不了的。
+   *
+   * <p>设备上一个 platforms 都没有时隐藏下拉：列空列表会让用户以为「没得选」
+   * 而不是「还没装」。
+   */
+  private fun setupCompileSdkDropdown(ctx: Context) {
+    // installedPlatforms() 返回 "android-36" 形式，取数字部分用于显示与比较。
+    val installed =
+        SdkManagerInstaller.installedPlatforms()
+            .mapNotNull { it.removePrefix("android-").toIntOrNull() }
+            .distinct()
+            .sortedDescending()
+    if (installed.isEmpty()) {
+      binding.compileSdkInputLayout.visibility = View.GONE
+      Options.OPT_COMPILE_SDK = PROJECTS_COMPILE_SDK_VERSION
+      return
+    }
+    // 默认：模板值（36）在列表里就用它，否则用最高可用版本。
+    val default =
+        if (PROJECTS_COMPILE_SDK_VERSION in installed) PROJECTS_COMPILE_SDK_VERSION
+        else installed.first()
+    Options.OPT_COMPILE_SDK = default
+    val labels = installed.map { "API $it: ${sdkCodenameOf(it)}" }.toTypedArray()
+    binding.compileSdkInput.apply {
+      setSimpleItems(labels)
+      setText(labels[installed.indexOf(default)], false)
+      setOnClickListener { showDropDown() }
+      setOnItemClickListener { _, _, position, _ ->
+        Options.OPT_COMPILE_SDK = installed[position]
+      }
+    }
+  }
+
+  /** 取某个 API level 的展示名（复用 `Sdk` 枚举，未知的只显示数字）。 */
+  private fun sdkCodenameOf(api: Int): String =
+      Sdk.values().firstOrNull { it.api == api }?.let { "${it.version} (${it.codename})" }
+          ?: "Android $api"
 
   private fun setupTemplatesGrid(ctx: Context) {
     val templates = TemplateRegistry.getAllTemplates()

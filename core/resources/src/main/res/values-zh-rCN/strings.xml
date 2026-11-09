@@ -1035,6 +1035,12 @@
   <string name="idepref_gradle_mirror_summary">构建时下载 Gradle 与 Maven 依赖所用的镜像。当前：%1$s</string>
   <string name="idepref_gradle_mirror_auto">自动（推荐）</string>
   <string name="idepref_gradle_mirror_auto_desc">逐个探测候选镜像，用第一个可达的</string>
+  <string name="compile_sdk_version">构建 SDK（compileSdk）</string>
+  <string name="sdk_default_version_auto">新建项目默认版本：自动（由 AGP 决定）</string>
+  <string name="sdk_default_version">新建项目默认版本：%1$s</string>
+  <string name="sdk_default_version_title">新建项目的默认 build-tools</string>
+  <string name="build_tools_version">Build-tools 版本</string>
+  <string name="build_tools_auto">自动（由 AGP 决定）</string>
   <string name="idepref_sdk_manager_subtitle">管理 SDK 组件</string>
   <string name="sdk_component_build_tools_desc">打包工具（aapt2 / d8 / zipalign）；AGP 有最低版本要求</string>
   <string name="sdk_component_platforms_desc">compileSdk 的目标平台（android.jar）</string>

@@ -33,6 +33,7 @@ object BuildPreferences {
   const val GRADLE_CLEAR_CACHE = "idepref_build_gradleClearCache"
   const val CUSTOM_GRADLE_INSTALLATION = "idepref_build_customGradleInstallation"
   const val GRADLE_MIRROR_ID = "ide.build.gradleMirrorId"
+  const val DEFAULT_BUILD_TOOLS_VERSION = "ide.build.defaultBuildToolsVersion"
   const val LAUNCH_APP_AFTER_INSTALL = "ide.build.run.launchAppAfterInstall"
   const val INSTALL_VIA_SHIZUKU = "ide.build.run.installViaShizuku"
   const val PREF_JAVA_HOME = "ide.build.javaHome"
@@ -120,6 +121,25 @@ object BuildPreferences {
     get() = prefManager.getString(GRADLE_MIRROR_ID, "")
     set(value) {
       prefManager.putString(GRADLE_MIRROR_ID, value)
+    }
+
+  /**
+   * 新建项目时默认使用的 **build-tools 版本**（如 `"36.0.0"`）。
+   *
+   * <p>空串 = **不指定**，生成的 `build.gradle` 里不出现 `buildToolsVersion`，
+   * 由 AGP 挑它要求的最低版本。这是模板长期行为，也是 Google 的推荐做法。
+   *
+   * <p><b>为什么是设备级全局设置而不是每个项目选一次</b>：build-tools 装在
+   * `$ANDROID_HOME/build-tools/`，同一设备所有项目共享同一套工具链；让每个项目
+   * 各选一次既重复又容易选出互相冲突的版本。用户在 SDK 管理器设一次即可。
+   *
+   * <p>需要它的情况：AGP 自挑的那个恰好有问题（缺组件、架构不符）时钉一个能用的；
+   * 或设备只有低版本可用（AGP 9 要求 ≥36.0.0，只装了 35.x 时构建会失败）。
+   */
+  var defaultBuildToolsVersion: String
+    get() = prefManager.getString(DEFAULT_BUILD_TOOLS_VERSION, "")
+    set(value) {
+      prefManager.putString(DEFAULT_BUILD_TOOLS_VERSION, value)
     }
 
   /** Whether the app should be launched automatically after installation (after build). */

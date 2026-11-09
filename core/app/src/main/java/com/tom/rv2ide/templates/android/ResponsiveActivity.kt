@@ -447,7 +447,9 @@ class ResponsiveActivity : Template {
               enableKotlinOptions(false)
             }
             namespace(packageHelper.getPackageId())
-            compileSdk(PROJECTS_COMPILE_SDK_VERSION)
+            compileSdk(Options.OPT_COMPILE_SDK)
+            // build-tools 版本：用户没选就不写这一行（由 AGP 自挑）。
+            buildToolsVersion(Options.OPT_BUILD_TOOLS_VERSION)
             defaultConfig(
                 DefaultConfig(
                     applicationId = packageHelper.getPackageId(),

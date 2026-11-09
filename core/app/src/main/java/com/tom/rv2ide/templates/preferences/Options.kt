@@ -17,6 +17,9 @@
 
 package com.tom.rv2ide.templates.preferences
 
+import com.tom.rv2ide.preferences.internal.BuildPreferences
+import com.tom.rv2ide.templates.PROJECTS_COMPILE_SDK_VERSION
+
 /**
  * Global template configuration options.
  *
@@ -52,6 +55,35 @@ object Options {
   var OPT_SELECTED_NDK_VERSION: String? = null
 
   /**
+   * 用户在向导里选的 build-tools 版本（如 `"36.0.0"`）。
+   *
+   * <p>null 表示**不写进 build.gradle**，由 AGP 自己挑「它要求的最低版本」——
+   * 这是模板长期以来的行为，多数项目也不需要显式指定。
+   *
+   * <p><b>什么时候需要它</b>：设备上装了多个 build-tools（如同时有 36.0.0 与 37.0.0），
+   * 而 AGP 挑的那个恰好有问题时，用户可以钉一个已知能用的；反过来，AGP 9 要求
+   * ≥36.0.0，设备若只装了 35.x，构建直接失败，不给出路就等于无解。
+   *
+   * <p>取值来自设备上**已安装**的 build-tools（见 `SdkManagerInstaller.installedBuildTools`）——
+   * 不列未安装的，选一个没装的只会让构建报「找不到 build-tools」。
+   */
+  var OPT_BUILD_TOOLS_VERSION: String? = null
+
+  /**
+   * 用户在向导里选的 **compileSdk**（API level，如 36）。
+   *
+   * <p>默认 [PROJECTS_COMPILE_SDK_VERSION]（36）——模板长期行为。
+   *
+   * <p><b>与 [OPT_MIN_SDK] 的区别</b>：minSdk 是「最低支持的系统版本」（写进
+   * `defaultConfig`），compileSdk 是「用哪个平台的 android.jar 编译」（写进
+   * `android {}`）。前者影响运行范围，后者影响能用哪些 API 与编译结果。
+   *
+   * <p><b>与 build-tools 的区别</b>：compileSdk 是**项目级**（每个项目可不同），
+   * build-tools 是**设备级工具链**，因此后者不放这里、而在 SDK 管理器里设默认。
+   */
+  var OPT_COMPILE_SDK: Int = PROJECTS_COMPILE_SDK_VERSION
+
+  /**
    * 用户在向导里显式选择的 CMake **版本号**（如 "3.31.6"）。
    *
    * <p>null 表示「自动挑一个当前设备能跑的」，见
@@ -74,6 +106,11 @@ object Options {
     OPT_NATIVE_LANGUAGE = "cpp"
     OPT_SELECTED_NDK_VERSION = null
     OPT_CMAKE_VERSION = null
+    // build-tools 是**设备级**设置，默认取 SDK 管理器里的全局偏好
+    // （用户没设过就是 null = 不写进 build.gradle，由 AGP 自挑）。
+    // 不写死 null：否则用户在 SDK 管理器设的默认值一到模板里就被抹掉了。
+    OPT_BUILD_TOOLS_VERSION = BuildPreferences.defaultBuildToolsVersion
+    OPT_COMPILE_SDK = PROJECTS_COMPILE_SDK_VERSION
     OPT_MIN_SDK = 21
   }
 }

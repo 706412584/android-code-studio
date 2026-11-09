@@ -62,6 +62,23 @@
       app:chipSpacingVertical="4dp"
       tools:ignore="MissingConstraints" />
 
+    <!-- 「新建项目时默认用哪个版本」——仅 build-tools 卡显示（它是设备级设置，
+         两个组件共享同一套工具链，不该每个项目各选一次）。点击弹出选择。 -->
+    <com.google.android.material.textview.MaterialTextView
+      android:id="@+id/default_version_text"
+      android:layout_width="match_parent"
+      android:layout_height="wrap_content"
+      android:layout_marginTop="8dp"
+      android:background="?attr/selectableItemBackground"
+      android:clickable="true"
+      android:focusable="true"
+      android:paddingVertical="6dp"
+      android:textAppearance="@style/TextAppearance.Material3.BodyMedium"
+      android:textColor="?attr/colorPrimary"
+      android:visibility="gone"
+      tools:text="默认版本：36.0.0"
+      tools:visibility="visible" />
+
     <com.google.android.material.textview.MaterialTextView
       android:id="@+id/component_hint"
       android:layout_width="match_parent"
