@@ -1,17 +1,12 @@
 package com.termux.shared.interact;
 
-import android.app.Activity;
-import android.app.AlertDialog;
 import android.content.Context;
 import android.content.DialogInterface;
-import android.graphics.Color;
 import android.view.LayoutInflater;
 import android.view.View;
-import android.widget.Button;
 import android.widget.TextView;
 
 import com.termux.shared.R;
-import com.termux.shared.logger.Logger;
 
 public class MessageDialogUtils {
 
@@ -51,7 +46,11 @@ public class MessageDialogUtils {
                                    final DialogInterface.OnClickListener onNegativeButton,
                                    final DialogInterface.OnDismissListener onDismiss) {
 
-        AlertDialog.Builder builder = new AlertDialog.Builder(context, R.style.Theme_AppCompat_Light_Dialog);
+        // 用 Material 弹窗并**跟随当前主题**（不再强制 Theme_AppCompat_Light_Dialog）。
+        // 旧实现强制浅色，于是不得不在 setOnShowListener 里把按钮文字硬编码成黑色——
+        // 那在深色主题下就是一块刺眼的白底黑字框。改用 Material 后主题属性自洽，
+        // 按钮文字色由主题决定，不需要也不应该再手动覆盖。
+        var builder = new com.google.android.material.dialog.MaterialAlertDialogBuilder(context);
 
         LayoutInflater inflater = (LayoutInflater) context.getSystemService( Context.LAYOUT_INFLATER_SERVICE );
         View view = inflater.inflate(R.layout.dialog_show_message, null);
@@ -77,19 +76,7 @@ public class MessageDialogUtils {
         if (onDismiss != null)
             builder.setOnDismissListener(onDismiss);
 
-        AlertDialog dialog = builder.create();
-
-        dialog.setOnShowListener(dialogInterface -> {
-            Logger.logError("dialog");
-            Button button = dialog.getButton(AlertDialog.BUTTON_POSITIVE);
-            if (button != null)
-                button.setTextColor(Color.BLACK);
-            button = dialog.getButton(AlertDialog.BUTTON_NEGATIVE);
-            if (button != null)
-                button.setTextColor(Color.BLACK);
-        });
-
-        dialog.show();
+        builder.show();
     }
 
     public static void exitAppWithErrorMessage(Context context, String titleText, String messageText) {

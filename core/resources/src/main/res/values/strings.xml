@@ -134,6 +134,7 @@
   <string name="ai_agent_image_gen_no_providers">No usable provider. Add one under Providers first.</string>
   <string name="ai_agent_image_gen_no_models">No image model found in this provider\'s catalog (names containing \"image\").</string>
   <string name="ai_agent_image_gen_clear">Clear</string>
+  <string name="ai_agent_image_gen_clear_confirm">Clear the selected provider and model?</string>
   <string name="ai_agent_image_gen_output_dir_title">Image save location</string>
   <string name="ai_agent_image_gen_output_dir_default">Default: current project ai-generated/ folder</string>
   <string name="ai_agent_image_gen_output_dir_row">Image save location: %1$s</string>
@@ -144,6 +145,7 @@
   <string name="ai_agent_video_gen_no_providers">No usable provider. Add one under Providers first.</string>
   <string name="ai_agent_video_gen_no_models">No video model found in this provider\'s catalog (names containing \"video\").</string>
   <string name="ai_agent_video_gen_clear">Clear</string>
+  <string name="ai_agent_video_gen_clear_confirm">Clear the selected provider and model?</string>
   <string name="ai_agent_video_gen_output_dir_row">Video save location: %1$s</string>
   <string name="ai_agent_video_gen_output_dir_default">Default: current project ai-generated/ folder</string>
   <string name="ai_agent_skills_import">Import skill</string>
@@ -151,7 +153,6 @@
   <string name="ai_agent_skills_import_empty">No .md files in Downloads. Put skill files there first.</string>
   <string name="ai_agent_skills_import_ok">Imported: %1$s</string>
   <string name="ai_agent_skills_import_failed">Import failed — check the file and try again</string>
-  <string name="ai_agent_mcp_type_stdio">stdio (local process via Termux)</string>
   <string name="ai_agent_mcp_stdio_args">Command arguments (space separated)</string>
   <string name="ai_agent_mcp_stdio_env">Environment variables (KEY=VALUE, one per line)</string>
   <string name="ai_agent_mcp_stdio_cwd">Working directory (optional)</string>
@@ -324,21 +325,65 @@
   <string name="ai_agent_memory_none">No memory saved yet</string>
   <string name="ai_agent_memory_count">%1$d entr(y/ies) saved — tap to review or delete</string>
   <string name="ai_agent_memory_clear_all">Clear all</string>
+  <string name="ai_agent_memory_delete">Delete</string>
+  <string name="ai_agent_memory_clear_all_confirm">All saved memories will be deleted. This cannot be undone.</string>
 
   <!-- MCP servers -->
   <string name="ai_agent_mcp_title">MCP servers</string>
   <string name="ai_agent_mcp_summary">Connect external MCP tool servers</string>
   <string name="ai_agent_mcp_none">No MCP server configured</string>
   <string name="ai_agent_mcp_count">%1$d of %2$d enabled</string>
-  <string name="ai_agent_mcp_add">Add server…</string>
-  <string name="ai_agent_mcp_add_hint">Enter the endpoint of an MCP server. Its tools will appear as mcpx_&lt;name&gt; and always require confirmation.</string>
   <string name="ai_agent_mcp_label_hint">Label (optional)</string>
   <string name="ai_agent_mcp_type_label">Transport</string>
-  <string name="ai_agent_mcp_type_http">Streamable HTTP</string>
-  <string name="ai_agent_mcp_type_sse">SSE (legacy)</string>
   <string name="ai_agent_mcp_enable">Enable</string>
-  <string name="ai_agent_mcp_disable">Disable</string>
   <string name="ai_agent_mcp_remove">Remove</string>
+
+  <!-- Manage pages (provider / MCP list + edit screens) -->
+  <string name="manage_add">Add</string>
+  <string name="manage_custom">Custom</string>
+  <string name="manage_configured_count">%1$d configured</string>
+  <string name="manage_required">Required</string>
+  <string name="manage_saving">Saving…</string>
+  <string name="manage_save_failed">Save failed</string>
+  <string name="manage_fetch_failed">Fetch failed: %1$s</string>
+  <string name="manage_unknown_error">Unknown error</string>
+
+  <string name="manage_mcp_empty">No MCP server connected yet.\n\nMCP (Model Context Protocol) lets you plug external tool services into the assistant:\n· HTTP / SSE: enter the server URL\n· stdio: enter the start command (launched by this app\'s built-in shell)\n\nOnce connected, the server\'s tools appear in the model\'s tool list.</string>
+  <string name="manage_mcp_add_title">Add MCP server</string>
+  <string name="manage_mcp_edit_title">Edit MCP server</string>
+  <string name="manage_mcp_name_hint">e.g. Image generation service</string>
+  <string name="manage_mcp_target_url">Server URL</string>
+  <string name="manage_mcp_target_command">Start command</string>
+  <string name="manage_mcp_target_required">%1$s is required</string>
+  <string name="manage_mcp_env_hint">API_KEY=xxx (one KEY=VALUE per line)</string>
+  <string name="manage_mcp_cwd_hint">Leave empty to inherit the parent process</string>
+  <string name="manage_mcp_remove_title">Remove MCP server</string>
+  <string name="manage_mcp_remove_confirm">“%1$s” will be removed. Its tools disappear from the model tool list immediately.</string>
+
+  <string name="manage_provider_empty">No provider configured yet.\n\nTap “Start from a preset” to pick one (DeepSeek / OpenAI / Claude…); the URL and models are filled in for you.\nOr tap “Custom” to enter a relay or self-hosted gateway manually.\n\nEach provider keeps its own API key, so switching never mixes them up.</string>
+  <string name="manage_provider_slot_second">Second model</string>
+  <string name="manage_provider_slot_third">Third model</string>
+  <string name="manage_provider_slot_fourth">Fourth model</string>
+  <string name="manage_provider_no_url">No URL</string>
+  <string name="manage_provider_delete_title">Delete provider</string>
+  <string name="manage_provider_delete_confirm">“%1$s” will be deleted. Model selections that depend on it stop working too.</string>
+  <string name="manage_provider_preset_hint">Pick a preset — the API URL and the default model are filled in for you. You can change them later.</string>
+  <string name="manage_provider_name_hint">e.g. DeepSeek</string>
+  <!--
+    编辑页标题用「编辑服务商」而不是复用弹窗时代的 ai_agent_provider_edit（值只有 “Edit”）：
+    弹窗有正文可交代对象，独立页面只有标题，光写 “Edit” 看不出在编辑什么。
+  -->
+  <string name="manage_provider_edit_title">Edit provider</string>
+  <string name="manage_provider_name_required">Enter a name</string>
+  <string name="manage_provider_url_required">Enter the API URL</string>
+  <string name="manage_provider_url_scheme">The URL must start with http(s)://</string>
+  <string name="manage_provider_main_required">Enter the main model</string>
+  <string name="manage_provider_protocol_openai">OpenAI compatible</string>
+  <string name="manage_provider_url_hint_anthropic">For the Anthropic protocol just enter the domain (e.g. https://api.anthropic.com) or the anthropic segment of a third-party gateway (e.g. https://api.deepseek.com/anthropic) — /v1/messages is appended automatically; a pasted full path is used as is.</string>
+  <string name="manage_provider_url_hint_openai">OpenAI-compatible protocols usually need the version segment (e.g. .../v1).</string>
+  <string name="manage_provider_slots_hint">The main model is used for chat; leave the other three empty to reuse it. Tap “Fetch models” to load the real list from the provider\'s /models endpoint.</string>
+  <string name="manage_provider_slot_same_hint">Leave empty = same as main</string>
+  <string name="manage_provider_1m_context">1M context</string>
 
   <!-- CodeGraph 语义索引 -->
   <string name="ai_agent_codegraph_title">CodeGraph index</string>
@@ -439,7 +484,7 @@
   <string name="ai_agent_prompt_template_reset">Reset this template</string>
   <string name="ai_agent_prompt_template_reset_all">Reset all</string>
   <string name="ai_agent_prompt_template_placeholders">Available placeholders:</string>
-  <string name="ai_agent_prompt_template_placeholders_hint">Placeholders (long-press the box to see all). Tip: write {{DEFAULT}} to keep the current default text and append your own — it keeps receiving updates.</string>
+  <string name="ai_agent_prompt_template_placeholders_hint">Tip: write {{DEFAULT}} to keep the current default text and append your own — it keeps receiving updates.</string>
   <string name="ai_agent_prompt_template_save">Save</string>
   <string name="ai_agent_prompt_template_unknown">Not recognized (will render as empty):</string>
 
@@ -448,7 +493,9 @@
   <string name="ai_agent_authorized_summary">Review or revoke rules saved by “Always allow”</string>
   <string name="ai_agent_authorized_none">No tool has been permanently authorized</string>
   <string name="ai_agent_authorized_count">%1$d authorization rule(s) saved</string>
+  <string name="ai_agent_authorized_revoke">Revoke</string>
   <string name="ai_agent_authorized_clear_all">Revoke all</string>
+  <string name="ai_agent_authorized_clear_all_confirm">All saved authorizations will be revoked. Those tools will ask for confirmation again.</string>
 
   <!-- Diff revert in the assistant panel -->
   <string name="ai_assistant_file_changed">✎ Changed %1$s</string>
@@ -1623,6 +1670,7 @@ This AI agent is designed to assist you in developing Android applications direc
   <string name="title_discard">Discard</string>
   <string name="msg_build_variants_fetch_failed">Failed to fetch build variants</string>
   <string name="title_choose_application">Choose application</string>
+  <string name="msg_output_share_failed">Failed to prepare output for sharing</string>
   <string name="err_selected_variant_not_found">Selected build variant not found</string>
   <string name="title_disconnect_log_senders">Disconnect log senders</string>
   <string name="title_begin_long_select">Begin long select</string>

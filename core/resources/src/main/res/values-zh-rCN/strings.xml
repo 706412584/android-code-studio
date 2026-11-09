@@ -129,6 +129,7 @@
   <string name="ai_agent_image_gen_no_providers">没有可用的服务商，请先在「服务商」里添加。</string>
   <string name="ai_agent_image_gen_no_models">该服务商目录里没有找到图片模型（名称含 image）。</string>
   <string name="ai_agent_image_gen_clear">清除配置</string>
+  <string name="ai_agent_image_gen_clear_confirm">清除已选择的服务商与模型？</string>
   <string name="ai_agent_image_gen_output_dir_title">图片保存位置</string>
   <string name="ai_agent_image_gen_output_dir_default">默认：当前项目的 ai-generated/ 文件夹</string>
   <string name="ai_agent_image_gen_output_dir_row">图片保存位置：%1$s</string>
@@ -139,6 +140,7 @@
   <string name="ai_agent_video_gen_no_providers">没有可用的服务商，请先在「服务商」里添加。</string>
   <string name="ai_agent_video_gen_no_models">该服务商目录里没有找到视频模型（名称含 video）。</string>
   <string name="ai_agent_video_gen_clear">清除配置</string>
+  <string name="ai_agent_video_gen_clear_confirm">清除已选择的服务商与模型？</string>
   <string name="ai_agent_video_gen_output_dir_row">视频保存位置：%1$s</string>
   <string name="ai_agent_video_gen_output_dir_default">默认：当前项目的 ai-generated/ 文件夹</string>
   <string name="ai_agent_skills_import">导入技能</string>
@@ -146,7 +148,6 @@
   <string name="ai_agent_skills_import_empty">「下载」目录里没有 .md 文件，请先把技能文件放进去。</string>
   <string name="ai_agent_skills_import_ok">已导入：%1$s</string>
   <string name="ai_agent_skills_import_failed">导入失败——请检查文件后重试</string>
-  <string name="ai_agent_mcp_type_stdio">stdio（Termux 本地进程）</string>
   <string name="ai_agent_mcp_stdio_args">命令参数（空格分隔）</string>
   <string name="ai_agent_mcp_stdio_env">环境变量（KEY=VALUE，每行一个）</string>
   <string name="ai_agent_mcp_stdio_cwd">工作目录（可选）</string>
@@ -319,21 +320,61 @@
   <string name="ai_agent_memory_none">尚未保存任何记忆</string>
   <string name="ai_agent_memory_count">已保存 %1$d 条 — 点击查看或删除</string>
   <string name="ai_agent_memory_clear_all">全部清空</string>
+  <string name="ai_agent_memory_delete">删除</string>
+  <string name="ai_agent_memory_clear_all_confirm">将删除全部已保存的记忆，且无法撤销。</string>
 
   <!-- MCP 服务端 -->
   <string name="ai_agent_mcp_title">MCP 服务端</string>
   <string name="ai_agent_mcp_summary">接入外部 MCP 工具服务</string>
   <string name="ai_agent_mcp_none">尚未配置 MCP 服务端</string>
   <string name="ai_agent_mcp_count">已启用 %1$d / %2$d 个</string>
-  <string name="ai_agent_mcp_add">添加服务端…</string>
-  <string name="ai_agent_mcp_add_hint">填写 MCP 服务端的地址。它的工具会以 mcpx_&lt;名字&gt; 的形式出现，且始终需要确认。</string>
   <string name="ai_agent_mcp_label_hint">备注名（可选）</string>
   <string name="ai_agent_mcp_type_label">传输方式</string>
-  <string name="ai_agent_mcp_type_http">Streamable HTTP</string>
-  <string name="ai_agent_mcp_type_sse">SSE（旧规范）</string>
   <string name="ai_agent_mcp_enable">启用</string>
-  <string name="ai_agent_mcp_disable">停用</string>
   <string name="ai_agent_mcp_remove">删除</string>
+
+  <!-- 管理页（服务商 / MCP 的列表与编辑页） -->
+  <string name="manage_add">添加</string>
+  <string name="manage_custom">自定义</string>
+  <string name="manage_configured_count">已配置 %1$d 个</string>
+  <string name="manage_required">必填</string>
+  <string name="manage_saving">保存中…</string>
+  <string name="manage_save_failed">保存失败</string>
+  <string name="manage_fetch_failed">拉取失败：%1$s</string>
+  <string name="manage_unknown_error">未知错误</string>
+
+  <string name="manage_mcp_empty">还没有接入 MCP server。\n\nMCP（Model Context Protocol）让你把外部工具服务接进助手：\n· HTTP / SSE：填服务端 URL\n· stdio：填启动命令（本 App 用内置 shell 启动）\n\n接入后 server 的工具会出现在模型的工具清单里。</string>
+  <string name="manage_mcp_add_title">添加 MCP 服务端</string>
+  <string name="manage_mcp_edit_title">编辑 MCP 服务端</string>
+  <string name="manage_mcp_name_hint">例如：图像生成服务</string>
+  <string name="manage_mcp_target_url">服务端 URL</string>
+  <string name="manage_mcp_target_command">启动命令</string>
+  <string name="manage_mcp_target_required">请填写%1$s</string>
+  <string name="manage_mcp_env_hint">API_KEY=xxx（每行一个 KEY=VALUE）</string>
+  <string name="manage_mcp_cwd_hint">留空继承父进程</string>
+  <string name="manage_mcp_remove_title">移除 MCP 服务端</string>
+  <string name="manage_mcp_remove_confirm">将移除「%1$s」。其工具会立即从模型清单里消失。</string>
+
+  <string name="manage_provider_empty">还没有配置服务商。\n\n点「从预设开始」选一家（DeepSeek / OpenAI / Claude…），会自动填好地址与模型；\n或点「自定义」手填中转站、自建网关。\n\n每个服务商各存一份密钥，切换时不会串。</string>
+  <string name="manage_provider_slot_second">第二模型</string>
+  <string name="manage_provider_slot_third">第三模型</string>
+  <string name="manage_provider_slot_fourth">第四模型</string>
+  <string name="manage_provider_no_url">无地址</string>
+  <string name="manage_provider_delete_title">删除服务商</string>
+  <string name="manage_provider_delete_confirm">将删除「%1$s」。依赖它的模型选择会一并失效。</string>
+  <string name="manage_provider_preset_hint">选一个预设，会自动填好 API 地址与默认模型。之后可以随意改。</string>
+  <string name="manage_provider_name_hint">例如：DeepSeek</string>
+  <string name="manage_provider_edit_title">编辑服务商</string>
+  <string name="manage_provider_name_required">请填写名称</string>
+  <string name="manage_provider_url_required">请填写 API 地址</string>
+  <string name="manage_provider_url_scheme">地址需以 http(s):// 开头</string>
+  <string name="manage_provider_main_required">请填写主模型</string>
+  <string name="manage_provider_protocol_openai">OpenAI 兼容</string>
+  <string name="manage_provider_url_hint_anthropic">Anthropic 协议的地址只填域名即可（如 https://api.anthropic.com），或第三方网关的 anthropic 段（如 https://api.deepseek.com/anthropic）——/v1/messages 由应用自动补全；若已粘贴完整路径也原样使用。</string>
+  <string name="manage_provider_url_hint_openai">OpenAI 兼容协议通常需要带版本段（如 .../v1）。</string>
+  <string name="manage_provider_slots_hint">主模型用于对话；其余三个留空表示「与主模型相同」。点「拉取模型」从服务商的 /models 取真实清单。</string>
+  <string name="manage_provider_slot_same_hint">留空 = 与主模型相同</string>
+  <string name="manage_provider_1m_context">1M 上下文</string>
 
   <!-- CodeGraph 语义索引 -->
   <string name="ai_agent_codegraph_title">CodeGraph 索引</string>
@@ -434,7 +475,7 @@
   <string name="ai_agent_prompt_template_reset">恢复此模板默认值</string>
   <string name="ai_agent_prompt_template_reset_all">全部恢复默认</string>
   <string name="ai_agent_prompt_template_placeholders">可用占位符：</string>
-  <string name="ai_agent_prompt_template_placeholders_hint">可用占位符（长按输入框查看完整清单）。提示：写 {{DEFAULT}} 可保留当前默认文本并在其后追加你的要求，默认模板更新时会自动流入。</string>
+  <string name="ai_agent_prompt_template_placeholders_hint">提示：写 {{DEFAULT}} 可保留当前默认文本并在其后追加你的要求，默认模板更新时会自动流入。</string>
   <string name="ai_agent_prompt_template_save">保存</string>
   <string name="ai_agent_prompt_template_unknown">无法识别（将渲染为空）：</string>
 
@@ -443,7 +484,9 @@
   <string name="ai_agent_authorized_summary">查看或撤销「始终允许」保存的规则</string>
   <string name="ai_agent_authorized_none">尚未永久授权任何工具</string>
   <string name="ai_agent_authorized_count">已保存 %1$d 条授权规则</string>
+  <string name="ai_agent_authorized_revoke">撤销</string>
   <string name="ai_agent_authorized_clear_all">全部撤销</string>
+  <string name="ai_agent_authorized_clear_all_confirm">将撤销全部已保存的授权，这些工具会重新询问确认。</string>
 
   <!-- 助手面板中的改动撤销 -->
   <string name="ai_assistant_file_changed">✎ 已改动 %1$s</string>
@@ -1568,6 +1611,7 @@
   <string name="title_discard">放弃</string>
   <string name="msg_build_variants_fetch_failed">无法获取构建变体</string>
   <string name="title_choose_application">选择应用项</string>
+  <string name="msg_output_share_failed">无法准备要分享的输出</string>
   <string name="err_selected_variant_not_found">找不到选定的构建变体</string>
   <string name="title_disconnect_log_senders">断开日志发送器</string>
   <string name="title_begin_long_select">开始长选</string>

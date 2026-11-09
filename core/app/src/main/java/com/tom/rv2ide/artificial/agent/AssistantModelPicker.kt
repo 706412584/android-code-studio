@@ -316,16 +316,16 @@ object AssistantModelPicker {
       picker: Dialog,
   ) {
     val input =
-        android.widget.EditText(context).apply {
-          setText(ApiKey.getCustomModel())
-          hint = context.getString(string.ai_assistant_custom_model_hint)
-          setSingleLine(true)
-        }
+        com.tom.rv2ide.preferences.dialogEditTextField(
+            context,
+            context.getString(string.ai_assistant_custom_model_hint),
+            ApiKey.getCustomModel(),
+        )
     com.google.android.material.dialog.MaterialAlertDialogBuilder(context)
         .setTitle(string.ai_agent_custom_model)
-        .setView(input)
+        .setView(com.tom.rv2ide.preferences.dialogFieldColumn(context, input))
         .setPositiveButton(android.R.string.ok) { _, _ ->
-          val model = input.text.toString().trim()
+          val model = input.editText?.text?.toString()?.trim().orEmpty()
           if (model.isNotEmpty()) {
             ApiKey.setCustomModel(model)
             agents.setAgent(model)
@@ -363,31 +363,26 @@ object AssistantModelPicker {
   ) {
     val prefs = localPrefs(context)
     val baseUrlInput =
-        android.widget.EditText(context).apply {
-          setText(prefs.getString(KEY_LOCAL_BASE_URL, DEFAULT_LOCAL_BASE_URL))
-          hint = context.getString(string.ai_agent_custom_base_url)
-          setSingleLine(true)
-        }
+        com.tom.rv2ide.preferences.dialogEditTextField(
+            context,
+            context.getString(string.ai_agent_custom_base_url),
+            prefs.getString(KEY_LOCAL_BASE_URL, DEFAULT_LOCAL_BASE_URL),
+            inputType = android.text.InputType.TYPE_CLASS_TEXT or
+                android.text.InputType.TYPE_TEXT_VARIATION_URI,
+        )
     val modelInput =
-        android.widget.EditText(context).apply {
-          setText(prefs.getString(KEY_LOCAL_MODEL_NAME, DEFAULT_LOCAL_MODEL))
-          hint = context.getString(string.ai_agent_custom_model)
-          setSingleLine(true)
-        }
-    val container =
-        android.widget.LinearLayout(context).apply {
-          orientation = android.widget.LinearLayout.VERTICAL
-          setPadding(dp(context, 24), dp(context, 8), dp(context, 24), 0)
-          addView(baseUrlInput)
-          addView(modelInput)
-        }
+        com.tom.rv2ide.preferences.dialogEditTextField(
+            context,
+            context.getString(string.ai_agent_custom_model),
+            prefs.getString(KEY_LOCAL_MODEL_NAME, DEFAULT_LOCAL_MODEL),
+        )
 
     com.google.android.material.dialog.MaterialAlertDialogBuilder(context)
         .setTitle(string.ai_assistant_configure_local)
-        .setView(container)
+        .setView(com.tom.rv2ide.preferences.dialogFieldColumn(context, baseUrlInput, modelInput))
         .setPositiveButton(android.R.string.ok) { _, _ ->
-          val baseUrl = baseUrlInput.text.toString().trim()
-          val model = modelInput.text.toString().trim()
+          val baseUrl = baseUrlInput.editText?.text?.toString()?.trim().orEmpty()
+          val model = modelInput.editText?.text?.toString()?.trim().orEmpty()
           prefs.edit()
               .putString(KEY_LOCAL_BASE_URL, baseUrl)
               .putString(KEY_LOCAL_MODEL_NAME, model)

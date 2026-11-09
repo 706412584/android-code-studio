@@ -220,6 +220,17 @@ public final class ProviderPresets {
                   Arrays.asList("deepseek-chat", "deepseek-reasoner"),
                   true,
                   "https://platform.deepseek.com/api_keys"),
+              // DeepSeek 的 Anthropic 端点（同一把密钥）：Anthropic 协议在 Claude Code 类
+              // 场景下更省 token（system 摘要、缓存语义更完整）。baseUrl 只写域名 + /anthropic，
+              // 不写 /v1/messages——路径由 AnthropicMessagesProtocol 补全（参考 cc-haha 的预设写法）。
+              new Preset(
+                  "deepseek-anthropic",
+                  "DeepSeek (Anthropic)",
+                  ModelProtocolType.ANTHROPIC_MESSAGES,
+                  "https://api.deepseek.com/anthropic",
+                  Arrays.asList("deepseek-chat", "deepseek-reasoner"),
+                  true,
+                  "https://platform.deepseek.com/api_keys"),
               new Preset(
                   "glm",
                   "智谱 GLM",

@@ -111,11 +111,16 @@ internal fun settingsPageBackground(): Color =
 /**
  * 白色/深色分组圆角卡片容器：内部按行排布，行间用 [SettingsDivider] 分隔。
  * [visible] 为 false 时整组不渲染（可折叠分组用）。
+ *
+ * @param color 卡片底色；null = 助手面板语义色 cardSurface。IDE 自己的页面（设置类）
+ *   传主题的 `?attr/colorSurfaceContainerLow`，否则卡片色来自助手面板那套预设、与页面
+ *   背景不同源（管理页实测反馈：背景不再跟随 IDE 配色）。
  */
 @Composable
 internal fun SettingsGroup(
     modifier: Modifier = Modifier,
     visible: Boolean = true,
+    color: Color? = null,
     content: @Composable ColumnScope.() -> Unit
 ) {
     // 不用「调用方 if 包一层」：`if (x) SettingsGroup { ... }` 里的花括号会被 Kotlin 当成 if 的语句块，
@@ -124,7 +129,7 @@ internal fun SettingsGroup(
     Surface(
         modifier = modifier.fillMaxWidth(),
         shape = RoundedCornerShape(14.dp),
-        color = MaterialTheme.semanticColors.cardSurface,
+        color = color ?: MaterialTheme.semanticColors.cardSurface,
         shadowElevation = 0.dp
     ) {
         Column(content = content)

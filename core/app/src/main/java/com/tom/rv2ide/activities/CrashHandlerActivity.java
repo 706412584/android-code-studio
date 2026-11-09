@@ -53,7 +53,7 @@ public class CrashHandlerActivity extends IDEActivity {
     // 而是给一条可操作提示后直接返回。进程仍在运行，未保存内容还在。
     final var oomNotice = extra.getString(OOM_RECOVERED_KEY, "");
     if (oomNotice != null && !oomNotice.isEmpty()) {
-      new androidx.appcompat.app.AlertDialog.Builder(this)
+      new com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
           .setTitle("内存不足")
           .setMessage(oomNotice + "\n\n技术细节：\n" + report)
           .setPositiveButton("知道了", (dialog, which) -> finish())

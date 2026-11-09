@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Git 操作的**非阻塞**进度指示（Snackbar 内容视图）。
+
+  顶部一条不确定进度条 + 一行操作说明。用作 Snackbar 的 custom view：
+  Snackbar 默认会给自己的内容留白与背景，这里只放内容，不自绘卡片。
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical">
+
+  <com.google.android.material.progressindicator.LinearProgressIndicator
+      android:layout_width="match_parent"
+      android:layout_height="wrap_content"
+      android:indeterminate="true"
+      style="@style/Widget.Material3.LinearProgressIndicator" />
+
+  <TextView
+      android:id="@+id/gitProgressMessage"
+      android:layout_width="match_parent"
+      android:layout_height="wrap_content"
+      android:paddingTop="12dp"
+      android:paddingBottom="4dp"
+      android:text="@string/common_please_wait"
+      android:textAppearance="@style/TextAppearance.Material3.BodyMedium" />
+
+</LinearLayout>

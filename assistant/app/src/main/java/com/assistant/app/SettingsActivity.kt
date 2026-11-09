@@ -326,37 +326,41 @@ class SettingsActivity : ComponentActivity() {
                             protocol = preset.protocolType.toUi(),
                         )
                       },
-                  // 预设只用于预填表单（见 AssistantProviderScreens 的 toDraft），
-                  // 落库统一走 onUpdate（id 为空 = 新增）。
-                  onAddFromPreset = {},
-                  onAddCustom = { /* 表单里保存时走 onUpdate（id 为空） */ },
-                  onUpdate = { item ->
-                    if (item.id.isEmpty()) {
-                      records.addCustom(
-                          item.label,
-                          item.baseUrl,
-                          item.apiKey,
-                          item.protocol.toEngine(),
-                          item.model,
-                      )
-                    } else {
-                      records.update(
-                          item.id,
-                          item.label,
-                          item.baseUrl,
-                          item.apiKey,
-                          item.protocol.toEngine(),
-                          arrayOf(item.model, "", "", ""),
-                      )
+                  // 落库统一走 onSave（id 为空 = 新增）。**suspend**：写 SharedPreferences
+                  // 走 IO，返回失败原因（非空）或成功（null）。
+                  onSave = { item ->
+                    val engineProtocol = item.protocol.toEngine()
+                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                      if (item.id.isEmpty()) {
+                        records.addCustom(
+                            item.label,
+                            item.baseUrl,
+                            item.apiKey,
+                            engineProtocol,
+                            item.slots.toTypedArray(),
+                        )
+                      } else {
+                        // **保留全部 4 个槽位**：旧代码只写主模型，会清空其余三个。
+                        records.update(
+                            item.id,
+                            item.label,
+                            item.baseUrl,
+                            item.apiKey,
+                            engineProtocol,
+                            item.slots.toTypedArray(),
+                        )
+                      }
                     }
                     recomposeKey++
+                    null
                   },
                   onDelete = { id ->
                     records.remove(id)
                     recomposeKey++
                   },
-                  // 拉取模型清单。**必须切线程**：ui 模块同步调用本回调，
-                  // 网络请求跑在主线程会 ANR。
+                  // 拉取模型清单。**suspend + IO**：真正的网络请求切到 IO 线程。
+                  // 旧实现在回调里自建线程池 + Future.get() 同步等待，仍会阻塞调用它的
+                  // UI 线程（.get() 是阻塞的）——这里是真异步。
                   onFetchModels = { baseUrl, apiKey, protocol ->
                     val engineProtocol =
                         if (protocol ==
@@ -366,22 +370,13 @@ class SettingsActivity : ComponentActivity() {
                         } else {
                           com.tom.rv2ide.ai.protocol.ModelProtocolType.OPENAI_COMPATIBLE
                         }
-                    // 用单线程池 + Future.get() 同步等结果：**必须切线程**，
-                    // 因为 ui 模块的回调是同步的，网络请求跑主线程会 ANR。
-                    // 用标准库而不是 Guava（仓库里没有 guava 依赖）。
-                    val pool = java.util.concurrent.Executors.newSingleThreadExecutor()
-                    try {
-                      pool.submit<Pair<List<String>, String>> {
-                            val r =
-                                com.assistant.engine.ModelCatalog.fetch(
-                                    baseUrl, apiKey, engineProtocol)
-                            r.models to r.error
-                          }
-                          .get()
-                    } catch (e: Exception) {
-                      emptyList<String>() to ("拉取失败：" + (e.message ?: "未知错误"))
-                    } finally {
-                      pool.shutdown()
+                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                      try {
+                        val r = com.assistant.engine.ModelCatalog.fetch(baseUrl, apiKey, engineProtocol)
+                        r.models to r.error
+                      } catch (e: Exception) {
+                        emptyList<String>() to ("拉取失败：" + (e.message ?: "未知错误"))
+                      }
                     }
                   },
                   onBack = { route = "home" },
@@ -456,7 +451,7 @@ class SettingsActivity : ComponentActivity() {
                     }
                     recomposeKey++
                   },
-                  // 与「模型与凭据」页同一个拉取实现（见上面的 onFetchModels）。
+                  // 与「服务商」页同一个拉取实现（真 suspend + IO，见上面的 onFetchModels）。
                   onFetchModels = { baseUrl, apiKey, protocol ->
                     val engineProtocol =
                         if (protocol ==
@@ -466,19 +461,13 @@ class SettingsActivity : ComponentActivity() {
                         } else {
                           com.tom.rv2ide.ai.protocol.ModelProtocolType.OPENAI_COMPATIBLE
                         }
-                    val pool = java.util.concurrent.Executors.newSingleThreadExecutor()
-                    try {
-                      pool.submit<Pair<List<String>, String>> {
-                            val r =
-                                com.assistant.engine.ModelCatalog.fetch(
-                                    baseUrl, apiKey, engineProtocol)
-                            r.models to r.error
-                          }
-                          .get()
-                    } catch (e: Exception) {
-                      emptyList<String>() to ("拉取失败：" + (e.message ?: "未知错误"))
-                    } finally {
-                      pool.shutdown()
+                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                      try {
+                        val r = com.assistant.engine.ModelCatalog.fetch(baseUrl, apiKey, engineProtocol)
+                        r.models to r.error
+                      } catch (e: Exception) {
+                        emptyList<String>() to ("拉取失败：" + (e.message ?: "未知错误"))
+                      }
                     }
                   },
                   onBack = { route = "home" },

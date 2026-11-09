@@ -26,10 +26,8 @@ import android.content.Intent
 import android.net.Uri
 import android.view.ViewGroup
 import android.view.WindowManager
-import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.view.ContextThemeWrapper
 import androidx.lifecycle.LifecycleCoroutineScope
-import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.tom.rv2ide.R as AppR
 import com.tom.rv2ide.activities.AttachmentPickerActivity
 import com.tom.rv2ide.artificial.agent.AssistantModelPicker
@@ -83,9 +81,9 @@ class OverlayHost(
  * overlay 的弹窗实现。
  *
  * <p>每个弹窗在 `show()` 之前都必须把 window type 设成 `TYPE_APPLICATION_OVERLAY`——
- * 这是 overlay 下弹窗与 Activity 下弹窗的**唯一**必要差异。builder 的类型选择
- * （权限/上下文用 Material，确认/危险工具用 AppCompat）与 [ActivityHost] 保持一致，
- * 避免同一种弹窗在两种形态下观感不同。
+ * 这是 overlay 下弹窗与 Activity 下弹窗的**唯一**必要差异。弹窗一律经
+ * [com.tom.rv2ide.utils.DialogUtils.newMaterialDialogBuilder] 取主题统一挂载的 M3 overlay，
+ * 与 [ActivityHost] 的形态一致（悬浮窗与 Activity 内的同一种弹窗观感相同）。
  */
 private class OverlayDialogs(
     private val themed: Context,
@@ -108,7 +106,7 @@ private class OverlayDialogs(
       onChosen: (Int) -> Unit,
   ) {
     val dialog =
-        MaterialAlertDialogBuilder(themed)
+        com.tom.rv2ide.utils.DialogUtils.newMaterialDialogBuilder(themed)
             .setTitle(titleRes)
             .setSingleChoiceItems(items, checked) { d, which ->
               onChosen(which)
@@ -127,7 +125,7 @@ private class OverlayDialogs(
       negativeRes: Int?,
   ) {
     val builder =
-        MaterialAlertDialogBuilder(themed)
+        com.tom.rv2ide.utils.DialogUtils.newMaterialDialogBuilder(themed)
             .setTitle(titleRes)
             .setMessage(message)
             .setPositiveButton(positiveRes) { _, _ -> onPositive() }
@@ -146,7 +144,7 @@ private class OverlayDialogs(
       onConfirm: () -> Unit,
   ) {
     val dialog =
-        AlertDialog.Builder(themed)
+        com.tom.rv2ide.utils.DialogUtils.newMaterialDialogBuilder(themed)
             .setTitle(titleRes)
             .setMessage(message)
             .setPositiveButton(positiveRes) { _, _ -> onConfirm() }
@@ -166,7 +164,7 @@ private class OverlayDialogs(
     // 超时守卫：5 分钟无应答即视为拒绝并关窗（与 ActivityHost 同一预算）。
     val guard = DialogTimeouts.Guard { onDeny() }.start()
     val dialog =
-        AlertDialog.Builder(themed)
+        com.tom.rv2ide.utils.DialogUtils.newMaterialDialogBuilder(themed)
             .setTitle(string.ai_assistant_dangerous_title)
             .setMessage(
                 themed.getString(
@@ -224,7 +222,7 @@ private class OverlayDialogs(
       if (q.multiSelect) {
         val checked = BooleanArray(optionsArray.size)
         val dialog =
-            AlertDialog.Builder(themed)
+            com.tom.rv2ide.utils.DialogUtils.newMaterialDialogBuilder(themed)
                 .setTitle(q.header.ifBlank { themed.getString(string.ai_assistant_question_title) })
                 .setMessage(q.question)
                 .setMultiChoiceItems(optionsArray, checked) { _, which, isChecked ->
@@ -250,7 +248,7 @@ private class OverlayDialogs(
       } else {
         var selectedIndex = 0
         val dialog =
-            AlertDialog.Builder(themed)
+            com.tom.rv2ide.utils.DialogUtils.newMaterialDialogBuilder(themed)
                 .setTitle(q.header.ifBlank { themed.getString(string.ai_assistant_question_title) })
                 .setMessage(q.question)
                 .setSingleChoiceItems(optionsArray, selectedIndex) { _, which ->
@@ -258,15 +256,18 @@ private class OverlayDialogs(
                 }
                 .setPositiveButton(string.ai_assistant_question_submit) { _, _ ->
                   if (selectedIndex == optionsArray.size - 1) {
-                    val input = android.widget.EditText(themed).apply {
-                      hint = themed.getString(string.ai_assistant_question_other_hint)
-                    }
+                    val input =
+                        com.tom.rv2ide.preferences.dialogEditTextField(
+                            themed,
+                            themed.getString(string.ai_assistant_question_other_hint),
+                        )
                     val inputDialog =
-                        AlertDialog.Builder(themed)
+                        com.tom.rv2ide.utils.DialogUtils.newMaterialDialogBuilder(themed)
                             .setTitle(q.question)
-                            .setView(input)
+                            .setView(
+                                com.tom.rv2ide.preferences.dialogFieldColumn(themed, input))
                             .setPositiveButton(string.ai_assistant_question_submit) { _, _ ->
-                              answers.add(input.text.toString().trim())
+                              answers.add(input.editText?.text?.toString()?.trim().orEmpty())
                               askNext(index + 1)
                             }
                             .setNegativeButton(android.R.string.cancel) { _, _ ->

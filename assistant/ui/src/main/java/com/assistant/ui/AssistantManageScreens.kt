@@ -23,6 +23,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -56,9 +57,20 @@ import compose.icons.feathericons.ArrowLeft
 import compose.icons.feathericons.Trash2
 
 /**
- * 管理页的通用外壳：返回 + 标题 + 内容。
+ * 管理页的通用外壳：返回 + 标题（+ 可选副标题/动作槽）+ 内容 + 可选底部动作条。
  *
- * <p>三个管理页（提示词模板 / 记忆 / Skill）版式完全一样，抽出来避免三份重复。
+ * <p>所有管理页与编辑页共用这一个外壳，版式一致。原先只有 title/onBack/content 三个
+ * 参数，编辑页需要「保存/取消」固定底栏时无处可放，只能自己再拼一套 Column——
+ * 那正是弹窗形态不统一的一部分来源。这里补上 [actions] / [bottomBar] / [subtitle] 三个槽。
+ *
+ * <p><b>底部动作条不随内容滚动</b>：长表单（提示词、规则、Agent 提示词）的保存按钮若跟着
+ * 内容滚，用户滚到底之前看不到保存入口。放在 [bottomBar] 即固定在内容区之下。
+ *
+ * @param subtitle 标题下的辅助说明（可选），如端点、当前项目路径
+ * @param actions 顶栏右侧动作槽（可选），如「添加」
+ * @param bottomBar 内容区之下的固定底栏（可选），编辑页的「保存/取消」放这里
+ * @param wrapTheme 是否由本组件包一层 [AIEditorTheme]。宿主已经提供主题时传 false，
+ *   避免重复嵌套 MaterialTheme 导致配色被覆盖。
  */
 @Composable
 fun AssistantManageScaffold(
@@ -66,9 +78,13 @@ fun AssistantManageScaffold(
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
     darkTheme: Boolean = androidx.compose.foundation.isSystemInDarkTheme(),
+    subtitle: String? = null,
+    actions: (@Composable RowScope.() -> Unit)? = null,
+    bottomBar: (@Composable () -> Unit)? = null,
+    wrapTheme: Boolean = true,
     content: @Composable () -> Unit,
 ) {
-  AIEditorTheme(darkTheme = darkTheme, followHostFrame = false) {
+  val body: @Composable () -> Unit = {
     Column(modifier = modifier.fillMaxSize().background(settingsPageBackground())) {
       Row(
           modifier = Modifier.fillMaxWidth().padding(horizontal = Spacing.sm, vertical = Spacing.sm),
@@ -82,17 +98,40 @@ fun AssistantManageScaffold(
               modifier = Modifier.size(20.dp),
           )
         }
-        Text(
-            text = title,
-            style = MaterialTheme.typography.titleLarge,
-            color = MaterialTheme.colorScheme.onBackground,
-            modifier = Modifier.padding(start = Spacing.xs),
-        )
+        Column(modifier = Modifier.weight(1f).padding(start = Spacing.xs)) {
+          Text(
+              text = title,
+              style = MaterialTheme.typography.titleLarge,
+              color = MaterialTheme.colorScheme.onBackground,
+              maxLines = 1,
+              overflow = TextOverflow.Ellipsis,
+          )
+          if (subtitle != null) {
+            Text(
+                text = subtitle,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+          }
+        }
+        if (actions != null) {
+          Row(verticalAlignment = Alignment.CenterVertically, content = actions)
+        }
       }
       // 内容必须占剩余高度：不给 weight 时，内部用 fillMaxSize 的列表会按
       // 无限高度测量，滚出屏幕外的部分无法点击（实测点「从预设新建」无响应）。
       Box(modifier = Modifier.weight(1f)) { content() }
+      if (bottomBar != null) {
+        bottomBar()
+      }
     }
+  }
+  if (wrapTheme) {
+    AIEditorTheme(darkTheme = darkTheme, followHostFrame = false) { body() }
+  } else {
+    body()
   }
 }
 

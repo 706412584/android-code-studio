@@ -173,11 +173,10 @@ constructor(
 
       val filename = fragment.getFilename()
 
-      @Suppress("DEPRECATION")
-      val progress =
-          android.app.ProgressDialog.show(context, null, context.getString(string.please_wait))
+      // 取内容 + 写临时文件是短操作：禁用分享按钮避免重复点，不弹阻塞进度框。
+      binding.shareOutputFab.isEnabled = false
       executeAsync(fragment::getContent) {
-        progress.dismiss()
+        binding.shareOutputFab.isEnabled = true
         shareText(it, filename)
       }
     }
@@ -377,26 +376,18 @@ constructor(
     shareFile(context, file, "text/plain")
   }
 
-  @Suppress("DEPRECATION")
   private fun shareText(text: String?, type: String) {
     if (text == null || TextUtils.isEmpty(text)) {
       flashError(context.getString(string.msg_output_text_extraction_failed))
       return
     }
-    val pd =
-        android.app.ProgressDialog.show(
-            context,
-            null,
-            context.getString(string.please_wait),
-            true,
-            false,
-        )
+    // 写一个临时文件很短，去掉阻塞式进度框；失败时才提示，成功直接拉起系统分享。
     executeAsyncProvideError(
         Callable { writeTempFile(text, type) },
         CallbackWithError<File> { result: File?, error: Throwable? ->
-          pd.dismiss()
           if (result == null || error != null) {
             log.warn("Unable to share output", error)
+            flashError(context.getString(string.msg_output_share_failed))
             return@CallbackWithError
           }
           shareFile(result)

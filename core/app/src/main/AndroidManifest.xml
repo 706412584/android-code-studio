@@ -112,6 +112,16 @@
     <activity android:name=".activities.AboutActivity" />
     <activity android:name=".activities.SdkManagerActivity" />
     <activity android:name=".activities.JdkManagerActivity" />
+    <!--
+      AI 助手管理页面宿主（分区式：服务商 / MCP …），取代 AI 设置里的弹窗链。
+      exported=false：只由应用内入口拉起；configChanges 与助手全屏宿主一致，
+      避免旋转时重建丢状态。
+    -->
+    <activity
+      android:name=".artificial.agent.manage.AssistantManageActivity"
+      android:exported="false"
+      android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden|density|uiMode"
+      android:theme="@style/Theme.AndroidIDE" />
     <activity android:name=".activities.ContributorsActivity" />
     <activity android:name=".activities.IDEConfigurations" />
     <activity android:name=".activities.ActivityM3Icons" />

@@ -7,8 +7,6 @@ import static com.termux.shared.termux.TermuxConstants.TERMUX_STAGING_PREFIX_DIR
 import static com.termux.shared.termux.shell.TermuxShellUtils.shellExists;
 
 import android.app.Activity;
-import android.app.AlertDialog;
-import android.app.ProgressDialog;
 import android.content.Context;
 import android.os.Environment;
 import android.system.Os;
@@ -111,7 +109,18 @@ public final class TermuxInstaller {
             Logger.logInfo(LOG_TAG, "The termux prefix directory \"" + TERMUX_PREFIX_DIR_PATH + "\" does not exist but another file exists at its destination.");
         }
 
-        final ProgressDialog progress = ProgressDialog.show(activity, null, activity.getString(R.string.bootstrap_installer_body), true, false);
+        // 首装是必须先完成的阻塞前置（解包未完成时终端不可用），保留不可取消的进度框，
+        // 但改用 DialogUtils 的现代 M3 进度框（材质进度圈 + 主题底色），
+        // 不再用平台 ProgressDialog 的旧样式。
+        final androidx.appcompat.app.AlertDialog progress =
+            com.tom.rv2ide.utils.DialogUtils.newProgressDialog(
+                    activity,
+                    activity.getString(R.string.bootstrap_installer_body),
+                    null,
+                    false,
+                    null)
+                .create();
+        progress.show();
         new Thread() {
             @Override
             public void run() {
@@ -244,7 +253,7 @@ public final class TermuxInstaller {
 
         activity.runOnUiThread(() -> {
             try {
-                new AlertDialog.Builder(activity).setTitle(R.string.bootstrap_error_title).setMessage(R.string.bootstrap_error_body)
+                new com.google.android.material.dialog.MaterialAlertDialogBuilder(activity).setTitle(R.string.bootstrap_error_title).setMessage(R.string.bootstrap_error_body)
                     .setNegativeButton(R.string.bootstrap_error_abort, (dialog, which) -> {
                         dialog.dismiss();
                         activity.finish();

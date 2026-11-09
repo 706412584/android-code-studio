@@ -3037,16 +3037,14 @@ class FloatingAssistantView(
    * 引用提问对话框：输入对当前消息的追问，确认后回填并附带引用前缀。
    */
   private fun showQuoteReplyDialog(message: AssistantMessageAdapter.Message) {
-    val input = android.widget.EditText(context).apply {
-      hint = context.getString(string.ai_assistant_quote_input_hint)
-      setPadding(dp(16), dp(16), dp(16), dp(16))
-    }
-
+    val input =
+        com.tom.rv2ide.preferences.dialogEditTextField(
+            context, context.getString(string.ai_assistant_quote_input_hint))
     com.google.android.material.dialog.MaterialAlertDialogBuilder(context)
         .setTitle(string.ai_assistant_quote_dialog_title)
-        .setView(input)
+        .setView(com.tom.rv2ide.preferences.dialogFieldColumn(context, input))
         .setPositiveButton(android.R.string.ok) { _, _ ->
-          val question = input.text?.toString()?.trim().orEmpty()
+          val question = input.editText?.text?.toString()?.trim().orEmpty()
           val ref = ChatReference(
               messageId = message.id,
               role = if (message.role == AssistantMessageAdapter.Role.USER) "user" else "assistant",

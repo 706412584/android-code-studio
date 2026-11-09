@@ -1,7 +1,6 @@
 package com.termux.shared.termux.interact;
 
 import android.app.Activity;
-import android.app.AlertDialog;
 import android.content.DialogInterface;
 import android.text.Selection;
 import android.util.TypedValue;
@@ -28,7 +27,7 @@ public final class TextInputDialogUtils {
             Selection.setSelection(input.getText(), initialText.length());
         }
 
-        final AlertDialog[] dialogHolder = new AlertDialog[1];
+        final androidx.appcompat.app.AlertDialog[] dialogHolder = new androidx.appcompat.app.AlertDialog[1];
         input.setImeActionLabel(activity.getResources().getString(positiveButtonText), KeyEvent.KEYCODE_ENTER);
         input.setOnEditorActionListener((v, actionId, event) -> {
             onPositive.onTextSet(input.getText().toString());
@@ -47,9 +46,11 @@ public final class TextInputDialogUtils {
         layout.setPadding(paddingTopAndSides, paddingTopAndSides, paddingTopAndSides, paddingBottom);
         layout.addView(input);
 
-        AlertDialog.Builder builder = new AlertDialog.Builder(activity)
-            .setTitle(titleText).setView(layout)
-            .setPositiveButton(positiveButtonText, (d, whichButton) -> onPositive.onTextSet(input.getText().toString()));
+        // 用 Material 弹窗跟随主题（此前是平台 AlertDialog 的旧样式）。
+        com.google.android.material.dialog.MaterialAlertDialogBuilder builder =
+            new com.google.android.material.dialog.MaterialAlertDialogBuilder(activity)
+                .setTitle(titleText).setView(layout)
+                .setPositiveButton(positiveButtonText, (d, whichButton) -> onPositive.onTextSet(input.getText().toString()));
 
         if (onNeutral != null) {
             builder.setNeutralButton(neutralButtonText, (dialog, which) -> onNeutral.onTextSet(input.getText().toString()));
