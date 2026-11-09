@@ -84,6 +84,17 @@ object Options {
   var OPT_COMPILE_SDK: Int = PROJECTS_COMPILE_SDK_VERSION
 
   /**
+   * [OPT_COMPILE_SDK] 的**次要版本**（如 2 → 平台目录 `android-37.2`）。
+   *
+   * <p>null = 该 API 没有次要版本（如 36 → `android-36`）。
+   * 非 null 时必须落盘，否则 AGP 去找不存在的 `android-<主版本>`
+   * （本机 core/app 对此有实测记录）。
+   *
+   * <p>取值由向导按所选的平台目录名推导：`android-37.2` → 37 + minor 2。
+   */
+  var OPT_COMPILE_SDK_MINOR: Int? = null
+
+  /**
    * 用户在向导里显式选择的 CMake **版本号**（如 "3.31.6"）。
    *
    * <p>null 表示「自动挑一个当前设备能跑的」，见
@@ -111,6 +122,7 @@ object Options {
     // 不写死 null：否则用户在 SDK 管理器设的默认值一到模板里就被抹掉了。
     OPT_BUILD_TOOLS_VERSION = BuildPreferences.defaultBuildToolsVersion
     OPT_COMPILE_SDK = PROJECTS_COMPILE_SDK_VERSION
+    OPT_COMPILE_SDK_MINOR = null
     OPT_MIN_SDK = 21
   }
 }

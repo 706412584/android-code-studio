@@ -403,6 +403,7 @@ class QuickDevelop : Template {
             enableKotlinOptions(false)
             namespace(packageHelper.getPackageId())
             compileSdk(Options.OPT_COMPILE_SDK)
+            compileSdkMinor(Options.OPT_COMPILE_SDK_MINOR)
             // build-tools 版本：用户没选就不写这一行（由 AGP 自挑）。
             buildToolsVersion(Options.OPT_BUILD_TOOLS_VERSION)
             defaultConfig(

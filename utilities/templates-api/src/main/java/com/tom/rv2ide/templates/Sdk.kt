@@ -43,14 +43,36 @@ enum class Sdk(val codename: String, val version: String, val api: Int) {
   Tiramisu("Tiramisu", "13", 33),
   UpsideDownCake("UpsideDownCake", "14", 34),
   VanillaIceCream("VanillaIceCream", "15", 35),
-  BakLava("BakLava", "16", 36);
+  BakLava("BakLava", "16", 36),
+
+  /**
+   * API 37 —— **Android 16 的次要版本，没有独立代号**。
+   *
+   * <p>依据（读本机 SDK 平台元数据得出，不是猜的）：
+   * `platforms/android-37.2/source.properties` 里 `AndroidVersion.CodeName=` **为空**，
+   * `build.prop` 只有 `ro.build.version.sdk=37`。Google 自 API 36 起改用
+   * 「主版本 + 次要版本」编号（36 → 36.1 → 37.x 同属 Android 16），已停用甜点代号。
+   *
+   * <p>因此 [codename] 留空——[displayName] 对空代号不拼括号，显示为
+   * `API 37: Android 16`，而不是编一个假代号误导用户。
+   *
+   * <p><b>平台目录名带 minor</b>：实际为 `android-37.2`，生成的工程必须同时写
+   * `compileSdkMinor = 2`，否则 AGP 去找不存在的 `android-37`（见
+   * `SdkVersion.minorOf` 的说明）。
+   */
+  BakLavaMR1("", "16", 37);
 
   /**
    * Get the display name for this Sdk version.
    *
    * @return The display name.
    */
-  fun displayName(): String = "API ${api}: Android $version (${codename})"
+  fun displayName(): String =
+      // 空代号不拼括号：API 37 是 Android 16 的次要版本、没有独立代号
+      // （Google 已停用甜点代号）。拼成 `(Android 16)` 会与前面的
+      // `Android 16` 重复，编个假代号更糟。
+      if (codename.isBlank()) "API $api: Android $version"
+      else "API $api: Android $version ($codename)"
 
   /**
    * Get the number for this Sdk version.

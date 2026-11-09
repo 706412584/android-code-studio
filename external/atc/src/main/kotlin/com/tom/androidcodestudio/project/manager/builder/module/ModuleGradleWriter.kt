@@ -166,6 +166,15 @@ data class ModuleGradleConfig(
      * 版本才落盘。
      */
     val buildToolsVersion: String? = null,
+    /**
+     * compileSdk 的**次要版本**（如 `2`，对应平台目录 `android-37.2`）。
+     *
+     * <p>null 表示不写 —— 只有主版本（`compileSdk = 36`）时 AGP 找 `android-36`，
+     * 是对的。但从 API 36 起 Google 引入了次要版本，平台目录名带 minor
+     * （`android-37.2`），此时**必须同时给 minor**，否则 AGP 会去找不存在的
+     * `android-37`。core/app 的 build.gradle.kts 里对此有实测记录。
+     */
+    val compileSdkMinor: Int? = null,
 )
 
 /**
@@ -255,6 +264,9 @@ class MLGradleWriter : IMLGradleWriter {
     builder.appendLine("android {")
     builder.appendLine("    namespace '${config.namespace}'")
     builder.appendLine("    compileSdk ${config.compileSdk}")
+    // 平台目录名带 minor 时（android-37.2）必须同时写，否则 AGP 找 android-37 会失败。
+    // 不写则 AGP 按主版本找（android-36），那是历史行为的正确形态。
+    config.compileSdkMinor?.let { builder.appendLine("    compileSdkMinor $it") }
     // 只在用户显式选了版本时才写。不写时 AGP 自己挑「要求的最低版本」，
     // 这与模板长期行为一致，也是文档推荐的用法。
     config.buildToolsVersion?.let { builder.appendLine("    buildToolsVersion '$it'") }
@@ -402,6 +414,8 @@ class MLGradleWriter : IMLGradleWriter {
     builder.appendLine("android {")
     builder.appendLine("    namespace = \"${config.namespace}\"")
     builder.appendLine("    compileSdk = ${config.compileSdk}")
+    // 同 Groovy 版：平台目录带 minor（android-37.2）时必须一起写。
+    config.compileSdkMinor?.let { builder.appendLine("    compileSdkMinor = $it") }
     // 同 Groovy 版：不指定就不写，交给 AGP。
     config.buildToolsVersion?.let { builder.appendLine("    buildToolsVersion = \"$it\"") }
 
@@ -553,6 +567,8 @@ class ModuleGradleConfigBuilder {
   private var compileSdk: Int = 0
   /** build-tools 版本；null = 不写进 build.gradle（由 AGP 自挑）。 */
   private var buildToolsVersion: String? = null
+  /** compileSdk 的次要版本；null = 不写（AGP 找 android-<主版本>）。 */
+  private var compileSdkMinor: Int? = null
   private var defaultConfig: DefaultConfig? = null
   private val buildFeatures = mutableListOf<BuildFeature>()
   private var javaVersion: JavaVersion = JavaVersion.VERSION_17
@@ -573,6 +589,9 @@ class ModuleGradleConfigBuilder {
 
   /** 指定 build-tools 版本；不调用则生成的 build.gradle 里不出现 `buildToolsVersion`。 */
   fun buildToolsVersion(version: String?) = apply { this.buildToolsVersion = version }
+
+  /** 指定 compileSdk 的次要版本（平台目录 `android-<主>.<次>` 时必需）。 */
+  fun compileSdkMinor(minor: Int?) = apply { this.compileSdkMinor = minor }
 
   fun defaultConfig(config: DefaultConfig) = apply { this.defaultConfig = config }
 
@@ -616,6 +635,7 @@ class ModuleGradleConfigBuilder {
         externalNativeBuild = externalNativeBuild,
         ndkVersion = ndkVersion,
         buildToolsVersion = buildToolsVersion,
+        compileSdkMinor = compileSdkMinor,
     )
   }
 }

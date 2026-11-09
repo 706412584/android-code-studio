@@ -199,37 +199,39 @@ class AtcWizardDialog : BottomSheetDialogFragment() {
    * 而不是「还没装」。
    */
   private fun setupCompileSdkDropdown(ctx: Context) {
-    // installedPlatforms() 返回 "android-36" 形式，取数字部分用于显示与比较。
+    // 平台目录名形如 `android-36` 或 **`android-37.2`**（带 minor）。
+    // 早先这里用 `toIntOrNull()` 解析，带 minor 的会被**静默丢掉**——
+    // 用户明明装了 37 却看不到它。改为分别解析主/次版本。
     val installed =
         SdkManagerInstaller.installedPlatforms()
-            .mapNotNull { it.removePrefix("android-").toIntOrNull() }
-            .distinct()
-            .sortedDescending()
+            .mapNotNull { parsePlatformDir(it) }
+            .distinctBy { it.major to it.minor }
+            .sortedWith(compareByDescending<PlatformSdk> { it.major }.thenByDescending { it.minor })
     if (installed.isEmpty()) {
       binding.compileSdkInputLayout.visibility = View.GONE
       Options.OPT_COMPILE_SDK = PROJECTS_COMPILE_SDK_VERSION
+      Options.OPT_COMPILE_SDK_MINOR = null
       return
     }
     // 默认：模板值（36）在列表里就用它，否则用最高可用版本。
     val default =
-        if (PROJECTS_COMPILE_SDK_VERSION in installed) PROJECTS_COMPILE_SDK_VERSION
-        else installed.first()
-    Options.OPT_COMPILE_SDK = default
-    val labels = installed.map { "API $it: ${sdkCodenameOf(it)}" }.toTypedArray()
+        installed.firstOrNull { it.major == PROJECTS_COMPILE_SDK_VERSION && it.minor == null }
+            ?: installed.first()
+    setCompileSdk(default)
+    val labels = installed.map { it.label() }.toTypedArray()
     binding.compileSdkInput.apply {
       setSimpleItems(labels)
       setText(labels[installed.indexOf(default)], false)
       setOnClickListener { showDropDown() }
-      setOnItemClickListener { _, _, position, _ ->
-        Options.OPT_COMPILE_SDK = installed[position]
-      }
+      setOnItemClickListener { _, _, position, _ -> setCompileSdk(installed[position]) }
     }
   }
 
-  /** 取某个 API level 的展示名（复用 `Sdk` 枚举，未知的只显示数字）。 */
-  private fun sdkCodenameOf(api: Int): String =
-      Sdk.values().firstOrNull { it.api == api }?.let { "${it.version} (${it.codename})" }
-          ?: "Android $api"
+  /** 把选择写入全局 Options（主版本 + minor 一起，二者必须成对）。 */
+  private fun setCompileSdk(sdk: PlatformSdk) {
+    Options.OPT_COMPILE_SDK = sdk.major
+    Options.OPT_COMPILE_SDK_MINOR = sdk.minor
+  }
 
   private fun setupTemplatesGrid(ctx: Context) {
     val templates = TemplateRegistry.getAllTemplates()
@@ -916,4 +918,40 @@ internal object SafResolver {
       Environment.PROJECTS_DIR.absolutePath
     }
   }
+}
+
+/**
+ * 一个已安装的 SDK 平台：主版本 + 可选次要版本。
+ *
+ * <p>从 API 36 起 Google 引入了次要版本（`android-36` / `android-36.1` / `android-37.2`），
+ * 目录名因此可能带 `.N` 后缀——早先按 `toIntOrNull()` 解析会把带 minor 的**静默丢掉**，
+ * 用户明明装了 37 却在向导里看不到。这个类型与 [parsePlatformDir] 就是为修那个问题引入的。
+ */
+data class PlatformSdk(val major: Int, val minor: Int?) {
+
+  /** 下拉里显示的文案；复用 `Sdk` 枚举的 displayName 与「最低 SDK」保持一致。 */
+  fun label(): String {
+    val base =
+        Sdk.values().firstOrNull { it.api == major }?.displayName()
+            ?: "API $major: Android $major"
+    // 带 minor 时补后缀，如 `API 37: Android 16 [37.2]`。
+    return if (minor == null) base else "$base [$major.$minor]"
+  }
+}
+
+/**
+ * 解析平台目录名：`android-36` → (36, null)，**`android-37.2` → (37, 2)**。
+ *
+ * <p>抽成顶层函数以便 JVM 单测（[AtcWizardDialog] 是 Fragment，测不了）；
+ * 解析规则本身是纯函数，且正是曾经出错的地方，值得钉住。
+ *
+ * @return 不认识的形态返回 null（调用方跳过），而不是当成 0 混进列表
+ */
+fun parsePlatformDir(dirName: String): PlatformSdk? {
+  val ver = dirName.removePrefix("android-")
+  val parts = ver.split('.')
+  val major = parts.getOrNull(0)?.toIntOrNull() ?: return null
+  // 只有 "37.2" 这种才带 minor；"36" 的第二个元素不存在 → null。
+  val minor = parts.getOrNull(1)?.toIntOrNull()
+  return PlatformSdk(major, minor)
 }
