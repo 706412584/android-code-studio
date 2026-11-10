@@ -54,7 +54,16 @@ data class ProjectTab(val id: String, val displayName: String) {
  */
 class EditorTabsViewModel(
     private val registry: ProjectSessionRegistry =
-        ProjectManagerImpl.getInstance().sessionRegistry
+        ProjectManagerImpl.getInstance().sessionRegistry,
+    /**
+     * SSH 会话表，用于「项目关闭即断开连接」。
+     *
+     * <p>可空且默认 null：本类在单测里被直接构造（不依赖 Android Context），
+     * 而 [SshSessionRegistry] 需要 Context 才能读偏好。为空时关闭标签只是不断开 SSH，
+     * 不影响标签本身的语义。
+     */
+    private val sshSessions: com.tom.rv2ide.ssh.SshSessionRegistry? =
+        com.tom.rv2ide.ssh.SshComponents.sessions()
 ) : ViewModel() {
 
   private val _tabs = MutableStateFlow<List<ProjectTab>>(emptyList())
@@ -109,6 +118,10 @@ class EditorTabsViewModel(
     if (registry.close(dir) == null) {
       return false
     }
+    // 项目关了就断开它的 SSH 会话：用户要求「连接随项目关闭而中断」。
+    // 这里不能只靠 supervisor 的空转——连接会一直挂在服务器上，直到 IDE 进程退出。
+    // 用 runCatching：SSH 断开失败不该阻止标签关闭（用户点的是「关标签」，不是「断连接」）。
+    runCatching { sshSessions?.disconnect(dir.absolutePath) }
     refresh()
     return true
   }

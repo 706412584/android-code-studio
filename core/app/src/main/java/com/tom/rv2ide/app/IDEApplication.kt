@@ -138,6 +138,11 @@ class IDEApplication : TermuxApplication() {
     registerMemoryReleasers()
     com.tom.rv2ide.artificial.agent.tool.MemorySampler.start(this)
 
+    // SSH 组件装配（会话表、配置、主机指纹、凭据）。延迟到首次真正需要时建连接，
+    // 这里只是把单例造好，让编辑器标签页与 AI 工具层拿到**同一个**会话表——
+    // 否则同一条连接会被建立两次，用户要的「一次登录」就失效了。
+    com.tom.rv2ide.ssh.SshComponents.init(this)
+
     if (GeneralPreferences.snowfallOverlay && isSnowfallSeasonActive()) {
       SeasonalEffects.init(this)
       SeasonalEffects.enableChristmas()

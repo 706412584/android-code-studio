@@ -143,6 +143,9 @@ class PreferencesActivity : EdgeToEdgeIDEActivity() {
 
   /** Force restart the entire application Call this method when theme changes need to be applied */
   fun forceRestartApp() {
+    // 重启前显式断开全部 SSH 会话：进程即将退出，但 exitProcess 不会等 TCP FIN 完成，
+    // 服务端可能保留半开连接一段时间。显式断开让「随 IDE 关闭而中断」立刻生效。
+    runCatching { com.tom.rv2ide.ssh.SshComponents.sessions()?.closeAll() }
     finishAffinity() // Close all activities
 
     // Restart the application

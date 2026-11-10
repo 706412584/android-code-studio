@@ -2165,6 +2165,12 @@ public final class AgentOrchestrator {
     registry.register(new ShizukuShellBackend(appContext));
     // 共享实例：探测缓存跨运行复用（见 RootShellBackend.shared 的说明）。
     registry.register(com.tom.rv2ide.ai.tool.RootShellBackend.shared());
+    // SSH：按项目路径持有连接，因此传的是「取全局会话表」的 lambda 而非实例——
+    // 编辑器标签页与工具层必须共用同一份会话表，否则同一条连接会被建两次，
+    // 用户要的「一次登录」就失效了（见 SshComponents 的说明）。
+    registry.register(
+        new com.tom.rv2ide.ssh.SshShellBackend(
+            () -> com.tom.rv2ide.ssh.SshComponents.sessions()));
     registry.setActiveId(settings.getShellBackendId());
     return registry;
   }
