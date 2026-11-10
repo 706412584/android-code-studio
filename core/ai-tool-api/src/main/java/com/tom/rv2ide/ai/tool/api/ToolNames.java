@@ -314,6 +314,18 @@ public final class ToolNames {
      */
     public static final String PROJECT_INFO = "project_info";
     /**
+     * 当前 SSH 连接状态与环境（只读）。
+     *
+     * <p><b>为什么需要它</b>：{@code ssh} 是 shell 后端之一，但模型只能从提示词里看到一句
+     * 静态的「在远端服务器上执行命令」——它不知道连的是**哪台机器**、**哪个用户**、远端的
+     * **工作目录**在哪。于是它只能猜：拿本机路径去远端用、猜远端装了哪些工具，然后对着失败
+     * 结果反复重试。
+     *
+     * <p>本工具一次返回事实：激活配置（名称/主机/端口/用户名/远端工作区）、是否已连接、
+     * 远端 {@code $HOME}（连上后才查得到）、连接失败的原因。**只读，不触发连接。**
+     */
+    public static final String SSH_INFO = "ssh_info";
+    /**
      * 测试覆盖率查询：跑 kover 任务、解析报告，返回各模块覆盖率与未覆盖的类。
      *
      * <p>补的是「AI 改完代码后不知道哪里没测到」这个缺口。{@code gradle_build} 能跑

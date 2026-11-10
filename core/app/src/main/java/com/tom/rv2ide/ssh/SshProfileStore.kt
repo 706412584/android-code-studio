@@ -105,7 +105,18 @@ class SharedPrefsSshProfileStore(context: Context) : SshProfileStore {
       preferences.all.keys
           .filter { it.endsWith("_host") }
           .mapNotNull { raw -> find(raw.removeSuffix("_host")) }
-          // 偏好里的键序不保证稳定；按名称排序让设置页的列表保持可预期。
+          // 先按 id 排序再 distinctBy：`preferences.all.keys` 的顺序不保证稳定，
+          // 不去重前先定序会让「保留哪一条」随进程重启而变——用户看到的条目
+          // 时有时无地跳变。
+          .sortedBy { it.id }
+          // 按「主机+端口+用户名」去重：这三者相同就是同一台机器的同一个账号。
+          //
+          // 为什么在读取侧也去重：历史版本允许重复保存同一条配置（列表只显示
+          // user@host:port，名字往往也相同，用户看到的就是「3 个重复 item」）。
+          // 保存侧已改为复用已有 id，但设备上可能已存在旧数据——这里折叠显示，
+          // 让存量数据也不再显示成多条。**不删数据**：只是折叠，避免误删用户配置。
+          .distinctBy { Triple(it.host, it.port, it.username) }
+          // 最后按名称排序，让设置页列表可预期。
           .sortedBy { it.name }
 
   override fun find(id: String): SshProfile? {

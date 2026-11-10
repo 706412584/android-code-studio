@@ -92,6 +92,7 @@ import com.tom.rv2ide.artificial.agent.tool.ProjectInfoTool;
 import com.tom.rv2ide.artificial.agent.tool.SdkInstallTool;
 import com.tom.rv2ide.artificial.agent.tool.SdkListTool;
 import com.tom.rv2ide.artificial.agent.tool.SdkUninstallTool;
+import com.tom.rv2ide.artificial.agent.tool.SshInfoTool;
 import com.tom.rv2ide.artificial.agent.tool.PhoneBaselineTool;
 import com.tom.rv2ide.artificial.agent.tool.PhoneClearDataTool;
 import com.tom.rv2ide.artificial.agent.tool.PhoneClickTool;
@@ -1756,6 +1757,10 @@ public final class AgentOrchestrator {
     registry.register(new com.tom.rv2ide.ai.tool.FormatCodeTool());
     // 项目结构查询：模块/变体/真实任务名（app 层工具，直接读 IWorkspace）。
     registry.register(new ProjectInfoTool());
+    // SSH 连接状态与环境：让模型用 backend="ssh" 前拿到真实主机/路径，而不是靠猜。
+    // 只读、不触发连接（同 project_info 的定位）。
+    registry.register(new SshInfoTool());
+
 
     // Android SDK 组件：查询（只读）与安装分成两个工具，理由同 git / git_write——权限层按
     // 工具分级，装需要确认而查询不该被确认门挡住。后端是官方 sdkmanager（直连 Google 仓库），

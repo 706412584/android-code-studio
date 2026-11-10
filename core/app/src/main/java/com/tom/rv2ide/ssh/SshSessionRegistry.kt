@@ -148,6 +148,7 @@ class SshSessionRegistry(
   var lastError: String? = null
     private set
 
+
   /** 项目关闭时调用：断开该项目的连接并释放 supervisor。 */
   fun disconnect(projectPath: String) {
     val key = keyOf(projectPath)
@@ -169,6 +170,14 @@ class SshSessionRegistry(
   /** 是否已有该项目的活跃会话（供设置页与工具提示用，不触发连接）。 */
   fun isConnected(projectPath: String): Boolean =
       entries[keyOf(projectPath)]?.connection?.isConnected() == true
+
+  /**
+   * 拿**已存在**的会话；不触发连接。
+   *
+   * <p>与 [getOrConnect] 的区别：后者会真的去连（可能要 1-3 秒并产生网络活动），
+   * 而只读工具（{@code ssh_info}）不该为了「报告状态」去建立连接。没有会话时返回 null。
+   */
+  fun peek(projectPath: String): RemoteSshConnection? = entries[keyOf(projectPath)]?.connection
 
   /** 当前持有的会话数（测试与诊断用）。 */
   internal fun size(): Int = entries.size

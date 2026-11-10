@@ -2837,6 +2837,10 @@ private fun showSshManagerDialog(context: Context, onChanged: (() -> Unit)? = nu
                 orientation = LinearLayout.HORIZONTAL
                 gravity = android.view.Gravity.CENTER_VERTICAL
                 setPadding(0, dpToPx(context, 6), 0, dpToPx(context, 6))
+                // 行内边距收窄：两行文字已经占得不少，再叠 6dp 上下会让行显得松散。
+                // 真正的高度上限由 label 自己的固定高度控制（见下）——外层
+                // LinearLayout 无法设 maxHeight，而 dialogFieldColumn 会把行包成
+                // MATCH_PARENT × WRAP_CONTENT。
                 isClickable = true
                 setOnClickListener {
                   store.setActiveId(profile.id)
@@ -2849,24 +2853,34 @@ private fun showSshManagerDialog(context: Context, onChanged: (() -> Unit)? = nu
                   true
                 }
               }
-          val label =
-              android.widget.TextView(context).apply {
-                text =
-                    (if (active) "✓ " else "") +
-                        context.getString(
-                            R.string.ai_agent_ssh_active,
-                            profile.username,
-                            profile.host,
-                            profile.port) +
-                        (if (profile.name.isNotEmpty() && profile.name != profile.host)
-                            "  ·  ${profile.name}"
-                        else "")
-                setTextAppearance(
-                    com.google.android.material.R.style.TextAppearance_Material3_BodyLarge)
-              }
-          row.addView(
-              label,
-              LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+          // 两行：第一行是**备注名**（用户起的名字，最好像自己的），第二行才是
+              // user@host:port。单行拼在一起时名字被挤到末尾，长主机名一长就看不见了。
+              // 名字为空时退回主机名，避免第一行空着。
+              val displayName =
+                  profile.name.takeIf { it.isNotEmpty() } ?: profile.host
+              val label =
+                  android.widget.TextView(context).apply {
+                    // 两行封顶 + 省略号：备注名和主机名都可能很长，不限制会把两个按钮挤出去。
+                    maxLines = 2
+                    ellipsize = android.text.TextUtils.TruncateAt.END
+                    text =
+                        (if (active) "✓ " else "") +
+                            displayName +
+                            "\n" +
+                            context.getString(
+                                R.string.ai_agent_ssh_active,
+                                profile.username,
+                                profile.host,
+                                profile.port)
+                    setTextAppearance(
+                        com.google.android.material.R.style.TextAppearance_Material3_BodyLarge)
+                  }
+          // label 用**固定高度**而不是 WRAP_CONTENT：这是「高度限制」真正生效的地方。
+              // 外层 LinearLayout 设不了 maxHeight，而 dialogFieldColumn 会把行包成
+              // WRAP_CONTENT，所以只能在这里封顶。两行文字 + ellipsize 截断，
+              // 每行等高、长名字不会把列表撑变形。
+              row.addView(
+                  label, LinearLayout.LayoutParams(0, dpToPx(context, 44), 1f))
           // 「编辑」与「删除」分成两个按钮：一行里只有「点行 = 激活」的话，
           // 改错主机/密码就只能删了重建（密码还要重输），代价太大。
           row.addView(
@@ -3148,8 +3162,20 @@ private fun showSshEditDialog(
           }
         }
 
+    // **按「主机+端口+用户名」去重**：这三者相同就是同一台机器上的同一个账号，
+// 再存一条只会得到两条视觉上完全一样的条目（列表只显示 user@host:port，名字往往
+// 也相同），用户看到的就是「重复项」——真机反馈里的「3 个重复 item」。
+    // 已存在时复用那条的 id（等于更新），而不是新增。
+    val id =
+        existing?.id
+            ?: sshProfiles(context)
+                .all()
+                .firstOrNull { it.host == host && it.port == port && it.username == username }
+                ?.id
+            ?: UUID.randomUUID().toString()
+
     return SshProfile(
-        id = existing?.id ?: UUID.randomUUID().toString(),
+        id = id,
         name = name,
         host = host,
         port = port,

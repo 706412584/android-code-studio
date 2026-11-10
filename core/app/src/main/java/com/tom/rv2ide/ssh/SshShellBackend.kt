@@ -88,9 +88,26 @@ class SshShellBackend(private val registryProvider: () -> SshSessionRegistry?) :
    */
   override fun hasCliToolchain(): Boolean = true
 
-  override fun capabilitySummary(): String =
-      "在远端服务器上执行命令（完整的 Linux 工具链，如 git/docker/systemctl）。" +
-          "文件是本机项目的副本关系需自行确认；adb/root 权限仅对被连的那台服务器有意义。"
+  /**
+   * 面向模型的能力说明，**带上当前激活配置的实际值**。
+   *
+   * <p>为什么要带实际值：这句文案会进 `promptSupplement` 生成的后端清单，是模型决定
+   * 「用不用 ssh、命令怎么写」时唯一的信息来源。只写「在远端服务器上执行命令」等于什么
+   * 都没说——模型不知道连哪台机器、用哪个账号、在哪个目录跑，只能猜（真机反馈：
+   * 「ai 老是会去猜」）。把主机与远端工作区写进文案，它至少能一次把路径写对。
+   *
+   * <p>未配置时明确说「不可用」，避免模型对着一个空配置反复尝试。
+   */
+  override fun capabilitySummary(): String {
+    val profile =
+        runCatching { SshComponents.profiles()?.active() }.getOrNull()
+            ?: return "未配置 SSH 连接（需在 AI 设置 → 工具与权限 → SSH 连接里添加后才能使用）"
+    val workspace = profile.remoteWorkspacePath.trim()
+    val where = if (workspace.isEmpty()) "远端 \$HOME" else "远端目录 $workspace"
+    return "在 ${profile.username}@${profile.host}:${profile.port} 上执行命令，" +
+        "默认工作目录为$where；远端是独立主机（路径与手机无关，也没有本机 adb/root 权限）。" +
+        "远端环境详情可用 ssh_info 查询。"
+  }
 
   override fun execute(
       request: ShellRequest,
