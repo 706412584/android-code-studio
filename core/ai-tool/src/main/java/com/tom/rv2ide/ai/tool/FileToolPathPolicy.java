@@ -28,6 +28,34 @@ public final class FileToolPathPolicy {
     private FileToolPathPolicy() {
     }
 
+    /**
+     * 从工具参数里取目标路径：{@code file_path} 优先，其次 {@code path}。
+     *
+     * <p><b>为什么需要两个名字</b>：本文件工具族的 schema 并不统一——{@code file_read} /
+     * {@code file_write} / {@code file_edit} 用 {@code file_path}，而 {@code list_dir} /
+     * {@code grep} / {@code glob} 用 {@code path}。模型会跨工具泛化，实测（真机会话
+     * {@code 7e0dd4b9}，项目 MyNoActivity23）它 8 次 {@code file_read} 全部发
+     * {@code {"path": ...}}，于是每个调用都被解析成「空路径」→ 落到工作区根目录 →
+     * 返回一棵目录树 + "To read a file, specify the exact file path"。
+     *
+     * <p>这不是模型拼错，是同一套工具里参数名不一致导致的必然结果：它看到 {@code list_dir}
+     * 用 {@code path}，就认为读文件也是 {@code path}。{@code file_delete} 早就同时接受
+     * 两个名字（见 {@code FileDeleteTool.collectPaths}），这里把同样的容忍提升为全族共用。
+     *
+     * <p><b>注意</b>：路径为空时的语义由调用方决定。{@code file_read} 会把它当「根目录」
+     * 列目录，因此调用方应保留原有的非空校验，别让空路径静默变成一次合法的目录读取。
+     */
+    public static String inputPath(org.json.JSONObject input) {
+        if (input == null) {
+            return "";
+        }
+        String filePath = input.optString("file_path", "").trim();
+        if (filePath.length() > 0) {
+            return filePath;
+        }
+        return input.optString("path", "").trim();
+    }
+
     public static File resolve(String homePath, String inputPath) throws IOException {
         return resolve(homePath, java.util.Collections.emptyList(), inputPath, false);
     }

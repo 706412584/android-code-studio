@@ -94,7 +94,7 @@ public final class FileEditTool extends BaseTool {
     @Override
     public ToolResult execute(JSONObject input, ToolContext context) {
         try {
-            String path = input.optString("file_path");
+            String path = FileToolPathPolicy.inputPath(input);
             ToolArgs.requireNonEmpty(path, "file_path");
 
             // 批量模式：edits 数组，按序应用，全成功或全不写。

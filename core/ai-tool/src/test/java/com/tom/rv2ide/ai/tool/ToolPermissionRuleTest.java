@@ -132,6 +132,20 @@ final class ToolPermissionRuleTest {
   }
 
   @Test
+  void fileWriteScopeUsesPathAliasSoAuthorizationMatchesExecution() {
+    // 授权范围必须与**实际写入目标**逐字相同。模型发 {"path": "..."} 时执行侧按 path
+    // 真的会写文件；若这里只认 file_path，scope 为空 → fallbackIfEmpty 退化成参数摘要，
+    // 两侧对同一份参数得出不同解读。规模不大但方向危险：漂移永远朝「授权比执行窄」。
+    String viaFilePath = ToolPermissionRule.keyFor("file_write", "{\"file_path\":\"/p/A.kt\"}");
+    String viaPath = ToolPermissionRule.keyFor("file_write", "{\"path\":\"/p/A.kt\"}");
+
+    assertEquals(viaFilePath, viaPath, "两个参数名应产生同一条授权键");
+    assertTrue(viaPath.startsWith("file_write\u0000/p/A.kt"), viaPath);
+    // 与其它路径的键仍须可区分，别把两条规则合成一个。
+    assertNotEquals(viaPath, ToolPermissionRule.keyFor("file_write", "{\"path\":\"/p/B.kt\"}"));
+  }
+
+  @Test
   void unknownToolNeverProducesAnEmptyScopeRule() {
     // 空 scope 会拼出 `<tool>\0`，它对**任意参数**都匹配——「始终允许」被悄悄放大成
     // 无限放行。mcpx_*、install_apk、gradle_build 这些没有可判别字段的工具都走这条路径。

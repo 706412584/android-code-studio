@@ -118,12 +118,12 @@ public final class LspNavigateTool extends BaseTool {
 
     File file;
     try {
-      file = FileToolPathPolicy.resolve(context, input.optString("file_path", ""));
+      file = FileToolPathPolicy.resolve(context, FileToolPathPolicy.inputPath(input));
     } catch (IOException e) {
       return error("路径无效：" + e.getMessage());
     }
     if (!file.isFile()) {
-      return error("文件不存在：" + input.optString("file_path"));
+      return error("文件不存在：" + FileToolPathPolicy.inputPath(input));
     }
     if (!port.isSupported(file.getAbsolutePath())) {
       return error("该文件类型没有语言服务器，无法导航：" + file.getName());

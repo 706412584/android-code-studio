@@ -68,6 +68,51 @@ final class FileToolsTest {
         content, Files.readString(workspace.resolve("src/Main.kt")), "磁盘内容应与写入内容一致");
   }
 
+  // ---- path / file_path 双名（回归：模型只发 path 时 file_read 会去列根目录）----
+
+  @Test
+  void readAcceptsPathAsAliasForFilePath(@TempDir Path workspace) throws IOException {
+    // 真机实测（会话 7e0dd4b9，项目 MyNoActivity23）：模型 8/8 次 file_read 都发
+    // {"path": "..."}。修复前每次都被解析成空路径 → 回落到工作区根目录 →
+    // 返回目录树 + "To read a file, specify the exact file path"，模型据此断定
+    // 「read_file 工具坏了」。这里钉住：path 必须能读到真实文件内容。
+    ToolContext ctx = context(workspace);
+    Files.writeString(workspace.resolve("gradle.properties"), "org.gradle.jvmargs=-Xmx2g\n");
+
+    ToolResult read = new FileReadTool().execute(args("path", "gradle.properties"), ctx);
+
+    assertFalse(read.isError(), "应成功读取: " + read.getContent());
+    assertTrue(read.getContent().contains("org.gradle.jvmargs"), read.getContent());
+    // 关键判据：不能是目录列表。只断言「包含文件名」是不够的——目录树里同样会出现
+    // 「gradle.properties」这一行，那样会让本用例在 bug 复现时也通过。
+    assertFalse(read.getContent().contains("[FILE]"), "不应返回目录树: " + read.getContent());
+  }
+
+  @Test
+  void writeAcceptsPathAsAliasForFilePath(@TempDir Path workspace) throws IOException {
+    // DiffRecorder 在 tool.execute 之前就按同名取路径，因此写入类工具必须一起容忍，
+    // 否则记录 diff 的路径解析会抢在工具之前报「路径是一个目录，无法写入文件: 」。
+    ToolContext ctx = context(workspace);
+
+    ToolResult write = new FileWriteTool().execute(args("path", "out.txt", "content", "hi"), ctx);
+
+    assertFalse(write.isError(), "写入应成功: " + write.getContent());
+    assertEquals("hi", Files.readString(workspace.resolve("out.txt")));
+  }
+
+  @Test
+  void editAcceptsPathAsAliasForFilePath(@TempDir Path workspace) throws IOException {
+    ToolContext ctx = context(workspace);
+    Files.writeString(workspace.resolve("f.txt"), "hello world\n");
+
+    ToolResult result =
+        new FileEditTool()
+            .execute(args("path", "f.txt", "old_string", "world", "new_string", "there"), ctx);
+
+    assertFalse(result.isError(), "编辑应成功: " + result.getContent());
+    assertEquals("hello there\n", Files.readString(workspace.resolve("f.txt")));
+  }
+
   @Test
   void writeCreatesMissingParentDirectories(@TempDir Path workspace) throws IOException {
     ToolContext ctx = context(workspace);

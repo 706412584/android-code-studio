@@ -87,7 +87,7 @@ public final class FileReadTool extends BaseTool {
     @Override
     public ToolResult execute(JSONObject input, ToolContext context) {
         try {
-            File file = FileToolPathPolicy.resolve(context, input.optString("file_path"));
+            File file = FileToolPathPolicy.resolve(context, FileToolPathPolicy.inputPath(input));
             if (!file.exists()) {
                 return error(ToolMessages.format(ToolMessages.FILE_READ_NOT_FOUND, FileToolPathPolicy.displayPath(context.getHomePath(), file)));
             }
@@ -134,7 +134,7 @@ public final class FileReadTool extends BaseTool {
             //  - large file (>= 50KB): refuse and suggest using KB range
             if (!hasKbRange) {
                 if (fileLen > LARGE_FILE_THRESHOLD_BYTES) {
-                    return error(ToolMessages.format(ToolMessages.FILE_READ_EXCEED_50KB, FileToolPathPolicy.displayPath(context.getHomePath(), file), fileLen / 1024, input.optString("file_path")));
+                    return error(ToolMessages.format(ToolMessages.FILE_READ_EXCEED_50KB, FileToolPathPolicy.displayPath(context.getHomePath(), file), fileLen / 1024, FileToolPathPolicy.inputPath(input)));
                 }
                 String content = FileIo.readUtf8(file);
                 String numbered = addLineNumbers(content, 1);

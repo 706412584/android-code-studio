@@ -169,9 +169,9 @@ public final class CodeActionsTool extends BaseTool {
       return error(reason);
     }
 
-    String filePath = input.optString("file_path", "").trim();
+    String filePath = FileToolPathPolicy.inputPath(input);
     if (filePath.isEmpty()) {
-      return error("缺少 file_path 参数。");
+      return error("缺少 file_path 参数（或 path）。");
     }
     File file;
     try {

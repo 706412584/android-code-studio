@@ -71,7 +71,7 @@ public final class FileWriteTool extends BaseTool {
     @Override
     public ToolResult execute(JSONObject input, ToolContext context) {
         try {
-            String path = input.optString("file_path");
+            String path = FileToolPathPolicy.inputPath(input);
             ToolArgs.requireNonEmpty(path, "file_path");
             File file = FileToolPathPolicy.resolve(context, path);
             if (file.exists() && file.isDirectory()) {

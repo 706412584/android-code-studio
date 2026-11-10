@@ -26,6 +26,7 @@ import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import org.json.JSONObject;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -143,5 +144,48 @@ final class FileToolPathPolicyTest {
     assertFalse(
         FileToolPathPolicy.isInside(new File("/w/ws"), new File("/w/ws-evil/a")),
         "同前缀目录不应被视为内部");
+  }
+
+  // ---------------------------------------------------------------------------
+  // inputPath：file_path / path 双名容忍
+  // ---------------------------------------------------------------------------
+
+  @Test
+  void prefersFilePathOverPath() {
+    JSONObject input = new JSONObject().put("file_path", "a.txt").put("path", "b.txt");
+
+    // file_path 是规范名，两个都给时它优先（不能让 path 悄悄改写目标）。
+    assertEquals("a.txt", FileToolPathPolicy.inputPath(input));
+  }
+
+  @Test
+  void fallsBackToPathWhenFilePathAbsent() {
+    // 真机实测形态：模型 8/8 次只发 path，于是 file_read 全被解析成空路径 → 列根目录。
+    assertEquals("b.txt", FileToolPathPolicy.inputPath(new JSONObject().put("path", "b.txt")));
+  }
+
+  @Test
+  void fallsBackToPathWhenFilePathIsBlank() {
+    // file_path 存在但为空（模型偶尔补一个空串）：同样应按「没给」处理。
+    JSONObject input = new JSONObject().put("file_path", "  ").put("path", "b.txt");
+
+    assertEquals("b.txt", FileToolPathPolicy.inputPath(input));
+  }
+
+  @Test
+  void returnsEmptyWhenNeitherNameGiven() {
+    // 空路径的语义（file_read 会列根目录）由调用方决定，这里只保证不抛、返回空串。
+    assertEquals("", FileToolPathPolicy.inputPath(new JSONObject()));
+    assertEquals("", FileToolPathPolicy.inputPath(null));
+
+    // 两个名字都是空白 → 空串，而不是留一个带空白的值让下游当成真实路径。
+    assertEquals("", FileToolPathPolicy.inputPath(new JSONObject().put("path", " ")));
+  }
+
+  @Test
+  void trimsTheResolvedValue() {
+    // 前后空白必须去掉：模型偶尔在路径里带换行/空格，带空白去 exists() 会误判不存在。
+    assertEquals("a.txt", FileToolPathPolicy.inputPath(new JSONObject().put("file_path", " a.txt ")));
+    assertEquals("b.txt", FileToolPathPolicy.inputPath(new JSONObject().put("path", "\tb.txt\n")));
   }
 }

@@ -129,10 +129,11 @@ public final class FileOpenTool extends BaseTool {
       return error(reason);
     }
 
-    String rawPath = input.optString("file_path", "").trim();
+    String rawPath = FileToolPathPolicy.inputPath(input);
     if (rawPath.isEmpty()) {
-      return error("缺少参数 file_path。");
+      return error("缺少参数 file_path（或 path）。");
     }
+
     int line = input.optInt("line", -1);
     if (line < 1) {
       return error("参数 line 必须 >= 1（行号从 1 开始）。");

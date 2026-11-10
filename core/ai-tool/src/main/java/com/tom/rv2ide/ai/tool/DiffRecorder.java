@@ -37,7 +37,10 @@ public final class DiffRecorder {
     }
 
     ToolResult executeWithDiff(BaseTool tool, JSONObject input, ToolContext context) {
-        String path = input.optString("file_path");
+        // 与工具的读取口径一致（file_path 优先，其次 path）：这里在 tool.execute 之前
+        // 就解析路径并读原文件，用错参数名会让记录 diff 的写入类工具**在工具自己看到
+        // 路径之前**就报「路径是一个目录，无法写入文件: 」（实测真机会话 7e0dd4b9）。
+        String path = FileToolPathPolicy.inputPath(input);
         File file;
         boolean existed;
         String oldContent = "";

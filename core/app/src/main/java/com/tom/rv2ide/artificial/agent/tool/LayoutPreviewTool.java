@@ -146,7 +146,7 @@ public final class LayoutPreviewTool extends BaseTool {
 
   @Override
   public ToolResult execute(JSONObject input, ToolContext context) {
-    String rawPath = input.optString("file_path", "").trim();
+    String rawPath = FileToolPathPolicy.inputPath(input);
     if (rawPath.isEmpty()) {
       return error("file_path 不能为空：请给出要预览的布局文件路径。");
     }

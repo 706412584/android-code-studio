@@ -215,7 +215,12 @@ public final class ToolPermissionRule {
       return githubWriteScope(json, arguments);
     }
     if (ToolNames.FILE_WRITE.equals(toolName) || ToolNames.FILE_EDIT.equals(toolName)) {
-      return fallbackIfEmpty(json.optString(ARG_FILE_PATH, "").trim(), arguments);
+      // 复用执行侧的取路径口径（file_path 优先，其次 path），而不是只读 file_path：
+      // 授权范围必须与**实际写入的目标**逐字相同。只认 file_path 时，模型发
+      // {"path": "..."} 会拿到空 scope，fallbackIfEmpty 便把这次的键退化成参数摘要，
+      // 而执行侧却真的按 path 写到了文件——同一份参数在两侧得到不同的解读。
+      // 见 FileDeleteTool.collectPaths 的同款说明：漂移的方向永远是「授权比执行窄」。
+      return fallbackIfEmpty(FileToolPathPolicy.inputPath(json), arguments);
     }
     if (ToolNames.FILE_DELETE.equals(toolName)) {
       return fallbackIfEmpty(joinedPaths(json), arguments);
