@@ -22,12 +22,25 @@ import android.content.Context
 import android.content.Intent
 import android.os.Handler
 import android.os.Looper
+import android.text.InputType
 import android.view.View
+import android.widget.LinearLayout
 import android.widget.Toast
 import androidx.preference.Preference
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.tom.rv2ide.R
 import com.tom.rv2ide.activities.FolderPickerActivity
+import com.tom.rv2ide.activities.SshKeyPickerActivity
+import com.tom.rv2ide.ssh.KeystoreCipher
+import com.tom.rv2ide.ssh.SharedPrefsSshHostKeyStore
+import com.tom.rv2ide.ssh.SharedPrefsSshLoginKeyStore
+import com.tom.rv2ide.ssh.SharedPrefsSshProfileStore
+import com.tom.rv2ide.ssh.SshAuthRef
+import com.tom.rv2ide.ssh.SshComponents
+import com.tom.rv2ide.ssh.SshLoginKey
+import com.tom.rv2ide.ssh.SshPrivateKeyStore
+import com.tom.rv2ide.ssh.SshProfile
+import java.util.UUID
 import com.tom.rv2ide.ai.agent.ProjectRulesLoader
 import com.tom.rv2ide.artificial.agent.AgentImageToolSettings
 import com.tom.rv2ide.artificial.agent.AgentToolSettings
@@ -146,6 +159,8 @@ private class ToolsPage(
     addPreference(PermissionModePreference())
     addPreference(AuthorizedToolsPreference())
     addPreference(ShellBackendPreference())
+    // 紧随 shell 后端：ssh 是它的一个选项，连接参数放在同一页才找得到。
+    addPreference(SshConnectionPreference())
     // 紧随 shell 后端：两者是同一件事的两条路（操作设备的能力来源）——
     // Shizuku 那条要装要授权，无障碍这条勾选一次即可。放一起用户才好权衡。
     addPreference(AccessibilityPreference())
@@ -2611,30 +2626,56 @@ private class ShellBackendPreference(
     override val summary: Int? = R.string.ai_agent_shell_backend_summary,
 ) : BasePreference() {
 
-  private val values = arrayOf("termux", "shizuku", "root")
-  private val shown =
+  private val values = arrayOf("termux", "shizuku", "root", SSH_BACKEND_ID)
+
+  /** 选项文案走字符串资源（新增的 ssh 项不能硬编码中文）。 */
+  private fun shown(context: Context) =
       arrayOf(
-          "内置终端 Termux（无 adb/root）",
-          "Shizuku（adb；以 root 启动时为 root）",
-          "Root（su，需要设备已 root）")
+          context.getString(R.string.ai_agent_shell_backend_termux),
+          context.getString(R.string.ai_agent_shell_backend_shizuku),
+          context.getString(R.string.ai_agent_shell_backend_root),
+          context.getString(R.string.ai_agent_shell_backend_ssh))
 
   override fun onCreatePreference(context: Context): Preference {
     val current = agentPrefs(context).getString("shell_backend", "termux")
+    val labels = shown(context)
     return androidx.preference.Preference(context).apply {
       key = "shell_backend"
       title = context.getString(R.string.ai_agent_shell_backend_title)
-      summary = shown[values.indexOf(current).coerceAtLeast(0)]
+      summary = labels[values.indexOf(current).coerceAtLeast(0)]
     }
   }
 
   override fun onPreferenceClick(preference: Preference): Boolean {
     val context = preference.context
     val current = agentPrefs(context).getString("shell_backend", "termux")
+    val labels = shown(context)
     com.google.android.material.dialog.MaterialAlertDialogBuilder(context)
         .setTitle(R.string.ai_agent_shell_backend_title)
-        .setSingleChoiceItems(shown, values.indexOf(current).coerceAtLeast(0)) { dialog, which ->
+        .setSingleChoiceItems(labels, values.indexOf(current).coerceAtLeast(0)) { dialog, which ->
+          if (values[which] == SSH_BACKEND_ID && sshProfiles(context).active() == null) {
+            // 没配置连接就切到 ssh，会让 AI 每次执行命令都失败且看不出原因。
+            // 这里不落盘、不切换，直接引导用户去配置（而不是静默切换）。
+            dialog.dismiss()
+            MaterialAlertDialogBuilder(context)
+                .setMessage(R.string.ai_agent_ssh_need_config)
+                .setPositiveButton(R.string.ai_agent_ssh_go_configure) { _, _ ->
+                  // 引导用户配置完成后，若已有可用连接就把后端切到 ssh。这不是「静默切换」：
+                  // 用户先选了 ssh、又主动填完了一条连接，切换是他刚刚表达的意图；
+                  // 原先「未配置就不切」是为了避免「切了但用不了」。
+                  showSshManagerDialog(context) {
+                    if (sshProfiles(context).active() != null) {
+                      agentPrefs(context).edit().putString("shell_backend", SSH_BACKEND_ID).apply()
+                      preference.summary = labels[values.indexOf(SSH_BACKEND_ID)]
+                    }
+                  }
+                }
+                .setNegativeButton(android.R.string.cancel, null)
+                .show()
+            return@setSingleChoiceItems
+          }
           agentPrefs(context).edit().putString("shell_backend", values[which]).apply()
-          preference.summary = shown[which]
+          preference.summary = labels[which]
           dialog.dismiss()
           if (values[which] == ShizukuShellBackend.ID) {
             ensureShizukuAuthorized(context)
@@ -2694,6 +2735,590 @@ private class ShellBackendPreference(
       Toast.makeText(context, backend.unavailableReason(), Toast.LENGTH_LONG).show()
     }
   }
+}
+
+/*
+ * ---------------------------- SSH 连接 ----------------------------
+ */
+
+/** shell 后端 id：与 `SshShellBackend.id()` 一致。 */
+private const val SSH_BACKEND_ID = "ssh"
+
+/** SSH 各存储。每次现造：它们只是 SharedPreferences 的薄封装，不持有连接。 */
+private fun sshProfiles(context: Context): SharedPrefsSshProfileStore =
+    SharedPrefsSshProfileStore(context.applicationContext)
+
+private fun sshLoginKeys(context: Context): SharedPrefsSshLoginKeyStore =
+    SharedPrefsSshLoginKeyStore(context.applicationContext)
+
+private fun sshHostKeys(context: Context): SharedPrefsSshHostKeyStore =
+    SharedPrefsSshHostKeyStore(context.applicationContext)
+
+/**
+ * SSH 连接配置入口。
+ *
+ * <p><b>为什么单独成项而不是塞进 Shell 后端弹窗</b>：连接配置有主机、端口、用户名、
+ * 两种认证方式、工作区路径与私钥导入，是一个完整表单；塞进单选弹窗会变成「选完还要再
+ * 弹一层」，且 shell 后端是「用哪条通道」，SSH 连接是「通道通向哪」——两件事。
+ * 后端选中 ssh 时若未配置，会引导到这里（见 [ShellBackendPreference]）。
+ */
+@Parcelize
+private class SshConnectionPreference(
+    override val key: String = "ssh_connection",
+    override val title: Int = R.string.ai_agent_ssh_title,
+    // 静态 summary 为 null：摘要必须是动态值（当前激活配置），见 onCreateView。
+    override val summary: Int? = null,
+) : BasePreference() {
+
+  override fun onCreatePreference(context: Context): Preference =
+      androidx.preference.Preference(context).apply { key = "ssh_connection" }
+
+  override fun onCreateView(context: Context): Preference {
+    val pref = super.onCreateView(context)
+    // super 之后：基类会把静态 summary 写上去，动态值必须放在它后面。
+    pref.summary = sshActiveSummary(context)
+    return pref
+  }
+
+  override fun onPreferenceClick(preference: Preference): Boolean {
+    // 只刷新自己的 summary：不能用「传进来的 Preference」，否则从 Shell 后端弹窗
+    // 引导过来时会顺手把后端条目的摘要改成 SSH 主机名。
+    showSshManagerDialog(preference.context) { preference.summary = sshActiveSummary(preference.context) }
+    return true
+  }
+}
+
+/** 当前激活配置 → 一行摘要（供本条目与 Shell 后端弹窗刷新用）。 */
+private fun sshActiveSummary(context: Context): String {
+  val active =
+      sshProfiles(context).active()
+          ?: return context.getString(R.string.ai_agent_ssh_not_configured)
+  return context.getString(R.string.ai_agent_ssh_active, active.username, active.host, active.port)
+}
+
+/**
+ * 连接管理对话框：列出全部配置，点击设为激活，右侧按钮删除。
+ *
+ * <p><b>为什么用自绘行而不是 `setItems`</b>：`setItems` 只支持「点击整行」，而本页需要
+ * 每行一个独立的删除按钮（点击行 = 激活，点击删除 = 删），两种目标必须能分开点。
+ */
+private fun showSshManagerDialog(context: Context, onChanged: (() -> Unit)? = null) {
+  val store = sshProfiles(context)
+  val hostKeys = sshHostKeys(context)
+
+  // 每次变更后重开对话框：列表项、激活标记、删除按钮都要跟着变。重开比原地增删控件简单，
+  // 也不会留下指向已删配置的闭包。**必须先关掉旧对话框**——否则点几次会叠出好几层，
+  // 用户看到的是「点了没反应」。
+  var current: androidx.appcompat.app.AlertDialog? = null
+  fun reopen() {
+    onChanged?.invoke()
+    current?.dismiss()
+    showSshManagerDialog(context, onChanged)
+  }
+
+  val profiles = store.all()
+  val activeId = store.activeId()
+
+  val content: View =
+      if (profiles.isEmpty()) {
+        dialogFieldColumn(
+            context,
+            android.widget.TextView(context).apply {
+              setText(R.string.ai_agent_ssh_empty)
+              setTextAppearance(
+                  com.google.android.material.R.style.TextAppearance_Material3_BodyMedium)
+            })
+      } else {
+        val rows = mutableListOf<View>()
+        for (profile in profiles) {
+          val active = profile.id == activeId
+          val row =
+              LinearLayout(context).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = android.view.Gravity.CENTER_VERTICAL
+                setPadding(0, dpToPx(context, 6), 0, dpToPx(context, 6))
+                isClickable = true
+                setOnClickListener {
+                  store.setActiveId(profile.id)
+                  reopen()
+                }
+                // 长按 = 删除（与右侧按钮等价），符合 Android 列表的常见预期。
+                isLongClickable = true
+                setOnLongClickListener {
+                  confirmDeleteSshProfile(context, store, hostKeys, profile) { reopen() }
+                  true
+                }
+              }
+          val label =
+              android.widget.TextView(context).apply {
+                text =
+                    (if (active) "✓ " else "") +
+                        context.getString(
+                            R.string.ai_agent_ssh_active,
+                            profile.username,
+                            profile.host,
+                            profile.port) +
+                        (if (profile.name.isNotEmpty() && profile.name != profile.host)
+                            "  ·  ${profile.name}"
+                        else "")
+                setTextAppearance(
+                    com.google.android.material.R.style.TextAppearance_Material3_BodyLarge)
+              }
+          row.addView(
+              label,
+              LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+          // 「编辑」与「删除」分成两个按钮：一行里只有「点行 = 激活」的话，
+          // 改错主机/密码就只能删了重建（密码还要重输），代价太大。
+          row.addView(
+              android.widget.Button(context, null, android.R.attr.borderlessButtonStyle).apply {
+                setText(R.string.ai_agent_ssh_edit)
+                setOnClickListener {
+                  showSshEditDialog(context, profile) { reopen() }
+                }
+              })
+          row.addView(
+              android.widget.Button(context, null, android.R.attr.borderlessButtonStyle).apply {
+                setText(R.string.ai_agent_ssh_delete)
+                setOnClickListener {
+                  confirmDeleteSshProfile(context, store, hostKeys, profile) { reopen() }
+                }
+              })
+          rows.add(row)
+        }
+        dialogFieldColumn(context, *rows.toTypedArray())
+      }
+
+  val dialog =
+      MaterialAlertDialogBuilder(context)
+          .setTitle(R.string.ai_agent_ssh_manage_title)
+          .setView(content)
+          .setNeutralButton(R.string.ai_agent_ssh_new, null)
+          .setNegativeButton(android.R.string.cancel, null)
+          .create()
+
+  dialog.setOnShowListener {
+    // 连接多时列表会长过屏幕；限高让按钮栏始终可见（同 AI 设置里其它弹窗的做法）。
+    content.layoutParams =
+        android.widget.FrameLayout.LayoutParams(
+            android.widget.FrameLayout.LayoutParams.MATCH_PARENT,
+            (context.resources.displayMetrics.heightPixels * 0.45f).toInt(),
+        )
+    dialog.getButton(android.content.DialogInterface.BUTTON_NEUTRAL).setOnClickListener {
+      showSshEditDialog(context, null) { reopen() }
+    }
+  }
+  current = dialog
+  dialog.show()
+}
+
+/** 删除确认。删配置的同时清掉该主机的指纹：换了服务器/重装后旧指纹会拒绝连接。 */
+private fun confirmDeleteSshProfile(
+    context: Context,
+    store: SharedPrefsSshProfileStore,
+    hostKeys: SharedPrefsSshHostKeyStore,
+    profile: SshProfile,
+    onDone: () -> Unit,
+) {
+  MaterialAlertDialogBuilder(context)
+      .setMessage(context.getString(R.string.ai_agent_ssh_delete_confirm, profile.name))
+      .setPositiveButton(R.string.ai_agent_ssh_delete) { _, _ ->
+        store.remove(profile.id)
+        // 指纹按 host:port 存；同一主机被多条配置引用时这里会一并清掉，
+        // 下次连接重新 TOFU，属预期（安全上只会更严格）。
+        hostKeys.remove(profile.host, profile.port)
+        onDone()
+      }
+      .setNegativeButton(android.R.string.cancel, null)
+      .show()
+}
+
+/**
+ * 编辑/新建连接对话框。
+ *
+ * @param existing null 表示新建
+ * @param onSaved 保存成功且对话框关闭后回调（用于刷新上层列表）
+ */
+private fun showSshEditDialog(
+    context: Context,
+    existing: SshProfile?,
+    onSaved: () -> Unit,
+) {
+  val loginKeys = sshLoginKeys(context)
+
+  val nameField = dialogEditTextField(context, context.getString(R.string.ai_agent_ssh_name), existing?.name)
+  val hostField = dialogEditTextField(context, context.getString(R.string.ai_agent_ssh_host), existing?.host)
+  val portField =
+      dialogEditTextField(
+          context,
+          context.getString(R.string.ai_agent_ssh_port),
+          (existing?.port ?: 22).toString(),
+          inputType = InputType.TYPE_CLASS_NUMBER)
+  val usernameField =
+      dialogEditTextField(context, context.getString(R.string.ai_agent_ssh_username), existing?.username)
+  val workspaceField =
+      dialogEditTextField(
+          context, context.getString(R.string.ai_agent_ssh_workspace), existing?.remoteWorkspacePath)
+
+  val existingPassword = existing?.auth as? SshAuthRef.Password
+  val passwordField =
+      dialogEditTextField(
+          context,
+          context.getString(R.string.ai_agent_ssh_password),
+          // 编辑时**不回填**明文密码：Keystore 里只有密文，回填等于把密码摊在界面上。
+          "",
+          inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD,
+          helperText =
+              if (existingPassword != null)
+                  context.getString(R.string.ai_agent_ssh_password_keep)
+              else null)
+  val passphraseField =
+      dialogEditTextField(
+          context,
+          context.getString(R.string.ai_agent_ssh_passphrase),
+          (existing?.auth as? SshAuthRef.LoginKey)?.passphrase,
+          inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD)
+
+  val passwordRadio =
+      android.widget.RadioButton(context).apply {
+        id = View.generateViewId()
+        setText(R.string.ai_agent_ssh_auth_password)
+      }
+  val keyRadio =
+      android.widget.RadioButton(context).apply {
+        id = View.generateViewId()
+        setText(R.string.ai_agent_ssh_auth_key)
+      }
+  val authGroup =
+      android.widget.RadioGroup(context).apply {
+        orientation = android.widget.RadioGroup.VERTICAL
+        addView(passwordRadio)
+        addView(keyRadio)
+        check(if (existing?.auth is SshAuthRef.LoginKey) keyRadio.id else passwordRadio.id)
+      }
+
+  // 已选私钥：编辑私钥认证时沿用原引用；否则默认第一条（没有则空）。
+  var selectedKeyId: String? =
+      (existing?.auth as? SshAuthRef.LoginKey)?.loginKeyId ?: loginKeys.entries().firstOrNull()?.id
+
+  val keyLabel =
+      android.widget.TextView(context).apply {
+        setTextAppearance(com.google.android.material.R.style.TextAppearance_Material3_BodyMedium)
+        setPadding(0, dpToPx(context, 6), 0, dpToPx(context, 6))
+      }
+
+  fun renderSelectedKey() {
+    val key = loginKeys.entries().firstOrNull { it.id == selectedKeyId }
+    keyLabel.text =
+        if (key == null) {
+          context.getString(R.string.ai_agent_ssh_key_none)
+        } else {
+          key.name + (key.fingerprint?.let { "  ·  $it" } ?: "")
+        }
+  }
+
+  fun chooseKey() {
+    val entries = loginKeys.entries()
+    val labels =
+        (entries.map { it.name + (it.fingerprint?.let { f -> "  ·  $f" } ?: "") } +
+                context.getString(R.string.ai_agent_ssh_import_key))
+            .toTypedArray()
+    MaterialAlertDialogBuilder(context)
+        .setTitle(R.string.ai_agent_ssh_auth_key)
+        .setItems(labels) { _, which ->
+          if (which < entries.size) {
+            selectedKeyId = entries[which].id
+            renderSelectedKey()
+          } else {
+            importSshLoginKey(context) { key ->
+              if (key != null) {
+                selectedKeyId = key.id
+                renderSelectedKey()
+              }
+            }
+          }
+        }
+        .setNegativeButton(android.R.string.cancel, null)
+        .show()
+  }
+
+  val keySection =
+      LinearLayout(context).apply {
+        orientation = LinearLayout.VERTICAL
+        addView(keyLabel)
+        addView(
+            android.widget.Button(context, null, android.R.attr.borderlessButtonStyle).apply {
+              setText(R.string.ai_agent_ssh_import_key)
+              setOnClickListener {
+                // 已有条目时先让用户选，没有就直接进导入（少一次无意义的空列表点击）。
+                if (loginKeys.entries().isEmpty()) {
+                  importSshLoginKey(context) { key ->
+                    if (key != null) {
+                      selectedKeyId = key.id
+                      renderSelectedKey()
+                    }
+                  }
+                } else {
+                  chooseKey()
+                }
+              }
+            })
+      }
+
+  renderSelectedKey()
+
+  // 认证方式切换：只改可见性，不销毁控件——两套字段都要保留用户已填的内容。
+  fun applyAuthVisibility() {
+    val useKey = authGroup.checkedRadioButtonId == keyRadio.id
+    passwordField.visibility = if (useKey) View.GONE else View.VISIBLE
+    keySection.visibility = if (useKey) View.VISIBLE else View.GONE
+    passphraseField.visibility = if (useKey) View.VISIBLE else View.GONE
+  }
+  authGroup.setOnCheckedChangeListener { _, _ -> applyAuthVisibility() }
+  applyAuthVisibility()
+
+  val authLabel =
+      android.widget.TextView(context).apply {
+        setText(R.string.ai_agent_ssh_auth_label)
+        setTextAppearance(com.google.android.material.R.style.TextAppearance_Material3_BodyMedium)
+      }
+
+  val scroll =
+      dialogFieldColumn(
+          context,
+          nameField,
+          hostField,
+          portField,
+          usernameField,
+          workspaceField,
+          authLabel,
+          authGroup,
+          passwordField,
+          keySection,
+          passphraseField)
+
+  val dialog =
+      MaterialAlertDialogBuilder(context)
+          .setTitle(
+              if (existing == null) R.string.ai_agent_ssh_new else R.string.ai_agent_ssh_edit)
+          .setView(scroll)
+          .setPositiveButton(android.R.string.ok, null)
+          .setNeutralButton(R.string.ai_agent_ssh_test, null)
+          .setNegativeButton(android.R.string.cancel, null)
+          .create()
+
+  /** 收集表单 → 配置；校验失败弹 Toast 并返回 null。 */
+  fun collect(): SshProfile? {
+    val host = hostField.editText?.text?.toString()?.trim().orEmpty()
+    if (host.isEmpty()) {
+      Toast.makeText(context, R.string.ai_agent_ssh_err_host, Toast.LENGTH_SHORT).show()
+      return null
+    }
+    val username = usernameField.editText?.text?.toString()?.trim().orEmpty()
+    if (username.isEmpty()) {
+      Toast.makeText(context, R.string.ai_agent_ssh_err_username, Toast.LENGTH_SHORT).show()
+      return null
+    }
+    val port = portField.editText?.text?.toString()?.trim()?.toIntOrNull() ?: 0
+    if (port !in 1..65535) {
+      Toast.makeText(context, R.string.ai_agent_ssh_err_port, Toast.LENGTH_SHORT).show()
+      return null
+    }
+    val name = nameField.editText?.text?.toString()?.trim().orEmpty().ifEmpty { host }
+    val workspace = workspaceField.editText?.text?.toString()?.trim().orEmpty()
+    val password = passwordField.editText?.text?.toString().orEmpty()
+    val passphrase = passphraseField.editText?.text?.toString()?.takeIf { it.isNotEmpty() }
+
+    val auth: SshAuthRef =
+        if (authGroup.checkedRadioButtonId == keyRadio.id) {
+          val keyId = selectedKeyId
+          if (keyId.isNullOrEmpty()) {
+            Toast.makeText(context, R.string.ai_agent_ssh_err_key, Toast.LENGTH_SHORT).show()
+            return null
+          }
+          SshAuthRef.LoginKey(keyId, passphrase)
+        } else {
+          when {
+            password.isNotEmpty() -> SshAuthRef.Password(KeystoreCipher.encryptString(password))
+            // 编辑且密码留空：沿用已保存的密文（用户没改密码就不该被迫重输）。
+            existingPassword != null -> existingPassword
+            else -> {
+              Toast.makeText(context, R.string.ai_agent_ssh_err_password, Toast.LENGTH_SHORT).show()
+              return null
+            }
+          }
+        }
+
+    return SshProfile(
+        id = existing?.id ?: UUID.randomUUID().toString(),
+        name = name,
+        host = host,
+        port = port,
+        username = username,
+        auth = auth,
+        remoteWorkspacePath = workspace)
+  }
+
+  /** 保存并设为激活；失败返回 null。 */
+  fun save(): SshProfile? {
+    val profile = collect() ?: return null
+    return try {
+      sshProfiles(context).save(profile)
+      // 保存后即设为激活：用户刚填完/刚改过就是要用它，省一次点击；
+      // 「测试连接」也只能测激活配置（registry 只认 active），不设激活会测到别的连接。
+      sshProfiles(context).setActiveId(profile.id)
+      profile
+    } catch (e: Exception) {
+      // Keystore 不可用时 encryptString 会抛 KeystoreUnavailableException。
+      Toast.makeText(
+              context,
+              context.getString(
+                  R.string.ai_agent_ssh_save_fail, e.message ?: e.javaClass.simpleName),
+              Toast.LENGTH_LONG)
+          .show()
+      null
+    }
+  }
+
+  dialog.setOnShowListener {
+    // 限高必须在本监听里做：clampDialogScrollHeight 用的是同一个 setOnShowListener，
+    // 先后调用会互相覆盖（它设的会被这里替换掉）。
+    scroll.layoutParams =
+        android.widget.FrameLayout.LayoutParams(
+            android.widget.FrameLayout.LayoutParams.MATCH_PARENT,
+            (context.resources.displayMetrics.heightPixels * 0.45f).toInt(),
+        )
+    dialog.getButton(android.content.DialogInterface.BUTTON_POSITIVE).setOnClickListener {
+      if (save() != null) {
+        dialog.dismiss()
+        onSaved()
+      }
+    }
+    dialog.getButton(android.content.DialogInterface.BUTTON_NEUTRAL).setOnClickListener {
+      // 测试必须先落盘：registry 只认已保存的激活配置，拿内存里的临时值去连会连到旧配置。
+      if (save() != null) {
+        testSshConnection(context)
+      }
+    }
+  }
+  dialog.show()
+}
+
+/**
+ * 导入私钥：选文件 → 加密写入 `filesDir/ssh_keys/` → 算指纹 → 记入登录密钥表。
+ *
+ * <p><b>为什么在后台线程做</b>：指纹计算要走 sshj 的密钥解析 + BouncyCastle 注册，
+ * 首次调用可达数百毫秒；在主线程做会卡界面。文件读取本身也很小，但一并挪走更省心。
+ *
+ * @param onDone 主线程回调；取消/失败为 null
+ */
+private fun importSshLoginKey(context: Context, onDone: (SshLoginKey?) -> Unit) {
+  val appContext = context.applicationContext
+  val main = Handler(Looper.getMainLooper())
+  SshKeyPickerActivity.onKeyPicked = picker@{ bytes, displayName ->
+    // 回调用完即清：静态引用持有设置页闭包，不清会让设置页无法回收。
+    SshKeyPickerActivity.onKeyPicked = null
+    if (bytes == null || bytes.isEmpty()) {
+      onDone(null)
+      return@picker
+    }
+    Thread {
+          var result: SshLoginKey? = null
+          var error: String? = null
+          try {
+            val store = SshPrivateKeyStore()
+            val dir = File(appContext.filesDir, "ssh_keys").apply { mkdirs() }
+            val id = UUID.randomUUID().toString()
+            val path = File(dir, "$id.pem").absolutePath
+            store.write(path, bytes)
+            // 指纹按**解密后的 PEM** 算：write 落的是密文。
+            val pem = store.readPem(path)
+            val fingerprint = store.fingerprint(pem)
+            val key =
+                SshLoginKey(
+                    id = id,
+                    name = displayName?.takeIf { it.isNotBlank() } ?: "key-${id.take(8)}",
+                    path = path,
+                    fingerprint = fingerprint)
+            sshLoginKeys(appContext).add(key)
+            result = key
+            if (fingerprint == null) {
+              // 带口令的私钥无法在导入时解析出公钥，指纹为空不是失败——连接时用口令解。
+              main.post {
+                Toast.makeText(
+                        appContext,
+                        R.string.ai_agent_ssh_key_no_fingerprint,
+                        Toast.LENGTH_LONG)
+                    .show()
+              }
+            }
+          } catch (e: Exception) {
+            error = e.message ?: e.javaClass.simpleName
+          }
+          main.post {
+            if (result == null) {
+              Toast.makeText(
+                      appContext,
+                      appContext.getString(R.string.ai_agent_ssh_import_fail, error ?: "?"),
+                      Toast.LENGTH_LONG)
+                  .show()
+            } else {
+              Toast.makeText(appContext, R.string.ai_agent_ssh_import_ok, Toast.LENGTH_SHORT)
+                  .show()
+            }
+            onDone(result)
+          }
+        }
+        .start()
+  }
+  context.startActivity(Intent(context, SshKeyPickerActivity::class.java))
+}
+
+/**
+ * 测试当前激活的 SSH 连接（后台线程）。
+ *
+ * <p><b>必须后台</b>：一次完整握手 + 认证要 1-3 秒，主线程做会 ANR。
+ *
+ * <p>用空项目路径取会话：注册表把它当「默认」键，与设置页无关的连接共用同一条，
+ * 因此测通后再由 AI 使用同一项目路径时能直接复用（这正是「一次登录」的含义）。
+ */
+private fun testSshConnection(context: Context) {
+  val appContext = context.applicationContext
+  val main = Handler(Looper.getMainLooper())
+  Toast.makeText(appContext, R.string.ai_agent_ssh_testing, Toast.LENGTH_SHORT).show()
+  Thread {
+        val registry = SshComponents.sessions()
+        if (registry == null) {
+          main.post {
+            Toast.makeText(
+                    appContext,
+                    appContext.getString(
+                        R.string.ai_agent_ssh_test_fail,
+                        appContext.getString(R.string.ai_agent_ssh_not_ready)),
+                    Toast.LENGTH_LONG)
+                .show()
+          }
+          return@Thread
+        }
+        val connection =
+            try {
+              registry.getOrConnect("")
+            } catch (e: Exception) {
+              null
+            }
+        val home = connection?.remoteHome
+        val error = registry.lastError
+        main.post {
+          val message =
+              if (connection != null) {
+                appContext.getString(R.string.ai_agent_ssh_test_ok, home ?: "?")
+              } else {
+                appContext.getString(
+                    R.string.ai_agent_ssh_test_fail, error ?: appContext.getString(R.string.ai_agent_ssh_not_ready))
+              }
+          Toast.makeText(appContext, message, Toast.LENGTH_LONG).show()
+        }
+      }
+      .start()
 }
 
 @Parcelize
