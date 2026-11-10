@@ -91,6 +91,16 @@ public final class ToolPermissionRule {
   /** shell_execute 的参数键：本次调用临时指定的后端 id（可省略）。 */
   public static final String ARG_BACKEND = "backend";
 
+  /**
+   * shell_execute 的参数键：本次调用临时的 SSH 主机（`host:port`）。
+   *
+   * <p>用于授权 scope —— 同一条命令连不同主机是不同的授权对象。见 {@link #sshScope}。
+   */
+  public static final String ARG_SSH_HOST = "sshHost";
+
+  /** shell_execute 的参数键：用户保存的 SSH 连接配置名（{@link #ARG_SSH_HOST} 未给时用）。 */
+  public static final String ARG_SSH_PROFILE = "sshProfile";
+
   /** 键与值之间的分隔符。见类注释说明为何选 NUL。 */
   private static final char SEPARATOR = '\u0000';
 
@@ -103,6 +113,12 @@ public final class ToolPermissionRule {
 
   /** 多路径 scope 内部的连接符。路径不可能含控制字符，故无歧义。 */
   private static final char PATH_JOINER = '\u0001';
+
+  /** ssh 后端 scope 里「命令」与「远端主机」之间的分隔符。见 {@link #sshScope}。 */
+  private static final char SSH_HOST_SEPARATOR = '\u0003';
+
+  /** shell_execute 显式指定 ssh 后端时用的后端 id。 */
+  private static final String SSH_BACKEND_ID = "ssh";
 
   /** 参数摘要的前缀，用于把它与路径/命令区分开，也便于在设置页辨认。 */
   private static final String DIGEST_PREFIX = "args:";
@@ -205,6 +221,9 @@ public final class ToolPermissionRule {
       String command = normalizeCommand(json.optString(ARG_COMMAND, ""));
       String backend =
           json.optString(ARG_BACKEND, "").trim().toLowerCase(java.util.Locale.ROOT);
+      if (SSH_BACKEND_ID.equals(backend)) {
+        return sshScope(command, json, arguments);
+      }
       return backend.isEmpty() ? command : command + BACKEND_SEPARATOR + backend;
     }
     if (ToolNames.GIT_WRITE.equals(toolName)) {
@@ -250,6 +269,34 @@ public final class ToolPermissionRule {
    */
   private static String fallbackIfEmpty(String scope, String arguments) {
     return scope.isEmpty() ? digest(arguments) : scope;
+  }
+
+  /**
+   * ssh 后端的 scope：命令 + **远端主机**。
+   *
+   * <p><b>为什么主机会进键</b>：其他后端（termux / shizuku / root）都跑在**同一台设备**上，
+   * 「在哪跑」不构成差异；ssh 则要连不同服务器。只按 {@code command + "ssh"} 建键的话，
+   * 用户对「在测试机 A 上允许 {@code rm -rf build}」的一次点击，会连带放行「在**生产机 B**
+   * 上跑同一条命令」——而两台机器的破坏面完全不同。这与 {@code file_move} 必须同时绑定
+   * 源与目标（{@link #scopeOf} 里的说明）是同一类问题：授权范围不能比实际作用范围窄。
+   *
+   * <p><b>主机从哪里取</b>：优先本次调用显式指定的 {@code sshHost}（模型可临时切主机）；
+   * 未指定时取 {@code sshProfile}（用户保存的连接配置名）。两者都没有时回落到参数摘要
+   * ——绝不能返回「命令 + ssh」这种与主机无关的键。
+   *
+   * <p>分隔符用控制字符，与 {@link #BACKEND_SEPARATOR} 同理：命令与主机名都可能是任意
+   * 可打印文本，只有控制字符不可能出现在其中。
+   */
+  private static String sshScope(String command, JSONObject json, String arguments) {
+    String host = json.optString(ARG_SSH_HOST, "").trim();
+    if (host.isEmpty()) {
+      host = json.optString(ARG_SSH_PROFILE, "").trim();
+    }
+    if (host.isEmpty() || command.isEmpty()) {
+      // 缺任一判别字段都不能建「命令 + ssh」这种与主机无关的键，否则一次点击放行所有主机。
+      return digest(arguments);
+    }
+    return command + BACKEND_SEPARATOR + SSH_BACKEND_ID + SSH_HOST_SEPARATOR + host;
   }
 
   /**

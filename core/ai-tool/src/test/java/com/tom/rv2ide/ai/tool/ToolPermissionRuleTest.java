@@ -113,6 +113,79 @@ final class ToolPermissionRuleTest {
   }
 
   @Test
+  void sshRuleIsScopedToRemoteHost() {
+    // 其他后端都跑在同一台设备上，「在哪跑」不构成差异；ssh 要连不同服务器。
+    // 只按 command + "ssh" 建键，会让「允许在测试机 A 跑 rm -rf build」连带放行生产机 B。
+    String onA =
+        ToolPermissionRule.keyFor(
+            "shell_execute",
+            "{\"command\":\"rm -rf build\",\"backend\":\"ssh\",\"sshHost\":\"a.example.com:22\"}");
+    String onB =
+        ToolPermissionRule.keyFor(
+            "shell_execute",
+            "{\"command\":\"rm -rf build\",\"backend\":\"ssh\",\"sshHost\":\"b.example.com:22\"}");
+
+    assertNotEquals(onA, onB, "同一命令在不同远端主机下必须不是同一条规则");
+    assertTrue(onA.startsWith("shell_execute\u0000"), onA);
+  }
+
+  @Test
+  void sshRuleIsStableForTheSameHostAndCommand() {
+    // 同一主机、同一命令必须产生稳定的键，否则「始终允许」每次都失效（反复弹窗）。
+    String viaHost =
+        ToolPermissionRule.keyFor(
+            "shell_execute",
+            "{\"command\":\"ls -la\",\"backend\":\"ssh\",\"sshHost\":\"h:22\"}");
+    String again =
+        ToolPermissionRule.keyFor(
+            "shell_execute",
+            "{\"command\":\"ls -la\",\"backend\":\"ssh\",\"sshHost\":\" h:22 \"}");
+
+    assertEquals(viaHost, again, "主机名前后空白不影响键");
+  }
+
+  @Test
+  void sshRuleFallsBackToDigestWhenHostIsMissing() {
+    // 没有主机字段就不能建「命令 + ssh」这种与主机无关的键——否则一次点击放行所有主机。
+    // 回落到参数摘要意味着「只有完全相同的参数才复用」，方向是安全的。
+    String noHost =
+        ToolPermissionRule.keyFor("shell_execute", "{\"command\":\"ls\",\"backend\":\"ssh\"}");
+    String otherHost =
+        ToolPermissionRule.keyFor(
+            "shell_execute",
+            "{\"command\":\"ls\",\"backend\":\"ssh\",\"sshHost\":\"b:22\"}");
+
+    assertTrue(noHost.contains("args:"), "缺主机时应回落到参数摘要: " + noHost);
+    assertNotEquals(noHost, otherHost);
+  }
+
+  @Test
+  void sshProfileIsUsedWhenHostIsAbsent() {
+    // 模型可以不写 host 而写保存好的配置名；两者都必须绑定到具体主机身份上。
+    String viaProfile =
+        ToolPermissionRule.keyFor(
+            "shell_execute", "{\"command\":\"ls\",\"backend\":\"ssh\",\"sshProfile\":\"prod\"}");
+    String otherProfile =
+        ToolPermissionRule.keyFor(
+            "shell_execute", "{\"command\":\"ls\",\"backend\":\"ssh\",\"sshProfile\":\"test\"}");
+
+    assertNotEquals(viaProfile, otherProfile);
+    assertTrue(viaProfile.contains("prod"), "配置名应进入键: " + viaProfile);
+  }
+
+  @Test
+  void sshRuleDoesNotCollideWithNonSshBackends() {
+    // ssh 是独立鉴权域：同一条命令在 termux 下被允许，不应自动放行 ssh。
+    String ssh =
+        ToolPermissionRule.keyFor(
+            "shell_execute", "{\"command\":\"ls\",\"backend\":\"ssh\",\"sshHost\":\"h:22\"}");
+    String termux =
+        ToolPermissionRule.keyFor("shell_execute", "{\"command\":\"ls\",\"backend\":\"termux\"}");
+
+    assertNotEquals(ssh, termux);
+  }
+
+  @Test
   void fileWriteRuleIsScopedToPath() {
     String a = ToolPermissionRule.keyFor("file_write", "{\"file_path\":\"/sdcard/proj/A.kt\"}");
     String b = ToolPermissionRule.keyFor("file_write", "{\"file_path\":\"/sdcard/proj/B.kt\"}");
