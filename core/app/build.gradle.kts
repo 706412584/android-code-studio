@@ -190,6 +190,13 @@ android {
       pickFirsts += "kotlin/**.kotlin_builtins"
       pickFirsts += "THIRD-PARTY"
       pickFirsts += "LICENSE"
+      // sshj 自带一份 sshj.properties，与本项目同名资源冲突（AGP 打包会直接报重复）。
+      // 它只用于读取 sshj 版本号（DefaultConfig.readVersionFromProperties），缺失时
+      // sshj 自行回退成 "unknown"，不影响任何功能。
+      excludes += "/sshj.properties"
+      // bcprov-jdk18on 与 jspecify 都带该 multi-release OSGi 元数据文件，打包路径冲突；
+      // 仅是 OSGi MANIFEST，排除即可。
+      excludes += "/META-INF/versions/9/OSGI-INF/MANIFEST.MF"
     }
   }
 
@@ -262,6 +269,15 @@ dependencies {
   implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.0")
   implementation("org.tukaani:xz:1.9")
   implementation("org.apache.commons:commons-compress:1.21")
+
+  // ---- SSH 传输层（AI agent 的远程执行后端，见 com.tom.rv2ide.ssh）----
+  // 版本钉死为 sshj 0.38.0 + bcprov 1.78.1，照抄 Aharou 的踩坑结论，不要随手升
+  // （两处版本与理由都写在 gradle/libs.versions.toml）。
+  implementation(libs.sshj)
+  // BouncyCastle：sshj 0.38.0 用 X25519 密钥交换，Android 自带裁剪版 BC 不含该算法，
+  // 需显式引入完整版并注册替换（见 com.tom.rv2ide.ssh.SshSecurity.ensureInstalled，
+  // 它在建连前把系统裁剪版 BC 换成这里的完整版并令 sshj 使用它）。
+  implementation(libs.bouncycastle.prov)
 
   // ---- 热更新 SDK（OrangeUpdate，本地 AAR）----
   // 预编译产物 update-release.aar（2026-02-06，含 b5f43b5「Android 10+ 可写目录 DEX 加载限制」

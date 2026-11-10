@@ -11,6 +11,10 @@ androidx-work = "2.9.0"
 antlr4 = "4.13.2"
 benchmark = "1.2.4"
 benchmark-junit4 = "1.2.4"
+# BouncyCastle：sshj 0.38.0 用 X25519 密钥交换，Android 自带裁剪版 BC 不含该算法，
+# 需显式引入完整版并注册替换（见 com.tom.rv2ide.ssh.SshSecurity）。
+# 1.75 命中 CVE-2024-30172（Ed25519 验证死循环 DoS），1.78 起修复；取与 sshj 0.39.0 对齐的 1.78.1。
+bouncycastle = "1.78.1"
 com-google-auto-service = "1.1.1"
 com-google-auto-value = "1.10.4"
 customizable-cardview = "v1.0"
@@ -49,6 +53,9 @@ org-openjdk-jmh = "1.37"
 # SyntaxHighlight 单方法接口，反而比官方插件更可控（配色可直接跟随 ACS 主题）。
 prism4j = "2.1.0"
 retrofit = "3.0.0"
+# SSH 传输层（AI agent 远程执行后端）。版本严格照抄 Aharou——它踩过 sshj 各版本与
+# Android 裁剪版 BC 的兼容坑，不要随手升。
+sshj = "0.38.0"
 tree-sitter = "1.0.1"
 
 [libraries]
@@ -57,6 +64,13 @@ aapt2-annotations = "com.android.tools:annotations:31.2.2"
 aapt2-common = "com.android.tools:common:31.4.1"
 aapt2-jb-annotations = { module = "org.jetbrains:annotations", version.ref = "org-jetbrains" }
 aapt2-proto = "com.android.tools.build:aapt2-proto:8.3.0-10880808"
+# SSH 传输层（`com.tom.rv2ide.ssh`）：纯 Java 的 SSHv2 实现，exec / SFTP / 保活 / 重连原语齐全。
+# 版本钉死、不要随手升——sshj 的传递依赖（asn-one / eddsa / bcpkix）与 Android 裁剪版 BC
+# 有一套容易踩的兼容矩阵，0.38.0 是在真机上验证过 X25519 + Ed25519 + SFTP 全通的一档。
+sshj = { module = "com.hierynomus:sshj", version.ref = "sshj" }
+# 必须显式引入完整版：sshj 的 POM 把 bcprov 写成 runtime 且版本 1.75（含 CVE-2024-30172），
+# 显式声明既升到修复版，也保证 release 打包一定带上它。
+bouncycastle-prov = { module = "org.bouncycastle:bcprov-jdk18on", version.ref = "bouncycastle" }
 # Classpaths
 android-gradle-plugin = { module = "com.android.tools.build:gradle", version.ref = "agp" }
 # AndroidIDE
