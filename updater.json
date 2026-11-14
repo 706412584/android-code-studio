@@ -1,25 +1,25 @@
 {
-    "baseVersionCode": 1072,
-    "baseVersionName": "1.0.0+gh.r22",
+    "baseVersionCode": 1073,
+    "baseVersionName": "1.0.0+gh.r23",
     "baseUrl": "https://github.com/706412584/android-code-studio/releases/download/v{versionName}",
     "variants": {
         "armeabi-v7a": {
-            "versionCode": 1072,
-            "versionName": "1.0.0+gh.r22",
+            "versionCode": 1073,
+            "versionName": "1.0.0+gh.r23",
             "apkUrl": "{baseUrl}/android-code-studio-armeabi-v7a-{versionName}.apk"
         },
         "arm64-v8a": {
-            "versionCode": 1072,
-            "versionName": "1.0.0+gh.r22",
+            "versionCode": 1073,
+            "versionName": "1.0.0+gh.r23",
             "apkUrl": "{baseUrl}/android-code-studio-arm64-v8a-{versionName}.apk"
         }
     },
-    "changelog": "https://raw.githubusercontent.com/706412584/android-code-studio/refs/heads/dev/whatsnew/1.0.0+gh.r22.md",
+    "changelog": "https://raw.githubusercontent.com/706412584/android-code-studio/refs/heads/dev/whatsnew/1.0.0+gh.r23.md",
     "patch": {
-        "versionCode": 1072,
-        "versionName": "1.0.0+gh.r22",
-        "baseVersionCode": 1070,
-        "patchUrl": "https://github.com/706412584/android-code-studio/releases/download/v1.0.0+gh.r22/acs-hotupdate-1.0.0+gh.r22.zip",
-        "sha256": "b04ab8003db2414e35638997ee7d6ddb0de8d003fdaca55435127b7bfd05276d"
+        "versionCode": 1073,
+        "versionName": "1.0.0+gh.r23",
+        "baseVersionCode": 1072,
+        "patchUrl": "https://github.com/706412584/android-code-studio/releases/download/v1.0.0+gh.r23/acs-hotupdate-1.0.0+gh.r23.zip",
+        "sha256": "cbf29d34ddd8f115f2064d21bba69016690fc3a4de712f2669ae5275effcd702"
     }
 }
