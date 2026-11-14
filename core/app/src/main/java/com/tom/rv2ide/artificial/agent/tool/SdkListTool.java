@@ -120,8 +120,10 @@ public final class SdkListTool extends BaseTool {
     appendAvailable(sb, "ndk", available.getNdk());
     appendAvailable(sb, "cmake", available.getCmake());
     appendAvailable(sb, "platform-tools", available.getPlatformTools());
-    sb.append("\n安装用 sdk_install，包名形如 build-tools;36.0.0 / platforms;android-36 / "
+    sb.append("\n安装用 sdk_install，包名形如 build-tools;36.0.0 / platforms;android-37.2 / "
         + "ndk;26.1.10909125 / cmake;3.22.1。");
+    sb.append("\n平台包名**必须与上面列出的完全一致**：API 36 起有次要版本"
+        + "（android-36.1 / android-37.0 / 37.1 / 37.2），少写小数后缀会因包不存在而失败。");
     sb.append("\n注意（实测）：官方仓库的 CMake 只有 x86-64，arm64 设备装了也跑不了；"
         + "本机能用的 CMake 是 ACS 自带的 4.1.2。原生项目要显式钉住该版本"
         + "（见 android-native-build skill）。");

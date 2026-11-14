@@ -934,7 +934,7 @@ data class PlatformSdk(val major: Int, val minor: Int?) {
     val base =
         Sdk.values().firstOrNull { it.api == major }?.displayName()
             ?: "API $major: Android $major"
-    // 带 minor 时补后缀，如 `API 37: Android 16 [37.2]`。
+    // 带 minor 时补后缀，如 `API 37: Android 17 [37.2]`。
     return if (minor == null) base else "$base [$major.$minor]"
   }
 }

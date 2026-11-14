@@ -37,12 +37,55 @@ class SdkManagerInstaller {
     /** 递归 chown 整个 SDK 目录的超时（2.3G、上万个文件，给足时间）。 */
     private const val CHOWN_TIMEOUT_MS = 5 * 60 * 1000L
 
-    /** sdkmanager 可执行文件（随 cmdline-tools 安装；不存在说明还没做过首次引导）。 */
+    /**
+     * Google 官方 SDK 仓库索引。
+     *
+     * <p>`repository2-3.xml` 与 `sdkmanager` 自己读的是同一份文件；用 `-3` 是因为
+     * 它是当前 schema 版本（`-1` / `-2` 是旧格式，可能缺少较新字段）。
+     */
+    private const val REPOSITORY_XML_URL =
+        "https://dl.google.com/android/repository/repository2-3.xml"
+
+    /**
+     * sdkmanager 可执行文件（随 cmdline-tools 安装；找不到说明还没做过首次引导）。
+     *
+     * <p><b>为什么不再硬编码 `latest`</b>：`latest` 是首装时建的目录名，之后
+     * 用户/引导装的新版本落在 `cmdline-tools/<version>/`（实测 pja110 上同时有
+     * `2.0` 与 `19.0`）。`latest` 永远指向那个**旧的 2.0**，而它的仓库解析器
+     * 不认识 `api-level="37.2"` 这类浮点平台号 —— 列表里看不到 37.x，
+     * 直接 install 也会报 `Warning: Failed to find package platforms;android-37.2`
+     * （实测）。因此按版本号挑最高的那个可用目录。
+     */
     @JvmStatic
-    fun sdkManagerFile(): File? =
-        File(Environment.ANDROID_HOME, "cmdline-tools/latest/bin/sdkmanager").takeIf {
-          it.exists()
-        }
+    fun sdkManagerFile(): File? = cmdlineToolsDir()?.resolve("bin/sdkmanager")?.takeIf { it.exists() }
+
+    /**
+     * 选中的 cmdline-tools 目录。
+     *
+     * <p>策略：`cmdline-tools/` 下所有**含 `bin/sdkmanager` 的子目录**里按版本号取最高
+     * （`latest` 视作最低——它只是首装留下的符号约定，实际版本由 `source.properties`
+     * 决定，但读它要多一次 IO，且 `latest` 指向的往往就是最旧的那份）。
+     *
+     * <p>回退：一个合法目录都没有时返回 `latest`（保持原有报错文案可读，
+     * 让 [unavailableReason] 能区分「未装」与「权限不可读」）。
+     */
+    @JvmStatic
+    fun cmdlineToolsDir(): File? {
+      val root = File(Environment.ANDROID_HOME, "cmdline-tools")
+      if (!root.isDirectory) return null
+      val candidates =
+          root.listFiles()
+              ?.filter { it.isDirectory && File(it, "bin/sdkmanager").exists() }
+              .orEmpty()
+      if (candidates.isEmpty()) return File(root, "latest").takeIf { it.isDirectory }
+      // "latest" 视为 0：只要存在任何带版本号的目录就不选它。
+      return candidates.maxWithOrNull(
+          compareBy { if (it.name == "latest") 0 else versionSortKey(it.name) })
+    }
+
+    /** 目录名转成可比较的数字段；`19.0` → [19,0]，`latest` → [0]。 */
+    private fun versionSortKey(name: String): Int =
+        name.substringBefore('.').substringBefore('-').toIntOrNull() ?: 1
 
     /**
      * sdkmanager 是否**可用**（存在 + 本进程可读可执行）。
@@ -57,7 +100,8 @@ class SdkManagerInstaller {
      */
     @JvmStatic
     fun unavailableReason(): String? {
-      val sm = File(Environment.ANDROID_HOME, "cmdline-tools/latest/bin/sdkmanager")
+      val sm = cmdlineToolsDir()?.resolve("bin/sdkmanager")
+          ?: File(Environment.ANDROID_HOME, "cmdline-tools/latest/bin/sdkmanager")
       if (!sm.exists()) {
         // 再探一层父目录：能列出 bin/ 说明是"确实没有该文件"，列不出则是权限问题。
         val bin = sm.parentFile
@@ -125,24 +169,37 @@ class SdkManagerInstaller {
       return "SDK 目录不可写（属主不是本应用）：${home.absolutePath}"
     }
 
-    /** platforms 目录里已安装的 API level（如 "android-36"）。 */
+    /**
+     * platforms 目录里已安装的 API level（如 "android-36"、"android-37.2"），**按版本升序**。
+     *
+     * <p><b>不能用字符串排序</b>：`sorted()` 会把 `android-37.2` 排在 `android-36` 之前
+     * （逐字符比较时 `'3'=='3'`、`'7'>'6'` 看似对，但 `android-9` 会排在 `android-10`
+     * 之后）。更关键的是调用方 `SdkManagerActivity` 用 `installed.lastOrNull()` 当作
+     * 「最新已装版本」来决定列出哪些可装版本——顺序错了这个判断就全错。
+     */
     @JvmStatic
     fun installedPlatforms(): List<String> =
         File(Environment.ANDROID_HOME, "platforms")
             .listFiles()
             ?.filter { it.isDirectory && it.name.startsWith("android-") }
-            ?.map { it.name }
-            ?.sorted()
+            ?.map { it.name.removePrefix("android-") }
+            ?.sortedWith(versionComparator)
+            ?.map { "android-$it" }
             ?: emptyList()
 
-    /** build-tools 目录里已安装的版本（如 "36.0.0"）。 */
+    /**
+     * build-tools 目录里已安装的版本（如 "36.0.0"），按版本升序。
+     *
+     * <p>与 [installedPlatforms] 同理：调用方以 `lastOrNull()` 当「最新已装」，
+     * 字符串排序会把 `9.0.0` 排在 `10.0.0` 之后。
+     */
     @JvmStatic
     fun installedBuildTools(): List<String> =
         File(Environment.ANDROID_HOME, "build-tools")
             .listFiles()
             ?.filter { it.isDirectory }
             ?.map { it.name }
-            ?.sorted()
+            ?.sortedWith(versionComparator)
             ?: emptyList()
 
     /** ndk 目录里已安装的版本（如 "26.1.10909125"）。 */
@@ -172,15 +229,7 @@ class SdkManagerInstaller {
             ?: emptyList()
 
     /** 按数字段比较版本号（"9" > "10" 这类字符串排序错误由此避免）。 */
-    private val versionComparator = Comparator<String> { a, b ->
-      val pa = a.split('.').map { it.toIntOrNull() ?: 0 }
-      val pb = b.split('.').map { it.toIntOrNull() ?: 0 }
-      for (i in 0 until maxOf(pa.size, pb.size)) {
-        val c = pa.getOrElse(i) { 0 }.compareTo(pb.getOrElse(i) { 0 })
-        if (c != 0) return@Comparator c
-      }
-      0
-    }
+    private val versionComparator = versionStringComparator
   }
 
   /**
@@ -208,12 +257,27 @@ class SdkManagerInstaller {
             .sortedWith(versionComparator)
             .toList()
 
+    val fromSdkManager = parsePlatformPackages(text)
+    // **旧版 sdkmanager 列不出带 minor 的平台**：实测设备上的 cmdline-tools;2.0
+    // 只能列到 android-36——它的仓库解析器不认识 `api-level="37.2"` 这种浮点形式，
+    // 于是 google 仓库里真实存在的 36.1 / 37.0 / 37.1 / 37.2 全都消失了。
+    // 这不是本应用能靠改 sdkmanager 修好的，但**能绕过**：直接抓 Google 的
+    // repository XML 自己解析。只在 sdkmanager 的结果里缺少高版本时才走网络，
+    // 正常设备（已装新版 cmdline-tools）不会多一次请求。
+    val platforms =
+        if (fromSdkManager.any { it.substringBefore('.').toIntOrNull()?.let { v -> v >= 37 } == true }) {
+          fromSdkManager
+        } else {
+          fetchPlatformsFromRepository()?.let { fresh ->
+            // 用仓库结果与 sdkmanager 结果取并集：仓库给的是官方全集，
+            // sdkmanager 那边可能已装了某个被仓库下架的版本（仍应显示为已装）。
+            (fromSdkManager + fresh).distinct().sortedWith(versionComparator)
+          } ?: fromSdkManager
+        }
+
     return AvailableSdk(
         buildTools = versions("build-tools", """[0-9][0-9.]*"""),
-        platforms =
-            versions("platforms", """android-[0-9]+""")
-                .map { it.removePrefix("android-") }
-                .sortedBy { it.toIntOrNull() ?: 0 },
+        platforms = platforms,
         // NDK / CMake 同样由 sdkmanager 管理（实测可列到 ndk;26.x、cmake;4.1.2），
         // 因此把它们也收进同一个界面，替代 IDE 配置里那套走镜像的安装。
         ndk = versions("ndk", """[0-9][0-9.]*"""),
@@ -221,6 +285,45 @@ class SdkManagerInstaller {
         // platform-tools 无版本尾巴（就一个包），用固定占位表示"可安装"。
         platformTools = if (text.contains("platform-tools")) listOf("latest") else emptyList(),
     )
+  }
+
+  /**
+   * 抓 Google 的仓库索引，解析出可用平台。网络失败返回 null。
+   *
+   * <p><b>只在必要时调用</b>：`listAvailable()` 会先看 sdkmanager 的结果里有没有
+   * API ≥ 37 的平台，有就不再走这条路——已装新版 cmdline-tools 的设备因此
+   * 不会多一次网络请求（见调用处注释）。
+   *
+   * <p><b>超时 15s</b>：这个请求在 UI 线程的协程里跑（`loadAvailable`），
+   * 国内网络下 dl.google.com 可能很慢；设短一点让失败尽快发生、回退到 sdkmanager。
+   */
+  private fun fetchPlatformsFromRepository(): List<String>? {
+    return try {
+      val url = java.net.URL(REPOSITORY_XML_URL)
+      val conn =
+          (url.openConnection() as java.net.HttpURLConnection).apply {
+            connectTimeout = 8_000
+            readTimeout = 15_000
+            requestMethod = "GET"
+          }
+      try {
+        val code = conn.responseCode
+        if (code != 200) {
+          Log.w(TAG, "repository xml HTTP $code")
+          return null
+        }
+        val text = conn.inputStream.bufferedReader().use { it.readText() }
+        val parsed = parseRepositoryXml(text)
+        Log.d(TAG, "repository xml -> ${parsed.size} platforms, latest=${parsed.lastOrNull()}")
+        parsed
+      } finally {
+        conn.disconnect()
+      }
+    } catch (e: Exception) {
+      // 断网 / DNS 失败 / 超时：都当作"拿不到"，由调用方回退。
+      Log.w(TAG, "fetch repository xml failed", e)
+      null
+    }
   }
 
   /**
@@ -362,9 +465,10 @@ class SdkManagerInstaller {
       env["PREFIX"] = Environment.PREFIX.absolutePath
       env["JAVA_HOME"] = jdk.absolutePath
       env["PATH"] =
-          listOf(
+          listOfNotNull(
                   Environment.BIN_DIR.absolutePath,
-                  File(Environment.ANDROID_HOME, "cmdline-tools/latest/bin").absolutePath,
+                  // 用实际选中的版本目录，而不是固定的 latest（见 [cmdlineToolsDir]）。
+                  cmdlineToolsDir()?.resolve("bin")?.absolutePath,
                   "/system/bin",
               )
               .joinToString(":")
@@ -411,4 +515,75 @@ class SdkManagerInstaller {
       /** platform-tools 无版本号（就一个包），非空即"可安装"。 */
       val platformTools: List<String>,
   )
+}
+
+/**
+ * 按数字段比较版本号：`"9"` > `"10"` 这类字符串排序错误由此避免，
+ * `"37.2"` 也能与 `"36"` 正确比较（逐段补齐后比）。
+ */
+private val versionStringComparator = Comparator<String> { a, b ->
+  val pa = a.split('.').map { it.toIntOrNull() ?: 0 }
+  val pb = b.split('.').map { it.toIntOrNull() ?: 0 }
+  for (i in 0 until maxOf(pa.size, pb.size)) {
+    val c = pa.getOrElse(i) { 0 }.compareTo(pb.getOrElse(i) { 0 })
+    if (c != 0) return@Comparator c
+  }
+  0
+}
+
+/**
+ * 从 `sdkmanager --list` 的输出里解析出可安装的平台版本（不含 `android-` 前缀，升序）。
+ *
+ * <p><b>为什么必须允许 minor 后缀</b>：Google 自 API 36 起改用「主版本 + 次要版本」
+ * 编号，官方仓库里 `platforms;android-36.1`、`android-37.0`、`android-37.1`、
+ * `android-37.2` 这类带小数后缀的包是常态。早先的正则 `android-[0-9]+` 只截取
+ * 整数部分，37.0 / 37.1 / 37.2 三者被截成同一个字符串 `"37"`，`distinct()` 后只剩
+ * 一个 chip，而安装时拼出的包名 `platforms;android-37` 在仓库里根本不存在
+ * ——用户点它必然失败（实测反馈「只有 33-36，装不了 37」）。
+ *
+ * <p><b>为什么去掉前缀后再排序</b>：[versionStringComparator] 按 `split('.')` 逐段比较数字。
+ * `"android-37.2"` 会被拆成 `["android-37","2"]`，首段 `toIntOrNull()` 得 null→0，
+ * 于是所有平台都退化成「只比 minor」、顺序全乱。去掉前缀后 `"37.2"` 拆成 `[37,2]`、
+ * `"36"` 拆成 `[36]`，比较才正确。
+ *
+ * <p>也**不能**用 `sortedBy { it.toIntOrNull() ?: 0 }`——`"37.2".toIntOrNull()` 是
+ * null，会被一律当成 0 排到最前。
+ *
+ * <p>抽成顶层函数是为可单测（[SdkManagerInstaller] 需要 Context / 进程，JVM 单测跑不了）。
+ */
+internal fun parsePlatformPackages(text: String): List<String> {
+  return Regex("platforms;(android-[0-9]+(?:\\.[0-9]+)?)")
+      .findAll(text)
+      .map { it.groupValues[1] }
+      .filterNot { it.contains("rc") }
+      .map { it.removePrefix("android-") }
+      .distinct()
+      .sortedWith(versionStringComparator)
+      .toList()
+}
+
+/**
+ * 从 Google 的 repository XML 里直接解析可用平台（不含 `android-` 前缀，升序）。
+ *
+ * <p><b>为什么需要绕过 sdkmanager</b>：实测设备上的 `cmdline-tools;2.0` 的
+ * `--list` 只能列到 `android-36`——它的仓库解析器不认识 `api-level="37.2"`
+ * 这种浮点形式，于是官方仓库里真实存在的 36.1 / 37.0 / 37.1 / 37.2 全部消失，
+ * 用户在 SDK 管理器里永远看不到、也就永远装不上（这正是「只有 33-36」的直接原因）。
+ * 升级 cmdline-tools 能解决，但那要用户手动操作；这里直接读仓库索引更可靠。
+ *
+ * <p><b>只解析 `<path>` 属性</b>：不需要完整 XML 解析器——`remotePackage path=` 的
+ * 值形式固定（`platforms;android-37.2`），正则足够且没有解析失败的边角。
+ * `<channelRef ref="channel-0"/>` 是 stable，但我们**不按通道过滤**：
+ * `--list` 本来就不区分，过滤反而会让预览版从列表里莫名消失。
+ *
+ * @return 解析结果；网络失败 / 响应异常时返回 null（调用方回退到 sdkmanager 的结果）
+ */
+internal fun parseRepositoryXml(xml: String): List<String> {
+  return Regex("""path="platforms;(android-[0-9]+(?:\.[0-9]+)?)"""")
+      .findAll(xml)
+      .map { it.groupValues[1] }
+      .map { it.removePrefix("android-") }
+      .distinct()
+      .sortedWith(versionStringComparator)
+      .toList()
 }

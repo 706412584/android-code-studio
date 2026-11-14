@@ -78,11 +78,13 @@ public class PlatformSdkParseTest {
     assertTrue("应含 API 36", plain.contains("API 36"));
     assertTrue("应含代号 BakLava", plain.contains("BakLava"));
 
-    // API 37 无代号（Android 16 的次要版本，Google 已停用甜点代号），
+    // API 37 无代号（Android 17 的主版本，Google 已停用甜点代号），
     // 展示名不应出现空括号 `()`。
+    // 注意：37 是 Android 17，不是 Android 16 的次要版本——那个是 android-36.1。
     String withMinor = new PlatformSdk(37, 2).label();
     assertTrue("应含 API 37", withMinor.contains("API 37"));
     assertTrue("应补版本后缀 37.2", withMinor.contains("37.2"));
+    assertTrue("API 37 应标为 Android 17", withMinor.contains("Android 17"));
     assertTrue("空代号不应留下空括号", !withMinor.contains("()"));
   }
 

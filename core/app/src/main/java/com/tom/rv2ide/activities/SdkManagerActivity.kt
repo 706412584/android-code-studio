@@ -178,15 +178,25 @@ class SdkManagerActivity : EdgeToEdgeIDEActivity() {
     }
 
     val installedSet = installed.toSet()
-    // 只列「比已装最新还新」的（含未装的更高版本）——老版本没有升级价值，列出来只是噪声
-    // （实测 platforms 会列出 API 7…35，一屏都放不下，而项目 minSdk 是 21）。
     val all = component.availableOf(availableNow).filterNot { it in installedSet }
     val latestInstalled = installed.lastOrNull()
     val toInstall =
-        if (latestInstalled == null) {
-          all
-        } else {
-          all.filter { sdkVersionGreaterThan(it, latestInstalled) }
+        when {
+          // **platforms 是并列目标，不按「比已装最新还新」过滤**。那条规则是为
+          // build-tools 设计的（同一工具链，新版本装好后旧版本就没用了），套到平台上
+          // 是错的：不同项目各自钉不同 compileSdk，装 37.2 不代表 36.1 没用了。
+          //
+          // 实测 bug：装了 37.2 之后 `latestInstalled` = "37.2"，于是
+          // `sdkVersionGreaterThan(x, "37.2")` 把 36.1 / 37.0 / 37.1 全部滤掉，
+          // 它们的 chip 直接消失，用户没有任何入口装回中间版本。
+          //
+          // 但也不能全列：官方仓库里 platforms 从 **android-2** 起就有，全列出会让
+          // 一手屏都放不下（用户实测反馈「从 7 显示到 37.2」）。按
+          // [MIN_USEFUL_PLATFORM_API] 卡掉早已无用的老版本。
+          component.id == "platforms" ->
+              all.filter { (it.substringBefore('.').toIntOrNull() ?: 0) >= MIN_USEFUL_PLATFORM_API }
+          latestInstalled == null -> all
+          else -> all.filter { sdkVersionGreaterThan(it, latestInstalled) }
         }
     if (toInstall.isEmpty()) {
       card.componentHint.visibility = View.VISIBLE
@@ -492,6 +502,18 @@ class SdkManagerActivity : EdgeToEdgeIDEActivity() {
   private companion object {
     /** 折叠态显示的 chip 数（一排左右）。 */
     const val VISIBLE_CHIPS = 4
+
+    /**
+     * platforms 卡里最低展示到哪个 API。
+     *
+     * <p><b>为什么要有下限</b>：官方仓库的 platforms 从 `android-2` 起就有几十个，
+     * 全部列出会把整屏塞满（用户实测反馈「从 7 显示到 37.2」），而那些版本对
+     * 现在的项目毫无意义——向导里的 minSdk 默认就是 21。
+     *
+     * <p>取 21（Android 5.0）而不是 26（本应用自己的 minSdk）：这是**给用户项目**
+     * 选 compileSdk 的界面，用户项目可以比 IDE 自身支持更老的设备，21 是常见底线。
+     */
+    const val MIN_USEFUL_PLATFORM_API = 21
   }
 
   /** 一个 SDK 组件的描述。 */

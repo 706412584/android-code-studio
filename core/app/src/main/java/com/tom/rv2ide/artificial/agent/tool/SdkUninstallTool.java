@@ -49,9 +49,10 @@ public final class SdkUninstallTool extends BaseTool {
   @Override
   public String getDescription() {
     return "卸载一个 Android SDK 组件包（走官方 sdkmanager --uninstall）。"
-        + "packageId 用分号形式的完整包名，例如 build-tools;35.0.1、platforms;android-33、"
+        + "packageId 用分号形式的完整包名，例如 build-tools;35.0.1、platforms;android-37.2、"
         + "ndk;26.1.10909125、cmake;3.22.1、platform-tools。"
-        + "用 sdk_list 查已装的确切包名。"
+        + "用 sdk_list 查已装的确切包名（API 36 起平台有次要版本，"
+        + "如 android-36.1 / android-37.2，包名必须带小数后缀才匹配得上）。"
         + "**不可逆**：删掉后只能重新下载，且 SDK 目录在应用私有空间、用户无法手动恢复。"
         + "只该在「清理装错的版本」或「用户明确要求」时使用；不要为了省空间删除项目构建需要的版本"
         + "（build-tools 低于 AGP 要求的版本会让构建直接失败）。";
@@ -86,7 +87,7 @@ public final class SdkUninstallTool extends BaseTool {
                         .put("type", "string")
                         .put(
                             "description",
-                            "完整包名，形如 build-tools;35.0.1 / platforms;android-33 / "
+                            "完整包名，形如 build-tools;35.0.1 / platforms;android-37.2 / "
                                 + "ndk;26.1.10909125 / cmake;3.22.1 / platform-tools")))
         .put("required", new org.json.JSONArray().put("packageId"));
   }

@@ -46,21 +46,27 @@ enum class Sdk(val codename: String, val version: String, val api: Int) {
   BakLava("BakLava", "16", 36),
 
   /**
-   * API 37 —— **Android 16 的次要版本，没有独立代号**。
+   * API 37 —— **Android 17，没有独立代号**。
    *
    * <p>依据（读本机 SDK 平台元数据得出，不是猜的）：
-   * `platforms/android-37.2/source.properties` 里 `AndroidVersion.CodeName=` **为空**，
-   * `build.prop` 只有 `ro.build.version.sdk=37`。Google 自 API 36 起改用
-   * 「主版本 + 次要版本」编号（36 → 36.1 → 37.x 同属 Android 16），已停用甜点代号。
+   * `platforms/android-37.2/build.prop` 里 `ro.build.version.release=17`
+   * （`ro.build.version.sdk=37`、`ro.build.version.codename=REL`）；
+   * `source.properties` 的 `AndroidVersion.CodeName=` **为空**。
+   *
+   * <p><b>易错点</b>：37 是 Android 17 的**主版本**，`android-37.1 / 37.2` 才是它的
+   * 次要版本。「API 37 是 Android 16 的次要版本」是把 `android-36.1`
+   * （`release=16`）的情况套错了对象——36.1 才是 Android 16 的次要版本。
+   * Google 自 API 36 起改用「主版本 + 次要版本」编号，并停用了甜点代号，
+   * 因此跨主版本的编号不再与代号一一对应。
    *
    * <p>因此 [codename] 留空——[displayName] 对空代号不拼括号，显示为
-   * `API 37: Android 16`，而不是编一个假代号误导用户。
+   * `API 37: Android 17`，而不是编一个假代号误导用户。
    *
    * <p><b>平台目录名带 minor</b>：实际为 `android-37.2`，生成的工程必须同时写
    * `compileSdkMinor = 2`，否则 AGP 去找不存在的 `android-37`（见
    * `SdkVersion.minorOf` 的说明）。
    */
-  BakLavaMR1("", "16", 37);
+  BakLavaMR1("", "17", 37);
 
   /**
    * Get the display name for this Sdk version.
@@ -68,9 +74,8 @@ enum class Sdk(val codename: String, val version: String, val api: Int) {
    * @return The display name.
    */
   fun displayName(): String =
-      // 空代号不拼括号：API 37 是 Android 16 的次要版本、没有独立代号
-      // （Google 已停用甜点代号）。拼成 `(Android 16)` 会与前面的
-      // `Android 16` 重复，编个假代号更糟。
+      // 空代号不拼括号：API 37 没有独立代号（Google 已停用甜点代号）。
+      // 拼成空括号或编个假代号都比省略更糟。
       if (codename.isBlank()) "API $api: Android $version"
       else "API $api: Android $version ($codename)"
 

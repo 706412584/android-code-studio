@@ -51,8 +51,11 @@ public final class SdkInstallTool extends BaseTool {
   @Override
   public String getDescription() {
     return "安装一个 Android SDK 组件包（走官方 sdkmanager，直连 Google 仓库）。"
-        + "packageId 用分号形式的完整包名，例如 build-tools;36.0.0、platforms;android-36、"
+        + "packageId 用分号形式的完整包名，例如 build-tools;36.0.0、platforms;android-37.2、"
         + "ndk;26.1.10909125、cmake;3.22.1、platform-tools。"
+        + "**平台包名必须与 sdk_list 列出的完全一致**：API 36 起 Google 引入次要版本，"
+        + "仓库里是 platforms;android-36.1 / android-37.0 / android-37.1 / android-37.2 "
+        + "这类带小数后缀的包，写 platforms;android-37 会因包不存在而失败。"
         + "先调 sdk_list 看有哪些版本可装。"
         + "**不要用 idesetup --sdk 或镜像源装 SDK**——镜像的 build-tools 最高 35.0.1，"
         + "AGP 9 要 ≥36，那条路装不出来。"
@@ -88,7 +91,7 @@ public final class SdkInstallTool extends BaseTool {
                         .put("type", "string")
                         .put(
                             "description",
-                            "完整包名，形如 build-tools;36.0.0 / platforms;android-36 / "
+                            "完整包名，形如 build-tools;36.0.0 / platforms;android-37.2 / "
                                 + "ndk;26.1.10909125 / cmake;3.22.1 / platform-tools")))
         .put("required", new org.json.JSONArray().put("packageId"));
   }
