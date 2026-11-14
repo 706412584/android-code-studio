@@ -168,6 +168,9 @@ private class ToolsPage(
     // 原先只有 AgentToolSettings 的常量，没有 UI 入口，等于该功能不可达。
     addPreference(BackgroundBuildSwitch())
     addPreference(CodeCompletionSwitch())
+    // 默认开启（与独立助手 App 同一键名）；关闭 = 只首跑一次，等价接入前。
+    addPreference(RefusalRecoverySwitch())
+    addPreference(RefusalRecoveryAttemptsPreference())
   }
 }
 
@@ -2502,6 +2505,87 @@ private class CodeCompletionSwitch(
       title = context.getString(R.string.ai_agent_code_completion)
       summary = context.getString(R.string.ai_agent_code_completion_summary)
     }
+  }
+}
+
+/**
+ * 模型拒绝时自动换策略重跑。
+ *
+ * <p>读写 "ai_agent_tools" 的 {@code refusal_recovery_enabled}——与 AgentOrchestrator
+ * 的 [refusalRecoveryEnabled] 同一份存储、同一键名；也与独立助手 App 的
+ * AssistantPrefs.refusalRecoveryEnabled 同名（分属两个 App 的数据目录，互不影响）。
+ * 默认开启；关闭 = 只首跑一次，行为等价于未接入该功能。
+ */
+@Parcelize
+private class RefusalRecoverySwitch(
+    override val key: String = "refusal_recovery_enabled",
+    override val title: Int = R.string.ai_agent_refusal_recovery_title,
+    override val summary: Int? = R.string.ai_agent_refusal_recovery_summary,
+) : SwitchPreference(
+    setValue = { enabled ->
+      agentPrefs(com.tom.rv2ide.app.BaseApplication.getBaseInstance())
+          .edit()
+          .putBoolean("refusal_recovery_enabled", enabled)
+          .apply()
+    },
+    getValue = {
+      agentPrefs(com.tom.rv2ide.app.BaseApplication.getBaseInstance())
+          .getBoolean("refusal_recovery_enabled", true)
+    },
+) {
+  override fun onCreatePreference(context: Context): Preference {
+    return super.onCreatePreference(context).apply {
+      key = "refusal_recovery_enabled"
+      title = context.getString(R.string.ai_agent_refusal_recovery_title)
+      summary = context.getString(R.string.ai_agent_refusal_recovery_summary)
+    }
+  }
+}
+
+/**
+ * 拒绝恢复最大尝试次数（含首跑，1-5，默认 3）。
+ *
+ * <p>单选对话框（与 ShellBackendPreference 同模式）而非自由数字输入：
+ * 五个固定选项天然防越界，无需再校验。AgentOrchestrator 构造 Policy 时读同一键。
+ */
+@Parcelize
+private class RefusalRecoveryAttemptsPreference(
+    override val key: String = "refusal_recovery_max_attempts",
+    override val title: Int = R.string.ai_agent_refusal_attempts_title,
+    override val summary: Int? = null,
+) : BasePreference() {
+
+  private val values = arrayOf(1, 2, 3, 4, 5)
+
+  private fun current(context: Context): Int =
+      agentPrefs(context).getInt("refusal_recovery_max_attempts", 3).coerceIn(1, 5)
+
+  override fun onCreatePreference(context: Context): Preference {
+    return androidx.preference.Preference(context).apply {
+      key = "refusal_recovery_max_attempts"
+      title = context.getString(R.string.ai_agent_refusal_attempts_title)
+      summary =
+          context.getString(R.string.ai_agent_refusal_attempts_summary, current(context))
+    }
+  }
+
+  override fun onPreferenceClick(preference: Preference): Boolean {
+    val context = preference.context
+    val labels = values.map { it.toString() }.toTypedArray()
+    com.google.android.material.dialog.MaterialAlertDialogBuilder(context)
+        .setTitle(context.getString(R.string.ai_agent_refusal_attempts_title))
+        .setSingleChoiceItems(labels, values.indexOf(current(context))) { dialog, which ->
+          agentPrefs(context)
+              .edit()
+              .putInt("refusal_recovery_max_attempts", values[which])
+              .apply()
+          preference.summary =
+              context.getString(R.string.ai_agent_refusal_attempts_summary, values[which])
+          dialog.dismiss()
+        }
+        .setNegativeButton(android.R.string.cancel, null)
+        .show()
+    return true
   }
 }
 

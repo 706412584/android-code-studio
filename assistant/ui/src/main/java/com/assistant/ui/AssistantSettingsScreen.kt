@@ -77,6 +77,10 @@ class AssistantSettingsState(
     var thinkingAutoCollapse: Boolean,
     /** 是否显示工具运行状态条。 */
     var toolStatusBar: Boolean,
+    /** 模型拒绝时是否自动重试。 */
+    var refusalRecovery: Boolean,
+    /** 拒绝恢复最大尝试次数（含首跑，1-5）。 */
+    var refusalMaxAttempts: Int = 3,
     /** 卡片缩放系数。 */
     var cardScale: Float,
     /** 正文颜色 ARGB；0 表示跟随主题。 */
@@ -98,6 +102,9 @@ class AssistantSettingsState(
     var onChatModeChange: (String) -> Unit,
     var onThinkingAutoCollapseChange: (Boolean) -> Unit,
     var onToolStatusBarChange: (Boolean) -> Unit,
+    var onRefusalRecoveryChange: (Boolean) -> Unit,
+    /** 拒绝恢复最大尝试次数变更（1-5）。 */
+    var onRefusalMaxAttemptsChange: (Int) -> Unit = {},
     var onCardScaleChange: (Float) -> Unit,
     var onTextColorChange: (Int) -> Unit,
     /** 打开提示词模板管理。 */
@@ -329,6 +336,34 @@ fun AssistantSettingsScreen(
           )
           SettingsDivider()
           SettingsRow(
+              icon = FeatherIcons.Zap,
+              title = "模型拒绝时自动重试",
+              subtitle =
+                  if (state.refusalRecovery)
+                      "检测到拒绝会用同样参数再请求（最多 ${state.refusalMaxAttempts} 次）"
+                  else "关闭时只跑一次，拒绝则原样返回（等价旧行为）",
+              trailing = {
+                Switch(
+                    checked = state.refusalRecovery,
+                    onCheckedChange = state.onRefusalRecoveryChange,
+                )
+              },
+          )
+          if (state.refusalRecovery) {
+            SettingsDivider()
+            SettingsRow(
+                title = "重试次数",
+                subtitle = "含首次请求，共 ${state.refusalMaxAttempts} 次",
+                trailing = {
+                  AttemptsStepper(
+                      value = state.refusalMaxAttempts,
+                      onChange = state.onRefusalMaxAttemptsChange,
+                  )
+                },
+            )
+          }
+          SettingsDivider()
+          SettingsRow(
               icon = FeatherIcons.Cpu,
               title = "技能",
               subtitle = if (state.skillCount > 0) "已安装 ${state.skillCount} 个" else "尚未安装",
@@ -464,6 +499,26 @@ private fun ThemePresetRow(
                 if (isSelected) MaterialTheme.colorScheme.primary
                 else MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(top = 4.dp),
+        )
+      }
+    }
+  }
+}
+
+/** 重试次数步进器（1-5）：与字号步进同一形态，按钮点选天然防越界。 */
+@Composable
+private fun AttemptsStepper(value: Int, onChange: (Int) -> Unit) {
+  val steps = listOf(1, 2, 3, 4, 5)
+  Row(horizontalArrangement = Arrangement.spacedBy(Spacing.xs)) {
+    steps.forEach { n ->
+      val isSelected = value == n
+      androidx.compose.material3.TextButton(onClick = { onChange(n) }) {
+        Text(
+            text = n.toString(),
+            style = MaterialTheme.typography.bodyMedium,
+            color =
+                if (isSelected) MaterialTheme.colorScheme.primary
+                else MaterialTheme.colorScheme.onSurfaceVariant,
         )
       }
     }

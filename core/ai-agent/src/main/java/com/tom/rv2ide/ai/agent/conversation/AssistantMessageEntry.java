@@ -40,10 +40,12 @@ public final class AssistantMessageEntry extends ConversationEntry {
   static final String FIELD_TOOL_CALL_ID = "id";
   static final String FIELD_TOOL_CALL_NAME = "name";
   static final String FIELD_TOOL_CALL_ARGS = "arguments";
+  static final String FIELD_REFUSED = "refused";
 
   private final String content;
   private final String reasoningContent;
   private final List<ToolCall> toolCalls;
+  private final boolean refused;
 
   public AssistantMessageEntry(
       String uuid,
@@ -52,6 +54,17 @@ public final class AssistantMessageEntry extends ConversationEntry {
       String content,
       String reasoningContent,
       List<ToolCall> toolCalls) {
+    this(uuid, parentUuid, timestamp, content, reasoningContent, toolCalls, false);
+  }
+
+  public AssistantMessageEntry(
+      String uuid,
+      String parentUuid,
+      long timestamp,
+      String content,
+      String reasoningContent,
+      List<ToolCall> toolCalls,
+      boolean refused) {
     super(uuid, parentUuid, timestamp);
     this.content = content == null ? "" : content;
     this.reasoningContent = reasoningContent == null ? "" : reasoningContent;
@@ -59,11 +72,17 @@ public final class AssistantMessageEntry extends ConversationEntry {
         toolCalls == null
             ? Collections.emptyList()
             : Collections.unmodifiableList(new ArrayList<>(toolCalls));
+    this.refused = refused;
   }
 
   public static AssistantMessageEntry create(
       String parentUuid, long timestamp, String content, String reasoningContent, List<ToolCall> toolCalls) {
     return new AssistantMessageEntry(null, parentUuid, timestamp, content, reasoningContent, toolCalls);
+  }
+
+  public static AssistantMessageEntry createRefused(
+      String parentUuid, long timestamp, String content, String reasoningContent, List<ToolCall> toolCalls) {
+    return new AssistantMessageEntry(null, parentUuid, timestamp, content, reasoningContent, toolCalls, true);
   }
 
   @Override
@@ -83,9 +102,23 @@ public final class AssistantMessageEntry extends ConversationEntry {
     return toolCalls;
   }
 
+  /**
+   * 该回复是否为「模型拒绝」。
+   *
+   * <p>被拒的回复**不进入模型上下文**（{@code ConversationHistory.toMessage} 跳过）——
+   * 把拒绝原文喂回去，模型大概率顺着「我已经拒过了」继续拒；且拒绝文本对后续任务
+   * 没有信息价值。UI 回放仍显示（用户有权看到完整过程），只是模型看不到。
+   */
+  public boolean isRefused() {
+    return refused;
+  }
+
   @Override
   protected void writeFields(JSONObject json) throws JSONException {
     json.put(FIELD_CONTENT, content);
+    if (refused) {
+      json.put(FIELD_REFUSED, true);
+    }
     if (!reasoningContent.isEmpty()) {
       json.put(FIELD_REASONING, reasoningContent);
     }

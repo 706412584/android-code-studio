@@ -371,7 +371,17 @@ class EventReducer(private val timeline: MessageTimeline) {
       // 本 App 还没有「调用 id → 卡片 id」映射（串行执行下不需要）。
       // 直接落到最近一张，语义与无 id 时一致。
     }
-    lastToolCardId?.let { timeline.appendToolStep(it, step) }
+    val target = lastToolCardId
+    if (target != null) {
+      timeline.appendToolStep(target, step)
+    } else {
+      // 没有运行中的工具卡时落为 TRACE 条目，而不是静默丢弃。
+      // 裸 PROGRESS 不都来自工具循环：拒绝恢复的「检测到模型拒绝…换策略重试」、
+      // 会话层的「上下文超限已压缩重试」都在**没有工具卡**时发出——丢掉的话，
+      // 重试发生了用户却看不到任何解释（实测症状：一次发送冒出多段回复，
+      // 像模型自己复读）。TRACE 弱化显示，语义与 onContextCompacted 一致。
+      timeline.append(MessageTimeline.Role.TRACE, step)
+    }
   }
 
   /** 上下文被压缩：插入一条可见提示。压缩是**有损**的，用户有权知道。 */

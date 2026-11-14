@@ -22,6 +22,8 @@ import com.tom.rv2ide.ai.agent.AgentEvent;
 import com.tom.rv2ide.ai.agent.AgentPromptBuilder;
 import com.tom.rv2ide.ai.agent.AgentRunResult;
 import com.tom.rv2ide.ai.agent.AgentSession;
+import com.tom.rv2ide.ai.agent.RefusalDetector;
+import com.tom.rv2ide.ai.agent.RefusalRecovery;
 import com.tom.rv2ide.ai.agent.context.ContextCompactor;
 import com.tom.rv2ide.ai.agent.context.RunContextManager;
 import com.tom.rv2ide.ai.agent.context.TokenEstimator;
@@ -2801,47 +2803,77 @@ public final class AgentOrchestrator {
     maybeCompact(persistingListener, entries, history, config, overhead);
 
     try {
-      AgentSession session = new AgentSession(modelClient, registry, executor);
-      // 登记运行中的 session，供「立即插入」投递（见 injectIntoRun）。
-      // 先登记后 run：登记晚于首个请求会让「刚点插入」落进空窗、被当成没在跑。
-      activeSessions.put(conversationId, session);
-      // 开场注入跨会话消息（send_message 在收件方空闲时攒下的）。
-      // 在 run 之前投进注入槽：循环首轮就会取（见 AgentSession 的「首轮时也会取」注释），
-      // 因此消息与本轮用户请求同一轮进入模型视野，而不是拖到下一轮。
-      for (String mail : drainInboundMailbox(conversationId)) {
-        session.offerInject(mail);
-      }
-      try {
-        return session.run(
-            config,
-            systemPrompt,
-            userRequest,
-            history,
-            toolContext,
-            cancellation,
-            persistingListener,
-            contextManager,
-            rawInputJson,
-            reasoningEffort);
-      } finally {
-        activeSessions.remove(conversationId);
-        // 收尾时把**未被消费**的注入放回队列头部（保持原序）：它们已被用户点过
-        // 「插入」，但循环恰好没赶上最后一个检查点。不放回就永久丢失；
-        // 放回后由 runInConversation 的 finally 立即消化（RUN_FINISHED 之后）。
-        List<String> leftover = session.drainLeftoverInjects();
-        if (!leftover.isEmpty()) {
-          java.util.ArrayDeque<QueuedRequest> queue =
-              queuedRequests.computeIfAbsent(conversationId, k -> new java.util.ArrayDeque<>());
-          synchronized (queue) {
-            // 逆序 addFirst：保持它们在注入槽里的原始先后。
-            for (int i = leftover.size() - 1; i >= 0; i--) {
-              queue.addFirst(
-                  new QueuedRequest(
-                      providerId, modelId, leftover.get(i), customBaseUrl, null, reasoningEffort));
-            }
-          }
+      // 拒绝恢复:首跑正常完成则直接返回;模型拒绝执行时**原地重发**(同参数再请求
+      // 一次,翻盘靠系统提示词与采样随机性,工具层不做策略升级)。每次尝试重建会话
+      // (注入槽在上一档收尾后已关闭),activeSessions 登记、开场 mailbox 注入与收尾
+      // 注入回收同样逐次执行——上次没来得及消费的注入放回排队队列,不丢消息。
+      //
+      // 被拒尝试的助手条目走**延迟提交**(deferAssistantPersistence):收尾时按结果
+      // 提交(非拒绝)或丢弃(被拒)。被拒的回复不进模型上下文——下一轮模型看不到
+      // 自己拒过,不会顺着「我已经拒过了」继续拒。
+      final String baseSystemPrompt = systemPrompt;
+      final ToolContext attemptToolContext = toolContext;
+      final boolean refusalEnabled = refusalRecoveryEnabled();
+      persistingListener.setDeferAssistantPersistence(refusalEnabled);
+      RefusalRecovery.AttemptRunner attemptRunner =
+          (runConfig, eventListener) -> {
+                AgentSession session = new AgentSession(modelClient, registry, executor);
+                // 登记运行中的 session,供「立即插入」投递(见 injectIntoRun)。
+                activeSessions.put(conversationId, session);
+                for (String mail : drainInboundMailbox(conversationId)) {
+                  session.offerInject(mail);
+                }
+                try {
+                  // 用 AttemptRunner 注入的 eventListener 而非外层写死的 persistingListener:
+                  // 二者当前恒等(execute 透传同一个),但按接口契约用注入参数,
+                  // 将来 execute 传不同监听器时本 lambda 自动跟上。
+                  return session.run(
+                      runConfig,
+                      baseSystemPrompt,
+                      userRequest,
+                      history,
+                      attemptToolContext,
+                      runToken,
+                      eventListener,
+                      contextManager,
+                      rawInputJson,
+                      reasoningEffort);
+                } finally {
+                  activeSessions.remove(conversationId);
+                  // 收尾时把**未被消费**的注入放回队列头部(保持原序)。
+                  List<String> leftover = session.drainLeftoverInjects();
+                  if (!leftover.isEmpty()) {
+                    java.util.ArrayDeque<QueuedRequest> queue =
+                        queuedRequests.computeIfAbsent(conversationId, k -> new java.util.ArrayDeque<>());
+                    synchronized (queue) {
+                      for (int i = leftover.size() - 1; i >= 0; i--) {
+                        queue.addFirst(
+                            new QueuedRequest(
+                                providerId, modelId, leftover.get(i), customBaseUrl, null, reasoningEffort));
+                      }
+                    }
+                  }
+                }
+          };
+      RefusalRecovery recovery =
+          refusalEnabled
+              ? new RefusalRecovery(
+                  new RefusalDetector(), attemptRunner, refusalRecoveryPolicy())
+              // 关:只首跑一次(不检测/不重试),等价未接入本功能。
+              : RefusalRecovery.disabled(attemptRunner);
+      AgentRunResult runResult = recovery.execute(config, persistingListener);
+      // 收尾:被拒 → 丢弃未决条目(不落盘,模型看不到);正常 → 提交。
+      // 仅拒绝恢复链路有未决缓冲;disabled 路径 defer=false,直接落盘后无缓冲。
+      if (refusalEnabled) {
+        RefusalDetector.Verdict finalVerdict = new RefusalDetector().detect(runResult);
+        if (finalVerdict.isRefused() || runResult == null || runResult.isFailed()) {
+          persistingListener.discardPendingAssistant();
+        } else {
+          persistingListener.commitPendingAssistant();
         }
+        persistingListener.resetDeferAssistantPersistence();
       }
+      return runResult;
     } finally {
       // 只移除本次运行登记的那一个令牌：并发会话各有各的，不能整体清空。
       activeCancellations.remove(conversationId);
@@ -2861,6 +2893,34 @@ public final class AgentOrchestrator {
         }
       }
     }
+  }
+
+  /**
+   * 拒绝恢复开关:读共享偏好 {@code ai_agent_tools} 的 {@code refusal_recovery_enabled},默认开。
+   * 关闭时 {@link #executeRun} 走 {@link RefusalRecovery#disabled}——只首跑一次,
+   * 行为与未接入本功能完全一致(不检测拒绝、不强化约束、不换备用模型)。
+   * 与 {@code assistant} 宿主设置页共用同一个键名,但分属两个 App 的数据目录,互不影响。
+   */
+  private boolean refusalRecoveryEnabled() {
+    return appContext
+        .getSharedPreferences("ai_agent_tools", Context.MODE_PRIVATE)
+        .getBoolean("refusal_recovery_enabled", true);
+  }
+
+  /**
+   * 拒绝恢复预算:读共享偏好 {@code ai_agent_tools} 的 {@code refusal_recovery_max_attempts}
+   * (含首跑,1-5,默认 3)。与设置页 {@code RefusalRecoveryAttemptsPreference} 及独立助手
+   * App 的 AssistantPrefs.refusalRecoveryMaxAttempts 同键名(各 App 数据目录独立)。
+   * 出界值钳回合法区间——不信任存储。
+   */
+  private RefusalRecovery.Policy refusalRecoveryPolicy() {
+    RefusalRecovery.Policy policy = new RefusalRecovery.Policy();
+    int attempts =
+        appContext
+            .getSharedPreferences("ai_agent_tools", Context.MODE_PRIVATE)
+            .getInt("refusal_recovery_max_attempts", 3);
+    policy.maxAttempts = Math.max(1, Math.min(attempts, 5));
+    return policy;
   }
 
   /**

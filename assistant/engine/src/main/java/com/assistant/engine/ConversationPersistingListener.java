@@ -20,6 +20,7 @@ package com.assistant.engine;
 import com.tom.rv2ide.ai.agent.AgentEvent;
 import com.tom.rv2ide.ai.agent.conversation.AssistantMessageEntry;
 import com.tom.rv2ide.ai.agent.conversation.ConversationEntry;
+import com.tom.rv2ide.ai.agent.conversation.ConversationLog;
 import com.tom.rv2ide.ai.agent.conversation.ConversationStore;
 import com.tom.rv2ide.ai.agent.conversation.ToolResultEntry;
 import com.tom.rv2ide.ai.agent.conversation.UserMessageEntry;
@@ -108,6 +109,44 @@ public final class ConversationPersistingListener implements AgentEvent.Listener
   /** 本轮累积的**动作文案**（最近一条 PROGRESS）；状态条只表达「此刻在做什么」。 */
   private volatile String lastAction = "";
 
+  /**
+   * 延迟提交的助手轮缓冲（拒绝恢复链路）。
+   *
+   * <p>TURN_FINISHED 时若 {@link #deferAssistantPersistence} 为 true，助手条目不直接
+   * 落盘，先进这里；宿主在拿到运行结果后用 {@link #commitPendingAssistant()} 提交
+   * （非拒绝）或 {@link #discardPendingAssistant()} 丢弃（被拒——拒绝原文不进模型
+   * 上下文）。为 null 表示无未决条目。
+   */
+  private String pendingAssistant;
+  private String pendingAssistantReasoning;
+  private List<ToolCall> pendingAssistantCalls;
+
+  /** 是否延迟提交助手条目。由宿主按「本轮走拒绝恢复」设置；默认 false（照旧直接落盘）。 */
+  private volatile boolean deferAssistantPersistence;
+
+  /**
+   * 设置是否延迟提交助手条目（拒绝恢复链路用）。
+   *
+   * <p>必须在**运行开始前**设置；运行结束后宿主负责 commit 或 discard，
+   * 并把开关复位（本方法只管写标志，复位由 {@link #resetDeferAssistantPersistence} 承担）。
+   */
+  public void setDeferAssistantPersistence(boolean defer) {
+    this.deferAssistantPersistence = defer;
+  }
+
+  /** 复位延迟提交标志并清掉未决缓冲（运行收尾的兜底，防缓冲跨轮泄漏）。 */
+  public synchronized void resetDeferAssistantPersistence() {
+    deferAssistantPersistence = false;
+    pendingAssistant = null;
+    pendingAssistantReasoning = null;
+    pendingAssistantCalls = null;
+  }
+
+  /** 是否还有未决的助手缓冲。 */
+  public synchronized boolean hasPendingAssistant() {
+    return pendingAssistant != null;
+  }
+
   public ConversationPersistingListener(
       String conversationId,
       String userRequest,
@@ -181,6 +220,26 @@ public final class ConversationPersistingListener implements AgentEvent.Listener
         }
         break;
       case TURN_FINISHED:
+        if (deferAssistantPersistence) {
+          // 拒绝恢复链路:助手条目先缓冲不落盘,由宿主在收尾时提交或丢弃
+          // (discardPendingAssistant/commitPendingAssistant)。文本对 UI 的展示
+          // 不受影响——TEXT_DELTA 已实时转发,快照也读 textBuffer。
+          synchronized (this) {
+            pendingAssistant = event.getMessage() == null ? "" : event.getMessage();
+            pendingAssistantReasoning = reasoningBuffer.toString();
+            pendingAssistantCalls =
+                event.getToolCalls() == null
+                    ? new ArrayList<>()
+                    : new ArrayList<>(event.getToolCalls());
+            reasoningBuffer.setLength(0);
+            textBuffer.setLength(0);
+            lastAction = "";
+          }
+          // 孤儿步骤桶(重试提示行)照常 flush:提示是系统注记,不属于被拒的
+          // 助手正文,留在桶里会泄漏到下一轮、被错误地落进下一轮的历史。
+          flushOrphanSteps();
+          break;
+        }
         appendEntry(
             AssistantMessageEntry.create(
                 null,
@@ -195,6 +254,15 @@ public final class ConversationPersistingListener implements AgentEvent.Listener
           textBuffer.setLength(0);
           lastAction = "";
         }
+        // 孤儿步骤桶兜底：裸 PROGRESS（无 callId）落 NO_CALL_ID 桶，正常由对应的
+        // TOOL_FINISHED 取走。但有些 PROGRESS 不属于任何工具调用——拒绝恢复的
+        // 「检测到模型拒绝…原地重试」、会话层的「上下文超限已压缩重试」都没有
+        // TOOL_FINISHED 来清桶。留在这儿的话：磁盘上永远不出现，回放时这些解释
+        // 性提示凭空消失（实测症状：一次发送冒出多段回复，像模型自己复读）。
+        // 落成 **meta** 用户条目：isMeta()==true 的条目不进模型对话
+        // （ConversationHistory.toMessage 跳过），只作回放展示——语义是系统注记，
+        // 不是用户发言。回放端（ChatActivity.replayEntries）把它渲染为 TRACE。
+        flushOrphanSteps();
         break;
       case TOOL_FINISHED:
         if (event.getToolResult() != null) {
@@ -230,6 +298,26 @@ public final class ConversationPersistingListener implements AgentEvent.Listener
     }
   }
 
+  /**
+   * 把孤儿步骤桶（无工具调用归属的裸 PROGRESS 行）落成 meta 用户条目。
+   *
+   * <p>落成 **meta**（{@code isMeta()==true}）：不进模型对话
+   * （{@code ConversationHistory.toMessage} 跳过），只作回放展示——语义是系统注记，
+   * 不是用户发言。回放端（{@code ChatActivity.replayEntries}）把它渲染为 TRACE。
+   */
+  private void flushOrphanSteps() {
+    List<String> orphanSteps = stepBuffers.remove(NO_CALL_ID);
+    if (orphanSteps != null && !orphanSteps.isEmpty()) {
+      appendEntry(
+          new UserMessageEntry(
+              null,
+              null,
+              System.currentTimeMillis(),
+              String.join("\n", orphanSteps),
+              true));
+    }
+  }
+
   /** 工具调用的桶键；无 id 时返回 {@link #NO_CALL_ID}（与无 id 的 PROGRESS 同桶）。 */
   private String callKey(ToolCall call) {
     if (call == null) {
@@ -237,6 +325,45 @@ public final class ConversationPersistingListener implements AgentEvent.Listener
     }
     String id = call.getId();
     return id == null || id.isEmpty() ? NO_CALL_ID : id;
+  }
+
+  /**
+   * 把**最近一条**助手条目标记为「模型拒绝」。
+   *
+   * <p>拒绝恢复链路用:宿主拿到最终结果、判定被拒后调用。JSONL 是 append-only、
+   * 不能改写已落的行,因此 {@code TURN_FINISHED} 的助手条目走**延迟提交**:
+   * 先进 {@link #pendingAssistant} 缓冲,宿主在运行收尾时调用本方法(丢弃)
+   * 或 {@link #commitPendingAssistant()}(提交)。被丢弃的条目完全不落盘——
+   * 模型下一轮看不到自己拒过,UI 实时流与历史回放由 TEXT_DELTA/快照展示。
+   *
+   * <p>无未提交缓冲(无助手轮/已提交)时为无操作。
+   */
+  public void discardPendingAssistant() {
+    synchronized (this) {
+      pendingAssistant = null;
+      pendingAssistantReasoning = null;
+      pendingAssistantCalls = null;
+    }
+  }
+
+  /** 提交缓冲中的助手条目(正常路径:TURN_FINISHED 后由收尾逻辑调用)。 */
+  public void commitPendingAssistant() {
+    String content;
+    String reasoning;
+    List<ToolCall> calls;
+    synchronized (this) {
+      if (pendingAssistant == null) {
+        return;
+      }
+      content = pendingAssistant;
+      reasoning = pendingAssistantReasoning;
+      calls = pendingAssistantCalls;
+      pendingAssistant = null;
+      pendingAssistantReasoning = null;
+      pendingAssistantCalls = null;
+    }
+    appendEntry(
+        AssistantMessageEntry.create(null, System.currentTimeMillis(), content, reasoning, calls));
   }
 
   /** 追加一条会话条目。包内可见：编排器的压缩路径也要写（{@code CompactionEntry}）。 */

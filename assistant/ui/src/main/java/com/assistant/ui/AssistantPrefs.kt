@@ -49,6 +49,52 @@ object AssistantPrefs {
   fun setToolStatusBar(context: Context, enabled: Boolean) =
       AssistantToolStatusBarPref.setEnabled(context, enabled)
 
+  // ---- 拒绝恢复 ----
+
+  /**
+   * 模型拒绝时是否自动重试。默认开。
+   *
+   * <p>关闭时两个宿主都退化为「只首跑一次」,行为与本功能接入前完全一致。
+   * 键落 "ai_agent_tools"(与 [chatMode] 同源),core/app 宿主直接读同一文件、
+   * 同一键名,两边开关互不相干(各 App 数据目录独立)。
+   */
+  fun refusalRecoveryEnabled(context: Context): Boolean =
+      context
+          .getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+          .getBoolean(KEY_REFUSAL_RECOVERY, true)
+
+  fun setRefusalRecoveryEnabled(context: Context, enabled: Boolean) {
+    context
+        .getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        .edit()
+        .putBoolean(KEY_REFUSAL_RECOVERY, enabled)
+        .apply()
+  }
+
+  /**
+   * 拒绝恢复的最大尝试次数(含首跑)。默认 3,范围 1-5。
+   *
+   * <p>外部改写出界值时读侧钳回合法区间,不信任存储。
+   */
+  fun refusalRecoveryMaxAttempts(context: Context): Int {
+    val raw =
+        context
+            .getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .getInt(KEY_REFUSAL_MAX_ATTEMPTS, 3)
+    return raw.coerceIn(1, 5)
+  }
+
+  fun setRefusalRecoveryMaxAttempts(context: Context, attempts: Int) {
+    context
+        .getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        .edit()
+        .putInt(KEY_REFUSAL_MAX_ATTEMPTS, attempts.coerceIn(1, 5))
+        .apply()
+  }
+
+  private const val KEY_REFUSAL_RECOVERY = "refusal_recovery_enabled"
+  private const val KEY_REFUSAL_MAX_ATTEMPTS = "refusal_recovery_max_attempts"
+
   // ---- 外观 ----
 
   /** 卡片缩放系数（1.0 = 默认）。 */

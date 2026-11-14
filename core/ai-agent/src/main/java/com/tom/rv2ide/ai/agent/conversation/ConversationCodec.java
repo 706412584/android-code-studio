@@ -101,7 +101,9 @@ public final class ConversationCodec {
             timestamp,
             json.optString(AssistantMessageEntry.FIELD_CONTENT, ""),
             json.optString(AssistantMessageEntry.FIELD_REASONING, ""),
-            readToolCalls(json.optJSONArray(AssistantMessageEntry.FIELD_TOOL_CALLS)));
+            readToolCalls(json.optJSONArray(AssistantMessageEntry.FIELD_TOOL_CALLS)),
+            // 旧文件没有该字段，optBoolean 返回 false → 判为正常回复。
+            json.optBoolean(AssistantMessageEntry.FIELD_REFUSED, false));
       case TOOL_RESULT:
         return ToolResultEntry.fromFields(
             uuid,

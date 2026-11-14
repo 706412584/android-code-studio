@@ -21,6 +21,8 @@ import com.tom.rv2ide.ai.agent.AgentEvent;
 import com.tom.rv2ide.ai.agent.AgentPromptBuilder;
 import com.tom.rv2ide.ai.agent.AgentRunResult;
 import com.tom.rv2ide.ai.agent.AgentSession;
+import com.tom.rv2ide.ai.agent.RefusalDetector;
+import com.tom.rv2ide.ai.agent.RefusalRecovery;
 import com.tom.rv2ide.ai.agent.context.RunContextManager;
 import com.tom.rv2ide.ai.agent.context.TokenUsageTracker;
 import com.tom.rv2ide.ai.agent.conversation.ConversationHistory;
@@ -88,6 +90,34 @@ public final class ConversationRunner {
   /** 设置推理强度提供者。 */
   public void setReasoningEffortProvider(java.util.function.Supplier<String> provider) {
     this.reasoningEffortProvider = provider == null ? () -> "" : provider;
+  }
+
+  /**
+   * 拒绝恢复开关提供者:每次运行前读一次,返回是否启用「模型拒绝 → 换策略重跑」。
+   *
+   * <p>默认开。关掉时 {@link RefusalRecovery} 退化为「只首跑一次」——等价于未接入
+   * 本功能(不检测拒绝、不强化约束、不换备用模型),行为与接入前完全一致。
+   *
+   * <p>做成回调而非构造参数:宿主可在设置里改开关,改动对下一次运行立即生效。
+   */
+  private volatile java.util.function.Supplier<Boolean> refusalRecoveryEnabled = () -> true;
+
+  /** 设置拒绝恢复开关提供者。null 表示默认开。 */
+  public void setRefusalRecoveryEnabledProvider(java.util.function.Supplier<Boolean> provider) {
+    this.refusalRecoveryEnabled = provider == null ? () -> true : provider;
+  }
+
+  /**
+   * 拒绝恢复最大尝试次数提供者（含首跑）。每次运行前读一次，宿主设置页可改。
+   *
+   * <p>engine 是零 Android 依赖模块,读不了 SharedPreferences,走与开关相同的
+   * Supplier 模式由宿主接线。null 或非法值(≤0)回退默认 3;上界由内核钳制。
+   */
+  private volatile java.util.function.Supplier<Integer> refusalRecoveryMaxAttempts = () -> 3;
+
+  /** 设置拒绝恢复最大尝试次数提供者。null 表示默认 3。 */
+  public void setRefusalRecoveryMaxAttemptsProvider(java.util.function.Supplier<Integer> provider) {
+    this.refusalRecoveryMaxAttempts = provider == null ? () -> 3 : provider;
   }
 
   /** 当前运行实例；null 表示空闲。 */
@@ -273,8 +303,6 @@ public final class ConversationRunner {
     Throwable error = null;
     AgentRunResult result = null;
     try {
-      AgentSession session = new AgentSession(new ModelClient(), toolRegistry, toolExecutor);
-
       // 历史：从落盘的 JSONL 折叠出模型消息。fold 会清洗「调用与结果不成对」的坏数据
       // （流在参数中途断开留下的残缺 JSON 会让之后每一次请求都 400）。
       List<ModelMessage> history = null;
@@ -291,19 +319,7 @@ public final class ConversationRunner {
 
       // 系统提示词：工具清单按「可请求」集合给（延迟加载的工具不在其中，
       // 它们由 tool_search 激活后出现）。
-      ModelClient modelClient = new ModelClient();
-      boolean nativeTools = modelClient.supportsNativeTools(config);
-      String systemPrompt =
-          promptBuilder.build(
-              workspace == null ? "" : workspace.getAbsolutePath(),
-              new java.util.ArrayList<>(toolRegistry.getRequestableTools()),
-              nativeTools,
-              null,
-              com.tom.rv2ide.ai.agent.prompt.ChatMode.fromId(chatModeId.get()),
-              new AgentPromptBuilder.ModelInfo(
-                  config.getId(),
-                  config.getModelId(),
-                  config.getProtocolType().getLabel()));
+      String systemPrompt = buildSystemPrompt(config);
 
       // 工具上下文：工作区 = 允许访问的文件范围。
       ToolContext toolContext =
@@ -360,21 +376,63 @@ public final class ConversationRunner {
               conversationStore,
               null);
 
-      result =
-          session.run(
-              config,
-              systemPrompt,
-              userText,
-              history,
-              toolContext,
-              handle.cancellation,
-              persisting,
-              contextManager,
-              attachmentsJson,
-              // 推理强度（off/low/medium/high）。此前恒传 null —— 输入栏那个档位
-              // 选择器点了没有任何效果：内核本来就支持，只是没人把用户的选择送进来。
-              // null 表示「用服务商默认」，不是「关掉推理」。
-              reasoningEffortProvider.get());
+      // 拒绝恢复:首跑正常完成则直接返回;模型拒绝执行时**原地重发**(同参数再请求
+      // 一次,翻盘靠系统提示词与采样随机性,工具层不做策略升级)。每次尝试的事件走
+      // 同一条持久化流。
+      //
+      // 被拒尝试的助手条目走**延迟提交**:deferAssistantPersistence 开启后,
+      // TURN_FINISHED 的条目先缓冲不落盘;收尾时按结果提交(非拒绝)或丢弃(被拒)。
+      // 被拒的回复不进模型上下文——下一轮模型看不到自己拒过,不会顺着「我已经拒过了」
+      // 继续拒;UI 实时流照常显示(TEXT_DELTA 不受影响),回放则由 TRACE 重试提示交代。
+      final List<ModelMessage> runHistory = history;
+      final boolean refusalEnabled = refusalRecoveryEnabled.get();
+      persisting.setDeferAssistantPersistence(refusalEnabled);
+      RefusalRecovery.Policy refusalPolicy = new RefusalRecovery.Policy();
+      Integer configuredAttempts = refusalRecoveryMaxAttempts.get();
+      if (configuredAttempts != null && configuredAttempts > 0) {
+        refusalPolicy.maxAttempts = Math.min(configuredAttempts, 5);
+      }
+      RefusalRecovery recovery =
+          refusalEnabled
+              ? new RefusalRecovery(
+                  new RefusalDetector(),
+                  (runConfig, eventListener) ->
+                      runAgentOnce(
+                          runConfig,
+                          buildSystemPrompt(runConfig),
+                          userText,
+                          runHistory,
+                          toolContext,
+                          handle,
+                          persisting,
+                          contextManager,
+                          attachmentsJson),
+                  refusalPolicy)
+              // 关:只首跑一次(不检测/不重试),等价未接入本功能。
+              : RefusalRecovery.disabled(
+                  (runConfig, eventListener) ->
+                      runAgentOnce(
+                          runConfig,
+                          buildSystemPrompt(runConfig),
+                          userText,
+                          runHistory,
+                          toolContext,
+                          handle,
+                          persisting,
+                          contextManager,
+                          attachmentsJson));
+      result = recovery.execute(config, persisting);
+      // 收尾:被拒 → 丢弃未决条目(不落盘,模型看不到);正常 → 提交。
+      // 仅拒绝恢复链路有未决缓冲;disabled 路径 defer=false,直接落盘后无缓冲。
+      if (refusalEnabled) {
+        RefusalDetector.Verdict finalVerdict = new RefusalDetector().detect(result);
+        if (finalVerdict.isRefused() || result == null || result.isFailed()) {
+          persisting.discardPendingAssistant();
+        } else {
+          persisting.commitPendingAssistant();
+        }
+        persisting.resetDeferAssistantPersistence();
+      }
     } catch (Throwable t) {
       // 内核内部已经处理了 OOM 与模型异常（转成 FAILED 事件）；能到这里的是
       // 装配期异常（配置非法、工作区不可写等）。如实上报，不吞。
@@ -404,6 +462,53 @@ public final class ConversationRunner {
 
       listener.onFinished(result, error);
     }
+  }
+
+
+  /** 为指定模型配置构建完整系统提示词(工具清单为「可请求」集合;恢复的备用档按模型重算)。 */
+  private String buildSystemPrompt(ModelConfig modelConfig) {
+    ModelClient modelClient = new ModelClient();
+    boolean nativeTools = modelClient.supportsNativeTools(modelConfig);
+    return promptBuilder.build(
+        workspace == null ? "" : workspace.getAbsolutePath(),
+        new java.util.ArrayList<>(toolRegistry.getRequestableTools()),
+        nativeTools,
+        null,
+        com.tom.rv2ide.ai.agent.prompt.ChatMode.fromId(chatModeId.get()),
+        new AgentPromptBuilder.ModelInfo(
+            modelConfig.getId(),
+            modelConfig.getModelId(),
+            modelConfig.getProtocolType().getLabel()));
+  }
+
+  /**
+   * 用指定模型配置跑一次 agent 运行。
+   *
+   * <p>作为 {@link RefusalRecovery} 的 AttemptRunner 实现:每次尝试重建会话
+   * (注入槽在上一轮收尾后已关闭),持久化监听器复用——各次尝试的事件在同一条流里。
+   */
+  private AgentRunResult runAgentOnce(
+      ModelConfig runConfig,
+      String systemPrompt,
+      String userText,
+      List<ModelMessage> history,
+      ToolContext toolContext,
+      RunHandle handle,
+      ConversationPersistingListener persisting,
+      RunContextManager contextManager,
+      String attachmentsJson) {
+    AgentSession session = new AgentSession(new ModelClient(), toolRegistry, toolExecutor);
+    return session.run(
+        runConfig,
+        systemPrompt,
+        userText,
+        history,
+        toolContext,
+        handle.cancellation,
+        persisting,
+        contextManager,
+        attachmentsJson,
+        reasoningEffortProvider.get());
   }
 
   /**

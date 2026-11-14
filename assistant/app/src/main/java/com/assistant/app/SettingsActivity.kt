@@ -149,6 +149,9 @@ class SettingsActivity : ComponentActivity() {
                       thinkingAutoCollapse =
                           AssistantPrefs.thinkingAutoCollapse(this@SettingsActivity),
                       toolStatusBar = AssistantPrefs.toolStatusBar(this@SettingsActivity),
+                      refusalRecovery = AssistantPrefs.refusalRecoveryEnabled(this@SettingsActivity),
+                      refusalMaxAttempts =
+                          AssistantPrefs.refusalRecoveryMaxAttempts(this@SettingsActivity),
                       cardScale = AssistantPrefs.cardScale(this@SettingsActivity),
                       textColor = AssistantPrefs.textColor(this@SettingsActivity),
                       memoryEnabled = memoryPrefs.enabled(),
@@ -184,6 +187,14 @@ class SettingsActivity : ComponentActivity() {
                       },
                       onToolStatusBarChange = { enabled ->
                         AssistantPrefs.setToolStatusBar(this@SettingsActivity, enabled)
+                        recomposeKey++
+                      },
+                      onRefusalRecoveryChange = { enabled ->
+                        AssistantPrefs.setRefusalRecoveryEnabled(this@SettingsActivity, enabled)
+                        recomposeKey++
+                      },
+                      onRefusalMaxAttemptsChange = { attempts ->
+                        AssistantPrefs.setRefusalRecoveryMaxAttempts(this@SettingsActivity, attempts)
                         recomposeKey++
                       },
                       onCardScaleChange = { scale ->
