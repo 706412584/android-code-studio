@@ -123,6 +123,33 @@ final class ConversationPersistingListener implements AgentEvent.Listener {
   /** 是否延迟提交助手条目。由宿主按「本轮走拒绝恢复」设置；默认 false（照旧直接落盘）。 */
   private volatile boolean deferAssistantPersistence;
 
+  /**
+   * 会话标题刷新器（可选）。宿主在创建本监听器后调用 {@link #setTitleRefresher} 注入，
+   * 之后每轮 {@code TURN_FINISHED} 会驱动它累积上下文并按策略生成标题。
+   *
+   * <p>为 null 表示不启用（子代理会话不需要标题——它挂在父会话下，不单独出现在列表）。
+   */
+  private com.tom.rv2ide.ai.agent.conversation.ConversationTitleRefresher titleRefresher;
+
+  /** 首条用户消息（用于标题刷新器的换话题比对与占位标题）。 */
+  private String userRequestText = "";
+
+  /**
+   * 注入标题刷新器。
+   *
+   * <p>为什么由宿主注入而不是这里自建：生成标题需要 {@code ModelConfig}
+   * （baseUrl / apiKey / modelId），而这些只在编排层有——本监听器只负责事件落盘，
+   * 不持有模型配置。
+   */
+  public void setTitleRefresher(
+      com.tom.rv2ide.ai.agent.conversation.ConversationTitleRefresher refresher) {
+    this.titleRefresher = refresher;
+    // 注入时回放首条用户消息：构造函数先于注入执行，那时 refresher 还是 null。
+    if (refresher != null && !userRequestText.isEmpty()) {
+      refresher.onUserMessage(userRequestText);
+    }
+  }
+
   /** 设置是否延迟提交助手条目（拒绝恢复链路用），必须在运行开始前设置。 */
   public void setDeferAssistantPersistence(boolean defer) {
     this.deferAssistantPersistence = defer;
@@ -179,6 +206,7 @@ final class ConversationPersistingListener implements AgentEvent.Listener {
     this.conversationId = conversationId == null ? "" : conversationId;
     this.downstream = downstream;
     this.conversationStore = conversationStore;
+    this.userRequestText = userRequest == null ? "" : userRequest;
     this.deliveryLock = deliveryLock == null ? new Object() : deliveryLock;
     // 附件元数据随用户消息一起落盘：不落的话，重新打开会话时气泡上的缩略图
     // 就全没了（模型那边不受影响——图片走 rawInputJson，与这里无关）。
@@ -279,6 +307,11 @@ final class ConversationPersistingListener implements AgentEvent.Listener {
         // 孤儿步骤桶兜底:拒绝恢复提示、上下文压缩提示等裸 PROGRESS 没有
         // TOOL_FINISHED 来清桶,在此落成 meta 条目(不进模型对话,回放可见)。
         flushOrphanSteps();
+        // 标题刷新：本轮正文已落盘，累积进标题上下文并按策略决定是否生成。
+        // 放在最后——生成是旁路，任何失败都不影响上面的落盘结果。
+        if (titleRefresher != null) {
+          titleRefresher.onTurnFinished(event.getMessage());
+        }
         break;
       case TOOL_FINISHED:
         if (event.getToolResult() != null) {

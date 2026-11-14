@@ -610,7 +610,14 @@ class FloatingAssistantView(
    * 于是每条消息都开一个新会话，历史永远无法续接。
    */
   private val orchestrator: AgentOrchestrator by lazy {
-    sharedOrchestrator ?: AgentOrchestrator(context, diffStore)
+    val instance = sharedOrchestrator ?: AgentOrchestrator(context, diffStore)
+    // 标题更新 → 刷新会话列表。AI 生成标题落盘后，列表项应立即换成新标题，
+    // 不必等用户手动展开抽屉。回调里走 Main 线程，与 reloadConversations 的
+    // 常规调用路径一致。
+    AgentOrchestrator.setTitleUpdateListener { _, _ ->
+      lifecycleScope.launch(Dispatchers.Main) { reloadConversations() }
+    }
+    instance
   }
 
   /**

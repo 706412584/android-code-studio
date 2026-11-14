@@ -35,6 +35,7 @@ import com.tom.rv2ide.ai.agent.conversation.ConversationHistory;
 import com.tom.rv2ide.ai.agent.conversation.ConversationLog;
 import com.tom.rv2ide.ai.agent.conversation.ConversationStore;
 import com.tom.rv2ide.ai.agent.conversation.ConversationSummary;
+import com.tom.rv2ide.ai.agent.conversation.ConversationTitleRefresher;
 import com.tom.rv2ide.ai.agent.conversation.FileConversationStore;
 import com.tom.rv2ide.ai.agent.conversation.ToolResultEntry;
 import com.tom.rv2ide.ai.agent.conversation.UserMessageEntry;
@@ -156,6 +157,20 @@ public final class AgentOrchestrator {
   private final AgentToolSettings settings;
   private final DiffStore diffStore;
   private final ConversationStore conversationStore;
+
+  /**
+   * 会话标题更新回调（可选）。{@link ConversationTitleRefresher} 生成新标题并落盘后
+   * 触发，视图（{@code FloatingAssistantView}）据此刷新列表——不必轮询会话文件。
+   *
+   * <p>用静态字段是因为 orchestrator 可能被多个入口实例化，而标题更新是全局事件：
+   * 任何视图都想知道「某个会话的标题变了」。同一时刻只会有一个活动的标题刷新器。
+   */
+  private static volatile ConversationTitleRefresher.Listener titleUpdateListener;
+
+  /** 注册标题更新回调（视图侧调用）。传 null 取消注册。 */
+  public static void setTitleUpdateListener(ConversationTitleRefresher.Listener listener) {
+    titleUpdateListener = listener;
+  }
 
   /**
    * 提示词构建器。
@@ -2742,6 +2757,15 @@ public final class AgentOrchestrator {
         };
     ConversationPersistingListener persistingListener =
         new ConversationPersistingListener(conversationId, userRequest, fanOut, attachments, conversationStore, deliveryLock);
+
+    // 会话标题刷新：累积轮次、按策略（turn 1/3、换话题、每 8 轮）生成标题。
+    // 复用当前会话的 ModelConfig（同一服务商/密钥/模型），生成是旁路——
+    // 失败只保留现有标题，绝不影响对话。
+    com.tom.rv2ide.ai.agent.conversation.ConversationTitleRefresher titleRefresher =
+        new com.tom.rv2ide.ai.agent.conversation.ConversationTitleRefresher(
+            conversationId, conversationStore, titleUpdateListener);
+    titleRefresher.setModelConfig(config);
+    persistingListener.setTitleRefresher(titleRefresher);
     // 登记本轮的实时态持有者，供视图重建时拉快照（见 currentRunSnapshot）。
     // 先登记后执行：登记晚于首个增量会让「刚重建的视图」查不到本轮正文。
     activeListeners.put(conversationId, persistingListener);

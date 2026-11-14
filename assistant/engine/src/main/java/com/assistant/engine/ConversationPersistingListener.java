@@ -56,6 +56,9 @@ public final class ConversationPersistingListener implements AgentEvent.Listener
   private final AgentEvent.Listener downstream;
   private final ConversationStore conversationStore;
 
+  /** 首条用户消息（用于标题刷新器的换话题比对与占位标题）。 */
+  private final String userRequestText;
+
   /**
    * 与「订阅 + 读历史」互斥的锁（见 {@link #onEvent}）。
    *
@@ -125,6 +128,35 @@ public final class ConversationPersistingListener implements AgentEvent.Listener
   private volatile boolean deferAssistantPersistence;
 
   /**
+   * 会话标题刷新器（可选）。宿主在创建本监听器后调用 {@link #setTitleRefresher} 注入，
+   * 之后每轮 {@code TURN_FINISHED} 会驱动它累积上下文并按策略生成标题。
+   *
+   * <p>为 null 表示不启用（子代理会话不需要标题——它挂在父会话下，不单独出现在列表）。
+   */
+  private com.tom.rv2ide.ai.agent.conversation.ConversationTitleRefresher titleRefresher;
+
+  /**
+   * 注入标题刷新器。
+   *
+   * <p>为什么由宿主注入而不是这里自建：生成标题需要 {@code ModelConfig}
+   * （baseUrl / apiKey / modelId），而这些只在编排层有——本监听器只负责事件落盘，
+   * 不持有模型配置。
+   */
+  public void setTitleRefresher(
+      com.tom.rv2ide.ai.agent.conversation.ConversationTitleRefresher refresher) {
+    this.titleRefresher = refresher;
+    // 注入时回放首条用户消息：构造函数先于注入执行，那时 refresher 还是 null。
+    if (refresher != null && !userRequestText.isEmpty()) {
+      refresher.onUserMessage(userRequestText);
+    }
+  }
+
+  /** 当前标题刷新器（供宿主查询是否已启用）。 */
+  public com.tom.rv2ide.ai.agent.conversation.ConversationTitleRefresher getTitleRefresher() {
+    return titleRefresher;
+  }
+
+  /**
    * 设置是否延迟提交助手条目（拒绝恢复链路用）。
    *
    * <p>必须在**运行开始前**设置；运行结束后宿主负责 commit 或 discard，
@@ -157,6 +189,7 @@ public final class ConversationPersistingListener implements AgentEvent.Listener
     this.conversationId = conversationId == null ? "" : conversationId;
     this.downstream = downstream;
     this.conversationStore = conversationStore;
+    this.userRequestText = userRequest == null ? "" : userRequest;
     this.deliveryLock = deliveryLock == null ? new Object() : deliveryLock;
     // 附件元数据随用户消息一起落盘：不落的话，重新打开会话时气泡上的缩略图
     // 就全没了（模型那边不受影响——图片走 rawInputJson，与这里无关）。
@@ -166,6 +199,11 @@ public final class ConversationPersistingListener implements AgentEvent.Listener
             System.currentTimeMillis(),
             userRequest,
             attachments == null ? Collections.emptyList() : attachments));
+    // 登记本轮用户消息：供标题刷新器做「换话题」比对与首轮占位标题。
+    // 标题刷新器由宿主随后注入（setTitleRefresher），这里先记下文本即可。
+    if (titleRefresher != null) {
+      titleRefresher.onUserMessage(userRequest);
+    }
   }
 
   @Override
@@ -263,6 +301,11 @@ public final class ConversationPersistingListener implements AgentEvent.Listener
         // （ConversationHistory.toMessage 跳过），只作回放展示——语义是系统注记，
         // 不是用户发言。回放端（ChatActivity.replayEntries）把它渲染为 TRACE。
         flushOrphanSteps();
+        // 标题刷新：本轮正文已落盘，累积进标题上下文并按策略决定是否生成。
+        // 放在最后——生成是旁路，任何失败都不影响上面的落盘结果。
+        if (titleRefresher != null) {
+          titleRefresher.onTurnFinished(event.getMessage());
+        }
         break;
       case TOOL_FINISHED:
         if (event.getToolResult() != null) {

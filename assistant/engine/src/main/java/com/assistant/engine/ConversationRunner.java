@@ -376,6 +376,15 @@ public final class ConversationRunner {
               conversationStore,
               null);
 
+      // 会话标题刷新：累积轮次、按策略（turn 1/3、换话题、每 8 轮）生成标题。
+      // 复用当前会话的 ModelConfig（同一服务商/密钥/模型），生成是旁路——
+      // 失败只保留现有标题，绝不影响对话。
+      com.tom.rv2ide.ai.agent.conversation.ConversationTitleRefresher titleRefresher =
+          new com.tom.rv2ide.ai.agent.conversation.ConversationTitleRefresher(
+              conversationId, conversationStore, null);
+      titleRefresher.setModelConfig(config);
+      persisting.setTitleRefresher(titleRefresher);
+
       // 拒绝恢复:首跑正常完成则直接返回;模型拒绝执行时**原地重发**(同参数再请求
       // 一次,翻盘靠系统提示词与采样随机性,工具层不做策略升级)。每次尝试的事件走
       // 同一条持久化流。
