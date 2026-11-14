@@ -57,6 +57,7 @@ enum class MessageAction {
   EDIT,
   COPY,
   REGENERATE,
+  DELETE,
 }
 
 /**
@@ -74,9 +75,10 @@ enum class MessageAction {
  *   「编辑后重发」，那是 EDIT 的职责
  * - 编辑：用户消息与助手消息都有
  *
- * <p><b>刻意没有「删除」</b>：会话是 append-only JSONL，删单条要重写整个文件——
- * 而 `ConversationStore` 只提供整会话删除。做一个只删界面、重开就回来的「删除」是
- * 骗人的（用户以为删掉了）。真需要清理会话时用抽屉里的删除整个会话。
+ * <p><b>「删除」的语义</b>：删的是**磁盘落盘记录 + 界面条目**（连带该条助手消息
+ * 后面的工具结果行）。`ConversationStore.deleteEntries` 已支持按序号重写文件
+ * （原子替换 + .bak 备份），删除后下一轮对话的上下文里也没有这条消息——
+ * 不是「只删界面」的假象。
  */
 @Composable
 fun MessageActionDialog(
@@ -107,6 +109,13 @@ fun MessageActionDialog(
               onDismiss()
               onAction(MessageAction.REGENERATE)
             }
+          }
+          // 删除对所有角色开放：用户消息（发错了）、助手回复（不想要）、
+          // 工具行（不想留记录）都有删除的正当需求。工具行与推理块没有磁盘条目
+          // （entryOrdinal == null），由宿主按「仅移除显示」处理。
+          ActionRow(FeatherIcons.Trash2, "删除") {
+            onDismiss()
+            onAction(MessageAction.DELETE)
           }
         }
       },

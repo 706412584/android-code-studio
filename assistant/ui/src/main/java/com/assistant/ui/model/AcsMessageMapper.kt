@@ -147,6 +147,7 @@ object AcsMessageMapper {
           durationMs = m.durationMs,
           isTrace = m.role == MessageTimeline.Role.TRACE,
           attachments = m.attachments.map { it.toUiAttachment() },
+          entryOrdinal = m.entryOrdinal,
       )
 
   /** 已发送附件 → 渲染层附件。两边字段一一对应，只做类型搬运。 */

@@ -80,6 +80,14 @@ class MessageTimeline {
       val reverted: Boolean = false,
       val durationMs: Long = 0L,
       val attachments: List<MessageAttachment> = emptyList(),
+      /**
+       * 磁盘条目序号（{@code ConversationLog.EntryLocation.ordinal}）。
+       *
+       * <p>回放时由 {@code ChatActivity.replayEntries} 回填；实时流式产生的消息为 null
+       * （它们的落盘由持久化层异步完成，UI 无从得知序号——删除这类消息时按
+       * 「匹配最后一条同内容条目」兜底）。删除功能靠它定位要剔除的磁盘行。
+       */
+      val entryOrdinal: Int? = null,
   ) : Item()
 
   /** 消息气泡里的一条附件（已发送状态的只读投影）。 */
@@ -236,9 +244,20 @@ class MessageTimeline {
 
   fun append(role: Role, text: String, diffId: String?): Long = append(role, text, diffId, 0L)
 
-  fun append(role: Role, text: String, diffId: String?, durationMs: Long): Long {
+  fun append(role: Role, text: String, diffId: String?, durationMs: Long): Long =
+      append(role, text, diffId, durationMs, null)
+
+  fun append(
+      role: Role,
+      text: String,
+      diffId: String?,
+      durationMs: Long,
+      entryOrdinal: Int?,
+  ): Long {
     val id = nextId++
-    items.add(Message(id, role, text, diffId, reverted = false, durationMs = durationMs))
+    items.add(
+        Message(id, role, text, diffId, reverted = false, durationMs = durationMs,
+            entryOrdinal = entryOrdinal))
     notifyChanged()
     return id
   }

@@ -114,6 +114,11 @@ data class AgentUIMessage(
     /** 本轮耗时（毫秒）；0 表示无数据。 */
     val durationMs: Long = 0L,
     /**
+     * 磁盘条目序号（{@code ConversationLog.EntryLocation.ordinal}）。
+     * 回放条目有值；实时流式消息为 null。删除功能靠它定位磁盘行。
+     */
+    val entryOrdinal: Int? = null,
+    /**
      * 该条是否是 ACS 的 TRACE 过程信息（工具调用/系统提示，弱化显示）。
      *
      * <p>映射到 `role = TOOL` 且 `toolName == null`，因为 Aharou 的组件对 null 工具名是安全的

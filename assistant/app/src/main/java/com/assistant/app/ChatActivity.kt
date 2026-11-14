@@ -128,6 +128,9 @@ class ChatActivity : ComponentActivity() {
   /** 正在编辑的消息；null = 不显示编辑框。与 [messageForActions] 互斥（编辑时先关菜单）。 */
   private var messageForEdit by mutableStateOf<com.assistant.ui.model.AgentUIMessage?>(null)
 
+  /** 待删除确认的消息；null = 不显示删除确认框。 */
+  private var messageForDelete by mutableStateOf<com.assistant.ui.model.AgentUIMessage?>(null)
+
   /** 会话搜索词（抽屉）。改了要重算 searchHits。 */
   private var sessionSearchQuery by mutableStateOf("")
 
@@ -726,6 +729,10 @@ class ChatActivity : ComponentActivity() {
                         messageForActions = null
                         regenerate()
                       }
+                      com.assistant.ui.components.independent.MessageAction.DELETE -> {
+                        messageForActions = null
+                        messageForDelete = target
+                      }
                     }
                   },
               )
@@ -750,6 +757,32 @@ class ChatActivity : ComponentActivity() {
                               "已修改显示内容（不会重新生成回答）",
                               android.widget.Toast.LENGTH_LONG)
                           .show()
+                    }
+                  },
+              )
+            }
+
+            // ---- 删除确认 ----
+            messageForDelete?.let { target ->
+              androidx.compose.material3.AlertDialog(
+                  onDismissRequest = { messageForDelete = null },
+                  title = { androidx.compose.material3.Text("删除这条消息？") },
+                  text = {
+                    androidx.compose.material3.Text(
+                        "将从会话记录中删除（含关联的工具结果），后续对话不再携带这条消息。此操作不可撤销。")
+                  },
+                  confirmButton = {
+                    androidx.compose.material3.TextButton(
+                        onClick = {
+                          messageForDelete = null
+                          deleteMessage(target)
+                        }) {
+                      androidx.compose.material3.Text("删除")
+                    }
+                  },
+                  dismissButton = {
+                    androidx.compose.material3.TextButton(onClick = { messageForDelete = null }) {
+                      androidx.compose.material3.Text("取消")
                     }
                   },
               )
@@ -1608,6 +1641,91 @@ class ChatActivity : ComponentActivity() {
     send(lastUser.text)
   }
 
+  /**
+   * 删除一条消息：磁盘条目（含其后连续的工具结果行）+ 时间线条目。
+   *
+   * <p>ordinal 为 null 的消息（实时流式产生的）按「最后一条同内容条目」兜底定位——
+   * 它们的落盘由持久化层在 TURN_FINISHED 时完成，UI 拿不到序号。
+   * 删除在 IO 线程做（重写整个会话文件），完成后回主线程刷新渲染。
+   */
+  private fun deleteMessage(target: com.assistant.ui.model.AgentUIMessage) {
+    val id = conversationId
+    if (id == null) {
+      // 草稿态：消息只存在于内存，直接移除显示即可。
+      target.id.toLongOrNull()?.let { timeline.remove(it) }
+      return
+    }
+    kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+      try {
+        val entries = conversationStore.read(id)
+        val ordinalsToDelete = mutableListOf<Int>()
+
+        val targetOrdinal = target.entryOrdinal
+        if (targetOrdinal != null) {
+          ordinalsToDelete.add(targetOrdinal)
+          // 连带：该条之后连续的 ToolResultEntry（直到下一个非工具结果条目）。
+          // 用户消息不连带（语义上用户只删自己那句话，助手回复独立存在）。
+          if (target.role == com.assistant.ui.model.MessageRole.ASSISTANT) {
+            for (loc in entries) {
+              if (loc.ordinal > targetOrdinal) {
+                if (loc.entry is com.tom.rv2ide.ai.agent.conversation.ToolResultEntry) {
+                  ordinalsToDelete.add(loc.ordinal)
+                } else {
+                  break
+                }
+              }
+            }
+          }
+        } else {
+          // 兜底：按内容 + 角色匹配，从后往前找第一条（而非 lastOrNull——
+          // 同正文出现多次时 lastOrNull 会跳到最末尾那条，与用户选中的早期消息不符）。
+          val match =
+              entries.reversed().firstOrNull { loc ->
+                when (val e = loc.entry) {
+                  is com.tom.rv2ide.ai.agent.conversation.UserMessageEntry ->
+                      target.role == com.assistant.ui.model.MessageRole.USER && e.content == target.content
+                  is com.tom.rv2ide.ai.agent.conversation.AssistantMessageEntry ->
+                      target.role == com.assistant.ui.model.MessageRole.ASSISTANT && e.content == target.content
+                  else -> false
+                }
+              }
+          if (match != null) {
+            ordinalsToDelete.add(match.ordinal)
+            if (match.entry is com.tom.rv2ide.ai.agent.conversation.AssistantMessageEntry) {
+              for (loc in entries) {
+                if (loc.ordinal > match.ordinal) {
+                  if (loc.entry is com.tom.rv2ide.ai.agent.conversation.ToolResultEntry) {
+                    ordinalsToDelete.add(loc.ordinal)
+                  } else {
+                    break
+                  }
+                }
+              }
+            }
+          }
+        }
+
+        val removed =
+            if (ordinalsToDelete.isEmpty()) 0
+            else conversationStore.deleteEntries(id, ordinalsToDelete)
+
+        runOnUiThread {
+          target.id.toLongOrNull()?.let { timeline.remove(it) }
+          timeline.append(
+              MessageTimeline.Role.TRACE,
+              if (removed > 0) "已删除 $removed 条记录" else "已移除显示（未找到对应磁盘记录）")
+          chatView.forceScrollToBottom(uiScope)
+        }
+      } catch (e: Exception) {
+        runOnUiThread {
+          android.widget.Toast.makeText(
+                  this@ChatActivity, "删除失败：${e.message}", android.widget.Toast.LENGTH_SHORT)
+              .show()
+        }
+      }
+    }
+  }
+
   // ---- 斜杠命令 / @ 技能 ----
 
   /**
@@ -2014,14 +2132,16 @@ class ChatActivity : ComponentActivity() {
               if (entry.isMeta) {
                 timeline.append(MessageTimeline.Role.TRACE, text)
               } else {
-                timeline.append(MessageTimeline.Role.USER, text)
+                timeline.append(
+                    MessageTimeline.Role.USER, text, null, 0L, location.ordinal)
               }
             }
           }
           is com.tom.rv2ide.ai.agent.conversation.AssistantMessageEntry -> {
             val text = entry.content
             if (!text.isNullOrBlank()) {
-              timeline.append(MessageTimeline.Role.ASSISTANT, text)
+              timeline.append(
+                  MessageTimeline.Role.ASSISTANT, text, null, 0L, location.ordinal)
             }
             // 工具调用作为独立卡片回放：它们承载了「这一轮做了什么」。
             entry.toolCalls.forEach { call ->

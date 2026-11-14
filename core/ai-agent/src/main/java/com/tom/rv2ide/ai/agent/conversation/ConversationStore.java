@@ -74,6 +74,21 @@ public interface ConversationStore {
   /** 删除会话及其日志。 */
   void delete(String conversationId) throws IOException;
 
+  /**
+   * 删除指定序号的条目（连带后续的工具结果行由调用方计算传入）。
+   *
+   * <p>这是 append-only 哲学的**唯一破例**：重写整个文件去掉指定行。
+   * 实现必须保证原子性（写临时文件 + rename 覆盖）并留 .bak 备份——
+   * 中途崩溃不能让原文件损坏。
+   *
+   * @param conversationId 会话 id
+   * @param ordinals 要删除的条目序号集合（见 {@link ConversationLog.EntryLocation#getOrdinal()}）
+   * @return 实际删除的条目数（不存在的序号被忽略）
+   */
+  default int deleteEntries(String conversationId, List<Integer> ordinals) throws IOException {
+    throw new UnsupportedOperationException("deleteEntries 未实现");
+  }
+
   /** @return 会话是否存在。 */
   boolean exists(String conversationId);
 }

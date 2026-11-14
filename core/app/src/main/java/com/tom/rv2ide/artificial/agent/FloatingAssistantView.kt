@@ -3040,7 +3040,7 @@ class FloatingAssistantView(
   }
 
   /**
-   * 弹出消息操作菜单（复制原文、复制纯文本、引用提问）。
+   * 弹出消息操作菜单（复制原文、复制纯文本、引用提问、删除）。
    */
   private fun showMessageActionsMenu(message: AssistantMessageAdapter.Message, anchor: View) {
     val items = mutableListOf<Pair<String, () -> Unit>>()
@@ -3058,12 +3058,92 @@ class FloatingAssistantView(
       showQuoteReplyDialog(message)
     })
 
+    items.add("删除这条消息" to {
+      confirmDeleteMessage(message)
+    })
+
     val titles = items.map { it.first }.toTypedArray()
     com.google.android.material.dialog.MaterialAlertDialogBuilder(context)
         .setItems(titles) { _, which ->
           items[which].second.invoke()
         }
         .show()
+  }
+
+  /** 删除确认：说明连带语义（磁盘 + 界面 + 后续上下文），用户确认后执行。 */
+  private fun confirmDeleteMessage(message: AssistantMessageAdapter.Message) {
+    com.google.android.material.dialog.MaterialAlertDialogBuilder(context)
+        .setTitle("删除这条消息？")
+        .setMessage("将从会话记录中删除（含关联的工具结果），后续对话不再携带这条消息。此操作不可撤销。")
+        .setPositiveButton("删除") { _, _ -> deleteMessage(message) }
+        .setNegativeButton("取消", null)
+        .show()
+  }
+
+  /**
+   * 删除一条消息：磁盘条目（含其后连续的工具结果行）+ 适配器条目。
+   *
+   * <p>主 App 回放走 fold 后的 ModelMessage（不带 ordinal），因此按「最后一条同内容条目」
+   * 定位磁盘行。删除在 IO 线程做（重写整个会话文件），完成后回主线程刷新。
+   */
+  private fun deleteMessage(message: AssistantMessageAdapter.Message) {
+    val conversationId = displayedConversationId
+    if (conversationId == null) {
+      adapter.remove(message.id)
+      return
+    }
+    val store = orchestrator.conversationStore
+    kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+      try {
+        val entries = store.read(conversationId)
+        val ordinalsToDelete = mutableListOf<Int>()
+
+        // 按内容 + 角色匹配，从后往前找第一条（而非 lastOrNull——
+        // 同正文出现多次时 lastOrNull 会跳到最末尾那条，与用户选中的早期消息不符）。
+        val targetRole = message.role
+        val match =
+            entries.reversed().firstOrNull { loc ->
+              when (val e = loc.entry) {
+                is com.tom.rv2ide.ai.agent.conversation.UserMessageEntry ->
+                    targetRole == AssistantMessageAdapter.Role.USER && e.content == message.text
+                is com.tom.rv2ide.ai.agent.conversation.AssistantMessageEntry ->
+                    targetRole == AssistantMessageAdapter.Role.ASSISTANT && e.content == message.text
+                else -> false
+              }
+            }
+        if (match != null) {
+          ordinalsToDelete.add(match.ordinal)
+          // 连带：该条之后连续的 ToolResultEntry（用户消息不连带）。
+          if (match.entry is com.tom.rv2ide.ai.agent.conversation.AssistantMessageEntry) {
+            for (loc in entries) {
+              if (loc.ordinal > match.ordinal) {
+                if (loc.entry is com.tom.rv2ide.ai.agent.conversation.ToolResultEntry) {
+                  ordinalsToDelete.add(loc.ordinal)
+                } else {
+                  break
+                }
+              }
+            }
+          }
+        }
+
+        val removed =
+            if (ordinalsToDelete.isEmpty()) 0
+            else store.deleteEntries(conversationId, ordinalsToDelete)
+
+        android.os.Handler(android.os.Looper.getMainLooper()).post {
+          adapter.remove(message.id)
+          appendTrace(
+              if (removed > 0) "已删除 $removed 条记录" else "已移除显示（未找到对应磁盘记录）")
+        }
+      } catch (e: Exception) {
+        android.os.Handler(android.os.Looper.getMainLooper()).post {
+          android.widget.Toast.makeText(
+                  context, "删除失败：${e.message}", android.widget.Toast.LENGTH_SHORT)
+              .show()
+        }
+      }
+    }
   }
 
   /**
