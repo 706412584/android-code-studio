@@ -138,7 +138,7 @@ final class AnthropicMessagesProtocolTest {
             "{\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"答\"}}")
         + ProtocolStreamHarness.sseEvent("message_delta",
             "{\"type\":\"message_delta\",\"usage\":{\"output_tokens\":7}}")
-        + "data: [DONE]\n\n";
+        + ProtocolStreamHarness.sseEvent("message_stop", "{\"type\":\"message_stop\"}");
     ProtocolStreamHarness h = harnessFor(200, sse);
     RecordingCallback callback = new RecordingCallback();
     ModelCompletionResponse response = new AnthropicMessagesProtocol()
@@ -152,11 +152,26 @@ final class AnthropicMessagesProtocolTest {
     assertEquals("答", callback.text.get(0));
   }
 
+  /**
+   * 用 OpenAI 风格 `data: [DONE]` 收尾的 Anthropic 兼容网关（newapi / one-api 类）
+   * 也必须被识别为正常结束，否则会读到 EOF 判「未收到结束标记」→ 误报截断 → 重试。
+   */
+  @Test
+  void streamAcceptsOpenAiStyleDoneTerminator() throws Exception {
+    String sse = ProtocolStreamHarness.sseEvent("content_block_delta",
+            "{\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"答\"}}")
+        + "data: [DONE]\n\n";
+    ProtocolStreamHarness h = harnessFor(200, sse);
+    ModelCompletionResponse response = new AnthropicMessagesProtocol()
+        .stream(config(h.baseUrl()), List.of(new UserModelMessage("q")), null, null, null);
+    assertEquals("答", response.getText());
+  }
+
   @Test
   void streamEmitsRedactedThinkingAsReasoning() throws Exception {
     String sse = ProtocolStreamHarness.sseEvent("content_block_start",
             "{\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"redacted_thinking\"}}")
-        + "data: [DONE]\n\n";
+        + ProtocolStreamHarness.sseEvent("message_stop", "{\"type\":\"message_stop\"}");
     ProtocolStreamHarness h = harnessFor(200, sse);
     ModelCompletionResponse response = new AnthropicMessagesProtocol()
         .stream(config(h.baseUrl()), List.of(new UserModelMessage("q")), null, null, null);
@@ -172,7 +187,7 @@ final class AnthropicMessagesProtocolTest {
             "{\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"input_json_delta\",\"partial_json\":\"{\\\"file_path\\\":\"}}")
         + ProtocolStreamHarness.sseEvent("content_block_delta",
             "{\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"input_json_delta\",\"partial_json\":\"\\\"a.txt\\\"}\"}}")
-        + "data: [DONE]\n\n";
+        + ProtocolStreamHarness.sseEvent("message_stop", "{\"type\":\"message_stop\"}");
     ProtocolStreamHarness h = harnessFor(200, sse);
     ModelCompletionResponse response = new AnthropicMessagesProtocol()
         .stream(config(h.baseUrl()), List.of(new UserModelMessage("q")), null, null, null);
@@ -188,7 +203,7 @@ final class AnthropicMessagesProtocolTest {
     String sse = ProtocolStreamHarness.sseEvent("content_block_start",
             "{\"type\":\"content_block_start\",\"index\":0,\"content_block\":"
                 + "{\"type\":\"tool_use\",\"id\":\"toolu_2\",\"name\":\"glob\",\"input\":{\"pattern\":\"**\"}}}")
-        + "data: [DONE]\n\n";
+        + ProtocolStreamHarness.sseEvent("message_stop", "{\"type\":\"message_stop\"}");
     ProtocolStreamHarness h = harnessFor(200, sse);
     ModelCompletionResponse response = new AnthropicMessagesProtocol()
         .stream(config(h.baseUrl()), List.of(new UserModelMessage("q")), null, null, null);
@@ -224,7 +239,7 @@ final class AnthropicMessagesProtocolTest {
 
   @Test
   void streamSendsThinkingBudgetWhenReasoningEnabled() throws Exception {
-    ProtocolStreamHarness h = harnessFor(200, "data: [DONE]\n\n");
+    ProtocolStreamHarness h = harnessFor(200, ProtocolStreamHarness.sseEvent("message_stop", "{\"type\":\"message_stop\"}"));
     new AnthropicMessagesProtocol().stream(config(h.baseUrl()), List.of(new UserModelMessage("q")), null, null,
         new ModelRequestOptions("high", false));
     JSONObject body = bodyOf(h);
@@ -236,7 +251,7 @@ final class AnthropicMessagesProtocolTest {
 
   @Test
   void streamSendsToolsWhenProvided() throws Exception {
-    ProtocolStreamHarness h = harnessFor(200, "data: [DONE]\n\n");
+    ProtocolStreamHarness h = harnessFor(200, ProtocolStreamHarness.sseEvent("message_stop", "{\"type\":\"message_stop\"}"));
     ModelRequestOptions options = new ModelRequestOptions("off", false,
         Collections.singletonList(stubTool("file_read")));
     new AnthropicMessagesProtocol().stream(config(h.baseUrl()), List.of(new UserModelMessage("q")), null, null, options);
@@ -248,7 +263,7 @@ final class AnthropicMessagesProtocolTest {
 
   @Test
   void streamIncludesSystemPromptAndOmitsSystemMessagesFromMessages() throws Exception {
-    ProtocolStreamHarness h = harnessFor(200, "data: [DONE]\n\n");
+    ProtocolStreamHarness h = harnessFor(200, ProtocolStreamHarness.sseEvent("message_stop", "{\"type\":\"message_stop\"}"));
     List<ModelMessage> messages = Arrays.asList(
         new SystemModelMessage("你是助手"),
         new SystemModelMessage("第二条规则"),

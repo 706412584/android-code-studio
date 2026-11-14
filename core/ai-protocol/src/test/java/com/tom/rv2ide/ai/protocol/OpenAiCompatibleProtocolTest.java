@@ -206,6 +206,42 @@ final class OpenAiCompatibleProtocolTest {
     assertEquals("部分", e.partialText());
   }
 
+  /**
+   * `"finish_reason": null` 的中间帧不能当成结束帧。
+   *
+   * <p>OpenAI / DeepSeek / Kimi 的每个中间 chunk 都带 `finish_reason: null`。
+   * Android 框架的 org.json 里 `optString` 对 JSON null 返回**字符串 "null"**（非 fallback），
+   * 直接用它判 `!isEmpty()` 会让第一帧就被当成结束——整段回复截断且无错误。
+   * 单测用的 JSON-java 返回 "" 掩盖了这个差异，因此这里显式构造该形态回归。
+   */
+  @Test
+  void streamDoesNotEndOnNullFinishReason() throws Exception {
+    String sse = ProtocolStreamHarness.sse(
+        "{\"choices\":[{\"delta\":{\"content\":\"你\"},\"finish_reason\":null}]}",
+        "{\"choices\":[{\"delta\":{\"content\":\"好\"},\"finish_reason\":null}]}",
+        "{\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}]}");
+    ProtocolStreamHarness h = replay(200, sse);
+    ModelCompletionResponse response = new OpenAiCompatibleProtocol()
+        .stream(config(h.baseUrl()), List.of(new UserModelMessage("q")), null, null, null);
+    assertEquals("你好", response.getText(), "null finish_reason 的帧必须继续累积内容");
+  }
+
+  /**
+   * 结束帧带 finish_reason 但没有 `[DONE]` 时不能判截断。
+   *
+   * <p>部分第三方中转发完 finish_reason 就关流，不发 [DONE]。finish_reason 必须被当作
+   * 结束标记，否则 readSse 读到 EOF 会判「未收到结束标记」→ 误报截断 → 白白重试。
+   */
+  @Test
+  void streamCompletesWithoutDoneWhenFinishReasonPresent() throws Exception {
+    String sse = "data: {\"choices\":[{\"delta\":{\"content\":\"完成\"}}]}\n\n"
+        + "data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}]}\n\n";
+    ProtocolStreamHarness h = replay(200, sse);
+    ModelCompletionResponse response = new OpenAiCompatibleProtocol()
+        .stream(config(h.baseUrl()), List.of(new UserModelMessage("q")), null, null, null);
+    assertEquals("完成", response.getText());
+  }
+
   // ---- 请求体构造 ----
 
   @Test

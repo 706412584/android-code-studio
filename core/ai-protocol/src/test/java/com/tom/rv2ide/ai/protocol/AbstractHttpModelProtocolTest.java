@@ -135,22 +135,52 @@ final class AbstractHttpModelProtocolTest {
 
   @Test
   void sseInvokesHandlerForEachEvent() throws Exception {
-    String sse = "event: message\ndata: one\n\ndata: two\n\n";
+    // 末尾必须带结束标记：readSse 现在把「EOF 且无结束标记」判为截断并抛 IOException
+    // （见 AbstractHttpModelProtocol.readSse 的结束语义）。探针 handler 用 [DONE]
+    // 表达「正常结束」——与真实协议实现一致。
+    String sse = "event: message\ndata: one\n\ndata: two\n\ndata: [DONE]\n\n";
     harness = new ProtocolStreamHarness().replay(200, "text/event-stream", sse);
     List<String> seen = new ArrayList<>();
     new Probe().postSse(harness.baseUrl() + "/p", body(), Collections.emptyMap(),
-        (eventType, data) -> seen.add(eventType + ":" + data));
+        (eventType, data) -> {
+          if ("[DONE]".equals(data.trim())) {
+            throw new AbstractHttpModelProtocol.SseStreamCompleteException();
+          }
+          seen.add(eventType + ":" + data);
+        });
     assertEquals(List.of("message:one", ":two"), seen);
   }
 
   @Test
   void sseJoinsMultiLineDataPayload() throws Exception {
-    String sse = "data: line1\ndata: line2\n\n";
+    String sse = "data: line1\ndata: line2\n\ndata: [DONE]\n\n";
     harness = new ProtocolStreamHarness().replay(200, "text/event-stream", sse);
     List<String> seen = new ArrayList<>();
     new Probe().postSse(harness.baseUrl() + "/p", body(), Collections.emptyMap(),
-        (eventType, data) -> seen.add(data));
+        (eventType, data) -> {
+          if ("[DONE]".equals(data.trim())) {
+            throw new AbstractHttpModelProtocol.SseStreamCompleteException();
+          }
+          seen.add(data);
+        });
     assertEquals(List.of("line1\nline2"), seen);
+  }
+
+  /**
+   * EOF 且没有结束标记 = 真截断，必须报错而不是静默当成功。
+   *
+   * <p>这是本次修复的核心行为：早先 readSse 在 EOF 直接返回，截断的响应被当成
+   * 「正常完成」——用户看到 AI 说到一半停了、无错误、不重试。
+   */
+  @Test
+  void sseWithoutTerminatorThrowsAsTruncated() throws Exception {
+    String sse = "data: partial\n\n";
+    harness = new ProtocolStreamHarness().replay(200, "text/event-stream", sse);
+    ModelCompletionException e = assertThrows(ModelCompletionException.class,
+        () -> new Probe().postSse(harness.baseUrl() + "/p", body(), Collections.emptyMap(),
+            (eventType, data) -> { }));
+    assertTrue(String.valueOf(e.getMessage()).contains("未收到结束标记"),
+        "异常信息应说明未收到结束标记，实际: " + e.getMessage());
   }
 
   @Test

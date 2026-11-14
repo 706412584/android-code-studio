@@ -155,7 +155,9 @@ public final class OpenAiCompatibleProtocol extends AbstractHttpModelProtocol {
         try {
         postJsonSse(endpoint(config.getBaseUrl(), "/chat/completions"), body, headers, cancellationToken, (eventType, data) -> {
             if ("[DONE]".equals(data.trim())) {
-                return;
+                // **正常结束标记**：抛它让 readSse 立刻收尾，而不是继续读到 EOF。
+                // 见 AbstractHttpModelProtocol.readSse 的结束语义说明。
+                throw new SseStreamCompleteException();
             }
             JSONObject event = new JSONObject(data);
             if (event.has("error")) {
@@ -175,32 +177,53 @@ public final class OpenAiCompatibleProtocol extends AbstractHttpModelProtocol {
             if (choice == null) {
                 return;
             }
-            if ("content_filter".equals(choice.optString("finish_reason"))) {
+            // **必须显式排除 JSON null**：Android 框架的 org.json 里 optString 对
+            // JSONObject.NULL 返回字符串 "null"（AOSP JSON.toString(NULL) → NULL.toString()），
+            // 而单测用的 JSON-java 返回 fallback ""。OpenAI/DeepSeek/Kimi 每个中间 chunk
+            // 都带 "finish_reason": null —— 直接 optString 会让第一帧就被当成结束帧，
+            // 真机上整段回复被截断且无错误（单测因实现差异全绿，看不出问题）。
+            String finishReason =
+                    choice.has("finish_reason") && !choice.isNull("finish_reason")
+                            ? choice.optString("finish_reason")
+                            : "";
+            if ("content_filter".equals(finishReason)) {
                 throw new ModelCompletionException("OpenAI stream error: output blocked by content safety policy");
             }
+            // **finish_reason 必须先于 delta 判定**：部分兼容服务（第三方中转最常见）
+            // 最后一帧只带 finish_reason、没有 delta 字段，或发完就关流不发 [DONE]。
+            // 早先 `delta == null → return` 会把这种结束标记整个漏掉，随后 readSse 读到
+            // EOF 判成断流、触发重试并重新生成整段内容（参考项目 Aharou 6b5fcaa8 的实测）。
+            //
+            // 这里把「收到 finish_reason」当作流结束：先让本帧的 delta（如果有）
+            // 处理完，再抛 SseStreamCompleteException 收尾。
             JSONObject delta = choice.optJSONObject("delta");
-            if (delta == null) {
-                return;
-            }
 
-            JSONArray toolCalls = delta.optJSONArray("tool_calls");
-            if (toolCalls != null && toolCalls.length() > 0) {
-                commitBuffer.markToolUseStarted();
-                appendToolCallDeltas(toolCallBuilders, toolCalls);
-            }
+            if (delta != null) {
+                JSONArray toolCalls = delta.optJSONArray("tool_calls");
+                if (toolCalls != null && toolCalls.length() > 0) {
+                    commitBuffer.markToolUseStarted();
+                    appendToolCallDeltas(toolCallBuilders, toolCalls);
+                }
 
-            String reasoningDelta = reasoningDeltaExtractor.extract(delta);
-            if (reasoningDelta.length() > 0) {
-                reasoning.append(reasoningDelta);
-                commitBuffer.appendReasoning(reasoningDelta);
-                if (callback != null) {
-                    callback.onReasoningDelta(reasoningDelta);
+                String reasoningDelta = reasoningDeltaExtractor.extract(delta);
+                if (reasoningDelta.length() > 0) {
+                    reasoning.append(reasoningDelta);
+                    commitBuffer.appendReasoning(reasoningDelta);
+                    if (callback != null) {
+                        callback.onReasoningDelta(reasoningDelta);
+                    }
+                }
+
+                if (delta.has("content") && !delta.isNull("content")) {
+                    ThinkTagParser.Result parsed = thinkTagParser.append(delta.optString("content"));
+                    appendParsedDeltaTo(text, reasoning, parsed, callback, commitBuffer);
                 }
             }
 
-            if (delta.has("content") && !delta.isNull("content")) {
-                ThinkTagParser.Result parsed = thinkTagParser.append(delta.optString("content"));
-                appendParsedDeltaTo(text, reasoning, parsed, callback, commitBuffer);
+            // 本帧的 delta 已经处理完。若它带着 finish_reason，说明这是最后一帧 ——
+            // 抛结束标记收尾，不再等 [DONE]（部分中转根本不发）。
+            if (!finishReason.isEmpty()) {
+                throw new SseStreamCompleteException();
             }
         });
         String trailingReasoning = reasoningDeltaExtractor.flush();

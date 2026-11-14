@@ -335,9 +335,22 @@ abstract class AbstractHttpModelProtocol implements ModelProtocol {
                     data.append(value.startsWith(" ") ? value.substring(1) : value);
                 }
             }
-            if ((cancellationToken == null || !cancellationToken.isCancelled()) && data.length() > 0) {
+            // 用户主动取消不算截断，直接返回（调用方据 token 判断要不要上报取消）。
+            if (cancellationToken != null && cancellationToken.isCancelled()) {
+                return;
+            }
+            // 末尾可能残留一个没有空行收尾的事件（部分服务最后一条不带分隔空行）。
+            // 它同样可能抛 SseStreamCompleteException —— 让它正常传播。
+            if (data.length() > 0) {
                 handler.onEvent(eventType, data.toString());
             }
+            // 走到这里 = 读到 EOF，且协议层没抛出「已完成」标记 = 真截断。
+            //
+            // **早先这里什么都不做，直接返回**：网络中途断开时截断的响应被当成正常完成，
+            // 用户看到 AI 说到一半停了、无任何错误提示、也不触发重试——最难排查的一类故障。
+            // 现在抛 IOException 交给 RetryPolicy（它会判断是否可重试）。
+            throw new IOException(
+                    "SSE 流被中断：未收到结束标记（疑似网络断开或服务端提前关闭连接）");
         } finally {
             reader.close();
         }

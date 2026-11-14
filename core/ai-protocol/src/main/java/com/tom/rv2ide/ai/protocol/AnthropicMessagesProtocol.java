@@ -133,6 +133,12 @@ public final class AnthropicMessagesProtocol extends AbstractHttpModelProtocol {
 
         try {
         postJsonSse(anthropicMessagesEndpoint(config.getBaseUrl()), body, headers, cancellationToken, (eventType, data) -> {
+            // **message_stop = 正常结束**：抛结束标记让 readSse 立刻收尾。
+            // Anthropic 没有 [DONE]，它的结束事件是 `event: message_stop`。
+            // 见 AbstractHttpModelProtocol.readSse 的结束语义说明。
+            if ("message_stop".equals(eventType)) {
+                throw new AbstractHttpModelProtocol.SseStreamCompleteException();
+            }
             handleSseEvent(data, callback, text, reasoning, toolUseBuilders, usageInputTokens, usageOutputTokens, commitBuffer);
         });
 
@@ -214,7 +220,10 @@ public final class AnthropicMessagesProtocol extends AbstractHttpModelProtocol {
             com.tom.rv2ide.ai.protocol.AssistantCommitBuffer commitBuffer
     ) throws Exception {
         if ("[DONE]".equals(data.trim())) {
-            return;
+            // 部分 Anthropic 兼容网关（newapi / one-api 之类）用 OpenAI 风格 `data: [DONE]`
+            // 收尾，而不是官方的 `event: message_stop`。这里同样当结束标记处理——否则
+            // readSse 会在 EOF 判「未收到结束标记」→ 截断 → 白白重试到次数上限。
+            throw new AbstractHttpModelProtocol.SseStreamCompleteException();
         }
         JSONObject event = new JSONObject(data);
         if (event.has("error")) {
