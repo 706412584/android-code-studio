@@ -367,6 +367,9 @@ class ChatActivity : ComponentActivity() {
 
     // 拒绝恢复开关:每次运行前读一次,设置里关闭后下一次发送即回退「只跑一次」。
     runner.setRefusalRecoveryEnabledProvider { com.assistant.ui.AssistantPrefs.refusalRecoveryEnabled(this) }
+    runner.setRefusalRecoveryMaxAttemptsProvider {
+      com.assistant.ui.AssistantPrefs.refusalRecoveryMaxAttempts(this)
+    }
 
     // ---- 附件 ----
     //
@@ -2005,7 +2008,15 @@ class ChatActivity : ComponentActivity() {
         when (val entry = location.entry) {
           is com.tom.rv2ide.ai.agent.conversation.UserMessageEntry -> {
             val text = entry.content
-            if (!text.isNullOrBlank()) timeline.append(MessageTimeline.Role.USER, text)
+            if (!text.isNullOrBlank()) {
+              // meta 条目是系统注记（拒绝恢复的重试提示、上下文压缩提示等），
+              // 不是用户发言：渲染为弱化的 TRACE 行，与实时流里的呈现一致。
+              if (entry.isMeta) {
+                timeline.append(MessageTimeline.Role.TRACE, text)
+              } else {
+                timeline.append(MessageTimeline.Role.USER, text)
+              }
+            }
           }
           is com.tom.rv2ide.ai.agent.conversation.AssistantMessageEntry -> {
             val text = entry.content

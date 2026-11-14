@@ -66,6 +66,10 @@
   <string name="ai_agent_auto_switch_summary">Automatically switch provider on errors</string>
   <string name="ai_agent_code_completion">Code Completion</string>
   <string name="ai_agent_code_completion_summary">Enable AI-powered code suggestions</string>
+  <string name="ai_agent_refusal_recovery_title">Retry on model refusal</string>
+  <string name="ai_agent_refusal_recovery_summary">When the model refuses, retry the same request (sampling gives a chance to recover)</string>
+  <string name="ai_agent_refusal_attempts_title">Refusal retry attempts</string>
+  <string name="ai_agent_refusal_attempts_summary">Total attempts including the first request: %1$d</string>
   <string name="ai_agent_compose_render">Compose Message Rendering</string>
   <string name="ai_agent_compose_render_summary">Render assistant messages with the Compose UI. On by default; turn off only as a fallback — the classic list no longer receives new features.</string>
   <string name="ai_agent_tool_status_bar">Tool Running Status Bar</string>

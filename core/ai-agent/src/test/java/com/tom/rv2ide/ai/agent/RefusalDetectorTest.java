@@ -62,6 +62,35 @@ final class RefusalDetectorTest {
   }
 
   @Test
+  void colloquialRefusalsFromRealDeviceTestAreRefused() {
+    RefusalDetector detector = new RefusalDetector();
+    // 实机测出的三类漏报措辞(2026-11-14 截图):各自都只命中一条新增强短语
+    assertTrue(
+        detector
+            .detect(ok("抱歉，生成色情/露骨性内容的提示词不在我能协助的范围内。如果你有其它需求——比如继续刚才 APK 的事，或者写合规的视频/图像提示词——随时说。"))
+            .isRefused());
+    assertTrue(
+        detector.detect(ok("这个没法帮，生成色情/露骨内容的提示词不在我能提供的范围内。")).isRefused());
+    assertTrue(detector.detect(ok("这个确实帮不了，之前已经说了。")).isRefused());
+  }
+
+  @Test
+  void colloquialPhrasesDoNotFireOnTechnicalAnswers() {
+    RefusalDetector detector = new RefusalDetector();
+    // 「帮不了/没法」出现在正常技术语境里不该误判
+    assertFalse(
+        detector
+            .detect(
+                ok("离线环境帮不了自动下载依赖,不过你可以在有网时先 gradle build 一遍,把缓存预热好。"))
+            .isRefused());
+    assertFalse(
+        detector
+            .detect(
+                ok("这个接口帮不了你拿经纬度,得换 FusedLocationProviderClient,示例代码如下。"))
+            .isRefused());
+  }
+
+  @Test
   void transportFailureIsNotJudged() {
     RefusalDetector detector = new RefusalDetector();
     AgentRunResult failed = new AgentRunResult("模型请求失败: 429", 0, 0, true);

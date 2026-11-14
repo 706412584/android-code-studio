@@ -2803,14 +2803,20 @@ public final class AgentOrchestrator {
     maybeCompact(persistingListener, entries, history, config, overhead);
 
     try {
-      // 拒绝恢复:首跑正常完成则直接返回;模型拒绝执行时按策略阶梯换档重跑
-      //(强化执行约束 → 备用模型)。每档重建会话(注入槽在上一档收尾后已关闭),
-      // activeSessions 登记、开场 mailbox 注入与收尾注入回收同样逐档执行——
-      // 上一档没来得及消费的注入放回排队队列,不丢消息。
+      // 拒绝恢复:首跑正常完成则直接返回;模型拒绝执行时**原地重发**(同参数再请求
+      // 一次,翻盘靠系统提示词与采样随机性,工具层不做策略升级)。每次尝试重建会话
+      // (注入槽在上一档收尾后已关闭),activeSessions 登记、开场 mailbox 注入与收尾
+      // 注入回收同样逐次执行——上次没来得及消费的注入放回排队队列,不丢消息。
+      //
+      // 被拒尝试的助手条目走**延迟提交**(deferAssistantPersistence):收尾时按结果
+      // 提交(非拒绝)或丢弃(被拒)。被拒的回复不进模型上下文——下一轮模型看不到
+      // 自己拒过,不会顺着「我已经拒过了」继续拒。
       final String baseSystemPrompt = systemPrompt;
       final ToolContext attemptToolContext = toolContext;
+      final boolean refusalEnabled = refusalRecoveryEnabled();
+      persistingListener.setDeferAssistantPersistence(refusalEnabled);
       RefusalRecovery.AttemptRunner attemptRunner =
-          (runConfig, reinforced, eventListener) -> {
+          (runConfig, eventListener) -> {
                 AgentSession session = new AgentSession(modelClient, registry, executor);
                 // 登记运行中的 session,供「立即插入」投递(见 injectIntoRun)。
                 activeSessions.put(conversationId, session);
@@ -2823,8 +2829,7 @@ public final class AgentOrchestrator {
                   // 将来 execute 传不同监听器时本 lambda 自动跟上。
                   return session.run(
                       runConfig,
-                      baseSystemPrompt
-                          + (reinforced ? RefusalRecovery.ENFORCE_SUFFIX : ""),
+                      baseSystemPrompt,
                       userRequest,
                       history,
                       attemptToolContext,
@@ -2851,12 +2856,24 @@ public final class AgentOrchestrator {
                 }
           };
       RefusalRecovery recovery =
-          refusalRecoveryEnabled()
+          refusalEnabled
               ? new RefusalRecovery(
-                    new RefusalDetector(), attemptRunner, refusalRecoveryPolicy(providerId, modelId))
-              // 关:只首跑一次(不检测/不强化/不换模型),等价未接入本功能。
+                  new RefusalDetector(), attemptRunner, refusalRecoveryPolicy())
+              // 关:只首跑一次(不检测/不重试),等价未接入本功能。
               : RefusalRecovery.disabled(attemptRunner);
-      return recovery.execute(config, persistingListener);
+      AgentRunResult runResult = recovery.execute(config, persistingListener);
+      // 收尾:被拒 → 丢弃未决条目(不落盘,模型看不到);正常 → 提交。
+      // 仅拒绝恢复链路有未决缓冲;disabled 路径 defer=false,直接落盘后无缓冲。
+      if (refusalEnabled) {
+        RefusalDetector.Verdict finalVerdict = new RefusalDetector().detect(runResult);
+        if (finalVerdict.isRefused() || runResult == null || runResult.isFailed()) {
+          persistingListener.discardPendingAssistant();
+        } else {
+          persistingListener.commitPendingAssistant();
+        }
+        persistingListener.resetDeferAssistantPersistence();
+      }
+      return runResult;
     } finally {
       // 只移除本次运行登记的那一个令牌：并发会话各有各的，不能整体清空。
       activeCancellations.remove(conversationId);
@@ -2891,37 +2908,18 @@ public final class AgentOrchestrator {
   }
 
   /**
-   * 拒绝恢复策略:第三档切到「另一家可用服务商的主模型」+ 同一执行约束;
-   * 没有可用备份时 fallbackConfig 返回 null,第三档退化为「同模型强化约束再跑一次」。
-   *
-   * <p>备份服务商现读 {@link ProviderConfigStore}(密钥改动立即生效),跳过当前服务商
-   * 与不可用记录(缺密钥等);任何异常都收敛为 null——恢复链路本身不该让主运行崩掉。
+   * 拒绝恢复预算:读共享偏好 {@code ai_agent_tools} 的 {@code refusal_recovery_max_attempts}
+   * (含首跑,1-5,默认 3)。与设置页 {@code RefusalRecoveryAttemptsPreference} 及独立助手
+   * App 的 AssistantPrefs.refusalRecoveryMaxAttempts 同键名(各 App 数据目录独立)。
+   * 出界值钳回合法区间——不信任存储。
    */
-  private RefusalRecovery.Policy refusalRecoveryPolicy(String providerId, String modelId) {
+  private RefusalRecovery.Policy refusalRecoveryPolicy() {
     RefusalRecovery.Policy policy = new RefusalRecovery.Policy();
-    policy.fallbackConfig =
-        () -> {
-          try {
-            java.util.List<ProviderConfig> records =
-                new ProviderConfigStore(appContext).load();
-            for (ProviderConfig record : records) {
-              if (record.getId().equals(providerId) || !record.isUsable()) {
-                continue;
-              }
-              AgentModelConfigs.ProviderEndpoint fallbackEndpoint =
-                  AgentModelConfigs.endpointFor(record.getId(), null);
-              if (fallbackEndpoint == null) {
-                continue;
-              }
-              return AgentModelConfigs.build(
-                  fallbackEndpoint, record.getMainModel(), DEFAULT_TOOL_CALL_LIMIT, ProviderConfig.SLOT_MAIN);
-            }
-          } catch (Throwable t) {
-            com.tom.rv2ide.ai.tool.api.ErrorLog.record(
-                "agent", "拒绝恢复:备用模型配置不可用", t, null);
-          }
-          return null;
-        };
+    int attempts =
+        appContext
+            .getSharedPreferences("ai_agent_tools", Context.MODE_PRIVATE)
+            .getInt("refusal_recovery_max_attempts", 3);
+    policy.maxAttempts = Math.max(1, Math.min(attempts, 5));
     return policy;
   }
 

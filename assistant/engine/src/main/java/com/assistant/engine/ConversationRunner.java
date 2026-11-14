@@ -107,6 +107,19 @@ public final class ConversationRunner {
     this.refusalRecoveryEnabled = provider == null ? () -> true : provider;
   }
 
+  /**
+   * 拒绝恢复最大尝试次数提供者（含首跑）。每次运行前读一次，宿主设置页可改。
+   *
+   * <p>engine 是零 Android 依赖模块,读不了 SharedPreferences,走与开关相同的
+   * Supplier 模式由宿主接线。null 或非法值(≤0)回退默认 3;上界由内核钳制。
+   */
+  private volatile java.util.function.Supplier<Integer> refusalRecoveryMaxAttempts = () -> 3;
+
+  /** 设置拒绝恢复最大尝试次数提供者。null 表示默认 3。 */
+  public void setRefusalRecoveryMaxAttemptsProvider(java.util.function.Supplier<Integer> provider) {
+    this.refusalRecoveryMaxAttempts = provider == null ? () -> 3 : provider;
+  }
+
   /** 当前运行实例；null 表示空闲。 */
   private volatile RunHandle active;
 
@@ -363,40 +376,63 @@ public final class ConversationRunner {
               conversationStore,
               null);
 
-      // 拒绝恢复:首跑正常完成则直接返回;模型拒绝执行时按策略阶梯换档重跑
-      //(强化执行约束 → 备用模型),每档重建会话、复用持久化监听器(被拒绝的那
-      // 次尝试会作为「助手拒绝消息」落盘进历史,回放时可见)。
+      // 拒绝恢复:首跑正常完成则直接返回;模型拒绝执行时**原地重发**(同参数再请求
+      // 一次,翻盘靠系统提示词与采样随机性,工具层不做策略升级)。每次尝试的事件走
+      // 同一条持久化流。
+      //
+      // 被拒尝试的助手条目走**延迟提交**:deferAssistantPersistence 开启后,
+      // TURN_FINISHED 的条目先缓冲不落盘;收尾时按结果提交(非拒绝)或丢弃(被拒)。
+      // 被拒的回复不进模型上下文——下一轮模型看不到自己拒过,不会顺着「我已经拒过了」
+      // 继续拒;UI 实时流照常显示(TEXT_DELTA 不受影响),回放则由 TRACE 重试提示交代。
       final List<ModelMessage> runHistory = history;
-      RefusalRecovery.Policy policy = new RefusalRecovery.Policy();
-      policy.fallbackConfig = fallbackModelConfigSupplier(config);
+      final boolean refusalEnabled = refusalRecoveryEnabled.get();
+      persisting.setDeferAssistantPersistence(refusalEnabled);
+      RefusalRecovery.Policy refusalPolicy = new RefusalRecovery.Policy();
+      Integer configuredAttempts = refusalRecoveryMaxAttempts.get();
+      if (configuredAttempts != null && configuredAttempts > 0) {
+        refusalPolicy.maxAttempts = Math.min(configuredAttempts, 5);
+      }
       RefusalRecovery recovery =
-          refusalRecoveryEnabled.get()
-              ? new RefusalRecovery(new RefusalDetector(), (runConfig, reinforced, eventListener) ->
-                  runAgentOnce(
-                      runConfig,
-                      buildSystemPrompt(runConfig)
-                          + (reinforced ? RefusalRecovery.ENFORCE_SUFFIX : ""),
-                      userText,
-                      runHistory,
-                      toolContext,
-                      handle,
-                      persisting,
-                      contextManager,
-                      attachmentsJson), policy)
-              // 关:只首跑一次(不检测/不强化/不换模型),等价未接入本功能。
-              : RefusalRecovery.disabled((runConfig, reinforced, eventListener) ->
-                  runAgentOnce(
-                      runConfig,
-                      buildSystemPrompt(runConfig)
-                          + (reinforced ? RefusalRecovery.ENFORCE_SUFFIX : ""),
-                      userText,
-                      runHistory,
-                      toolContext,
-                      handle,
-                      persisting,
-                      contextManager,
-                      attachmentsJson));
+          refusalEnabled
+              ? new RefusalRecovery(
+                  new RefusalDetector(),
+                  (runConfig, eventListener) ->
+                      runAgentOnce(
+                          runConfig,
+                          buildSystemPrompt(runConfig),
+                          userText,
+                          runHistory,
+                          toolContext,
+                          handle,
+                          persisting,
+                          contextManager,
+                          attachmentsJson),
+                  refusalPolicy)
+              // 关:只首跑一次(不检测/不重试),等价未接入本功能。
+              : RefusalRecovery.disabled(
+                  (runConfig, eventListener) ->
+                      runAgentOnce(
+                          runConfig,
+                          buildSystemPrompt(runConfig),
+                          userText,
+                          runHistory,
+                          toolContext,
+                          handle,
+                          persisting,
+                          contextManager,
+                          attachmentsJson));
       result = recovery.execute(config, persisting);
+      // 收尾:被拒 → 丢弃未决条目(不落盘,模型看不到);正常 → 提交。
+      // 仅拒绝恢复链路有未决缓冲;disabled 路径 defer=false,直接落盘后无缓冲。
+      if (refusalEnabled) {
+        RefusalDetector.Verdict finalVerdict = new RefusalDetector().detect(result);
+        if (finalVerdict.isRefused() || result == null || result.isFailed()) {
+          persisting.discardPendingAssistant();
+        } else {
+          persisting.commitPendingAssistant();
+        }
+        persisting.resetDeferAssistantPersistence();
+      }
     } catch (Throwable t) {
       // 内核内部已经处理了 OOM 与模型异常（转成 FAILED 事件）；能到这里的是
       // 装配期异常（配置非法、工作区不可写等）。如实上报，不吞。
@@ -448,9 +484,8 @@ public final class ConversationRunner {
   /**
    * 用指定模型配置跑一次 agent 运行。
    *
-   * <p>作为 {@link RefusalRecovery} 的 AttemptRunner 实现:拒绝恢复的重试会重建会话
-   * (注入槽在上一轮收尾后已关闭),持久化监听器复用——各次尝试的事件在同一条流里
-   * 落盘,被拒绝的那次尝试会作为「助手拒绝消息」留在历史中,回放时可见。
+   * <p>作为 {@link RefusalRecovery} 的 AttemptRunner 实现:每次尝试重建会话
+   * (注入槽在上一轮收尾后已关闭),持久化监听器复用——各次尝试的事件在同一条流里。
    */
   private AgentRunResult runAgentOnce(
       ModelConfig runConfig,
@@ -476,39 +511,6 @@ public final class ConversationRunner {
         reasoningEffortProvider.get());
   }
 
-  /**
-   * 备用模型配置供应:另一家可用服务商优先;同服务商的不同模型槽位次之;都没有返回 null
-   * (第三档退化为「同模型强化约束再跑一次」)。
-   *
-   * @param primary 主运行配置(「同服务商换模型」档基于它构建)
-   */
-  private java.util.function.Supplier<ModelConfig> fallbackModelConfigSupplier(ModelConfig primary) {
-    // 包成 Supplier:第三档每次 get() 现读记录表(密钥/新增服务商改动立即生效),
-    // 与 AgentOrchestrator.refusalRecoveryPolicy 的惰性语义一致。
-    return () -> {
-      String currentProvider = modelSettings.providerId();
-      String currentModel = modelSettings.modelId();
-      for (ProviderRecords.Record record : modelSettings.providerRecords().all()) {
-        if (record.id.equals(currentProvider) || !record.isUsable()) {
-          continue;
-        }
-        return ModelConfig.builder(
-                record.id, record.label, record.protocolType, record.label,
-                record.baseUrl, record.apiKey, record.mainModel())
-            .build();
-      }
-      ProviderRecords.Record primaryRecord = modelSettings.providerRecords().find(currentProvider);
-      if (primaryRecord != null) {
-        for (int i = 1; i < primaryRecord.slotModels.length; i++) {
-          String slot = primaryRecord.slotModels[i];
-          if (slot != null && !slot.isEmpty() && !slot.equals(currentModel)) {
-            return primary.withModelId(slot);
-          }
-        }
-      }
-      return null;
-    };
-  }
   /**
    * 估算系统提示词 + 工具定义的 token 成本。
    *

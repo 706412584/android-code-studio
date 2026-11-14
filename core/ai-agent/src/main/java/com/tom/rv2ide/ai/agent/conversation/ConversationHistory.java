@@ -127,9 +127,15 @@ public final class ConversationHistory {
         continue;
       }
       if (entry instanceof AssistantMessageEntry) {
+        AssistantMessageEntry assistantEntry = (AssistantMessageEntry) entry;
+        // 被拒的回复整条跳过(与 toMessage 同一语义):不进模型上下文。
+        // 它的 toolCalls 在拒绝轮不会被结果配对(模型拒绝时不调工具),直接 continue
+        // 也避免了 keptIds 链被无关条目打断。
+        if (assistantEntry.isRefused()) {
+          continue;
+        }
         lastKeptCallIds =
-            appendAssistantWithSanitizedCalls(
-                (AssistantMessageEntry) entry, resultIds, messages);
+            appendAssistantWithSanitizedCalls(assistantEntry, resultIds, messages);
         continue;
       }
       if (entry instanceof ToolResultEntry) {
@@ -346,6 +352,11 @@ public final class ConversationHistory {
     }
     if (entry instanceof AssistantMessageEntry) {
       AssistantMessageEntry assistant = (AssistantMessageEntry) entry;
+      // 被拒的回复不进模型上下文:拒绝原文喂回去,模型大概率顺着「我已经拒过了」
+      // 继续拒,且对后续任务没有信息价值。UI 回放仍显示(isRefused 只影响这里)。
+      if (assistant.isRefused()) {
+        return null;
+      }
       return new AssistantModelMessage(
           assistant.getContent(), assistant.getReasoningContent(), assistant.getToolCalls());
     }

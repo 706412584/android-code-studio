@@ -108,6 +108,67 @@ final class ConversationPersistingListener implements AgentEvent.Listener {
   /** 本轮累积的**动作文案**（最近一条 PROGRESS）；状态条只表达「此刻在做什么」。 */
   private volatile String lastAction = "";
 
+  /**
+   * 延迟提交的助手轮缓冲（拒绝恢复链路）。
+   *
+   * <p>TURN_FINISHED 时若 {@link #deferAssistantPersistence} 为 true，助手条目不直接
+   * 落盘，先进这里；宿主在拿到运行结果后用 {@link #commitPendingAssistant()} 提交
+   * （非拒绝）或 {@link #discardPendingAssistant()} 丢弃（被拒——拒绝原文不进模型
+   * 上下文）。为 null 表示无未决条目。
+   */
+  private String pendingAssistant;
+  private String pendingAssistantReasoning;
+  private java.util.List<ToolCall> pendingAssistantCalls;
+
+  /** 是否延迟提交助手条目。由宿主按「本轮走拒绝恢复」设置；默认 false（照旧直接落盘）。 */
+  private volatile boolean deferAssistantPersistence;
+
+  /** 设置是否延迟提交助手条目（拒绝恢复链路用），必须在运行开始前设置。 */
+  public void setDeferAssistantPersistence(boolean defer) {
+    this.deferAssistantPersistence = defer;
+  }
+
+  /** 复位延迟提交标志并清掉未决缓冲（运行收尾的兜底，防缓冲跨轮泄漏）。 */
+  public synchronized void resetDeferAssistantPersistence() {
+    deferAssistantPersistence = false;
+    pendingAssistant = null;
+    pendingAssistantReasoning = null;
+    pendingAssistantCalls = null;
+  }
+
+  public synchronized boolean hasPendingAssistant() {
+    return pendingAssistant != null;
+  }
+
+  /** 提交缓冲中的助手条目（正常路径）。 */
+  public void commitPendingAssistant() {
+    String content;
+    String reasoning;
+    java.util.List<ToolCall> calls;
+    synchronized (this) {
+      if (pendingAssistant == null) {
+        return;
+      }
+      content = pendingAssistant;
+      reasoning = pendingAssistantReasoning;
+      calls = pendingAssistantCalls;
+      pendingAssistant = null;
+      pendingAssistantReasoning = null;
+      pendingAssistantCalls = null;
+    }
+    appendEntry(
+        AssistantMessageEntry.create(null, System.currentTimeMillis(), content, reasoning, calls));
+  }
+
+  /** 丢弃缓冲中的助手条目（被拒——拒绝原文不进模型上下文、也不落盘）。 */
+  public void discardPendingAssistant() {
+    synchronized (this) {
+      pendingAssistant = null;
+      pendingAssistantReasoning = null;
+      pendingAssistantCalls = null;
+    }
+  }
+
   ConversationPersistingListener(
       String conversationId,
       String userRequest,
@@ -181,6 +242,26 @@ final class ConversationPersistingListener implements AgentEvent.Listener {
         }
         break;
       case TURN_FINISHED:
+        if (deferAssistantPersistence) {
+          // 拒绝恢复链路:助手条目先缓冲不落盘,由宿主在收尾时提交或丢弃
+          // (discardPendingAssistant/commitPendingAssistant)。文本对 UI 的展示
+          // 不受影响——TEXT_DELTA 已实时转发,快照也读 textBuffer。
+          synchronized (this) {
+            pendingAssistant = event.getMessage() == null ? "" : event.getMessage();
+            pendingAssistantReasoning = reasoningBuffer.toString();
+            pendingAssistantCalls =
+                event.getToolCalls() == null
+                    ? new java.util.ArrayList<>()
+                    : new java.util.ArrayList<>(event.getToolCalls());
+            reasoningBuffer.setLength(0);
+            textBuffer.setLength(0);
+            lastAction = "";
+          }
+          // 孤儿步骤桶(重试提示行)照常 flush:提示是系统注记,不属于被拒的
+          // 助手正文,留在桶里会泄漏到下一轮、被错误地落进下一轮的历史。
+          flushOrphanSteps();
+          break;
+        }
         appendEntry(
             AssistantMessageEntry.create(
                 null,
@@ -195,6 +276,9 @@ final class ConversationPersistingListener implements AgentEvent.Listener {
           textBuffer.setLength(0);
           lastAction = "";
         }
+        // 孤儿步骤桶兜底:拒绝恢复提示、上下文压缩提示等裸 PROGRESS 没有
+        // TOOL_FINISHED 来清桶,在此落成 meta 条目(不进模型对话,回放可见)。
+        flushOrphanSteps();
         break;
       case TOOL_FINISHED:
         if (event.getToolResult() != null) {
@@ -227,6 +311,26 @@ final class ConversationPersistingListener implements AgentEvent.Listener {
         break;
       default:
         break;
+    }
+  }
+
+  /**
+   * 把孤儿步骤桶（无工具调用归属的裸 PROGRESS 行）落成 meta 用户条目。
+   *
+   * <p>落成 **meta**（{@code isMeta()==true}）：不进模型对话
+   * （{@code ConversationHistory.toMessage} 跳过），只作回放展示——语义是系统注记，
+   * 不是用户发言。
+   */
+  private void flushOrphanSteps() {
+    List<String> orphanSteps = stepBuffers.remove(NO_CALL_ID);
+    if (orphanSteps != null && !orphanSteps.isEmpty()) {
+      appendEntry(
+          new UserMessageEntry(
+              null,
+              null,
+              System.currentTimeMillis(),
+              String.join("\n", orphanSteps),
+              true));
     }
   }
 
