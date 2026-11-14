@@ -93,9 +93,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.tom.rv2ide.R as AppR
 import com.tom.rv2ide.artificial.agent.compose.compat.LocalBrowserOpener
-import com.tom.rv2ide.artificial.agent.compose.components.tools.ToolOutputText
 import com.tom.rv2ide.artificial.agent.compose.compat.LocalTerminalOpener
 import com.tom.rv2ide.artificial.agent.compose.compat.SessionUseCase
+import com.tom.rv2ide.artificial.agent.compose.components.tools.AdaptiveModalBottomSheet
+import com.tom.rv2ide.artificial.agent.compose.components.tools.ToolOutputText
 import com.tom.rv2ide.artificial.agent.compose.model.AgentUIMessage
 import com.tom.rv2ide.artificial.agent.compose.theme.Radius
 import com.tom.rv2ide.resources.R
@@ -152,11 +153,9 @@ internal fun AharouComputerSheet(
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val current = toolMessages.getOrNull(pagerState.currentPage)
 
-    ModalBottomSheet(
-        onDismissRequest = onDismiss,
-        sheetState = sheetState,
-        dragHandle = null,
-    ) {
+    // 统一走 AdaptiveModalBottomSheet：它在悬浮窗宿主下会退化成面板内嵌卡片，
+    // 不会因为没有 Activity window token 而抛 BadTokenException。
+    AdaptiveModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()

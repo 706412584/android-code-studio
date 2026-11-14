@@ -605,6 +605,7 @@
   <string name="ai_assistant_fullscreen_hint">长按进入沉浸式全屏</string>
   <string name="ai_assistant_new_conversation">新会话</string>
   <string name="ai_assistant_minimize">最小化</string>
+  <string name="ai_assistant_collapse">收起为悬浮图标</string>
   <string name="ai_assistant_close">关闭</string>
   <string name="ai_assistant_empty_hint">让 AI 读取、修改或构建你的项目。\n例如：“读取 app/build.gradle 并列出其中的依赖”。</string>
   <string name="ai_assistant_input_hint">描述你的需求…</string>

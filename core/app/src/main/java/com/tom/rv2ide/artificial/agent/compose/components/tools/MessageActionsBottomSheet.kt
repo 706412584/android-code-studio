@@ -21,11 +21,16 @@
 
 package com.tom.rv2ide.artificial.agent.compose.components.tools
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
@@ -43,27 +48,30 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import com.tom.rv2ide.artificial.agent.compose.compat.LocalIsOverlayWindow
+import com.tom.rv2ide.artificial.agent.compose.compat.OverlayAwareDialog
 import com.tom.rv2ide.artificial.agent.compose.model.AgentUIMessage
 import com.tom.rv2ide.artificial.agent.compose.model.MessageRole
 import com.tom.rv2ide.artificial.agent.compose.model.hasVisibleContent
 import com.tom.rv2ide.artificial.agent.compose.theme.Spacing
+import com.tom.rv2ide.resources.R
 import compose.icons.FeatherIcons
 import compose.icons.feathericons.Copy
 import compose.icons.feathericons.Edit2
 import compose.icons.feathericons.RefreshCw
 import compose.icons.feathericons.Trash2
-import androidx.compose.runtime.getValue
-import androidx.compose.ui.res.stringResource
-import com.tom.rv2ide.resources.R
 
 /** 宽屏下模态弹窗的最大宽度：再宽一行文案过长，视线来回扫描成本高。 */
 private val DialogMaxWidth = 560.dp
@@ -111,6 +119,21 @@ internal fun AdaptiveModalBottomSheet(
     containerColor: Color = MaterialTheme.colorScheme.surface,
     content: @Composable ColumnScope.() -> Unit
 ) {
+  // 悬浮窗（Service 宿主）分支：**不能用 Compose 的 Dialog / ModalBottomSheet**。
+  //
+  // 它们在内部 `DisposableEffect` 里就调 `Dialog.show()`，而 Dialog 默认 window type
+  // 是 TYPE_APPLICATION（要 Activity token）。试过在内容里放 SideEffect 事后改 type
+  // ——太晚，`show()` 已经失败并抛出 BadTokenException（黑鲨实测崩溃，堆栈指向
+  // AndroidDialog_androidKt$Dialog$1$1）。
+  //
+  // 唯一可行的顺序是「先 setType，再 show」，只有创建 Dialog 的一方做得到。
+  // 因此把这件事交给宿主（OverlayDialogHost），这里只提供内容。
+  if (LocalIsOverlayWindow.current) {
+    OverlayAwareDialog(onDismissRequest = onDismissRequest) {
+      OverlaySheetSurface(containerColor = containerColor) { content() }
+    }
+    return
+  }
   if (isCompactWidth()) {
     ModalBottomSheet(
         onDismissRequest = onDismissRequest,
@@ -133,6 +156,44 @@ internal fun AdaptiveModalBottomSheet(
               tonalElevation = 0.dp) {
                 Column(modifier = Modifier.fillMaxWidth().padding(top = Spacing.md)) { content() }
               }
+        }
+  }
+}
+
+/**
+ * 悬浮窗弹窗的内容壳：半透明遮罩 + 贴底卡片。
+ *
+ * <p>只在 [LocalIsOverlayWindow] 分支里用——它跑在宿主创建的原生 overlay Dialog 内部，
+ * 那个窗口默认按内容测量且不可触摸穿透，所以这里显式铺满并自带点击关闭。
+ *
+ * @param content 调用方给的内容（与 Activity 分支共用同一份 Composable）
+ */
+@Composable
+private fun OverlaySheetSurface(
+    containerColor: Color,
+    content: @Composable ColumnScope.() -> Unit,
+) {
+  Box(modifier = Modifier.fillMaxSize()) {
+    // 遮罩：点击关闭。用独立一层而不是给整个 Box 加 clickable，否则会吞掉卡片的点击。
+    Box(
+        modifier =
+            Modifier.fillMaxSize()
+                .background(Color.Black.copy(alpha = 0.45f))
+                .clickable(
+                    indication = null,
+                    interactionSource = remember { MutableInteractionSource() },
+                    onClick = { /* 关闭由外层 Dialog 的 onDismiss 统一处理 */ }))
+    Surface(
+        modifier =
+            Modifier.align(Alignment.BottomCenter)
+                .fillMaxWidth()
+                .padding(horizontal = Spacing.sm)
+                .padding(bottom = Spacing.sm)
+                .heightIn(max = (LocalConfiguration.current.screenHeightDp * 0.7f).dp),
+        shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp),
+        color = containerColor,
+        tonalElevation = 0.dp) {
+          Column(modifier = Modifier.fillMaxWidth().padding(top = Spacing.md)) { content() }
         }
   }
 }

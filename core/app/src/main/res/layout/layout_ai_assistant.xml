@@ -258,6 +258,38 @@
   </com.google.android.material.card.MaterialCardView>
 
   <!--
+    悬浮窗内嵌的底部选择面板宿主（模型 / 思考强度 / 附件 / 消息操作等）。
+
+    **为什么需要它**：Material3 的 ModalBottomSheet 与 Compose 的 Dialog 都是独立
+    窗口，在应用外悬浮窗（Service 宿主）下要么抛 BadTokenException（没有 Activity
+    token），要么必须建一个 TYPE_APPLICATION_OVERLAY 窗口——后者会**盖住整个屏幕**，
+    看起来像「切到了另一个界面」而不是面板内的一层（用户实测反馈）。
+
+    正确做法是把内容**画在面板自己的视图树里**，与会话抽屉（assistantDrawerOverlay）
+    同一套办法：作为 assistantCard 的兄弟节点、约束贴合卡片边界，后声明所以绘制在上层。
+
+    内容由 Compose 渲染（`OverlayViewTreeOwners` 已挂在根容器上，ComposeView 能解析
+    owner）；收起时 gone，不占布局也不接触摸。
+  -->
+  <FrameLayout
+    android:id="@+id/assistantSheetOverlay"
+    android:layout_width="0dp"
+    android:layout_height="0dp"
+    android:visibility="gone"
+    tools:visibility="gone"
+    app:layout_constraintBottom_toBottomOf="@id/assistantCard"
+    app:layout_constraintEnd_toEndOf="@id/assistantCard"
+    app:layout_constraintStart_toStartOf="@id/assistantCard"
+    app:layout_constraintTop_toTopOf="@id/assistantCard">
+
+    <androidx.compose.ui.platform.ComposeView
+      android:id="@+id/assistantSheetCompose"
+      android:layout_width="match_parent"
+      android:layout_height="match_parent" />
+
+  </FrameLayout>
+
+  <!--
     会话列表抽屉。
 
     放在 assistantCard **之后**（同级、兄弟节点）：ConstraintLayout 里后声明的子视图

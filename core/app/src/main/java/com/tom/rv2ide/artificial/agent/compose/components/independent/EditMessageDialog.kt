@@ -30,8 +30,6 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import com.tom.rv2ide.artificial.agent.compose.compat.AppTextField
-import com.tom.rv2ide.artificial.agent.compose.compat.dialogTextFieldColors
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -40,8 +38,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
-import com.tom.rv2ide.resources.R
+import com.tom.rv2ide.artificial.agent.compose.compat.AppTextField
+import com.tom.rv2ide.artificial.agent.compose.compat.dialogTextFieldColors
 import com.tom.rv2ide.artificial.agent.compose.theme.Spacing
+import com.tom.rv2ide.resources.R
 
 @Composable
 internal fun EditMessageDialog(

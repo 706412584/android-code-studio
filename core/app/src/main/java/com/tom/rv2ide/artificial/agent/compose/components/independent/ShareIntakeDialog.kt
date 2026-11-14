@@ -36,8 +36,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
-import com.tom.rv2ide.resources.R
 import com.tom.rv2ide.artificial.agent.compose.compat.PendingUploadAttachment
+import com.tom.rv2ide.resources.R
 
 /**
  * 外部分享进来的文件「怎么处理」确认框。

@@ -24,14 +24,19 @@ import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.view.View
 import android.view.ViewGroup
 import android.view.WindowManager
 import androidx.appcompat.view.ContextThemeWrapper
 import androidx.lifecycle.LifecycleCoroutineScope
+import com.tom.rv2ide.R
 import com.tom.rv2ide.R as AppR
 import com.tom.rv2ide.activities.AttachmentPickerActivity
 import com.tom.rv2ide.artificial.agent.AssistantModelPicker
 import com.tom.rv2ide.artificial.agent.AssistantSettings
+import com.tom.rv2ide.artificial.agent.compose.compat.OverlayDialogHandle
+import com.tom.rv2ide.artificial.agent.compose.compat.OverlayDialogHost
+import com.tom.rv2ide.artificial.agent.compose.compat.createOverlayDialog
 import com.tom.rv2ide.resources.R.string
 import com.tom.rv2ide.services.AssistantOverlayService
 
@@ -59,6 +64,15 @@ class OverlayHost(
     private val service: Service,
     override val lifecycleScope: LifecycleCoroutineScope,
     override val container: ViewGroup,
+    /**
+     * 面板拖动的执行者（由 [AssistantOverlayService] 注入）。
+     *
+     * <p><b>为什么用回调而不是让宿主自己改窗口</b>：改悬浮窗必须走
+     * `WindowManager.updateViewLayout` 并持有当前的 `LayoutParams`——那些状态都在
+     * 服务里，宿主持有的是抽象 `Service`。给一个 `(dx, dy) -> Unit` 既让宿主保持
+     * 「不知道怎么移窗口」，也免了把整个服务 API 暴露给视图层。
+     */
+    private val onPanelDrag: ((dx: Int, dy: Int) -> Unit)? = null,
 ) : AssistantHost {
 
   /** 带应用主题的 Context；弹窗与视图 inflate 都用它。 */
@@ -75,6 +89,74 @@ class OverlayHost(
   override val dialogs: AssistantDialogs = OverlayDialogs(context)
 
   override val attachments: AssistantAttachments = OverlayAttachments(service)
+
+  /**
+   * 面板顶栏拖动 → 移动系统窗口。
+   *
+   * <p>用「增量」而非「绝对坐标」：Compose 的 `detectDragGestures` 给的就是逐帧增量，
+   * 服务侧累加即可，两端都不必追踪起点。回调为 null（构造时没注入）时静默忽略——
+   * 拖动只是便利功能，不该影响面板其余行为。
+   */
+  override fun onOverlayPanelDrag(dx: Int, dy: Int) {
+    onPanelDrag?.invoke(dx, dy)
+  }
+
+  /**
+   * 悬浮层弹窗宿主（见 [OverlayDialogHost]）。
+   *
+   * <p>Compose 的 `Dialog` 在 overlay 下必崩（`show()` 需要 Activity token），
+   * 而这里创建的**原生** `Dialog` 可以在 `show()` 之前把 window type 设成
+   * `TYPE_APPLICATION_OVERLAY`——顺序对了就不会崩。
+   */
+  val overlayDialogs: OverlayDialogHost = OverlayDialogHost { onDismissRequest, content ->
+    // 渲染进面板**内部**的 overlay 容器（layout_ai_assistant.xml 的
+    // assistantSheetOverlay），而不是建系统窗口。
+    //
+    // 建窗口（TYPE_APPLICATION_OVERLAY）虽然不崩，但遮罩会铺满整个屏幕、面板被盖住，
+    // 用户看到的是「切到了另一个界面」——那不是 sheet 的语义。画在面板视图树里，
+    // 遮罩与卡片自然只覆盖面板范围，与 Activity 宿主的观感一致。
+    val overlay = container.findViewById<ViewGroup>(R.id.assistantSheetOverlay)
+    val compose = container.findViewById<androidx.compose.ui.platform.ComposeView>(
+        R.id.assistantSheetCompose)
+    if (overlay != null && compose != null) {
+      overlay.visibility = View.VISIBLE
+      compose.setContent(content)
+      return@OverlayDialogHost object : OverlayDialogHandle {
+        override fun dismiss() {
+          overlay.visibility = View.GONE
+          // 清空内容，避免下一层 sheet 打开时短暂闪出上一份内容。
+          runCatching { compose.setContent {} }
+          onDismissRequest()
+        }
+      }
+    }
+    // 兜底：布局里没有容器（旧版 XML）时退回系统窗口方案。
+    val dialog =
+        createOverlayDialog(
+            context = ContextThemeWrapper(service, AppR.style.Theme_AndroidIDE),
+            onDismiss = onDismissRequest,
+            installViewTreeOwners = { view ->
+              val owners = service as? com.tom.rv2ide.services.AssistantOverlayService
+              if (owners != null) {
+                com.tom.rv2ide.artificial.agent.compose.OverlayViewTreeOwners.install(
+                    view, owners, owners, owners)
+              }
+            },
+            bounds =
+                com.tom.rv2ide.services.AssistantOverlayService.panelBoundsOnScreen()
+                    ?: android.graphics.Rect(
+                        0,
+                        0,
+                        service.resources.displayMetrics.widthPixels,
+                        service.resources.displayMetrics.heightPixels),
+            content = content)
+    dialog.show()
+    object : OverlayDialogHandle {
+      override fun dismiss() {
+        runCatching { dialog.dismiss() }
+      }
+    }
+  }
 }
 
 /**
@@ -373,9 +455,18 @@ private class OverlayAttachments(private val service: Service) : AssistantAttach
             // "Calling startActivity() from outside of an Activity context requires FLAG_ACTIVITY_NEW_TASK"。
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
 
+    // **先把悬浮窗收起来**再拉起选择器：展开态的面板是整块系统悬浮窗，会盖在
+    // 系统文件选择器之上（`TYPE_APPLICATION_OVERLAY` 层级高于普通 Activity），
+    // 用户根本点不到选择器里的条目。收起后只剩 FAB，不挡内容。
+    //
+    // 结果回来时（[AssistantOverlayService.handleAttachmentResult]）自动展开回面板，
+    // 因此用户看到的仍是「点附件 → 选完回来」的连续流程。
+    AssistantOverlayService.collapseForAttachmentRequest()
+
     try {
       service.startActivity(trampoline)
     } catch (e: ActivityNotFoundException) {
+      AssistantOverlayService.expandAfterAttachmentRequest()
       // 连蹦床都拉不起来（理论上不会，它是本应用组件）。撤销登记并回 null。
       AssistantOverlayService.cancelAttachmentRequest(requestCode)
       onResult(null)

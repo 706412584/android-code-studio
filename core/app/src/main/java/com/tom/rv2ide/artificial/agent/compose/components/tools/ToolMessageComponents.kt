@@ -57,6 +57,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Construction
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -76,12 +77,13 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.input.pointer.AwaitPointerEventScope
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.PointerId
 import androidx.compose.ui.input.pointer.PointerInputScope
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
@@ -89,6 +91,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
+import com.tom.rv2ide.artificial.agent.ToolResultImageSupport
+import com.tom.rv2ide.artificial.agent.compose.compat.ImageSource
+import com.tom.rv2ide.artificial.agent.compose.compat.ImageViewerRequest
+import com.tom.rv2ide.artificial.agent.compose.compat.LocalImageViewer
 import com.tom.rv2ide.artificial.agent.compose.compat.SessionUseCase
 import com.tom.rv2ide.artificial.agent.compose.components.bubbles.RippleText
 import com.tom.rv2ide.artificial.agent.compose.components.style.BotGlyph
@@ -103,16 +109,17 @@ import com.tom.rv2ide.artificial.agent.compose.theme.Brand
 import com.tom.rv2ide.artificial.agent.compose.theme.Radius
 import com.tom.rv2ide.artificial.agent.compose.theme.Spacing
 import com.tom.rv2ide.artificial.agent.compose.theme.semanticColors
+import com.tom.rv2ide.resources.R
 import compose.icons.FeatherIcons
-import compose.icons.feathericons.ChevronRight
-import compose.icons.feathericons.Image
 import compose.icons.feathericons.Check
 import compose.icons.feathericons.ChevronDown
+import compose.icons.feathericons.ChevronRight
 import compose.icons.feathericons.ChevronUp
 import compose.icons.feathericons.Cpu
 import compose.icons.feathericons.Database
 import compose.icons.feathericons.Edit3
 import compose.icons.feathericons.FileText
+import compose.icons.feathericons.Image
 import compose.icons.feathericons.Search
 import compose.icons.feathericons.Terminal
 import compose.icons.feathericons.Tool
@@ -129,13 +136,6 @@ import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
-import androidx.compose.ui.res.stringResource
-import com.tom.rv2ide.resources.R
-import com.tom.rv2ide.artificial.agent.ToolResultImageSupport
-import com.tom.rv2ide.artificial.agent.compose.compat.ImageSource
-import com.tom.rv2ide.artificial.agent.compose.compat.LocalImageViewer
-import com.tom.rv2ide.artificial.agent.compose.compat.ImageViewerRequest
-import androidx.compose.material3.Surface
 
 internal val DiffAddBg: Color
     @Composable get() = MaterialTheme.semanticColors.diffAddBg

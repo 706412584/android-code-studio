@@ -133,6 +133,20 @@ class AssistantOverlayService :
   private var overlayExpanded = false
 
   /**
+   * 展开态窗口相对默认位置（贴顶居中）的偏移，由用户拖动面板顶部产生。
+   *
+   * <p><b>为什么不复用 [collapsedX]/[collapsedY]</b>：两者语义不同。收起态的落点是
+   * **用户摆放 FAB 的绝对位置**，展开态是**贴顶的整块面板**——把收起态的坐标套到展开态，
+   * 面板会整体位移、右/下被推出屏幕（这是早先不铺满时踩过的 bug）。展开态用独立的
+   * 偏移量（从默认 0,0 起算），收起/展开来回切换时两套坐标互不干扰。
+   *
+   * <p>不持久化：展开态位置是「临时看看」，重开面板回到贴顶是合理默认；而 FAB 落点
+   * 是长期摆放，必须记住（见 [PREF_OVERLAY_X]）。
+   */
+  private var expandedOffsetX = 0
+  private var expandedOffsetY = 0
+
+  /**
    * 本服务作为 [LifecycleOwner] 的 registry。
    *
    * <p>`FloatingAssistantView` 需要 [LifecycleCoroutineScope] 驱动异步加载（会话回放、
@@ -172,6 +186,8 @@ class AssistantOverlayService :
     lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_CREATE)
     lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_START)
     createNotificationChannel()
+    // 登记实例：附件选择要临时收起/展开面板（见 collapseForAttachmentRequest）。
+    instance = java.lang.ref.WeakReference(this)
   }
 
   override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -293,7 +309,12 @@ class AssistantOverlayService :
     com.tom.rv2ide.artificial.agent.compose.OverlayViewTreeOwners.install(
         container, this, this, this)
 
-    val host = OverlayHost(this, serviceScope, container)
+    // 顶栏拖动 → 移动本窗口。用增量回调（见 dragExpandedWindowBy）：视图层不需要知道
+// 窗口对象，服务侧累加偏移即可。
+    val host =
+        OverlayHost(this, serviceScope, container) { dx, dy ->
+          rootView?.let { dragExpandedWindowBy(it, dx, dy) }
+        }
     // 注入进程级共享 orchestrator（AssistantOrchestratorProvider）：应用外悬浮跑在 Service 里、
     // **没有 Activity**，取不到 MainViewModel；若在这里自建实例，会话列表、正在跑的任务、
     // 上下文用量、工作区会与应用内的悬浮助手/内联页/真全屏各说各话——这正是「三者割裂」的
@@ -342,7 +363,7 @@ class AssistantOverlayService :
       }
       overlayExpanded = expanded
       if (expanded) {
-        // 展开：**窗口自己长到全屏**。
+        // 展开：窗口长到**屏幕高度的一个比例**，不是铺满整屏。
         //
         // 不能只让卡片 match_parent：窗口是 WRAP_CONTENT（见 [buildLayoutParams]，
         // 为避免全屏吞触摸），窗口按内容测量，卡片在 wrap 窗口里的 match_parent
@@ -350,11 +371,30 @@ class AssistantOverlayService :
         // 实测：收起态窗口 220×220（FAB），点开后只有 994×968 挤在右下角。
         //
         // 因此展开态必须把窗口尺寸也一起改掉，卡片才真正有铺满的空间。
+        //
+        // **高度按比例封顶而不是 MATCH_PARENT**：铺满整屏时面板从状态栏一直压到
+        // 屏幕最底、完全盖住底下的应用，用户反馈「悬浮窗 UI 太长、没有限制整体高度」。
+        // 限到 [EXPAND_HEIGHT_FRACTION] 后，顶部仍对齐屏幕顶（窗口不挪位，标题栏的
+        // statusBarsPadding 继续正确避让状态栏），下方留出可见的应用内容。
         lp.width = WindowManager.LayoutParams.MATCH_PARENT
-        lp.height = WindowManager.LayoutParams.MATCH_PARENT
+        lp.height = expandedHeightPx()
         lp.gravity = Gravity.TOP or Gravity.START
-        lp.x = 0
-        lp.y = 0
+        // 回到上次拖动到的位置（默认 0,0 = 贴顶）。钳制一次：屏幕旋转/分辨率变化后
+        // 旧偏移可能把面板推出可视区。
+        val clamped = clampExpandedOffset(expandedOffsetX, expandedOffsetY)
+        expandedOffsetX = clamped[0]
+        expandedOffsetY = clamped[1]
+        lp.x = expandedOffsetX
+        lp.y = expandedOffsetY
+        // **展开态必须清掉 FLAG_NOT_FOCUSABLE**，否则面板里的控件收不到点击。
+        //
+        // 带这个 flag 的窗口只接受「真实触摸序列」，`input tap` / UIAutomator 注入的
+        // 事件会被直接丢弃——实测（黑鲨）展开后点收起键、输入框、思考强度全部无反应，
+        // 且没有任何日志或崩溃。真机上用户用手指是能点的，所以这个 bug 只在自动化里暴露；
+        // 但它同样影响「用无障碍服务操作手机」的真实场景，属于真缺陷。
+        //
+        // 收起态（只剩 FAB）仍保留该 flag：那时窗口很小、不该抢别人的输入焦点。
+        lp.flags = lp.flags and WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE.inv()
       } else {
         // 收起：窗口缩回 FAB 大小，并回到用户拖动的落点。
         // 用 WRAP_CONTENT 让窗口自然贴合 FAB，而不是写死 56dp——不同主题/字号下
@@ -364,6 +404,9 @@ class AssistantOverlayService :
         lp.gravity = Gravity.START or Gravity.TOP
         lp.x = collapsedX
         lp.y = collapsedY
+        // 收起态恢复 NOT_FOCUSABLE：窗口此刻只有 FAB 大小，不该抢其它应用的输入焦点
+        // （见展开分支的说明）。
+        lp.flags = lp.flags or WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
       }
       try {
         windowManager.updateViewLayout(container, lp)
@@ -402,6 +445,7 @@ class AssistantOverlayService :
    */
   private fun installDrag() {
     val container = rootView ?: return
+
     val fab = container.findViewById<View>(R.id.assistantFab) ?: return
     dragHandle = fab
     val touchSlop = ViewConfiguration.get(this).scaledTouchSlop
@@ -451,6 +495,44 @@ class AssistantOverlayService :
         }
         else -> false
       }
+    }
+  }
+
+  /**
+   * 把展开态偏移钳制到「面板仍**完整可见**」的范围。
+   *
+   * <p>水平方向固定为 0：面板宽是 `MATCH_PARENT`，任何横向偏移都会在左侧露出空隙。
+   * 垂直方向限制在 `0..(可用高度 − 面板高度)`——再往下会把输入栏顶出屏幕，
+   * 用户既看不到也无法收回。
+   *
+   * @return `[x, y]`，其中 x 恒为 0
+   */
+  private fun clampExpandedOffset(x: Int, y: Int): IntArray {
+    val metrics = resources.displayMetrics
+    val margin = dp(OVERLAY_EDGE_MARGIN_DP)
+    val maxY = (metrics.heightPixels - expandedHeightPx() - margin).coerceAtLeast(0)
+    return intArrayOf(0, y.coerceIn(0, maxY))
+  }
+
+  /**
+   * 展开态：按增量移动面板窗口（由顶栏空白区的拖动回调驱动）。
+   *
+   * <p>增量累加比绝对坐标更简单：Compose 的 `detectDragGestures` 逐帧给的本来就是增量，
+   * 两端都不必追踪按下时的手势起点。累加后过 [clampExpandedOffset]，保证面板不会被
+   * 拖出可视区。
+   */
+  private fun dragExpandedWindowBy(container: View, dx: Int, dy: Int) {
+    val lp = layoutParams ?: return
+    val clamped = clampExpandedOffset(expandedOffsetX + dx, expandedOffsetY + dy)
+    expandedOffsetX = clamped[0]
+    expandedOffsetY = clamped[1]
+    lp.gravity = Gravity.TOP or Gravity.START
+    lp.x = expandedOffsetX
+    lp.y = expandedOffsetY
+    try {
+      windowManager.updateViewLayout(container, lp)
+    } catch (e: IllegalArgumentException) {
+      // 服务正在收尾、视图已移除。忽略。
     }
   }
 
@@ -585,6 +667,22 @@ class AssistantOverlayService :
   private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
 
   /**
+   * 展开态窗口高度：屏幕可用高度的 [EXPAND_HEIGHT_FRACTION]。
+   *
+   * <p><b>不要再减状态栏高度</b>：`displayMetrics.heightPixels` 返回的已经是**应用可用
+   * 高度**——它已扣掉状态栏，窗口的 `y=0` 也被系统自动让到状态栏下方。早先这里多减了
+   * 一次状态栏，实机（pja110，1080p，屏幕 2772）测出面板只有 1795px = 64.8%，
+   * 与 0.72 的意图不符。改为直接用 heightPixels 即可得到准确的 72%。
+   *
+   * <p>下限 [MIN_EXPAND_HEIGHT_DP] 兜底：极小屏/分屏下按比例算出的高度可能装不下
+   * 输入栏，那会让面板完全不可用。
+   */
+  private fun expandedHeightPx(): Int {
+    val available = resources.displayMetrics.heightPixels
+    return (available * EXPAND_HEIGHT_FRACTION).toInt().coerceAtLeast(dp(MIN_EXPAND_HEIGHT_DP))
+  }
+
+  /**
    * 输入法适配。
    *
    * <p><b>为什么必须做</b>：overlay 窗口默认带 `FLAG_NOT_FOCUSABLE`（否则会抢走其它应用的
@@ -661,6 +759,9 @@ class AssistantOverlayService :
     // 置为 DESTROYED：lifecycleScope 随之取消全部子协程，避免摘窗后仍有协程写控件。
     lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_DESTROY)
     pendingAttachments.clear()
+    // 注销实例：必须做，否则静态弱引用会指向一个已死服务（弱引用本身不阻止回收，
+    // 但会让 isAlive 判断出错，且每次重建都要覆盖一次，容易忘记）。
+    instance = null
     super.onDestroy()
   }
 
@@ -695,6 +796,9 @@ class AssistantOverlayService :
     val resultCode = intent.getIntExtra(EXTRA_ATTACHMENT_RESULT_CODE, android.app.Activity.RESULT_CANCELED)
     @Suppress("DEPRECATION")
     val data = intent.getParcelableExtra<Intent>(EXTRA_ATTACHMENT_DATA)
+    // 选完（或取消）把面板展开回去——选择器启动时我们主动收起了它
+    // （见 collapseForAttachmentRequest）。取消也展开：用户的意图是「继续对话」。
+    openPanel()
     deliverAttachmentResult(resultCode, data, callback)
   }
 
@@ -759,8 +863,80 @@ class AssistantOverlayService :
     /** 拖动时窗口四周保留的最小边距（dp）。 */
     private const val OVERLAY_EDGE_MARGIN_DP = 8
 
+    /**
+     * 展开态窗口占屏幕可用高度的比例。
+     *
+     * <p><b>为什么不是 1.0（铺满）</b>：铺满时面板从状态栏压到屏幕最底，完全盖住底下的
+     * 应用，"悬浮"退化成"全屏应用"，用户反馈「悬浮窗 UI 太长、没有限制整体高度」。
+     * 0.72 让消息区有足够高度阅读，同时底部始终露出一截应用内容，
+     * 用户能看见自己刚才在操作什么。
+     *
+     * <p><b>不取更小值的理由</b>：输入栏 + 顶栏 + 状态条约占 200dp，再压缩会让消息区
+     * 只剩两三行，读长回复需要频繁滚动。
+     */
+    private const val EXPAND_HEIGHT_FRACTION = 0.72f
+
+    /**
+     * 展开态窗口的最小高度（dp）。
+     *
+     * <p>分屏 / 横屏 / 极小屏下 `heightPixels × 0.72` 可能小于输入栏 + 顶栏的固有高度，
+     * 面板会被压到无法使用（消息区 0 高、输入框被裁）。给一个下限保证基本可用。
+     */
+    private const val MIN_EXPAND_HEIGHT_DP = 320
+
     const val ACTION_SHOW = "com.tom.rv2ide.action.SHOW_ASSISTANT_OVERLAY"
     const val ACTION_HIDE = "com.tom.rv2ide.action.HIDE_ASSISTANT_OVERLAY"
+
+    /**
+     * 当前存活的服务实例（弱引用）。
+     *
+     * <p><b>为什么需要</b>：附件选择要把面板临时收起、结果回来后再展开，而入口
+     * [com.tom.rv2ide.artificial.agent.host.OverlayAttachments] 只有一个抽象
+     * `Service` 引用，拿不到具体的本类实例。用弱引用而不是强引用：服务随时可能被系统
+     * 停掉，强引用会让它无法回收。
+     *
+     * <p>只在主线程读写（Service 生命周期方法 + 悬浮窗点击回调都在主线程）。
+     */
+    @Volatile private var instance: java.lang.ref.WeakReference<AssistantOverlayService>? = null
+
+    /**
+     * 附件选择开始：收起面板，让系统文件选择器不被悬浮窗盖住。
+     *
+     * <p>展开态的面板是整个系统悬浮窗（`TYPE_APPLICATION_OVERLAY`），层级高于普通
+     * Activity——文件选择器会被完全遮住，用户看不到也点不到。收起后只剩 FAB。
+     */
+    @JvmStatic
+    fun collapseForAttachmentRequest() {
+      instance?.get()?.assistant?.let { if (it.isOpen) it.close() }
+    }
+
+    /**
+     * 当前展开面板在屏幕上的矩形（供宿主建同尺寸的弹窗窗口）。
+     *
+     * <p>返回 null 时调用方退到整屏。
+     */
+    @JvmStatic
+    fun panelBoundsOnScreen(): android.graphics.Rect? =
+        instance?.get()?.let { svc ->
+          val view = svc.rootView ?: return@let null
+          val loc = IntArray(2)
+          view.getLocationOnScreen(loc)
+          val w = view.width
+          val h = view.height
+          if (w <= 0 || h <= 0) null
+          else android.graphics.Rect(loc[0], loc[1], loc[0] + w, loc[1] + h)
+        }
+
+    /**
+     * 附件选择**启动失败**：把面板展开回去（成功路径由 [handleAttachmentResult] 负责）。
+     *
+     * <p>两个入口都要恢复：蹦床拉不起来时走这里；用户选完/cancel 时走结果回传那条。
+     * 漏掉任一都会让面板停在收起态，用户以为助手坏了。
+     */
+    @JvmStatic
+    fun expandAfterAttachmentRequest() {
+      instance?.get()?.let { svc -> svc.assistant?.let { if (!it.isOpen) it.open() } }
+    }
 
     /**
      * 悬浮窗当前是否显示。

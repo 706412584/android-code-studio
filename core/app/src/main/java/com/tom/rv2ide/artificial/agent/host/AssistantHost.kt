@@ -138,6 +138,18 @@ interface AssistantHost {
   fun onOpenSidebarPage(pageId: String) {}
 
   /**
+   * 拖动面板（顶栏空白区）。
+   *
+   * <p><b>默认空实现</b>：只有应用外悬浮窗能拖——它是一个独立系统窗口，位置由
+   * `WindowManager.LayoutParams` 决定。编辑器侧栏 / 真全屏 / 内联页的位置由各自布局
+   * 决定，拖动它们没有意义，因此视图层只在悬浮宿主上接这条手势。
+   *
+   * @param dx 水平增量（px，正数向右）
+   * @param dy 垂直增量（px，正数向下）
+   */
+  fun onOverlayPanelDrag(dx: Int, dy: Int) {}
+
+  /**
    * 宿主让位后，留给面板的比例。
    *
    * <p><b>为什么放在这里而不是各处自算</b>：让位量由宿主决定（它缩编辑器），

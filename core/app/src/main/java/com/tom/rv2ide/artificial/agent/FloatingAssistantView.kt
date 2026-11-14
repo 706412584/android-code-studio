@@ -37,6 +37,7 @@ import com.tom.rv2ide.adapters.AssistantMessageAdapter
 import com.tom.rv2ide.adapters.ConversationListAdapter
 import com.tom.rv2ide.artificial.agent.compose.compat.toAnswerList
 import com.tom.rv2ide.artificial.agent.compose.compat.toPendingUserQuestion
+import com.tom.rv2ide.artificial.agent.compose.components.independent.HeaderToggleMode
 import com.tom.rv2ide.artificial.agent.compose.theme.AppThemePreset
 import com.tom.rv2ide.artificial.agent.host.AssistantHost
 import com.tom.rv2ide.artificial.agents.Agents
@@ -90,6 +91,27 @@ class FloatingAssistantView(
 
   private val context: Context = host.context
   private val lifecycleScope: LifecycleCoroutineScope = host.lifecycleScope
+
+  /**
+   * 是否跑在应用外悬浮窗（Service 宿主）里。
+   *
+   * <p>四处 Compose 根都要把它注入成 [LocalIsOverlayWindow]，否则 Material3 的
+   * `ModalBottomSheet` / `Dialog` 会因为没有 Activity window token 抛
+   * `BadTokenException`（实测三处闪退：模型切换、上传附件、思考强度）。
+   * 见 [com.tom.rv2ide.artificial.agent.compose.compat.LocalIsOverlayWindow]。
+   */
+  private val isOverlayWindow: Boolean =
+      host is com.tom.rv2ide.artificial.agent.host.OverlayHost
+
+  /**
+   * 悬浮层弹窗宿主；null = Activity 宿主（各处走普通 Compose Dialog）。
+   *
+   * <p>Compose 的 Dialog / ModalBottomSheet 在 overlay 下必崩，必须由宿主建**原生**
+   * Dialog 并**在 `show()` 之前**设好 window type。见 `OverlayDialogHost` 的说明。
+   */
+  private val overlayDialogHost:
+      com.tom.rv2ide.artificial.agent.compose.compat.OverlayDialogHost? =
+      (host as? com.tom.rv2ide.artificial.agent.host.OverlayHost)?.overlayDialogs
 
   /**
    * 挂载面板的真实父容器。
@@ -3003,7 +3025,18 @@ class FloatingAssistantView(
         com.tom.rv2ide.activities.PreferencesActivity.EXTRA_DIRECT_TITLE,
         context.getString(screen.title),
     )
-    context.startActivity(intent)
+    // NEW_TASK 对应用外悬浮（Service context）是必需的——从非 Activity context 启动
+    // Activity 必须带它，否则抛 AndroidRuntimeException（实测 pja110 上点设置必崩：
+    // "Calling startActivity() from outside of an Activity context requires
+    // the FLAG_ACTIVITY_NEW_TASK flag"）。对 Activity 宿主无害。
+    // Android 10 起后台启动 Activity 受限，可能被系统拦截，因此失败一律吞掉：
+    // 这只是多一个入口，拉不起也不该让面板崩。
+    intent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+    try {
+      context.startActivity(intent)
+    } catch (e: Exception) {
+      // 后台启动被拦 / 没有可用的 Activity：静默忽略，不打断当前会话。
+    }
   }
 
   /**
@@ -3394,6 +3427,12 @@ class FloatingAssistantView(
           androidx.core.graphics.ColorUtils.calculateLuminance(bg) <= 0.5
         }
     binding.assistantInputBarCompose.setContent {
+      // 悬浮窗注入：让 ModalBottomSheet / Dialog 走面板内渲染（见 LocalIsOverlayWindow）。
+      androidx.compose.runtime.CompositionLocalProvider(
+          com.tom.rv2ide.artificial.agent.compose.compat.LocalIsOverlayWindow provides
+              isOverlayWindow,
+          com.tom.rv2ide.artificial.agent.compose.compat.LocalOverlayDialogHost provides
+              overlayDialogHost) {
       com.tom.rv2ide.artificial.agent.compose.theme.AIEditorTheme(
                 darkTheme = darkTheme,
                 // UI 壳（顶栏/输入栏/状态条/会话抽屉）不随「消息配色方案」换色：
@@ -3490,6 +3529,7 @@ class FloatingAssistantView(
             sessionId = displayedConversationId ?: "",
         )
       }
+      }
     }
   }
 
@@ -3520,6 +3560,12 @@ class FloatingAssistantView(
         }
     applyToolStatusBarVisibility()
     binding.assistantToolStatusBarCompose.setContent {
+      // 悬浮窗注入：让 ModalBottomSheet / Dialog 走面板内渲染（见 LocalIsOverlayWindow）。
+      androidx.compose.runtime.CompositionLocalProvider(
+          com.tom.rv2ide.artificial.agent.compose.compat.LocalIsOverlayWindow provides
+              isOverlayWindow,
+          com.tom.rv2ide.artificial.agent.compose.compat.LocalOverlayDialogHost provides
+              overlayDialogHost) {
       com.tom.rv2ide.artificial.agent.compose.theme.AIEditorTheme(
                 darkTheme = darkTheme,
                 // UI 壳（顶栏/输入栏/状态条/会话抽屉）不随「消息配色方案」换色：
@@ -3545,6 +3591,7 @@ class FloatingAssistantView(
               setRunningUi(false)
             },
         )
+      }
       }
     }
   }
@@ -3600,6 +3647,12 @@ class FloatingAssistantView(
           androidx.core.graphics.ColorUtils.calculateLuminance(bg) <= 0.5
         }
     binding.assistantHeaderCompose.setContent {
+      // 悬浮窗注入：让 ModalBottomSheet / Dialog 走面板内渲染（见 LocalIsOverlayWindow）。
+      androidx.compose.runtime.CompositionLocalProvider(
+          com.tom.rv2ide.artificial.agent.compose.compat.LocalIsOverlayWindow provides
+              isOverlayWindow,
+          com.tom.rv2ide.artificial.agent.compose.compat.LocalOverlayDialogHost provides
+              overlayDialogHost) {
       com.tom.rv2ide.artificial.agent.compose.theme.AIEditorTheme(
                 darkTheme = darkTheme,
                 // UI 壳（顶栏/输入栏/状态条/会话抽屉）不随「消息配色方案」换色：
@@ -3637,11 +3690,24 @@ class FloatingAssistantView(
             },
             connectionState = null,
             showMenuButton = true,
-            // 二选一：非全屏显示全屏图标，全屏显示最小化图标。
-            // 本视图在编辑器/侧栏宿主里不是 FULLSCREEN，因此恒为 false；
-            // 真全屏宿主（AssistantFullscreenActivity，Mode.FULLSCREEN）为 true。
-            isFullscreen = mode == Mode.FULLSCREEN,
-            onToggleFullscreen = {
+            // 图标与描述表达「点击会做什么」，三态由宿主决定：
+            // - 应用外悬浮（OverlayHost）：折叠回 FAB，**不是**全屏（缩小图标）
+            // - 真全屏（Mode.FULLSCREEN）：退出全屏（缩小图标）
+            // - 其余（编辑器/侧栏/内联页）：进入真全屏（放大图标）
+            toggleMode =
+                when {
+                  host is com.tom.rv2ide.artificial.agent.host.OverlayHost ->
+                      HeaderToggleMode.COLLAPSE_TO_FAB
+                  mode == Mode.FULLSCREEN -> HeaderToggleMode.EXIT_FULLSCREEN
+                  else -> HeaderToggleMode.ENTER_FULLSCREEN
+                },
+            // 面板拖动：只有应用外悬浮窗需要（它是独立系统窗口，能拖到任意位置）。
+            // Activity 宿主的位置由布局决定，传 null 让顶栏空白区不抢手势。
+            onHeaderDrag =
+                if (host is com.tom.rv2ide.artificial.agent.host.OverlayHost) {
+                  { dx, dy -> host.onOverlayPanelDrag(dx.toInt(), dy.toInt()) }
+                } else null,
+            onToggle = {
               if (mode == Mode.FULLSCREEN) {
                 // 全屏里「最小化」= 退出这个独立窗口，回到编辑器。
                 // 用 finish 而不是 close()：宿主是 AssistantFullscreenActivity，
@@ -3660,6 +3726,7 @@ class FloatingAssistantView(
               }
             },
         )
+      }
       }
     }
   }
@@ -3685,6 +3752,12 @@ class FloatingAssistantView(
           androidx.core.graphics.ColorUtils.calculateLuminance(bg) <= 0.5
         }
     drawerView.setContent {
+      // 悬浮窗注入：让 ModalBottomSheet / Dialog 走面板内渲染（见 LocalIsOverlayWindow）。
+      androidx.compose.runtime.CompositionLocalProvider(
+          com.tom.rv2ide.artificial.agent.compose.compat.LocalIsOverlayWindow provides
+              isOverlayWindow,
+          com.tom.rv2ide.artificial.agent.compose.compat.LocalOverlayDialogHost provides
+              overlayDialogHost) {
       com.tom.rv2ide.artificial.agent.compose.theme.AIEditorTheme(
                 darkTheme = darkTheme,
                 // UI 壳（顶栏/输入栏/状态条/会话抽屉）不随「消息配色方案」换色：
@@ -3737,6 +3810,7 @@ class FloatingAssistantView(
             onOpenSearchHit = { hit -> openSearchHitInEditor(hit) },
             fileSearchEngine = drawerSearchEngine,
         )
+      }
       }
     }
   }
