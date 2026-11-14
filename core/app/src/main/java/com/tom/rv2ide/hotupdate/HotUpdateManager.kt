@@ -152,6 +152,29 @@ object HotUpdateManager {
         )
         return
       }
+
+      // 构建一致性校验：补丁的资源路径风格必须与**已安装 APK** 一致。
+      //
+      // 这是本次事故的直接防线。`baseVersionCode == 当前 versionCode` 不足以说明
+      // 构建一致——本地 assembleDebug 与 CI release 的 versionCode 相同，但
+      // release 缩短资源名（arsc 记 `res/hq.xml`），debug 不缩短（`res/drawable/
+      // abc_vector_test.xml`）。CI 的补丁基于 release 包，装到 debug 包上会让资源表
+      // 指向不存在的文件 → 启动即 Resources$NotFoundException，且在 CrashHandlerActivity
+      // 里二次崩溃 → 无限重启（实测）。
+      //
+      // 判据放这一层（而非只在 TomIDEUpdater）是刻意的：这里是**所有**补丁应用的
+      // 必经之路（启动时 loadPatchIfNeeded 之外的唯一写入口），任何未来入口都绕不过。
+      val installedApk = context.applicationInfo?.sourceDir?.let { File(it) }?.takeIf { it.isFile }
+      if (installedApk != null && !PatchPackage.buildsCompatible(raw, installedApk)) {
+        cleanup(raw, normalized)
+        onResult(
+            false,
+            "该补丁的构建类型与当前安装包不一致，无法安全应用。" +
+                "补丁由 CI 发布构建生成，而当前装的是本地开发构建，两者资源布局不同，" +
+                "强行应用会导致启动崩溃。请改用完整 APK 更新。",
+        )
+        return
+      }
       // 关键修复：把补丁内的 dex 重命名为连续的 classes*.dex。
       //
       // Android 的 DexPathList 只按 classes.dex → classes2.dex → classes3.dex … 顺序查找，

@@ -85,6 +85,16 @@ class TomIDEUpdater(private val context: Context) {
      * 280dp 约 12~15 行，够扫一眼要点，长内容滚动看。
      */
     private const val MAX_CHANGELOG_HEIGHT_DP = 280
+
+    /**
+     * 本地构建版本名的后缀（见 `settings.gradle.kts`）。
+     *
+     * <p>本地 `assembleDebug`/`assembleRelease` 的 versionCode 与 CI 发布包相同，但
+     * 产物不兼容（资源路径未缩短、dex 切分不同、无 stable-ids）。版本名带此后缀让
+     * 「这不是发布包」一眼可见。凡是要拿版本名去比对「发布版本」的地方（如拼
+     * whatsnew 的 raw 地址）都要先剥掉它。
+     */
+    private const val LOCAL_BUILD_SUFFIX = "-local"
   }
 
   /**
@@ -311,6 +321,9 @@ class TomIDEUpdater(private val context: Context) {
     if (version.startsWith('v')) {
       version = version.substring(1)
     }
+    // 本地构建的版本名带 `-local` 后缀（见 settings.gradle.kts），而 whatsnew 文件名
+    // 只有发布版本（`1.0.0+gh.r23.md`）——不去掉后缀会 404。
+    version = version.removeSuffix(LOCAL_BUILD_SUFFIX)
     return "$GITHUB_RAW_API_REPO_BRANCH_URL/whatsnew/$version.md"
   }
 
@@ -328,11 +341,19 @@ class TomIDEUpdater(private val context: Context) {
   /**
    * 补丁是否适用于当前安装。
    *
-   * <p>三个条件缺一不可：
-   * 1. **base 版本匹配**：`patch.baseVersionCode == 当前 versionCode`。补丁是「上一版本 →
+   * <p>条件缺一不可：
+   * 1. **当前包不是调试构建**：本地 `assembleDebug` 的包与 CI release 包
+   *    versionCode 相同（都从 `PROJECT_CONFIG_KT_BASE_VERSION_CODE` 推导），但两者
+   *    **构建产物不兼容**——debug 包资源路径不缩短（`res/drawable/x.xml`）、dex 切分
+   *    不同（实测 36 vs 19 个），且本地构建**不注入 aapt2 --stable-ids**。CI 产出的
+   *    补丁带的是 release 版 `resources.arsc`（缩短名），打到 debug 包上会让资源表
+   *    指向不存在的文件（实测：`0x7f070090` → `res/hq.xml` 而包里是
+   *    `res/drawable/abc_vector_test.xml`）→ 启动即 `Resources$NotFoundException`，
+   *    且在 `CrashHandlerActivity` 里再崩 → 无限重启。故调试构建一律走整包更新。
+   * 2. **base 版本匹配**：`patch.baseVersionCode == 当前 versionCode`。补丁是「上一版本 →
    *    本版本」的增量，base 不匹配时装上去会静默注入错误 dex（SDK 不校验这项）。
-   * 2. **补丁版本更高**：`patch.versionCode > 当前 versionCode`，否则说明已经打过这个补丁。
-   * 3. **该补丁尚未应用**：热更新是 DEX 注入，**不改 APK 的 versionCode**——已应用补丁的
+   * 3. **补丁版本更高**：`patch.versionCode > 当前 versionCode`，否则说明已经打过这个补丁。
+   * 4. **该补丁尚未应用**：热更新是 DEX 注入，**不改 APK 的 versionCode**——已应用补丁的
    *    用户 APK 仍是旧 versionCode，条件 1/2 依然成立，不做此检查每次启动都会重复弹窗
    *    （实测：应用 r07 补丁并重启后，重启即再次弹出「发现热更新补丁」）。
    *
@@ -341,6 +362,15 @@ class TomIDEUpdater(private val context: Context) {
    */
   private fun isPatchApplicable(patch: PatchInfo): Boolean {
     if (patch.versionCode <= 0 || patch.baseVersionCode <= 0) return false
+
+    // 条件 1：调试构建不接受补丁（见 KDoc 里的实机事故复盘）。
+    // `FLAG_DEBUGGABLE` 是 CI release 包与本地 debug 包最直接、零成本的区分点：
+    // CI 的发布包恒为非调试，任何 `assembleDebug` 产物恒为调试。
+    if (isDebuggableBuild()) {
+      Log.w(TAG, "当前为调试构建，不使用热更新补丁（资源布局与 CI release 包不兼容），改走整包更新")
+      return false
+    }
+
     val current =
         try {
           context.packageManager.getPackageInfo(context.packageName, 0).versionCode
@@ -364,6 +394,28 @@ class TomIDEUpdater(private val context: Context) {
     }
 
     return patch.baseVersionCode == current && patch.versionCode > current
+  }
+
+  /**
+   * 当前安装包是否为调试构建（manifest 里 `android:debuggable="true"`）。
+   *
+   * <p>用 `ApplicationInfo.FLAG_DEBUGGABLE` 而不是 `BuildConfig.DEBUG`：前者读的是
+   * **已安装 APK 自己声明的标志**，与「这个包是谁构建的」严格对应；而 `BuildConfig.DEBUG`
+   * 是本进程编译期的常量，评估的仍是同一份代码，无法捕捉「用 debug 模式打出但装了
+   * release 包」这类错配。热更新判定的关注点正是「装的是什么包」。
+   */
+  private fun isDebuggableBuild(): Boolean {
+    return try {
+      val info =
+          context.packageManager.getApplicationInfo(
+              context.packageName,
+              0,
+          )
+      (info.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0
+    } catch (e: PackageManager.NameNotFoundException) {
+      // 读不到就保守当作调试构建——宁可让这类异常环境走整包更新，也不要冒险装补丁。
+      true
+    }
   }
 
   /**

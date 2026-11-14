@@ -84,12 +84,31 @@ gradle.rootProject {
         }
     }
 
+    // CI 构建的标志：只有 CI 与发布脚本会显式注入这两个环境变量
+    // （asm_build.yml 的 Assemble 步骤、tools/publish-release.ps1）。
+    // 本地 `./gradlew assembleDebug` 两者皆空，走 updater.json 回落。
+    val isCiBuild = System.getenv("MAIN_VERSION") != null && System.getenv("REVISION_NUM") != null
+
     val appMainVersion = System.getenv("MAIN_VERSION") ?: "1.0.0"
     val revision = System.getenv("REVISION_NUM")
         ?: readUpdaterField("baseVersionName")?.substringAfterLast("r", "06")
         ?: "06"
-    val baseVersion = "$appMainVersion+gh.r$revision"
-    println("Android code studio version: $baseVersion")
+    // 本地构建在版本名上打 `-local` 后缀。
+    //
+    // **为什么需要**：本地 assembleDebug/assembleRelease 与 CI 发布包的 versionCode
+    // 完全相同（都从 PROJECT_CONFIG_KT_BASE_VERSION_CODE / updater.json 推导），但
+    // 构建产物并不兼容——本地包资源路径不缩短、dex 切分不同、且没有注入 aapt2
+    // --stable-ids。CI 的热更新补丁基于 release 包，装到本地包上会指向不存在的资源
+    // → 启动即崩（实测 PJA110 无限重启 608 次）。
+    //
+    // 事后靠资源路径指纹能拦（见 PatchPackage.resourcePathStyle / buildsCompatible），
+    // 但那要等到补丁已下载。版本名带 -local 让「这不是发布包」在**版本号层面**
+    // 一眼可见——设置页、日志、崩溃报告都能立刻看出，不必再去比对 APK 内部结构。
+    //
+    // CI 构建**不能**带此后缀：发布资产的下载 URL、热更新补丁的 baseVersion 匹配
+    // 都依赖版本名精确等于 `1.0.0+gh.rNN`。
+    val baseVersion = "$appMainVersion+gh.r$revision" + if (isCiBuild) "" else "-local"
+    println("Android code studio version: $baseVersion (ciBuild=$isCiBuild)")
     project.setProperty("version", baseVersion)
 }
 

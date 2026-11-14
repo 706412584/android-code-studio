@@ -100,6 +100,18 @@ class IDEApplication : TermuxApplication() {
     // 不会因补丁损坏而拦住应用启动。
     try {
       com.orange.update.HotUpdateHelper.init(this)
+      // 自愈：加载前先踢掉「构建类型与当前安装包不一致」的已应用补丁。
+      //
+      // 这是本次事故的根因修复。补丁一旦被**应用**（落盘在 files/update/applied/
+      // current_patch.zip 并写进 patch_storage_prefs），loadPatchIfNeeded 每次启动
+      // 都会重新注入它。若该补丁来自 CI release 构建而当前装的是本地 debug 构建，
+      // 其 resources.arsc 指向缩短后的资源名（res/hq.xml），而 debug 包里是原名
+      // （res/drawable/abc_vector_test.xml）→ 启动即 Resources$NotFoundException，
+      // 且崩溃界面 CrashHandlerActivity 自己也要加载资源 → 二次崩溃 → **无限重启**
+      // （实测 608 次 FATAL、每 2~3 秒一轮）。
+      //
+      // 必须在 loadPatchIfNeeded 之前做：之后资源补丁已挂上 AssetManager，再清也来不及。
+      healIncompatibleAppliedPatch()
       com.orange.update.HotUpdateHelper.getInstance().loadPatchIfNeeded()
     } catch (e: Throwable) {
       log.error("Failed to load hot-update patch", e)
@@ -112,6 +124,52 @@ class IDEApplication : TermuxApplication() {
       try {} catch (e: Throwable) {
         log.error("Failed to load TreeSitter library", e)
       }
+    }
+  }
+
+  /**
+   * 若已应用的补丁与本机安装包的**构建类型**不一致，清掉它，让应用回到纯净基线启动。
+   *
+   * <p>触发条件：补丁的资源路径风格（缩短名 vs 原名）与已安装 APK 不同。
+   * 这覆盖「本地 debug 包误装 CI release 补丁」这一整类事故——两者 versionCode
+   * 可能完全相同，`baseVersionCode` 校验对此**无能为力**（实测：设备装 r22 本地
+   * debug 包 + 应用了 r23 CI 补丁 → 资源表指向不存在的文件 → 无限重启）。
+   *
+   * <p><b>为什么要在这里做而不是应用补丁时</b>：坏补丁已经落盘的场景下，
+   * 应用时的校验救不了已装上的补丁——每次启动 `loadPatchIfNeeded` 都会重新加载。
+   * 只有启动早期主动比对并清除，才能让用户「下次启动就恢复正常」，而不是必须卸载重装。
+   *
+   * <p>清除是安全的：`clearPatch()` 只删补丁文件与偏好，不动用户数据
+   * （项目、SDK、Termux 环境全在别处）。
+   */
+  private fun healIncompatibleAppliedPatch() {
+    try {
+      val helper = com.orange.update.HotUpdateHelper.getInstance(this)
+      if (!helper.hasAppliedPatch()) {
+        return
+      }
+      val applied = File(filesDir, "update/applied/current_patch.zip")
+      if (!applied.isFile) {
+        return
+      }
+      val installedApk = applicationInfo.sourceDir?.let { File(it) }?.takeIf { it.isFile }
+      if (installedApk == null ||
+          com.tom.rv2ide.hotupdate.PatchPackage.buildsCompatible(applied, installedApk)) {
+        return
+      }
+      log.error(
+          "已应用的补丁构建类型与当前安装包不一致" +
+              "（补丁=${com.tom.rv2ide.hotupdate.PatchPackage.resourcePathStyle(applied)}，" +
+              "安装包=${com.tom.rv2ide.hotupdate.PatchPackage.resourcePathStyle(installedApk)}），" +
+              "清除该补丁以避免启动崩溃",
+      )
+      helper.clearPatch()
+      // 连带清掉可能与坏补丁一起落盘的中间产物，避免残留影响下次判断。
+      File(filesDir, "update/applied").deleteRecursively()
+      cacheDir?.listFiles { f -> f.name.startsWith("patch_") && f.name.endsWith(".zip") }
+          ?.forEach { it.delete() }
+    } catch (e: Throwable) {
+      log.error("Failed to heal incompatible hot-update patch", e)
     }
   }
 

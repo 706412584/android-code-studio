@@ -20,6 +20,7 @@ package com.tom.rv2ide.hotupdate;
 import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
@@ -402,5 +403,138 @@ public class PatchPackageTest {
                 new String[] {"patch.json", "not json"},
                 new String[] {"classes.dex", "D"}));
     assertFalse(PatchPackage.INSTANCE.declaresResourceChanges(badJson));
+  }
+
+  // ---- 资源路径风格指纹（2026-11-15 PJA110 无限重启事故的回归保护）----
+
+  /**
+   * release 构建的资源名被缩短（{@code res/hq.xml}），应判为 {@code SHORTENED}。
+   *
+   * <p>回归背景：CI 的补丁基于 release 包（缩短名），装到本地 debug 包（原名
+   * {@code res/drawable/abc_vector_test.xml}）上，资源表指向不存在的文件 → 启动即崩。
+   */
+  @Test
+  public void shortenedResourceNamesAreDetected() throws IOException {
+    File apk =
+        newTempZip(
+            "release",
+            Arrays.asList(
+                new String[] {"classes.dex", "D"},
+                new String[] {"res/hq.xml", "X"},
+                new String[] {"res/y4.xml", "X"},
+                new String[] {"res/Bd.xml", "X"},
+                new String[] {"res/aM.xml", "X"},
+                new String[] {"res/UX.xml", "X"}));
+
+    assertEquals(PatchPackage.Style.SHORTENED, PatchPackage.INSTANCE.resourcePathStyle(apk));
+  }
+
+  /** debug 构建保留原始资源名（含下划线、长度足够），应判为 {@code FULL}。 */
+  @Test
+  public void originalResourceNamesAreDetected() throws IOException {
+    File apk =
+        newTempZip(
+            "debug",
+            Arrays.asList(
+                new String[] {"classes.dex", "D"},
+                new String[] {"res/drawable/abc_vector_test.xml", "X"},
+                new String[] {"res/anim/abc_fade_in.xml", "X"},
+                new String[] {"res/drawable/abc_vector_out.xml", "X"},
+                new String[] {"res/mipmap-anydpi-v26/ic_launcher.xml", "X"}));
+
+    assertEquals(PatchPackage.Style.FULL, PatchPackage.INSTANCE.resourcePathStyle(apk));
+  }
+
+  /**
+   * **同一 versionCode 的 release 包与 debug 包必须判为不同风格**——这是整个
+   * 加固的核心断言：versionCode 相同不足以说明构建一致，风格指纹才能区分。
+   */
+  @Test
+  public void releaseAndDebugWithSameVersionCodeDifferInStyle() throws IOException {
+    File release =
+        newTempZip(
+            "rel",
+            Arrays.asList(
+                new String[] {"res/hq.xml", "X"},
+                new String[] {"res/y4.xml", "X"},
+                new String[] {"res/Bd.xml", "X"},
+                new String[] {"res/aM.xml", "X"}));
+    File debug =
+        newTempZip(
+            "dbg",
+            Arrays.asList(
+                new String[] {"res/drawable/abc_vector_test.xml", "X"},
+                new String[] {"res/anim/abc_fade_in.xml", "X"},
+                new String[] {"res/drawable/abc_fade_out.xml", "X"},
+                new String[] {"res/mipmap-anydpi-v26/ic_launcher.xml", "X"}));
+
+    assertNotEquals(PatchPackage.INSTANCE.resourcePathStyle(release),
+        PatchPackage.INSTANCE.resourcePathStyle(debug));
+  }
+
+  /** 没有 `res/` 条目（如纯 dex 补丁）时无法判定，返回 UNKNOWN 而不误判。 */
+  @Test
+  public void zipWithoutResEntriesIsUnknown() throws IOException {
+    File patch =
+        newTempZip(
+            "nodex",
+            Arrays.asList(
+                new String[] {"patch.json", "{}"},
+                new String[] {"classes.dex", "D"}));
+
+    assertEquals(PatchPackage.Style.UNKNOWN, PatchPackage.INSTANCE.resourcePathStyle(patch));
+  }
+
+  /** 补丁与安装包风格不同 → 判定不兼容（本次事故的直接拦截条件）。 */
+  @Test
+  public void buildsAreIncompatibleWhenStylesDiffer() throws IOException {
+    File releasePatch =
+        newTempZip(
+            "patch",
+            Arrays.asList(
+                new String[] {"res/hq.xml", "X"},
+                new String[] {"res/y4.xml", "X"},
+                new String[] {"res/Bd.xml", "X"},
+                new String[] {"res/aM.xml", "X"}));
+    File debugApk =
+        newTempZip(
+            "apk",
+            Arrays.asList(
+                new String[] {"res/drawable/abc_vector_test.xml", "X"},
+                new String[] {"res/anim/abc_fade_in.xml", "X"},
+                new String[] {"res/drawable/abc_fade_out.xml", "X"},
+                new String[] {"res/mipmap-anydpi-v26/ic_launcher.xml", "X"}));
+
+    assertFalse(PatchPackage.INSTANCE.buildsCompatible(releasePatch, debugApk));
+  }
+
+  /** 同风格判为兼容；纯 dex 补丁（UNKNOWN）不拦截，避免制造无法应用的死结。 */
+  @Test
+  public void buildsCompatibleWhenSameStyleOrUnknown() throws IOException {
+    File releaseApk =
+        newTempZip(
+            "rel",
+            Arrays.asList(
+                new String[] {"res/hq.xml", "X"},
+                new String[] {"res/y4.xml", "X"},
+                new String[] {"res/Bd.xml", "X"},
+                new String[] {"res/aM.xml", "X"}));
+    File releasePatch =
+        newTempZip(
+            "patch",
+            Arrays.asList(
+                new String[] {"res/hq.xml", "X"},
+                new String[] {"res/y4.xml", "X"}));
+
+    assertTrue(PatchPackage.INSTANCE.buildsCompatible(releasePatch, releaseApk));
+
+    // 纯 dex 补丁没有 res/ 条目 → UNKNOWN → 不拦截（上游 baseVersionCode 兜底）。
+    File pureDex =
+        newTempZip(
+            "pure",
+            Arrays.asList(
+                new String[] {"patch.json", "{}"},
+                new String[] {"classes.dex", "D"}));
+    assertTrue(PatchPackage.INSTANCE.buildsCompatible(pureDex, releaseApk));
   }
 }

@@ -202,4 +202,91 @@ object PatchPackage {
 
   /** 列出 zip 内的条目名（按 zip 内顺序）。测试与诊断用。 */
   fun entryNames(zip: File): List<String> = ZipFile(zip).use { it.entries().toList().map { e -> e.name } }
+
+  /**
+   * 一个 APK/补丁内 `res/` 条目的**路径布局风格**。
+   *
+   * <p><b>为什么需要它</b>：热更新补丁只能装在与生成它时**同一种构建**的 APK 上。
+   * `versionCode` 相同并**不足以**说明构建一致——实测同一份源码：
+   *
+   * | 构建 | versionCode | 资源路径 | dex 数 |
+   * |---|---|---|---|
+   * | CI release | 1072 | 缩短名 `res/hq.xml` | 19 |
+   * | 本地 assembleDebug | 1072 | 原名 `res/drawable/abc_vector_test.xml` | 36 |
+   *
+   * <p>release 构建会缩短资源路径（`resources.arsc` 里记录的就是缩短后的名），
+   * debug 构建不缩短。CI 的补丁基于 release 包，其 `resources.arsc` 指向
+   * `res/hq.xml`；装到 debug 包（只有 `res/drawable/abc_vector_test.xml`）上后，
+   * 资源表指向不存在的文件 → 启动即 `Resources$NotFoundException`，且在
+   * `CrashHandlerActivity` 里二次崩溃 → 无限重启（实测）。
+   *
+   * <p><b>判据</b>：看 `res/` 下的条目是否「文件名被缩短」——缩短后的名字是
+   * 2~4 个随机字符（如 `hq.xml`、`y4.xml`、`Bd.xml`），未缩短的是有意义的原名
+   * （如 `abc_vector_test.xml`）。多数条目被缩短即判 [Style.SHORTENED]。
+   */
+  enum class Style {
+    /** 资源文件名被缩短（AGP release 构建）。 */
+    SHORTENED,
+    /** 资源文件名保持原样（AGP debug 构建或未缩短配置）。 */
+    FULL,
+    /** 包里没有 `res/` 条目，无法判定。 */
+    UNKNOWN,
+  }
+
+  /**
+   * 判定 APK 或补丁 zip 的资源路径布局风格（见 [Style]）。
+   *
+   * <p>只读 zip 条目名，不解析 `resources.arsc`——够用且零风险。AGP 缩短资源名时
+   * 会同时改写 `res/` 下的文件名与 arsc 里的引用，因此「文件名被缩短」与
+   * 「arsc 记录缩短名」是同一个事实的两面，看文件名即可。
+   */
+  fun resourcePathStyle(zip: File): Style {
+    return try {
+      ZipFile(zip).use { z ->
+        val resNames =
+            z.entries().asSequence()
+                .map { it.name }
+                .filter { it.startsWith("res/") && !it.endsWith("/") }
+                .toList()
+        if (resNames.isEmpty()) {
+          return Style.UNKNOWN
+        }
+        // 统计「叶文件名被缩短」的比例。缩短名的典型形态：2~4 字符（不含扩展名）、
+        // 与资源语义无关；原名通常更长且含下划线（如 abc_vector_test.xml）。
+        var shortened = 0
+        for (name in resNames) {
+          val leaf = name.substringAfterLast('/')
+          val stem = leaf.substringBeforeLast('.')
+          // 原名的判据：长度 >= 5 且含下划线（AGP 与 AOSP 的资源命名习惯）。
+          // 缩短名恰好不满足（`hq`、`y4`、`Bd`），据此分类即可，无需精确阈值。
+          val looksOriginal = stem.length >= 5 && stem.contains('_')
+          if (!looksOriginal) {
+            shortened++
+          }
+        }
+        // 多数条目被缩短才判 SHORTENED：个别原名条目（如 AAPT 生成的少量文件）
+        // 不应翻转整体结论。
+        if (shortened * 2 > resNames.size) Style.SHORTENED else Style.FULL
+      }
+    } catch (e: Exception) {
+      Style.UNKNOWN
+    }
+  }
+
+  /**
+   * 补丁与已安装 APK 是否为**同一种构建**（资源路径风格一致）。
+   *
+   * <p>任一方风格无法判定（[Style.UNKNOWN]）时返回 `true`——不做拦截。理由：这类
+   * 「读不到」的情况（纯 dex 补丁、读 APK 失败）不应制造无法应用的死结，且上游还有
+   * `baseVersionCode` 与调试构建判据兜底。只有在**两边都判得出且不一致**时才拦，
+   * 那正是「debug 包 + release 补丁」这种确定有害的组合。
+   */
+  fun buildsCompatible(patchZip: File, installedApk: File): Boolean {
+    val patchStyle = resourcePathStyle(patchZip)
+    val installedStyle = resourcePathStyle(installedApk)
+    if (patchStyle == Style.UNKNOWN || installedStyle == Style.UNKNOWN) {
+      return true
+    }
+    return patchStyle == installedStyle
+  }
 }
