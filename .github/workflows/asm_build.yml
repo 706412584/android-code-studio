@@ -261,8 +261,37 @@ jobs:
       - name: Stage CN APKs
         run: cp core/app/build/outputs/apk/${{ env.BUILD_TYPE_LOWER }}/*-cn-*.apk apk-staging/
 
+      # ---- 独立助手 App（:assistant:app）----
+      #
+      # 它是与 ACS 分离的独立应用（applicationId=com.assistant.app），消费的是
+      # core/ai-agent|protocol|tool 这几个**同源码模块**，因此内核层修复（协议、
+      # 重试、上下文、会话编解码）会自动进包；UI 层是 core/app compose 组件的分叉
+      # 副本，不会自动跟进。
+      #
+      # 无需单独调用 Gradle：根项目的 `assemble<Type>` 任务图本来就包含
+      # `:assistant:app:assemble<Type>`（实测 --dry-run 可见），此前只是产物没被
+      # 上传。这里只做「取产物 + 单独 upload」，**不**并入 apk-staging——那一目录
+      # 会被后续的验签循环与 Release 上传消费，而 assistant 不该进 ACS 的版本资产
+      # （updater.json 的 apkUrl 只认固定四个文件名，多传一个会被当成无关资产）。
+      - name: Stage assistant app APK
+        run: |
+          mkdir -p assistant-staging
+          cp assistant/app/build/outputs/apk/${{ env.BUILD_TYPE_LOWER }}/*.apk assistant-staging/ 2>/dev/null \
+            || echo "assistant APK 未产出（不影响 ACS 构建）"
+          ls -la assistant-staging/ || true
+
+      - name: Upload assistant app APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: assistant-app-${{ env.BUILD_TYPE_LOWER }}
+          retention-days: 7
+          path: assistant-staging/*.apk
+        if: always()
+
       - name: List APK files
-        run: ls -la apk-staging/ || echo "Directory not found"
+        run: |
+          ls -la apk-staging/ || echo "Directory not found"
+          ls -la assistant-staging/ || true
 
       - name: Upload arm64-v8a APK
         uses: actions/upload-artifact@v4

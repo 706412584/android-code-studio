@@ -50,9 +50,45 @@ android {
     versionName = "0.1.0-standalone-probe"
   }
 
+  // 与 :core:app 共用同一把签名密钥（用户决定：签名用主 app 的密钥）。
+  //
+  // 两边包名不同（com.tom.rv2ide / com.assistant.app），共用证书互不冲突；
+  // 好处是沿用已有的密钥管理链路——CI 的 Secrets、本机 D:/android/keys 都已就绪，
+  // 不必为这个实验包再维护第二把密钥。
+  //
+  // storeFile 必须用 rootProject 绝对路径建：`file()` 相对的是本模块目录，
+  // 写相对路径会解析成 assistant/app/signing/...（不存在），CI 已在 core/app
+  // 的同类注释里踩过这个坑。
+  signingConfigs {
+    create("custom") {
+      val keyStorePath = "${rootProject.projectDir}/signing/signing-key.jks"
+
+      val signing_storePassword = System.getenv("SIGNING_STORE_PASSWORD") ?: ""
+      val signing_keyPassword = System.getenv("SIGNING_KEY_PASSWORD") ?: ""
+      // 本机实机测试走 D:/android/keys/acs-debug-signing.jks（密码 android）；
+      // CI 走仓库内 signing/signing-key.jks（密码来自 Secrets）。两个变量都设置时
+      // 以环境变量为准，未设置时行为与 :core:app 完全一致。
+      val signing_storeFileEnv = System.getenv("SIGNING_STORE_FILE")
+      val signing_keyAliasEnv = System.getenv("SIGNING_KEY_ALIAS")
+
+      storeFile =
+          if (signing_storeFileEnv.isNullOrBlank()) file(keyStorePath)
+          else file(signing_storeFileEnv)
+      storePassword = signing_storePassword
+      keyAlias = if (signing_keyAliasEnv.isNullOrBlank()) "androidcs" else signing_keyAliasEnv
+      keyPassword = signing_keyPassword
+    }
+  }
+
   buildTypes {
+    debug {
+      signingConfig = signingConfigs.getByName("custom")
+    }
+
     release {
       isMinifyEnabled = false
+      // 未配签名时 AGP 产出 unsigned APK，装不上；这里与 :core:app 一致挂同一把。
+      signingConfig = signingConfigs.getByName("custom")
     }
   }
 
