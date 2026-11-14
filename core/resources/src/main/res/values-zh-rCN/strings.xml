@@ -1314,6 +1314,12 @@
   <string name="lsp_server_success_title">下载完成</string>
 
   <string name="title_gradle_service_notification_channel">Android Code Studio Gradle 构建服务</string>
+
+  <!-- 应用外系统悬浮助手（AssistantOverlayService）的常驻通知 -->
+  <string name="title_assistant_overlay_notification">悬浮助手已开启</string>
+  <string name="title_assistant_overlay_notification_channel">Android Code Studio 悬浮助手</string>
+  <string name="msg_assistant_overlay_running">打开 Android Code Studio，关闭「悬浮到其它应用之上」即可停止。</string>
+
   <string name="msg_hex_color_code">十六进制颜色代码</string>
   <string name="msg_color_picker_pick">选择</string>
   <string name="msg_chmod_exec">正在设置可执行权限…</string>

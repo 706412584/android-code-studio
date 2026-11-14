@@ -1368,8 +1368,10 @@
   <string name="title_gradle_service_notification_channel">Android Code Studio Gradle build service</string>
 
   <!-- 应用外系统悬浮助手（AssistantOverlayService）的常驻通知 -->
-  <string name="title_assistant_overlay_notification">AI assistant is floating over other apps</string>
+  <string name="title_assistant_overlay_notification">Floating assistant is on</string>
   <string name="title_assistant_overlay_notification_channel">Android Code Studio floating assistant</string>
+  <!-- 通知的展开说明：告诉用户怎么关掉，而不是只描述状态 -->
+  <string name="msg_assistant_overlay_running">Open Android Code Studio and turn off “Float over other apps” to stop it.</string>
   <string name="msg_hex_color_code">Hex color code</string>
   <string name="msg_color_picker_pick">Pick</string>
   <string name="msg_chmod_exec">Setting executable permissions…</string>

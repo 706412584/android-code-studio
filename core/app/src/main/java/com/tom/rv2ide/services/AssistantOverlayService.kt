@@ -835,6 +835,14 @@ class AssistantOverlayService :
         .setSmallIcon(ResourcesR.drawable.ic_launcher_notification)
         .setContentTitle(getString(R.string.app_name))
         .setContentText(getString(ResourcesR.string.title_assistant_overlay_notification))
+        // 展开后给出**怎么关掉**，而不是只描述状态：用户从最近任务划掉 ACS 后仍看到
+        // 这条常驻通知，只有「正在悬浮」这句话会让他不知道该怎么停掉它。
+        .setStyle(
+            Notification.BigTextStyle()
+                .bigText(
+                    getString(ResourcesR.string.title_assistant_overlay_notification) +
+                        "\n" +
+                        getString(ResourcesR.string.msg_assistant_overlay_running)))
         .setContentIntent(contentIntent)
         .setOngoing(true)
         .build()

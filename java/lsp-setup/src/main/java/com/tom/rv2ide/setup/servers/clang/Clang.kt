@@ -107,10 +107,29 @@ class Clang(private val context: Context) : ILanguageServerInstaller {
       onOutput("\nInstalling clang...")
       hasOverwriteError = false
       hasUnmetDependencies = false
-      
+
+      // **先让 dpkg 允许覆盖文件**（不是等失败后再重试）。
+      //
+      // 实测（黑鲨 SKW-A0，2026-11-14）：`clang` 的依赖 `ndk-sysroot` 与已装的
+      // `openssl 1:3.5.2` 争夺同一批头文件（`include/openssl/aes.h` 等），
+      // dpkg 默认策略直接报：
+      //
+      //   dpkg: error processing ... ndk-sysroot ... (--unpack):
+      //     trying to overwrite '.../include/openssl/aes.h',
+      //     which is also in package openssl 1:3.5.2
+      //
+      // 后果是 clang 本体的文件解包了、但依赖没配置，apt 随后报
+      // `Unmet dependencies`，`isInstalled()` 为 false —— 用户看到的就是安装失败。
+      //
+      // 这两个包的文件内容兼容（都来自上游同一套头文件），强制覆盖是安全的；
+      // Termux 官方也建议这种操作。原代码只在「失败后」才加这个选项重试，
+      // 而 apt 在依赖未满足时会直接拒绝安装（`is not going to be installed`），
+      // 重试拿不到任何进展，必须**首次**就带上。
       val installProcess = executeProcessAsync {
         command = listOf(
           Environment.BIN_DIR.absolutePath + "/apt",
+          "-o",
+          "Dpkg::Options::=--force-overwrite",
           "install",
           "clang",
           "-y"
@@ -124,8 +143,16 @@ class Clang(private val context: Context) : ILanguageServerInstaller {
       val installExitCode = installProcess.waitFor()
       onOutput("\nClang installation command completed (exit code: $installExitCode)")
       
+      // 即使 `apt` 返回非 0，也已经把 clang/clangd 解包出来了（依赖配置阶段才失败）。
+      // 先跑一次 `--fix-broken` 把依赖收尾，再判断二进制是否就位——否则会出现
+      // 「clangd 明明在、却报安装失败」的误导（实测踩到）。
+      if (installExitCode != 0) {
+        onOutput("\nInstallation reported errors. Running apt --fix-broken install...")
+        fixBrokenInstall(env, onOutput)
+      }
+
       // Check if installation was successful
-      if (installExitCode == 0 && isInstalled()) {
+      if (isInstalled()) {
         onOutput("\nClang installation successful!")
         return true
       }
