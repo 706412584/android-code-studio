@@ -276,6 +276,11 @@ public final class ConversationPersistingListener implements AgentEvent.Listener
           // 孤儿步骤桶(重试提示行)照常 flush:提示是系统注记,不属于被拒的
           // 助手正文,留在桶里会泄漏到下一轮、被错误地落进下一轮的历史。
           flushOrphanSteps();
+          // 标题刷新：defer 分支也要触发——拒绝恢复默认开启，漏掉这里会让
+          // 绝大多数会话的标题永远停在占位（实测：只有 custom-title，无 ai-title）。
+          if (titleRefresher != null) {
+            titleRefresher.onTurnFinished(event.getMessage());
+          }
           break;
         }
         appendEntry(
