@@ -95,6 +95,16 @@ class TomIDEUpdater(private val context: Context) {
      * whatsnew 的 raw 地址）都要先剥掉它。
      */
     private const val LOCAL_BUILD_SUFFIX = "-local"
+
+    /**
+     * 变更日志的网络请求尝试次数。
+     *
+     * <p>GitHub raw 在国内实测 **50% 概率返回 503**（PJA110 上 8 次测试 4 次失败），
+     * 且是瞬时的——连续失败几次后又会连续成功。3 次尝试（含 2 次退避）能把
+     * 单次抖动的失败率从 50% 压到约 12.5%。不设更高：每多一次就多 0.5s 弹窗延迟，
+     * 而日志只是说明文字，缺了不影响用户决定是否更新。
+     */
+    private const val CHANGELOG_MAX_ATTEMPTS = 3
   }
 
   /**
@@ -692,26 +702,78 @@ class TomIDEUpdater(private val context: Context) {
     )
   }
 
+  /**
+   * 取更新日志正文（已转纯文本）。
+   *
+   * <p><b>两道防线，针对 GitHub raw 在国内实测 50% 返回 503</b>：
+   *
+   * 1. **本地优先**：`assets/whatsnew/<文件名>.md` 由构建时打包（见
+   *    `core/app/build.gradle.kts` 的 copyWhatsnewToAssets）。命中的场景是
+   *    「设置 → 变更日志」看当前版本，完全不走网络。
+   * 2. **网络重试**：更新弹窗要看的是**更新版本**的日志，本地包里不可能有它，
+   *    只能走网络——那就重试几次。实测 503 是瞬时的（连续 4 次失败后 4 次成功），
+   *    退避重试能消化掉大部分抖动。
+   *
+   * <p>全失败时返回占位文案（不抛异常）：弹窗仍可正常显示与下载，只是缺说明文字。
+   */
   private suspend fun fetchChangelog(changelogUrl: String): String {
-    return withContext(Dispatchers.IO) {
-      try {
-        val url = URL(changelogUrl)
-        val connection = url.openConnection() as HttpURLConnection
-        connection.requestMethod = "GET"
-        connection.connectTimeout = 10000
-        connection.readTimeout = 10000
-
-        val responseCode = connection.responseCode
-        if (responseCode == HttpURLConnection.HTTP_OK) {
-          val markdown = connection.inputStream.bufferedReader().use { it.readText() }
-          parseMarkdownToPlainText(markdown)
-        } else {
-          context.getString(R.string.updater_changelog_failed)
-        }
-      } catch (e: Exception) {
-        Log.e(TAG, context.getString(R.string.updater_changelog_error), e)
-        context.getString(R.string.updater_changelog_failed)
+    // 本地优先：URL 末段即文件名（`.../whatsnew/1.0.0+gh.r24.md`）。
+    val fileName = changelogUrl.substringAfterLast('/').takeIf { it.endsWith(".md") }
+    if (fileName != null) {
+      val local = readBundledChangelog(fileName)
+      if (local != null) {
+        Log.d(TAG, "变更日志命中本地打包资源：$fileName")
+        return parseMarkdownToPlainText(local)
       }
+    }
+    return withContext(Dispatchers.IO) {
+      var lastError: Exception? = null
+      for (attempt in 1..CHANGELOG_MAX_ATTEMPTS) {
+        try {
+          val connection = URL(changelogUrl).openConnection() as HttpURLConnection
+          connection.requestMethod = "GET"
+          connection.connectTimeout = 10000
+          connection.readTimeout = 10000
+          try {
+            val responseCode = connection.responseCode
+            if (responseCode == HttpURLConnection.HTTP_OK) {
+              val markdown = connection.inputStream.bufferedReader().use { it.readText() }
+              return@withContext parseMarkdownToPlainText(markdown)
+            }
+            // 4xx 是确定性失败（路径错、无权限），重试没有意义；
+            // 只有 5xx / 429 这类瞬时错误才值得再试。
+            if (responseCode in 400..499 && responseCode != 429) {
+              Log.e(TAG, "变更日志 HTTP $responseCode，不重试：$changelogUrl")
+              return@withContext context.getString(R.string.updater_changelog_failed)
+            }
+            Log.w(TAG, "变更日志 HTTP $responseCode（第 $attempt/$CHANGELOG_MAX_ATTEMPTS 次）")
+          } finally {
+            connection.disconnect()
+          }
+        } catch (e: Exception) {
+          lastError = e
+          Log.w(TAG, "变更日志请求异常（第 $attempt/$CHANGELOG_MAX_ATTEMPTS 次）", e)
+        }
+        if (attempt < CHANGELOG_MAX_ATTEMPTS) {
+          // 指数退避 0.5s / 1s：503 断续是秒级的，短退避就够，不拖住弹窗。
+          delay(500L * attempt)
+        }
+      }
+      Log.e(TAG, context.getString(R.string.updater_changelog_error), lastError)
+      context.getString(R.string.updater_changelog_failed)
+    }
+  }
+
+  /**
+   * 读 APK 内打包的更新日志（`assets/whatsnew/<fileName>`）。
+   *
+   * @return 正文；没有这个文件时返回 null（交给网络分支）
+   */
+  private fun readBundledChangelog(fileName: String): String? {
+    return try {
+      context.assets.open("whatsnew/$fileName").bufferedReader().use { it.readText() }
+    } catch (e: Exception) {
+      null // 本地没有是常态（看的是更新版本的日志），静默回落网络
     }
   }
 
