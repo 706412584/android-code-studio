@@ -49,6 +49,30 @@ object AssistantPrefs {
   fun setToolStatusBar(context: Context, enabled: Boolean) =
       AssistantToolStatusBarPref.setEnabled(context, enabled)
 
+  // ---- 拒绝恢复 ----
+
+  /**
+   * 模型拒绝时是否自动换策略重跑(强化执行约束 → 备用模型)。默认开。
+   *
+   * <p>关闭时两个宿主都退化为「只首跑一次」,行为与本功能接入前完全一致。
+   * 键落 "ai_agent_tools"(与 [chatMode] 同源),core/app 宿主直接读同一文件、
+   * 同一键名,两边开关互不相干(各 App 数据目录独立)。
+   */
+  fun refusalRecoveryEnabled(context: Context): Boolean =
+      context
+          .getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+          .getBoolean(KEY_REFUSAL_RECOVERY, true)
+
+  fun setRefusalRecoveryEnabled(context: Context, enabled: Boolean) {
+    context
+        .getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        .edit()
+        .putBoolean(KEY_REFUSAL_RECOVERY, enabled)
+        .apply()
+  }
+
+  private const val KEY_REFUSAL_RECOVERY = "refusal_recovery_enabled"
+
   // ---- 外观 ----
 
   /** 卡片缩放系数（1.0 = 默认）。 */

@@ -77,6 +77,8 @@ class AssistantSettingsState(
     var thinkingAutoCollapse: Boolean,
     /** 是否显示工具运行状态条。 */
     var toolStatusBar: Boolean,
+    /** 模型拒绝时是否自动换策略重跑。 */
+    var refusalRecovery: Boolean,
     /** 卡片缩放系数。 */
     var cardScale: Float,
     /** 正文颜色 ARGB；0 表示跟随主题。 */
@@ -98,6 +100,7 @@ class AssistantSettingsState(
     var onChatModeChange: (String) -> Unit,
     var onThinkingAutoCollapseChange: (Boolean) -> Unit,
     var onToolStatusBarChange: (Boolean) -> Unit,
+    var onRefusalRecoveryChange: (Boolean) -> Unit,
     var onCardScaleChange: (Float) -> Unit,
     var onTextColorChange: (Int) -> Unit,
     /** 打开提示词模板管理。 */
@@ -324,6 +327,21 @@ fun AssistantSettingsScreen(
                 Switch(
                     checked = state.toolStatusBar,
                     onCheckedChange = state.onToolStatusBarChange,
+                )
+              },
+          )
+          SettingsDivider()
+          SettingsRow(
+              icon = FeatherIcons.Zap,
+              title = "模型拒绝时自动换策略",
+              subtitle =
+                  if (state.refusalRecovery)
+                      "检测到拒绝会强化执行约束、必要时换备用模型重跑"
+                  else "关闭时只跑一次,拒绝则原样返回(等价旧行为)",
+              trailing = {
+                Switch(
+                    checked = state.refusalRecovery,
+                    onCheckedChange = state.onRefusalRecoveryChange,
                 )
               },
           )

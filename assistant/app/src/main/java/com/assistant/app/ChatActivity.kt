@@ -365,6 +365,9 @@ class ChatActivity : ComponentActivity() {
     // 于是输入栏那个选择器点了没有任何效果。
     runner.setReasoningEffortProvider { toKernelReasoningEffort(reasoningEffortOf()) }
 
+    // 拒绝恢复开关:每次运行前读一次,设置里关闭后下一次发送即回退「只跑一次」。
+    runner.setRefusalRecoveryEnabledProvider { com.assistant.ui.AssistantPrefs.refusalRecoveryEnabled(this) }
+
     // ---- 附件 ----
     //
     // 三个选取入口各自注册：文件走 OpenMultipleDocuments，图片走 PickMultipleVisualMedia
