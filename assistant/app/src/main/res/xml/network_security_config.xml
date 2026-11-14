@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  明文 HTTP 策略。
+
+  <p><b>为什么需要它</b>：本 App 的服务商列表支持本地 / 局域网 LLM 端点
+  （`http://127.0.0.1:17991/v1`、`http://192.168.1.5:17990/v1` 等，由 proot 或同网段
+  设备提供）。targetSdk=28 在 Android 9+ 上默认禁止明文流量，没有这份配置时
+  「拉取模型」会直接失败并提示
+  `Cleartext HTTP traffic to 127.0.0.1 not permitted`——请求在系统 socket 层就被拦，
+  应用层看不到任何响应（实测）。
+
+  <p><b>为什么全局放开而不是按域名白名单</b>：Android 的 `<domain>` 是**主机名精确匹配**，
+  不支持 CIDR 网段，局域网 IP 无法穷举。主 App 的 `core/app/res/xml/network_security_config.xml`
+  已有同样的判定与更长的事故记录，这里保持一致。
+
+  <p><b>安全性由应用层承担</b>：所有出站 HTTP 都经
+  `com.tom.rv2ide.ai.protocol.UrlPolicy.requireHttpOrLocalCleartextUrl`
+  校验——仅允许 https、loopback、RFC1918 私网地址与显式白名单主机；
+  公网明文地址会被拒绝。调用点包括 `SimpleHttpClient.execute`（模型请求与
+  `ModelCatalog.fetch` 都走它）与 `AppHttpPort`（工具发出的请求）。
+  即「系统层放开 + 应用层按私网收紧」，与主 App 的方案同构。
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true" />
+</network-security-config>

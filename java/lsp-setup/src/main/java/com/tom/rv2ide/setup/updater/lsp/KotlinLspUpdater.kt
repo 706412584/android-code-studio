@@ -18,6 +18,7 @@
 package com.tom.rv2ide.setup.updater.lsp
 
 import android.content.Context
+import android.util.Log
 import android.widget.Toast
 import com.tom.rv2ide.setup.R
 import com.tom.rv2ide.resources.R.string
@@ -58,6 +59,10 @@ import java.util.zip.ZipInputStream
  */
 class KotlinLspUpdater(private val context: Context) {
 
+    private companion object {
+        const val TAG = "KotlinLspUpdater"
+    }
+
     private val manifestUrl = "https://raw.githubusercontent.com/AndroidCSOfficial/acs-language-servers/refs/heads/main/servers-manifest.json"
 
     /**
@@ -68,11 +73,19 @@ class KotlinLspUpdater(private val context: Context) {
      * to the user.
      *
      * @param currentVersion The currently installed version of the Kotlin LSP server.
+     * @param notifyOnFailure 检查失败时是否弹 Toast。默认 `false`——**启动时静默**：
+     *   manifest 在 GitHub raw，国内设备实测 50% 概率 503（8 次里 4 次失败），
+     *   每次启动都因为网络抖动弹一句「检查更新失败」纯属噪声。只有用户主动点
+     *   「检查更新」时才传 `true`（那时必须有反馈，否则会被当成功能坏了）。
      * @param onResult Optional callback invoked with the update availability status and
      * the remote version string. The first parameter indicates whether an update is available,
      * and the second parameter contains the remote version string if available.
      */
-    fun checkForUpdates(currentVersion: String, onResult: ((Boolean, String?) -> Unit)? = null) {
+    fun checkForUpdates(
+        currentVersion: String,
+        notifyOnFailure: Boolean = false,
+        onResult: ((Boolean, String?) -> Unit)? = null,
+    ) {
         CoroutineScope(Dispatchers.IO).launch {
             try {
                 val jsonString = URL(manifestUrl).readText()
@@ -93,9 +106,12 @@ class KotlinLspUpdater(private val context: Context) {
                     }
                 }
             } catch (e: Exception) {
+                Log.w(TAG, "LSP manifest 检查失败（通知用户=$notifyOnFailure）：$manifestUrl", e)
                 withContext(Dispatchers.Main) {
                     onResult?.invoke(false, null)
-                    Toast.makeText(context, context.getString(R.string.lsp_update_check_failed, e.message), Toast.LENGTH_SHORT).show()
+                    if (notifyOnFailure) {
+                        Toast.makeText(context, context.getString(R.string.lsp_update_check_failed, e.message), Toast.LENGTH_SHORT).show()
+                    }
                 }
             }
         }

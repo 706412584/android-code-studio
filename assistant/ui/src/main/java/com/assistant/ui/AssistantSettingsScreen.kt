@@ -20,21 +20,30 @@ package com.assistant.ui
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import com.assistant.ui.components.independent.SettingsDivider
 import com.assistant.ui.components.independent.SettingsGroup
@@ -44,7 +53,9 @@ import com.assistant.ui.components.independent.settingsPageBackground
 import com.assistant.ui.theme.AIEditorTheme
 import com.assistant.ui.theme.AppThemePreset
 import com.assistant.ui.theme.Spacing
+import com.assistant.ui.theme.semanticColors
 import compose.icons.FeatherIcons
+import compose.icons.feathericons.ChevronDown
 import compose.icons.feathericons.ArrowLeft
 import compose.icons.feathericons.Cpu
 import compose.icons.feathericons.Folder
@@ -335,33 +346,30 @@ fun AssistantSettingsScreen(
               },
           )
           SettingsDivider()
+          // 开关与次数选择合并为一行：此前「重试次数」是独立的一整行
+          // （标题 + 副标题 + 5 个 48dp 按钮），开启后结构明显变高、与相邻项不齐。
+          // 次数只在开启时有意义，放进同一行的 trailing 既省高度也不丢可发现性。
           SettingsRow(
               icon = FeatherIcons.Zap,
               title = "模型拒绝时自动重试",
               subtitle =
                   if (state.refusalRecovery)
-                      "检测到拒绝会用同样参数再请求（最多 ${state.refusalMaxAttempts} 次）"
+                      "检测到拒绝会用同样参数再请求（含首次共 ${state.refusalMaxAttempts} 次）"
                   else "关闭时只跑一次，拒绝则原样返回（等价旧行为）",
               trailing = {
+                if (state.refusalRecovery) {
+                  AttemptsStepper(
+                      value = state.refusalMaxAttempts,
+                      onChange = state.onRefusalMaxAttemptsChange,
+                  )
+                  Spacer(Modifier.width(Spacing.sm))
+                }
                 Switch(
                     checked = state.refusalRecovery,
                     onCheckedChange = state.onRefusalRecoveryChange,
                 )
               },
           )
-          if (state.refusalRecovery) {
-            SettingsDivider()
-            SettingsRow(
-                title = "重试次数",
-                subtitle = "含首次请求，共 ${state.refusalMaxAttempts} 次",
-                trailing = {
-                  AttemptsStepper(
-                      value = state.refusalMaxAttempts,
-                      onChange = state.onRefusalMaxAttemptsChange,
-                  )
-                },
-            )
-          }
           SettingsDivider()
           SettingsRow(
               icon = FeatherIcons.Cpu,
@@ -508,17 +516,49 @@ private fun ThemePresetRow(
 /** 重试次数步进器（1-5）：与字号步进同一形态，按钮点选天然防越界。 */
 @Composable
 private fun AttemptsStepper(value: Int, onChange: (Int) -> Unit) {
-  val steps = listOf(1, 2, 3, 4, 5)
-  Row(horizontalArrangement = Arrangement.spacedBy(Spacing.xs)) {
-    steps.forEach { n ->
-      val isSelected = value == n
-      androidx.compose.material3.TextButton(onClick = { onChange(n) }) {
+  // 下拉菜单而不是 5 个并排按钮：并排时（哪怕压到 28dp）仍会挤掉标题宽度，
+  // 实测标题「模型拒绝时自动重试」被压成一列竖排字。这里只占一个按钮宽度，
+  // 点击展开 1~5 的选择。次数是低频设置，多一次点击可接受。
+  var expanded by remember { mutableStateOf(false) }
+  Box {
+    Surface(
+        shape = androidx.compose.foundation.shape.RoundedCornerShape(8.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant,
+        modifier = Modifier.clickable { expanded = true },
+    ) {
+      Row(
+          modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+          verticalAlignment = Alignment.CenterVertically,
+      ) {
         Text(
-            text = n.toString(),
+            text = "$value 次",
             style = MaterialTheme.typography.bodyMedium,
-            color =
-                if (isSelected) MaterialTheme.colorScheme.primary
-                else MaterialTheme.colorScheme.onSurfaceVariant,
+            color = MaterialTheme.colorScheme.onSurface,
+        )
+        Icon(
+            imageVector = FeatherIcons.ChevronDown,
+            contentDescription = null,
+            tint = MaterialTheme.semanticColors.subtleText,
+            modifier = Modifier.padding(start = 2.dp).size(14.dp),
+        )
+      }
+    }
+    androidx.compose.material3.DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+      (1..5).forEach { n ->
+        androidx.compose.material3.DropdownMenuItem(
+            text = {
+              Text(
+                  text = if (n == value) "$n 次（当前）" else "$n 次",
+                  style = MaterialTheme.typography.bodyMedium,
+                  color =
+                      if (n == value) MaterialTheme.colorScheme.primary
+                      else MaterialTheme.colorScheme.onSurface,
+              )
+            },
+            onClick = {
+              onChange(n)
+              expanded = false
+            },
         )
       }
     }
