@@ -135,9 +135,10 @@ final class ReverseToolSupport {
     return null;
   }
 
-  /** jar 的候选路径（/sdcard、Termux share、工作区）。 */
+  /** jar 的候选路径（/sdcard、/sdcard/lib、Termux share、工作区）。 */
   private static List<String> jarCandidates(String jarName) {
     List<String> paths = new ArrayList<>();
+    paths.add("/sdcard/lib/" + jarName);
     paths.add("/sdcard/" + jarName);
     paths.add("/data/data/com.termux/files/usr/share/" + jarName);
     paths.add("/data/data/com.tom.rv2ide/files/usr/share/" + jarName);
