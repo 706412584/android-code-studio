@@ -114,14 +114,21 @@ public final class ApkDecompileTool extends BaseTool {
     ShellBackend backend = resolution.getBackend();
 
     String jadx = ReverseToolSupport.probeExecutable(backend, "jadx", cwd);
+    String cliPrefix = null;
     if (jadx == null) {
+      // jadx 以 jar 分发（无 jadx 命令时，回退到 java -cp lib/* jadx.cli.JadxCLI）。
+      cliPrefix = ReverseToolSupport.probeJarTool(backend, "jadx.jar", "jadx.cli.JadxCLI", cwd);
+    }
+    if (jadx == null && cliPrefix == null) {
       return error(
           ReverseToolSupport.notInstalled(
               "jadx",
               "安装方式：\n"
-                  + "- 从 https://github.com/skylot/jadx/releases 下载 jadx-<ver>.zip，解压后用 `java -jar <path>/jadx.jar` 调用；\n"
+                  + "- 从 https://github.com/skylot/jadx/releases 下载 jadx-<ver>.zip，解压到 /sdcard，"
+                  + "本工具会自动用 `java -cp lib/* jadx.cli.JadxCLI` 调用；\n"
                   + "- 或把 jadx 命令放进 PATH（Termux 的 $PREFIX/bin）。"));
     }
+    String execPrefix = jadx != null ? ReverseToolSupport.quote(jadx) : cliPrefix;
 
     String outputDir = input.optString("output_dir", "").trim();
     if (outputDir.isEmpty()) {
@@ -129,7 +136,7 @@ public final class ApkDecompileTool extends BaseTool {
     }
     // 防注入：路径全部 quote。
     String command =
-        ReverseToolSupport.quote(jadx)
+        execPrefix
             + " -d "
             + ReverseToolSupport.quote(outputDir)
             + " "

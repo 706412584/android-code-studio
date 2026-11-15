@@ -109,4 +109,39 @@ final class ReverseToolSupport {
   static String notInstalled(String toolName, String installHint) {
     return "未检测到可用的 " + toolName + "。\n" + installHint;
   }
+
+  /**
+   * 探测一个 **jar 形态**的工具（jadx/apktool 主要以 jar 分发，没有 apktool/jadx 命令）。
+   *
+   * <p>先找到 java，再在候选路径里找 jar。fat jar（mainClass=null）用 `java -jar`；
+   * 需要依赖的（mainClass 非空，如 jadx.cli.JadxCLI）用 `java -cp <dir>/* <mainClass>`。
+   *
+   * @return 命令前缀（含 java 与 jar/classpath），找不到返回 null
+   */
+  static String probeJarTool(ShellBackend backend, String jarName, String mainClass, String cwd) {
+    String java = probeExecutable(backend, "java", cwd);
+    if (java == null) {
+      return null;
+    }
+    for (String jarPath : jarCandidates(jarName)) {
+      if (run(backend, "test -f " + quote(jarPath), cwd, PROBE_TIMEOUT_MS, null).getExitCode() == 0) {
+        if (mainClass == null) {
+          return quote(java) + " -jar " + quote(jarPath);
+        }
+        String dir = jarPath.substring(0, jarPath.lastIndexOf('/'));
+        return quote(java) + " -cp " + quote(dir + "/*") + " " + mainClass;
+      }
+    }
+    return null;
+  }
+
+  /** jar 的候选路径（/sdcard、Termux share、工作区）。 */
+  private static List<String> jarCandidates(String jarName) {
+    List<String> paths = new ArrayList<>();
+    paths.add("/sdcard/" + jarName);
+    paths.add("/data/data/com.termux/files/usr/share/" + jarName);
+    paths.add("/data/data/com.tom.rv2ide/files/usr/share/" + jarName);
+    paths.add(jarName);
+    return paths;
+  }
 }

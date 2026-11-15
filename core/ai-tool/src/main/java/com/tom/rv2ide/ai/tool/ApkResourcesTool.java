@@ -106,22 +106,28 @@ public final class ApkResourcesTool extends BaseTool {
     ShellBackend backend = resolution.getBackend();
 
     String apktool = ReverseToolSupport.probeExecutable(backend, "apktool", cwd);
+    String jarPrefix = null;
     if (apktool == null) {
+      // apktool 以 jar 分发（无 apktool 命令时，回退到 java -jar apktool.jar）。
+      jarPrefix = ReverseToolSupport.probeJarTool(backend, "apktool.jar", null, cwd);
+    }
+    if (apktool == null && jarPrefix == null) {
       return error(
           ReverseToolSupport.notInstalled(
               "apktool",
               "安装方式：\n"
                   + "- Termux：`pkg install apktool`（若源提供）；\n"
-                  + "- 或从 https://github.com/iBotPeaches/Apktool/releases 下载 apktool.jar，"
-                  + "用 `java -jar <path>/apktool.jar` 调用。"));
+                  + "- 或从 https://github.com/iBotPeaches/Apktool/releases 下载 apktool.jar 到 /sdcard，"
+                  + "本工具会自动用 `java -jar` 调用。"));
     }
+    String execPrefix = apktool != null ? ReverseToolSupport.quote(apktool) : jarPrefix;
 
     String outputDir = input.optString("output_dir", "").trim();
     if (outputDir.isEmpty()) {
       outputDir = apkPath + ".apktool";
     }
     String command =
-        ReverseToolSupport.quote(apktool)
+        execPrefix
             + " d -o "
             + ReverseToolSupport.quote(outputDir)
             + " "
