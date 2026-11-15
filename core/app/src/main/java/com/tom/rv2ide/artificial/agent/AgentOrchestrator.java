@@ -1344,7 +1344,9 @@ public final class AgentOrchestrator {
     if (entries.isEmpty()) {
       return new ArrayList<>();
     }
-    return ConversationHistory.fold(entries);
+    // UI 回放用「只转换不清洗」的列表：fold 会丢弃被拒回复、压缩段、无配对调用与旧图，
+    // 导致用户切换会话后看不到完整历史（实测「历史丢失」）。续接给模型仍走 fold。
+    return ConversationHistory.toDisplayMessages(entries);
   }
 
   /** @return 当前会话 id，可能为 null（尚未开始任何会话）。 */

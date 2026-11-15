@@ -387,4 +387,43 @@ public final class ConversationHistory {
     // SessionMetaEntry / TitleEntry / CompactionEntry 不参与模型对话
     return null;
   }
+
+  /**
+   * 把会话条目转成**界面回放**用的消息列表——只转换、不清洗。
+   *
+   * <p>与 {@link #fold} 的区别：fold 是「发给模型前的清洗」，会丢弃被压缩覆盖的条目、
+   * 被拒回复、无配对的工具调用/结果，并把图片限制在最近几张。这些清洗是为了让模型
+   * 续接时不报错、不被旧图撑爆上下文，但**不该用在界面回放**——用户回看历史时想看到
+   * 完整内容（全部工具调用、思考、图片、被拒的回复、压缩前的原文）。
+   *
+   * <p>因此本方法逐条转换、不跳过任何对话条目：压缩段照常显示、被拒回复照常显示、
+   * 图片全部保留。CompactionEntry/TitleEntry/SessionMeta 不是对话内容，仍不显示。
+   *
+   * <p>调用方：`AgentOrchestrator.loadConversationMessages`（UI 回放专用，见
+   * subscribeWithHistory）。续接给模型仍走 {@link #fold}，不受影响。
+   */
+  public static List<ModelMessage> toDisplayMessages(
+      List<ConversationLog.EntryLocation> entries) {
+    List<ModelMessage> messages = new ArrayList<>();
+    if (entries == null) {
+      return messages;
+    }
+    for (ConversationLog.EntryLocation location : entries) {
+      ConversationEntry entry = location.getEntry();
+      // 被拒的回复：toMessage 返回 null（不进模型上下文），但界面回放要显示。
+      if (entry instanceof AssistantMessageEntry
+          && ((AssistantMessageEntry) entry).isRefused()) {
+        AssistantMessageEntry refused = (AssistantMessageEntry) entry;
+        messages.add(
+            new AssistantModelMessage(
+                refused.getContent(), refused.getReasoningContent(), refused.getToolCalls()));
+        continue;
+      }
+      ModelMessage message = toMessage(entry);
+      if (message != null) {
+        messages.add(message);
+      }
+    }
+    return messages;
+  }
 }
