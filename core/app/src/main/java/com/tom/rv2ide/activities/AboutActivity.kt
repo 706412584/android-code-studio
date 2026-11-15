@@ -229,6 +229,15 @@ class AboutActivity : EdgeToEdgeIDEActivity() {
     builder.append(BuildInfo.VERSION_NAME_SIMPLE)
     builder.append("-")
     builder.append(IDEBuildConfigProvider.getInstance().cpuAbiName)
+    // 热更新补丁：补丁是 DEX 注入，**不改** APK 的 versionCode/versionName——
+    // BuildInfo.VERSION_NAME_SIMPLE 是基线包编译时写死的版本名，补丁应用后仍显示基线
+    // （实测：应用 r25 补丁后关于页仍显示 r24，被误认为「更新没生效」）。
+    // 有补丁时一并显示补丁版本，让用户能确认「实际跑的是哪版代码」。
+    val patchVersion = appliedPatchVersionName()
+    if (!patchVersion.isNullOrBlank()) {
+      builder.append(" +补丁")
+      builder.append(patchVersion)
+    }
     builder.append(" ")
 
     val colorPositive = ContextCompat.getColor(this, R.color.color_success)
@@ -237,6 +246,23 @@ class AboutActivity : EdgeToEdgeIDEActivity() {
     appendBuildType(builder, colorPositive, colorNegative)
 
     return builder
+  }
+
+  /**
+   * 已应用热更新补丁的版本名（如 `1.0.0+gh.r25`）；未应用补丁时返回 null。
+   *
+   * <p>读 SDK 的 `appliedPatchInfo.patchVersion`（持久化在 `patch_storage_prefs`），
+   * 而不是 `getPatchedVersionCode()`——后者只在内存维护，重启后从 prefs 恢复拿不到值。
+   * 与 {@code TomIDEUpdater.appliedPatchVersion} 同一数据源。
+   */
+  private fun appliedPatchVersionName(): String? {
+    return try {
+      val helper = com.orange.update.HotUpdateHelper.getInstance(this)
+      if (helper.hasAppliedPatch()) helper.appliedPatchInfo?.patchVersion else null
+    } catch (e: Throwable) {
+      // SDK 未初始化或读取失败时按「无补丁」处理，不影响关于页其余内容。
+      null
+    }
   }
 
   private fun appendBuildType(
