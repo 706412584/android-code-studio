@@ -28,6 +28,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.view.WindowManager
 import androidx.appcompat.view.ContextThemeWrapper
+import androidx.compose.runtime.Composable
 import androidx.lifecycle.LifecycleCoroutineScope
 import com.tom.rv2ide.R
 import com.tom.rv2ide.R as AppR
@@ -37,6 +38,8 @@ import com.tom.rv2ide.artificial.agent.AssistantSettings
 import com.tom.rv2ide.artificial.agent.compose.compat.OverlayDialogHandle
 import com.tom.rv2ide.artificial.agent.compose.compat.OverlayDialogHost
 import com.tom.rv2ide.artificial.agent.compose.compat.createOverlayDialog
+import com.tom.rv2ide.artificial.agent.compose.theme.AIEditorTheme
+import com.tom.rv2ide.artificial.agent.compose.theme.AppThemePreset
 import com.tom.rv2ide.resources.R.string
 import com.tom.rv2ide.services.AssistantOverlayService
 
@@ -102,6 +105,43 @@ class OverlayHost(
   }
 
   /**
+   * overlay 弹窗的 darkTheme 判据：与面板各 ComposeView 一致，用 `colorBackground` 亮度
+   * （ACS 可应用内切主题而不改系统 uiMode，故不能用 `isSystemInDarkTheme()`）。
+   */
+  private fun isHostDarkTheme(): Boolean {
+    val tv = android.util.TypedValue()
+    val resolved = context.theme.resolveAttribute(android.R.attr.colorBackground, tv, true)
+    val bg = if (resolved) tv.data else 0xFF07111F.toInt()
+    return androidx.core.graphics.ColorUtils.calculateLuminance(bg) <= 0.5
+  }
+
+  /**
+   * 给 overlay 弹窗内容包上 [AIEditorTheme]。
+   *
+   * <p><b>为什么必须包</b>：弹窗内容渲染进**独立的** ComposeView（面板内的
+   * `assistantSheetCompose`，或兜底的原生 Dialog 内 ComposeView），那是一个**全新的
+   * Composition**——`CompositionLocal` 不跨 Composition 传递，面板的 AIEditorTheme
+   * 不会传进来。不包的话 `MaterialTheme.colorScheme` 回落到默认 light scheme，
+   * 而 `AIEditorTheme` 的 `overlayHost` 又会用宿主主题的 `colorOnSurface` 覆盖，
+   * base scheme 与宿主主题一旦明暗不一致就是「深底深字」（实测：深色模式下
+   * 长按会话的删除确认弹窗文字黑色看不见）。
+   *
+   * <p><b>为什么这样就协调</b>：darkTheme 判据（`colorBackground` 亮度）与
+   * `AIEditorTheme` 内部 `resolveHostColors`（`colorSurface`/`colorOnSurface` 等）
+   * 读的是**同一个 [context] 的同一个主题**，二者必然配套——深色主题同时给出
+   * 深色 surface 与浅色 onSurface，不会出现背景深、文字也深的错配。
+   */
+  private fun themedDialogContent(content: @Composable () -> Unit): @Composable () -> Unit = {
+    AIEditorTheme(
+        darkTheme = isHostDarkTheme(),
+        // 弹窗是居中卡片，不跟随宿主「页面框架」底色（SurfaceDim/ContainerLow）。
+        followHostFrame = false,
+        // 弹窗属 UI 壳，与面板壳一致用 DEFAULT，不随「消息配色方案」换色。
+        presetOverride = AppThemePreset.DEFAULT,
+    ) { content() }
+  }
+
+  /**
    * 悬浮层弹窗宿主（见 [OverlayDialogHost]）。
    *
    * <p>Compose 的 `Dialog` 在 overlay 下必崩（`show()` 需要 Activity token），
@@ -120,7 +160,7 @@ class OverlayHost(
         R.id.assistantSheetCompose)
     if (overlay != null && compose != null) {
       overlay.visibility = View.VISIBLE
-      compose.setContent(content)
+      compose.setContent(themedDialogContent(content))
       return@OverlayDialogHost object : OverlayDialogHandle {
         override fun dismiss() {
           overlay.visibility = View.GONE
@@ -149,7 +189,7 @@ class OverlayHost(
                         0,
                         service.resources.displayMetrics.widthPixels,
                         service.resources.displayMetrics.heightPixels),
-            content = content)
+            content = themedDialogContent(content))
     dialog.show()
     object : OverlayDialogHandle {
       override fun dismiss() {
