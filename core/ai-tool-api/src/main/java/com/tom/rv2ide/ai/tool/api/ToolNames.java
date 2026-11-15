@@ -428,6 +428,14 @@ public final class ToolNames {
     public static final String BINARY_DISASM = "binary_disasm";
     /** frida 动态插桩（需 root）。 */
     public static final String FRIDA_HOOK = "frida_hook";
+    /** 不解压浏览 APK（ZipFile 随机访问 + AXML 解析，MT 管理器式）。 */
+    public static final String APK_BROWSE = "apk_browse";
+    /** 对 APK 重新签名（apksigner.jar / apksig）。 */
+    public static final String APK_RESIGN = "apk_resign";
+    /** 查看原生库（.so）的符号表/导出函数（nm/readelf）。 */
+    public static final String NATIVE_SYMBOLS = "native_symbols";
+    /** 美化（反混淆）前端 JS（js-beautify）。 */
+    public static final String JS_BEAUTIFY = "js_beautify";
 
     private static final String CUSTOM_AGENT_PREFIX = "agentx_";
     private static final String CUSTOM_MCP_PREFIX = "mcpx_";

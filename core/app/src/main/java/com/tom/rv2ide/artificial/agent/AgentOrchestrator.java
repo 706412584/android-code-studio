@@ -1831,6 +1831,11 @@ public final class AgentOrchestrator {
     registry.register(new com.tom.rv2ide.ai.tool.ApkInfoTool(shellBackends));
     registry.register(new com.tom.rv2ide.ai.tool.BinaryDisasmTool(shellBackends));
     registry.register(new com.tom.rv2ide.ai.tool.FridaHookTool(shellBackends));
+    // MT 管理器式不解压浏览（纯 Java ZipFile，无需 backend）+ 重签名 + so 符号表 + JS 美化。
+    registry.register(new com.tom.rv2ide.ai.tool.ApkBrowseTool());
+    registry.register(new com.tom.rv2ide.ai.tool.ApkResignTool(shellBackends));
+    registry.register(new com.tom.rv2ide.ai.tool.NativeSymbolsTool(shellBackends));
+    registry.register(new com.tom.rv2ide.ai.tool.JsBeautifyTool(shellBackends));
 
     // CodeGraph 代码知识图谱（复用同一个 shell 后端执行 acs-codegraph）。
     // 注册后助手才能主动按符号查源码/调用关系/影响面，而不是靠 shell_execute 手敲
