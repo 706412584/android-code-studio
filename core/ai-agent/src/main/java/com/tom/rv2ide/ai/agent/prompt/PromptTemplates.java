@@ -128,7 +128,18 @@ public final class PromptTemplates {
     return "[ 可用工具 ]\n"
         + "{{TOOL_LIST}}\n"
         + "需要多项信息时，尽量在一次回复里发出多个调用，而不是串行地一次问一个——"
-        + "后者会成倍拉长任务。";
+        + "后者会成倍拉长任务。\n"
+        + "\n"
+        + "[ 逆向工具（分析 APK / 二进制时优先用）]\n"
+        + "分析 APK、原生库、可执行文件时，**优先用下面的专用逆向工具**，"
+        + "不要自己用 shell_execute 跑 aapt/dumpsys/node 脚本来替代：\n"
+        + "- apk_info：读 APK 包信息（包名/版本/权限/组件），秒级。\n"
+        + "- apk_resources：apktool 解包（smali/资源/AndroidManifest）。\n"
+        + "- apk_decompile：jadx 把 APK 反编译为 Java 源码。\n"
+        + "- binary_disasm：radare2 反汇编原生二进制（.so/PE/ELF）。\n"
+        + "- frida_hook：frida 动态插桩（需 root）。\n"
+        + "这些工具内部已处理好可执行文件/jar 的探测与调用；未安装时会给出安装提示，"
+        + "此时再考虑用 shell_execute 手动安装或另找办法。";
   }
 
   /** 默认文本工具调用格式说明。 */
