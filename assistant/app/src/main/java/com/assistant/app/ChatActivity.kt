@@ -1022,6 +1022,15 @@ class ChatActivity : ComponentActivity() {
               this, "该会话的工作区已不存在：${row.workspacePath}", android.widget.Toast.LENGTH_LONG)
           .show()
     }
+    // 同工作区切换：与跨工作区一致，运行中禁止切换——本轮正文仅在 TURN_FINISHED
+    // 落盘，运行中 timeline.clear() 会把还没落盘的前缀（textBuffer）丢掉（实测：同工作区
+    // 运行中切会话，已显示的开头几句凭空消失）。
+    if (runner.isRunning()) {
+      android.widget.Toast.makeText(
+              this, "当前对话还在运行，等它结束再切换会话", android.widget.Toast.LENGTH_LONG)
+          .show()
+      return
+    }
     conversationId = row.id
     currentTitle = row.title
     timeline.clear()
