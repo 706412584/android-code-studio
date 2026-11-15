@@ -868,6 +868,18 @@ class AssistantOverlayService :
     private const val PREF_OVERLAY_X = "ai_assistant_overlay_x"
     private const val PREF_OVERLAY_Y = "ai_assistant_overlay_y"
 
+    /**
+     * 用户是否开启了「应用外悬浮」（**持久化**开关）。
+     *
+     * <p>与运行时状态 [isShowing] 的区别：[isShowing] 反映「服务此刻在不在跑」（会被系统
+     * 杀进程、被临时隐藏等改变），本键反映「用户想不想要它」（只由用户主动开关写）。
+     * 进 APP / 返回主界面时按本键恢复——见 [restoreIfEnabled]。
+     *
+     * <p>临时隐藏（跳主 app 设置，见 [hideTemporarily]）**不写**本键，否则返回时
+     * 「自动恢复」会因为开关已被洗掉而失效。
+     */
+    private const val PREF_OVERLAY_ENABLED = "ai_assistant_overlay_enabled"
+
     /** 拖动时窗口四周保留的最小边距（dp）。 */
     private const val OVERLAY_EDGE_MARGIN_DP = 8
 
@@ -912,11 +924,11 @@ class AssistantOverlayService :
      *
      * <p>展开态的面板是整个系统悬浮窗（`TYPE_APPLICATION_OVERLAY`），层级高于普通
      * Activity——文件选择器会被完全遮住，用户看不到也点不到。收起后只剩 FAB。
+     *
+     * <p>实现归一到 [collapsePanel]（通用收起；进 APP 时也用它）。
      */
     @JvmStatic
-    fun collapseForAttachmentRequest() {
-      instance?.get()?.assistant?.let { if (it.isOpen) it.close() }
-    }
+    fun collapseForAttachmentRequest() = collapsePanel()
 
     /**
      * 当前展开面板在屏幕上的矩形（供宿主建同尺寸的弹窗窗口）。
@@ -996,17 +1008,77 @@ class AssistantOverlayService :
      * [onStartCommand] 里也会再查一次作为兜底。
      */
     fun show(context: Context) {
+      // 用户主动开启：记住开关（进 APP / 返回主界面时据此恢复）。
+      setOverlayEnabled(context, true)
       val intent = Intent(context, AssistantOverlayService::class.java).setAction(ACTION_SHOW)
       ContextCompat.startForegroundService(context, intent)
     }
 
-    /** 关闭悬浮服务（摘窗 + 停前台）。 */
+    /** 关闭悬浮服务（摘窗 + 停前台）。用户主动关闭：洗掉开关，不再自动恢复。 */
     fun hide(context: Context) {
+      setOverlayEnabled(context, false)
+      hideTemporarily(context)
+    }
+
+    /**
+     * 临时关闭悬浮服务（摘窗 + 停前台），**不动**持久化开关。
+     *
+     * <p>用于「跳主 app 设置」这类临时让位场景：设置页需要完全无遮挡，但用户的
+     * 「我想要悬浮窗」意图没变——返回主界面时 [restoreIfEnabled] 会按开关重新拉起。
+     * 与 [hide]（用户主动关、洗开关）区分开，否则返回时无法自动恢复。
+     */
+    @JvmStatic
+    fun hideTemporarily(context: Context) {
       val intent = Intent(context, AssistantOverlayService::class.java).setAction(ACTION_HIDE)
       // 用 startService 而不是 startForegroundService：这是一个「停止」动作，
       // 走 startForegroundService 会要求调用方在 5 秒内 startForeground，
       // 而本分支恰恰不打算继续常驻。
-    context.startService(intent)
+      context.startService(intent)
+    }
+
+    /** 用户是否开启了「应用外悬浮」（持久化开关；见 [PREF_OVERLAY_ENABLED]）。 */
+    @JvmStatic
+    fun isOverlayEnabled(context: Context): Boolean =
+        androidx.preference.PreferenceManager.getDefaultSharedPreferences(context)
+            .getBoolean(PREF_OVERLAY_ENABLED, false)
+
+    private fun setOverlayEnabled(context: Context, enabled: Boolean) {
+      androidx.preference.PreferenceManager.getDefaultSharedPreferences(context)
+          .edit()
+          .putBoolean(PREF_OVERLAY_ENABLED, enabled)
+          .apply()
+    }
+
+    /**
+     * 若用户开着悬浮窗，则确保它在跑（进 APP / 返回主界面时调用）。
+     *
+     * <p>三个条件缺一不可：开关关着不动；已在跑不重复拉起（[attachOverlay] 本身幂等，
+     * 但重复 `startForegroundService` 会多发一次 `onStartCommand`）；没权限不动
+     * （权限申请由设置入口负责，这里静默跳过，不打扰）。
+     *
+     * <p>拉起后是**收起态**（[attachOverlay] 不自动展开面板），符合「进 APP 只显示小球、
+     * 不遮挡界面」的预期。
+     */
+    @JvmStatic
+    fun restoreIfEnabled(context: Context) {
+      if (!isOverlayEnabled(context) || isShowing) {
+        return
+      }
+      if (!com.termux.shared.android.PermissionUtils.checkDisplayOverOtherAppsPermission(context)) {
+        return
+      }
+      show(context)
+    }
+
+    /**
+     * 把展开的面板收起成悬浮小球（从外面进 APP 时调用）。
+     *
+     * <p>系统悬浮窗挂在系统窗口层，ACS 回到前台时若面板仍展开，会盖住应用自己的界面。
+     * 收起后只剩小球，用户想看再点开。已收起 / 服务未跑时为空操作。
+     */
+    @JvmStatic
+    fun collapsePanel() {
+      instance?.get()?.assistant?.let { if (it.isOpen) it.close() }
     }
   }
 }

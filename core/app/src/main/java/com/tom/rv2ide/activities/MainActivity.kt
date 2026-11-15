@@ -126,6 +126,16 @@ class MainActivity : EdgeToEdgeIDEActivity() {
 
   }
 
+  override fun onResume() {
+    super.onResume()
+    // 进 APP / 返回主屏：若用户开着「应用外悬浮」，确保它在跑（收起态小球），
+    // 并把可能展开着的面板收起——回到主界面不该被大面板盖住。
+    // 跳主 app 设置时悬浮窗被临时关闭（hideTemporarily，不动开关），这里按开关自动恢复。
+    // 设置页不调 restoreIfEnabled：会把刚临时关闭的悬浮窗又拉起来，故只在主界面做。
+    com.tom.rv2ide.services.AssistantOverlayService.restoreIfEnabled(this)
+    com.tom.rv2ide.services.AssistantOverlayService.collapsePanel()
+  }
+
   override fun onApplySystemBarInsets(insets: Insets) {
     _binding?.fragmentContainersParent?.setPadding(insets.left, 0, insets.right, insets.bottom)
   }

@@ -1122,6 +1122,12 @@ override fun onApplySystemBarInsets(insets: Insets) {
     super.onResume()
     invalidateOptionsMenu()
 
+    // 进 APP / 返回编辑器：同 MainActivity——若开着「应用外悬浮」确保它在跑（收起态
+    // 小球），并收起可能展开着的面板，避免大面板盖住编辑器。跳设置时被临时关闭的
+    // 悬浮窗在此按开关自动恢复。
+    com.tom.rv2ide.services.AssistantOverlayService.restoreIfEnabled(this)
+    com.tom.rv2ide.services.AssistantOverlayService.collapsePanel()
+
     try {
       memoryUsageWatcher.listener = memoryUsageListener
       memoryUsageWatcher.startWatching()
