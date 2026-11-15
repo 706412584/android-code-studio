@@ -21,11 +21,14 @@ import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.IOException;
 import java.io.RandomAccessFile;
+import java.nio.channels.FileChannel;
+import java.nio.channels.FileLock;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.ConcurrentHashMap;
 import org.json.JSONException;
 
 /**
@@ -56,6 +59,20 @@ public final class ConversationLog {
 
   private final File file;
 
+  /**
+   * 按文件路径的 JVM 内互斥锁（静态、跨实例共享）。
+   *
+   * <p>为什么需要它：`FileChannel.lock()` 在**同一 JVM 内**对同一文件重复加锁会抛
+   * `OverlappingFileLockException`（不阻塞），只在**跨进程**时才阻塞等待。因此 JVM 内
+   * 必须先用这把锁把同文件的并发 append 串行化，再进入 OS 文件锁——两层配合才能同时
+   * 覆盖「同 JVM 多线程」「跨 Store 实例」「跨进程」三种并发。
+   */
+  private static final ConcurrentHashMap<String, Object> FILE_LOCKS = new ConcurrentHashMap<>();
+
+  private static Object lockFor(File file) {
+    return FILE_LOCKS.computeIfAbsent(file.getAbsolutePath(), k -> new Object());
+  }
+
   public ConversationLog(File file) {
     this.file = file;
   }
@@ -85,18 +102,26 @@ public final class ConversationLog {
       throw new IOException("无法创建目录: " + parent);
     }
 
-    try (RandomAccessFile raf = new RandomAccessFile(file, "rw")) {
-      long length = raf.length();
-      // 残缺尾部（崩溃留下的半行）没有换行结尾。直接追加会让两条条目粘成一行，
-      // 导致两者都不可解析。补一个换行把它隔开——半行本身仍会被解析器跳过。
-      if (length > 0 && !endsWithNewline(raf)) {
-        raf.seek(length);
-        raf.write('\n');
-        length += 1;
+    try (RandomAccessFile raf = new RandomAccessFile(file, "rw");
+        FileChannel channel = raf.getChannel()) {
+      // 双层互斥：先用 JVM 内按文件路径的锁把同文件的并发 append 串行化（避免同 JVM
+      // 触发 OverlappingFileLockException），再用 OS 文件锁挡住跨进程写入（悬浮窗
+      // Service 与主 app Activity）。length→seek→write 由此原子化，杜绝同偏移覆盖。
+      synchronized (lockFor(file)) {
+        try (FileLock ignored = channel.lock()) {
+          long length = raf.length();
+          // 残缺尾部（崩溃留下的半行）没有换行结尾。直接追加会让两条条目粘成一行，
+          // 导致两者都不可解析。补一个换行把它隔开——半行本身仍会被解析器跳过。
+          if (length > 0 && !endsWithNewline(raf)) {
+            raf.seek(length);
+            raf.write('\n');
+            length += 1;
+          }
+          raf.seek(length);
+          raf.write(payload);
+          return length;
+        }
       }
-      raf.seek(length);
-      raf.write(payload);
-      return length;
     }
   }
 
