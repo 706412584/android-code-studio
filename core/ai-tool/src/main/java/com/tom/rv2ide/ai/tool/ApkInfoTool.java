@@ -36,6 +36,26 @@ public final class ApkInfoTool extends BaseTool {
   /** badging 输出上限，保留首部（package/application/权限在前面）。 */
   private static final int MAX_OUTPUT_CHARS = 4000;
 
+  /**
+   * app 层注入的 APK 包信息解析器。
+   *
+   * <p><b>为什么需要它</b>：本工具最初用 `aapt dump badging`，但 aapt 是**桌面工具**
+   * （x86_64），在 Android 设备上根本跑不起来（实测报「aapt not executable: 64-bit ELF」）。
+   * 正解是用 Android 原生的 `PackageManager.getPackageArchiveInfo()`——设备自带、
+   * 无需安装任何外部工具。app 层以此接口注入实现（core/ai-tool 是纯 Java，不依赖 Android）。
+   */
+  public interface Provider {
+    /** 解析 APK，返回包信息文本（包名/版本/权限/组件）；失败返回 null 以回退到 aapt。 */
+    String readApkInfo(String apkPath);
+  }
+
+  private static volatile Provider provider;
+
+  /** app 启动时注入一次（PackageManager.getPackageArchiveInfo 实现）。 */
+  public static void setProvider(Provider p) {
+    provider = p;
+  }
+
   private final ShellBackendRegistry registry;
 
   public ApkInfoTool(ShellBackendRegistry registry) {
@@ -94,6 +114,15 @@ public final class ApkInfoTool extends BaseTool {
     String apkPath = input.optString("apk_path", "").trim();
     if (apkPath.isEmpty()) {
       return error("apk_path 不能为空");
+    }
+    // 优先 app 层 PackageManager（设备原生，无需外部 aapt）。
+    Provider p = provider;
+    if (p != null) {
+      String info = p.readApkInfo(apkPath);
+      if (info != null && !info.trim().isEmpty()) {
+        return ok(info);
+      }
+      // provider 解析失败则回退到 aapt（见下）。
     }
     String cwd = context == null ? "" : context.getHomePath();
     ShellBackendRegistry.Resolution resolution = registry.resolveActive();

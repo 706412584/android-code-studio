@@ -243,6 +243,22 @@ final class ReverseToolsTest {
         "应回退到 SDK 的 aapt");
   }
 
+  @Test
+  void aaptPrefersPackageManagerProvider() {
+    // 注入 app 层 provider（PackageManager）：应优先用它，不调 aapt/shell。
+    ApkInfoTool.setProvider(apkPath -> "package: com.example\nversionCode: 7");
+    try {
+      FakeBackend b = backend(map());
+      ToolResult r =
+          new ApkInfoTool(registry(b)).execute(new JSONObject().put("apk_path", "app.apk"), ctx());
+      assertFalse(r.isError(), r.getContent());
+      assertTrue(r.getContent().contains("com.example"), r.getContent());
+      assertEquals(0, b.requests.size(), "provider 可用时不应调 aapt/shell");
+    } finally {
+      ApkInfoTool.setProvider(null); // 复位，避免影响其它 aapt 测试
+    }
+  }
+
   // ---- radare2 反汇编 ----
 
   @Test

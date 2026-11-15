@@ -1823,6 +1823,9 @@ public final class AgentOrchestrator {
 
     // 逆向工程工具链：jadx 反编译 / apktool 解包 / aapt 包信息 / radare2 反汇编 / frida 动态插桩。
     // 复用同一个 shell 后端；各工具内部探测可执行文件绝对路径，未安装时给出安装提示。
+    // apk_info 改用 Android 原生 PackageManager 解析（aapt 是桌面工具，设备上跑不了）。
+    com.tom.rv2ide.ai.tool.ApkInfoTool.setProvider(
+        new com.tom.rv2ide.artificial.agent.tool.ApkPackageInfoProvider(appContext));
     registry.register(new com.tom.rv2ide.ai.tool.ApkDecompileTool(shellBackends));
     registry.register(new com.tom.rv2ide.ai.tool.ApkResourcesTool(shellBackends));
     registry.register(new com.tom.rv2ide.ai.tool.ApkInfoTool(shellBackends));
