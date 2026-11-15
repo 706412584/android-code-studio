@@ -417,6 +417,18 @@ public final class ToolNames {
      */
     public static final String SDK_UNINSTALL = "sdk_uninstall";
 
+    // ---- 逆向工程工具链 ----
+    /** jadx 反编译 APK 为 Java 源码。 */
+    public static final String APK_DECOMPILE = "apk_decompile";
+    /** apktool 解包 APK（smali / 资源 / AndroidManifest）。 */
+    public static final String APK_RESOURCES = "apk_resources";
+    /** aapt 读取 APK 包信息（包名 / 权限 / 组件 / SDK 版本）。 */
+    public static final String APK_INFO = "apk_info";
+    /** radare2 反汇编二进制（Android ELF / Windows PE / Linux ELF 等）。 */
+    public static final String BINARY_DISASM = "binary_disasm";
+    /** frida 动态插桩（需 root）。 */
+    public static final String FRIDA_HOOK = "frida_hook";
+
     private static final String CUSTOM_AGENT_PREFIX = "agentx_";
     private static final String CUSTOM_MCP_PREFIX = "mcpx_";
 

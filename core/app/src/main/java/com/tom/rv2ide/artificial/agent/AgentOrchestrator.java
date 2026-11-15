@@ -1819,6 +1819,14 @@ public final class AgentOrchestrator {
     // 终端会话读取：查看用户在终端里手动跑的命令及其输出（shell_execute 看不见）。端口在 executeRun 注入。
     registry.register(new com.tom.rv2ide.ai.tool.TerminalReadTool());
 
+    // 逆向工程工具链：jadx 反编译 / apktool 解包 / aapt 包信息 / radare2 反汇编 / frida 动态插桩。
+    // 复用同一个 shell 后端；各工具内部探测可执行文件绝对路径，未安装时给出安装提示。
+    registry.register(new com.tom.rv2ide.ai.tool.ApkDecompileTool(shellBackends));
+    registry.register(new com.tom.rv2ide.ai.tool.ApkResourcesTool(shellBackends));
+    registry.register(new com.tom.rv2ide.ai.tool.ApkInfoTool(shellBackends));
+    registry.register(new com.tom.rv2ide.ai.tool.BinaryDisasmTool(shellBackends));
+    registry.register(new com.tom.rv2ide.ai.tool.FridaHookTool(shellBackends));
+
     // CodeGraph 代码知识图谱（复用同一个 shell 后端执行 acs-codegraph）。
     // 注册后助手才能主动按符号查源码/调用关系/影响面，而不是靠 shell_execute 手敲
     // —— 后者它并不知道有这个工具，会回答「找不到 codegraph 工具」。
