@@ -61,7 +61,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ContentCut
 import androidx.compose.material.icons.outlined.PushPin
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CheckboxDefaults
@@ -104,6 +103,7 @@ import androidx.compose.ui.unit.dp
 import com.tom.rv2ide.artificial.agent.compose.compat.AppTextField
 import com.tom.rv2ide.artificial.agent.compose.compat.HostFileAccessProvider
 import com.tom.rv2ide.artificial.agent.compose.compat.OnboardingStep
+import com.tom.rv2ide.artificial.agent.compose.compat.OverlayAlertDialog
 import com.tom.rv2ide.artificial.agent.compose.compat.SegmentedTabs
 import com.tom.rv2ide.artificial.agent.compose.compat.WorkspaceSearchEngine
 import com.tom.rv2ide.artificial.agent.compose.compat.dialogTextFieldColors
@@ -426,7 +426,7 @@ fun ChatDrawerContent(
     }
 
     pasteConflict?.let { (_, targetPath) ->
-        AlertDialog(
+        OverlayAlertDialog(
             onDismissRequest = onCancelPasteOverwrite,
             title = { Text(stringResource(R.string.file_browser_paste_conflict_title)) },
             text = {
@@ -447,7 +447,7 @@ fun ChatDrawerContent(
     }
 
     pendingDelete?.let { session ->
-        AlertDialog(
+        OverlayAlertDialog(
             onDismissRequest = { pendingDelete = null },
             title = { Text(stringResource(R.string.chat_delete_session)) },
             text = { Text(stringResource(R.string.chat_delete_session_confirm, session.title)) },
@@ -493,7 +493,7 @@ fun ChatDrawerContent(
     }
 
     if (showBatchDeleteConfirm) {
-        AlertDialog(
+        OverlayAlertDialog(
             onDismissRequest = { showBatchDeleteConfirm = false },
             title = { Text(stringResource(R.string.chat_batch_delete_title)) },
             text = {
@@ -526,7 +526,7 @@ fun ChatDrawerContent(
 
     pendingRename?.let { session ->
         var renameText by remember(session.id) { mutableStateOf(session.title) }
-        AlertDialog(
+        OverlayAlertDialog(
             onDismissRequest = { pendingRename = null },
             title = { Text(stringResource(R.string.chat_rename_session)) },
             text = {
@@ -1096,7 +1096,7 @@ private fun FileBrowserTab(
     }
 
     pendingDelete?.let { node ->
-        AlertDialog(
+        OverlayAlertDialog(
             onDismissRequest = { pendingDelete = null },
             title = { Text(stringResource(R.string.common_delete)) },
             text = {
@@ -1140,7 +1140,7 @@ private fun FileNameInputDialog(
     onDismiss: () -> Unit
 ) {
     var name by remember { mutableStateOf(initialName) }
-    AlertDialog(
+    OverlayAlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(title) },
         text = {
