@@ -93,7 +93,7 @@ public final class ApkPackageInfoProvider implements ApkInfoTool.Provider {
       return;
     }
     sb.append("\n").append(title).append(" (").append(components.length).append("):\n");
-    for (ActivityInfo c : components) {
+    for (ComponentInfo c : components) {
       sb.append("  ").append(c.name).append('\n');
     }
   }
