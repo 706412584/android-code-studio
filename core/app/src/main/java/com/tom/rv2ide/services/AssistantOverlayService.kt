@@ -1067,7 +1067,14 @@ class AssistantOverlayService :
       if (!com.termux.shared.android.PermissionUtils.checkDisplayOverOtherAppsPermission(context)) {
         return
       }
-      show(context)
+      // 后台启动防御：本方法也会在「离开设置页」（PreferencesActivity.onStop）等可能
+      // 已退到后台的时机被调用，Android 12+ 禁止后台 startForegroundService。失败则
+      // 静默放弃——下次进主界面 onResume 会再恢复，开关状态不丢。
+      try {
+        show(context)
+      } catch (e: Exception) {
+        // 后台启动受限，忽略。
+      }
     }
 
     /**
