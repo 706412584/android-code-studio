@@ -197,6 +197,14 @@ object ToolResultImageSupport {
     val dialog =
         android.app.Dialog(context, android.R.style.Theme_Black_NoTitleBar_Fullscreen).apply {
           setContentView(view)
+          // 应用外悬浮窗（Service 宿主）里没有 Activity token，原生 Dialog 默认的
+          // TYPE_APPLICATION 会抛 BadTokenException（实测：点工具结果里的截图直接崩）。
+          // 非 Activity context 时改用 TYPE_APPLICATION_OVERLAY——悬浮窗场景必有
+          // SYSTEM_ALERT_WINDOW 权限（否则悬浮窗本身起不来），而 Activity 宿主下不设、
+          // 也就不会引入「无悬浮窗权限时崩溃」的新路径。
+          if (isOverlayContext(context)) {
+            window?.setType(android.view.WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY)
+          }
         }
 
     // ---- 缩放与拖动 ----
@@ -300,5 +308,24 @@ object ToolResultImageSupport {
 
     showAt(current)
     dialog.show()
+  }
+
+  /**
+   * [context] 是否处于**应用外悬浮窗**（Service 宿主，无 Activity window token）。
+   *
+   * <p>沿 `ContextWrapper` 链找到底层 context：链上有 Activity 即 Activity 宿主
+   * （含 `ContextThemeWrapper(Activity)` 这种包装），否则是 Service / overlay 宿主。
+   * 不能直接 `context !is Activity`——`ContextThemeWrapper(Activity)` 会被误判成 overlay，
+   * 在 Activity 宿主下错误地要求悬浮窗权限。
+   */
+  private fun isOverlayContext(context: android.content.Context): Boolean {
+    var c: android.content.Context? = context
+    while (c is android.content.ContextWrapper) {
+      if (c is android.app.Activity) {
+        return false
+      }
+      c = c.baseContext
+    }
+    return true
   }
 }
