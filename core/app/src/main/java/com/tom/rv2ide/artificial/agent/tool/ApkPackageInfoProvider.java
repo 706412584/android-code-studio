@@ -18,7 +18,7 @@
 package com.tom.rv2ide.artificial.agent.tool;
 
 import android.content.Context;
-import android.content.pm.ActivityInfo;
+import android.content.pm.ComponentInfo;
 import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
 import android.content.pm.PermissionInfo;
@@ -88,7 +88,7 @@ public final class ApkPackageInfoProvider implements ApkInfoTool.Provider {
     }
   }
 
-  private static void appendComponents(StringBuilder sb, String title, ActivityInfo[] components) {
+  private static void appendComponents(StringBuilder sb, String title, ComponentInfo[] components) {
     if (components == null || components.length == 0) {
       return;
     }
