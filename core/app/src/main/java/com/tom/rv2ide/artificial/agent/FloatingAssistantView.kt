@@ -3039,6 +3039,12 @@ class FloatingAssistantView(
     // Android 10 起后台启动 Activity 受限，可能被系统拦截，因此失败一律吞掉：
     // 这只是多一个入口，拉不起也不该让面板崩。
     intent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+    // 应用外系统悬浮：跳主 app 设置前**完全关闭**悬浮窗（设置页需要无遮挡），
+    // 但不动持久化开关——返回主界面时按开关自动恢复（restoreIfEnabled）。
+    // 与模型选择器路径（OverlayHost.openSettings）一致；Activity 宿主不隐藏。
+    if (isOverlayWindow) {
+      com.tom.rv2ide.services.AssistantOverlayService.hideTemporarily(context)
+    }
     try {
       context.startActivity(intent)
     } catch (e: Exception) {
