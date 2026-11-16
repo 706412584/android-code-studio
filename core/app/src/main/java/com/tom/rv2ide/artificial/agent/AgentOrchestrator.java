@@ -1836,6 +1836,16 @@ public final class AgentOrchestrator {
     registry.register(new com.tom.rv2ide.ai.tool.ApkResignTool(shellBackends));
     registry.register(new com.tom.rv2ide.ai.tool.NativeSymbolsTool(shellBackends));
     registry.register(new com.tom.rv2ide.ai.tool.JsBeautifyTool(shellBackends));
+    // 构建（apktool b 回编译 + 重签）与 MT 式不解压编辑（ZipFile 重写 + 重签）。
+    registry.register(new com.tom.rv2ide.ai.tool.ApkBuildTool(shellBackends));
+    registry.register(new com.tom.rv2ide.ai.tool.ApkEditTool(shellBackends));
+    // 纯 Java 的 APK 内省：包内搜索 / DEX 随机访问 / 离线签名证书 / resources.arsc 读取。
+    registry.register(new com.tom.rv2ide.ai.tool.ApkSearchTool());
+    registry.register(new com.tom.rv2ide.ai.tool.ApkDexTool());
+    registry.register(new com.tom.rv2ide.ai.tool.ApkSignatureTool());
+    registry.register(new com.tom.rv2ide.ai.tool.ApkArscTool());
+    registry.register(new com.tom.rv2ide.ai.tool.ApkArscEditTool(shellBackends));
+    registry.register(new com.tom.rv2ide.ai.tool.ApkNativeTool());
 
     // CodeGraph 代码知识图谱（复用同一个 shell 后端执行 acs-codegraph）。
     // 注册后助手才能主动按符号查源码/调用关系/影响面，而不是靠 shell_execute 手敲

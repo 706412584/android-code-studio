@@ -432,10 +432,26 @@ public final class ToolNames {
     public static final String APK_BROWSE = "apk_browse";
     /** 对 APK 重新签名（apksigner.jar / apksig）。 */
     public static final String APK_RESIGN = "apk_resign";
+    /** apktool 解包目录回编译 + 重签名为可安装 APK（对应 MT 的 build）。 */
+    public static final String APK_BUILD = "apk_build";
+    /** 编辑 APK 内的文件（ZipFile 重写 + 重签，MT 式不解压编辑）。 */
+    public static final String APK_EDIT = "apk_edit";
     /** 查看原生库（.so）的符号表/导出函数（nm/readelf）。 */
     public static final String NATIVE_SYMBOLS = "native_symbols";
     /** 美化（反混淆）前端 JS（js-beautify）。 */
     public static final String JS_BEAUTIFY = "js_beautify";
+    /** 在 APK 内部搜索（ZIP 条目名 / 纯文本条目 / dex 字符串表），纯 Java。 */
+    public static final String APK_SEARCH = "apk_search";
+    /** 不解压随机访问 DEX：列类 / 读类字段与方法摘要（不跑 jadx 全量反编译）。 */
+    public static final String APK_DEX = "apk_dex";
+    /** 离线读取 APK 签名证书（v1 PKCS#7 / v2 / v3 签名块），输出指纹与有效期。 */
+    public static final String APK_SIGNATURE = "apk_signature";
+    /** 读取 resources.arsc 资源表（按资源 id / 名查类型与值），纯 Java。 */
+    public static final String APK_ARSC = "apk_arsc";
+    /** 编辑 resources.arsc 的字符串资源值（等长原地替换），写类需确认。 */
+    public static final String APK_ARSC_EDIT = "apk_arsc_edit";
+    /** 原生符号 xref：跨 APK 内所有 .so 判断某符号被谁导出/引用，纯 Java 解析 ELF。 */
+    public static final String APK_NATIVE = "apk_native";
 
     private static final String CUSTOM_AGENT_PREFIX = "agentx_";
     private static final String CUSTOM_MCP_PREFIX = "mcpx_";

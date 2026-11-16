@@ -20,7 +20,13 @@
 import com.tom.rv2ide.build.config.BuildConfig
 import com.tom.rv2ide.desugaring.utils.JavaIOReplacements.applyJavaIOReplacements
 import com.tom.rv2ide.plugins.AndroidIDEAssetsPlugin
+import java.io.File
 import java.util.Properties
+import org.gradle.api.DefaultTask
+import org.gradle.api.file.DirectoryProperty
+import org.gradle.api.tasks.InputFiles
+import org.gradle.api.tasks.OutputDirectory
+import org.gradle.api.tasks.TaskAction
 
 plugins {
   id("com.tom.rv2ide.core-app")
@@ -252,6 +258,57 @@ android {
 }
 
 kapt { arguments { arg("eventBusIndex", "${BuildConfig.packageName}.events.AppEventsIndex") } }
+
+/**
+ * 把仓库根的 whatsnew 目录里的 .md 文件打进 APK 的 assets/whatsnew/。
+ *
+ * 为什么：变更日志原先只从 GitHub raw 拉，国内设备实测该域名 50% 概率返回 503，
+ * 导致「加载更新日志失败」占位文案频繁出现。打包后当前版本的日志可直接读本地文件。
+ *
+ * 覆盖范围只限构建此 APK 时仓库里已有的版本；更新弹窗要看新版本日志仍需网络。
+ *
+ * 实现：任务把 md 拷到 build 下的生成目录（内含 whatsnew 子目录），再把该生成目录
+ * 挂成 main 的 assets 源根，并让 merge 资产的合并任务依赖这个拷贝任务。
+ *
+ * 注意：本文件其它注释里不要出现「斜杠紧跟星号」的连续字符——Kotlin 块注释可嵌套，
+ * 多一个嵌套起点就会让后面整段代码（包括 dependencies）被当成注释吞掉，
+ * 表现是 module 依赖神秘缺失（库资源 attr 找不到 + Kotlin 编译 ICE）。
+ */
+abstract class CopyWhatsnewTask : DefaultTask() {
+  @get:InputFiles
+  abstract val sourceDir: DirectoryProperty
+
+  @get:OutputDirectory
+  abstract val outputDir: DirectoryProperty
+
+  @TaskAction
+  fun run() {
+    val root = outputDir.get().asFile
+    root.deleteRecursively() // 先清空，避免已删除的 whatsnew 长期残留
+    // assets 源目录的内容会铺到 assets 根，所以写进 whatsnew 子目录，
+    // 最终落到 assets/whatsnew 下（app 用 assets.open("whatsnew/版本名.md") 读取）。
+    val dir = File(root, "whatsnew")
+    dir.mkdirs()
+    sourceDir.get().asFile.listFiles()
+        ?.filter { it.isFile && it.name.endsWith(".md") }
+        ?.forEach { it.copyTo(File(dir, it.name), overwrite = true) }
+  }
+}
+
+// 走 AGP 变体 API：生成目录必须由任务产出并登记到变体，才能正确接线。
+// 不要用 legacy sourceSets.srcDir 指向 build 下的目录——那会让 AGP 把它当成
+// 没有生产者的源目录（与产出它的任务形成环），导致变体装配失败、依赖整体丢失。
+androidComponents {
+  onVariants { variant ->
+    val task =
+        tasks.register<CopyWhatsnewTask>(
+            "copyWhatsnewToAssets" + variant.name.replaceFirstChar { it.uppercase() }) {
+          sourceDir.set(rootProject.layout.projectDirectory.dir("whatsnew"))
+          outputDir.set(layout.buildDirectory.dir("generated/whatsnewAssets/${variant.name}"))
+        }
+    variant.sources.assets?.addGeneratedSourceDirectory(task, CopyWhatsnewTask::outputDir)
+  }
+}
 
 desugaring {
   replacements {
