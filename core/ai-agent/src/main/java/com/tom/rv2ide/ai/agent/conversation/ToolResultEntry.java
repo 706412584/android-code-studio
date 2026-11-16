@@ -18,6 +18,9 @@
 package com.tom.rv2ide.ai.agent.conversation;
 
 import com.tom.rv2ide.ai.tool.api.ToolResult;
+import java.io.File;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -43,6 +46,8 @@ public final class ToolResultEntry extends ConversationEntry {
   static final String FIELD_REVIEW_MESSAGE = "reviewMessage";
   static final String FIELD_IMAGE_MIME_TYPE = "imageMimeType";
   static final String FIELD_IMAGE_BASE64 = "imageBase64";
+  /** 外置截图文件名（相对会话 .images 目录）。新写入用它，避免 base64 撑大 JSONL。 */
+  static final String FIELD_IMAGE_REF = "imageRef";
   static final String FIELD_STEPS = "steps";
 
   private final String toolCallId;
@@ -54,8 +59,14 @@ public final class ToolResultEntry extends ConversationEntry {
   private final String reviewMessage;
   /** 工具结果图片的 MIME 类型；无图片时为空串。 */
   private final String imageMimeType;
-  /** 工具结果图片的 base64 数据；无图片时为空串。 */
+  /** 工具结果图片的 base64 数据；无图片时为空串（外置时为读入缓存）。 */
   private final String imageBase64;
+  /** 外置截图的文件名（相对会话 .images 目录）；为空表示内联或无心图片。 */
+  private final String imageRef;
+  /** 懒加载外置截图用的基目录；内联图片时为 null。 */
+  private final File imageBaseDir;
+  /** 外置截图首次读取后的 base64 缓存（避免每次 getImageBase64 都读盘）。 */
+  private volatile String cachedExternalBase64;
 
   /**
    * 工具执行期间的步骤进度记录（子 agent 这类长任务才会产生）。
@@ -87,6 +98,8 @@ public final class ToolResultEntry extends ConversationEntry {
     this.reviewMessage = result == null ? "" : result.getReviewMessage();
     this.imageMimeType = result == null ? "" : result.getImageMimeType();
     this.imageBase64 = result == null ? "" : result.getImageBase64();
+    this.imageRef = "";
+    this.imageBaseDir = null;
     this.steps = steps == null ? Collections.emptyList() : new ArrayList<>(steps);
   }
 
@@ -103,6 +116,8 @@ public final class ToolResultEntry extends ConversationEntry {
       String reviewMessage,
       String imageMimeType,
       String imageBase64,
+      String imageRef,
+      File imageBaseDir,
       List<String> steps) {
     super(uuid, parentUuid, timestamp);
     this.toolCallId = toolCallId;
@@ -114,6 +129,8 @@ public final class ToolResultEntry extends ConversationEntry {
     this.reviewMessage = reviewMessage;
     this.imageMimeType = imageMimeType == null ? "" : imageMimeType;
     this.imageBase64 = imageBase64 == null ? "" : imageBase64;
+    this.imageRef = imageRef == null ? "" : imageRef;
+    this.imageBaseDir = imageBaseDir;
     this.steps = steps == null ? Collections.emptyList() : steps;
   }
 
@@ -130,10 +147,12 @@ public final class ToolResultEntry extends ConversationEntry {
       String reviewMessage,
       String imageMimeType,
       String imageBase64,
+      String imageRef,
+      File imageBaseDir,
       List<String> steps) {
     return new ToolResultEntry(
         uuid, parentUuid, timestamp, toolCallId, toolName, content, error, diffId, reviewState,
-        reviewMessage, imageMimeType, imageBase64, steps);
+        reviewMessage, imageMimeType, imageBase64, imageRef, imageBaseDir, steps);
   }
 
   public static ToolResultEntry create(String parentUuid, long timestamp, ToolResult result) {
@@ -188,9 +207,47 @@ public final class ToolResultEntry extends ConversationEntry {
     return imageMimeType;
   }
 
-  /** 工具结果图片的 base64 数据；无图片时为空串。 */
+  /**
+   * 工具结果图片的 base64 数据；无图片时为空串。
+   *
+   * <p>新版记录把 base64 外置到会话的 .images 目录，这里首次调用时才从文件读入并缓存；
+   * 旧版记录内联 base64，直接返回。因此「读盘/续接」不再把全部截图读进内存。
+   */
   public String getImageBase64() {
+    if (!imageBase64.isEmpty()) {
+      return imageBase64;
+    }
+    if (imageRef.isEmpty() || imageBaseDir == null) {
+      return "";
+    }
+    String cached = cachedExternalBase64;
+    if (cached != null) {
+      return cached;
+    }
+    try {
+      byte[] bytes = Files.readAllBytes(new File(imageBaseDir, imageRef).toPath());
+      String value = new String(bytes, StandardCharsets.UTF_8).trim();
+      cachedExternalBase64 = value;
+      return value;
+    } catch (Exception e) {
+      // 文件缺失（被清理/移动）时退化为无图，不影响对话继续。
+      return "";
+    }
+  }
+
+  /** 是否带图片——**不触发文件读取**，供 fold 在决定水合前快速判断。 */
+  public boolean hasImage() {
+    return !imageBase64.isEmpty() || !imageRef.isEmpty();
+  }
+
+  /** 内联的 base64（落盘外置用）；外置或无心图片时为空。 */
+  public String getInlineImageBase64() {
     return imageBase64;
+  }
+
+  /** 外置截图的文件名；内联或无心图片时为空。 */
+  public String getImageRef() {
+    return imageRef;
   }
 
   /** 该次调用期间的步骤进度记录；无步骤时为空列表。 */
@@ -214,7 +271,11 @@ public final class ToolResultEntry extends ConversationEntry {
       json.put(FIELD_REVIEW_MESSAGE, reviewMessage);
     }
     // 图片负载只在存在时写入，避免给纯文本结果塞两个空字段（JSONL 里每行都有）。
-    if (!imageBase64.isEmpty()) {
+    // 优先写外置引用（新记录），兼容旧的内联 base64。
+    if (!imageRef.isEmpty()) {
+      json.put(FIELD_IMAGE_MIME_TYPE, imageMimeType);
+      json.put(FIELD_IMAGE_REF, imageRef);
+    } else if (!imageBase64.isEmpty()) {
       json.put(FIELD_IMAGE_MIME_TYPE, imageMimeType);
       json.put(FIELD_IMAGE_BASE64, imageBase64);
     }

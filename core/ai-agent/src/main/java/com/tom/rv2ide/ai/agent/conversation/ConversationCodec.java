@@ -43,6 +43,16 @@ public final class ConversationCodec {
    * @return 解析结果；行为空、格式错误或类型未知时返回 {@code null}
    */
   public static ConversationEntry parse(String line) {
+    return parse(line, null);
+  }
+
+  /**
+   * 解析一行 JSON 为条目，并允许外置截图懒加载。
+   *
+   * @param imageDir 会话的截图目录（tool-result 的 imageRef 相对它）；为 {@code null} 时
+   *     外置图片不会被读入（{@link ToolResultEntry#getImageBase64()} 返回空），但仍可正常解析。
+   */
+  public static ConversationEntry parse(String line, java.io.File imageDir) {
     if (line == null || line.trim().isEmpty()) {
       return null;
     }
@@ -61,7 +71,7 @@ public final class ConversationCodec {
     String parentUuid = json.optString(ConversationEntry.FIELD_PARENT_UUID, "");
     long timestamp = json.optLong(ConversationEntry.FIELD_TIMESTAMP, 0L);
     try {
-      return build(type, json, uuid, parentUuid, timestamp);
+      return build(type, json, uuid, parentUuid, timestamp, imageDir);
     } catch (JSONException e) {
       return null;
     }
@@ -72,7 +82,8 @@ public final class ConversationCodec {
       JSONObject json,
       String uuid,
       String parentUuid,
-      long timestamp)
+      long timestamp,
+      java.io.File imageDir)
       throws JSONException {
     switch (type) {
       case SESSION_META:
@@ -118,6 +129,8 @@ public final class ConversationCodec {
             json.optString(ToolResultEntry.FIELD_REVIEW_MESSAGE, ""),
             json.optString(ToolResultEntry.FIELD_IMAGE_MIME_TYPE, ""),
             json.optString(ToolResultEntry.FIELD_IMAGE_BASE64, ""),
+            json.optString(ToolResultEntry.FIELD_IMAGE_REF, ""),
+            imageDir,
             readStringArray(json.optJSONArray(ToolResultEntry.FIELD_STEPS)));
       case CUSTOM_TITLE:
       case AI_TITLE:

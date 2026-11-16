@@ -24,12 +24,14 @@ import java.io.RandomAccessFile;
 import java.nio.channels.FileChannel;
 import java.nio.channels.FileLock;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
 import org.json.JSONException;
+import org.json.JSONObject;
 
 /**
  * 一个会话的 append-only JSONL 日志。
@@ -89,7 +91,7 @@ public final class ConversationLog {
   public long append(ConversationEntry entry) throws IOException {
     String line;
     try {
-      line = ConversationCodec.toLine(entry);
+      line = serializeForAppend(entry);
     } catch (JSONException e) {
       throw new IOException("条目无法序列化: " + e.getMessage(), e);
     }
@@ -125,6 +127,44 @@ public final class ConversationLog {
     }
   }
 
+  /**
+   * 序列化条目；工具结果**截图外置**成文件，JSONL 只写 {@code imageRef}。
+   *
+   * <p>为什么外置：截图 base64 内联进 JSONL 会让会话文件膨胀到几十 MB，且每次续接读盘
+   * 都把全部截图读进内存——影子屏连拍时的 512MB 堆 OOM 即由此而来。外置后 JSONL 只有
+   * 小引用，图片在需要时才从文件懒加载（见 {@link ToolResultEntry#getImageBase64()}）。
+   *
+   * <p>外置失败时退回内联（照旧写 base64），绝不因写图失败而丢会话。
+   */
+  private String serializeForAppend(ConversationEntry entry) throws JSONException {
+    if (entry instanceof ToolResultEntry) {
+      ToolResultEntry result = (ToolResultEntry) entry;
+      String inline = result.getInlineImageBase64();
+      if (!inline.isEmpty()) {
+        File imageDir = imagesDir();
+        if (imageDir.isDirectory() || imageDir.mkdirs() || imageDir.isDirectory()) {
+          String refName = result.getUuid() + ".b64";
+          try {
+            Files.write(
+                new File(imageDir, refName).toPath(), inline.getBytes(StandardCharsets.UTF_8));
+            JSONObject json = result.toJson();
+            json.remove(ToolResultEntry.FIELD_IMAGE_BASE64);
+            json.put(ToolResultEntry.FIELD_IMAGE_REF, refName);
+            return json.toString();
+          } catch (IOException e) {
+            // 退回内联。
+          }
+        }
+      }
+    }
+    return ConversationCodec.toLine(entry);
+  }
+
+  /** 该会话外置截图的目录：与 .jsonl 同级的 `<日志文件名>.images/`。 */
+  private File imagesDir() {
+    return new File(file.getParentFile(), file.getName() + ".images");
+  }
+
   private static boolean endsWithNewline(RandomAccessFile raf) throws IOException {
     long length = raf.length();
     raf.seek(length - 1);
@@ -147,6 +187,7 @@ public final class ConversationLog {
     }
 
     List<EntryLocation> entries = new ArrayList<>();
+    File imageDir = imagesDir();
     long pendingTailBytes = 0;
     try (RandomAccessFile raf = new RandomAccessFile(file, "r")) {
       raf.seek(startOffset);
@@ -172,7 +213,7 @@ public final class ConversationLog {
           pending.reset();
           int byteLength = lineBytes.length + 1; // 含换行符，偏移才与文件一致
           ConversationEntry entry =
-              ConversationCodec.parse(new String(lineBytes, StandardCharsets.UTF_8));
+              ConversationCodec.parse(new String(lineBytes, StandardCharsets.UTF_8), imageDir);
           if (entry != null) {
             entries.add(new EntryLocation(entry, ordinal, lineStart, byteLength));
             ordinal++;

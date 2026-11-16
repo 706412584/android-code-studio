@@ -118,6 +118,9 @@ public final class ConversationHistory {
     Set<String> lastKeptCallIds = new HashSet<>();
     // 已写出的结果 id：同一 id 的重复结果只保留第一条。
     Set<String> emittedResultIds = new HashSet<>();
+    // 只对最近 maxImages 张工具截图做水合（从文件读入）；更早的不读取，避免续接时
+    // 把历史全部截图一次性读进内存。注意这里先算集合、后建消息，才叫「编码前限制」。
+    Set<String> keepImageUuids = recentImageUuids(entries, maxImages);
     for (ConversationLog.EntryLocation location : entries) {
       ConversationEntry entry = location.getEntry();
       if (entry instanceof CompactionEntry) {
@@ -148,7 +151,7 @@ public final class ConversationHistory {
         // （正常日志不会出现这种排列，纯防御——宁可丢弃也不发出无配对的 tool 消息）。
         lastKeptCallIds = new HashSet<>();
       }
-      append(entry, messages);
+      append(entry, messages, keepImageUuids);
     }
 
     // 摘要放在最前：它是被压缩区间的替身，必须出现在后续对话之前。
@@ -238,11 +241,34 @@ public final class ConversationHistory {
     return message;
   }
 
-  private static void append(ConversationEntry entry, List<ModelMessage> messages) {
-    ModelMessage message = toMessage(entry);
-    if (message != null) {
-      messages.add(message);
+  private static void append(
+      ConversationEntry entry, List<ModelMessage> messages, Set<String> keepImageUuids) {
+    boolean includeImage = keepImageUuids.contains(entry.getUuid());
+    ModelMessage message = toMessage(entry, includeImage);
+    if (message == null) {
+      return;
     }
+    // 超出保留张数的旧截图：留一句占位说明（与 limitImages 对被剥离图片的处理一致），
+    // 否则模型会以为工具没返回图。
+    if (!includeImage && entry instanceof ToolResultEntry && ((ToolResultEntry) entry).hasImage()) {
+      message = withoutImage(message);
+    }
+    messages.add(message);
+  }
+
+  /** 从后往前挑出最近 {@code maxImages} 张带图工具结果的 uuid（不读取图片内容）。 */
+  private static Set<String> recentImageUuids(
+      List<ConversationLog.EntryLocation> entries, int maxImages) {
+    Set<String> keep = new java.util.LinkedHashSet<>();
+    int remaining = Math.max(0, maxImages);
+    for (int i = entries.size() - 1; i >= 0 && remaining > 0; i--) {
+      ConversationEntry entry = entries.get(i).getEntry();
+      if (entry instanceof ToolResultEntry && ((ToolResultEntry) entry).hasImage()) {
+        keep.add(entry.getUuid());
+        remaining--;
+      }
+    }
+    return keep;
   }
 
   /** 收集（未被压缩覆盖的）结果条目引用的调用 id。 */
@@ -337,6 +363,16 @@ public final class ConversationHistory {
    * 整体列表，而选择压缩边界需要逐条累加。
    */
   public static ModelMessage toMessage(ConversationEntry entry) {
+    return toMessage(entry, true);
+  }
+
+  /**
+   * 同上，但可控制是否水合工具截图。
+   *
+   * @param includeImage false 时不读取图片（连外置文件都不碰），只给文字结果——用于
+   *     {@link #fold} 对超出保留张数的旧截图做「编码前限制」，避免续接时全量读入内存
+   */
+  public static ModelMessage toMessage(ConversationEntry entry, boolean includeImage) {
     if (entry instanceof UserMessageEntry) {
       UserMessageEntry user = (UserMessageEntry) entry;
       // meta 条目是系统注入，不进入模型对话
@@ -365,13 +401,14 @@ public final class ConversationHistory {
       // 带图工具结果：把图片重新编码成 rawInputJson，协议层据此还原 image block。
       // 不这么做的话，历史里的图片在续接会话时会退化成一句文字说明，模型看不到图。
       String imageJson = null;
-      if (result.getImageBase64().length() > 0) {
-        try {
-          imageJson =
-              ImageInputPayload.imageResultJson(
-                  result.getImageMimeType(), result.getImageBase64());
-        } catch (org.json.JSONException ignored) {
-          // 编码失败就退回纯文本，不影响对话继续。
+      if (includeImage && result.hasImage()) {
+        String base64 = result.getImageBase64();
+        if (!base64.isEmpty()) {
+          try {
+            imageJson = ImageInputPayload.imageResultJson(result.getImageMimeType(), base64);
+          } catch (org.json.JSONException ignored) {
+            // 编码失败就退回纯文本，不影响对话继续。
+          }
         }
       }
       return new ToolModelMessage(

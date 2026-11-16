@@ -122,10 +122,12 @@ final class ConversationHistoryTest {
             ToolResult.withImage("file_read", "图片已附加", "image/png", "QUJD")
                 .withCall("c1", "file_read")));
 
-    // 先验证 JSONL 往返（写盘再读回）——图片负载是 base64，容易被截断或转义出错。
-    ConversationEntry reloaded =
-        ConversationCodec.parse(ConversationCodec.toLine(log.readAll().get(1).getEntry()));
-    ToolResultEntry entry = assertInstanceOf(ToolResultEntry.class, reloaded);
+    // 外置后：JSONL 里不再内联 base64，只记 imageRef；读回时从 .images 文件懒加载还原。
+    String jsonl = java.nio.file.Files.readString(log.getFile().toPath());
+    assertFalse(jsonl.contains("QUJD"), "截图 base64 不应再内联进 JSONL");
+    assertTrue(jsonl.contains("imageRef"), "JSONL 应改为记录外置引用");
+    ToolResultEntry entry =
+        assertInstanceOf(ToolResultEntry.class, log.readAll().get(1).getEntry());
     assertEquals("QUJD", entry.getImageBase64());
     assertEquals("image/png", entry.getImageMimeType());
 
@@ -219,6 +221,19 @@ final class ConversationHistoryTest {
         assertInstanceOf(ToolModelMessage.class, ConversationHistory.fold(log.readAll()).get(1));
     assertEquals("图", tool.getContent());
     assertTrue(hasImage(tool));
+  }
+
+  @Test
+  void legacyInlineImageStillReadable() {
+    // 旧版日志把截图 base64 内联在 JSONL 里；升级后仍必须能直接读出（向后兼容）。
+    String line =
+        "{\"type\":\"tool-result\",\"uuid\":\"u1\",\"timestamp\":1,"
+            + "\"toolCallId\":\"c1\",\"toolName\":\"vscreen\",\"content\":\"图\","
+            + "\"isError\":false,\"imageMimeType\":\"image/png\",\"imageBase64\":\"QUJD\"}";
+    ToolResultEntry entry =
+        assertInstanceOf(ToolResultEntry.class, ConversationCodec.parse(line));
+    assertEquals("QUJD", entry.getImageBase64());
+    assertEquals("image/png", entry.getImageMimeType());
   }
 
   /** 该消息是否还带着图片负载（{@code rawInputJson} 无图时是空串，不是 null）。 */
