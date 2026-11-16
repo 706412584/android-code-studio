@@ -295,7 +295,8 @@ abstract class AbstractHttpModelProtocol implements ModelProtocol {
         }
 
         BufferedWriter writer = new BufferedWriter(new OutputStreamWriter(connection.getOutputStream(), StandardCharsets.UTF_8));
-        writer.write(com.tom.rv2ide.ai.protocol.StableJson.stringify(body));
+        // 流式写出：不再先 stringify 成整包大字符串（请求体可能含多张图片 base64）。
+        com.tom.rv2ide.ai.protocol.StableJson.write(writer, body);
         writer.flush();
         writer.close();
         return connection;
