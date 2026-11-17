@@ -275,6 +275,18 @@ public final class AgentModelConfigs {
     //  - applyContextSize 的「声明是否属于本模型」比对以已剥名为前提，传入带后缀的值
     //    会让比对必然失败，声明的窗口静默退回默认值（勾了 1M 却不生效）。
     String apiModelId = ContextSizeParser.stripSuffix(modelId == null ? "" : modelId);
+    ProviderConfig record = recordFor(endpoint.id);
+    // 全局默认头打底，服务商单独设置的覆盖同名键。
+    java.util.LinkedHashMap<String, String> extraHeaders = new java.util.LinkedHashMap<>();
+    try {
+      extraHeaders.putAll(
+          ProviderConfig.parseExtraHeaders(ProviderConfigStore.globalExtraHeaders()));
+    } catch (Throwable ignored) {
+      // 全局头读不出来不影响请求。
+    }
+    if (record != null) {
+      extraHeaders.putAll(ProviderConfig.parseExtraHeaders(record.getExtraHeaders()));
+    }
     ModelConfig.Builder builder =
         ModelConfig.builder(
                 endpoint.id,
@@ -284,9 +296,24 @@ public final class AgentModelConfigs {
                 endpoint.baseUrl,
                 endpoint.apiKey,
                 apiModelId)
-            .toolCallLimit(toolCallLimit);
-    applyContextSize(builder, recordFor(endpoint.id), slot, apiModelId);
+            .toolCallLimit(toolCallLimit)
+            .userAgent(resolveUserAgent(record))
+            .extraHeaders(extraHeaders);
+    applyContextSize(builder, record, slot, apiModelId);
     return builder.build();
+  }
+
+  /** 出站 UA：服务商单独设置优先，否则用全局默认（都为空则运行时默认）。 */
+  private static String resolveUserAgent(ProviderConfig record) {
+    String providerUa = record == null ? "" : record.getUserAgent();
+    if (providerUa != null && !providerUa.trim().isEmpty()) {
+      return providerUa.trim();
+    }
+    try {
+      return ProviderConfigStore.globalUserAgent();
+    } catch (Throwable e) {
+      return "";
+    }
   }
 
   /**

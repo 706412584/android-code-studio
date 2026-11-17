@@ -293,6 +293,10 @@ abstract class AbstractHttpModelProtocol implements ModelProtocol {
                 connection.setRequestProperty(header.getKey(), header.getValue());
             }
         }
+        // 出站头日志：仅当确有「自定义 UA / 额外请求头」时记录，避免纯鉴权请求也刷日志。
+        if (hasCustomOutboundHeaders(headers)) {
+            ErrorLog.record("http_out", "模型请求出站头", null, describeOutboundHeaders(headers));
+        }
 
         BufferedWriter writer = new BufferedWriter(new OutputStreamWriter(connection.getOutputStream(), StandardCharsets.UTF_8));
         // 流式写出：不再先 stringify 成整包大字符串（请求体可能含多张图片 base64）。
@@ -385,6 +389,50 @@ abstract class AbstractHttpModelProtocol implements ModelProtocol {
 
     /** 错误日志里请求体与响应体的最大字符数。 */
     private static final int MAX_LOGGED_BODY_CHARS = 4000;
+
+    /** 是否带「自定义 UA 或额外请求头」（鉴权头不算），据此决定是否记出站日志。 */
+    private static boolean hasCustomOutboundHeaders(Map<String, String> headers) {
+        for (String key : headers.keySet()) {
+            if (key == null) {
+                continue;
+            }
+            if (key.equalsIgnoreCase("User-Agent")) {
+                return true;
+            }
+            if (key.equalsIgnoreCase("Authorization")
+                    || key.equalsIgnoreCase("x-api-key")
+                    || key.equalsIgnoreCase("anthropic-version")) {
+                continue;
+            }
+            return true;
+        }
+        return false;
+    }
+
+    /** 拼出「出站头」摘要：UA 明确标出，敏感头脱敏，便于真机从日志核对。 */
+    private static String describeOutboundHeaders(Map<String, String> headers) {
+        String ua = null;
+        for (Map.Entry<String, String> entry : headers.entrySet()) {
+            if (entry.getKey() != null && entry.getKey().equalsIgnoreCase("User-Agent")) {
+                ua = entry.getValue();
+                break;
+            }
+        }
+        StringBuilder sb = new StringBuilder("User-Agent=");
+        sb.append(ua == null ? "(runtime default)" : ua);
+        for (Map.Entry<String, String> entry : headers.entrySet()) {
+            String key = entry.getKey();
+            if (key == null || key.equalsIgnoreCase("User-Agent")) {
+                continue;
+            }
+            boolean sensitive =
+                    key.equalsIgnoreCase("Authorization")
+                            || key.equalsIgnoreCase("x-api-key")
+                            || key.equalsIgnoreCase("api-key");
+            sb.append("; ").append(key).append('=').append(sensitive ? "***" : entry.getValue());
+        }
+        return sb.toString();
+    }
 
     private void logHttpError(String type, String url, Map<String, String> headers, JSONObject body, int code, String response, Throwable throwable) {
         StringBuilder builder = new StringBuilder();

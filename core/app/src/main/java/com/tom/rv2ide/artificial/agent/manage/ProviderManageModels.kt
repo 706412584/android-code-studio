@@ -37,6 +37,10 @@ data class ManageProviderItem(
     val slots: List<String>,
     /** 是否可用于发请求（baseUrl 与主模型都非空）。 */
     val usable: Boolean,
+    /** 出站 User-Agent 覆盖（空 = 用全局默认/运行时默认）。 */
+    val userAgent: String = "",
+    /** 额外请求头原文（每行 Key: Value）。 */
+    val extraHeaders: String = "",
 ) {
   val mainModel: String get() = slots.firstOrNull().orEmpty()
 
@@ -48,6 +52,8 @@ data class ManageProviderItem(
           protocol,
           baseUrl,
           apiKey,
+          userAgent,
+          extraHeaders,
           slots.toTypedArray(),
       )
 
@@ -61,6 +67,8 @@ data class ManageProviderItem(
             apiKey = config.getApiKey(),
             slots = config.getSlotModels().toList(),
             usable = config.isUsable(),
+            userAgent = config.getUserAgent(),
+            extraHeaders = config.getExtraHeaders(),
         )
 
     /**
@@ -78,6 +86,8 @@ data class ManageProviderItem(
         apiKey: String = "",
         slots: List<String> = listOf("", "", "", ""),
         protocol: ModelProtocolType = ModelProtocolType.OPENAI_COMPATIBLE,
+        userAgent: String = "",
+        extraHeaders: String = "",
     ): ManageProviderItem =
         ManageProviderItem(
             id = id,
@@ -87,6 +97,8 @@ data class ManageProviderItem(
             apiKey = apiKey,
             slots = slots,
             usable = baseUrl.isNotBlank() && slots.firstOrNull().orEmpty().isNotBlank(),
+            userAgent = userAgent,
+            extraHeaders = extraHeaders,
         )
   }
 }

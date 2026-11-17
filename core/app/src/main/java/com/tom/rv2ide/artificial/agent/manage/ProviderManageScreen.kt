@@ -222,6 +222,84 @@ private fun ProviderListPage(
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = Spacing.md),
     ) {
+      // 「默认请求头」紧凑条目：不展开大输入框，点一下弹窗编辑；有值时用主题色高亮。
+      var globalUa by remember {
+        mutableStateOf(com.tom.rv2ide.artificial.agent.ProviderConfigStore.globalUserAgent())
+      }
+      var showGlobalDialog by remember { mutableStateOf(false) }
+      SettingsGroup(
+          modifier = Modifier.padding(bottom = Spacing.xs),
+          color = ideThemeColor(com.tom.rv2ide.R.attr.colorSurfaceContainer),
+      ) {
+        Row(
+            modifier =
+                Modifier.fillMaxWidth()
+                    .clickable { showGlobalDialog = true }
+                    .padding(horizontal = Spacing.lg, vertical = 11.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+          Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = "默认请求头",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+            Text(
+                text = globalUa.ifBlank { "未设置（使用系统默认）" },
+                style = MaterialTheme.typography.bodySmall,
+                color =
+                    if (globalUa.isBlank()) MaterialTheme.colorScheme.onSurfaceVariant
+                    else MaterialTheme.colorScheme.primary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+          }
+        }
+      }
+      if (showGlobalDialog) {
+        var dlgUa by remember { mutableStateOf(globalUa) }
+        var dlgHeaders by remember {
+          mutableStateOf(com.tom.rv2ide.artificial.agent.ProviderConfigStore.globalExtraHeaders())
+        }
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { showGlobalDialog = false },
+            title = { Text("默认请求头") },
+            text = {
+              Column(verticalArrangement = Arrangement.spacedBy(Spacing.sm)) {
+                AppTextField(
+                    value = dlgUa,
+                    onValueChange = { dlgUa = it },
+                    label = "User-Agent（可选）",
+                    placeholder = "留空用系统默认；如 curl/8.0",
+                )
+                AppTextField(
+                    value = dlgHeaders,
+                    onValueChange = { dlgHeaders = it },
+                    label = "额外请求头（每行 Key: Value）",
+                    placeholder = "X-Example: value",
+                    singleLine = false,
+                    minLines = 2,
+                )
+              }
+            },
+            confirmButton = {
+              androidx.compose.material3.TextButton(
+                  onClick = {
+                    com.tom.rv2ide.artificial.agent.ProviderConfigStore.setGlobalUserAgent(dlgUa.trim())
+                    com.tom.rv2ide.artificial.agent.ProviderConfigStore.setGlobalExtraHeaders(
+                        dlgHeaders.trim())
+                    globalUa = dlgUa.trim()
+                    showGlobalDialog = false
+                  }
+              ) { Text("保存") }
+            },
+            dismissButton = {
+              androidx.compose.material3.TextButton(onClick = { showGlobalDialog = false }) {
+                Text("取消")
+              }
+            },
+        )
+      }
       if (records.isEmpty()) {
         Text(
             text = stringResource(R.string.manage_provider_empty),
@@ -398,6 +476,8 @@ private fun ProviderEditPage(
   var label by remember(draftKey) { mutableStateOf(existing?.label ?: "") }
   var baseUrl by remember(draftKey) { mutableStateOf(existing?.baseUrl ?: "") }
   var apiKey by remember(draftKey) { mutableStateOf(existing?.apiKey ?: "") }
+  var userAgent by remember(draftKey) { mutableStateOf(existing?.userAgent ?: "") }
+  var extraHeaders by remember(draftKey) { mutableStateOf(existing?.extraHeaders ?: "") }
   var protocol by remember(draftKey) { mutableStateOf(existing?.protocol ?: ModelProtocolType.OPENAI_COMPATIBLE) }
   var slots by remember(draftKey) {
     mutableStateOf(List(4) { i -> existing?.slots?.getOrNull(i).orEmpty() })
@@ -439,6 +519,8 @@ private fun ProviderEditPage(
           apiKey = apiKey.trim(),
           slots = slots.map { it.trim() },
           protocol = protocol,
+          userAgent = userAgent.trim(),
+          extraHeaders = extraHeaders.trim(),
       )
 
   ManagePage(
@@ -511,6 +593,22 @@ private fun ProviderEditPage(
           onValueChange = { apiKey = it },
           label = stringResource(R.string.ai_agent_provider_api_key),
           visualTransformation = PasswordVisualTransformation(),
+      )
+      // 出站 User-Agent：某些中转/网关校验固定 UA。留空回退全局默认/运行时默认。
+      AppTextField(
+          value = userAgent,
+          onValueChange = { userAgent = it },
+          label = "User-Agent（可选）",
+          placeholder = "留空用默认；如 curl/8.0 或 OpenAI/Python 3.11",
+      )
+      // 额外请求头：每行 `Key: Value`，随模型请求发送（可覆盖 UA）。
+      AppTextField(
+          value = extraHeaders,
+          onValueChange = { extraHeaders = it },
+          label = "额外请求头（可选，每行 Key: Value）",
+          placeholder = "X-Example: value",
+          singleLine = false,
+          minLines = 2,
       )
 
       SettingsGroupHeader(text = stringResource(R.string.ai_agent_provider_protocol))

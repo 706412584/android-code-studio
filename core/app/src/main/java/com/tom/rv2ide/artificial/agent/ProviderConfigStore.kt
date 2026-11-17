@@ -190,6 +190,40 @@ class ProviderConfigStore(private val context: Context) {
   }
 
   companion object {
+    /** 全局默认出站 User-Agent 的偏好键（服务商未单独设置时用它）。 */
+    const val GLOBAL_USER_AGENT_KEY = "ai_agent_global_user_agent"
+
+    /** 全局默认出站 User-Agent；空串表示用运行时默认。 */
+    @JvmStatic
+    fun globalUserAgent(): String =
+        com.tom.rv2ide.preferences.internal.prefManager
+            .getString(GLOBAL_USER_AGENT_KEY, "")
+            .orEmpty()
+
+    /** 设置全局默认出站 User-Agent（空串清除）。 */
+    @JvmStatic
+    fun setGlobalUserAgent(value: String) {
+      com.tom.rv2ide.preferences.internal.prefManager
+          .putString(GLOBAL_USER_AGENT_KEY, value.orEmpty())
+    }
+
+    /** 全局默认额外请求头（每行 Key: Value）的偏好键。 */
+    const val GLOBAL_EXTRA_HEADERS_KEY = "ai_agent_global_extra_headers"
+
+    /** 全局默认额外请求头原文；空串表示无。 */
+    @JvmStatic
+    fun globalExtraHeaders(): String =
+        com.tom.rv2ide.preferences.internal.prefManager
+            .getString(GLOBAL_EXTRA_HEADERS_KEY, "")
+            .orEmpty()
+
+    /** 设置全局默认额外请求头原文（空串清除）。 */
+    @JvmStatic
+    fun setGlobalExtraHeaders(value: String) {
+      com.tom.rv2ide.preferences.internal.prefManager
+          .putString(GLOBAL_EXTRA_HEADERS_KEY, value.orEmpty())
+    }
+
     /** 把预设转成一条用户记录（密钥可后补）。界面「从预设添加」也走这里。 */
     @JvmStatic
     fun presetToConfig(preset: ProviderPresets.Preset, apiKey: String): ProviderConfig =

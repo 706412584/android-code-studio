@@ -95,6 +95,7 @@ public final class OpenAiCompatibleProtocol extends AbstractHttpModelProtocol {
 
             HashMap<String, String> headers = new HashMap<>();
             headers.put("Authorization", "Bearer " + config.getApiKey());
+            OutboundHeaders.apply(headers, config);
             raw = postJson(endpoint(config.getBaseUrl(), "/chat/completions"), body, headers);
             JSONObject response = new JSONObject(raw);
             String text = response
@@ -141,6 +142,7 @@ public final class OpenAiCompatibleProtocol extends AbstractHttpModelProtocol {
 
         HashMap<String, String> headers = new HashMap<>();
         headers.put("Authorization", "Bearer " + config.getApiKey());
+        OutboundHeaders.apply(headers, config);
 
         StringBuilder text = new StringBuilder();
         StringBuilder reasoning = new StringBuilder();

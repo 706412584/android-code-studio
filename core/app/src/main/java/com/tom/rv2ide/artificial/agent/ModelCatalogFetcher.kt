@@ -118,6 +118,26 @@ object ModelCatalogFetcher {
         request.headers["x-api-key"] = config.getApiKey()
         request.headers["anthropic-version"] = "2023-06-01"
       }
+      // 出站 UA / 额外请求头：全局默认 + 服务商覆盖。让「拉取模型」与真实模型请求用同一套头，
+      // 也方便真机通过这个请求核对出站头是否生效。
+      val ua =
+          if (config.getUserAgent().isNotBlank()) config.getUserAgent()
+          else ProviderConfigStore.globalUserAgent()
+      if (ua.isNotBlank()) {
+        request.headers["User-Agent"] = ua
+      }
+      val extraHeaders = LinkedHashMap<String, String>()
+      extraHeaders.putAll(ProviderConfig.parseExtraHeaders(ProviderConfigStore.globalExtraHeaders()))
+      extraHeaders.putAll(ProviderConfig.parseExtraHeaders(config.getExtraHeaders()))
+      for ((key, value) in extraHeaders) {
+        request.headers[key] = value
+      }
+      com.tom.rv2ide.ai.tool.api.ErrorLog.record(
+          "http_out",
+          "拉取模型出站头",
+          null,
+          "User-Agent=" + ua.ifBlank { "(runtime default)" } + "; extras=" + extraHeaders.keys,
+      )
       val response = SimpleHttpClient.execute(request)
       // 非 2xx 直接当失败：401 会返回一个 JSON 错误对象，硬解析会得到空列表，
       // 但那掩盖了「密钥不对」这个真正原因，调用方无法区分。

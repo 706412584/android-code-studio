@@ -93,6 +93,7 @@ public final class AnthropicMessagesProtocol extends AbstractHttpModelProtocol {
             HashMap<String, String> headers = new HashMap<>();
             headers.put("x-api-key", config.getApiKey());
             headers.put("anthropic-version", "2023-06-01");
+            OutboundHeaders.apply(headers, config);
             raw = postJson(anthropicMessagesEndpoint(config.getBaseUrl()), body, headers);
             JSONObject response = new JSONObject(raw);
             return extractResponse(response.optJSONArray("content"));
@@ -117,6 +118,7 @@ public final class AnthropicMessagesProtocol extends AbstractHttpModelProtocol {
         HashMap<String, String> headers = new HashMap<>();
         headers.put("x-api-key", config.getApiKey());
         headers.put("anthropic-version", "2023-06-01");
+        OutboundHeaders.apply(headers, config);
         try {
             body = buildRequestBody(config, messages, requestOptions);
         } catch (Exception e) {

@@ -58,6 +58,10 @@ public final class ModelConfig {
     private final int contextSize;
     private final String groupId;
     private final String slotRole;
+    /** 出站 User-Agent；空串表示用运行时默认。 */
+    private final String userAgent;
+    /** 额外出站请求头（键值），随模型请求一起发送；空表表示无。 */
+    private final java.util.Map<String, String> extraHeaders;
 
     /**
      * 显式带上 contextSize 的构造函数。新代码请优先使用 {@link Builder}。
@@ -99,6 +103,29 @@ public final class ModelConfig {
             String groupId,
             String slotRole
     ) {
+        this(id, name, protocolType, providerLabel, baseUrl, apiKey, modelId, toolCallLimit,
+                compressionModelEnabled, compressionModelAuto, compressionModelId, contextSize,
+                groupId, slotRole, "", java.util.Collections.emptyMap());
+    }
+
+    public ModelConfig(
+            String id,
+            String name,
+            ModelProtocolType protocolType,
+            String providerLabel,
+            String baseUrl,
+            String apiKey,
+            String modelId,
+            int toolCallLimit,
+            boolean compressionModelEnabled,
+            boolean compressionModelAuto,
+            String compressionModelId,
+            int contextSize,
+            String groupId,
+            String slotRole,
+            String userAgent,
+            java.util.Map<String, String> extraHeaders
+    ) {
         this.id = Strings.nullToEmpty(id);
         this.name = Strings.nullToEmpty(name);
         this.protocolType = protocolType == null ? ModelProtocolType.OPENAI_COMPATIBLE : protocolType;
@@ -113,6 +140,15 @@ public final class ModelConfig {
         this.contextSize = contextSize < 0 ? CONTEXT_SIZE_UNSET : contextSize;
         this.groupId = Strings.nullToEmpty(groupId);
         this.slotRole = Strings.nullToEmpty(slotRole);
+        this.userAgent = Strings.nullToEmpty(userAgent).trim();
+        this.extraHeaders = immutableHeaders(extraHeaders);
+    }
+
+    private static java.util.Map<String, String> immutableHeaders(java.util.Map<String, String> in) {
+        if (in == null || in.isEmpty()) {
+            return java.util.Collections.emptyMap();
+        }
+        return java.util.Collections.unmodifiableMap(new java.util.LinkedHashMap<>(in));
     }
 
     private ModelConfig(Builder builder) {
@@ -130,6 +166,8 @@ public final class ModelConfig {
         this.contextSize = builder.contextSize < 0 ? CONTEXT_SIZE_UNSET : builder.contextSize;
         this.groupId = Strings.nullToEmpty(builder.groupId);
         this.slotRole = Strings.nullToEmpty(builder.slotRole);
+        this.userAgent = Strings.nullToEmpty(builder.userAgent).trim();
+        this.extraHeaders = immutableHeaders(builder.extraHeaders);
     }
 
     public static Builder builder(String id, String name, ModelProtocolType protocolType,
@@ -152,6 +190,20 @@ public final class ModelConfig {
         private int contextSize = CONTEXT_SIZE_UNSET;
         private String groupId = "";
         private String slotRole = "";
+        private String userAgent = "";
+        private java.util.Map<String, String> extraHeaders = java.util.Collections.emptyMap();
+
+        /** 出站 User-Agent（可选）；空串用运行时默认。 */
+        public Builder userAgent(String nextUserAgent) {
+            this.userAgent = nextUserAgent == null ? "" : nextUserAgent;
+            return this;
+        }
+
+        /** 额外出站请求头（可选）。 */
+        public Builder extraHeaders(java.util.Map<String, String> nextExtraHeaders) {
+            this.extraHeaders = nextExtraHeaders;
+            return this;
+        }
 
         private Builder(String id, String name, ModelProtocolType protocolType,
                         String providerLabel, String baseUrl, String apiKey, String modelId) {
@@ -282,26 +334,39 @@ public final class ModelConfig {
         return compressionModelId;
     }
 
+    /** 出站 User-Agent；空串表示用运行时默认。 */
+    public String getUserAgent() {
+        return userAgent;
+    }
+
+    /** 额外出站请求头；空表表示无。 */
+    public java.util.Map<String, String> getExtraHeaders() {
+        return extraHeaders;
+    }
+
     public ModelConfig withId(String nextId) {
         return new ModelConfig(nextId, name, protocolType, providerLabel, baseUrl, apiKey, modelId, toolCallLimit,
-                compressionModelEnabled, compressionModelAuto, compressionModelId, contextSize, groupId, slotRole);
+                compressionModelEnabled, compressionModelAuto, compressionModelId, contextSize, groupId, slotRole,
+                userAgent, extraHeaders);
     }
 
     public ModelConfig withModelId(String nextModelId) {
         return new ModelConfig(id, name, protocolType, providerLabel, baseUrl, apiKey, nextModelId, toolCallLimit,
-                compressionModelEnabled, compressionModelAuto, compressionModelId, contextSize, groupId, slotRole);
+                compressionModelEnabled, compressionModelAuto, compressionModelId, contextSize, groupId, slotRole,
+                userAgent, extraHeaders);
     }
 
     /** 返回一个更新了 contextSize 的副本。 */
     public ModelConfig withContextSize(int nextContextSize) {
         return new ModelConfig(id, name, protocolType, providerLabel, baseUrl, apiKey, modelId, toolCallLimit,
-                compressionModelEnabled, compressionModelAuto, compressionModelId, nextContextSize, groupId, slotRole);
+                compressionModelEnabled, compressionModelAuto, compressionModelId, nextContextSize, groupId, slotRole,
+                userAgent, extraHeaders);
     }
 
     public ModelConfig withGroup(String nextGroupId, String nextSlotRole) {
         return new ModelConfig(id, name, protocolType, providerLabel, baseUrl, apiKey, modelId, toolCallLimit,
                 compressionModelEnabled, compressionModelAuto, compressionModelId, contextSize,
-                nextGroupId, nextSlotRole);
+                nextGroupId, nextSlotRole, userAgent, extraHeaders);
     }
 
     public JSONObject toJson() throws JSONException {
@@ -320,6 +385,16 @@ public final class ModelConfig {
         object.put("contextSize", contextSize);
         object.put("groupId", groupId);
         object.put("slotRole", slotRole);
+        if (!userAgent.isEmpty()) {
+            object.put("userAgent", userAgent);
+        }
+        if (!extraHeaders.isEmpty()) {
+            JSONObject headerJson = new JSONObject();
+            for (java.util.Map.Entry<String, String> entry : extraHeaders.entrySet()) {
+                headerJson.put(entry.getKey(), entry.getValue());
+            }
+            object.put("extraHeaders", headerJson);
+        }
         return object;
     }
 
@@ -356,6 +431,16 @@ public final class ModelConfig {
         if (contextSize < 0) {
             contextSize = CONTEXT_SIZE_UNSET;
         }
+        String userAgent = object.optString("userAgent", "");
+        java.util.Map<String, String> extraHeaders = new java.util.LinkedHashMap<>();
+        JSONObject headerJson = object.optJSONObject("extraHeaders");
+        if (headerJson != null) {
+            java.util.Iterator<String> keys = headerJson.keys();
+            while (keys.hasNext()) {
+                String key = keys.next();
+                extraHeaders.put(key, headerJson.optString(key, ""));
+            }
+        }
         return new ModelConfig(
                 object.optString("id"),
                 object.optString("name"),
@@ -370,7 +455,9 @@ public final class ModelConfig {
                 compressionModelId,
                 contextSize,
                 object.optString("groupId", ""),
-                object.optString("slotRole", "")
+                object.optString("slotRole", ""),
+                userAgent,
+                extraHeaders
         );
     }
 

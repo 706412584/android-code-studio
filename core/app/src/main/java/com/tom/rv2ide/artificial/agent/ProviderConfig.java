@@ -56,6 +56,10 @@ public final class ProviderConfig {
   private final ModelProtocolType protocolType;
   private final String baseUrl;
   private final String apiKey;
+  /** 出站 User-Agent 覆盖；空串表示用全局默认/运行时默认。 */
+  private final String userAgent;
+  /** 额外请求头（每行 {@code Key: Value}）；空串表示无。 */
+  private final String extraHeaders;
   /** 4 槽位模型名，顺序同 {@link #SLOT_ORDER}；空串表示未设置。 */
   private final String[] slotModels;
 
@@ -66,12 +70,26 @@ public final class ProviderConfig {
       String baseUrl,
       String apiKey,
       String[] slotModels) {
+    this(id, label, protocolType, baseUrl, apiKey, "", "", slotModels);
+  }
+
+  public ProviderConfig(
+      String id,
+      String label,
+      ModelProtocolType protocolType,
+      String baseUrl,
+      String apiKey,
+      String userAgent,
+      String extraHeaders,
+      String[] slotModels) {
     this.id = safe(id);
     this.label = safe(label);
     this.protocolType =
         protocolType == null ? ModelProtocolType.OPENAI_COMPATIBLE : protocolType;
     this.baseUrl = safe(baseUrl);
     this.apiKey = safe(apiKey);
+    this.userAgent = safe(userAgent);
+    this.extraHeaders = extraHeaders == null ? "" : extraHeaders.trim();
     this.slotModels = normalizeSlots(slotModels);
   }
 
@@ -106,6 +124,40 @@ public final class ProviderConfig {
 
   public String getApiKey() {
     return apiKey;
+  }
+
+  /** 出站 User-Agent 覆盖；空串表示用全局默认/运行时默认。 */
+  public String getUserAgent() {
+    return userAgent;
+  }
+
+  /** 额外请求头原文（每行 Key: Value）；空串表示无。 */
+  public String getExtraHeaders() {
+    return extraHeaders;
+  }
+
+  /** 把「每行 Key: Value」的文本解析成头映射；非法行忽略。 */
+  public static java.util.Map<String, String> parseExtraHeaders(String raw) {
+    java.util.LinkedHashMap<String, String> out = new java.util.LinkedHashMap<>();
+    if (raw == null || raw.trim().isEmpty()) {
+      return out;
+    }
+    for (String line : raw.split("\\r?\\n")) {
+      String trimmed = line.trim();
+      if (trimmed.isEmpty()) {
+        continue;
+      }
+      int idx = trimmed.indexOf(':');
+      if (idx <= 0) {
+        continue;
+      }
+      String key = trimmed.substring(0, idx).trim();
+      String value = trimmed.substring(idx + 1).trim();
+      if (!key.isEmpty()) {
+        out.put(key, value);
+      }
+    }
+    return out;
   }
 
   /** 取某槽位的模型名（可能带上下文后缀）。未知槽位返回空串。 */
@@ -160,7 +212,8 @@ public final class ProviderConfig {
   }
 
   public ProviderConfig withApiKey(String newApiKey) {
-    return new ProviderConfig(id, label, protocolType, baseUrl, newApiKey, slotModels);
+    return new ProviderConfig(
+        id, label, protocolType, baseUrl, newApiKey, userAgent, extraHeaders, slotModels);
   }
 
   // ---- 序列化 ----
@@ -177,6 +230,12 @@ public final class ProviderConfig {
       models.put(model);
     }
     json.put("slots", models);
+    if (!userAgent.isEmpty()) {
+      json.put("userAgent", userAgent);
+    }
+    if (!extraHeaders.isEmpty()) {
+      json.put("extraHeaders", extraHeaders);
+    }
     return json;
   }
 
@@ -198,6 +257,9 @@ public final class ProviderConfig {
     for (int i = 0; i < slots.length; i++) {
       slots[i] = array == null ? "" : array.optString(i, "");
     }
-    return new ProviderConfig(id, label, protocol, baseUrl, apiKey, slots);
+    String userAgent = json.optString("userAgent", "");
+    String extraHeaders = json.optString("extraHeaders", "");
+    return new ProviderConfig(
+        id, label, protocol, baseUrl, apiKey, userAgent, extraHeaders, slots);
   }
 }
