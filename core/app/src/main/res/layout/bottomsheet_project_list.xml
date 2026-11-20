@@ -2,74 +2,78 @@
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
   xmlns:app="http://schemas.android.com/apk/res-auto"
   android:layout_width="match_parent"
-  android:layout_height="wrap_content"
+  android:layout_height="match_parent"
   android:orientation="vertical"
-  android:padding="16dp">
+  android:paddingHorizontal="@dimen/acs_ui_page_padding"
+  android:paddingTop="@dimen/acs_ui_space_xl"
+  android:paddingBottom="@dimen/acs_ui_space_md">
 
-  <!-- Title row with browse icon button -->
   <LinearLayout
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:orientation="horizontal"
     android:gravity="center_vertical"
-    android:paddingBottom="8dp">
+    android:orientation="horizontal">
 
     <TextView
       android:layout_width="0dp"
       android:layout_height="wrap_content"
       android:layout_weight="1"
+      android:layout_marginEnd="@dimen/acs_ui_space_md"
+      android:accessibilityHeading="true"
       android:text="@string/open_project"
-      android:textSize="20sp"
-      android:textStyle="bold" />
+      android:textAppearance="@style/acs_ui_text_title" />
 
     <com.google.android.material.button.MaterialButton
       android:id="@+id/btnBrowse"
-      style="@style/Widget.Material3.Button.TonalButton"
+      style="@style/acs_ui_button_secondary"
       android:layout_width="wrap_content"
       android:layout_height="wrap_content"
-      android:contentDescription="@string/browse_other_location"
-      app:icon="@drawable/ic_folder"
       android:text="@string/import_project"
-      app:iconGravity="textStart"
-      />
-
+      app:icon="@drawable/ic_folder"
+      app:iconGravity="textStart" />
   </LinearLayout>
 
   <com.google.android.material.textfield.TextInputLayout
     android:id="@+id/searchLayout"
+    style="@style/acs_ui_input"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:layout_marginBottom="8dp"
+    android:layout_marginTop="@dimen/acs_ui_space_xl"
+    android:layout_marginBottom="@dimen/acs_ui_space_md"
     android:hint="@string/search_projects_hint"
-    app:startIconDrawable="@drawable/ic_search"
     app:endIconMode="clear_text"
-    app:boxBackgroundMode="filled"
-    style="@style/Widget.Material3.TextInputLayout.FilledBox">
+    app:startIconDrawable="@drawable/ic_search">
 
     <com.google.android.material.textfield.TextInputEditText
       android:id="@+id/searchEditText"
       android:layout_width="match_parent"
       android:layout_height="wrap_content"
-      android:inputType="text"
       android:imeOptions="actionSearch"
+      android:inputType="text"
       android:maxLines="1" />
-
   </com.google.android.material.textfield.TextInputLayout>
 
-  <androidx.recyclerview.widget.RecyclerView
-    android:id="@+id/projectsRecyclerView"
+  <FrameLayout
     android:layout_width="match_parent"
-    android:layout_height="wrap_content"
-    android:maxHeight="400dp"
-    android:scrollbars="vertical" />
+    android:layout_height="0dp"
+    android:layout_weight="1">
 
-  <TextView
-    android:id="@+id/emptyText"
-    android:layout_width="match_parent"
-    android:layout_height="wrap_content"
-    android:text="@string/no_projects_found"
-    android:textAlignment="center"
-    android:padding="32dp"
-    android:visibility="gone" />
+    <androidx.recyclerview.widget.RecyclerView
+      android:id="@+id/projectsRecyclerView"
+      android:layout_width="match_parent"
+      android:layout_height="match_parent"
+      android:clipToPadding="false"
+      android:paddingBottom="88dp"
+      android:scrollbars="vertical" />
 
+    <TextView
+      android:id="@+id/emptyText"
+      android:layout_width="match_parent"
+      android:layout_height="wrap_content"
+      android:gravity="center"
+      android:padding="@dimen/acs_ui_space_xxl"
+      android:text="@string/no_projects_found"
+      android:textAppearance="@style/acs_ui_text_caption"
+      android:visibility="gone" />
+  </FrameLayout>
 </LinearLayout>

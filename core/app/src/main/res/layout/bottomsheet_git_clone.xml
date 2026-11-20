@@ -1,23 +1,30 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<androidx.core.widget.NestedScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:fillViewport="true">
+
+    <LinearLayout
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:orientation="vertical"
-    android:padding="16dp">
+    android:paddingHorizontal="@dimen/acs_ui_page_padding"
+    android:paddingTop="@dimen/acs_ui_page_padding"
+    android:paddingBottom="88dp">
 
     <TextView
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:text="@string/git_clone_repo"
-        android:textAppearance="@style/TextAppearance.Material3.HeadlineSmall"
+        android:textAppearance="@style/acs_ui_text_title"
         android:paddingBottom="16dp" />
 
     <com.google.android.material.textfield.TextInputLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:hint="@string/git_clone_repo_url"
-        style="@style/Widget.Material3.TextInputLayout.OutlinedBox">
+        style="@style/acs_ui_input">
 
         <com.google.android.material.textfield.TextInputEditText
             android:id="@+id/et_repo_url"
@@ -31,7 +38,7 @@
         android:layout_height="wrap_content"
         android:layout_marginTop="8dp"
         android:hint="@string/git_clone_branch"
-        style="@style/Widget.Material3.TextInputLayout.OutlinedBox">
+        style="@style/acs_ui_input">
 
         <com.google.android.material.textfield.TextInputEditText
             android:id="@+id/et_branch"
@@ -44,7 +51,7 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:text="@string/git_clone_options"
-        android:textAppearance="@style/TextAppearance.Material3.TitleMedium"
+        android:textAppearance="@style/acs_ui_text_section"
         android:paddingTop="16dp"
         android:paddingBottom="8dp" />
 
@@ -69,7 +76,7 @@
         android:layout_marginTop="8dp"
         android:visibility="gone" 
         android:hint="@string/git_clone_custom_options"
-        style="@style/Widget.Material3.TextInputLayout.OutlinedBox">
+        style="@style/acs_ui_input">
 
         <com.google.android.material.textfield.TextInputEditText
             android:id="@+id/et_custom_options"
@@ -90,14 +97,15 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="@android:string/cancel"
-            style="@style/Widget.Material3.Button.TextButton" />
+            style="@style/acs_ui_button_text" />
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/btn_clone"
+            style="@style/acs_ui_button_primary"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="@string/git_clone"
             android:layout_marginStart="8dp" />
     </LinearLayout>
-
 </LinearLayout>
+</androidx.core.widget.NestedScrollView>

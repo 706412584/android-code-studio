@@ -26,7 +26,8 @@ import android.view.View;
 import android.widget.LinearLayout;
 import androidx.transition.ChangeImageTransform;
 import androidx.transition.TransitionManager;
-import com.blankj.utilcode.util.SizeUtils;
+import android.content.res.ColorStateList;
+import com.google.android.material.color.MaterialColors;
 import com.tom.rv2ide.databinding.LayoutFiletreeItemBinding;
 import com.tom.rv2ide.models.FileExtension;
 import com.tom.rv2ide.resources.R;
@@ -45,13 +46,18 @@ public class FileTreeViewHolder extends TreeNode.BaseNodeViewHolder<File> {
   public View createNodeView(TreeNode node, File file) {
     this.binding = LayoutFiletreeItemBinding.inflate(LayoutInflater.from(context));
 
-    final var dp15 = SizeUtils.dp2px(15);
+    final var indent = context.getResources().getDimensionPixelSize(R.dimen.acs_ui_space_md);
     final var icon = getIconForFile(file);
     final var chevron = binding.filetreeChevron;
     binding.filetreeName.setText(file.getName());
     binding.filetreeIcon.setImageResource(icon);
 
-    final var root = applyPadding(node, binding, dp15);
+    final var root = applyPadding(node, binding, indent);
+    final var iconColor = file.isDirectory()
+        ? R.attr.colorPrimary
+        : com.google.android.material.R.attr.colorOnSurfaceVariant;
+    binding.filetreeIcon.setImageTintList(
+        ColorStateList.valueOf(MaterialColors.getColor(root, iconColor)));
 
     if (file.isDirectory()) {
       chevron.setVisibility(View.VISIBLE);
@@ -79,15 +85,30 @@ public class FileTreeViewHolder extends TreeNode.BaseNodeViewHolder<File> {
       final TreeNode node, final LayoutFiletreeItemBinding binding, final int padding) {
     final var root = binding.getRoot();
     root.setPaddingRelative(
-        root.getPaddingLeft() + (padding * (node.getLevel() - 1)),
+        root.getPaddingStart() + (padding * (node.getLevel() - 1)),
         root.getPaddingTop(),
-        root.getPaddingRight(),
+        root.getPaddingEnd(),
         root.getPaddingBottom());
     return root;
   }
 
   protected int getIconForFile(final File file) {
     return FileExtension.Factory.forFile(file).getIcon();
+  }
+
+  public void setActivated(boolean activated) {
+    if (binding == null) {
+      return;
+    }
+    getView().setActivated(activated);
+    binding.filetreeName.setTextColor(MaterialColors.getColor(
+        binding.getRoot(),
+        activated ? R.attr.colorOnPrimaryContainer : R.attr.colorOnSurface));
+    if (!mNode.getValue().isDirectory()) {
+      binding.filetreeIcon.setImageTintList(ColorStateList.valueOf(MaterialColors.getColor(
+          binding.getRoot(),
+          activated ? R.attr.colorOnPrimaryContainer : R.attr.colorOnSurfaceVariant)));
+    }
   }
 
   public void updateChevron(boolean expanded) {

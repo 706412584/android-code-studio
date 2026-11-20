@@ -44,7 +44,6 @@ import com.google.android.material.bottomsheet.BottomSheetDialogFragment
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.chip.Chip
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
-import com.google.android.material.textfield.TextInputEditText
 import com.google.android.material.textfield.TextInputLayout
 import com.google.android.material.textview.MaterialTextView
 import com.google.android.material.transition.MaterialSharedAxis
@@ -964,29 +963,15 @@ class CloudBuildDialogFragment : BottomSheetDialogFragment() {
   private fun showTokenDialog() {
     val context = requireContext()
     val inputLayout =
-        TextInputLayout(context).apply {
-          boxBackgroundMode = TextInputLayout.BOX_BACKGROUND_OUTLINE
-          hint = getString(R.string.cloud_build_token_hint)
-          endIconMode = TextInputLayout.END_ICON_PASSWORD_TOGGLE
-          setPadding(dp(24), dp(8), dp(24), 0)
-        }
-    val input =
-        TextInputEditText(context).apply {
-          inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD
-          setText(tokenStore.getToken())
-          maxLines = 1
-        }
-    inputLayout.addView(input)
-
-    val container = LinearLayout(context)
-    container.orientation = LinearLayout.VERTICAL
-    container.addView(inputLayout)
-
-    val help = MaterialTextView(context)
-    help.text = getString(R.string.cloud_build_token_help)
-    help.setTextAppearance(R.style.TextAppearance_Material3_BodySmall)
-    help.setPadding(dp(24), dp(4), dp(24), 0)
-    container.addView(help)
+        com.tom.rv2ide.preferences.dialogEditTextField(
+            context,
+            getString(R.string.cloud_build_token_hint),
+            tokenStore.getToken(),
+            inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD,
+            helperText = getString(R.string.cloud_build_token_help),
+        ).apply { endIconMode = TextInputLayout.END_ICON_PASSWORD_TOGGLE }
+    val input = requireNotNull(inputLayout.editText)
+    val fields = mutableListOf<View>(inputLayout)
 
     // 「用 GitHub 登录」：Device Flow，无需用户手动创建 PAT。
     // 放在帮助文案之后、与手动粘贴并存——手动路径对「已有 PAT」的用户更快，
@@ -999,22 +984,20 @@ class CloudBuildDialogFragment : BottomSheetDialogFragment() {
         )
             .apply {
               setText(R.string.cloud_build_login_github)
-              setPadding(dp(24), dp(12), dp(24), 0)
               setOnClickListener { showGithubLoginDialog() }
             }
-    container.addView(loginButton)
+    fields.add(loginButton)
 
     if (!tokenStore.isPersistent()) {
       val warn = MaterialTextView(context)
       warn.text = getString(R.string.cloud_build_token_not_persistent)
-      warn.setTextAppearance(R.style.TextAppearance_Material3_BodySmall)
-      warn.setPadding(dp(24), dp(8), dp(24), 0)
-      container.addView(warn)
+      warn.setTextAppearance(R.style.acs_ui_text_caption)
+      fields.add(warn)
     }
 
     MaterialAlertDialogBuilder(context)
         .setTitle(R.string.cloud_build_token_title)
-        .setView(container)
+        .setView(com.tom.rv2ide.preferences.dialogFieldColumn(context, *fields.toTypedArray()))
         .setPositiveButton(R.string.cloud_build_token_save) { _, _ ->
           val previous = tokenStore.getToken()
           tokenStore.saveToken(input.text?.toString().orEmpty())

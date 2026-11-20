@@ -74,6 +74,7 @@ class BuildAndRunPreferences(
     override val key: String = "idepref_build_n_run",
     override val title: Int = string.idepref_build_title,
     override val summary: Int? = string.idepref_buildnrun_summary,
+    override val icon: Int? = drawable.ic_gradle,
     override val children: List<IPreference> = mutableListOf(),
 ) : IPreferenceScreen() {
 

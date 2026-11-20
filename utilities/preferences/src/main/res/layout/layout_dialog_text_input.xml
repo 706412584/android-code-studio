@@ -19,15 +19,15 @@
   xmlns:tools="http://schemas.android.com/tools"
   android:layout_width="match_parent"
   android:layout_height="wrap_content"
-  android:orientation="vertical">
+  android:orientation="vertical"
+  android:paddingHorizontal="@dimen/acs_ui_space_xl"
+  android:paddingTop="@dimen/acs_ui_space_sm">
 
   <com.google.android.material.textfield.TextInputLayout
     android:id="@+id/name"
-    style="@style/Widget.Material3.TextInputEditText.OutlinedBox.Dense"
+    style="@style/acs_ui_input"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:layout_marginStart="8dp"
-    android:layout_marginEnd="8dp"
     tools:hint="Type something">
 
     <com.google.android.material.textfield.TextInputEditText

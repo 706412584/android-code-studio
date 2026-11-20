@@ -11,15 +11,20 @@
     android:id="@+id/appbar"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:elevation="8dp"
-    app:elevation="8dp"
+    android:elevation="0dp"
+    app:elevation="0dp"
     app:layout_behavior="com.google.android.material.appbar.AppBarLayout$Behavior"
     android:fitsSystemWindows="true">
 
     <com.google.android.material.appbar.MaterialToolbar
       android:id="@+id/toolbar"
       android:layout_width="match_parent"
-      android:layout_height="wrap_content" />
+      android:layout_height="wrap_content"
+      android:minHeight="?attr/actionBarSize"
+      android:background="?android:attr/colorBackground"
+      android:paddingHorizontal="@dimen/acs_ui_space_sm"
+      app:titleTextAppearance="@style/acs_ui_text_section"
+      app:contentInsetStartWithNavigation="0dp" />
 
   </com.google.android.material.appbar.AppBarLayout>
 

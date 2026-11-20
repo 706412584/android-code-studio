@@ -138,10 +138,16 @@
   -->
   <style name="AppTheme.MaterialAlertDialog" parent="@style/ThemeOverlay.Material3.MaterialAlertDialog">
     <item name="shapeAppearanceOverlay">@style/MaterialDialog.ShapeAppearance</item>
+    <item name="materialAlertDialogTitleTextStyle">@style/acs_ui_dialog_title</item>
+    <item name="materialAlertDialogBodyTextStyle">@style/acs_ui_dialog_body</item>
+    <item name="buttonBarButtonStyle">@style/acs_ui_dialog_button</item>
+    <item name="buttonBarPositiveButtonStyle">@style/acs_ui_dialog_button</item>
+    <item name="buttonBarNegativeButtonStyle">@style/acs_ui_dialog_button</item>
+    <item name="buttonBarNeutralButtonStyle">@style/acs_ui_dialog_button_neutral</item>
   </style>
 
   <style name="MaterialDialog.ShapeAppearance" parent="">
-    <item name="cornerSize">28dp</item>
+    <item name="cornerSize">@dimen/acs_ui_radius_sheet</item>
   </style>
 
   <!--
@@ -163,8 +169,8 @@
 
   <style name="AppTheme.BottomSheet.ShapeAppearance" parent="">
     <item name="cornerFamily">rounded</item>
-    <item name="cornerSizeTopLeft">28dp</item>
-    <item name="cornerSizeTopRight">28dp</item>
+    <item name="cornerSizeTopLeft">@dimen/acs_ui_radius_sheet</item>
+    <item name="cornerSizeTopRight">@dimen/acs_ui_radius_sheet</item>
     <item name="cornerSizeBottomLeft">0dp</item>
     <item name="cornerSizeBottomRight">0dp</item>
   </style>

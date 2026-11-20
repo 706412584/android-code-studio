@@ -1,60 +1,62 @@
-<?xml version="1.0" encoding="utf-8"?>  
-<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"  
-    xmlns:app="http://schemas.android.com/apk/res-auto"  
-    android:layout_width="match_parent"  
-    android:layout_height="match_parent"  
-    android:paddingBottom="16dp"  
-    android:paddingStart="16dp"  
-    android:paddingEnd="16dp">  
-  
-    <!-- Header with label and folder button -->  
-    <RelativeLayout  
-        android:id="@+id/header"  
-        android:layout_width="match_parent"  
-        android:layout_height="wrap_content"  
-        android:layout_marginTop="8dp">  
-  
-        <TextView  
-            android:id="@+id/fileTreeLabel"  
-            android:layout_width="wrap_content"  
-            android:layout_height="wrap_content"  
-            android:layout_alignParentStart="true"  
-            android:layout_centerVertical="true"  
-            android:text="@string/msg_file_tree"
-            android:textSize="18sp"  
-            android:textStyle="bold" />  
-  
-        <com.google.android.material.button.MaterialButton  
-            android:id="@+id/folderBrowser"  
-            style="@style/Widget.Material3.Button.IconButton"  
-            android:layout_width="wrap_content"  
-            android:layout_height="wrap_content"  
-            android:layout_alignParentEnd="true"  
-            android:layout_centerVertical="true"  
-            app:icon="@drawable/ic_folder" />  
-              
-        <com.google.android.material.button.MaterialButton  
-            android:id="@+id/projectSettings"  
-            style="@style/Widget.Material3.Button.IconButton"  
-            android:layout_width="wrap_content"  
-            android:layout_height="wrap_content"  
-            android:layout_toStartOf="@id/folderBrowser"  
-            android:layout_centerVertical="true"  
-            app:icon="@drawable/ic_settings_filled" />  
-  
-    </RelativeLayout>  
-  
-    <HorizontalScrollView  
-        android:id="@+id/horizontal_croll"  
-        android:layout_width="match_parent"  
-        android:layout_height="match_parent"  
-        android:layout_below="@id/header"  
-        android:fillViewport="true" />  
-  
-    <ProgressBar  
-        android:id="@+id/loading"  
-        android:layout_width="wrap_content"  
-        android:layout_height="wrap_content"  
-        android:layout_centerInParent="true" />  
-  
+<?xml version="1.0" encoding="utf-8"?>
+<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
+  xmlns:app="http://schemas.android.com/apk/res-auto"
+  android:layout_width="match_parent"
+  android:layout_height="match_parent"
+  android:paddingStart="16dp"
+  android:paddingEnd="16dp"
+  android:paddingBottom="16dp">
+
+  <RelativeLayout
+    android:id="@+id/header"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:layout_marginTop="8dp">
+
+    <TextView
+      android:id="@+id/fileTreeLabel"
+      android:layout_width="match_parent"
+      android:layout_height="wrap_content"
+      android:layout_alignParentStart="true"
+      android:layout_toStartOf="@id/projectSettings"
+      android:layout_marginEnd="@dimen/acs_ui_space_sm"
+      android:layout_centerVertical="true"
+      android:maxLines="1"
+      android:ellipsize="end"
+      android:text="@string/msg_file_tree"
+      android:textAppearance="@style/acs_ui_text_section" />
+
+    <com.google.android.material.button.MaterialButton
+      android:id="@+id/folderBrowser"
+      style="@style/acs_ui_icon_button"
+      android:layout_width="wrap_content"
+      android:layout_height="wrap_content"
+      android:layout_alignParentEnd="true"
+      android:layout_centerVertical="true"
+      android:contentDescription="@string/browse"
+      app:icon="@drawable/ic_folder" />
+
+    <com.google.android.material.button.MaterialButton
+      android:id="@+id/projectSettings"
+      style="@style/acs_ui_icon_button"
+      android:layout_width="wrap_content"
+      android:layout_height="wrap_content"
+      android:layout_centerVertical="true"
+      android:layout_toStartOf="@id/folderBrowser"
+      android:contentDescription="@string/acs_ui_project_settings"
+      app:icon="@drawable/ic_settings_filled" />
+  </RelativeLayout>
+
+  <HorizontalScrollView
+    android:id="@+id/horizontal_croll"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:layout_below="@id/header"
+    android:fillViewport="true" />
+
+  <ProgressBar
+    android:id="@+id/loading"
+    android:layout_width="wrap_content"
+    android:layout_height="wrap_content"
+    android:layout_centerInParent="true" />
 </RelativeLayout>

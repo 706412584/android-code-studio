@@ -11,23 +11,30 @@
   android:id="@+id/root_layout"
   android:layout_width="match_parent"
   android:layout_height="match_parent"
+  android:background="?android:attr/colorBackground"
   android:fitsSystemWindows="true"
   android:orientation="vertical">
 
   <com.google.android.material.appbar.AppBarLayout
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:background="@android:color/transparent"
-    android:fitsSystemWindows="true">
+    android:background="?attr/colorSurface"
+    android:fitsSystemWindows="true"
+    app:elevation="0dp">
 
     <com.google.android.material.appbar.MaterialToolbar
       android:id="@+id/toolbar"
       android:layout_width="match_parent"
-      android:layout_height="?attr/actionBarSize"
+      android:layout_height="wrap_content"
+      android:minHeight="?attr/actionBarSize"
+      android:paddingHorizontal="@dimen/acs_ui_space_sm"
+      app:navigationContentDescription="@string/back"
+      app:navigationIcon="@drawable/ic_arrow_back"
+      app:navigationIconTint="?attr/colorOnSurface"
       app:subtitle="@string/idepref_jdk_manager_subtitle"
-      app:subtitleCentered="true"
+      app:subtitleTextAppearance="@style/acs_ui_text_caption"
       app:title="@string/idepref_jdk_manager_title"
-      app:titleCentered="true" />
+      app:titleTextAppearance="@style/acs_ui_text_section" />
   </com.google.android.material.appbar.AppBarLayout>
 
   <androidx.core.widget.NestedScrollView
@@ -36,7 +43,8 @@
     android:layout_height="0dp"
     android:layout_weight="1"
     android:clipToPadding="false"
-    android:paddingBottom="16dp">
+    android:paddingBottom="@dimen/acs_ui_space_xl"
+    android:scrollbars="vertical">
 
     <LinearLayout
       android:layout_width="match_parent"
@@ -48,17 +56,21 @@
         android:id="@+id/jdk_hint"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginHorizontal="16dp"
-        android:layout_marginTop="8dp"
+        android:layout_marginHorizontal="@dimen/acs_ui_page_padding"
+        android:layout_marginTop="@dimen/acs_ui_space_sm"
+        android:paddingHorizontal="@dimen/acs_ui_space_sm"
+        android:paddingVertical="@dimen/acs_ui_space_sm"
+        android:background="?attr/colorSurfaceContainerLow"
         android:text="@string/jdk_apt_hint"
-        android:textAppearance="@style/TextAppearance.Material3.BodySmall"
-        android:textColor="?android:attr/textColorSecondary" />
+        android:textAppearance="@style/acs_ui_text_body"
+        android:textColor="?attr/colorOnSurfaceVariant" />
 
       <!-- JDK 卡片由代码动态填充 -->
       <LinearLayout
         android:id="@+id/jdk_container"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
+        android:paddingTop="@dimen/acs_ui_space_xs"
         android:orientation="vertical" />
     </LinearLayout>
   </androidx.core.widget.NestedScrollView>
@@ -68,21 +80,24 @@
     android:id="@+id/output_card"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:layout_margin="8dp"
+    android:layout_marginHorizontal="@dimen/acs_ui_space_sm"
+    android:layout_marginTop="@dimen/acs_ui_space_xs"
+    android:layout_marginBottom="@dimen/acs_ui_space_sm"
     android:visibility="gone"
-    app:cardCornerRadius="12dp"
+    style="@style/acs_ui_card"
     tools:visibility="visible">
 
     <LinearLayout
       android:layout_width="match_parent"
       android:layout_height="wrap_content"
       android:orientation="vertical"
-      android:padding="12dp">
+      android:padding="@dimen/acs_ui_space_lg">
 
       <LinearLayout
         android:id="@+id/output_header"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
+        android:minHeight="@dimen/acs_ui_touch_target"
         android:background="?attr/selectableItemBackground"
         android:clickable="true"
         android:focusable="true"
@@ -93,8 +108,9 @@
           android:id="@+id/output_toggle_icon"
           android:layout_width="20dp"
           android:layout_height="20dp"
-          android:layout_marginEnd="8dp"
+          android:layout_marginEnd="@dimen/acs_ui_space_sm"
           android:contentDescription="@string/sdk_output_toggle"
+          android:tint="?attr/colorOnSurfaceVariant"
           android:src="@drawable/ic_chevron_down" />
 
         <com.google.android.material.textview.MaterialTextView
@@ -102,7 +118,7 @@
           android:layout_width="0dp"
           android:layout_height="wrap_content"
           android:layout_weight="1"
-          android:textAppearance="@style/TextAppearance.Material3.TitleSmall"
+          android:textAppearance="@style/acs_ui_text_section"
           tools:text="正在安装 JDK 21…" />
       </LinearLayout>
 
@@ -110,14 +126,17 @@
         android:id="@+id/output_scroll"
         android:layout_width="match_parent"
         android:layout_height="120dp"
-        android:layout_marginTop="8dp">
+        android:layout_marginTop="@dimen/acs_ui_space_sm"
+        android:background="?attr/colorSurface"
+        android:padding="@dimen/acs_ui_space_sm">
 
         <com.google.android.material.textview.MaterialTextView
           android:id="@+id/output_text"
           android:layout_width="match_parent"
           android:layout_height="wrap_content"
           android:fontFamily="monospace"
-          android:textSize="11sp" />
+          android:textColor="?attr/colorOnSurfaceVariant"
+          android:textSize="@dimen/acs_ui_caption_size" />
       </ScrollView>
     </LinearLayout>
   </com.google.android.material.card.MaterialCardView>

@@ -3,16 +3,20 @@
   xmlns:app="http://schemas.android.com/apk/res-auto">
 
   <androidx.core.widget.NestedScrollView
+    android:id="@+id/wizardScroll"
     android:layout_width="match_parent"
-    android:layout_height="wrap_content"
-    android:fillViewport="true">
+    android:layout_height="match_parent"
+    android:fillViewport="true"
+    android:scrollbars="vertical">
 
     <LinearLayout
       android:id="@+id/wizardContainer"
       android:layout_width="match_parent"
       android:layout_height="wrap_content"
       android:orientation="vertical"
-      android:padding="24dp">
+      android:paddingHorizontal="@dimen/acs_ui_page_padding"
+      android:paddingTop="@dimen/acs_ui_page_padding"
+      android:paddingBottom="88dp">
 
       <!-- Page 1: Template Selection -->
       <LinearLayout
@@ -25,9 +29,9 @@
           android:layout_width="match_parent"
           android:layout_height="wrap_content"
           android:text="@string/choose_template"
-          android:textAppearance="?attr/textAppearanceHeadlineSmall"
-          android:layout_marginBottom="16dp"
-          android:gravity="center" />
+          android:textAppearance="@style/acs_ui_text_title"
+          android:accessibilityHeading="true"
+          android:layout_marginBottom="16dp" />
 
         <androidx.recyclerview.widget.RecyclerView
           android:id="@+id/templatesGrid"
@@ -48,12 +52,13 @@
           android:layout_width="match_parent"
           android:layout_height="wrap_content"
           android:text="@string/project_configuration"
-          android:textAppearance="?attr/textAppearanceHeadlineSmall"
-          android:layout_marginBottom="16dp"
-          android:gravity="center" />
+          android:textAppearance="@style/acs_ui_text_title"
+          android:accessibilityHeading="true"
+          android:layout_marginBottom="16dp" />
 
         <com.google.android.material.textfield.TextInputLayout
           android:id="@+id/projectNameLayout"
+          style="@style/acs_ui_input"
           android:layout_width="match_parent"
           android:layout_height="wrap_content"
           android:layout_marginTop="8dp"
@@ -68,6 +73,7 @@
         </com.google.android.material.textfield.TextInputLayout>
 
         <com.google.android.material.textfield.TextInputLayout
+          style="@style/acs_ui_input"
           android:layout_width="match_parent"
           android:layout_height="wrap_content"
           android:layout_marginTop="8dp"
@@ -83,6 +89,7 @@
 
         <com.google.android.material.textfield.TextInputLayout
           android:id="@+id/saveLocationLayout"
+          style="@style/acs_ui_input"
           android:layout_width="match_parent"
           android:layout_height="wrap_content"
           android:layout_marginTop="8dp"
@@ -104,7 +111,7 @@
           android:layout_marginTop="8dp"
           android:layout_marginBottom="8dp"
           android:hint="@string/language"
-          style="@style/Widget.Material3.TextInputLayout.FilledBox.ExposedDropdownMenu">
+          style="@style/acs_ui_input_dropdown">
 
           <com.google.android.material.textfield.MaterialAutoCompleteTextView
             android:id="@+id/languageInput"
@@ -120,7 +127,7 @@
           android:layout_marginTop="8dp"
           android:layout_marginBottom="8dp"
           android:hint="@string/minimum_sdk"
-          style="@style/Widget.Material3.TextInputLayout.FilledBox.ExposedDropdownMenu">
+          style="@style/acs_ui_input_dropdown">
 
           <com.google.android.material.textfield.MaterialAutoCompleteTextView
             android:id="@+id/minSdkInput"
@@ -139,7 +146,7 @@
           android:layout_marginTop="8dp"
           android:layout_marginBottom="8dp"
           android:hint="@string/compile_sdk_version"
-          style="@style/Widget.Material3.TextInputLayout.FilledBox.ExposedDropdownMenu">
+          style="@style/acs_ui_input_dropdown">
 
           <com.google.android.material.textfield.MaterialAutoCompleteTextView
             android:id="@+id/compileSdkInput"
@@ -157,7 +164,7 @@
           android:layout_marginTop="8dp"
           android:layout_marginBottom="8dp"
           android:hint="@string/native_language"
-          style="@style/Widget.Material3.TextInputLayout.FilledBox.ExposedDropdownMenu">
+          style="@style/acs_ui_input_dropdown">
 
           <com.google.android.material.textfield.MaterialAutoCompleteTextView
             android:id="@+id/nativeLanguageInput"
@@ -213,7 +220,7 @@
             android:layout_height="wrap_content"
             android:text="@string/back"
             android:visibility="gone"
-            style="@style/Widget.Material3.Button.TextButton" />
+            style="@style/acs_ui_button_text" />
 
           <Space
             android:layout_width="8dp"
@@ -221,6 +228,7 @@
 
           <com.google.android.material.button.MaterialButton
             android:id="@+id/createButton"
+            style="@style/acs_ui_button_primary"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="@string/create"

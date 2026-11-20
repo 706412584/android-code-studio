@@ -67,5 +67,10 @@ enum class IDETheme(
 
     /** The default theme. */
     val DEFAULT = SUNNY_GLOW
+
+    /** Preserve unknown preference values for downgrades while using a safe local default. */
+    @JvmStatic
+    fun fromStoredName(name: String?): IDETheme =
+        entries.firstOrNull { it.name == name } ?: DEFAULT
   }
 }

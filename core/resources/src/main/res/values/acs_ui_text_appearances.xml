@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+  <style name="acs_ui_text_title" parent="TextAppearance.Material3.TitleLarge">
+    <item name="android:textSize">@dimen/acs_ui_title_size</item>
+    <item name="android:textStyle">bold</item>
+    <item name="android:letterSpacing">0</item>
+    <item name="android:textColor">?attr/colorOnSurface</item>
+  </style>
+  <style name="acs_ui_text_section" parent="TextAppearance.Material3.TitleMedium">
+    <item name="android:textSize">@dimen/acs_ui_section_size</item>
+    <item name="android:textStyle">bold</item>
+    <item name="android:letterSpacing">0</item>
+    <item name="android:textColor">?attr/colorOnSurface</item>
+  </style>
+  <style name="acs_ui_text_body" parent="TextAppearance.Material3.BodyLarge">
+    <item name="android:textSize">@dimen/acs_ui_body_size</item>
+    <item name="android:letterSpacing">0</item>
+    <item name="android:textColor">?attr/colorOnSurface</item>
+  </style>
+  <style name="acs_ui_text_button" parent="TextAppearance.Material3.LabelLarge">
+    <item name="android:textSize">@dimen/acs_ui_body_size</item>
+    <item name="android:letterSpacing">0</item>
+  </style>
+  <style name="acs_ui_text_caption" parent="TextAppearance.Material3.BodySmall">
+    <item name="android:textSize">@dimen/acs_ui_caption_size</item>
+    <item name="android:letterSpacing">0</item>
+    <item name="android:textColor">?attr/colorOnSurfaceVariant</item>
+  </style>
+</resources>

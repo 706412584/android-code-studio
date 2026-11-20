@@ -44,7 +44,7 @@ abstract class BasePreference : IPreference() {
       pref.icon =
           ContextCompat.getDrawable(context, it)?.apply {
             colorFilter =
-                PorterDuffColorFilter(context.resolveAttr(R.attr.colorOnPrimaryContainer), SRC_ATOP)
+                PorterDuffColorFilter(context.resolveAttr(R.attr.colorPrimary), SRC_ATOP)
           }
     }
 

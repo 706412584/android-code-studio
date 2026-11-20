@@ -45,6 +45,7 @@ import com.tom.rv2ide.tasks.callables.FileTreeCallable.SortFileName
 import com.tom.rv2ide.tasks.callables.FileTreeCallable.SortFolder
 import com.tom.rv2ide.utils.doOnApplyWindowInsets
 import com.tom.rv2ide.viewmodel.FileTreeViewModel
+import com.tom.rv2ide.viewmodel.EditorViewModel
 import com.unnamed.b.atv.model.TreeNode
 import com.unnamed.b.atv.model.TreeNode.TreeNodeClickListener
 import com.unnamed.b.atv.model.TreeNode.TreeNodeLongClickListener
@@ -62,8 +63,10 @@ class FileTreeFragment :
 
   private var binding: LayoutEditorFileTreeBinding? = null
   private var fileTreeView: AndroidTreeView? = null
+  private var treeRoot: TreeNode? = null
 
   private val viewModel by viewModels<FileTreeViewModel>(ownerProducer = { requireActivity() })
+  private val editorViewModel by viewModels<EditorViewModel>(ownerProducer = { requireActivity() })
 
   override fun onCreateView(
       inflater: LayoutInflater,
@@ -83,6 +86,7 @@ class FileTreeFragment :
 
   override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
     super.onViewCreated(view, savedInstanceState)
+    editorViewModel.observeCurrentFile(viewLifecycleOwner) { updateCurrentFile() }
     listProjectFiles()
 
     // 无项目时 projectDirPath 会抛异常（本 fragment 挂载即崩）。无项目就不显示项目名。
@@ -106,6 +110,7 @@ class FileTreeFragment :
 
     binding = null
     fileTreeView = null
+    treeRoot = null
   }
 
   override fun onDestroy() {
@@ -150,6 +155,7 @@ class FileTreeFragment :
     }
     fileTreeView!!.expandNode(node)
     updateChevron(node)
+    updateCurrentFile()
   }
 
   private fun collapseNode(node: TreeNode, animate: Boolean = true) {
@@ -278,7 +284,19 @@ class FileTreeFragment :
   private fun createTreeView(node: TreeNode): AndroidTreeView? {
     return if (context == null) {
       null
-    } else AndroidTreeView(context, node, drawable.bg_ripple).also { fileTreeView = it }
+    } else AndroidTreeView(context, node, drawable.bg_ripple).also {
+      fileTreeView = it
+      treeRoot = node
+    }
+  }
+
+  private fun updateCurrentFile() {
+    val currentFile = editorViewModel.getCurrentFile()
+    fun updateNode(node: TreeNode) {
+      (node.viewHolder as? FileTreeViewHolder)?.setActivated(node.value == currentFile)
+      if (node.isExpanded) node.children.forEach(::updateNode)
+    }
+    treeRoot?.children?.forEach(::updateNode)
   }
 
   private fun tryRestoreState(rootNode: TreeNode, state: String? = viewModel.savedState) {

@@ -23,6 +23,11 @@ import android.view.View
 import android.view.ViewGroup
 import androidx.preference.PreferenceCategory
 import androidx.preference.PreferenceGroup
+import androidx.preference.PreferenceGroupAdapter
+import androidx.preference.PreferenceScreen
+import androidx.recyclerview.widget.RecyclerView
+import androidx.preference.PreferenceViewHolder
+import com.tom.rv2ide.R as AppR
 import com.google.android.material.transition.MaterialSharedAxis
 import com.tom.rv2ide.preferences.IPreference
 import com.tom.rv2ide.preferences.IPreferenceGroup
@@ -59,7 +64,14 @@ class IDEPreferencesFragment : BasePreferenceFragment() {
       container: ViewGroup?,
       savedInstanceState: Bundle?,
   ): View {
-    return super.onCreateView(inflater, container, savedInstanceState)
+    return super.onCreateView(inflater, container, savedInstanceState).apply {
+      setPadding(0, resources.getDimensionPixelSize(AppR.dimen.acs_ui_space_sm), 0, 0)
+      listView?.apply {
+        clipToPadding = false
+        setPadding(0, 0, 0, resources.getDimensionPixelSize(AppR.dimen.acs_ui_space_lg))
+      }
+      setDivider(null)
+    }
   }
 
   override fun onCreatePreferences(savedInstanceState: Bundle?, rootKey: String?) {
@@ -98,6 +110,51 @@ class IDEPreferencesFragment : BasePreferenceFragment() {
 
     preferenceScreen.removeAll()
     addChildren(this.children, preferenceScreen)
+  }
+
+  override fun onCreateAdapter(preferenceScreen: PreferenceScreen): RecyclerView.Adapter<*> {
+    return object : PreferenceGroupAdapter(preferenceScreen) {
+      override fun onBindViewHolder(holder: PreferenceViewHolder, position: Int) {
+        super.onBindViewHolder(holder, position)
+        val preference = getItem(position)
+        val isCategory = preference is PreferenceCategory
+        holder.isDividerAllowedAbove = false
+        holder.isDividerAllowedBelow = false
+        holder.itemView.apply {
+          if (isCategory) {
+            background = null
+            minimumHeight = resources.getDimensionPixelSize(AppR.dimen.acs_ui_touch_target)
+            setPaddingRelative(
+                resources.getDimensionPixelSize(AppR.dimen.acs_ui_space_xl),
+                resources.getDimensionPixelSize(AppR.dimen.acs_ui_space_lg),
+                resources.getDimensionPixelSize(AppR.dimen.acs_ui_space_xl),
+                resources.getDimensionPixelSize(AppR.dimen.acs_ui_space_sm),
+            )
+          } else {
+            setBackgroundResource(AppR.drawable.acs_ui_preference_background)
+            minimumHeight = resources.getDimensionPixelSize(AppR.dimen.acs_ui_preference_min_height)
+            setPaddingRelative(
+                resources.getDimensionPixelSize(AppR.dimen.acs_ui_space_xl),
+                resources.getDimensionPixelSize(AppR.dimen.acs_ui_space_md),
+                resources.getDimensionPixelSize(AppR.dimen.acs_ui_space_xl),
+                resources.getDimensionPixelSize(AppR.dimen.acs_ui_space_md),
+            )
+          }
+        }
+        (holder.findViewById(android.R.id.title) as? android.widget.TextView)?.apply {
+          setTextAppearance(
+              if (isCategory) AppR.style.acs_ui_text_caption else AppR.style.acs_ui_text_body)
+          setTypeface(
+              typeface,
+              if (isCategory) android.graphics.Typeface.BOLD else android.graphics.Typeface.NORMAL,
+          )
+          isSingleLine = false
+          maxLines = Int.MAX_VALUE
+        }
+        (holder.findViewById(android.R.id.summary) as? android.widget.TextView)
+            ?.setTextAppearance(AppR.style.acs_ui_text_caption)
+      }
+    }
   }
 
   private fun addChildren(children: List<IPreference>, pref: PreferenceGroup) {

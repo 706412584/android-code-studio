@@ -17,15 +17,11 @@
 
 package com.tom.rv2ide.utils
 
-import android.content.Context
 import android.content.res.ColorStateList
 import android.graphics.drawable.Drawable
-import android.util.TypedValue
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
-import androidx.annotation.AttrRes
-import androidx.core.content.ContextCompat
 import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.ListAdapter
 import androidx.recyclerview.widget.RecyclerView
@@ -67,81 +63,32 @@ class SidebarNavigationAdapter(
 
     fun bind(item: SidebarNavigationItem) {
       button.apply {
-        val paddingLeft = paddingLeft
-        val paddingTop = paddingTop
-        val paddingRight = paddingRight
-        val paddingBottom = paddingBottom
-
-        icon = null
-        iconTint = null
-
         contentDescription = item.title
         isSelected = item.isSelected
         isChecked = item.isSelected
-
-        if (item.isSelected) {
-          val baseColor =
-              resolveColorAttr(context, com.google.android.material.R.attr.colorPrimaryContainer)
-
-          val alpha = (0.5f * 255).toInt() // 50% opacity
-          val red = (android.graphics.Color.red(baseColor) * 0.7f).toInt()
-          val green = (android.graphics.Color.green(baseColor) * 0.7f).toInt()
-          val blue = (android.graphics.Color.blue(baseColor) * 0.7f).toInt()
-          val finalColor = android.graphics.Color.argb(alpha, red, green, blue)
-
-          val shape =
-              android.graphics.drawable.GradientDrawable().apply {
-                this.shape = android.graphics.drawable.GradientDrawable.RECTANGLE
-                cornerRadius = 40f
-                setColor(finalColor)
-              }
-          val insetValue = 30
-          background = android.graphics.drawable.InsetDrawable(shape, insetValue)
-        } else {
-          background = null
-        }
-
-        setPadding(paddingLeft, paddingTop, paddingRight, paddingBottom)
-
-        item.icon?.let { drawable ->
-          icon = drawable.constantState?.newDrawable()?.mutate() ?: drawable.mutate()
-          if (item.isSelected) {
-            val iconTintColor =
-                resolveColorAttr(
-                    context,
-                    com.google.android.material.R.attr.colorOnPrimaryContainer,
-                )
-            iconTint = ColorStateList.valueOf(iconTintColor)
-          } else {
-            iconTint = ColorStateList.valueOf(android.graphics.Color.parseColor("#666666"))
-          }
-        }
+        backgroundTintList = ColorStateList.valueOf(
+            if (item.isSelected) {
+              com.google.android.material.color.MaterialColors.getColor(
+                  this, com.google.android.material.R.attr.colorPrimaryContainer)
+            } else {
+              android.graphics.Color.TRANSPARENT
+            })
+        icon = item.icon?.let { it.constantState?.newDrawable()?.mutate() ?: it.mutate() }
+        iconTint = ColorStateList.valueOf(
+            com.google.android.material.color.MaterialColors.getColor(
+                this,
+                if (item.isSelected) com.google.android.material.R.attr.colorOnPrimaryContainer
+                else com.google.android.material.R.attr.colorOnSurfaceVariant,
+            ))
 
         setOnClickListener { onItemClick(item) }
 
-        onItemLongClick?.let { longClickHandler ->
-          setOnLongClickListener { longClickHandler(item) }
-        }
+        setOnLongClickListener(onItemLongClick?.let { handler ->
+          View.OnLongClickListener { handler(item) }
+        })
+        isLongClickable = onItemLongClick != null
       }
     }
-  }
-
-  private fun resolveColorAttr(context: Context, @AttrRes attrRes: Int): Int {
-    val typedValue = TypedValue()
-    val theme = context.theme
-    if (theme.resolveAttribute(attrRes, typedValue, true)) {
-      return typedValue.data
-    }
-    return ContextCompat.getColor(context, android.R.color.black)
-  }
-
-  private fun resolveColorStateListAttr(context: Context, @AttrRes attrRes: Int): ColorStateList? {
-    val typedValue = TypedValue()
-    val theme = context.theme
-    if (theme.resolveAttribute(attrRes, typedValue, true)) {
-      return ContextCompat.getColorStateList(context, typedValue.resourceId)
-    }
-    return ContextCompat.getColorStateList(context, android.R.color.transparent)
   }
 
   private class DiffCallback : DiffUtil.ItemCallback<SidebarNavigationItem>() {

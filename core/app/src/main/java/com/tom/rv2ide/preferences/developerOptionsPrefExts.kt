@@ -30,6 +30,7 @@ internal class DeveloperOptionsScreen(
     override val key: String = DevOpsPreferences.KEY_DEVOPTS,
     override val title: Int = R.string.title_developer_options,
     override val summary: Int? = R.string.idepref_devOptions_summary,
+    override val icon: Int? = R.drawable.ic_bug,
     override val children: List<IPreference> = mutableListOf(),
 ) : IPreferenceScreen() {
 

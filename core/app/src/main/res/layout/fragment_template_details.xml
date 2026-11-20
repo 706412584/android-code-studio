@@ -39,7 +39,7 @@
     android:layout_width="wrap_content"
     android:layout_height="wrap_content"
     android:layout_margin="16dp"
-    android:textAppearance="@style/TextAppearance.Material3.TitleLarge"
+    android:textAppearance="@style/acs_ui_text_title"
     android:transitionName="templateName"
     app:layout_constraintStart_toStartOf="parent"
     app:layout_constraintTop_toBottomOf="@id/progress"

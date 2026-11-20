@@ -30,6 +30,7 @@ class StatPreferencesScreen(
     override val key: String = "idepref_stats",
     override val title: Int = R.string.title_androidide_statistics,
     override val summary: Int? = R.string.summary_anonymous_usage_stats,
+    override val icon: Int? = R.drawable.ic_info,
     override val children: List<IPreference> = mutableListOf(),
 ) : IPreferenceScreen() {
 

@@ -10,6 +10,7 @@
 package com.tom.rv2ide.activities
 
 import android.os.Bundle
+import android.view.ContextThemeWrapper
 import android.view.LayoutInflater
 import android.view.View
 import com.google.android.material.chip.Chip
@@ -156,7 +157,7 @@ class SdkManagerActivity : EdgeToEdgeIDEActivity() {
     card.installedChips.removeAllViews()
     for (version in installed) {
       val chip =
-          Chip(this).apply {
+          Chip(ContextThemeWrapper(this, R.style.acs_ui_project_chip_theme)).apply {
             text = version
             isCheckable = false
             isCloseIconVisible = true
@@ -210,7 +211,7 @@ class SdkManagerActivity : EdgeToEdgeIDEActivity() {
     val shown = if (expanded) toInstall else toInstall.take(VISIBLE_CHIPS)
     for (version in shown) {
       val chip =
-          Chip(this).apply {
+          Chip(ContextThemeWrapper(this, R.style.acs_ui_project_chip_theme)).apply {
             // platform-tools 的"版本"是占位 latest，对用户没有信息量，改显示动作词。
             text =
                 if (component.id == "platform-tools") getString(R.string.sdk_platform_tools_action)
@@ -223,7 +224,7 @@ class SdkManagerActivity : EdgeToEdgeIDEActivity() {
     }
     if (toInstall.size > VISIBLE_CHIPS) {
       val more =
-          Chip(this).apply {
+          Chip(ContextThemeWrapper(this, R.style.acs_ui_project_chip_theme)).apply {
             text =
                 if (expanded) {
                   getString(R.string.sdk_show_less)

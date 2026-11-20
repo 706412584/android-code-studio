@@ -18,6 +18,7 @@
 package com.tom.rv2ide.activities.editor
 
 import android.content.Context
+import android.view.ContextThemeWrapper
 import android.content.Intent
 import android.content.pm.PackageInstaller.SessionCallback
 import android.graphics.Color
@@ -729,8 +730,8 @@ override fun onApplySystemBarInsets(insets: Insets) {
       content.apply {
         // editorAppBarLayout.updatePadding(top = insets.top)  // THIS IS THE PROBLEM!
         editorToolbar.updatePaddingRelative(
-            start = editorToolbar.paddingStart + insets.left,
-            end = editorToolbar.paddingEnd + insets.right,
+            start = resources.getDimensionPixelSize(R.dimen.acs_ui_space_sm) + insets.left,
+            end = resources.getDimensionPixelSize(R.dimen.acs_ui_space_sm) + insets.right,
         )
       }
     }
@@ -803,8 +804,8 @@ override fun onApplySystemBarInsets(insets: Insets) {
         val systemBars = windowInsets.getInsets(WindowInsetsCompat.Type.systemBars())
 
         binding.content.editorToolbar.updatePaddingRelative(
-            start = systemBars.left,
-            end = systemBars.right,
+            start = resources.getDimensionPixelSize(R.dimen.acs_ui_space_sm) + systemBars.left,
+            end = resources.getDimensionPixelSize(R.dimen.acs_ui_space_sm) + systemBars.right,
         )
         windowInsets
     }
@@ -1212,7 +1213,9 @@ override fun onApplySystemBarInsets(insets: Insets) {
       val editorView = provideEditorAt(position)!!
       editorView.onEditorSelected()
   
-      editorViewModel.setCurrentFile(position, editorView.file)
+      // 编辑器异步读盘尚未完成时 file 仍为空，标签身份以已打开文件列表为准。
+      val file = editorViewModel.getOpenedFiles().getOrNull(position) ?: editorView.file
+      editorViewModel.setCurrentFile(position, file)
       refreshSymbolInput(editorView)
       invalidateOptionsMenu()
   
@@ -1718,7 +1721,7 @@ override fun onApplySystemBarInsets(insets: Insets) {
 
     tabs.forEach { tab ->
       val chip =
-          Chip(this).apply {
+          Chip(ContextThemeWrapper(this, R.style.acs_ui_project_chip_theme)).apply {
             text = tab.displayName
             isCheckable = true
             isCheckedIconVisible = false
@@ -1745,7 +1748,7 @@ override fun onApplySystemBarInsets(insets: Insets) {
 
     // 「打开另一个项目」：编辑器里原本没有这个入口，多标签页就无法从 UI 触发。
     group.addView(
-        Chip(this).apply {
+        Chip(ContextThemeWrapper(this, R.style.acs_ui_project_chip_theme)).apply {
           text = "+"
           isCheckable = false
           isCloseIconVisible = false

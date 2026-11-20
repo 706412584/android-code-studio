@@ -33,7 +33,6 @@ import com.google.android.material.bottomsheet.BottomSheetDialog
 import com.google.android.material.chip.Chip
 import com.google.android.material.progressindicator.LinearProgressIndicator
 import com.google.android.material.textfield.TextInputEditText
-import com.google.android.material.textfield.TextInputLayout
 import com.termux.shared.termux.TermuxConstants.TERMUX_APP.TERMUX_ACTIVITY
 import com.tom.rv2ide.R
 import com.tom.rv2ide.activities.IDEConfigurations
@@ -148,7 +147,38 @@ class MainFragment : BaseFragment() {
           }
         }
 
-    binding!!.actions.adapter = MainActionsListAdapter(actions)
+    val home = binding!!.homeContent
+    val projectActions =
+        listOf(
+            MainScreenAction.ACTION_CREATE_PROJECT to home.homeCreateProject,
+            MainScreenAction.ACTION_OPEN_PROJECT to home.homeOpenProject,
+            MainScreenAction.ACTION_CLONE_REPO to home.homeCloneProject,
+        )
+    projectActions.forEach { (id, target) ->
+      val action = actions.first { it.id == id }
+      target.setOnClickListener { action.onClick?.invoke(action, it) }
+    }
+    home.actions.adapter =
+        MainActionsListAdapter(actions.filter { action -> projectActions.none { it.first == action.id } })
+
+    val configuration = resources.configuration
+    val useColumns = configuration.screenWidthDp / configuration.fontScale >= 320
+    (home.actions.layoutManager as androidx.recyclerview.widget.GridLayoutManager).spanCount =
+        if (useColumns) 2 else 1
+    if (!useColumns) {
+      home.projectActions.orientation = android.widget.LinearLayout.VERTICAL
+      listOf(home.homeCreateProject, home.homeOpenProject).forEach { card ->
+        card.layoutParams =
+            (card.layoutParams as android.widget.LinearLayout.LayoutParams).apply {
+              width = ViewGroup.LayoutParams.MATCH_PARENT
+              weight = 0f
+              marginStart = 0
+              marginEnd = 0
+            }
+      }
+      (home.homeOpenProject.layoutParams as android.widget.LinearLayout.LayoutParams).topMargin =
+          resources.getDimensionPixelSize(R.dimen.acs_ui_space_md)
+    }
   }
 
   override fun onDestroyView() {
@@ -288,7 +318,11 @@ class MainFragment : BaseFragment() {
     }
 
     bottomSheet.setContentView(sheetView)
+    bottomSheet.behavior.maxHeight = (resources.displayMetrics.heightPixels * 0.85f).toInt()
+    bottomSheet.behavior.skipCollapsed = true
+    bottomSheet.window?.setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
     bottomSheet.show()
+    bottomSheet.behavior.state = com.google.android.material.bottomsheet.BottomSheetBehavior.STATE_EXPANDED
   }
 
   private fun showProjectOptionsDialog(project: File, onActionComplete: () -> Unit) {
@@ -323,20 +357,10 @@ class MainFragment : BaseFragment() {
     builder.setTitle(getString(string.rename_project))
 
     val inputLayout =
-        TextInputLayout(requireContext()).apply {
-          boxBackgroundMode = TextInputLayout.BOX_BACKGROUND_OUTLINE
-          hint = getString(string.new_project_name)
-          setPadding(64, 16, 64, 16)
-        }
-
-    val input =
-        TextInputEditText(requireContext()).apply {
-          setText(project.name)
-          selectAll()
-        }
-
-    inputLayout.addView(input)
-    builder.setView(inputLayout)
+        com.tom.rv2ide.preferences.dialogEditTextField(
+            requireContext(), getString(string.new_project_name), project.name)
+    val input = requireNotNull(inputLayout.editText).apply { selectAll() }
+    builder.setView(com.tom.rv2ide.preferences.dialogFieldColumn(requireContext(), inputLayout))
 
     builder.setPositiveButton(getString(string.rename)) { dialog, _ ->
       val newName = input.text?.toString()?.trim()
@@ -824,6 +848,9 @@ class MainFragment : BaseFragment() {
       val project = filteredProjects[position]
       holder.projectName.text = project.name
       holder.projectPath.text = project.absolutePath
+      holder.root.contentDescription =
+          holder.root.context.getString(
+              R.string.acs_ui_project_description, project.name, project.absolutePath)
 
       val recentRank =
           WizardPreferences.getRecentProjectRank(holder.root.context, project.absolutePath)

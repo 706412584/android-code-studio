@@ -8,39 +8,38 @@
   xmlns:tools="http://schemas.android.com/tools"
   android:layout_width="match_parent"
   android:layout_height="wrap_content"
-  android:layout_marginHorizontal="16dp"
-  android:layout_marginTop="12dp"
-  app:cardCornerRadius="16dp"
-  app:cardElevation="0dp">
+  android:layout_marginHorizontal="@dimen/acs_ui_page_padding"
+  android:layout_marginTop="@dimen/acs_ui_space_sm"
+  style="@style/acs_ui_card">
 
   <LinearLayout
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:orientation="vertical"
-    android:padding="16dp">
+    android:padding="@dimen/acs_ui_space_lg">
 
     <com.google.android.material.textview.MaterialTextView
       android:id="@+id/component_title"
       android:layout_width="match_parent"
       android:layout_height="wrap_content"
-      android:textAppearance="@style/TextAppearance.Material3.TitleMedium"
+      android:textAppearance="@style/acs_ui_text_section"
       tools:text="Build-tools" />
 
     <com.google.android.material.textview.MaterialTextView
       android:id="@+id/component_description"
       android:layout_width="match_parent"
       android:layout_height="wrap_content"
-      android:layout_marginTop="2dp"
-      android:textAppearance="@style/TextAppearance.Material3.BodySmall"
-      android:textColor="?android:attr/textColorSecondary"
+      android:layout_marginTop="@dimen/acs_ui_space_xs"
+      android:textAppearance="@style/acs_ui_text_caption"
+      android:textColor="?attr/colorOnSurfaceVariant"
       tools:text="打包工具（aapt2 / d8 / zipalign）；AGP 有最低版本要求" />
 
     <com.google.android.material.textview.MaterialTextView
       android:id="@+id/component_installed"
       android:layout_width="match_parent"
       android:layout_height="wrap_content"
-      android:layout_marginTop="8dp"
-      android:textAppearance="@style/TextAppearance.Material3.BodyMedium"
+      android:layout_marginTop="@dimen/acs_ui_space_md"
+      android:textAppearance="@style/acs_ui_text_body"
       tools:text="已安装：35.0.1, 36.0.0" />
 
     <!-- 已安装版本：每个一个带删除图标的 chip，点图标即卸载（先二次确认）。
@@ -49,8 +48,9 @@
       android:id="@+id/installed_chips"
       android:layout_width="match_parent"
       android:layout_height="wrap_content"
-      android:layout_marginTop="4dp"
-      app:chipSpacingVertical="4dp"
+      android:layout_marginTop="@dimen/acs_ui_space_xs"
+      app:chipSpacingHorizontal="@dimen/acs_ui_space_xs"
+      app:chipSpacingVertical="@dimen/acs_ui_space_xs"
       tools:ignore="MissingConstraints" />
 
     <!-- 可安装版本：横向 chip 流式排列，点一个即装 -->
@@ -58,8 +58,9 @@
       android:id="@+id/available_chips"
       android:layout_width="match_parent"
       android:layout_height="wrap_content"
-      android:layout_marginTop="8dp"
-      app:chipSpacingVertical="4dp"
+      android:layout_marginTop="@dimen/acs_ui_space_md"
+      app:chipSpacingHorizontal="@dimen/acs_ui_space_xs"
+      app:chipSpacingVertical="@dimen/acs_ui_space_xs"
       tools:ignore="MissingConstraints" />
 
     <!-- 「新建项目时默认用哪个版本」——仅 build-tools 卡显示（它是设备级设置，
@@ -68,12 +69,15 @@
       android:id="@+id/default_version_text"
       android:layout_width="match_parent"
       android:layout_height="wrap_content"
-      android:layout_marginTop="8dp"
+      android:layout_marginTop="@dimen/acs_ui_space_md"
       android:background="?attr/selectableItemBackground"
       android:clickable="true"
       android:focusable="true"
-      android:paddingVertical="6dp"
-      android:textAppearance="@style/TextAppearance.Material3.BodyMedium"
+      android:gravity="center_vertical"
+      android:minHeight="@dimen/acs_ui_touch_target"
+      android:paddingHorizontal="@dimen/acs_ui_space_sm"
+      android:paddingVertical="@dimen/acs_ui_space_sm"
+      android:textAppearance="@style/acs_ui_text_body"
       android:textColor="?attr/colorPrimary"
       android:visibility="gone"
       tools:text="默认版本：36.0.0"
@@ -83,9 +87,9 @@
       android:id="@+id/component_hint"
       android:layout_width="match_parent"
       android:layout_height="wrap_content"
-      android:layout_marginTop="6dp"
-      android:textAppearance="@style/TextAppearance.Material3.BodySmall"
-      android:textColor="?android:attr/textColorSecondary"
+      android:layout_marginTop="@dimen/acs_ui_space_sm"
+      android:textAppearance="@style/acs_ui_text_caption"
+      android:textColor="?attr/colorOnSurfaceVariant"
       android:visibility="gone"
       tools:text="正在获取可安装版本…"
       tools:visibility="visible" />

@@ -32,7 +32,7 @@
     android:text="@string/new_project"
     android:padding="8dp"
     android:gravity="center_horizontal|center_vertical"
-    android:textAppearance="@style/TextAppearance.Material3.TitleLarge"
+    android:textAppearance="@style/acs_ui_text_title"
     android:transitionName="title"
     app:layout_constraintStart_toStartOf="parent"
     app:layout_constraintEnd_toEndOf="parent"

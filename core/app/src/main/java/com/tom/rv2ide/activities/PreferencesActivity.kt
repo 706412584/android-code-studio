@@ -163,17 +163,17 @@ class PreferencesActivity : EdgeToEdgeIDEActivity() {
 
     val toolbar: View = binding.toolbar
     toolbar.setPadding(
-        toolbar.paddingLeft + insets.left,
+        resources.getDimensionPixelSize(R.dimen.acs_ui_space_sm) + insets.left,
         toolbar.paddingTop,
-        toolbar.paddingRight + insets.right,
+        resources.getDimensionPixelSize(R.dimen.acs_ui_space_sm) + insets.right,
         toolbar.paddingBottom,
     )
 
     val fragmentContainer: View = binding.fragmentContainerParent
     fragmentContainer.setPadding(
-        fragmentContainer.paddingLeft + insets.left,
+        insets.left,
         fragmentContainer.paddingTop,
-        fragmentContainer.paddingRight + insets.right,
+        insets.right,
         fragmentContainer.paddingBottom,
     )
   }
@@ -185,6 +185,11 @@ class PreferencesActivity : EdgeToEdgeIDEActivity() {
 
   private fun loadFragment(fragment: Fragment) {
     super.loadFragment(fragment, binding.fragmentContainer.id)
+  }
+
+  override fun onResume() {
+    super.onResume()
+    com.tom.rv2ide.services.AssistantOverlayService.hideTemporarily(this)
   }
 
   override fun onStop() {

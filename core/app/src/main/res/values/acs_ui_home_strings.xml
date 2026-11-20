@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+  <string name="acs_ui_home_eyebrow">YOUR WORKSPACE</string>
+  <string name="acs_ui_home_title">Make something great.</string>
+  <string name="acs_ui_home_subtitle">From your first line of code to your next app.</string>
+  <string name="acs_ui_home_open">Open project</string>
+  <string name="acs_ui_home_create_hint">Start from a template</string>
+  <string name="acs_ui_home_open_hint">Continue a local project</string>
+  <string name="acs_ui_home_clone">Clone repository</string>
+  <string name="acs_ui_home_clone_hint">Bring a Git project to your device</string>
+  <string name="acs_ui_home_tools">Development tools</string>
+  <string name="acs_ui_home_terminal_hint">Shell and commands</string>
+  <string name="acs_ui_home_preferences_hint">Appearance and preferences</string>
+  <string name="acs_ui_home_config_hint">SDK and build environment</string>
+  <string name="acs_ui_home_docs_hint">Guides and reference</string>
+</resources>

@@ -36,8 +36,8 @@ import androidx.compose.ui.graphics.luminance
  * 1. 去掉 `@StringRes` 名称——ACS 不为其新增字符串资源，名称直接放常量（渲染与设置
  *    选择器都读 [displayName]，避免为一个标签铺 4×2 条 string）；
  * 2. 存储走 ACS 的 SharedPreferences（见 [AssistantThemePrefs]），不引入 DataStore；
- * 3. [DEFAULT] 保留 ACS 现手调的品牌配色（浅色/深色全套在 AcsComposeTheme 里），
- *    其余三套由种子推导——升级后默认观感不变。
+ * 3. [DEFAULT] 在主 App 中跟随 IDE 主题；内置色板供属性缺失时使用，
+ *    其余三套仍按用户选择从种子推导。
  */
 data class AppThemePreset(
     val id: String,
@@ -52,11 +52,11 @@ data class AppThemePreset(
     }
 
     companion object {
-        /** 品牌蓝：ACS 历史默认配色，颜色值逐个手调，不走推导。 */
+        /** 默认消息配色跟随 IDE；内置色板仅在宿主未提供属性时使用。 */
         val DEFAULT =
             AppThemePreset(
                 id = "default",
-                displayName = "默认蓝",
+                displayName = "跟随 IDE 主题",
                 light = AppThemeColors(LightColorScheme, LightSemanticColors),
                 dark = AppThemeColors(DarkColorScheme, DarkSemanticColors),
             )

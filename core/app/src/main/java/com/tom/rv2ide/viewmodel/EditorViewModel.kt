@@ -226,6 +226,10 @@ class EditorViewModel : ViewModel() {
     _files.observe(lifecycleOwner!!, observer!!)
   }
 
+  fun observeCurrentFile(lifecycleOwner: LifecycleOwner, observer: Observer<Pair<Int, File?>?>) {
+    mCurrentFile.observe(lifecycleOwner, observer)
+  }
+
   fun getCurrentFileIndex(): Int {
     return mCurrentFile.value?.first ?: -1
   }

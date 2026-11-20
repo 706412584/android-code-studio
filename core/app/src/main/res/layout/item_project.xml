@@ -1,62 +1,54 @@
 <?xml version="1.0" encoding="utf-8"?>
 <com.google.android.material.card.MaterialCardView xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:app="http://schemas.android.com/apk/res-auto"
-    xmlns:tools="http://schemas.android.com/tools"
+  xmlns:app="http://schemas.android.com/apk/res-auto"
+  xmlns:tools="http://schemas.android.com/tools"
+  style="@style/acs_ui_card"
+  android:layout_width="match_parent"
+  android:layout_height="wrap_content"
+  android:layout_marginVertical="@dimen/acs_ui_space_xs">
+
+  <LinearLayout
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:layout_margin="8dp"
-    app:cardCornerRadius="16dp"
-    app:strokeWidth="0dp"
-    app:cardBackgroundColor="?attr/colorSurfaceContainerHigh"
-    app:cardElevation="0dp">
+    android:orientation="vertical"
+    android:padding="@dimen/acs_ui_space_lg">
 
     <LinearLayout
-        android:layout_width="match_parent"
+      android:layout_width="match_parent"
+      android:layout_height="wrap_content"
+      android:gravity="center_vertical"
+      android:orientation="horizontal">
+
+      <TextView
+        android:id="@+id/projectName"
+        android:layout_width="0dp"
         android:layout_height="wrap_content"
-        android:orientation="vertical"
-        android:padding="16dp">
+        android:layout_weight="1"
+        android:textAppearance="@style/acs_ui_text_section"
+        tools:text="Project Name" />
 
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:gravity="center_vertical">
-
-            <TextView
-                android:id="@+id/projectName"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:textSize="16sp"
-                android:textStyle="bold"
-                tools:text="Project Name" />
-
-            <TextView
-                android:id="@+id/recentBadge"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="@string/recent_badge"
-                android:textSize="10sp"
-                android:textColor="?attr/colorPrimary"
-                android:background="?attr/colorPrimaryContainer"
-                android:paddingHorizontal="8dp"
-                android:paddingVertical="4dp"
-                android:layout_marginStart="8dp"
-                android:visibility="gone" />
-
-        </LinearLayout>
-
-        <TextView
-            android:id="@+id/projectPath"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:textSize="12sp"
-            android:textColor="?android:textColorSecondary"
-            android:layout_marginTop="4dp"
-            android:ellipsize="middle"
-            android:singleLine="true"
-            tools:text="/path/to/project" />
-
+      <TextView
+        android:id="@+id/recentBadge"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="@dimen/acs_ui_space_sm"
+        android:paddingHorizontal="@dimen/acs_ui_space_sm"
+        android:paddingVertical="@dimen/acs_ui_space_xs"
+        android:background="@drawable/acs_ui_badge_background"
+        android:text="@string/recent_badge"
+        android:textAppearance="@style/acs_ui_text_caption"
+        android:textColor="?attr/colorOnPrimaryContainer"
+        android:visibility="gone" />
     </LinearLayout>
 
+    <TextView
+      android:id="@+id/projectPath"
+      android:layout_width="match_parent"
+      android:layout_height="wrap_content"
+      android:layout_marginTop="@dimen/acs_ui_space_xs"
+      android:ellipsize="middle"
+      android:maxLines="2"
+      android:textAppearance="@style/acs_ui_text_caption"
+      tools:text="/path/to/project" />
+  </LinearLayout>
 </com.google.android.material.card.MaterialCardView>

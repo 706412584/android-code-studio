@@ -6,58 +6,56 @@
   ~  每个版本的状态只有「已装/未装」且最多一个「使用中」，所以不用 chip 列表。
   -->
 <com.google.android.material.card.MaterialCardView xmlns:android="http://schemas.android.com/apk/res/android"
-  xmlns:app="http://schemas.android.com/apk/res-auto"
   xmlns:tools="http://schemas.android.com/tools"
   android:layout_width="match_parent"
   android:layout_height="wrap_content"
-  android:layout_marginHorizontal="16dp"
-  android:layout_marginTop="12dp"
-  app:cardCornerRadius="16dp"
-  app:cardElevation="0dp">
+  android:layout_marginHorizontal="@dimen/acs_ui_page_padding"
+  android:layout_marginTop="@dimen/acs_ui_space_sm"
+  style="@style/acs_ui_card">
 
   <LinearLayout
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:orientation="vertical"
-    android:padding="16dp">
+    android:padding="@dimen/acs_ui_space_lg">
 
     <com.google.android.material.textview.MaterialTextView
       android:id="@+id/jdk_title"
       android:layout_width="match_parent"
       android:layout_height="wrap_content"
-      android:textAppearance="@style/TextAppearance.Material3.TitleMedium"
+      android:textAppearance="@style/acs_ui_text_section"
       tools:text="JDK 21" />
 
     <com.google.android.material.textview.MaterialTextView
       android:id="@+id/jdk_status"
       android:layout_width="match_parent"
       android:layout_height="wrap_content"
-      android:layout_marginTop="2dp"
-      android:textAppearance="@style/TextAppearance.Material3.BodySmall"
-      android:textColor="?android:attr/textColorSecondary"
+      android:layout_marginTop="@dimen/acs_ui_space_xs"
+      android:textAppearance="@style/acs_ui_text_body"
+      android:textColor="?attr/colorPrimary"
       tools:text="已安装 · 使用中" />
 
     <com.google.android.material.textview.MaterialTextView
       android:id="@+id/jdk_path"
       android:layout_width="match_parent"
       android:layout_height="wrap_content"
-      android:layout_marginTop="6dp"
+      android:layout_marginTop="@dimen/acs_ui_space_sm"
       android:fontFamily="monospace"
-      android:textSize="11sp"
-      android:textColor="?android:attr/textColorSecondary"
+      android:textSize="@dimen/acs_ui_caption_size"
+      android:textColor="?attr/colorOnSurfaceVariant"
       tools:text="$PREFIX/lib/jvm/java-21-openjdk" />
 
     <!-- 动作区：按状态显示「使用」/「安装」/「卸载」，由代码决定可见性 -->
     <LinearLayout
       android:layout_width="match_parent"
       android:layout_height="wrap_content"
-      android:layout_marginTop="10dp"
+      android:layout_marginTop="@dimen/acs_ui_space_md"
       android:gravity="end"
       android:orientation="horizontal">
 
       <com.google.android.material.button.MaterialButton
         android:id="@+id/jdk_use_button"
-        style="@style/Widget.Material3.Button.TonalButton"
+        style="@style/acs_ui_button_secondary"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:text="@string/jdk_use_action"
@@ -66,7 +64,7 @@
 
       <com.google.android.material.button.MaterialButton
         android:id="@+id/jdk_install_button"
-        style="@style/Widget.Material3.Button.TonalButton"
+        style="@style/acs_ui_button_primary"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:text="@string/jdk_install_action"
@@ -75,10 +73,10 @@
 
       <com.google.android.material.button.MaterialButton
         android:id="@+id/jdk_uninstall_button"
-        style="@style/Widget.Material3.Button.TextButton"
+        style="@style/acs_ui_button_text"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_marginStart="8dp"
+        android:layout_marginStart="@dimen/acs_ui_space_xs"
         android:text="@string/jdk_uninstall_action"
         android:visibility="gone"
         tools:visibility="visible" />

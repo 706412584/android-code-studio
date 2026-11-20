@@ -78,8 +78,32 @@ class OverlayHost(
     private val onPanelDrag: ((dx: Int, dy: Int) -> Unit)? = null,
 ) : AssistantHost {
 
-  /** 带应用主题的 Context；弹窗与视图 inflate 都用它。 */
-  override val context: Context = ContextThemeWrapper(service, AppR.style.Theme_AndroidIDE)
+  /** 系统浮窗没有 Activity 的主题装配，按同一份 IDE 主题与明暗偏好构造。 */
+  override val context: Context = run {
+    val configuration = android.content.res.Configuration(service.resources.configuration)
+    val nightMode = when (com.tom.rv2ide.preferences.internal.GeneralPreferences.uiMode) {
+      androidx.appcompat.app.AppCompatDelegate.MODE_NIGHT_YES -> android.content.res.Configuration.UI_MODE_NIGHT_YES
+      androidx.appcompat.app.AppCompatDelegate.MODE_NIGHT_NO -> android.content.res.Configuration.UI_MODE_NIGHT_NO
+      else -> configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK
+    }
+    configuration.uiMode =
+        (configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK.inv()) or nightMode
+    val configured = service.createConfigurationContext(configuration)
+    val theme = com.tom.rv2ide.ui.themes.IThemeManager.getInstance().getCurrentTheme()
+    val style = if (theme == com.tom.rv2ide.ui.themes.IDETheme.MATERIAL_YOU) {
+      AppR.style.Theme_AndroidIDE
+    } else if (nightMode == android.content.res.Configuration.UI_MODE_NIGHT_YES) {
+      theme.styleDark
+    } else {
+      theme.styleLight
+    }
+    val themed = ContextThemeWrapper(configured, style)
+    if (theme == com.tom.rv2ide.ui.themes.IDETheme.MATERIAL_YOU) {
+      com.google.android.material.color.DynamicColors.wrapContextIfAvailable(themed)
+    } else {
+      themed
+    }
+  }
 
   /**
    * 面板宽度预算。
@@ -173,7 +197,7 @@ class OverlayHost(
     // 兜底：布局里没有容器（旧版 XML）时退回系统窗口方案。
     val dialog =
         createOverlayDialog(
-            context = ContextThemeWrapper(service, AppR.style.Theme_AndroidIDE),
+            context = context,
             onDismiss = onDismissRequest,
             installViewTreeOwners = { view ->
               val owners = service as? com.tom.rv2ide.services.AssistantOverlayService

@@ -18,8 +18,10 @@
 package com.tom.rv2ide.adapters
 
 import android.view.LayoutInflater
+import android.view.View
 import android.view.ViewGroup
 import androidx.recyclerview.widget.RecyclerView
+import com.tom.rv2ide.R
 import com.tom.rv2ide.databinding.LayoutMainActionItemBinding
 import com.tom.rv2ide.models.MainScreenAction
 
@@ -45,11 +47,26 @@ constructor(val actions: List<MainScreenAction> = emptyList()) :
     val action = getAction(index = position)
     val binding = holder.binding
 
+    binding.actionTitle.setText(action.text)
+    binding.actionIcon.setImageResource(action.icon)
+    val summary =
+        when (action.id) {
+          MainScreenAction.ACTION_OPEN_TERMINAL -> R.string.acs_ui_home_terminal_hint
+          MainScreenAction.ACTION_PREFERENCES -> R.string.acs_ui_home_preferences_hint
+          MainScreenAction.ACTION_DONATE -> R.string.acs_ui_home_config_hint
+          MainScreenAction.ACTION_DOCS -> R.string.acs_ui_home_docs_hint
+          else -> null
+        }
+    binding.actionSummary.visibility = if (summary == null) View.GONE else View.VISIBLE
+    summary?.let(binding.actionSummary::setText)
     binding.actionButton.apply {
-      setText(action.text)
-      setIconResource(action.icon)
       setOnClickListener { action.onClick?.invoke(action, it) }
-      action.onLongClick?.let { onLongClick -> setOnLongClickListener { onLongClick(action, it) } }
+      val onLongClick = action.onLongClick
+      setOnLongClickListener(
+          if (onLongClick == null) null else android.view.View.OnLongClickListener {
+            onLongClick(action, it)
+          })
+      isLongClickable = onLongClick != null
     }
   }
 }

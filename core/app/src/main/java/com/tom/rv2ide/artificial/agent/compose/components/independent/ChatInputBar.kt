@@ -109,7 +109,6 @@ import com.tom.rv2ide.artificial.agent.compose.compat.rememberImeBottomInset
 import com.tom.rv2ide.artificial.agent.compose.components.independent.ProviderSelectionTarget
 import com.tom.rv2ide.artificial.agent.compose.components.style.rememberBoundNestedScrollConnection
 import com.tom.rv2ide.artificial.agent.compose.components.tools.ParsedTodoItem
-import com.tom.rv2ide.artificial.agent.compose.theme.Brand
 import com.tom.rv2ide.artificial.agent.compose.theme.Radius
 import com.tom.rv2ide.artificial.agent.compose.theme.Spacing
 import com.tom.rv2ide.artificial.agent.compose.theme.semanticColors
@@ -790,7 +789,7 @@ internal fun ContextUsageButton(
     val ringColor =
         when {
             clamped >= 0.9f -> MaterialTheme.colorScheme.error
-            clamped >= 0.7f -> Brand.Orange
+            clamped >= 0.7f -> MaterialTheme.semanticColors.warning
             else -> MaterialTheme.colorScheme.primary
         }
     val label =
@@ -885,15 +884,15 @@ internal fun SendButton(
     val clickable = showStop || canSend || forceStopEnabled
     val buttonColor = when {
         showStop -> MaterialTheme.colorScheme.error
-        isBusy -> Brand.Orange
-        canSend -> MaterialTheme.semanticColors.success
+        isBusy -> MaterialTheme.semanticColors.warning
+        canSend -> MaterialTheme.colorScheme.primary
         else -> MaterialTheme.colorScheme.surfaceVariant
     }
-    // 前景色相对按钮底色而非主题：深色主题下的亮绿底用主题 onSurface（近白）会看不清。
     val iconTint = when {
-        !clickable -> MaterialTheme.colorScheme.onSurfaceVariant
-        buttonColor.luminance() > 0.5f -> Color(0xFF1C1C1E)
-        else -> Color.White
+        showStop -> MaterialTheme.colorScheme.onError
+        isBusy -> MaterialTheme.semanticColors.onWarning
+        canSend -> MaterialTheme.colorScheme.onPrimary
+        else -> MaterialTheme.colorScheme.onSurfaceVariant
     }
     val arcColor = buttonColor.copy(alpha = 0.85f)
     val clampedProgress = tokenProgress.coerceIn(0f, 1f)

@@ -1,34 +1,46 @@
 <?xml version="1.0" encoding="utf-8"?>
-<com.google.android.material.card.MaterialCardView
-    xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:app="http://schemas.android.com/apk/res-auto"
-    xmlns:tools="http://schemas.android.com/tools"
+<com.google.android.material.card.MaterialCardView xmlns:android="http://schemas.android.com/apk/res/android"
+  xmlns:app="http://schemas.android.com/apk/res-auto"
+  xmlns:tools="http://schemas.android.com/tools"
+  android:id="@+id/actionButton"
+  style="@style/acs_ui_card"
+  android:layout_width="match_parent"
+  android:layout_height="wrap_content"
+  android:layout_margin="@dimen/acs_ui_space_xs"
+  android:minHeight="112dp"
+  android:clickable="true"
+  android:focusable="true"
+  app:strokeWidth="0dp">
+
+  <LinearLayout
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:layout_margin="4dp"
-    app:cardElevation="0dp"
-    app:cardCornerRadius="8dp"
-    app:strokeWidth="0dp"
-    app:cardBackgroundColor="?attr/colorSurfaceContainerLow">
+    android:orientation="vertical"
+    android:padding="@dimen/acs_ui_space_lg">
 
-    <com.google.android.material.button.MaterialButton
-        style="@style/Widget.Material3.Button.TextButton.Icon"
-        android:layout_width="match_parent"
-        android:layout_height="56dp"
-        android:elevation="0dp"
-        android:ellipsize="end"
-        android:id="@+id/actionButton"
-        android:singleLine="true"
-        android:textAlignment="textStart"
-        android:textColor="?attr/colorOnBackground"
-        android:textStyle="bold"
-        app:cornerRadius="16dp"
-        app:iconPadding="8dp"
-        android:stateListAnimator="@null"
-        app:rippleColor="@android:color/transparent"
-        app:iconTint="?attr/colorOnBackground"
-        tools:icon="@drawable/ic_add"
-        tools:text="@string/msg_create_new_project" />
-        
+    <ImageView
+      android:id="@+id/actionIcon"
+      android:layout_width="24dp"
+      android:layout_height="24dp"
+      android:importantForAccessibility="no"
+      app:tint="?attr/colorPrimary"
+      tools:src="@drawable/ic_terminal" />
+
+    <TextView
+      android:id="@+id/actionTitle"
+      android:layout_width="match_parent"
+      android:layout_height="wrap_content"
+      android:layout_marginTop="@dimen/acs_ui_space_md"
+      android:textAppearance="@style/acs_ui_text_body"
+      android:textStyle="bold"
+      tools:text="@string/title_terminal" />
+
+    <TextView
+      android:id="@+id/actionSummary"
+      android:layout_width="match_parent"
+      android:layout_height="wrap_content"
+      android:layout_marginTop="@dimen/acs_ui_space_xs"
+      android:textAppearance="@style/acs_ui_text_caption"
+      tools:text="@string/acs_ui_home_terminal_hint" />
+  </LinearLayout>
 </com.google.android.material.card.MaterialCardView>
-

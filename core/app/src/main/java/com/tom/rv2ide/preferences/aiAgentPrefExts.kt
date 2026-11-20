@@ -75,6 +75,7 @@ class AIAgentPreferencesScreen(
     override val key: String = "idepref_ai_agent",
     override val title: Int = string.ai_agent_title,
     override val summary: Int? = string.ai_agent_description,
+    override val icon: Int? = R.drawable.ic_ai_agent,
     override val children: List<IPreference> = mutableListOf(),
 ) : IPreferenceScreen() {
 
@@ -125,6 +126,7 @@ private class ProvidersPage(
     override val key: String = "idepref_ai_agent_providers",
     override val title: Int = R.string.ai_agent_page_providers_title,
     override val summary: Int? = R.string.ai_agent_page_providers_summary,
+    override val icon: Int? = R.drawable.ic_remote,
     override val children: List<IPreference> = mutableListOf(),
 ) : IPreferenceScreen() {
 
@@ -146,6 +148,7 @@ private class ToolsPage(
     override val key: String = "idepref_ai_agent_tools",
     override val title: Int = R.string.ai_agent_page_tools_title,
     override val summary: Int? = R.string.ai_agent_page_tools_summary,
+    override val icon: Int? = R.drawable.ic_cfg_main,
     override val children: List<IPreference> = mutableListOf(),
 ) : IPreferenceScreen() {
 
@@ -180,6 +183,7 @@ private class CapabilitiesPage(
     override val key: String = "idepref_ai_agent_capabilities",
     override val title: Int = R.string.ai_agent_page_capabilities_title,
     override val summary: Int? = R.string.ai_agent_page_capabilities_summary,
+    override val icon: Int? = R.drawable.ic_extensions,
     override val children: List<IPreference> = mutableListOf(),
 ) : IPreferenceScreen() {
 
@@ -401,7 +405,7 @@ private class AssistantOverlayPreference(
   private fun describe(context: Context): String =
       when {
         !canDrawOverlays(context) -> context.getString(R.string.ai_agent_overlay_need_permission)
-        AssistantOverlayService.isShowing -> context.getString(R.string.ai_agent_overlay_on)
+        AssistantOverlayService.isOverlayEnabled(context) -> context.getString(R.string.ai_agent_overlay_on)
         else -> context.getString(R.string.ai_agent_overlay_off)
       }
 
@@ -426,18 +430,13 @@ private class AssistantOverlayPreference(
       return true
     }
 
-    // 有权限：按当前状态开关。
-    if (AssistantOverlayService.isShowing) {
+    // 设置页会临时隐藏窗口，开关始终以持久化意图为准。
+    if (AssistantOverlayService.isOverlayEnabled(context)) {
       AssistantOverlayService.hide(context)
     } else {
       AssistantOverlayService.show(context)
     }
-    // 立即按「点击后的预期状态」刷新一次；真正的状态以后再次打开设置时重读。
-    // 不写死为 isShowing 的即时值——服务启停是异步的，写死会读到旧值。
-    preference.summary =
-        context.getString(
-            if (AssistantOverlayService.isShowing) R.string.ai_agent_overlay_off
-            else R.string.ai_agent_overlay_on)
+    preference.summary = describe(context)
     return true
   }
 
@@ -834,6 +833,7 @@ private class AdvancedPage(
     override val key: String = "idepref_ai_agent_advanced",
     override val title: Int = R.string.ai_agent_page_advanced_title,
     override val summary: Int? = R.string.ai_agent_page_advanced_summary,
+    override val icon: Int? = R.drawable.ic_palette,
     override val children: List<IPreference> = mutableListOf(),
 ) : IPreferenceScreen() {
 

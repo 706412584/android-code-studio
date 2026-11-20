@@ -30,7 +30,7 @@
     android:id="@+id/cardView"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    app:cardCornerRadius="24dp"
+    app:cardCornerRadius="@dimen/acs_ui_radius_card"
     android:layout_marginLeft="16dp"
     android:layout_marginRight="16dp"
     app:strokeWidth="0dp"

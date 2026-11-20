@@ -75,6 +75,7 @@ class TermuxPreferences(
     override val key: String = KEY_TERMUX_PREFERENCES,
     override val title: Int = R.string.termux_preferences_title,
     override val summary: Int? = R.string.termux_preferences_summary,
+    override val icon: Int? = R.drawable.ic_terminal,
     override val children: List<IPreference> = mutableListOf(),
 ) : IPreferenceScreen() {
 

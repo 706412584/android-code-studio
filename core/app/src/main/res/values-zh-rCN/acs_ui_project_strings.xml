@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+  <string name="acs_ui_project_description">打开项目 %1$s，路径为 %2$s</string>
+  <string name="acs_ui_project_settings">项目设置</string>
+</resources>

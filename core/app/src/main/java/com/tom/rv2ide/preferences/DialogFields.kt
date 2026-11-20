@@ -52,7 +52,11 @@ internal fun dialogEditTextField(
   // boxBackgroundMode：后者只换背景形状，轮廓描边、内边距等由 style 决定，
   // 与 XML 里用 `Widget.Material3.TextInputLayout.OutlinedBox` 的表单观感不一致。
   val layout =
-      TextInputLayout(context, null, com.google.android.material.R.attr.textInputOutlinedStyle)
+      TextInputLayout(
+          android.view.ContextThemeWrapper(context, com.tom.rv2ide.R.style.acs_ui_input_theme),
+          null,
+          com.google.android.material.R.attr.textInputOutlinedStyle,
+      )
           .apply {
             hint = labelText
             if (helperText != null) this.helperText = helperText
@@ -85,7 +89,11 @@ internal fun dialogMultilineField(
   // boxBackgroundMode：后者只换背景形状，轮廓描边、内边距等由 style 决定，
   // 与 XML 里用 `Widget.Material3.TextInputLayout.OutlinedBox` 的表单观感不一致。
   val layout =
-      TextInputLayout(context, null, com.google.android.material.R.attr.textInputOutlinedStyle)
+      TextInputLayout(
+          android.view.ContextThemeWrapper(context, com.tom.rv2ide.R.style.acs_ui_input_theme),
+          null,
+          com.google.android.material.R.attr.textInputOutlinedStyle,
+      )
           .apply {
             hint = labelText
             if (helperText != null) this.helperText = helperText

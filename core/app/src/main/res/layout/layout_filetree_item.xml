@@ -6,21 +6,24 @@
   android:layout_width="match_parent"
   android:layout_height="wrap_content"
   android:gravity="center_vertical"
+  android:minHeight="@dimen/acs_ui_touch_target"
   android:orientation="horizontal"
-  android:padding="8dp">
+  android:paddingHorizontal="@dimen/acs_ui_space_sm"
+  android:paddingVertical="@dimen/acs_ui_space_xs">
 
   <ViewFlipper
     android:id="@+id/chevronLoadingSwitcher"
     android:layout_width="20dp"
     android:layout_height="20dp"
-    android:layout_marginEnd="8dp">
+    android:layout_marginEnd="@dimen/acs_ui_space_sm">
 
     <ImageView
       android:id="@+id/filetree_chevron"
       android:layout_width="20dp"
       android:layout_height="20dp"
       android:src="@drawable/ic_chevron_right"
-      app:tint="?attr/colorPrimary" />
+      android:importantForAccessibility="no"
+      app:tint="?attr/colorOnSurfaceVariant" />
 
     <ProgressBar
       android:id="@+id/loading_progress"
@@ -32,17 +35,19 @@
 
   <ImageView
     android:id="@+id/filetree_icon"
-    android:layout_width="25dp"
-    android:layout_height="25dp"
-    android:layout_marginEnd="8dp"
-    app:tint="?attr/colorPrimary"
+    android:layout_width="@dimen/acs_ui_icon_size"
+    android:layout_height="@dimen/acs_ui_icon_size"
+    android:layout_marginEnd="@dimen/acs_ui_space_sm"
+    android:importantForAccessibility="no"
+    app:tint="?attr/colorOnSurfaceVariant"
     tools:src="@drawable/ic_language_java" />
 
   <TextView
     android:id="@+id/filetree_name"
     android:layout_width="wrap_content"
     android:layout_height="wrap_content"
-    android:textAppearance="@style/TextAppearance.Material3.BodySmall"
+    android:textAppearance="@style/acs_ui_text_body"
+    android:maxLines="1"
     android:textColor="?attr/colorOnSurface"
     tools:text="@string/app_name" />
 

@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+  <dimen name="acs_ui_space_xs">4dp</dimen>
+  <dimen name="acs_ui_space_sm">8dp</dimen>
+  <dimen name="acs_ui_space_md">12dp</dimen>
+  <dimen name="acs_ui_space_lg">16dp</dimen>
+  <dimen name="acs_ui_space_xl">24dp</dimen>
+  <dimen name="acs_ui_space_xxl">32dp</dimen>
+  <dimen name="acs_ui_page_padding">16dp</dimen>
+  <dimen name="acs_ui_content_max_width">720dp</dimen>
+  <dimen name="acs_ui_touch_target">48dp</dimen>
+  <dimen name="acs_ui_preference_min_height">64dp</dimen>
+  <dimen name="acs_ui_radius_control">12dp</dimen>
+  <dimen name="acs_ui_radius_card">16dp</dimen>
+  <dimen name="acs_ui_radius_sheet">28dp</dimen>
+  <dimen name="acs_ui_icon_size">24dp</dimen>
+  <dimen name="acs_ui_title_size">24sp</dimen>
+  <dimen name="acs_ui_section_size">18sp</dimen>
+  <dimen name="acs_ui_body_size">15sp</dimen>
+  <dimen name="acs_ui_caption_size">13sp</dimen>
+</resources>

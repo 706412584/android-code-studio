@@ -55,6 +55,6 @@ class ThemeManager : IThemeManager {
 
   /** Get the currently selected theme. */
   override fun getCurrentTheme(): IDETheme {
-    return GeneralPreferences.selectedTheme?.let { IDETheme.valueOf(it) } ?: IDETheme.DEFAULT
+    return IDETheme.fromStoredName(GeneralPreferences.selectedTheme)
   }
 }

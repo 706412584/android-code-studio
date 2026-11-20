@@ -4,6 +4,7 @@
   xmlns:tools="http://schemas.android.com/tools"
   android:layout_width="match_parent"
   android:layout_height="match_parent"
+  android:background="?android:attr/colorBackground"
   android:animateLayoutChanges="true"
   android:orientation="vertical"
   tools:ignore="RtlCompat">
@@ -23,12 +24,11 @@
           android:id="@+id/appToolBar"
           android:layout_width="match_parent"
           android:layout_height="?attr/actionBarSize"
-          app:titleTextAppearance="@style/TextAppearance.AndroidIDE.TitleLarge.Bold"
-          app:subtitleTextAppearance="@style/TextAppearance.Material3.BodySmall"
+          app:titleTextAppearance="@style/acs_ui_text_section"
+          app:subtitleTextAppearance="@style/acs_ui_text_caption"
           app:title="@string/app_name"
-          app:subtitle="@string/subtitle_desc"
-          app:subtitleCentered="true"
-          app:titleCentered="true" />
+          app:contentInsetStart="@dimen/acs_ui_page_padding"
+          app:titleCentered="false" />
     </com.google.android.material.appbar.AppBarLayout>
     <FrameLayout
       android:id="@+id/fragment_containers_parent"

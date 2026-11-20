@@ -17,6 +17,7 @@ import android.widget.Toast
 import androidx.core.provider.DocumentsContractCompat
 import androidx.databinding.DataBindingUtil
 import androidx.fragment.app.FragmentActivity
+import com.google.android.material.color.MaterialColors
 import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.bottomsheet.BottomSheetDialog
@@ -96,6 +97,12 @@ class AtcWizardDialog : BottomSheetDialogFragment() {
     setupButtons(ctx)
 
     dialog.setContentView(binding.root)
+    dialog.behavior.maxHeight = (resources.displayMetrics.heightPixels * 0.85f).toInt()
+    dialog.behavior.skipCollapsed = true
+    dialog.setOnShowListener {
+      dialog.behavior.state = com.google.android.material.bottomsheet.BottomSheetBehavior.STATE_EXPANDED
+    }
+    dialog.window?.setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
     return dialog
   }
 
@@ -235,7 +242,9 @@ class AtcWizardDialog : BottomSheetDialogFragment() {
 
   private fun setupTemplatesGrid(ctx: Context) {
     val templates = TemplateRegistry.getAllTemplates()
-    binding.templatesGrid.layoutManager = GridLayoutManager(ctx, 2)
+    val configuration = ctx.resources.configuration
+    val columns = ((configuration.screenWidthDp / configuration.fontScale - 32) / 168).toInt()
+    binding.templatesGrid.layoutManager = GridLayoutManager(ctx, columns.coerceIn(1, 3))
     binding.templatesGrid.adapter =
         TemplateAdapter(ctx, templates) { template ->
           selectedTemplate = template
@@ -737,51 +746,44 @@ class TemplateAdapter(
   override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): TemplateVH {
     val displayMetrics = ctx.resources.displayMetrics
     val screenWidthDp = displayMetrics.widthPixels / displayMetrics.density
-    android.util.Log.d("TemplateAdapter", "Screen Width DP: $screenWidthDp")
-    
+    val spaceXs = ctx.resources.getDimensionPixelSize(R.dimen.acs_ui_space_xs)
+    val spaceSm = ctx.resources.getDimensionPixelSize(R.dimen.acs_ui_space_sm)
+    val spaceMd = ctx.resources.getDimensionPixelSize(R.dimen.acs_ui_space_md)
+    val spaceLg = ctx.resources.getDimensionPixelSize(R.dimen.acs_ui_space_lg)
     val card =
-        MaterialCardView(ctx).apply {
+        MaterialCardView(android.view.ContextThemeWrapper(ctx, R.style.acs_ui_card_theme)).apply {
           layoutParams =
               ViewGroup.MarginLayoutParams(
                       ViewGroup.LayoutParams.MATCH_PARENT,
                       ViewGroup.LayoutParams.WRAP_CONTENT,
                   )
-                  .apply { setMargins(8.dp, 8.dp, 8.dp, 8.dp) }
-          radius = 20.dp.toFloat()
+                  .apply { setMargins(spaceSm, spaceSm, spaceSm, spaceSm) }
           isClickable = true
           isFocusable = true
-          strokeWidth = 0
-          elevation = 1.dp.toFloat()
         }
 
     val layout = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
     val title =
         TextView(ctx).apply {
-          textSize = 14f
-          setPadding(12.dp, 12.dp, 12.dp, 4.dp)
-          gravity = android.view.Gravity.CENTER
+          setTextAppearance(R.style.acs_ui_text_section)
+          setPadding(spaceMd, spaceLg, spaceMd, spaceXs)
+          gravity = android.view.Gravity.START
         }
 
-    // 模板的一句话中文描述：帮助用户理解模板适合做什么。无描述的模板此行隐藏。
-    //
-    // minLines = maxLines = 3：描述行数直接决定卡片高度（图片区固定 160dp，
-    // 标题单行），不同模板描述长短不一时卡片会高矮不齐、图片底边错位——
-    // 实测用户反馈「React 卡片和其他两个视觉不同步」。占满固定 3 行后，
-    // 无论文案长短所有卡片高度一致。
+    // 描述至少保留三行，大字号或长文案可继续展开，避免内容被截断。
     val description =
         TextView(ctx).apply {
-          textSize = 11f
-          setPadding(12.dp, 0.dp, 12.dp, 4.dp)
-          gravity = android.view.Gravity.CENTER
-          setTextColor(android.graphics.Color.GRAY)
+          setTextAppearance(R.style.acs_ui_text_caption)
+          setPadding(spaceMd, 0, spaceMd, spaceXs)
+          gravity = android.view.Gravity.START
           minLines = 3
-          maxLines = 3
           visibility = android.view.View.GONE
         }
 
     val image =
         ImageView(ctx).apply {
-          scaleType = ImageView.ScaleType.CENTER_CROP
+          scaleType = ImageView.ScaleType.CENTER_INSIDE
+          adjustViewBounds = true
           // 图片填满外层 FrameLayout；尺寸由 FrameLayout 统一约束（见下）。
           layoutParams =
               android.widget.FrameLayout.LayoutParams(
@@ -795,11 +797,11 @@ class TemplateAdapter(
     // 比自绘或改图更轻（不用为每个跨平台模板重做预览图）。
     val crossPlatformBadge =
         TextView(ctx).apply {
-          textSize = 10f
-          text = ctx.getString(com.tom.rv2ide.R.string.template_cross_platform_badge)
-          setPadding(8.dp, 3.dp, 8.dp, 3.dp)
-          setTextColor(android.graphics.Color.WHITE)
-          setBackgroundColor(0xFF2E7D32.toInt()) // Material 绿 800：跨平台的正面语义
+          setTextAppearance(R.style.acs_ui_text_caption)
+          text = ctx.getString(R.string.template_cross_platform_badge)
+          setPadding(spaceSm, spaceXs, spaceSm, spaceXs)
+          setTextColor(MaterialColors.getColor(this, com.google.android.material.R.attr.colorOnPrimaryContainer))
+          setBackgroundResource(R.drawable.acs_ui_badge_background)
           visibility = android.view.View.GONE
           layoutParams =
               android.widget.FrameLayout.LayoutParams(
@@ -808,21 +810,21 @@ class TemplateAdapter(
                   )
                   .apply {
                     gravity = android.view.Gravity.TOP or android.view.Gravity.END
-                    setMargins(0, 8.dp, 8.dp, 0)
+                    setMargins(0, spaceSm, spaceSm, 0)
                   }
         }
 
     val imageContainer =
         android.widget.FrameLayout(ctx).apply {
           if (screenWidthDp >= 600) {
-            android.util.Log.d("TemplateAdapter", "Using small size for large screen")
             layoutParams =
                 LinearLayout.LayoutParams(100.dp, 100.dp).apply {
                   gravity = android.view.Gravity.CENTER
                 }
           } else {
-            android.util.Log.d("TemplateAdapter", "Using normal size")
-            layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 160.dp)
+            layoutParams =
+                LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 112.dp)
+                    .apply { setMargins(0, spaceSm, 0, spaceMd) }
           }
           addView(image)
           addView(crossPlatformBadge)
