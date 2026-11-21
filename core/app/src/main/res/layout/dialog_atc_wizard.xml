@@ -2,10 +2,16 @@
 <layout xmlns:android="http://schemas.android.com/apk/res/android"
   xmlns:app="http://schemas.android.com/apk/res-auto">
 
+  <LinearLayout
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical">
+
   <androidx.core.widget.NestedScrollView
     android:id="@+id/wizardScroll"
     android:layout_width="match_parent"
-    android:layout_height="match_parent"
+    android:layout_height="0dp"
+    android:layout_weight="1"
     android:fillViewport="true"
     android:scrollbars="vertical">
 
@@ -16,7 +22,7 @@
       android:orientation="vertical"
       android:paddingHorizontal="@dimen/acs_ui_page_padding"
       android:paddingTop="@dimen/acs_ui_page_padding"
-      android:paddingBottom="88dp">
+      android:paddingBottom="@dimen/acs_ui_space_lg">
 
       <!-- Page 1: Template Selection -->
       <LinearLayout
@@ -205,37 +211,39 @@
           android:checked="true"
           android:text="@string/use_cmake" />
 
-        <!-- Actions inside options page for better scrolling -->
-        <LinearLayout
-          android:layout_width="match_parent"
-          android:layout_height="wrap_content"
-          android:layout_marginTop="24dp"
-          android:layout_marginBottom="12dp"
-          android:gravity="end"
-          android:orientation="horizontal">
-
-          <com.google.android.material.button.MaterialButton
-            android:id="@+id/backButton"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="@string/back"
-            android:visibility="gone"
-            style="@style/acs_ui_button_text" />
-
-          <Space
-            android:layout_width="8dp"
-            android:layout_height="wrap_content" />
-
-          <com.google.android.material.button.MaterialButton
-            android:id="@+id/createButton"
-            style="@style/acs_ui_button_primary"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="@string/create"
-            android:visibility="gone" />
-        </LinearLayout>
       </LinearLayout>
 
     </LinearLayout>
   </androidx.core.widget.NestedScrollView>
+
+  <LinearLayout
+    android:id="@+id/wizardActions"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:paddingHorizontal="@dimen/acs_ui_page_padding"
+    android:paddingVertical="@dimen/acs_ui_space_sm"
+    android:gravity="end|center_vertical"
+    android:orientation="horizontal"
+    android:visibility="gone">
+
+    <com.google.android.material.button.MaterialButton
+      android:id="@+id/backButton"
+      style="@style/acs_ui_button_text"
+      android:layout_width="0dp"
+      android:layout_height="wrap_content"
+      android:layout_weight="1"
+      android:text="@string/back"
+      android:visibility="gone" />
+
+    <com.google.android.material.button.MaterialButton
+      android:id="@+id/createButton"
+      style="@style/acs_ui_button_primary"
+      android:layout_width="0dp"
+      android:layout_height="wrap_content"
+      android:layout_weight="1"
+      android:layout_marginStart="@dimen/acs_ui_space_sm"
+      android:text="@string/create"
+      android:visibility="gone" />
+  </LinearLayout>
+  </LinearLayout>
 </layout>

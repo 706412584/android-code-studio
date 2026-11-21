@@ -463,10 +463,8 @@ private class OverlayDialogs(
   }
 
   override fun openSettings() {
-    // 跳主 app 设置前**完全关闭**悬浮窗：设置页需要无遮挡（系统悬浮窗层级高于
-    // Activity，只收起成小球仍会浮在设置页上）。用 hideTemporarily 不动持久化开关，
-    // 返回主界面时按开关自动恢复（见 AssistantOverlayService.restoreIfEnabled）。
-    AssistantOverlayService.hideTemporarily(themed)
+    // 设置页 onStart 会申请 UI 让位租约。这里不停止服务，否则设置页退出时
+    // 即使租约释放也没有存活的窗口可恢复；服务会在租约期间保留会话与窗口状态。
     // themed 不是 Activity，AssistantSettings.open 会自动补 FLAG_ACTIVITY_NEW_TASK。
     AssistantSettings.open(themed)
   }

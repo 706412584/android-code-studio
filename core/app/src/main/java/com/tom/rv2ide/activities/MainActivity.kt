@@ -128,12 +128,8 @@ class MainActivity : EdgeToEdgeIDEActivity() {
 
   override fun onResume() {
     super.onResume()
-    // 进 APP / 返回主屏：若用户开着「应用外悬浮」，确保它在跑（收起态小球），
-    // 并把可能展开着的面板收起——回到主界面不该被大面板盖住。
-    // 跳主 app 设置时悬浮窗被临时关闭（hideTemporarily，不动开关），这里按开关自动恢复。
-    // 设置页不调 restoreIfEnabled：会把刚临时关闭的悬浮窗又拉起来，故只在主界面做。
+    // 临时让位由各页面/弹层配对管理，回前台不覆盖此前的展开状态。
     com.tom.rv2ide.services.AssistantOverlayService.restoreIfEnabled(this)
-    com.tom.rv2ide.services.AssistantOverlayService.collapsePanel()
   }
 
   override fun onApplySystemBarInsets(insets: Insets) {
@@ -198,7 +194,11 @@ class MainActivity : EdgeToEdgeIDEActivity() {
   }
 
   private fun openLastProject() {
-    binding.root.post { tryOpenLastProject() }
+    _binding?.root?.post {
+      if (_binding != null && !isFinishing && !isDestroyed) {
+        tryOpenLastProject()
+      }
+    }
   }
 
   private fun tryOpenLastProject() {
@@ -238,7 +238,9 @@ class MainActivity : EdgeToEdgeIDEActivity() {
     builder.setCancelable(false)
     builder.setPositiveButton(string.yes) { _, _ -> openProject(root) }
     builder.setNegativeButton(string.no, null)
-    builder.show()
+    com.tom.rv2ide.services.AssistantOverlayService
+        .suppressWhileShown(builder.create(), this, "resume-project-confirm")
+        .show()
   }
 
   /**

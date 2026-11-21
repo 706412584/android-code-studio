@@ -18,6 +18,7 @@
 package com.tom.rv2ide.tooling.impl.logging
 
 import ch.qos.logback.classic.spi.ILoggingEvent
+import ch.qos.logback.classic.spi.ThrowableProxyUtil
 import ch.qos.logback.core.AppenderBase
 import com.tom.rv2ide.tooling.api.messages.LogMessageParams
 import com.tom.rv2ide.tooling.impl.Main
@@ -39,6 +40,7 @@ class ToolingApiAppender : AppenderBase<ILoggingEvent>() {
             eventObject.level.levelStr[0],
             eventObject.loggerName,
             eventObject.formattedMessage,
+            eventObject.throwableProxy?.let(ThrowableProxyUtil::asString),
         )
     )
   }

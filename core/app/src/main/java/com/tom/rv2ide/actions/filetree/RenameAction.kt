@@ -61,7 +61,10 @@ class RenameAction(context: Context, override val order: Int) :
     binding.name.editText!!.setText(file.name)
     builder.setTitle(com.tom.rv2ide.resources.R.string.rename_file)
     builder.setMessage(com.tom.rv2ide.resources.R.string.msg_rename_file)
-    builder.setView(binding.root)
+    val fields = com.tom.rv2ide.ui.BoundedScrollView(context).apply {
+      addView(binding.root)
+    }
+    builder.setView(fields)
     builder.setNegativeButton(android.R.string.cancel, null)
     builder.setPositiveButton(com.tom.rv2ide.resources.R.string.rename_file) { dialogInterface, _ ->
       dialogInterface.dismiss()
@@ -101,7 +104,11 @@ class RenameAction(context: Context, override val order: Int) :
           },
       )
     }
-    builder.create().show()
+    val dialog = builder.create()
+    com.tom.rv2ide.preferences.clampDialogScrollHeight(dialog, fields, context)
+    com.tom.rv2ide.services.AssistantOverlayService
+        .suppressWhileShown(dialog, context, "file-rename")
+        .show()
   }
 
   private fun notifyFileRenamed(file: File, name: String, context: Context) {

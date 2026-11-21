@@ -179,6 +179,8 @@ class CloudBuildDialogFragment : BottomSheetDialogFragment() {
             }
           }
         }
+    com.tom.rv2ide.services.AssistantOverlayService.suppressWhileShown(
+        dialog, this, "cloud-build")
     // 与 RunTasksDialogFragment 一致：占据 70% 屏高，进度列表才有足够空间。
     dialog.behavior.peekHeight = (getWindowHeight() * 0.7).toInt()
     return dialog
@@ -995,9 +997,10 @@ class CloudBuildDialogFragment : BottomSheetDialogFragment() {
       fields.add(warn)
     }
 
-    MaterialAlertDialogBuilder(context)
+    val content = com.tom.rv2ide.preferences.dialogFieldColumn(context, *fields.toTypedArray())
+    val tokenDialog = MaterialAlertDialogBuilder(context)
         .setTitle(R.string.cloud_build_token_title)
-        .setView(com.tom.rv2ide.preferences.dialogFieldColumn(context, *fields.toTypedArray()))
+        .setView(content)
         .setPositiveButton(R.string.cloud_build_token_save) { _, _ ->
           val previous = tokenStore.getToken()
           tokenStore.saveToken(input.text?.toString().orEmpty())
@@ -1013,6 +1016,10 @@ class CloudBuildDialogFragment : BottomSheetDialogFragment() {
           }
         }
         .setNegativeButton(android.R.string.cancel, null)
+        .create()
+    com.tom.rv2ide.preferences.clampDialogScrollHeight(tokenDialog, content, context)
+    com.tom.rv2ide.services.AssistantOverlayService
+        .suppressWhileShown(tokenDialog, viewLifecycleOwner, "cloud-token")
         .show()
   }
 
@@ -1128,7 +1135,9 @@ class CloudBuildDialogFragment : BottomSheetDialogFragment() {
     }
     // 对话框关闭 → 停轮询（用户取消或授权完成都走这里）。
     dialog.setOnDismissListener { pollJob?.cancel() }
-    dialog.show()
+    com.tom.rv2ide.services.AssistantOverlayService
+        .suppressWhileShown(dialog, viewLifecycleOwner, "cloud-login")
+        .show()
   }
 
   private fun updateTokenStatus() {

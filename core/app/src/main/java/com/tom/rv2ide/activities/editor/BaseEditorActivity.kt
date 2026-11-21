@@ -167,6 +167,8 @@ abstract class BaseEditorActivity :
   protected val memoryUsageWatcher = MemoryUsageWatcher()
   protected val pidToDatasetIdxMap = MutableIntIntMap(initialCapacity = 3)
   private val bottomSheetHeaderHideReasons = mutableSetOf<String>()
+  private val overlayUiReasons = mutableSetOf<String>()
+  private var overlayUiToken: String? = null
   private var bottomSheetCardVisibilitySnapshot: Int = View.VISIBLE
   private var bottomSheetHeaderVisibilitySnapshot: Int = View.VISIBLE
 
@@ -1121,13 +1123,18 @@ override fun onApplySystemBarInsets(insets: Insets) {
 
   override fun onResume() {
     super.onResume()
+    if (_binding != null) {
+      setOverlayUiReason("drawer-restored",
+          binding.editorDrawerLayout.isDrawerVisible(binding.startNav))
+      val state = editorBottomSheet?.state
+      setOverlayUiReason("output-sheet", state != null &&
+          state != BottomSheetBehavior.STATE_COLLAPSED && state != BottomSheetBehavior.STATE_HIDDEN)
+    }
+    syncOverlayUiSuppression()
     invalidateOptionsMenu()
 
-    // 进 APP / 返回编辑器：同 MainActivity——若开着「应用外悬浮」确保它在跑（收起态
-    // 小球），并收起可能展开着的面板，避免大面板盖住编辑器。跳设置时被临时关闭的
-    // 悬浮窗在此按开关自动恢复。
+    // 抽屉与底栏按各自可见性让位，回前台保留助手原先窗口形态。
     com.tom.rv2ide.services.AssistantOverlayService.restoreIfEnabled(this)
-    com.tom.rv2ide.services.AssistantOverlayService.collapsePanel()
 
     try {
       memoryUsageWatcher.listener = memoryUsageListener
@@ -1177,6 +1184,8 @@ override fun onApplySystemBarInsets(insets: Insets) {
     saveAllPendingFiles()
 
     checkIsDestroying()
+    com.tom.rv2ide.services.AssistantOverlayService.releaseUiSuppression(overlayUiToken)
+    overlayUiToken = null
   }
 
   override fun onDestroy() {
@@ -1394,12 +1403,31 @@ override fun onApplySystemBarInsets(insets: Insets) {
     content.bottomSheet.refreshSymbolInput(editor)
   }
 
+  private fun setOverlayUiReason(reason: String, visible: Boolean) {
+    val changed = if (visible) overlayUiReasons.add(reason) else overlayUiReasons.remove(reason)
+    if (changed) syncOverlayUiSuppression()
+  }
+
+  private fun syncOverlayUiSuppression() {
+    val shouldSuppress =
+        (overlayUiReasons.isNotEmpty() || bottomSheetHeaderHideReasons.isNotEmpty()) &&
+            lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED)
+    if (shouldSuppress && overlayUiToken == null) {
+      overlayUiToken =
+          com.tom.rv2ide.services.AssistantOverlayService.acquireUiSuppression("editor-ui")
+    } else if (!shouldSuppress) {
+      com.tom.rv2ide.services.AssistantOverlayService.releaseUiSuppression(overlayUiToken)
+      overlayUiToken = null
+    }
+  }
+
   protected fun requestBottomSheetHeaderHide(reason: String) {
     runOnUiThread {
       if (_binding == null) {
         return@runOnUiThread
       }
       val wasAdded = bottomSheetHeaderHideReasons.add(reason)
+      syncOverlayUiSuppression()
       if (!wasAdded || bottomSheetHeaderHideReasons.size > 1) {
         return@runOnUiThread
       }
@@ -1417,6 +1445,7 @@ override fun onApplySystemBarInsets(insets: Insets) {
         return@runOnUiThread
       }
       val wasRemoved = bottomSheetHeaderHideReasons.remove(reason)
+      syncOverlayUiSuppression()
       if (!wasRemoved || bottomSheetHeaderHideReasons.isNotEmpty()) {
         return@runOnUiThread
       }
@@ -1476,6 +1505,20 @@ override fun onApplySystemBarInsets(insets: Insets) {
         )
 
     binding.editorDrawerLayout.addDrawerListener(toggle)
+    binding.editorDrawerLayout.addDrawerListener(
+        object : androidx.drawerlayout.widget.DrawerLayout.SimpleDrawerListener() {
+          override fun onDrawerSlide(drawerView: View, slideOffset: Float) {
+            setOverlayUiReason("drawer-restored", false)
+            setOverlayUiReason("drawer:${drawerView.id}", slideOffset > 0f)
+          }
+          override fun onDrawerOpened(drawerView: View) {
+            setOverlayUiReason("drawer:${drawerView.id}", true)
+          }
+          override fun onDrawerClosed(drawerView: View) {
+            setOverlayUiReason("drawer-restored", false)
+            setOverlayUiReason("drawer:${drawerView.id}", false)
+          }
+        })
     toggle.syncState()
     binding.apply {
       editorDrawerLayout.apply {
@@ -1978,6 +2021,10 @@ override fun onApplySystemBarInsets(insets: Insets) {
     editorBottomSheet?.addBottomSheetCallback(
         object : BottomSheetCallback() {
           override fun onStateChanged(bottomSheet: View, newState: Int) {
+            setOverlayUiReason(
+                "output-sheet",
+                newState != BottomSheetBehavior.STATE_COLLAPSED &&
+                    newState != BottomSheetBehavior.STATE_HIDDEN)
             if (newState == BottomSheetBehavior.STATE_EXPANDED) {
               val editor = provideCurrentEditor()
               editor?.editor?.ensureWindowsDismissed()

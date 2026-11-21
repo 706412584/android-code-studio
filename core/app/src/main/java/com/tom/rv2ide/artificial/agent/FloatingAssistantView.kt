@@ -904,9 +904,6 @@ class FloatingAssistantView(
     // 会话数据继续走 orchestrator.listConversations()（reloadConversations 投影后提交）。
     installDrawerCompose()
 
-    // 项目名刷新已随 XML 标题退役（refreshWorkspaceLabel 现为空操作），保留调用点
-    // 是为了将来若顶栏加回项目标识只需在那一处恢复逻辑。
-
     updateEmptyState()
 
     // 工具条控件的初始状态。
@@ -978,8 +975,6 @@ class FloatingAssistantView(
     // 换了项目就换了仓库：分支标签要重新读，且上一个项目的分支不能留着。
     lastGitBranch = null
     refreshGitBranch()
-    // 标题要跟着换项目名，会话列表里各条会话的归属标注也要重算。
-    refreshWorkspaceLabel()
     drawerCurrentCwd.value = workspace?.absolutePath ?: ""
     drawerFileHost.setWorkspace(workspace)
     drawerSearchEngine =
@@ -1028,15 +1023,6 @@ class FloatingAssistantView(
     toggleConversationPanel()
     openConversationById(hit.sessionId)
   }
-
-  /**
-   * 项目名刷新。XML 标题（assistantTitle）已随顶栏退役。
-   *
-   * <p>Compose 顶栏（ChatHeader）与 Aharou 一致**不设标题位**：会话名在抽屉里可改名，
-   * 顶栏把空间留给按钮；项目归属在抽屉会话行与文件 Tab 的 cwd 上仍然可见。
-   * 保留空方法收拢全部旧调用点（attach/setWorkspace/openConversation/beginNewConversation）。
-   */
-  private fun refreshWorkspaceLabel() {}
 
   /**
    * 让悬浮按钮可拖动，并把位置持久化。
@@ -3039,12 +3025,8 @@ class FloatingAssistantView(
     // Android 10 起后台启动 Activity 受限，可能被系统拦截，因此失败一律吞掉：
     // 这只是多一个入口，拉不起也不该让面板崩。
     intent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
-    // 应用外系统悬浮：跳主 app 设置前**完全关闭**悬浮窗（设置页需要无遮挡），
-    // 但不动持久化开关——返回主界面时按开关自动恢复（restoreIfEnabled）。
-    // 与模型选择器路径（OverlayHost.openSettings）一致；Activity 宿主不隐藏。
-    if (isOverlayWindow) {
-      com.tom.rv2ide.services.AssistantOverlayService.hideTemporarily(context)
-    }
+    // 应用外系统悬浮由 PreferencesActivity.onStart 申请 UI 让位租约；
+    // 这里不停止服务，避免设置页返回后丢失会话、窗口落点或展开形态。
     try {
       context.startActivity(intent)
     } catch (e: Exception) {
@@ -3536,6 +3518,11 @@ class FloatingAssistantView(
                 presetOverride = AppThemePreset.DEFAULT,
             ) {
         val bridge = inputBar
+        val promptSuggestions = androidx.compose.runtime.remember {
+          listOf(
+              context.getString(com.tom.rv2ide.R.string.acs_ui_assistant_example_structure),
+              context.getString(com.tom.rv2ide.R.string.acs_ui_assistant_example_build))
+        }
         com.tom.rv2ide.artificial.agent.compose.components.independent.ChatInputBar(
             value = bridge.text,
             onValueChange = { bridge.text = it },
@@ -3548,6 +3535,9 @@ class FloatingAssistantView(
               setRunningUi(false)
             },
             isBusy = bridge.isBusy,
+            promptSuggestions = if (bridge.conversationEmpty && mode == Mode.FULLSCREEN) {
+              promptSuggestions
+            } else emptyList(),
             canForceStop = bridge.canForceStop,
             activeModelName = bridge.modelName,
             currentProvider = bridge.currentProvider,
@@ -3759,6 +3749,14 @@ class FloatingAssistantView(
             inputTokens = 0,
             outputTokens = 0,
             sessionId = displayedConversationId,
+            workspaceTitle = if (mode == Mode.FULLSCREEN) {
+              drawerCurrentCwd.value.takeIf { it.isNotBlank() }?.let { File(it).name }
+                  ?: context.getString(com.tom.rv2ide.R.string.acs_ui_assistant_no_project)
+            } else null,
+            workspaceSubtitle = if (mode == Mode.FULLSCREEN) {
+              drawerCurrentCwd.value.takeIf { it.isNotBlank() }
+                  ?: context.getString(com.tom.rv2ide.R.string.acs_ui_assistant_choose_project)
+            } else null,
             onOpenDrawer = { toggleConversationPanel() },
             onNewChat = { startNewConversation() },
             // Git：切到编辑器侧栏的 Git 标签页（宿主实现）。宿主不支持（主页/真全屏/
@@ -4050,7 +4048,6 @@ class FloatingAssistantView(
           // 换了项目就换了仓库：分支标签要重读，旧项目的分支不能留着。
           lastGitBranch = null
           refreshGitBranch()
-          refreshWorkspaceLabel()
           drawerCurrentCwd.value = projectDir.absolutePath
           drawerFileHost.setWorkspace(projectDir)
         }
@@ -4567,7 +4564,9 @@ class FloatingAssistantView(
   }
 
   private fun updateEmptyState() {
-    binding.assistantEmpty.isVisible = adapter.isEmpty()
+    val empty = adapter.isEmpty()
+    binding.assistantEmpty.isVisible = empty
+    inputBar.conversationEmpty = empty
   }
 
   /**
@@ -4700,7 +4699,6 @@ class FloatingAssistantView(
             workspace = projectDir
             lastGitBranch = null
             refreshGitBranch()
-            refreshWorkspaceLabel()
             drawerCurrentCwd.value = projectDir.absolutePath
             drawerFileHost.setWorkspace(projectDir)
           }

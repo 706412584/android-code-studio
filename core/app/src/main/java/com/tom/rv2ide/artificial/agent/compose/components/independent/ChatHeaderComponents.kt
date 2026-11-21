@@ -146,6 +146,8 @@ internal fun ChatHeader(
      * ——拖动也不会产生任何效果。
      */
     onHeaderDrag: ((dx: Float, dy: Float) -> Unit)? = null,
+    workspaceTitle: String? = null,
+    workspaceSubtitle: String? = null,
 ) {
     Surface(
         color = MaterialTheme.colorScheme.background
@@ -223,6 +225,17 @@ internal fun ChatHeader(
                             contentDescription = stringResource(labelRes),
                             onClick = toggle,
                         )
+                    }
+                }
+            }
+            workspaceTitle?.let { title ->
+                Column(Modifier.fillMaxWidth().padding(horizontal = Spacing.lg, vertical = Spacing.xs)) {
+                    Text(title, style = MaterialTheme.typography.titleSmall,
+                        maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    workspaceSubtitle?.let { subtitle ->
+                        Text(subtitle, style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
                 }
             }

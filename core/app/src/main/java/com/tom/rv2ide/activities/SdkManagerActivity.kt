@@ -109,6 +109,7 @@ class SdkManagerActivity : EdgeToEdgeIDEActivity() {
 
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
+    com.tom.rv2ide.services.AssistantOverlayService.suppressWhileStarted(this, "sdk-manager")
 
     binding.toolbar.setNavigationOnClickListener { onBackPressedDispatcher.onBackPressed() }
     binding.fixPermsButton.setOnClickListener { fixPermissions() }
@@ -149,7 +150,7 @@ class SdkManagerActivity : EdgeToEdgeIDEActivity() {
         if (installed.isEmpty()) {
           getString(R.string.idepref_sdk_not_installed)
         } else {
-          getString(R.string.idepref_sdk_installed, installed.joinToString(", "))
+          getString(R.string.acs_ui_sdk_installed, installed.size)
         }
 
     // 已装版本各给一个可卸载的 chip（点即弹确认）。platform-tools 是单包，

@@ -117,3 +117,27 @@ SDK/JDK 最终批次的设备状态以本文件“SDK/JDK 管理页最终批次�
 已恢复并读回：主题“暖阳和煦”、界面模式“跟随系统”、字体1.0、输入法 `com.baidu.input_heisha/.ImeService`、`accelerometer_rotation=1`、`user_rotation=0`、当前竖屏与首页。原始基线为 `device-baseline.json` 和 `theme-baseline.json`；本批完成证明为 `device-unified-restored-final.json`、`home-unified-restored-final.png/.xml`、`projects-unified-cleaned-final.png/.xml`，首轮旧收尾文件不替代本批。
 
 工作区保留未提交状态，未推送、合并或发布。
+
+## 2026-11-21 续接批次最终验收
+
+本节以 `build-final-combined.log` 和设备最终包为准。arm64 APK 本机与设备 SHA-256 均为 `cd0985ad1f209a61c8f7441bdff6eeaa05792d9683f48ef76a4647e723727e1c`，证书一致且只覆盖安装。测试脚本为 `.verify/ui-refresh-v3/check_r31.py`，证据均相对该目录。
+
+| 流程 | 结果 | 代表证据/边界 |
+|---|---|---|
+| 构建与单测 | 通过 | `build-final-combined.log`；common 与 tooling:impl:test 通过，静态 XML/ViewBinding 检查通过 |
+| 首页移除继续项目 | 通过 | `home-r31.png/.xml`；无 `home_continue_project`，保留静态欢迎与创建/打开/克隆 |
+| 项目列表与详情 | 通过 | `projects-r31`、`project-details-r31`；嵌套弹层隐藏浮球，关闭后原位置恢复 |
+| 模板随机默认名 | 通过 | `wizard-random-{first,second}-r31`；两次名称及包名后缀不同且合法，未创建示例项目 |
+| 横屏字号2.0重命名 | 通过 | `rename-font2-landscape-ime-r31.png/.xml`；真实2340×1080 IME 下输入可滚动、按钮可达，`rename-font2-landscape-keyboard-hidden-r31` 标题恢复 |
+| 横屏字号2.0 ATC | 通过代表检查 | `wizard-font2-landscape-ime-r31.png/.xml`；Basic Activity 后退/创建固定可达，未创建项目 |
+| 设置当前值 | 通过 | `settings-root-r31`、`settings-general-r31`；暖阳/模式可见，设置页浮球隐藏 |
+| SDK/JDK 信息层级 | 通过代表检查 | `sdk-r31`、`jdk-r31`、`jdk-path-detail-r31`；可安装列表加载完成，JDK 详情可打开，未执行安装/卸载/切换 |
+| 悬浮窗状态恢复 | 通过 | `overlay-expanded-r31`、`settings-from-expanded-overlay-r31`、`overlay-restored-expanded-r31`；设置返回保持尺寸、位置及抽屉状态 |
+| 全屏项目与示例 | 通过 | `assistant-workspace-r31`、`assistant-empty-suggestions-r31`、`assistant-draft-only-r31`；活动会话标题正确，示例只填草稿不发送 |
+| 暖阳浅深 | 通过代表检查 | `home-r31`、`home-sunny-dark-r31`；不代表五主题全页面矩阵 |
+| 镜像换源顺序 | 通过 | `mirror-create-editor-r31`、`final-verification.json`；`MyProject856031` 进入编辑器前已为腾讯 Gradle 9.6.1 镜像，测试目录删除 |
+| 设备恢复 | 通过 | 竖屏、字号1.0、百度输入法、暖阳、跟随系统、原浮球落点；测试空会话、项目和偏好备份均已清理 |
+
+补充：旋转曾复现旧 MainActivity 更新回调访问空 binding，已加生命周期保护并复测；全屏曾漏掉初始化中的活动会话，已补路径回退并复测。三路只读审查及最终差异检查完成，未保留临时诊断日志。
+
+未测/不扩大声明：五主题全页面矩阵、所有模板及特殊字段、SDK/JDK 真实安装卸载、模型实际消息/工具卡片、Cloud Token 保存、文件树重命名单独入口、全部依赖构建成功。文件树重命名与项目重命名共用限高实现。工作区未提交、推送或发布。

@@ -130,7 +130,8 @@ internal fun ReasoningEffortSelector(
             )
             Spacer(Modifier.width(Spacing.xs))
             Text(
-                text = stringResource(effort.labelRes()),
+                text = stringResource(com.tom.rv2ide.R.string.acs_ui_assistant_reasoning,
+                    stringResource(effort.labelRes())),
                 style = MaterialTheme.typography.labelMedium,
                 color = tint,
                 maxLines = 1

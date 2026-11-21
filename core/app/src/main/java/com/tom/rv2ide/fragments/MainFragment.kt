@@ -79,6 +79,11 @@ class MainFragment : BaseFragment() {
   private val viewModel by viewModels<MainViewModel>(ownerProducer = { requireActivity() })
   private var binding: FragmentMainBinding? = null
 
+  private fun <T : android.app.Dialog> showWithOverlaySuppression(dialog: T, name: String): T =
+      com.tom.rv2ide.services.AssistantOverlayService
+          .suppressWhileShown(dialog, viewLifecycleOwner, name)
+          .also { it.show() }
+
   companion object {
     private val log = LoggerFactory.getLogger(MainFragment::class.java)
 
@@ -321,7 +326,7 @@ class MainFragment : BaseFragment() {
     bottomSheet.behavior.maxHeight = (resources.displayMetrics.heightPixels * 0.85f).toInt()
     bottomSheet.behavior.skipCollapsed = true
     bottomSheet.window?.setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
-    bottomSheet.show()
+    showWithOverlaySuppression(bottomSheet, "main-project-list")
     bottomSheet.behavior.state = com.google.android.material.bottomsheet.BottomSheetBehavior.STATE_EXPANDED
   }
 
@@ -331,6 +336,7 @@ class MainFragment : BaseFragment() {
             getString(string.project_options_backup),
             getString(string.project_options_delete),
             getString(string.rename),
+            getString(R.string.acs_ui_project_details),
         )
 
     val builder = DialogUtils.newMaterialDialogBuilder(requireContext())
@@ -346,10 +352,24 @@ class MainFragment : BaseFragment() {
         2 -> {
           showRenameDialog(project, onActionComplete)
         }
+        3 -> showProjectDetails(project)
       }
       dialog.dismiss()
     }
-    builder.show()
+    showWithOverlaySuppression(builder.create(), "main-project-options")
+  }
+
+  private fun showProjectDetails(project: File) {
+    val dialog = DialogUtils.newMaterialDialogBuilder(requireContext())
+        .setTitle(project.name)
+        .setMessage(project.absolutePath)
+        .setPositiveButton(R.string.file_browser_action_copy_path) { _, _ ->
+          com.termux.shared.interact.ShareUtils.copyTextToClipboard(
+              requireContext(), "project-path", project.absolutePath, null)
+        }
+        .setNegativeButton(android.R.string.cancel, null)
+        .create()
+    showWithOverlaySuppression(dialog, "project-details")
   }
 
   private fun showRenameDialog(project: File, onComplete: () -> Unit) {
@@ -360,7 +380,8 @@ class MainFragment : BaseFragment() {
         com.tom.rv2ide.preferences.dialogEditTextField(
             requireContext(), getString(string.new_project_name), project.name)
     val input = requireNotNull(inputLayout.editText).apply { selectAll() }
-    builder.setView(com.tom.rv2ide.preferences.dialogFieldColumn(requireContext(), inputLayout))
+    val fields = com.tom.rv2ide.preferences.dialogFieldColumn(requireContext(), inputLayout)
+    builder.setView(fields)
 
     builder.setPositiveButton(getString(string.rename)) { dialog, _ ->
       val newName = input.text?.toString()?.trim()
@@ -378,7 +399,8 @@ class MainFragment : BaseFragment() {
               .setTitle(getString(string.invalid_name))
               .setMessage(getString(string.invalid_project_name_message))
               .setPositiveButton(getString(android.R.string.ok), null)
-              .show()
+              .create()
+              .also { showWithOverlaySuppression(it, "main-project-name-error") }
         }
         else -> {
           val newProjectDir = File(project.parentFile, newName)
@@ -388,7 +410,8 @@ class MainFragment : BaseFragment() {
                 .setTitle(getString(string.name_already_exists))
                 .setMessage(getString(string.project_name_exists_message, newName))
                 .setPositiveButton(getString(android.R.string.ok), null)
-                .show()
+                .create()
+                .also { showWithOverlaySuppression(it, "main-project-name-exists") }
           } else {
             renameProject(project, newProjectDir, onComplete)
             dialog.dismiss()
@@ -399,7 +422,9 @@ class MainFragment : BaseFragment() {
 
     builder.setNegativeButton(getString(string.cancel)) { dialog, _ -> dialog.dismiss() }
 
-    val alertDialog = builder.show()
+    val alertDialog = builder.create()
+    com.tom.rv2ide.preferences.clampDialogScrollHeight(alertDialog, fields, requireContext())
+    showWithOverlaySuppression(alertDialog, "main-project-rename")
 
     input.requestFocus()
     val imm =
@@ -459,7 +484,7 @@ class MainFragment : BaseFragment() {
       dialog.dismiss()
     }
     builder.setNegativeButton(getString(string.cancel)) { dialog, _ -> dialog.dismiss() }
-    builder.show()
+    showWithOverlaySuppression(builder.create(), "main-project-delete-confirm")
   }
 
   fun backupProject(project: File, onComplete: () -> Unit = {}) {
@@ -489,7 +514,7 @@ class MainFragment : BaseFragment() {
     builder.setView(binding.root)
     builder.setCancelable(false)
 
-    val dialog = builder.show()
+    val dialog = showWithOverlaySuppression(builder.create(), "main-project-backup")
 
     coroutineScope.launch(Dispatchers.IO) {
       try {
@@ -528,7 +553,8 @@ class MainFragment : BaseFragment() {
             d.dismiss()
             onComplete()
           }
-          successBuilder.show()
+          showWithOverlaySuppression(
+              successBuilder.create(), "main-project-backup-result")
         }
       } catch (e: Exception) {
         log.error("Error backing up project: ${project.absolutePath}", e)
@@ -539,7 +565,7 @@ class MainFragment : BaseFragment() {
           errorBuilder.setTitle(getString(string.backup_failed_title))
           errorBuilder.setMessage(getString(string.backup_failed_message, e.localizedMessage))
           errorBuilder.setPositiveButton(android.R.string.ok, null)
-          errorBuilder.show()
+          showWithOverlaySuppression(errorBuilder.create(), "main-project-backup-error")
         }
       }
     }
@@ -572,7 +598,7 @@ class MainFragment : BaseFragment() {
     builder.setView(binding.root)
     builder.setCancelable(false)
 
-    val dialog = builder.show()
+    val dialog = showWithOverlaySuppression(builder.create(), "main-project-delete")
 
     coroutineScope.launch(Dispatchers.IO) {
       try {
@@ -687,7 +713,7 @@ class MainFragment : BaseFragment() {
     sheetBinding.btnCancel.setOnClickListener { bottomSheet.dismiss() }
 
     bottomSheet.setContentView(sheetBinding.root)
-    bottomSheet.show()
+    showWithOverlaySuppression(bottomSheet, "main-git-clone")
   }
 
   private fun doClone(repo: String?, branch: String? = null, options: List<String> = emptyList()) {
@@ -773,7 +799,7 @@ class MainFragment : BaseFragment() {
       cloneJob.cancel(CancellationException("Cancelled by user"))
     }
 
-    val dialog = builder.show()
+    val dialog = showWithOverlaySuppression(builder.create(), "main-git-clone-progress")
     getDialog = { dialog }
   }
 
@@ -787,7 +813,7 @@ class MainFragment : BaseFragment() {
     builder.setTitle(string.git_clone_failed)
     builder.setMessage(error.localizedMessage)
     builder.setPositiveButton(android.R.string.ok, null)
-    builder.show()
+    showWithOverlaySuppression(builder.create(), "main-git-clone-error")
   }
 
   private fun gotoPreferences() {

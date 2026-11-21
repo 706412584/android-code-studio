@@ -65,8 +65,17 @@ constructor(context: Context, attrs: AttributeSet? = null, defStyleAttr: Int = 0
 
   /** 设置高度上限（dp）。传 0 或负数表示不限制。 */
   fun setMaxHeightDp(maxHeightDp: Int) {
-    maxHeightPx = if (maxHeightDp <= 0) 0 else (maxHeightDp * resources.displayMetrics.density).toInt()
-    requestLayout()
+    setMaxHeightPx(
+        if (maxHeightDp <= 0) 0 else (maxHeightDp * resources.displayMetrics.density).toInt())
+  }
+
+  /** 按窗口当前可用空间动态限高。 */
+  fun setMaxHeightPx(maxHeightPx: Int) {
+    val bounded = maxHeightPx.coerceAtLeast(0)
+    if (this.maxHeightPx != bounded) {
+      this.maxHeightPx = bounded
+      requestLayout()
+    }
   }
 
   override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {

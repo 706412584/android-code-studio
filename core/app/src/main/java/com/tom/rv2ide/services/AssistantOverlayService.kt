@@ -27,6 +27,7 @@ import android.content.Intent
 import android.graphics.PixelFormat
 import android.os.Build
 import android.os.IBinder
+import android.os.Looper
 import android.provider.Settings
 import android.view.Gravity
 import android.view.MotionEvent
@@ -109,6 +110,69 @@ class AssistantOverlayService :
 
   /** 窗口参数；保留引用以便输入法出现/消失时切换高度与焦点 flag。 */
   private var layoutParams: WindowManager.LayoutParams? = null
+
+  /** 让位只改变提交给系统的窗口参数，不触碰助手视图或真实布局状态。 */
+  private var uiSuppressed = false
+
+  private fun updateOverlayLayout(container: View) {
+    val params = layoutParams ?: return
+    if (uiSuppressed) {
+      val suppressed = WindowManager.LayoutParams().apply {
+        copyFrom(params)
+        alpha = 0f
+        flags = flags or
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+            WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
+      }
+      windowManager.updateViewLayout(container, suppressed)
+    } else {
+      windowManager.updateViewLayout(container, params)
+    }
+  }
+
+  private fun suppressForUi() {
+    if (uiSuppressed || rootView == null) return
+    uiSuppressed = true
+    val root = checkNotNull(rootView)
+    root.visibility = View.INVISIBLE
+    try {
+      updateOverlayLayout(root)
+    } catch (_: IllegalArgumentException) {
+      // 窗口已被系统移除，等待服务收尾。
+    }
+  }
+
+  private fun restoreAfterUiSuppression() {
+    if (!uiSuppressed || !isOverlayEnabled(this)) return
+    val root = rootView ?: return
+    val params = layoutParams ?: return
+    if (overlayExpanded) {
+      params.width = WindowManager.LayoutParams.MATCH_PARENT
+      params.height = expandedHeightPx()
+      val position = clampExpandedOffset(expandedOffsetX, expandedOffsetY)
+      expandedOffsetX = position[0]
+      expandedOffsetY = position[1]
+      params.gravity = Gravity.TOP or Gravity.START
+      params.x = expandedOffsetX
+      params.y = expandedOffsetY
+    } else if (params.gravity == (Gravity.START or Gravity.TOP)) {
+      val position = clampToScreen(root, collapsedX, collapsedY)
+      collapsedX = position[0]
+      collapsedY = position[1]
+      params.x = collapsedX
+      params.y = collapsedY
+    }
+    uiSuppressed = false
+    root.visibility = View.VISIBLE
+    try {
+      updateOverlayLayout(root)
+      normalizeOverlayGravity(root)
+    } catch (_: IllegalArgumentException) {
+      uiSuppressed = true
+      root.visibility = View.INVISIBLE
+      // 窗口已被系统移除，等待服务收尾。
+    }
+  }
 
   /**
    * 拖动句柄（收起态的 FAB）。
@@ -283,6 +347,7 @@ class AssistantOverlayService :
    */
   private fun attachOverlay() {
     if (rootView != null) {
+      if (isUiSuppressed()) suppressForUi() else restoreAfterUiSuppression()
       return
     }
     val container = FrameLayout(this)
@@ -338,6 +403,9 @@ class AssistantOverlayService :
     installDrag()
     // 展开/收起时在「归零铺满」与「回到拖动落点」之间切换窗口坐标。见该方法。
     installOverlaySizeHandling()
+    if (isUiSuppressed()) {
+      suppressForUi()
+    }
   }
 
   /**
@@ -409,7 +477,7 @@ class AssistantOverlayService :
         lp.flags = lp.flags or WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
       }
       try {
-        windowManager.updateViewLayout(container, lp)
+        updateOverlayLayout(container)
       } catch (e: IllegalArgumentException) {
         // 视图已被移除。忽略。
       }
@@ -530,7 +598,7 @@ class AssistantOverlayService :
     lp.x = expandedOffsetX
     lp.y = expandedOffsetY
     try {
-      windowManager.updateViewLayout(container, lp)
+      updateOverlayLayout(container)
     } catch (e: IllegalArgumentException) {
       // 服务正在收尾、视图已移除。忽略。
     }
@@ -556,7 +624,7 @@ class AssistantOverlayService :
     lp.x = collapsedX
     lp.y = collapsedY
     try {
-      windowManager.updateViewLayout(container, lp)
+      updateOverlayLayout(container)
     } catch (e: IllegalArgumentException) {
       // 视图已被移除（服务正在收尾）。忽略。
     }
@@ -605,7 +673,7 @@ class AssistantOverlayService :
       collapsedX = location[0]
       collapsedY = location[1]
       try {
-        windowManager.updateViewLayout(container, lp)
+        updateOverlayLayout(container)
       } catch (e: IllegalArgumentException) {
         // 视图已被移除。忽略。
       }
@@ -638,7 +706,7 @@ class AssistantOverlayService :
       collapsedX = clamped[0]
       collapsedY = clamped[1]
       try {
-        windowManager.updateViewLayout(container, lp)
+        updateOverlayLayout(container)
       } catch (e: IllegalArgumentException) {
         // 视图已被移除。忽略。
       }
@@ -737,6 +805,7 @@ class AssistantOverlayService :
 
   /** 摘除悬浮窗。必须在 [onDestroy] 里调用，见类注释。 */
   private fun detachOverlay() {
+    uiSuppressed = false
     assistant?.dispose()
     assistant = null
     // 清掉拖动监听，断开「View → 监听闭包 → Service」的引用链（见 dragHandle）。
@@ -970,6 +1039,103 @@ class AssistantOverlayService :
      */
     @Volatile var isShowing: Boolean = false
       private set
+
+    private val uiSuppressionOwners = mutableSetOf<String>()
+    private var nextUiSuppressionId = 0L
+
+    private val uiHandler = android.os.Handler(Looper.getMainLooper())
+    private var uiRestorePending = false
+    private val restoreUi = Runnable {
+      if (uiSuppressionOwners.isEmpty()) instance?.get()?.restoreAfterUiSuppression()
+      uiRestorePending = false
+    }
+
+    /** 租约在主线程成对使用；嵌套弹层只在最后一层关闭后恢复。 */
+    @JvmStatic
+    @androidx.annotation.MainThread
+    fun acquireUiSuppression(owner: String): String {
+      check(Looper.myLooper() == Looper.getMainLooper())
+      uiHandler.removeCallbacks(restoreUi)
+      uiRestorePending = false
+      val token = "$owner#${++nextUiSuppressionId}"
+      uiSuppressionOwners += token
+      instance?.get()?.suppressForUi()
+      return token
+    }
+
+    @JvmStatic
+    @androidx.annotation.MainThread
+    fun releaseUiSuppression(token: String?) {
+      check(Looper.myLooper() == Looper.getMainLooper())
+      if (token == null || !uiSuppressionOwners.remove(token)) return
+      if (uiSuppressionOwners.isEmpty()) {
+        // 等本轮页面交接结束，避免设置 → 管理器、旋转重建期间闪回浮球。
+        uiRestorePending = true
+        uiHandler.post(restoreUi)
+      }
+    }
+
+    @JvmStatic
+    fun isUiSuppressed(): Boolean = uiSuppressionOwners.isNotEmpty() || uiRestorePending
+
+    /** 页面可见时让位，切后台及销毁时自动归还，不接管弹窗的业务回调。 */
+    fun suppressWhileStarted(owner: androidx.lifecycle.LifecycleOwner, name: String) {
+      owner.lifecycle.addObserver(object : androidx.lifecycle.DefaultLifecycleObserver {
+        private var token: String? = null
+        override fun onStart(owner: androidx.lifecycle.LifecycleOwner) {
+          if (token == null) token = acquireUiSuppression(name)
+        }
+        override fun onStop(owner: androidx.lifecycle.LifecycleOwner) {
+          releaseUiSuppression(token)
+          token = null
+        }
+        override fun onDestroy(owner: androidx.lifecycle.LifecycleOwner) {
+          releaseUiSuppression(token)
+          token = null
+          owner.lifecycle.removeObserver(this)
+        }
+      })
+    }
+
+    /** 监听窗口挂载，保留调用者已有的 onShow/onDismiss。 */
+    fun <T : android.app.Dialog> suppressWhileShown(
+        dialog: T,
+        owner: androidx.lifecycle.LifecycleOwner,
+        name: String,
+    ): T {
+      val decor = checkNotNull(dialog.window).decorView
+      var token: String? = null
+      fun acquire() {
+        if (decor.isAttachedToWindow &&
+            owner.lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED) && token == null) {
+          token = acquireUiSuppression(name)
+        }
+      }
+      fun release() {
+        releaseUiSuppression(token)
+        token = null
+      }
+      val observer = object : androidx.lifecycle.DefaultLifecycleObserver,
+          View.OnAttachStateChangeListener {
+        override fun onStart(owner: androidx.lifecycle.LifecycleOwner) = acquire()
+        override fun onStop(owner: androidx.lifecycle.LifecycleOwner) = release()
+        override fun onDestroy(owner: androidx.lifecycle.LifecycleOwner) {
+          release()
+          decor.removeOnAttachStateChangeListener(this)
+          owner.lifecycle.removeObserver(this)
+        }
+        override fun onViewAttachedToWindow(view: View) = acquire()
+        override fun onViewDetachedFromWindow(view: View) {
+          release()
+          decor.removeOnAttachStateChangeListener(this)
+          owner.lifecycle.removeObserver(this)
+        }
+      }
+      decor.addOnAttachStateChangeListener(observer)
+      owner.lifecycle.addObserver(observer)
+      acquire()
+      return dialog
+    }
 
     /** 蹦床 Activity 回传附件结果的 action 与 extra 键。 */
     const val ACTION_ATTACHMENT_RESULT = "com.tom.rv2ide.action.ASSISTANT_ATTACHMENT_RESULT"

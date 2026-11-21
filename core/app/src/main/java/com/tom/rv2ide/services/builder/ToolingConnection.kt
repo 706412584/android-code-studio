@@ -227,12 +227,15 @@ internal class ToolingConnection(
 
   override fun logMessage(params: LogMessageParams) {
     val logger = LoggerFactory.getLogger(params.tag)
+    val message =
+        if (params.throwable.isNullOrBlank()) params.message
+        else "${params.message}\n${params.throwable}"
     when (params.level) {
-      'D' -> logger.debug(params.message)
-      'W' -> logger.warn(params.message)
-      'E' -> logger.error(params.message)
-      'I' -> logger.info(params.message)
-      else -> logger.trace(params.message)
+      'D' -> logger.debug(message)
+      'W' -> logger.warn(message)
+      'E' -> logger.error(message)
+      'I' -> logger.info(message)
+      else -> logger.trace(message)
     }
   }
 
