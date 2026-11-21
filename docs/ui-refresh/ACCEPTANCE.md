@@ -140,4 +140,8 @@ SDK/JDK 最终批次的设备状态以本文件“SDK/JDK 管理页最终批次�
 
 补充：旋转曾复现旧 MainActivity 更新回调访问空 binding，已加生命周期保护并复测；全屏曾漏掉初始化中的活动会话，已补路径回退并复测。三路只读审查及最终差异检查完成，未保留临时诊断日志。
 
-未测/不扩大声明：五主题全页面矩阵、所有模板及特殊字段、SDK/JDK 真实安装卸载、模型实际消息/工具卡片、Cloud Token 保存、文件树重命名单独入口、全部依赖构建成功。文件树重命名与项目重命名共用限高实现。工作区未提交、推送或发布。
+未测/不扩大声明：五主题全页面矩阵、所有模板及特殊字段、SDK/JDK 真实安装卸载、模型实际消息/工具卡片、Cloud Token 保存、文件树重命名单独入口、全部依赖构建成功。文件树重命名与项目重命名共用限高实现。工作区未推送或发布。
+
+## 独立 diff 审查后的旋转补修
+
+代理发现镜像探测期间旋转会使旧 Fragment 回调失效。现由 Activity 级 `MainViewModel` 暂存待打开项目，新 Activity 观察者消费，旧 Fragment 不再直接导航；失败提示仅在 Fragment 仍附加时显示。`build-rotation-callback-fix.log` 构建成功，`mirror-create-rotate-editor-r31` 验证创建后立即横竖旋转仍进入编辑器，Wrapper 为腾讯镜像，`MyProject991120` 已删除。最终 APK 与设备 SHA-256 均为 `19b7c54279cb3e1cf3dfaf20447ddcd613370db6faab44cae40bdbe8f2ec63a8`。

@@ -77,6 +77,12 @@ class MainViewModel : ViewModel() {
 
   internal val template = MutableLiveData<Template<*>>(null)
   internal val creatingProject = MutableLiveData(false)
+  internal val pendingProjectOpen = MutableLiveData<java.io.File?>(null)
+
+  /** 由 Activity 消费，避免模板创建回调持有已销毁的 Fragment。 */
+  internal fun requestOpenProject(root: java.io.File) {
+    pendingProjectOpen.value = root
+  }
 
   val currentScreen: LiveData<Int> = _currentScreen
 

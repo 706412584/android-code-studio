@@ -623,6 +623,7 @@ class MainFragment : BaseFragment() {
   }
 
   private fun showCreateProject() {
+    val activityViewModel = viewModel
     com.tom.rv2ide.templates
         .AtcInterface()
         .create(
@@ -639,7 +640,7 @@ class MainFragment : BaseFragment() {
               override fun onTemplateCreated(success: Boolean, message: String) {
                 // 失败必须显式告知：此前这里是空实现，TemplateListFragment 那份又把
                 // message 丢掉，于是创建失败时用户只看到「点一下、回到首页、什么都没发生」。
-                if (!success) showCreateFailure(message)
+                if (!success && isAdded) showCreateFailure(message)
               }
 
               override fun onTemplateCreated(
@@ -648,8 +649,8 @@ class MainFragment : BaseFragment() {
                   projectDir: java.io.File?,
               ) {
                 if (success && projectDir != null) {
-                  openProject(projectDir)
-                } else if (!success) {
+                  activityViewModel.requestOpenProject(projectDir)
+                } else if (!success && isAdded) {
                   showCreateFailure(message)
                 }
               }

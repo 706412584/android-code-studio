@@ -39,6 +39,7 @@ import com.tom.rv2ide.projects.IProjectManager
 import com.tom.rv2ide.projects.internal.ProjectManagerImpl
 import com.tom.rv2ide.resources.R.string
 import com.tom.rv2ide.templates.ITemplateProvider
+import com.tom.rv2ide.templates.preferences.WizardPreferences
 import com.tom.rv2ide.utils.DialogUtils
 import com.tom.rv2ide.utils.flashInfo
 import com.tom.rv2ide.R
@@ -98,6 +99,14 @@ class MainActivity : EdgeToEdgeIDEActivity() {
     // 有更新时由弹窗按钮驱动后续：点「下载」直接进下载，点「跳过」/「浏览器」
     // 或直接关闭则继续打开上次项目。检查失败或无更新时立即继续，不拖慢启动。
     tomIDEUpdater.checkForUpdates(onNoUpdate = { openLastProject() })
+
+    viewModel.pendingProjectOpen.observe(this) { root ->
+      if (root != null) {
+        viewModel.pendingProjectOpen.value = null
+        WizardPreferences.addRecentProject(this, root.absolutePath)
+        openProject(root)
+      }
+    }
 
     viewModel.currentScreen.observe(this) { screen ->
       if (screen == -1) {

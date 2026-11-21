@@ -82,4 +82,5 @@
 - 镜像诊断：r18 为 AGP 8.13.0 / Gradle 8.13 / Kotlin 2.1.0，当前为 9.2.0 / 9.6.1 / 2.3.21。VPN 后成功指向网络路径，未据此降级。修复 Wrapper 异步换源与自动打开项目的竞态，换源流程结束后才初始化。真实 `MyProject856031` 在编辑器打开前已是腾讯镜像，测试目录已删除；其它仓库失败仍需具体堆栈，不宣称全部网络问题已修复。
 - 三路只读审查（复用/质量/效率）及主会话最终差异检查完成；复制路径复用 `ShareUtils` 与既有字符串，清理重复状态、热路径分配和诊断日志。
 - `build-final-combined.log` 构建成功，`:core:common:testDebugUnitTest` 与 `:tooling:impl:test` 通过；最终 arm64 APK 同签名覆盖安装，本机与设备 SHA-256 均为 `cd0985ad1f209a61c8f7441bdff6eeaa05792d9683f48ef76a4647e723727e1c`。
-- 证据见 `.verify/ui-refresh-v3/` 与 `final-verification.json`。设备恢复竖屏、字号1.0、百度输入法、暖阳、跟随系统、原悬浮落点；测试项目/偏好备份均已删除。未执行 SDK/JDK 真实安装卸载、模型请求或全部主题/模板/构建矩阵。Gradle daemon 已停止，未提交、推送或发布。
+- 证据见 `.verify/ui-refresh-v3/` 与 `final-verification.json`。设备恢复竖屏、字号1.0、百度输入法、暖阳、跟随系统、原悬浮落点；测试项目/偏好备份均已删除。未执行 SDK/JDK 真实安装卸载、模型请求或全部主题/模板/构建矩阵。Gradle daemon 已停止，未推送或发布。
+- 独立 diff 审查发现换源等待期旋转会留下陈旧 Fragment 导航，已改为 Activity 级 `MainViewModel` 暂存并消费待打开项目，旧 Fragment 不再直接导航。`build-rotation-callback-fix.log` 构建通过；`mirror-create-rotate-editor-r31` 证明创建后立即横竖旋转仍能进入编辑器，`MyProject991120` 已清理。最终 APK 与设备 SHA-256 均为 `19b7c54279cb3e1cf3dfaf20447ddcd613370db6faab44cae40bdbe8f2ec63a8`。
