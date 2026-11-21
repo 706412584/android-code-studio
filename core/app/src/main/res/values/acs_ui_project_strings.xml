@@ -2,4 +2,18 @@
 <resources>
   <string name="acs_ui_project_description">Open %1$s at %2$s</string>
   <string name="acs_ui_project_settings">Project settings</string>
+  <string name="acs_ui_project_details">Project details</string>
+  <string name="acs_ui_settings_appearance">%1$s · %2$s</string>
+  <string name="acs_ui_sdk_installed">Installed (%1$d)</string>
+  <string name="acs_ui_sdk_available">Available to install</string>
+  <string name="acs_ui_sdk_installed_hint">Tap an installed version to review removal.</string>
+  <string name="acs_ui_path_details">Show full path</string>
+  <string name="acs_ui_assistant_no_project">No project selected</string>
+  <string name="acs_ui_assistant_choose_project">Choose a project from the session drawer</string>
+  <string name="acs_ui_assistant_build">Build</string>
+  <string name="acs_ui_assistant_plan">Plan</string>
+  <string name="acs_ui_assistant_auto">Auto</string>
+  <string name="acs_ui_assistant_reasoning">Thinking: %1$s</string>
+  <string name="acs_ui_assistant_example_structure">Explain this project’s structure</string>
+  <string name="acs_ui_assistant_example_build">Review the build configuration</string>
 </resources>

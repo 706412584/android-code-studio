@@ -35,6 +35,7 @@ import com.tom.rv2ide.artificial.agent.FloatingAssistantView
 import com.tom.rv2ide.artificial.agent.host.ActivityHost
 import com.tom.rv2ide.preferences.internal.GeneralPreferences
 import com.tom.rv2ide.projects.IProjectManager
+import com.tom.rv2ide.projects.internal.ProjectManagerImpl
 import com.tom.rv2ide.utils.resolveAttr
 import java.io.File
 
@@ -67,6 +68,7 @@ class AssistantFullscreenActivity : EdgeToEdgeIDEActivity() {
 
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
+    com.tom.rv2ide.services.AssistantOverlayService.suppressWhileStarted(this, "assistant-fullscreen")
     // 内容延伸到系统栏区域；否则系统栏即使隐藏，布局里也会保留一块黑边。
     // 与 BaseEditorActivity 里同一处调用（`WindowCompat.setDecorFitsSystemWindows`）。
     enableEdgeToEdge()
@@ -242,7 +244,8 @@ class AssistantFullscreenActivity : EdgeToEdgeIDEActivity() {
    * 两个来源不一致，实测后果就是「主屏助手能发消息，点全屏后发同一条却报
    * 『尚未打开项目，请先打开或新建一个项目』」。
    *
-   * <p>顺序：已打开的项目优先（编辑器入口本就该用它），否则回退到主屏认定的项目。
+   * <p>顺序：同步完成的工作区、活动会话路径、主屏最近项目。活动会话在初始化中或
+   * 初始化失败时也已存在，可避免编辑器已打开但顶栏显示「尚未选择项目」。
    * 与 `MainFragment.currentWorkspace()` 的判据保持一致（存在且是目录），
    * 否则会出现「主屏认为有项目、全屏认为没有」的第二处漂移。
    *
@@ -252,6 +255,9 @@ class AssistantFullscreenActivity : EdgeToEdgeIDEActivity() {
    */
   private fun resolveWorkspace(): File? {
     IProjectManager.getInstance().getWorkspace()?.getProjectDir()?.let {
+      return it
+    }
+    ProjectManagerImpl.getInstance().activeSession()?.projectDir?.let {
       return it
     }
     val path = GeneralPreferences.lastOpenedProject

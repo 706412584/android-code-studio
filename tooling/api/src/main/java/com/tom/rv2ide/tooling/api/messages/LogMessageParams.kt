@@ -25,7 +25,12 @@ import com.tom.rv2ide.utils.ILogger
  *
  * @author Akash Yadav
  */
-data class LogMessageParams(val level: Char, val tag: String, val message: String)
+data class LogMessageParams(
+    val level: Char,
+    val tag: String,
+    val message: String,
+    val throwable: String? = null,
+)
 
 /** Creates a new [LogLine] instance from this [LogMessageParams]. */
 fun LogMessageParams.toLogLine(): LogLine {

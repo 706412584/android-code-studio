@@ -53,6 +53,20 @@
       app:chipSpacingVertical="@dimen/acs_ui_space_xs"
       tools:ignore="MissingConstraints" />
 
+    <com.google.android.material.textview.MaterialTextView
+      android:layout_width="match_parent"
+      android:layout_height="wrap_content"
+      android:text="@string/acs_ui_sdk_installed_hint"
+      android:textAppearance="@style/acs_ui_text_caption" />
+
+    <com.google.android.material.textview.MaterialTextView
+      android:id="@+id/available_label"
+      android:layout_width="match_parent"
+      android:layout_height="wrap_content"
+      android:layout_marginTop="@dimen/acs_ui_space_md"
+      android:text="@string/acs_ui_sdk_available"
+      android:textAppearance="@style/acs_ui_text_body" />
+
     <!-- 可安装版本：横向 chip 流式排列，点一个即装 -->
     <com.google.android.material.chip.ChipGroup
       android:id="@+id/available_chips"

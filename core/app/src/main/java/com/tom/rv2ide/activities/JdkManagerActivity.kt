@@ -68,6 +68,7 @@ class JdkManagerActivity : EdgeToEdgeIDEActivity() {
 
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
+    com.tom.rv2ide.services.AssistantOverlayService.suppressWhileStarted(this, "jdk-manager")
     binding.toolbar.setNavigationOnClickListener { onBackPressedDispatcher.onBackPressed() }
     binding.outputHeader.setOnClickListener {
       setOutputExpanded(binding.outputScroll.visibility != View.VISIBLE)
@@ -98,6 +99,18 @@ class JdkManagerActivity : EdgeToEdgeIDEActivity() {
     cards.clear()
     for (version in versions) {
       val card = JdkManagerCardBinding.inflate(inflater, binding.jdkContainer, false)
+      card.jdkPath.setOnClickListener {
+        val path = card.jdkPath.text.toString()
+        com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
+            .setTitle(card.jdkTitle.text)
+            .setMessage(path)
+            .setPositiveButton(R.string.file_browser_action_copy_path) { _, _ ->
+              com.termux.shared.interact.ShareUtils.copyTextToClipboard(
+                  this, "jdk-path", path, null)
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+      }
       card.jdkUseButton.setOnClickListener { use(version) }
       card.jdkInstallButton.setOnClickListener { confirmInstall(version) }
       card.jdkUninstallButton.setOnClickListener { confirmUninstall(version) }

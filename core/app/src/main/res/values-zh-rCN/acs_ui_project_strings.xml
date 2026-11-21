@@ -2,4 +2,18 @@
 <resources>
   <string name="acs_ui_project_description">打开项目 %1$s，路径为 %2$s</string>
   <string name="acs_ui_project_settings">项目设置</string>
+  <string name="acs_ui_project_details">项目详情</string>
+  <string name="acs_ui_settings_appearance">%1$s · %2$s</string>
+  <string name="acs_ui_sdk_installed">已安装（%1$d）</string>
+  <string name="acs_ui_sdk_available">可安装版本</string>
+  <string name="acs_ui_sdk_installed_hint">点已安装版本可查看卸载确认。</string>
+  <string name="acs_ui_path_details">查看完整路径</string>
+  <string name="acs_ui_assistant_no_project">尚未选择项目</string>
+  <string name="acs_ui_assistant_choose_project">可从会话抽屉选择项目</string>
+  <string name="acs_ui_assistant_build">构建模式</string>
+  <string name="acs_ui_assistant_plan">规划模式</string>
+  <string name="acs_ui_assistant_auto">自动模式</string>
+  <string name="acs_ui_assistant_reasoning">思考：%1$s</string>
+  <string name="acs_ui_assistant_example_structure">帮我梳理当前项目结构</string>
+  <string name="acs_ui_assistant_example_build">检查项目的构建配置</string>
 </resources>

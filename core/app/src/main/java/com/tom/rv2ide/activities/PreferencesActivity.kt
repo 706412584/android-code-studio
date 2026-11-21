@@ -46,6 +46,7 @@ class PreferencesActivity : EdgeToEdgeIDEActivity() {
 
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
+    com.tom.rv2ide.services.AssistantOverlayService.suppressWhileStarted(this, "preferences")
 
     setSupportActionBar(binding.toolbar)
     supportActionBar!!.setTitle(R.string.ide_preferences)
@@ -185,21 +186,6 @@ class PreferencesActivity : EdgeToEdgeIDEActivity() {
 
   private fun loadFragment(fragment: Fragment) {
     super.loadFragment(fragment, binding.fragmentContainer.id)
-  }
-
-  override fun onResume() {
-    super.onResume()
-    com.tom.rv2ide.services.AssistantOverlayService.hideTemporarily(this)
-  }
-
-  override fun onStop() {
-    super.onStop()
-    // 离开设置页（回主界面或回桌面）时，若悬浮窗是「跳设置时被临时关闭」的，
-    // 按开关恢复——覆盖「跳设置后直接回桌面（无 Main/Editor 任务）」的边界：
-    // 那种情况下没有主界面 onResume 可挂，只能在设置页关闭时恢复。
-    // restoreIfEnabled 内部检查开关与服务状态：主动关闭（enabled=false）或
-    // 服务在跑（isShowing=true）时不会误恢复；后台启动受限时静默放弃。
-    com.tom.rv2ide.services.AssistantOverlayService.restoreIfEnabled(this)
   }
 
   override fun onDestroy() {

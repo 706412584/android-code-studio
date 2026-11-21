@@ -244,6 +244,7 @@ internal fun ChatInputBar(
     sessionId: String = "",
     onTodoExpandedChange: (Boolean) -> Unit = {},
     forceCollapseDashboard: Boolean = false,
+    promptSuggestions: List<String> = emptyList(),
     /** 消息列表正在滚动时内容区淡出到 40%，停止滚动恢复；用于长列表阅读时降低底部干扰（同 git 页 tab 栏）。 */
     isScrolling: Boolean = false,
     modifier: Modifier = Modifier
@@ -352,6 +353,16 @@ internal fun ChatInputBar(
                     .padding(bottom = Spacing.md)
                     .padding(bottom = imeInset)
             ) {
+            if (value.isBlank() && !isBusy && pendingAttachments.isEmpty() && promptSuggestions.isNotEmpty()) {
+                Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
+                    promptSuggestions.forEach { suggestion ->
+                        androidx.compose.material3.SuggestionChip(
+                            onClick = { if (value.isBlank() && !isBusy) onValueChange(suggestion) },
+                            label = { Text(suggestion, maxLines = 1) })
+                    }
+                }
+            }
             if (filteredCommands.isNotEmpty()) {
                 SlashMenuList(
                     items = filteredCommands,
@@ -537,7 +548,7 @@ internal fun ChatInputBar(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Row(
-                        modifier = Modifier.weight(1f),
+                        modifier = Modifier.weight(1f).horizontalScroll(rememberScrollState()),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         val modeColor = when (currentMode) {
@@ -565,12 +576,16 @@ internal fun ChatInputBar(
                         ) {
                             Box(
                                 modifier = Modifier
-                                    .width(46.dp)
-                                    .padding(vertical = 4.dp),
+                                    .heightIn(min = 48.dp)
+                                    .padding(horizontal = Spacing.sm, vertical = Spacing.xs),
                                 contentAlignment = Alignment.Center
                             ) {
                                 Text(
-                                    text = currentMode.name,
+                                    text = stringResource(when (currentMode) {
+                                        AgentMode.BUILD -> com.tom.rv2ide.R.string.acs_ui_assistant_build
+                                        AgentMode.PLAN -> com.tom.rv2ide.R.string.acs_ui_assistant_plan
+                                        AgentMode.AUTO -> com.tom.rv2ide.R.string.acs_ui_assistant_auto
+                                    }),
                                     style = MaterialTheme.typography.labelSmall.copy(
                                         fontWeight = FontWeight.Bold,
                                         color = modeTextColor

@@ -51,6 +51,8 @@ internal class AssistantInputBarBridge {
   /** 输入框文本。Compose 侧 onValueChange 回写这里；宿主写入用 [text] 属性。 */
   var text by mutableStateOf("")
 
+  var conversationEmpty by mutableStateOf(true)
+
   // ── 运行态 ──
 
   /** 当前显示会话是否在跑（原 setRunningUi 的 running 参数）。 */

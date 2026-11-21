@@ -24,7 +24,6 @@ import android.view.Gravity
 import android.view.ViewGroup
 import android.widget.FrameLayout
 import android.widget.LinearLayout
-import android.widget.ScrollView
 import com.google.android.material.textfield.TextInputEditText
 import com.google.android.material.textfield.TextInputLayout
 
@@ -119,7 +118,10 @@ internal fun dialogMultilineField(
  * 内容边距——用一层 `FrameLayout` 给 padding，而不是给 ScrollView 自身设 padding
  * （后者在内容超高时会被裁掉两侧）。
  */
-internal fun dialogFieldColumn(context: Context, vararg children: android.view.View): ScrollView {
+internal fun dialogFieldColumn(
+    context: Context,
+    vararg children: android.view.View,
+): com.tom.rv2ide.ui.BoundedScrollView {
   val column =
       LinearLayout(context).apply {
         orientation = LinearLayout.VERTICAL
@@ -142,7 +144,7 @@ internal fun dialogFieldColumn(context: Context, vararg children: android.view.V
         addView(column, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
       }
 
-  return ScrollView(context).apply {
+  return com.tom.rv2ide.ui.BoundedScrollView(context).apply {
     addView(padded, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
   }
 }
@@ -150,26 +152,64 @@ internal fun dialogFieldColumn(context: Context, vararg children: android.view.V
 internal fun dpToPx(context: Context, value: Int): Int =
     (value * context.resources.displayMetrics.density).toInt()
 
-/**
- * 把 [dialogFieldColumn] 返回的滚动容器限高到屏幕的 45%。
- *
- * <p>不限高时，长内容（长提示词、粘贴进来的 XML）会把对话框撑到满屏，
- * 底部按钮栏被挤出可视区——用户看到的是「能编辑但找不到保存按钮」。
- * 45% 是标题、提示与按钮都留在可见区后的余量，不是内容长度上限。
- *
- * <p>必须在 `show()` **之前**调用：它通过 `setOnShowListener` 设置布局参数，
- * 因为 AlertController 在 show 时会把 setView 设的高度覆盖成 WRAP_CONTENT。
- */
+/** 根据键盘上方的可用窗口高度限制内容，优先保留输入区及原生按钮栏。 */
 internal fun clampDialogScrollHeight(
     dialog: android.app.Dialog,
-    scroll: ScrollView,
+    scroll: com.tom.rv2ide.ui.BoundedScrollView,
     context: Context,
 ) {
-  dialog.setOnShowListener {
-    scroll.layoutParams =
-        FrameLayout.LayoutParams(
-            FrameLayout.LayoutParams.MATCH_PARENT,
-            (context.resources.displayMetrics.heightPixels * 0.45f).toInt(),
-        )
+  val window = dialog.window ?: return
+  window.setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
+  val decor = window.decorView
+  val visible = android.graphics.Rect()
+  val screenLimit = (context.resources.displayMetrics.heightPixels * 0.45f).toInt()
+  var topPanel: android.view.View? = null
+  var buttonPanel: android.view.View? = null
+  val margin = dpToPx(context, 16)
+  var titleHeight = 0
+  var wasCompact = false
+  scroll.setMaxHeightPx(screenLimit)
+  val listener = android.view.ViewTreeObserver.OnGlobalLayoutListener {
+    if (scroll.width > 0 && decor.height > 0) {
+      decor.getWindowVisibleDisplayFrame(visible)
+      val available = visible.height()
+      if (available > 0) {
+        if (topPanel == null) {
+          topPanel = dialog.findViewById(androidx.appcompat.R.id.topPanel)
+        }
+        if (buttonPanel == null) {
+          buttonPanel = dialog.findViewById(androidx.appcompat.R.id.buttonPanel)
+        }
+        if (topPanel != null && topPanel.height > 0) titleHeight = topPanel.height
+        val buttonHeight = buttonPanel?.height ?: 0
+        val contentHeight = scroll.getChildAt(0)?.height ?: screenLimit
+        val desiredHeight = minOf(screenLimit, contentHeight)
+        // decor 包含全屏遮罩，不能用它估算对话框 chrome。极小横屏下收起标题，
+        // 给输入与原生按钮留出空间；不收起标题会导致三者无法同时可见。
+        val hideTitle = titleHeight > 0 &&
+            titleHeight + buttonHeight + desiredHeight + margin > available
+        topPanel?.visibility = if (hideTitle) android.view.View.GONE else android.view.View.VISIBLE
+        if (hideTitle && !wasCompact) {
+          scroll.post { scroll.fullScroll(android.view.View.FOCUS_DOWN) }
+        }
+        wasCompact = hideTitle
+        val chrome = (if (hideTitle) 0 else titleHeight) + buttonHeight
+        scroll.setMaxHeightPx(
+            minOf(screenLimit, available - chrome - margin).coerceAtLeast(1))
+      }
+    }
+  }
+  scroll.addOnAttachStateChangeListener(object : android.view.View.OnAttachStateChangeListener {
+    override fun onViewAttachedToWindow(view: android.view.View) {
+      decor.viewTreeObserver.addOnGlobalLayoutListener(listener)
+      scroll.post { listener.onGlobalLayout() }
+    }
+    override fun onViewDetachedFromWindow(view: android.view.View) {
+      if (decor.viewTreeObserver.isAlive) decor.viewTreeObserver.removeOnGlobalLayoutListener(listener)
+    }
+  })
+  if (scroll.isAttachedToWindow) {
+    decor.viewTreeObserver.addOnGlobalLayoutListener(listener)
+    scroll.post { listener.onGlobalLayout() }
   }
 }

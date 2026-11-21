@@ -96,10 +96,17 @@ class AtcWizardDialog : BottomSheetDialogFragment() {
     setupTemplatesGrid(ctx)
     setupButtons(ctx)
 
+    com.tom.rv2ide.services.AssistantOverlayService.suppressWhileShown(
+        dialog, this, "atc-wizard")
     dialog.setContentView(binding.root)
     dialog.behavior.maxHeight = (resources.displayMetrics.heightPixels * 0.85f).toInt()
     dialog.behavior.skipCollapsed = true
     dialog.setOnShowListener {
+      dialog.findViewById<View>(com.google.android.material.R.id.design_bottom_sheet)?.let { sheet ->
+        sheet.layoutParams = sheet.layoutParams.apply {
+          height = android.view.ViewGroup.LayoutParams.MATCH_PARENT
+        }
+      }
       dialog.behavior.state = com.google.android.material.bottomsheet.BottomSheetBehavior.STATE_EXPANDED
     }
     dialog.window?.setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
@@ -270,6 +277,7 @@ class AtcWizardDialog : BottomSheetDialogFragment() {
         )
         binding.backButton.visibility = View.GONE
         binding.createButton.visibility = View.GONE
+        binding.wizardActions.visibility = View.GONE
       }
     }
 
@@ -386,23 +394,9 @@ class AtcWizardDialog : BottomSheetDialogFragment() {
 
   private fun proceedToOptionsPage(ctx: Context) {
     binding.root.post {
-      // 项目名与包名后缀都要**先净化再拼**。
-      //
-      // 模板 displayName 里可能含标识符不允许的字符：「Native C++」直接去掉空格得到
-      // `MyNativeC++`，而 `+` 不在项目名允许的字符集里，于是打开这一页的瞬间
-      // 「Project name must start with a letter and contain only letters…」就报错，
-      // 创建按钮永远点不动——模板等于不可用。
-      //
-      // 净化规则：只保留字母与数字（项目名）／只保留字母、数字与点（包名）。
-      // 不做「把 + 替换成 p」这类映射：那会让包名与模板名看起来毫无关系，
-      // 用户改起来更困惑，不如直接丢掉非法字符。
-      val rawName = selectedTemplate?.displayName ?: ""
-      // 只保留字母数字：空格与 + 一并丢掉（包名各段本来也不能含空格）。
-      val templateName = "My" + rawName.filter { it.isLetterOrDigit() }
-      val packageSuffix = "my" + rawName.lowercase().filter { it.isLetterOrDigit() }
-
-      binding.projectNameInput.setText(templateName)
-      binding.packageNameInput.setText("com.example.$packageSuffix")
+      val suffix = kotlin.random.Random.nextInt(100_000, 1_000_000).toString()
+      binding.projectNameInput.setText("MyProject$suffix")
+      binding.packageNameInput.setText("com.example.myapp$suffix")
 
       // 强制跑一次校验。理由：上面两处 setText 虽然会触发监听器，但**不保证**一定
       // 跑过 validate——`setText` 相同的文本时 TextWatcher 可能不回调；而
@@ -442,6 +436,8 @@ class AtcWizardDialog : BottomSheetDialogFragment() {
       )
       binding.backButton.visibility = View.VISIBLE
       binding.createButton.visibility = View.VISIBLE
+      binding.wizardActions.visibility = View.VISIBLE
+      binding.wizardScroll.scrollTo(0, 0)
     }
   }
 
@@ -522,12 +518,14 @@ class AtcWizardDialog : BottomSheetDialogFragment() {
                 message: String,
                 projectDir: File?,
             ) {
-              // 创建成功后统一把 wrapper 的 Gradle 下载源换成可达的镜像。
-              // 放在这里（而不是各模板内部）是因为：13 个模板的 assets 各有自己的
-              // distributionUrl，逐个改既漏又难维护；而所有模板都要经过这个回调。
-              // 只改一行（见 GradleMirror.rewriteWrapper），失败不影响创建结果。
-              if (success && projectDir != null) applyGradleMirror(projectDir)
-              notifyResult(success, message, projectDir)
+              // 先完成 wrapper 换源再打开项目，避免初始化抢在改写前使用原地址。
+              if (success && projectDir != null) {
+                applyGradleMirror(projectDir) {
+                  notifyResult(success, message, projectDir)
+                }
+              } else {
+                notifyResult(success, message, projectDir)
+              }
             }
           }
 
@@ -547,37 +545,32 @@ class AtcWizardDialog : BottomSheetDialogFragment() {
     dismiss()
   }
 
-  /**
-   * 把工程 wrapper 的 Gradle 下载源换成可达的镜像。
-   *
-   * <p><b>为什么后台跑</b>：这个回调在主线程（模板里 `withContext(Dispatchers.Main)` 后调用），
-   * 而挑镜像要发 HTTP HEAD 探测——最坏情况（三个镜像全不通）会阻塞 15 秒，界面直接冻住。
-   *
-   * <p><b>为什么不阻塞创建结果</b>：换源只是优化首次构建的下载体验，失败（全都不可达、
-   * 或工程形态特殊没有 wrapper 文件）不该让用户觉得「项目创建失败了」——
-   * [GradleMirror.rewriteWrapper] 内部只打日志。
-   */
-  private fun applyGradleMirror(projectDir: File) {
+  /** 后台换源结束后才回调打开项目；探测或改写失败也照常回调。 */
+  private fun applyGradleMirror(projectDir: File, onComplete: () -> Unit) {
     // 用户显式选的优先；没选过用默认（国内镜像）。
     // 注意默认值不是硬编码限制——pickReachable 会预检并依次试其它候选。
     val preferred =
         BuildPreferences.gradleMirrorId.takeIf { it.isNotBlank() } ?: GradleMirror.defaultMirrorId()
     CoroutineScope(Dispatchers.IO).launch {
-      // 从工程当前 wrapper 里读出 Gradle 版本，据此探测（不同版本可用性可能不同）。
-      val version =
-          GradleMirror.readGradleVersion(projectDir)
-              ?: run {
-                Log.d(TAG, "工程里读不到 Gradle 版本，跳过镜像改写：${projectDir.name}")
-                return@launch
-              }
-      val mirror =
-          GradleMirror.pickReachable(version, preferred)
-              ?: run {
-                Log.w(TAG, "所有 Gradle 镜像都不可达，保持模板原有 distributionUrl")
-                return@launch
-              }
-      GradleMirror.rewriteWrapper(projectDir, mirror)
-      Log.i(TAG, "已为 ${projectDir.name} 选用 Gradle 镜像：${mirror.label}")
+      try {
+        // 从工程当前 wrapper 里读出 Gradle 版本，据此探测（不同版本可用性可能不同）。
+        val version =
+            GradleMirror.readGradleVersion(projectDir)
+                ?: run {
+                  Log.d(TAG, "工程里读不到 Gradle 版本，跳过镜像改写：${projectDir.name}")
+                  return@launch
+                }
+        val mirror =
+            GradleMirror.pickReachable(version, preferred)
+                ?: run {
+                  Log.w(TAG, "所有 Gradle 镜像都不可达，保持模板原有 distributionUrl")
+                  return@launch
+                }
+        GradleMirror.rewriteWrapper(projectDir, mirror)
+        Log.i(TAG, "已为 ${projectDir.name} 选用 Gradle 镜像：${mirror.label}")
+      } finally {
+        withContext(Dispatchers.Main) { onComplete() }
+      }
     }
   }
 

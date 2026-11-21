@@ -4,9 +4,9 @@
   xmlns:tools="http://schemas.android.com/tools"
   android:layout_width="match_parent"
   android:layout_height="wrap_content"
-  android:paddingHorizontal="@dimen/acs_ui_page_padding"
-  android:paddingTop="@dimen/acs_ui_space_xl"
-  android:paddingBottom="88dp">
+  android:paddingHorizontal="24dp"
+  android:paddingTop="16dp"
+  android:paddingBottom="72dp">
 
   <LinearLayout
     android:layout_width="0dp"
@@ -16,87 +16,131 @@
     app:layout_constraintStart_toStartOf="parent"
     app:layout_constraintEnd_toEndOf="parent"
     app:layout_constraintTop_toTopOf="parent"
-    app:layout_constraintBottom_toBottomOf="parent">
+    app:layout_constraintBottom_toBottomOf="parent"
+    app:layout_constraintVertical_bias="0">
 
-    <TextView
+    <LinearLayout
+      android:id="@+id/home_intro"
       android:layout_width="match_parent"
       android:layout_height="wrap_content"
-      android:text="@string/acs_ui_home_eyebrow"
-      android:textAppearance="@style/acs_ui_text_caption"
-      android:textColor="?attr/colorPrimary"
-      android:textStyle="bold" />
+      android:orientation="vertical">
 
-    <TextView
-      android:id="@+id/getStarted"
+      <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:background="@drawable/acs_ui_badge_background"
+        android:paddingHorizontal="12dp"
+        android:paddingVertical="6dp"
+        android:text="@string/acs_ui_home_eyebrow"
+        android:textAppearance="@style/acs_ui_text_caption"
+        android:textColor="?attr/colorOnPrimaryContainer"
+        android:letterSpacing="0.08"
+        android:textSize="11sp"
+        android:textStyle="bold" />
+
+      <TextView
+        android:id="@+id/getStarted"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="16dp"
+        android:accessibilityHeading="true"
+        android:fontFamily="sans-serif-medium"
+        android:lineSpacingExtra="2dp"
+        android:text="@string/acs_ui_home_title"
+        android:textAppearance="@style/acs_ui_text_title"
+        android:textSize="34sp" />
+
+      <TextView
+        android:id="@+id/greetingText"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="10dp"
+        android:text="@string/acs_ui_home_subtitle"
+        android:textAppearance="@style/acs_ui_text_body"
+        android:textColor="?attr/colorOnSurfaceVariant"
+        android:textSize="14sp" />
+    </LinearLayout>
+
+    <com.google.android.material.card.MaterialCardView
+      android:id="@+id/home_create_project"
+      style="@style/acs_ui_card"
       android:layout_width="match_parent"
       android:layout_height="wrap_content"
-      android:layout_marginTop="@dimen/acs_ui_space_sm"
-      android:accessibilityHeading="true"
-      android:fontFamily="sans-serif-medium"
-      android:text="@string/acs_ui_home_title"
-      android:textAppearance="@style/acs_ui_text_title"
-      android:textSize="30sp" />
+      android:layout_marginTop="24dp"
+      android:clickable="true"
+      android:focusable="true"
+      android:stateListAnimator="@animator/acs_home_card_press"
+      app:cardBackgroundColor="?attr/colorPrimary"
+      app:cardCornerRadius="24dp"
+      app:strokeWidth="0dp">
 
-    <TextView
-      android:id="@+id/greetingText"
-      android:layout_width="match_parent"
-      android:layout_height="wrap_content"
-      android:layout_marginTop="@dimen/acs_ui_space_sm"
-      android:text="@string/acs_ui_home_subtitle"
-      android:textAppearance="@style/acs_ui_text_body"
-      android:textColor="?attr/colorOnSurfaceVariant" />
+      <androidx.constraintlayout.widget.ConstraintLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:minHeight="144dp"
+        android:padding="20dp">
+
+        <TextView
+          android:id="@+id/create_eyebrow"
+          android:layout_width="0dp"
+          android:layout_height="wrap_content"
+          android:text="@string/acs_ui_home_create_hint"
+          android:textAppearance="@style/acs_ui_text_caption"
+          android:textColor="?attr/colorOnPrimary"
+          android:alpha="0.8"
+          app:layout_constraintStart_toStartOf="parent"
+          app:layout_constraintEnd_toStartOf="@id/create_art"
+          app:layout_constraintTop_toTopOf="parent" />
+
+        <TextView
+          android:id="@+id/create_title"
+          android:layout_width="0dp"
+          android:layout_height="wrap_content"
+          android:layout_marginTop="10dp"
+          android:text="@string/create_project"
+          android:textAppearance="@style/acs_ui_text_title"
+          android:textColor="?attr/colorOnPrimary"
+          android:textSize="24sp"
+          app:layout_constraintStart_toStartOf="parent"
+          app:layout_constraintEnd_toStartOf="@id/create_art"
+          app:layout_constraintTop_toBottomOf="@id/create_eyebrow" />
+
+        <ImageView
+          android:id="@+id/create_arrow"
+          android:layout_width="24dp"
+          android:layout_height="24dp"
+          android:layout_marginTop="18dp"
+          android:importantForAccessibility="no"
+          android:rotation="180"
+          android:src="@drawable/ic_arrow_back"
+          app:tint="?attr/colorOnPrimary"
+          app:layout_constraintStart_toStartOf="parent"
+          app:layout_constraintTop_toBottomOf="@id/create_title"
+          app:layout_constraintBottom_toBottomOf="parent"
+          app:layout_constraintVertical_bias="0" />
+
+        <ImageView
+          android:id="@+id/create_art"
+          android:layout_width="72dp"
+          android:layout_height="72dp"
+          android:layout_marginStart="12dp"
+          android:alpha="0.3"
+          android:importantForAccessibility="no"
+          android:src="@drawable/ic_code"
+          app:tint="?attr/colorOnPrimary"
+          app:layout_constraintEnd_toEndOf="parent"
+          app:layout_constraintTop_toTopOf="parent"
+          app:layout_constraintBottom_toBottomOf="parent" />
+      </androidx.constraintlayout.widget.ConstraintLayout>
+    </com.google.android.material.card.MaterialCardView>
 
     <LinearLayout
       android:id="@+id/project_actions"
       android:layout_width="match_parent"
       android:layout_height="wrap_content"
-      android:layout_marginTop="@dimen/acs_ui_space_xl"
+      android:layout_marginTop="12dp"
       android:baselineAligned="false"
       android:orientation="horizontal">
-
-      <com.google.android.material.card.MaterialCardView
-        android:id="@+id/home_create_project"
-        style="@style/acs_ui_card"
-        android:layout_width="0dp"
-        android:layout_height="wrap_content"
-        android:layout_weight="1"
-        android:layout_marginEnd="6dp"
-        android:minHeight="148dp"
-        android:clickable="true"
-        android:focusable="true"
-        app:cardBackgroundColor="?attr/colorPrimaryContainer"
-        app:strokeWidth="0dp">
-
-        <LinearLayout
-          android:layout_width="match_parent"
-          android:layout_height="wrap_content"
-          android:orientation="vertical"
-          android:padding="@dimen/acs_ui_space_lg">
-
-          <ImageView
-            android:layout_width="32dp"
-            android:layout_height="32dp"
-            android:importantForAccessibility="no"
-            android:src="@drawable/ic_add"
-            app:tint="?attr/colorOnPrimaryContainer" />
-
-          <TextView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="@dimen/acs_ui_space_xl"
-            android:text="@string/create_project"
-            android:textAppearance="@style/acs_ui_text_section"
-            android:textColor="?attr/colorOnPrimaryContainer" />
-
-          <TextView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="@dimen/acs_ui_space_xs"
-            android:text="@string/acs_ui_home_create_hint"
-            android:textAppearance="@style/acs_ui_text_caption"
-            android:textColor="?attr/colorOnPrimaryContainer" />
-        </LinearLayout>
-      </com.google.android.material.card.MaterialCardView>
 
       <com.google.android.material.card.MaterialCardView
         android:id="@+id/home_open_project"
@@ -104,20 +148,24 @@
         android:layout_width="0dp"
         android:layout_height="wrap_content"
         android:layout_weight="1"
-        android:layout_marginStart="6dp"
-        android:minHeight="148dp"
+        android:layout_marginEnd="6dp"
         android:clickable="true"
-        android:focusable="true">
+        android:focusable="true"
+        android:stateListAnimator="@animator/acs_home_card_press"
+        app:cardBackgroundColor="?attr/colorSurfaceContainerLow"
+        app:cardCornerRadius="20dp"
+        app:strokeWidth="0dp">
 
         <LinearLayout
           android:layout_width="match_parent"
           android:layout_height="wrap_content"
+          android:minHeight="114dp"
           android:orientation="vertical"
-          android:padding="@dimen/acs_ui_space_lg">
+          android:padding="16dp">
 
           <ImageView
-            android:layout_width="32dp"
-            android:layout_height="32dp"
+            android:layout_width="24dp"
+            android:layout_height="24dp"
             android:importantForAccessibility="no"
             android:src="@drawable/ic_folder"
             app:tint="?attr/colorPrimary" />
@@ -125,57 +173,52 @@
           <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="@dimen/acs_ui_space_xl"
+            android:layout_marginTop="12dp"
             android:text="@string/acs_ui_home_open"
-            android:textAppearance="@style/acs_ui_text_section" />
+            android:textAppearance="@style/acs_ui_text_body"
+            android:textStyle="bold" />
 
           <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="@dimen/acs_ui_space_xs"
+            android:layout_marginTop="4dp"
             android:text="@string/acs_ui_home_open_hint"
             android:textAppearance="@style/acs_ui_text_caption" />
         </LinearLayout>
       </com.google.android.material.card.MaterialCardView>
-    </LinearLayout>
 
-    <com.google.android.material.card.MaterialCardView
-      android:id="@+id/home_clone_project"
-      style="@style/acs_ui_card"
-      android:layout_width="match_parent"
-      android:layout_height="wrap_content"
-      android:layout_marginTop="@dimen/acs_ui_space_md"
-      android:clickable="true"
-      android:focusable="true"
-      app:cardBackgroundColor="?attr/colorSurface"
-      app:strokeWidth="0dp">
-
-      <LinearLayout
-        android:layout_width="match_parent"
+      <com.google.android.material.card.MaterialCardView
+        android:id="@+id/home_clone_project"
+        style="@style/acs_ui_card"
+        android:layout_width="0dp"
         android:layout_height="wrap_content"
-        android:minHeight="76dp"
-        android:gravity="center_vertical"
-        android:orientation="horizontal"
-        android:paddingHorizontal="@dimen/acs_ui_space_lg"
-        android:paddingVertical="@dimen/acs_ui_space_md">
-
-        <ImageView
-          android:layout_width="24dp"
-          android:layout_height="24dp"
-          android:importantForAccessibility="no"
-          android:src="@drawable/ic_git"
-          app:tint="?attr/colorPrimary" />
+        android:layout_weight="1"
+        android:layout_marginStart="6dp"
+        android:clickable="true"
+        android:focusable="true"
+        android:stateListAnimator="@animator/acs_home_card_press"
+        app:cardBackgroundColor="?attr/colorSurfaceContainerLow"
+        app:cardCornerRadius="20dp"
+        app:strokeWidth="0dp">
 
         <LinearLayout
-          android:layout_width="0dp"
+          android:layout_width="match_parent"
           android:layout_height="wrap_content"
-          android:layout_weight="1"
-          android:layout_marginStart="@dimen/acs_ui_space_lg"
-          android:orientation="vertical">
+          android:minHeight="114dp"
+          android:orientation="vertical"
+          android:padding="16dp">
+
+          <ImageView
+            android:layout_width="24dp"
+            android:layout_height="24dp"
+            android:importantForAccessibility="no"
+            android:src="@drawable/ic_git"
+            app:tint="?attr/colorPrimary" />
 
           <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
             android:text="@string/acs_ui_home_clone"
             android:textAppearance="@style/acs_ui_text_body"
             android:textStyle="bold" />
@@ -183,40 +226,54 @@
           <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="@dimen/acs_ui_space_xs"
+            android:layout_marginTop="4dp"
             android:text="@string/acs_ui_home_clone_hint"
             android:textAppearance="@style/acs_ui_text_caption" />
         </LinearLayout>
+      </com.google.android.material.card.MaterialCardView>
+    </LinearLayout>
 
-        <ImageView
-          android:layout_width="20dp"
-          android:layout_height="20dp"
-          android:layout_marginStart="@dimen/acs_ui_space_sm"
-          android:importantForAccessibility="no"
-          android:rotation="180"
-          android:src="@drawable/ic_arrow_back"
-          app:tint="?attr/colorOnSurfaceVariant" />
+    <LinearLayout
+      android:id="@+id/home_tools"
+      android:layout_width="match_parent"
+      android:layout_height="wrap_content"
+      android:layout_marginTop="24dp"
+      android:orientation="vertical">
+
+      <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginBottom="12dp"
+        android:gravity="center_vertical"
+        android:orientation="horizontal">
+
+        <TextView
+          android:layout_width="wrap_content"
+          android:layout_height="wrap_content"
+          android:accessibilityHeading="true"
+          android:text="@string/acs_ui_home_tools"
+          android:textAppearance="@style/acs_ui_text_section" />
+
+        <View
+          android:layout_width="0dp"
+          android:layout_height="1dp"
+          android:layout_marginStart="16dp"
+          android:layout_weight="1"
+          android:background="?attr/colorOutlineVariant"
+          android:importantForAccessibility="no" />
       </LinearLayout>
-    </com.google.android.material.card.MaterialCardView>
 
-    <TextView
-      android:layout_width="match_parent"
-      android:layout_height="wrap_content"
-      android:layout_marginTop="@dimen/acs_ui_space_xl"
-      android:layout_marginBottom="@dimen/acs_ui_space_md"
-      android:accessibilityHeading="true"
-      android:text="@string/acs_ui_home_tools"
-      android:textAppearance="@style/acs_ui_text_section" />
-
-    <androidx.recyclerview.widget.RecyclerView
-      android:id="@+id/actions"
-      android:layout_width="match_parent"
-      android:layout_height="wrap_content"
-      android:nestedScrollingEnabled="false"
-      android:overScrollMode="never"
-      app:layoutManager="androidx.recyclerview.widget.GridLayoutManager"
-      app:spanCount="2"
-      tools:itemCount="4"
-      tools:listitem="@layout/layout_main_action_item" />
+      <androidx.recyclerview.widget.RecyclerView
+        android:id="@+id/actions"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginHorizontal="-4dp"
+        android:nestedScrollingEnabled="false"
+        android:overScrollMode="never"
+        app:layoutManager="androidx.recyclerview.widget.GridLayoutManager"
+        app:spanCount="2"
+        tools:itemCount="4"
+        tools:listitem="@layout/layout_main_action_item" />
+    </LinearLayout>
   </LinearLayout>
 </androidx.constraintlayout.widget.ConstraintLayout>

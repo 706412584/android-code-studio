@@ -11,7 +11,9 @@
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:orientation="vertical"
-    android:padding="@dimen/acs_ui_space_lg">
+    android:minHeight="@dimen/acs_ui_preference_min_height"
+    android:paddingHorizontal="@dimen/acs_ui_space_lg"
+    android:paddingVertical="@dimen/acs_ui_space_md">
 
     <LinearLayout
       android:layout_width="match_parent"
@@ -47,7 +49,7 @@
       android:layout_height="wrap_content"
       android:layout_marginTop="@dimen/acs_ui_space_xs"
       android:ellipsize="middle"
-      android:maxLines="2"
+      android:maxLines="1"
       android:textAppearance="@style/acs_ui_text_caption"
       tools:text="/path/to/project" />
   </LinearLayout>

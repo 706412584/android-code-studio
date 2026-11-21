@@ -39,6 +39,7 @@ import com.tom.rv2ide.projects.IProjectManager
 import com.tom.rv2ide.projects.internal.ProjectManagerImpl
 import com.tom.rv2ide.resources.R.string
 import com.tom.rv2ide.templates.ITemplateProvider
+import com.tom.rv2ide.templates.preferences.WizardPreferences
 import com.tom.rv2ide.utils.DialogUtils
 import com.tom.rv2ide.utils.flashInfo
 import com.tom.rv2ide.R
@@ -97,7 +98,19 @@ class MainActivity : EdgeToEdgeIDEActivity() {
     //
     // 有更新时由弹窗按钮驱动后续：点「下载」直接进下载，点「跳过」/「浏览器」
     // 或直接关闭则继续打开上次项目。检查失败或无更新时立即继续，不拖慢启动。
-    tomIDEUpdater.checkForUpdates(onNoUpdate = { openLastProject() })
+    tomIDEUpdater.checkForUpdates(
+        onNoUpdate = {
+          // 显式导航后不能再让更新检查的延迟回调抢开旧项目。
+          if (!viewModel.hasExplicitProjectNavigation) openLastProject()
+        })
+
+    viewModel.pendingProjectOpen.observe(this) { root ->
+      if (root != null) {
+        viewModel.pendingProjectOpen.value = null
+        WizardPreferences.addRecentProject(this, root.absolutePath)
+        openProject(root)
+      }
+    }
 
     viewModel.currentScreen.observe(this) { screen ->
       if (screen == -1) {
@@ -128,12 +141,8 @@ class MainActivity : EdgeToEdgeIDEActivity() {
 
   override fun onResume() {
     super.onResume()
-    // 进 APP / 返回主屏：若用户开着「应用外悬浮」，确保它在跑（收起态小球），
-    // 并把可能展开着的面板收起——回到主界面不该被大面板盖住。
-    // 跳主 app 设置时悬浮窗被临时关闭（hideTemporarily，不动开关），这里按开关自动恢复。
-    // 设置页不调 restoreIfEnabled：会把刚临时关闭的悬浮窗又拉起来，故只在主界面做。
+    // 临时让位由各页面/弹层配对管理，回前台不覆盖此前的展开状态。
     com.tom.rv2ide.services.AssistantOverlayService.restoreIfEnabled(this)
-    com.tom.rv2ide.services.AssistantOverlayService.collapsePanel()
   }
 
   override fun onApplySystemBarInsets(insets: Insets) {
@@ -198,7 +207,12 @@ class MainActivity : EdgeToEdgeIDEActivity() {
   }
 
   private fun openLastProject() {
-    binding.root.post { tryOpenLastProject() }
+    _binding?.root?.post {
+      if (_binding != null && !isFinishing && !isDestroyed &&
+          !viewModel.hasExplicitProjectNavigation) {
+        tryOpenLastProject()
+      }
+    }
   }
 
   private fun tryOpenLastProject() {
@@ -238,7 +252,9 @@ class MainActivity : EdgeToEdgeIDEActivity() {
     builder.setCancelable(false)
     builder.setPositiveButton(string.yes) { _, _ -> openProject(root) }
     builder.setNegativeButton(string.no, null)
-    builder.show()
+    com.tom.rv2ide.services.AssistantOverlayService
+        .suppressWhileShown(builder.create(), this, "resume-project-confirm")
+        .show()
   }
 
   /**
@@ -253,6 +269,7 @@ class MainActivity : EdgeToEdgeIDEActivity() {
    * `onNewIntent` 原地切换，避免叠出第二个编辑器实例。
    */
   internal fun openProject(root: File) {
+    viewModel.hasExplicitProjectNavigation = true
     val manager = ProjectManagerImpl.getInstance()
     if (manager.isSessionOpen(root)) {
       manager.switchTo(root)

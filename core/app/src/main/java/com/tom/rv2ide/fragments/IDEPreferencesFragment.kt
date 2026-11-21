@@ -96,6 +96,22 @@ class IDEPreferencesFragment : BasePreferenceFragment() {
     if (com.tom.rv2ide.artificial.agent.manage.ManageChangeSignal.consume()) {
       refreshPreferences()
     }
+    refreshAppearanceSummaries()
+  }
+
+  private fun refreshAppearanceSummaries() {
+    val theme = getString(com.tom.rv2ide.ui.themes.IThemeManager.getInstance().getCurrentTheme().title)
+    val mode = getString(when (com.tom.rv2ide.preferences.internal.GeneralPreferences.uiMode) {
+      androidx.appcompat.app.AppCompatDelegate.MODE_NIGHT_NO -> AppR.string.uiMode_light
+      androidx.appcompat.app.AppCompatDelegate.MODE_NIGHT_YES -> AppR.string.uiMode_dark
+      else -> AppR.string.uiMode_system
+    })
+    findPreference<androidx.preference.Preference>("idepref_general")?.summary =
+        getString(AppR.string.acs_ui_settings_appearance, theme, mode)
+    findPreference<androidx.preference.Preference>(
+        com.tom.rv2ide.preferences.internal.GeneralPreferences.SELECTED_THEME)?.summary = theme
+    findPreference<androidx.preference.Preference>(
+        com.tom.rv2ide.preferences.internal.GeneralPreferences.UI_MODE)?.summary = mode
   }
 
   override fun onPause() {
@@ -131,7 +147,16 @@ class IDEPreferencesFragment : BasePreferenceFragment() {
                 resources.getDimensionPixelSize(AppR.dimen.acs_ui_space_sm),
             )
           } else {
-            setBackgroundResource(AppR.drawable.acs_ui_preference_background)
+            if (children.any { child ->
+                  child is IPreferenceScreen ||
+                      (child is IPreferenceGroup && child.children.any { it is IPreferenceScreen })
+                }) {
+              setBackgroundResource(AppR.drawable.acs_ui_preference_background)
+            } else {
+              val backgroundValue = android.util.TypedValue()
+              context.theme.resolveAttribute(android.R.attr.selectableItemBackground, backgroundValue, true)
+              setBackgroundResource(backgroundValue.resourceId)
+            }
             minimumHeight = resources.getDimensionPixelSize(AppR.dimen.acs_ui_preference_min_height)
             setPaddingRelative(
                 resources.getDimensionPixelSize(AppR.dimen.acs_ui_space_xl),
