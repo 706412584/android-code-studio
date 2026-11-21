@@ -83,4 +83,4 @@
 - 三路只读审查（复用/质量/效率）及主会话最终差异检查完成；复制路径复用 `ShareUtils` 与既有字符串，清理重复状态、热路径分配和诊断日志。
 - `build-final-combined.log` 构建成功，`:core:common:testDebugUnitTest` 与 `:tooling:impl:test` 通过；最终 arm64 APK 同签名覆盖安装，本机与设备 SHA-256 均为 `cd0985ad1f209a61c8f7441bdff6eeaa05792d9683f48ef76a4647e723727e1c`。
 - 证据见 `.verify/ui-refresh-v3/` 与 `final-verification.json`。设备恢复竖屏、字号1.0、百度输入法、暖阳、跟随系统、原悬浮落点；测试项目/偏好备份均已删除。未执行 SDK/JDK 真实安装卸载、模型请求或全部主题/模板/构建矩阵。Gradle daemon 已停止，未推送或发布。
-- 独立 diff 审查发现换源等待期旋转会留下陈旧 Fragment 导航，已改为 Activity 级 `MainViewModel` 暂存并消费待打开项目，旧 Fragment 不再直接导航。`build-rotation-callback-fix.log` 构建通过；`mirror-create-rotate-editor-r31` 证明创建后立即横竖旋转仍能进入编辑器，`MyProject991120` 已清理。最终 APK 与设备 SHA-256 均为 `19b7c54279cb3e1cf3dfaf20447ddcd613370db6faab44cae40bdbe8f2ec63a8`。
+- 独立 diff 审查发现换源等待期旋转会留下陈旧 Fragment 导航，已改为 Activity 级 `MainViewModel` 暂存并消费待打开项目，旧 Fragment 不再直接导航。`build-navigation-recheck.log` 构建通过；`mirror-create-rotate-editor-r31` 证明创建后立即横竖旋转仍能进入编辑器，`MyProject652954` 已清理。最终 APK 与设备 SHA-256 均为 `a850b6a885afd26a27eabb01e5ed3e1981c1169c213c73f3333a79e17697c159`。旧回调在真正执行自动打开前还会再次检查显式导航状态，避免在新项目完成后反抢。

@@ -98,7 +98,11 @@ class MainActivity : EdgeToEdgeIDEActivity() {
     //
     // 有更新时由弹窗按钮驱动后续：点「下载」直接进下载，点「跳过」/「浏览器」
     // 或直接关闭则继续打开上次项目。检查失败或无更新时立即继续，不拖慢启动。
-    tomIDEUpdater.checkForUpdates(onNoUpdate = { openLastProject() })
+    tomIDEUpdater.checkForUpdates(
+        onNoUpdate = {
+          // 显式导航后不能再让更新检查的延迟回调抢开旧项目。
+          if (!viewModel.hasExplicitProjectNavigation) openLastProject()
+        })
 
     viewModel.pendingProjectOpen.observe(this) { root ->
       if (root != null) {
@@ -204,7 +208,8 @@ class MainActivity : EdgeToEdgeIDEActivity() {
 
   private fun openLastProject() {
     _binding?.root?.post {
-      if (_binding != null && !isFinishing && !isDestroyed) {
+      if (_binding != null && !isFinishing && !isDestroyed &&
+          !viewModel.hasExplicitProjectNavigation) {
         tryOpenLastProject()
       }
     }
@@ -264,6 +269,7 @@ class MainActivity : EdgeToEdgeIDEActivity() {
    * `onNewIntent` 原地切换，避免叠出第二个编辑器实例。
    */
   internal fun openProject(root: File) {
+    viewModel.hasExplicitProjectNavigation = true
     val manager = ProjectManagerImpl.getInstance()
     if (manager.isSessionOpen(root)) {
       manager.switchTo(root)

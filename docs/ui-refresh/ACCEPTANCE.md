@@ -144,4 +144,4 @@ SDK/JDK 最终批次的设备状态以本文件“SDK/JDK 管理页最终批次�
 
 ## 独立 diff 审查后的旋转补修
 
-代理发现镜像探测期间旋转会使旧 Fragment 回调失效。现由 Activity 级 `MainViewModel` 暂存待打开项目，新 Activity 观察者消费，旧 Fragment 不再直接导航；失败提示仅在 Fragment 仍附加时显示。`build-rotation-callback-fix.log` 构建成功，`mirror-create-rotate-editor-r31` 验证创建后立即横竖旋转仍进入编辑器，Wrapper 为腾讯镜像，`MyProject991120` 已删除。最终 APK 与设备 SHA-256 均为 `19b7c54279cb3e1cf3dfaf20447ddcd613370db6faab44cae40bdbe8f2ec63a8`。
+代理发现镜像探测期间旋转会使旧 Fragment 回调失效。现由 Activity 级 `MainViewModel` 暂存待打开项目，新 Activity 观察者消费，旧 Fragment 不再直接导航；失败提示仅在 Fragment 仍附加时显示。`build-navigation-recheck.log` 构建成功，`mirror-create-rotate-editor-r31` 验证创建后立即横竖旋转仍进入编辑器，Wrapper 为腾讯镜像，`MyProject652954` 已删除。最终 APK 与设备 SHA-256 均为 `a850b6a885afd26a27eabb01e5ed3e1981c1169c213c73f3333a79e17697c159`。执行自动打开前会复查显式导航状态，防止旧回调在新项目完成后覆盖；最近项目场景的多种回调顺序已独立静态复核。
