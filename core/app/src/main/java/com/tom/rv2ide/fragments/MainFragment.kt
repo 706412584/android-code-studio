@@ -17,20 +17,27 @@
 
 package com.tom.rv2ide.fragments
 
+import android.animation.ValueAnimator
 import android.content.Intent
 import android.os.Bundle
+import android.text.SpannableString
+import android.text.Spanned
+import android.text.style.ForegroundColorSpan
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.view.animation.DecelerateInterpolator
 import android.widget.TextView
 import androidx.annotation.StringRes
 import androidx.appcompat.app.AlertDialog
+import androidx.core.view.doOnPreDraw
 import androidx.fragment.app.viewModels
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.bottomsheet.BottomSheetDialog
 import com.google.android.material.chip.Chip
+import com.google.android.material.color.MaterialColors
 import com.google.android.material.progressindicator.LinearProgressIndicator
 import com.google.android.material.textfield.TextInputEditText
 import com.termux.shared.termux.TermuxConstants.TERMUX_APP.TERMUX_ACTIVITY
@@ -153,6 +160,16 @@ class MainFragment : BaseFragment() {
         }
 
     val home = binding!!.homeContent
+    home.getStarted.text =
+        SpannableString(home.getStarted.text).apply {
+          setSpan(
+              ForegroundColorSpan(
+                  MaterialColors.getColor(home.getStarted, R.attr.colorPrimary)),
+              indexOf('\n') + 1,
+              length,
+              Spanned.SPAN_EXCLUSIVE_EXCLUSIVE,
+          )
+        }
     val projectActions =
         listOf(
             MainScreenAction.ACTION_CREATE_PROJECT to home.homeCreateProject,
@@ -172,7 +189,7 @@ class MainFragment : BaseFragment() {
         if (useColumns) 2 else 1
     if (!useColumns) {
       home.projectActions.orientation = android.widget.LinearLayout.VERTICAL
-      listOf(home.homeCreateProject, home.homeOpenProject).forEach { card ->
+      listOf(home.homeOpenProject, home.homeCloneProject).forEach { card ->
         card.layoutParams =
             (card.layoutParams as android.widget.LinearLayout.LayoutParams).apply {
               width = ViewGroup.LayoutParams.MATCH_PARENT
@@ -181,12 +198,36 @@ class MainFragment : BaseFragment() {
               marginEnd = 0
             }
       }
-      (home.homeOpenProject.layoutParams as android.widget.LinearLayout.LayoutParams).topMargin =
+      (home.homeCloneProject.layoutParams as android.widget.LinearLayout.LayoutParams).topMargin =
           resources.getDimensionPixelSize(R.dimen.acs_ui_space_md)
+    }
+
+    if (savedInstanceState == null && ValueAnimator.areAnimatorsEnabled()) {
+      homeSections.forEach { section ->
+        section.alpha = 0f
+        section.translationY = 16f * resources.displayMetrics.density
+      }
+      home.root.doOnPreDraw {
+        homeSections.forEachIndexed { index, section ->
+          section.animate()
+              .alpha(1f)
+              .translationY(0f)
+              .setStartDelay(index * 60L)
+              .setDuration(420L)
+              .setInterpolator(DecelerateInterpolator())
+              .start()
+        }
+      }
     }
   }
 
+  private val homeSections: List<View>
+    get() = binding?.homeContent?.run {
+      listOf(homeIntro, homeCreateProject, projectActions, homeTools)
+    }.orEmpty()
+
   override fun onDestroyView() {
+    homeSections.forEach { it.animate().cancel() }
     super.onDestroyView()
     binding = null
   }
