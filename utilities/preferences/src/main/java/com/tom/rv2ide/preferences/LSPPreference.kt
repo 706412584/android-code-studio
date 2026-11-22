@@ -28,15 +28,15 @@ import com.tom.rv2ide.preferences.observers.LSPStateObserver
 import com.tom.rv2ide.resources.R.string
 import com.tom.rv2ide.utils.AppRestartDialog
 import com.tom.rv2ide.utils.Environment
+import com.tom.rv2ide.utils.LspServerSource
 import java.io.File
 import java.io.FileOutputStream
-import java.net.URL
+import java.io.IOException
 import java.util.zip.ZipInputStream
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import org.json.JSONObject
 
 /*
  * @author Mohammed-baqer-null @ https://github.com/Mohammed-baqer-null
@@ -180,25 +180,14 @@ abstract class LSPPreference(
 
   private fun fetchServerInfo(serverId: String, callback: (String?, String?) -> Unit) {
     CoroutineScope(Dispatchers.IO).launch {
-      try {
-        val json = URL(manifestUrl()).readText()
-        val jsonObject = JSONObject(json)
-        val serversArray = jsonObject.getJSONArray("Servers")
-
-        for (i in 0 until serversArray.length()) {
-          val server = serversArray.getJSONObject(i)
-          if (server.getString("id") == serverId) {
-            val link = server.getString("link")
-            val version = server.getString("version")
-            if (link != "null") {
-              withContext(Dispatchers.Main) { callback(link, version) }
-            }
-            break
-          }
+      // Gitee 优先、GitHub 兜底；取不到条目就回调 null（不把网络异常抛到 UI）。
+      val entry = LspServerSource.fetch(serverId)
+      withContext(Dispatchers.Main) {
+        if (entry?.link != null) {
+          callback(entry.link, entry.version)
+        } else {
+          callback(null, null)
         }
-      } catch (e: Exception) {
-        e.printStackTrace()
-        withContext(Dispatchers.Main) { callback(null, null) }
       }
     }
   }
@@ -260,23 +249,10 @@ abstract class LSPPreference(
           progressText.text = context.getString(string.lsp_server_fetching_info)
         }
 
-        val json = URL(manifestUrl()).readText()
-        val jsonObject = JSONObject(json)
-        val serversArray = jsonObject.getJSONArray("Servers")
+        // Gitee 优先、GitHub 兜底；条目缺失/两处清单都不可达时给出明确提示。
+        val entry = LspServerSource.fetch(serverId)
 
-        var downloadLink: String? = null
-        for (i in 0 until serversArray.length()) {
-          val server = serversArray.getJSONObject(i)
-          if (server.getString("id") == serverId) {
-            downloadLink = server.getString("link")
-            if (downloadLink == "null") {
-              downloadLink = null
-            }
-            break
-          }
-        }
-
-        if (downloadLink == null) {
+        if (entry == null) {
           withContext(Dispatchers.Main) {
             progressDialog.dismiss()
             showErrorDialog(
@@ -297,39 +273,34 @@ abstract class LSPPreference(
           progressText.text = context.getString(string.lsp_server_connecting)
         }
 
-        val connection = URL(downloadLink).openConnection()
-        connection.connect()
-
-        val fileLength = connection.contentLength
-        val inputStream = connection.getInputStream()
-
         val tempFile = File(serversDir, "temp_${serverId}.zip")
-        val outputStream = FileOutputStream(tempFile)
+        val candidates = LspServerSource.downloadCandidates(entry)
 
         withContext(Dispatchers.Main) {
           progressText.text = context.getString(string.lsp_server_downloading_status)
         }
 
-        val buffer = ByteArray(8192)
-        var totalRead = 0L
-        var len: Int
-
-        while (inputStream.read(buffer).also { len = it } > 0) {
-          outputStream.write(buffer, 0, len)
-          totalRead += len
-
-          if (fileLength > 0) {
-            val progress = ((totalRead * 100) / fileLength).toInt()
-            withContext(Dispatchers.Main) {
-              progressBar.progress = progress
-              progressPercentage.text =
-                  context.getString(string.lsp_server_progress_percentage, progress)
+        var lastProgress = -1
+        val downloaded =
+            LspServerSource.download(candidates, tempFile) { read, total ->
+              if (total > 0) {
+                val progress = ((read * 100) / total).toInt()
+                if (progress != lastProgress) {
+                  lastProgress = progress
+                  CoroutineScope(Dispatchers.Main).launch {
+                    progressBar.progress = progress
+                    progressPercentage.text =
+                        context.getString(string.lsp_server_progress_percentage, progress)
+                  }
+                }
+              }
             }
-          }
-        }
 
-        outputStream.close()
-        inputStream.close()
+        if (!downloaded || !LspServerSource.verify(tempFile, entry.sha256)) {
+          tempFile.delete()
+          // 交给外层 catch 统一提示（文案含 serverId 与原因）。
+          throw IOException("下载失败或校验不通过（已尝试 ${candidates.size} 个源）")
+        }
 
         withContext(Dispatchers.Main) {
           progressText.text = context.getString(string.lsp_server_extracting)
@@ -407,10 +378,6 @@ abstract class LSPPreference(
         .setPositiveButton(android.R.string.ok) { dialog, _ -> dialog.dismiss() }
         .show()
   }
-
-  // TODO: allow the user to change repo url
-  private fun manifestUrl(): String =
-      "https://raw.githubusercontent.com/AndroidCSOfficial/acs-language-servers/refs/heads/main/servers-manifest.json"
 
   private fun showToast(context: android.content.Context, message: String) {
     android.widget.Toast.makeText(context, message, android.widget.Toast.LENGTH_SHORT).show()

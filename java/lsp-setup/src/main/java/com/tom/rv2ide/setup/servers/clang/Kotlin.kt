@@ -20,11 +20,10 @@ package com.tom.rv2ide.setup.servers.kotlin
 import android.content.Context
 import com.tom.rv2ide.setup.servers.ILanguageServerInstaller
 import com.tom.rv2ide.utils.Environment
+import com.tom.rv2ide.utils.LspServerSource
 import java.io.File
 import java.io.FileOutputStream
-import java.net.URL
 import java.util.zip.ZipInputStream
-import org.json.JSONObject
 
 /**
  * @author Mohammed-baqer-null @ https://github.com/Mohammed-baqer-null
@@ -34,7 +33,6 @@ class Kotlin(private val context: Context) : ILanguageServerInstaller {
   
   companion object {
     private const val SERVER_ID = "Kotlin"
-    private const val MANIFEST_URL = "https://raw.githubusercontent.com/AndroidCSOfficial/acs-language-servers/refs/heads/main/servers-manifest.json"
   }
   
   override fun isInstalled(): Boolean {
@@ -46,78 +44,55 @@ class Kotlin(private val context: Context) : ILanguageServerInstaller {
   override fun install(onOutput: (String) -> Unit): Boolean {
     return try {
       onOutput("Fetching Kotlin language server information...")
-      
-      val json = URL(MANIFEST_URL).readText()
-      val jsonObject = JSONObject(json)
-      val serversArray = jsonObject.getJSONArray("Servers")
-      
-      var downloadLink: String? = null
-      var version: String? = null
-      
-      for (i in 0 until serversArray.length()) {
-        val server = serversArray.getJSONObject(i)
-        if (server.getString("id") == SERVER_ID) {
-          downloadLink = server.getString("link")
-          version = server.getString("version")
-          if (downloadLink == "null") {
-            downloadLink = null
-          }
-          break
-        }
-      }
-      
-      if (downloadLink == null) {
-        onOutput("\nError: No download link available for Kotlin language server")
-        onOutput("Server ID searched: $SERVER_ID")
-        return false
-      }
-      
+
+      // Gitee 优先、GitHub 兜底；两处清单都不可达时返回 null。
+      val entry =
+          LspServerSource.fetch(SERVER_ID)
+              ?: run {
+                onOutput("\nError: 无法获取 Kotlin 语言服务器清单（Gitee 与 GitHub 均不可达）")
+                onOutput("Server ID searched: $SERVER_ID")
+                return false
+              }
+      val version = entry.version
       onOutput("Found Kotlin language server version: $version")
-      onOutput("Download URL: $downloadLink")
-      
+
       val serversDir = File(Environment.HOME, "acs/servers")
       serversDir.mkdirs()
-      
+
       val serverDir = File(serversDir, SERVER_ID.lowercase())
       serverDir.mkdirs()
-      
+
       onOutput("\nConnecting to download server...")
-      
-      val connection = URL(downloadLink).openConnection()
-      connection.connect()
-      
-      val fileLength = connection.contentLength
-      val inputStream = connection.getInputStream()
-      
+
+      val candidates = LspServerSource.downloadCandidates(entry)
+      onOutput("Download URL: ${candidates.first()}")
+
       val tempFile = File(serversDir, "temp_${SERVER_ID}.zip")
-      val outputStream = FileOutputStream(tempFile)
-      
+
       onOutput("Downloading Kotlin language server...")
-      if (fileLength > 0) {
-        onOutput("File size: ${fileLength / 1024 / 1024} MB")
-      }
-      
-      val buffer = ByteArray(8192)
-      var totalRead = 0L
-      var len: Int
-      var lastProgress = 0
-      
-      while (inputStream.read(buffer).also { len = it } > 0) {
-        outputStream.write(buffer, 0, len)
-        totalRead += len
-        
-        if (fileLength > 0) {
-          val progress = ((totalRead * 100) / fileLength).toInt()
-          if (progress != lastProgress && progress % 10 == 0) {
-            onOutput("Download progress: $progress%")
-            lastProgress = progress
+      var lastProgress = -1
+      val downloaded =
+          LspServerSource.download(candidates, tempFile) { read, total ->
+            if (total > 0) {
+              val progress = ((read * 100) / total).toInt()
+              if (progress != lastProgress && progress % 10 == 0) {
+                onOutput("Download progress: $progress%")
+                lastProgress = progress
+              }
+            }
           }
-        }
+
+      if (!downloaded) {
+        onOutput("\nError: 下载失败（已尝试 ${candidates.size} 个源）")
+        tempFile.delete()
+        return false
       }
-      
-      outputStream.close()
-      inputStream.close()
-      
+
+      if (!LspServerSource.verify(tempFile, entry.sha256)) {
+        onOutput("\nError: 下载文件校验失败（sha256 不匹配），已删除")
+        return false
+      }
+
       onOutput("\nDownload completed!")
       onOutput("Extracting files...")
       

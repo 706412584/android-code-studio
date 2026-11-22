@@ -54,4 +54,6 @@ dependencies {
     api(projects.utilities.shared)
 
     testImplementation(libs.tests.junit)
+    // org.json 在运行时由 Android 框架提供；JVM 单测需要显式依赖（与 core/app 一致）。
+    testImplementation(libs.org.json)
 }

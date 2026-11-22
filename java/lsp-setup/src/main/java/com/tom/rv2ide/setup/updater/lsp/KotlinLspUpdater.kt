@@ -25,16 +25,14 @@ import com.tom.rv2ide.resources.R.string
 import com.tom.rv2ide.setup.updater.LspUpdateDialog
 import com.tom.rv2ide.setup.updater.lsp.data.LSPProperties
 import com.tom.rv2ide.utils.Environment
+import com.tom.rv2ide.utils.LspServerSource
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import kotlinx.serialization.Serializable
-import kotlinx.serialization.json.Json
 import java.io.File
 import java.io.FileOutputStream
-import java.net.HttpURLConnection
-import java.net.URL
+import java.io.IOException
 import java.util.zip.ZipInputStream
 
 /**
@@ -63,8 +61,6 @@ class KotlinLspUpdater(private val context: Context) {
         const val TAG = "KotlinLspUpdater"
     }
 
-    private val manifestUrl = "https://raw.githubusercontent.com/AndroidCSOfficial/acs-language-servers/refs/heads/main/servers-manifest.json"
-
     /**
      * Checks for available updates by fetching the remote manifest and comparing versions.
      *
@@ -88,16 +84,15 @@ class KotlinLspUpdater(private val context: Context) {
     ) {
         CoroutineScope(Dispatchers.IO).launch {
             try {
-                val jsonString = URL(manifestUrl).readText()
-                val manifest = Json.decodeFromString<Manifest>(jsonString)
-                val serverItem = manifest.Servers.firstOrNull()
-
-                if (serverItem != null) {
-                    val updateAvailable = isUpdateAvailable(serverItem.version, currentVersion)
+                // Gitee 优先、GitHub 兜底；清单按 id 取而不是取第一个——
+                // 旧实现在清单顺序变化时会拿到别的服务器。
+                val entry = LspServerSource.fetch("Kotlin")
+                if (entry != null) {
+                    val updateAvailable = isUpdateAvailable(entry.version, currentVersion)
                     withContext(Dispatchers.Main) {
-                        onResult?.invoke(updateAvailable, serverItem.version)
+                        onResult?.invoke(updateAvailable, entry.version)
                         if (updateAvailable) {
-                            showUpdateDialog(serverItem.version, serverItem.link)
+                            showUpdateDialog(entry)
                         }
                     }
                 } else {
@@ -106,7 +101,7 @@ class KotlinLspUpdater(private val context: Context) {
                     }
                 }
             } catch (e: Exception) {
-                Log.w(TAG, "LSP manifest 检查失败（通知用户=$notifyOnFailure）：$manifestUrl", e)
+                Log.w(TAG, "LSP manifest 检查失败（通知用户=$notifyOnFailure）", e)
                 withContext(Dispatchers.Main) {
                     onResult?.invoke(false, null)
                     if (notifyOnFailure) {
@@ -153,49 +148,45 @@ class KotlinLspUpdater(private val context: Context) {
      * @param fetchedVersion The version string of the available update.
      * @param downloadUrl The URL from which to download the update package, or `null` if unavailable.
      */
-    private fun showUpdateDialog(fetchedVersion: String, downloadUrl: String?) {
+    private fun showUpdateDialog(entry: LspServerSource.Entry) {
+        val fetchedVersion = entry.version
+        val candidates = LspServerSource.downloadCandidates(entry)
         LspUpdateDialog(context)
             .setTitle(context.getString(R.string.lsp_update_available_title))
             .setDescription(context.getString(R.string.lsp_update_available_description, fetchedVersion))
             .setPrimaryButton(context.getString(R.string.lsp_update_button)) { dialog ->
-                if (downloadUrl == null) {
-                    Toast.makeText(context, context.getString(R.string.lsp_download_url_unavailable), Toast.LENGTH_SHORT).show()
-                    dialog.dismiss()
-                    return@setPrimaryButton
-                }
-
                 dialog.operate { updater ->
                     updater.updateTitle(context.getString(R.string.lsp_downloading_title))
                     updater.updateDescription(context.getString(R.string.lsp_initializing_download))
                     updater.updateProgress(0)
 
                     try {
-                        val url = URL(downloadUrl)
-                        val connection = url.openConnection() as HttpURLConnection
-                        connection.connect()
-
-                        val fileLength = connection.contentLength
-                        val fileName = downloadUrl.substringAfterLast("/")
+                        val fileName = candidates.first().substringAfterLast("/")
                         val downloadDir = context.getExternalFilesDir(null)
                         val file = File(downloadDir, fileName)
 
-                        connection.inputStream.use { input ->
-                            FileOutputStream(file).use { output ->
-                                val buffer = ByteArray(8192)
-                                var bytesRead: Int
-                                var totalBytesRead: Long = 0
-
-                                while (input.read(buffer).also { bytesRead = it } != -1) {
-                                    output.write(buffer, 0, bytesRead)
-                                    totalBytesRead += bytesRead
-
-                                    if (fileLength > 0) {
-                                        val progress = ((totalBytesRead * 100) / fileLength).toInt()
-                                        updater.updateProgress(progress)
-                                        updater.updateDescription(context.getString(R.string.lsp_downloading_progress, progress))
+                        var lastProgress = -1
+                        val downloaded =
+                            LspServerSource.download(candidates, file) { read, total ->
+                                if (total > 0) {
+                                    val progress = ((read * 100) / total).toInt()
+                                    if (progress != lastProgress) {
+                                        lastProgress = progress
+                                        // 回调在非 suspend 上下文里，updater 的方法是 suspend；
+                                        // 用独立协程切回主线程调用（不能直接 withContext）。
+                                        CoroutineScope(Dispatchers.Main).launch {
+                                            updater.updateProgress(progress)
+                                            updater.updateDescription(
+                                                context.getString(
+                                                    R.string.lsp_downloading_progress, progress))
+                                        }
                                     }
                                 }
                             }
+                        if (!downloaded || !LspServerSource.verify(file, entry.sha256)) {
+                            file.delete()
+                            throw IOException(
+                                "下载失败或校验不通过（已尝试 ${candidates.size} 个源）")
                         }
 
                         updater.updateProgress(100)
@@ -228,7 +219,7 @@ class KotlinLspUpdater(private val context: Context) {
                         kotlinx.coroutines.delay(2000)
 
                         withContext(Dispatchers.Main) {
-                            showErrorDialog(e.message ?: context.getString(R.string.lsp_unknown_error), fetchedVersion, downloadUrl)
+                            showErrorDialog(e.message ?: context.getString(R.string.lsp_unknown_error), entry)
                         }
                     }
                 }
@@ -335,42 +326,19 @@ class KotlinLspUpdater(private val context: Context) {
      * This dialog provides the user with an option to retry the download or cancel.
      *
      * @param error The error message describing why the installation failed.
-     * @param version The version string of the update that failed to install.
-     * @param downloadUrl The URL that was used for the failed download attempt.
+     * @param entry 失败时使用的清单条目（重试直接复用，避免重新拉清单）。
      */
-    private fun showErrorDialog(error: String, version: String, downloadUrl: String) {
+    private fun showErrorDialog(error: String, entry: LspServerSource.Entry) {
         LspUpdateDialog(context)
             .setTitle(context.getString(R.string.lsp_installation_failed_title))
             .setDescription(context.getString(R.string.lsp_installation_failed_description, error))
             .setPrimaryButton(context.getString(R.string.lsp_retry_button)) { dialog ->
                 dialog.dismiss()
-                showUpdateDialog(version, downloadUrl)
+                showUpdateDialog(entry)
             }
             .setSecondaryButton(context.getString(R.string.lsp_cancel_button)) { dialog ->
                 dialog.dismiss()
             }
             .reveal()
     }
-
-    /**
-     * Data class representing the structure of the remote manifest JSON.
-     *
-     * @property Servers A list of available server items in the manifest.
-     */
-    @Serializable
-    data class Manifest(val Servers: List<ServerItem>)
-
-    /**
-     * Data class representing a single server entry in the manifest.
-     *
-     * @property id The unique identifier for the server.
-     * @property version The version string of the server.
-     * @property link The download URL for the server package, or `null` if not available.
-     */
-    @Serializable
-    data class ServerItem(
-        val id: String,
-        val version: String,
-        val link: String?
-    )
 }
