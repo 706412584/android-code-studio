@@ -13,8 +13,8 @@
       android-code-studio-armeabi-v7a-<ver>.apk
       android-code-studio-arm64-v8a-cn-<ver>.apk
       android-code-studio-armeabi-v7a-cn-<ver>.apk
-    CN 包不是可选项：CN 用户从 Gitee 分卷装整包，而 CN 热更新补丁生成时要从
-    GitHub Release 下载上一版 CN APK 作 base——缺了补丁链就断在那一版。
+    CN 包不是可选项：CN 用户从 Gitee 分卷装整包（热更新补丁已停发，
+    CN 用户只走整包更新），GitHub Release 必须带上 CN 包供 CN 用户下载。
     CN 包用 `-PcnMirror=true` 单独构建（CN_MIRROR 常量内联差异使两版 dex 不同）。
 
     为什么走 GitHub Release 而不是别的：应用内更新（TomIDEUpdater）直接读
@@ -242,9 +242,8 @@ $apkCnArm64 = Resolve-ApkPath $apkNameCnArm64
 $apkCnArmv7 = Resolve-ApkPath $apkNameCnArmv7
 
 # ---------- 3. 校验产物 ----------
-# 四个包缺一不可：CN 包缺失会连带破坏 CN 热更新补丁链——CI 生成 CN 补丁时要从
-# GitHub Release 下载**上一版 CN APK** 作 base（见 asm_build.yml 的
-# "Generate CN hot-update patch"），Release 上没有 CN 包，补丁链即断在那一版。
+# 四个包缺一不可：CN 包供 CN 用户从 GitHub Release 下载整包（热更新补丁已停发，
+# CN 用户只走整包更新），缺了 CN 包则 CN 用户拿不到更新。
 $allApks = @($apkArm64, $apkArmv7, $apkCnArm64, $apkCnArmv7)
 
 Invoke-Check '校验 4 个 APK 存在且文件名含版本号' {
@@ -331,8 +330,8 @@ Invoke-Step "创建 Release $tag 并上传 4 个 APK" {
         $notesArgs = @('--notes', "Release $versionName")
     }
     # 与 CI 的发布步骤传同样的四个包（asm_build.yml 的 gh release create）。
-    # 只传常规版会漏掉 CN 包：CN 用户拿不到整包，且下一版生成 CN 补丁时找不到
-    # base（补丁链断掉）。
+    # 只传常规版会漏掉 CN 包：CN 用户拿不到整包更新（热更新补丁已停发，
+    # CN 用户只走整包更新）。
     gh release create $tag -R $Repo --target $Branch --title $tag @notesArgs $allApks
     if ($LASTEXITCODE -ne 0) { Die 'gh release create 失败' }
     Ok "Release 已创建: https://github.com/$Repo/releases/tag/$tag"

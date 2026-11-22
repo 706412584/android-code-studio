@@ -1,36 +1,30 @@
 ﻿<#
 .SYNOPSIS
-    发布 CN 版（Gitee 源）更新资产：APK 分卷 + 热更新补丁 + updater-cn.json 清单。
+    发布 CN 版（Gitee 源）更新资产：APK 分卷 + updater-cn.json 清单。
 
 .DESCRIPTION
     CN 版的更新链路（TomIDEUpdater，-PcnMirror=true 构建）读 Gitee 的
     `updater-cn.json`，其字段指向本脚本上传的资产：
 
       updater-cn.json（acs-mirror 仓库根，raw 可匿名访问）
-        ├── variants[*].parts → acs-cn-releases release 的 APK 分卷（每卷 95MB）
-        └── patch.patchUrl    → 同 release 的 CN 热更新补丁（~74MB，单文件）
+        └── variants[*].parts → acs-cn-releases release 的 APK 分卷（每卷 95MB）
 
     为什么分卷：Gitee Release 附件单文件上限 100MB（实测报错原文
     「文件大小已超出限制：100 MB」），而 release 版 APK 约 141MB。
 
-    为什么补丁单独生成：CN 包与常规包的 dex 不同（CN_MIRROR 常量内联差异），
-    常规补丁打到 CN 包上会静默注入错误语义的 dex——两版补丁必须各自生成。
-    CI（asm_build.yml 的 "Generate CN hot-update patch" 步骤）已产出
-    `acs-hotupdate-cn-<ver>.zip` 并作为 GitHub Release 资产；本脚本默认从
-    该 Release 拉取（也可 -PatchFile 指定本地文件）。
+    不再发布热更新补丁：补丁只带差分 dex，R8 合成 lambda 类等签名与构建时绑定，
+    跨构建注入会 NoSuchMethodError（r31 实测），资源 ID 漂移也会让整体替换
+    resources.arsc 后界面错乱。CN 用户一律走整包（分卷拼接）更新。
 
 .PARAMETER ApkDir
     CN APK 所在目录。默认 apk-staging（CI staging 目录），不存在则退到
     core/app/build/outputs/apk/release。
 
-.PARAMETER PatchFile
-    CN 热更新补丁路径。默认从 GitHub Release 下载 acs-hotupdate-cn-<ver>.zip。
-
 .PARAMETER ChangelogFile
     更新说明 markdown。默认 whatsnew/<version>.md；不存在则用占位文案。
 
 .PARAMETER Repo
-    Gitee 仓库（存 APK 分卷与补丁），默认 wu-yongchengsvip_admin/acs-cn-releases。
+    Gitee 仓库（存 APK 分卷），默认 wu-yongchengsvip_admin/acs-cn-releases。
     不存在会自动创建（public）。
 
 .PARAMETER ManifestRepo
@@ -39,12 +33,11 @@
 
 .PARAMETER KeepReleases
     保留最近 N 个版本的 Gitee 资产（含本次要发的版本），更早的资产在上传前删除。
-    默认 2。Gitee 仓库附件配额是 1GB，而每个版本约 296MB（两个 ABI 各 2 卷 +
-    补丁），3 个版本就撑满——实测 r12 发布时被拒「文件大小已超出仓库附件配额 1 GB」，
+    默认 2。Gitee 仓库附件配额是 1GB，而每个版本约 280MB（两个 ABI 各 2 卷），
+    3 个版本就撑满——实测 r12 发布时被拒「文件大小已超出仓库附件配额 1 GB」，
     手工删了 r09 才通过。设 0 表示不清理（自己盯配额）。
 
-    删除是安全的：GitHub Release 保留全部 CN 整包（不分卷），CN 补丁生成时
-    的 base 也是从 GitHub 取的（见 asm_build.yml 的 gh release download），
+    删除是安全的：GitHub Release 保留全部 CN 整包（不分卷），
     Gitee 上的历史资产没有任何引用方。
 
 .PARAMETER DryRun
@@ -52,7 +45,7 @@
 
 .EXAMPLE
     .\tools\publish-cn-apk.ps1 -DryRun
-    .\tools\publish-cn-apk.ps1 -ApkDir apk-staging -PatchFile patch-work-cn/acs-hotupdate-cn-1.0.0+gh.r09.zip
+    .\tools\publish-cn-apk.ps1 -ApkDir apk-staging
     .\tools\publish-cn-apk.ps1 -KeepReleases 3
 
 .NOTES
@@ -62,8 +55,6 @@
 [CmdletBinding()]
 param(
     [string]$ApkDir = 'apk-staging',
-
-    [string]$PatchFile = '',
 
     [string]$ChangelogFile = '',
 
@@ -126,82 +117,7 @@ $versionCode = [int]$vcMatch.Groups[1].Value
 Write-Host "versionCode: $versionCode"
 Write-Host ''
 
-# ---------- 补丁定位 ----------
-# **只认与当前发布版本匹配的补丁**（acs-hotupdate-cn-<versionName>.zip）。
-# 不能用「patch-work-cn 下最新的 zip」：该目录会留存历史版本的补丁，
-# 发布 r09（首个 CN Release，无补丁）时会捡到 r07 的旧补丁传上去，
-# 且清单会带上错误的 patch 块（实测踩到）。
-if ([string]::IsNullOrWhiteSpace($PatchFile)) {
-    $expectedName = "acs-hotupdate-cn-$versionName.zip"
-    $candidate = Join-Path $repoRoot "patch-work-cn/$expectedName"
-    if (Test-Path $candidate) {
-        $PatchFile = $candidate
-    }
-    else {
-        Write-Host "本地无 $expectedName，尝试从 GitHub Release v$versionName 下载…"
-        $tmpDir = Join-Path $env:TEMP "cn-patch-dl-$versionName"
-        $tmpPatch = Join-Path $tmpDir $expectedName
-        # gh 在 dubious-ownership 仓库里会往 stderr 打警告，PS 5.1 下原生命令的
-        # stderr 在 ErrorActionPreference=Stop 时会变成终止错误——临时放宽。
-        $prevEap = $ErrorActionPreference
-        $ErrorActionPreference = 'Continue'
-        try {
-            & gh release download "v$versionName" --pattern $expectedName --dir $tmpDir --clobber 2>&1 | Out-Null
-            if ($LASTEXITCODE -eq 0 -and (Test-Path $tmpPatch)) { $PatchFile = $tmpPatch }
-            else { Write-Warning "GitHub Release 无 CN 补丁（首个 CN 版本属正常），跳过补丁上传。" }
-        }
-        finally { $ErrorActionPreference = $prevEap }
-    }
-}
-
-$patchSha = $null
-$patchBaseVc = $null
-if (-not [string]::IsNullOrWhiteSpace($PatchFile) -and (Test-Path $PatchFile)) {
-    $patchItem = Get-Item $PatchFile
-    # **含资源变更的补丁必须拒绝**：补丁整体替换 resources.arsc，而资源 ID 跨版本会漂移
-    # （r11→r12 实测 981 个 ID 变化）。补丁只带差分 dex，未被覆盖的代码仍引用旧 ID，
-    # 在新表里指向别的资源——实测主页「打开项目」显示成「找不到未解析的类名」。
-    #
-    # 这条检查与 CI 的 hotupdate-normalize-patch.py、应用侧的
-    # PatchPackage.containsResources 是同一判据的三道防线。此处是**独立路径**：
-    # 补丁可从 GitHub Release 下载（CI 已拒绝生成，但历史资产仍在），
-    # 若不在这里拦住，清单会带上 patch 块把用户推向损坏的补丁。
-    Add-Type -AssemblyName System.IO.Compression.FileSystem
-    $zip = [System.IO.Compression.ZipFile]::OpenRead($PatchFile)
-    try {
-        $resourceEntries = @($zip.Entries | Where-Object {
-            $_.FullName -eq 'resources.arsc' -or $_.FullName.StartsWith('res/')
-        })
-        if ($resourceEntries.Count -gt 0) {
-            Write-Warning ("补丁含资源变更（$($resourceEntries.Count) 个条目），已拒绝使用：" +
-                '补丁会整体替换 resources.arsc 而资源 ID 跨版本会漂移，' +
-                '会导致界面文字错乱。清单将不带 patch 块，用户走整包更新。')
-            $PatchFile = ''
-        }
-    }
-    finally { $zip.Dispose() }
-}
-
-if (-not [string]::IsNullOrWhiteSpace($PatchFile) -and (Test-Path $PatchFile)) {
-    $patchItem = Get-Item $PatchFile
-    $patchSha = (Get-FileHash $PatchFile -Algorithm SHA256).Hash.ToLower()
-    Write-Host "CN 补丁   : $($patchItem.Name)（$([math]::Round($patchItem.Length / 1MB, 1)) MB, sha256=$($patchSha.Substring(0,12))…）"
-    # 读补丁内 patch.json 的 baseVersionCode（App 端据此判定补丁适用性）
-    Add-Type -AssemblyName System.IO.Compression.FileSystem
-    $zip = [System.IO.Compression.ZipFile]::OpenRead($PatchFile)
-    try {
-        $entry = $zip.GetEntry('patch.json')
-        if ($entry) {
-            $reader = New-Object System.IO.StreamReader($entry.Open())
-            $patchMeta = $reader.ReadToEnd() | ConvertFrom-Json
-            $patchBaseVc = [int]$patchMeta.baseVersionCode
-            $reader.Dispose()
-        }
-    }
-    finally { $zip.Dispose() }
-    if ($null -eq $patchBaseVc) { Write-Warning '补丁内无 patch.json，清单将不带 patch 块。' }
-}
-Write-Host ''
+# 不再定位/上传 CN 热更新补丁（补丁已停发，用户走整包分卷更新）。
 
 # ---------- changelog ----------
 if ([string]::IsNullOrWhiteSpace($ChangelogFile)) {
@@ -236,12 +152,12 @@ $token = Get-GiteeToken
 $headers = @{ Authorization = "token $token" }
 
 # ---------- 清理旧版本资产（腾 Gitee 附件配额） ----------
-# Gitee 仓库附件配额 1GB，而每个 CN 版本约占 296MB（两个 ABI 各 2 卷 + 补丁），
+# Gitee 仓库附件配额 1GB，而每个 CN 版本约占 280MB（两个 ABI 各 2 卷），
 # 3 个版本就撑满——实测 r12 发布时上传被拒「文件大小已超出仓库附件配额 1 GB」，
 # 手工删掉 r09 才通过。这里按 KeepReleases 自动保留最近 N 个版本。
 #
-# 删除是安全的：GitHub Release 保留全部 CN 整包（不分卷），CN 补丁生成时的 base
-# 也从 GitHub 取（见 asm_build.yml 的 gh release download），Gitee 历史资产无引用方。
+# 删除是安全的：GitHub Release 保留全部 CN 整包（不分卷），
+# Gitee 历史资产没有任何引用方。
 function Get-GiteeReleases([string]$repo) {
     $base = "https://gitee.com/api/v5/repos/$repo/releases"
     $all = @()
@@ -337,9 +253,8 @@ if ($DryRun) {
     finally { $ErrorActionPreference = $prevEap }
     Write-Host "  1. 切卷上传 $($arm64Apk.Name) → $Repo release $tag"
     if ($armv7Apk) { Write-Host "  2. 切卷上传 $($armv7Apk.Name)" }
-    if ($patchSha) { Write-Host "  3. 上传 CN 补丁 → $Repo release $tag" }
-    Write-Host "  4. 推送 changelog → $ManifestRepo/$changelogPath"
-    Write-Host "  5. 生成并推送 updater-cn.json → $ManifestRepo（versionCode=$versionCode, patch=$([bool]$patchSha)）"
+    Write-Host "  3. 推送 changelog → $ManifestRepo/$changelogPath"
+    Write-Host "  4. 生成并推送 updater-cn.json → $ManifestRepo（versionCode=$versionCode）"
     return
 }
 
@@ -410,7 +325,7 @@ catch {
 }
 if (-not $releaseId) { throw '未能取得 release id。' }
 
-# ---------- 上传附件（切卷 + 补丁） ----------
+# ---------- 上传附件（APK 分卷） ----------
 $curl = Get-Command curl.exe -ErrorAction SilentlyContinue
 if (-not $curl) { throw '需要 curl.exe（Windows 10+ 自带）。' }
 
@@ -500,15 +415,6 @@ if ($armv7Apk) {
     $armv7Sha = (Get-FileHash $armv7Apk.FullName -Algorithm SHA256).Hash.ToLower()
 }
 
-$patchUploadName = $null
-if ($patchSha) {
-    Write-Host ''
-    Write-Host '上传 CN 补丁…'
-    $patchItem = Get-Item $PatchFile
-    $patchUploadName = Get-UploadName $patchItem.Name
-    Upload-GiteeAttachment $patchItem.FullName
-}
-
 # ---------- 推送文件到 acs-mirror（contents API） ----------
 function Push-GiteeFile([string]$repo, [string]$path, [string]$content, [string]$message) {
     # Gitee contents API 与 GitHub 不同：**新建用 POST**，更新才用 PUT+sha。
@@ -545,8 +451,8 @@ Push-GiteeFile $ManifestRepo $changelogPath $changelogContent "docs(cn): $versio
 
 # updater-cn.json 与 App 端 TomIDEUpdater.parseUpdateInfo 的字段一一对应：
 #   baseUrl 含 {versionName} 占位符（App 端 expandUrl 展开）；
-#   variants[*].parts 是分卷 URL 列表（展开后）；sha256 是拼接后整包哈希；
-#   patch.patchUrl/sha256/baseVersionCode 供补丁分支使用。
+#   variants[*].parts 是分卷 URL 列表（展开后）；sha256 是拼接后整包哈希。
+#   不再写 patch 块：热更新补丁已停发，CN 用户走整包（分卷拼接）更新。
 $variants = [ordered]@{}
 foreach ($abi in $allPartNames.Keys) {
     $partsExpanded = @($allPartNames[$abi] | ForEach-Object { "$baseUrl/$_" })
@@ -565,15 +471,6 @@ $manifest = [ordered]@{
     baseUrl         = "https://gitee.com/$Repo/releases/download/cn-v{versionName}"
     variants        = $variants
     changelog       = "https://gitee.com/$ManifestRepo/raw/master/$changelogPath"
-}
-if ($patchSha -and $patchBaseVc) {
-    $manifest['patch'] = [ordered]@{
-        versionCode     = $versionCode
-        versionName     = $versionName
-        baseVersionCode = $patchBaseVc
-        patchUrl        = "$baseUrl/$patchUploadName"
-        sha256          = $patchSha
-    }
 }
 
 $manifestJson = $manifest | ConvertTo-Json -Depth 6
