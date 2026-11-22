@@ -20,6 +20,7 @@ import com.tom.rv2ide.R
 import com.tom.rv2ide.app.EdgeToEdgeIDEActivity
 import com.tom.rv2ide.databinding.ActivitySdkManagerBinding
 import com.tom.rv2ide.databinding.LayoutSdkComponentCardBinding
+import com.tom.rv2ide.handlers.system.AcsSdkPackageInstaller
 import com.tom.rv2ide.handlers.system.installer.SdkManagerInstaller
 import com.tom.rv2ide.preferences.internal.BuildPreferences
 import kotlinx.coroutines.CoroutineScope
@@ -405,10 +406,29 @@ class SdkManagerActivity : EdgeToEdgeIDEActivity() {
               }
             }
           }
+      // NDK/CMake 的官方源（sdkmanager + dl.google.com）不可达时，改用 Gitee 镜像
+      // （ACS Provider 的分卷包）。build-tools/platforms 没有镜像，不参与兜底。
+      val acsOk =
+          if (!ok && component.id in ACS_FALLBACK_COMPONENTS) {
+            scope.launch {
+              binding.outputText.append("[sdkmanager 失败，改用 Gitee 镜像]\n")
+              binding.outputScroll.post { binding.outputScroll.fullScroll(View.FOCUS_DOWN) }
+            }
+            // install() 是 suspend：withContextIo 的 block 不是 suspend，不能用它。
+            kotlinx.coroutines.withContext(Dispatchers.IO) {
+              AcsSdkPackageInstaller.install(this@SdkManagerActivity, component.id, version) { line ->
+                scope.launch {
+                  binding.outputText.append("$line\n")
+                  binding.outputScroll.post { binding.outputScroll.fullScroll(View.FOCUS_DOWN) }
+                }
+              }
+            }
+          } else false
+      val success = ok || acsOk
       binding.outputTitle.text =
-          getString(if (ok) R.string.sdk_install_ok else R.string.sdk_install_failed, fullId)
+          getString(if (success) R.string.sdk_install_ok else R.string.sdk_install_failed, fullId)
       // 成功才折叠：失败时日志里有 sdkmanager 的原因，折叠掉等于让用户自己再点开找。
-      setOutputExpanded(!ok)
+      setOutputExpanded(!success)
       // 装完重新读磁盘刷新卡片。
       for (c in components) {
         cards[c.id]?.let { bindCard(it, c) }
@@ -504,6 +524,9 @@ class SdkManagerActivity : EdgeToEdgeIDEActivity() {
   private companion object {
     /** 折叠态显示的 chip 数（一排左右）。 */
     const val VISIBLE_CHIPS = 4
+
+    /** 官方源失败时可改用 Gitee 镜像（ACS Provider 分卷包）的组件。 */
+    val ACS_FALLBACK_COMPONENTS = setOf("ndk", "cmake")
 
     /**
      * platforms 卡里最低展示到哪个 API。

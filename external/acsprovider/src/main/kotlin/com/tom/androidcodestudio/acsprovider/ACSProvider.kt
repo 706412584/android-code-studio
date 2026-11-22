@@ -383,32 +383,52 @@ class ACSProvider(
             }
         val entry = findPackageEntry(jsonContent, config)
 
-        val outputFile = File(downloadDir, entry.filename)
-        if (entry.parts.isNotEmpty()) {
-          // 镜像分卷：顺序下载 → 拼接 → 交后续 sha256 校验（与单文件路径同一校验）
-          downloadParts(entry.parts, outputFile, callback)
-        } else {
-          downloadFile(entry.url, outputFile, callback)
+        // 包体下载失败后换另一侧清单再试一次：主版本清单在 GitHub（包 URL 也指向
+        // GitHub Releases），国内设备常下不动；Gitee 镜像清单里同一包是分卷。
+        // 只在「两侧解析出的下载目标不同」时重试，避免对同一 URL 重复失败。
+        try {
+          downloadEntry(entry, callback)
+        } catch (e: Exception) {
+          val fallback = config.fallbackJsonUrl
+          if (fallback.isNullOrEmpty() || fallback == config.jsonUrl) throw e
+          logger.warn("Package download failed from manifest {}, retrying with {}", config.jsonUrl, fallback, e)
+          val fallbackContent = downloadJson(fallback, silent = false)
+          val fallbackEntry = findPackageEntry(fallbackContent, config)
+          if (fallbackEntry.url == entry.url && fallbackEntry.parts == entry.parts) throw e
+          // 清掉上一次的半成品，避免与新的文件名/分卷混合。
+          File(downloadDir, entry.filename).delete()
+          downloadEntry(fallbackEntry, callback)
         }
-
-        // Verify SHA256 if provided
-        if (entry.sha256 != null) {
-          logger.info("Expected SHA256: {}", entry.sha256)
-          val actualHash = HashUtils.calculateSHA256(outputFile)
-          logger.info("Actual SHA256:   {}", actualHash)
-
-          if (HashUtils.verifySHA256(outputFile, entry.sha256)) {
-            logger.info("SHA256 verification: PASSED")
-          } else {
-            outputFile.delete()
-            throw IOException("SHA256 verification: FAILED. Downloaded file may be corrupted")
-          }
-        } else {
-          logger.warn("No SHA256 checksum available for verification")
-        }
-
-        outputFile
       }
+
+  /** 按条目下载单一文件或分卷，并做 sha256 校验；返回落盘文件。 */
+  private suspend fun downloadEntry(entry: PackageEntry, callback: DownloadCallback?): File {
+    val outputFile = File(downloadDir, entry.filename)
+    if (entry.parts.isNotEmpty()) {
+      // 镜像分卷：顺序下载 → 拼接 → 交后续 sha256 校验（与单文件路径同一校验）
+      downloadParts(entry.parts, outputFile, callback)
+    } else {
+      downloadFile(entry.url, outputFile, callback)
+    }
+
+    // Verify SHA256 if provided
+    if (entry.sha256 != null) {
+      logger.info("Expected SHA256: {}", entry.sha256)
+      val actualHash = HashUtils.calculateSHA256(outputFile)
+      logger.info("Actual SHA256:   {}", actualHash)
+
+      if (HashUtils.verifySHA256(outputFile, entry.sha256)) {
+        logger.info("SHA256 verification: PASSED")
+      } else {
+        outputFile.delete()
+        throw IOException("SHA256 verification: FAILED. Downloaded file may be corrupted")
+      }
+    } else {
+      logger.warn("No SHA256 checksum available for verification")
+    }
+
+    return outputFile
+  }
 
   /**
    * 下载分卷并拼接为 [outputFile]。

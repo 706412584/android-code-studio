@@ -92,16 +92,16 @@ class JdkInstaller {
     @JvmStatic
     fun discoverAvailable(): List<String> {
       val out = runApt(discoverQueryArgs(), QUERY_TIMEOUT_MS)
-      if (out == null) {
-        Log.w(TAG, "apt-cache pkgnames 失败，用兜底版本列表 $FALLBACK_VERSIONS")
+      val fromApt = out?.let { parsePackageNames(it) }.orEmpty()
+      // 并入 Gitee 镜像覆盖的版本：apt 源不可达时 `apt-cache` 只会列出已安装的版本
+      // （实测源坏了以后卸载 JDK 21，列表里只剩 17），没有卡片就没有「安装」按钮，
+      // 镜像兜底永远走不到。镜像版本必须始终可选。
+      val merged = (fromApt + JdkMirror.availableVersions()).distinct().sortedBy { it.toIntOrNull() ?: 0 }
+      if (merged.isEmpty()) {
+        Log.w(TAG, "apt-cache 未列出任何 JDK 且无镜像版本，用兜底版本列表 $FALLBACK_VERSIONS")
         return FALLBACK_VERSIONS
       }
-      val versions = parsePackageNames(out)
-      if (versions.isEmpty()) {
-        Log.w(TAG, "apt-cache 未列出任何 JDK，用兜底版本列表 $FALLBACK_VERSIONS")
-        return FALLBACK_VERSIONS
-      }
-      return versions
+      return merged
     }
 
     /**
@@ -202,14 +202,23 @@ class JdkInstaller {
     healBrokenPackages(onOutput)
     onOutput("正在安装 $pkg（走 Termux 的 apt，需要联网）…")
     val ok = apt(listOf("install", "-y", pkg), onOutput)
-    if (!ok) return false
     // 以磁盘为准复查：apt 退出码为 0 但目录没出现，等于没装成，不能报成功。
-    if (!isInstalled(javaVersion)) {
-      onOutput("[错误] apt 报告成功，但 ${jvmDir(javaVersion)?.absolutePath} 未出现。")
-      return false
+    if (ok && isInstalled(javaVersion)) {
+      onOutput("JDK $javaVersion 安装完成。")
+      return true
     }
-    onOutput("JDK $javaVersion 安装完成。")
-    return true
+
+    // apt 源（国内 GitLab）不可达/失败时，改用 Gitee 镜像的 deb。
+    if (JdkMirror.isAvailable(javaVersion)) {
+      onOutput(
+          if (ok) "[错误] apt 报告成功，但 ${jvmDir(javaVersion)?.absolutePath} 未出现；改用 Gitee 镜像…"
+          else "apt 安装失败，改用 Gitee 镜像…")
+      if (JdkMirror.install(javaVersion, onOutput)) return true
+    }
+
+    if (!ok) return false
+    onOutput("[错误] apt 报告成功，但 ${jvmDir(javaVersion)?.absolutePath} 未出现。")
+    return false
   }
 
   /**

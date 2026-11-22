@@ -172,6 +172,15 @@ class Clang(private val context: Context) : ILanguageServerInstaller {
         }
       }
       
+      // apt 源（国内 GitLab）不可达/装不上时，改用 Gitee 镜像的 deb。
+      if (com.tom.rv2ide.utils.ClangMirror.isAvailable()) {
+        onOutput("\napt 安装未成功，改用 Gitee 镜像…")
+        if (com.tom.rv2ide.utils.ClangMirror.install(onOutput)) {
+          onOutput("\nClang installation successful (Gitee mirror)!")
+          return true
+        }
+      }
+
       // Final check
       onOutput("\nFinal check for clang binaries...")
       if (isInstalled()) {
