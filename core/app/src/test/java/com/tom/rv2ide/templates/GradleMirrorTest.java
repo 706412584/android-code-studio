@@ -23,10 +23,13 @@ import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
+import com.tom.rv2ide.utils.GradleDistributionChecksums;
 import java.io.File;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.util.List;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
@@ -50,24 +53,28 @@ public class GradleMirrorTest {
   @Test
   public void candidatesAreOrderedWithDomesticFirst() {
     List<GradleMirror.Mirror> all = GradleMirror.ALL;
-    assertTrue("候选不应为空", all.size() >= 3);
+    assertTrue("候选不应为空", all.size() >= 2);
     // 官方源必须排在最后：国内实测不可达（307 → GitHub 超时），
     // 排前面会让预检白等一个超时。
     assertEquals(
         "官方源应排在候选末位", "official", all.get(all.size() - 1).getId());
     assertFalse("默认源不应是官方", "official".equals(GradleMirror.defaultMirrorId()));
+    // 默认必须是阿里云：腾讯的 WAF 对 Java 客户端返回 200 + 反爬挑战页，
+    // Gradle wrapper 会把它当 zip 写盘（实测 2026-11-23，983 字节 HTML）。
+    assertEquals("默认源应是阿里云", "aliyun", GradleMirror.defaultMirrorId());
+    assertEquals("阿里云应排在候选首位", "aliyun", all.get(0).getId());
   }
 
   @Test
   public void urlForBuildsBothVariantSuffixes() {
-    GradleMirror.Mirror tencent = GradleMirror.byId("tencent");
-    assertNotNull(tencent);
+    GradleMirror.Mirror aliyun = GradleMirror.byId("aliyun");
+    assertNotNull(aliyun);
     assertEquals(
-        "https://mirrors.cloud.tencent.com/gradle/gradle-9.6.1-bin.zip",
-        GradleMirror.urlFor(tencent, "9.6.1", false));
+        "https://mirrors.aliyun.com/macports/distfiles/gradle/gradle-9.6.1-bin.zip",
+        GradleMirror.urlFor(aliyun, "9.6.1", false));
     assertEquals(
-        "https://mirrors.cloud.tencent.com/gradle/gradle-9.6.1-all.zip",
-        GradleMirror.urlFor(tencent, "9.6.1", true));
+        "https://mirrors.aliyun.com/macports/distfiles/gradle/gradle-9.6.1-all.zip",
+        GradleMirror.urlFor(aliyun, "9.6.1", true));
   }
 
   @Test
@@ -126,7 +133,7 @@ public class GradleMirrorTest {
   // ---- wrapper 改写 ----
 
   @Test
-  public void rewriteOnlyReplacesDistributionUrlAndKeepsOtherLines() throws Exception {
+  public void rewriteOnlyReplacesDistributionUrlAndChecksumAndKeepsOtherLines() throws Exception {
     File root = tmp.newFolder("proj");
     File wrapperDir = new File(root, "gradle/wrapper");
     assertTrue(wrapperDir.mkdirs());
@@ -141,18 +148,95 @@ public class GradleMirrorTest {
             + "zipStoreBase=GRADLE_USER_HOME\n";
     Files.write(props.toPath(), original.getBytes(StandardCharsets.UTF_8));
 
-    boolean changed = GradleMirror.rewriteWrapper(root, GradleMirror.byId("tencent"));
+    boolean changed = GradleMirror.rewriteWrapper(root, GradleMirror.byId("aliyun"));
 
     assertTrue("应改写成功", changed);
     String rewritten = new String(Files.readAllBytes(props.toPath()), StandardCharsets.UTF_8);
-    assertTrue("应指向腾讯镜像", rewritten.contains("mirrors.cloud.tencent.com"));
+    assertTrue("应指向阿里云镜像", rewritten.contains("mirrors.aliyun.com/macports/distfiles/gradle/"));
     assertFalse("不应残留官方地址", rewritten.contains("services.gradle.org"));
+    // properties 里惯用转义形式；replaceFirst 的替换串会吃 `\`，必须 quoteReplacement。
+    assertTrue("URL 的冒号/斜杠应保持转义", rewritten.contains("distributionUrl=https\\://"));
     // 版本与变体保持不变。
     assertTrue("版本要保留", rewritten.contains("gradle-9.6.1-bin.zip"));
     // 其它行一字不动。
     assertTrue("networkTimeout 不能被丢", rewritten.contains("networkTimeout=10000"));
     assertTrue("validateDistributionUrl 不能被丢", rewritten.contains("validateDistributionUrl=true"));
-    assertEquals("行数不应变化", original.lines().count(), rewritten.lines().count());
+    assertTrue(
+        "应写入 9.6.1 的官方哈希",
+        rewritten.contains("distributionSha256Sum=" + GradleDistributionChecksums.sha256For("9.6.1", false)));
+  }
+
+  @Test
+  public void rewriteCorrectsStaleChecksum() throws Exception {
+    File root = tmp.newFolder("projStale");
+    File wrapperDir = new File(root, "gradle/wrapper");
+    assertTrue(wrapperDir.mkdirs());
+    File props = new File(wrapperDir, "gradle-wrapper.properties");
+    Files.write(
+        props.toPath(),
+        ("distributionUrl=https\\://services.gradle.org/distributions/gradle-9.6.1-bin.zip\n"
+                + "distributionSha256Sum=deadbeef\n")
+            .getBytes(StandardCharsets.UTF_8));
+
+    assertTrue(GradleMirror.rewriteWrapper(root, GradleMirror.byId("aliyun")));
+    String rewritten = new String(Files.readAllBytes(props.toPath()), StandardCharsets.UTF_8);
+    assertFalse("错误哈希应被换掉", rewritten.contains("distributionSha256Sum=deadbeef"));
+    assertTrue(
+        "应校正为官方哈希",
+        rewritten.contains("distributionSha256Sum=" + GradleDistributionChecksums.sha256For("9.6.1", false)));
+    assertEquals("哈希行不应重复", 1, countOccurrences(rewritten, "distributionSha256Sum="));
+  }
+
+  @Test
+  public void rewriteLeavesChecksumAloneForUnknownVersion() throws Exception {
+    File root = tmp.newFolder("projUnknown");
+    File wrapperDir = new File(root, "gradle/wrapper");
+    assertTrue(wrapperDir.mkdirs());
+    File props = new File(wrapperDir, "gradle-wrapper.properties");
+    Files.write(
+        props.toPath(),
+        ("distributionUrl=https\\://services.gradle.org/distributions/gradle-10.0.0-bin.zip\n"
+                + "distributionSha256Sum=custom-value\n")
+            .getBytes(StandardCharsets.UTF_8));
+
+    assertTrue(GradleMirror.rewriteWrapper(root, GradleMirror.byId("aliyun")));
+    String rewritten = new String(Files.readAllBytes(props.toPath()), StandardCharsets.UTF_8);
+    assertTrue("未知版本不得改写哈希", rewritten.contains("distributionSha256Sum=custom-value"));
+    assertTrue("URL 仍应换镜像", rewritten.contains("mirrors.aliyun.com/macports/distfiles/gradle/"));
+  }
+
+  /** 模板 assets 的 wrapper 必须钉住与版本匹配的官方哈希（否则会重现 .sha256 404 故障）。 */
+  @Test
+  public void templateAssetWrappersPinMatchingChecksums() throws Exception {
+    File assets = new File("src/main/assets");
+    assertTrue("缺少模板 assets 目录: " + assets.getAbsolutePath(), assets.isDirectory());
+    File[] templateDirs = assets.listFiles(File::isDirectory);
+    assertNotNull(templateDirs);
+    int checked = 0;
+    for (File dir : templateDirs) {
+      File props = new File(dir, "gradle/wrapper/gradle-wrapper.properties");
+      if (!props.isFile()) continue;
+      String text = new String(Files.readAllBytes(props.toPath()), StandardCharsets.UTF_8);
+      Matcher version = Pattern.compile("gradle-([0-9][0-9.]*)-(bin|all)\\.zip").matcher(text);
+      Matcher sha = Pattern.compile("distributionSha256Sum=([0-9a-f]{64})").matcher(text);
+      assertTrue(dir.getName() + " 的 wrapper 认不出 Gradle 版本", version.find());
+      assertTrue(dir.getName() + " 的 wrapper 缺少 distributionSha256Sum", sha.find());
+      assertEquals(
+          dir.getName() + " 的哈希与版本不匹配",
+          GradleDistributionChecksums.sha256For(version.group(1), "all".equals(version.group(2))),
+          sha.group(1));
+      checked++;
+    }
+    assertEquals("应至少检查 13 份模板 wrapper", 13, checked);
+  }
+
+  private static int countOccurrences(String text, String needle) {
+    int count = 0, from = 0;
+    while ((from = text.indexOf(needle, from)) >= 0) {
+      count++;
+      from += needle.length();
+    }
+    return count;
   }
 
   @Test
@@ -166,7 +250,7 @@ public class GradleMirrorTest {
         "distributionUrl=https\\://services.gradle.org/distributions/gradle-9.0.0-all.zip\n"
             .getBytes(StandardCharsets.UTF_8));
 
-    assertTrue(GradleMirror.rewriteWrapper(root, GradleMirror.byId("tencent")));
+    assertTrue(GradleMirror.rewriteWrapper(root, GradleMirror.byId("aliyun")));
     String rewritten = new String(Files.readAllBytes(props.toPath()), StandardCharsets.UTF_8);
     // `-all` 不能被悄悄换成 `-bin`：两者内容不同，用户可能故意选了 all。
     assertTrue("必须保留 -all 变体", rewritten.contains("gradle-9.0.0-all.zip"));
@@ -184,9 +268,9 @@ public class GradleMirrorTest {
         "distributionUrl=https\\://services.gradle.org/distributions/gradle-8.14.3-bin.zip\n"
             .getBytes(StandardCharsets.UTF_8));
 
-    assertTrue("应能在 android/ 子目录找到", GradleMirror.rewriteWrapper(root, GradleMirror.byId("tencent")));
+    assertTrue("应能在 android/ 子目录找到", GradleMirror.rewriteWrapper(root, GradleMirror.byId("aliyun")));
     String rewritten = new String(Files.readAllBytes(props.toPath()), StandardCharsets.UTF_8);
-    assertTrue(rewritten.contains("mirrors.cloud.tencent.com"));
+    assertTrue(rewritten.contains("mirrors.aliyun.com/macports/distfiles/gradle/"));
     assertTrue(rewritten.contains("gradle-8.14.3-bin.zip"));
   }
 
@@ -194,7 +278,7 @@ public class GradleMirrorTest {
   public void rewriteReturnsFalseWhenWrapperMissingOrUnparseable() throws Exception {
     // 没有 wrapper 文件的工程（形态特殊）不该抛异常，也不该被当成失败。
     File empty = tmp.newFolder("noWrapper");
-    assertFalse(GradleMirror.rewriteWrapper(empty, GradleMirror.byId("tencent")));
+    assertFalse(GradleMirror.rewriteWrapper(empty, GradleMirror.byId("aliyun")));
 
     // distributionUrl 认不出 Gradle 版本时同样安静跳过。
     File root = tmp.newFolder("weird");
@@ -204,7 +288,7 @@ public class GradleMirrorTest {
         new File(wrapperDir, "gradle-wrapper.properties").toPath(),
         "distributionUrl=https\\://example.com/my-custom-gradle.zip\n"
             .getBytes(StandardCharsets.UTF_8));
-    assertFalse(GradleMirror.rewriteWrapper(root, GradleMirror.byId("tencent")));
+    assertFalse(GradleMirror.rewriteWrapper(root, GradleMirror.byId("aliyun")));
   }
 
   @Test

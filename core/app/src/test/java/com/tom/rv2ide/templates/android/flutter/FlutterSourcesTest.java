@@ -79,8 +79,18 @@ public class FlutterSourcesTest {
   public void gradleWrapper_usesTencentMirror() {
     // 云端 CI 无所谓，但用户若有桌面 Flutter 环境构建，镜像更快
     String w = FlutterSources.INSTANCE.gradleWrapperProperties();
-    assertTrue(w.contains("mirrors.cloud.tencent.com/gradle/gradle-" + FlutterSources.GRADLE_VERSION + "-all.zip"));
+    assertTrue(w.contains("mirrors.aliyun.com/macports/distfiles/gradle/gradle-" + FlutterSources.GRADLE_VERSION + "-all.zip"));
     assertTrue("Flutter 模板默认 all 分发（IDE 需要源码）", w.contains("-all.zip"));
+    assertEquals(
+        "必须钉住 all 分发的官方哈希（否则会走镜像 .sha256 404 的死路）",
+        com.tom.rv2ide.utils.GradleDistributionChecksums.sha256For(
+            FlutterSources.GRADLE_VERSION, true),
+        firstGroup(w, "distributionSha256Sum=([0-9a-f]{64})"));
+  }
+
+  private static String firstGroup(String text, String pattern) {
+    java.util.regex.Matcher m = java.util.regex.Pattern.compile(pattern).matcher(text);
+    return m.find() ? m.group(1) : null;
   }
 
   @Test

@@ -649,15 +649,22 @@ object FlutterSources {
    * 但用户若在有网络的环境尝试构建（如桌面 Flutter），镜像更快。
    * 注意 Flutter 模板默认是 `-all.zip`（IDE 需要源码），保留 all 分发。
    */
-  fun gradleWrapperProperties(): String =
-      """
-      distributionBase=GRADLE_USER_HOME
-      distributionPath=wrapper/dists
-      zipStoreBase=GRADLE_USER_HOME
-      zipStorePath=wrapper/dists
-      distributionUrl=https\://mirrors.cloud.tencent.com/gradle/gradle-$GRADLE_VERSION-all.zip
-      """
-          .trimIndent() + "\n"
+  fun gradleWrapperProperties(): String {
+    // 与 13 份 assets 模板一致：有官方哈希就钉住。
+    // 不钉哈希时，Gradle 8.9 wrapper 在 zip 解压失败后会去拉镜像的 `.sha256`，
+    // 而腾讯镜像不提供该文件（实测 404），真实网络错误会被掩盖成「发行包不存在」。
+    val checksum =
+        com.tom.rv2ide.utils.GradleDistributionChecksums
+            .sha256For(GRADLE_VERSION, allVariant = true)
+    return buildString {
+      appendLine("distributionBase=GRADLE_USER_HOME")
+      appendLine("distributionPath=wrapper/dists")
+      appendLine("zipStoreBase=GRADLE_USER_HOME")
+      appendLine("zipStorePath=wrapper/dists")
+      appendLine("distributionUrl=https\\://mirrors.aliyun.com/macports/distfiles/gradle/gradle-$GRADLE_VERSION-all.zip")
+      if (checksum != null) appendLine("distributionSha256Sum=$checksum")
+    }
+  }
 
   // ---------------------------------------------------------------------------
   // CI workflow 与 README

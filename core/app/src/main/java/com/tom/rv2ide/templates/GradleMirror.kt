@@ -9,6 +9,7 @@
 
 package com.tom.rv2ide.templates
 
+import com.tom.rv2ide.utils.GradleDistributionChecksums
 import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
@@ -49,13 +50,22 @@ object GradleMirror {
       val mavenCentral: String? = null,
   )
 
-  /** 腾讯云。实测 HTTP 206、能正常下字节（本机与设备均可用）。无 Maven 镜像。 */
-  val TENCENT = Mirror("tencent", "腾讯云", "https://mirrors.cloud.tencent.com/gradle/")
-
   /**
-   * 阿里云。Gradle 发行包与 Maven 依赖都有——**唯一两者兼备的源**，
-   * 因此 Maven 镜像固定用它（不随 Gradle 源选择变化）。
-   */
+ * 阿里云。Gradle 发行包与 Maven 依赖都有——**唯一两者兼备的源**，
+ * 因此 Maven 镜像固定用它（不随 Gradle 源选择变化）。
+ *
+ * <p>**Gradle 发行包的默认源**：实测 Java 客户端完整下载 9.6.1 与官方字节一致
+ * （sha256 9c0f7fae…）。
+ *
+ * <p>**为什么候选里没有腾讯云**：腾讯的 EdgeOne WAF 会针对 Java 客户端下发反爬挑战页。
+ * 实测（黑鲨 SKW-A0，2026-11-23）：同一 URL 用 curl 下载得到 140,682,664 字节的正常 zip，
+ * 而用 `HttpURLConnection`（与 Gradle wrapper 相同的下载实现）拿到的是
+ * **HTTP 200 + 983 字节的 JavaScript 挑战页**（设置 `EO_Bot_Ssid`/`__tst_status`）。
+ * Gradle wrapper 不检查 HTTP 状态码，会把挑战页当成 zip 写盘——后果是解压失败，
+ * 若有 `distributionSha256Sum` 则直接校验失败。更糟的是它对 HEAD 也返回 200，
+ * 可达性探测会把腾讯误判为「可用」，从而在阿里云探测失败时选中它。
+ * 因此**整项移除**，避免任何路径再选中它。
+ */
   val ALIYUN =
       Mirror(
           id = "aliyun",
@@ -91,9 +101,19 @@ object GradleMirror {
    * <p>`@JvmField`：给 Java 侧（设置页的单选列表、单测）直接读，
    * 不必走 `getALL()` 这种 Kotlin object 生成的访问器。
    */
-  @JvmField val ALL: List<Mirror> = listOf(TENCENT, ALIYUN, OFFICIAL)
+  @JvmField val ALL: List<Mirror> = listOf(ALIYUN, OFFICIAL)
 
-  private const val ID_DEFAULT = "tencent"
+  /**
+   * 默认镜像。
+   *
+   * <p>**必须是阿里云而不是腾讯云**：腾讯的 WAF 会给 Java 客户端返回 200 + 反爬挑战页，
+   * 而 Gradle wrapper 正是 Java 实现（详见 [TENCENT] 的说明）。这个 bug 曾表现为
+   * 「新建项目同步失败、报 distribution does not exist」，且 HEAD 探测看不出差异。
+   */
+  private const val ID_DEFAULT = "aliyun"
+
+  /** 探测请求的 UA（阿里云会 403 掉 Dalvik 默认 UA，见 [probe]）。 */
+  private const val PROBE_USER_AGENT = "AndroidCodeStudio/1.0 (Gradle mirror probe)"
 
   /**
    * 默认镜像 id。
@@ -173,23 +193,46 @@ object GradleMirror {
    * 因此只认**直接的 2xx** —— 需要重定向的源一律不算可用。
    */
   private fun isReachable(url: String, timeoutMs: Int): Boolean {
+    // 先 HEAD；失败再退化为「Range GET 只读首字节」。
+    //
+    // <p>为什么要这个回退：实测（黑鲨实机，2026-11-23）阿里云的 HEAD 在 Android 的
+    // HttpURLConnection 下 5s 超时，而同一个 URL 的 GET 只需几百毫秒——只探 HEAD 会把
+    // 唯一可用源判成不可达，进而让创建流程退回模板 URL 或选到其它源。
+    // Range 只取 1KB，代价可忽略；仍不跟随重定向。
+    if (probe(url, "HEAD", timeoutMs)) return true
+    return probe(url, "GET", timeoutMs)
+  }
+
+  private fun probe(url: String, method: String, timeoutMs: Int): Boolean {
+    var conn: HttpURLConnection? = null
     return try {
-      val conn =
+      conn =
           (URL(url).openConnection() as HttpURLConnection).apply {
-            requestMethod = "HEAD"
+            requestMethod = method
             connectTimeout = timeoutMs
             readTimeout = timeoutMs
             instanceFollowRedirects = false
+            useCaches = false
+            // **必须换掉 Dalvik 的默认 UA**：阿里云对 `Dalvik/2.1.0 (…)` 直接返回 403，
+            // 实测（黑鲨，2026-11-23）HEAD 与 Range GET 都是 403，于是唯一可用源被
+            // 判成不可达，创建流程退回模板 URL / 用户选的镜像永远不生效。
+            // Gradle 自己也带 UA，实际下载不受影响；这里给探测一个明确的客户端标识。
+            setRequestProperty("User-Agent", PROBE_USER_AGENT)
+            if (method == "GET") setRequestProperty("Range", "bytes=0-1023")
           }
-      try {
-        conn.responseCode in 200..299
-      } finally {
-        conn.disconnect()
+      val code = conn.responseCode
+      val ok = code in 200..299
+      if (ok && method == "GET") {
+        // 读一小段再断开，确保连接可用（有些 CDN 先回首包再断）。
+        conn.inputStream.use { it.read() }
       }
+      ok
     } catch (e: Exception) {
       // 超时、DNS 失败、TLS 失败……一律视为不可达，不向上抛。
-      log.debug("镜像探测失败：{}（{}）", url, e.javaClass.simpleName)
+      log.debug("镜像探测失败：{}（{} / {}）", url, method, e.javaClass.simpleName)
       false
+    } finally {
+      conn?.disconnect()
     }
   }
 
@@ -281,11 +324,20 @@ object GradleMirror {
   }
 
   /**
-   * 把工程里的 wrapper 换成指定镜像。
+   * 把工程里的 wrapper 换成指定镜像，并同步维护 `distributionSha256Sum`。
    *
-   * <p><b>只改 `distributionUrl` 一行</b>（正则替换），文件其余内容与行尾一字不动——
-   * 用户的 wrapper properties 里还有 `networkTimeout`、`validateDistributionUrl` 等项，
-   * 整文件重写会把它们丢掉。
+   * <p><b>只动两行</b>（`distributionUrl` 与 `distributionSha256Sum`，正则替换），
+   * 文件其余内容与行尾一字不动——用户的 wrapper properties 里还有 `networkTimeout`、
+   * `validateDistributionUrl` 等项，整文件重写会把它们丢掉。
+   *
+   * <p><b>为什么要写哈希</b>：Gradle 8.9 wrapper 在没有 `distributionSha256Sum` 时，
+   * zip 解压失败会回退去拉同 URL 的 `.sha256`；国内镜像（腾讯云）不提供该文件（实测 404），
+   * 于是失败被包装成 “The specified Gradle distribution ... does not exist”。
+   * 钉住官方哈希后这条回退路径不会触发，坏下载会被明确拒绝。
+   * 镜像侧的发行包已实测与官方字节一致，换镜像不影响哈希有效性。
+   *
+   * <p>版本不在 [GradleDistributionChecksums] 表中时**不改动**已有哈希行——
+   * 宁可没有校验，也不写一个可能错误的值。
    *
    * <p>找不到该文件（模板形态特殊）时静默返回 false，调用方不应因此判定创建失败。
    *
@@ -311,12 +363,45 @@ object GradleMirror {
     val gradleVersion = version.groupValues[1]
     val isAll = version.groupValues[2] == "all"
     // 转义成 properties 里惯用的形式（`https\://...`），与模板其它文件保持一致。
-    val newUrl = urlFor(mirror, gradleVersion, isAll).replace(":", "\\:").replace("/", "\\/")
+    // **只转义冒号**：模板 assets 就是这种写法，而 `/` 在 Properties 值里无需转义
+    // （再转一道会得到 `https\:\/\/`，虽能解析但与模板风格不一致）。
+    val newUrl = urlFor(mirror, gradleVersion, isAll).replace(":", "\\:")
 
-    val rewritten = original.replaceFirst(Regex("distributionUrl=\\S+"), "distributionUrl=$newUrl")
+    // **必须 quoteReplacement**：replaceFirst 的替换串会把 `\` 当转义符，
+    // 直接传 `distributionUrl=https\://...` 会被吃成 `https://...`（实测）。
+    val rewritten =
+        syncChecksum(
+            original.replaceFirst(
+                Regex("distributionUrl=\\S+"),
+                java.util.regex.Matcher.quoteReplacement("distributionUrl=$newUrl"),
+            ),
+            gradleVersion,
+            isAll,
+        )
     if (rewritten == original) return false
     props.writeText(rewritten)
-    log.info("已把 {} 的 Gradle 源改为 {}（{}）", projectRoot.name, mirror.label, gradleVersion)
+    log.info("已把 {} 的 Gradle 源改为 {}（{}，哈希已同步）", projectRoot.name, mirror.label, gradleVersion)
     return true
+  }
+
+  /** `distributionSha256Sum` 整行（含可能存在的行尾空白）。 */
+  private val checksumLine = Regex("(?m)^distributionSha256Sum=.*$")
+
+  /**
+   * 写入或校正 `distributionSha256Sum`；版本未知时原样返回。
+   *
+   * <p>插入位置固定在 `distributionUrl` 行的下一行，行尾风格沿用文件现有风格
+   * （模板资源是 LF；Windows 上被外部工具改写过的文件可能是 CRLF）。
+   */
+  private fun syncChecksum(text: String, version: String, allVariant: Boolean): String {
+    val expected = GradleDistributionChecksums.sha256For(version, allVariant) ?: return text
+    val line = "distributionSha256Sum=$expected"
+    checksumLine.find(text)?.let { match ->
+      return text.replaceRange(match.range, line)
+    }
+    val urlLine = Regex("(?m)^distributionUrl=.*$").find(text) ?: return text
+    val eol = if (text.contains("\r\n")) "\r\n" else "\n"
+    val insertAt = urlLine.range.last + 1
+    return text.substring(0, insertAt) + eol + line + text.substring(insertAt)
   }
 }

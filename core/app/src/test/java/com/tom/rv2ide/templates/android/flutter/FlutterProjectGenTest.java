@@ -144,9 +144,9 @@ public class FlutterProjectGenTest {
     assertTrue(settings.contains("flutter.sdk not set in local.properties"));
     assertTrue(settings.contains("includeBuild(\"$flutterSdkPath/packages/flutter_tools/gradle\")"));
 
-    // wrapper 用腾讯镜像
+    // wrapper 用阿里云镜像（腾讯对 Java 客户端会返回反爬挑战页）
     String wrapper = read(root, "android/gradle/wrapper/gradle-wrapper.properties");
-    assertTrue(wrapper.contains("mirrors.cloud.tencent.com"));
+    assertTrue(wrapper.contains("mirrors.aliyun.com"));
   }
 
   @Test
