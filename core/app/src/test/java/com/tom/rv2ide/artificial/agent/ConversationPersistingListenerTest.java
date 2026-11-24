@@ -25,6 +25,7 @@ import static org.junit.Assert.assertTrue;
 import com.tom.rv2ide.ai.agent.AgentEvent;
 import com.tom.rv2ide.ai.agent.conversation.AssistantMessageEntry;
 import com.tom.rv2ide.ai.agent.conversation.ConversationEntry;
+import com.tom.rv2ide.ai.agent.conversation.ConversationHistory;
 import com.tom.rv2ide.ai.agent.conversation.ConversationLog;
 import com.tom.rv2ide.ai.agent.conversation.ConversationStore;
 import com.tom.rv2ide.ai.agent.conversation.ConversationSummary;
@@ -308,5 +309,151 @@ public class ConversationPersistingListenerTest {
   /** 造一条带调用 id 的 PROGRESS 事件。 */
   private static AgentEvent progressEvent(String message, String callId) {
     return AgentEvent.progress(callId, message);
+  }
+
+  // ── 延迟提交（拒绝恢复）按 attempt 入队与提交 ─────────────────────────
+
+  /**
+   * 关键回归：defer 的轮次**按事件顺序入队**，attempt 收尾按判定提交——
+   * 中间的工具调用轮不再被后续轮覆盖，带 toolCalls 的 assistant 与带图 tool_result
+   * 都能落盘，且 assistant 在 tool_result 之前（fold 才能正确配对）。
+   */
+  @Test
+  public void deferredTurnsAreQueuedAndCommittedWithToolCalls() throws IOException {
+    String id = newConversation();
+    ConversationPersistingListener l = listener(id, "问题");
+    l.setDeferAssistantPersistence(true);
+
+    // 第一轮：assistant 带 toolCalls + 工具结果带图
+    ToolCall call = new ToolCall("call-1", "file_read", "{\"file_path\":\"a.jpg\"}");
+    l.onEvent(AgentEvent.turnFinished("先读图", java.util.Collections.singletonList(call)));
+    l.onEvent(
+        AgentEvent.toolFinished(
+            call,
+            ToolResult.withImage("file_read", "图来了", "image/jpeg", "QUJD")
+                .withCall(call.getId(), call.getName())));
+
+    // 第二轮：又一个 assistant 带 toolCalls（旧实现会被它覆盖）
+    ToolCall call2 = new ToolCall("call-2", "file_read", "{\"file_path\":\"b.jpg\"}");
+    l.onEvent(AgentEvent.turnFinished("再读一张", java.util.Collections.singletonList(call2)));
+    l.onEvent(
+        AgentEvent.toolFinished(
+            call2,
+            ToolResult.withImage("file_read", "第二张", "image/jpeg", "REJT")
+                .withCall(call2.getId(), call2.getName())));
+
+    // defer 入队期间：assistant 与 tool_result 都不该提前落盘
+    assertEquals(
+        "defer 入队期间不该有 assistant 落盘",
+        0,
+        entries(id).stream().filter(e -> e instanceof AssistantMessageEntry).count());
+    assertEquals(
+        "defer 入队期间不该有 tool_result 落盘",
+        0,
+        entries(id).stream().filter(e -> e instanceof ToolResultEntry).count());
+
+    // attempt 收尾：非拒绝 → 全部按事件顺序落盘（带 toolCalls + 图片）
+    l.onAttemptFinished(false);
+
+    List<AssistantMessageEntry> assistants = new ArrayList<>();
+    List<ToolResultEntry> results = new ArrayList<>();
+    for (ConversationEntry e : entries(id)) {
+      if (e instanceof AssistantMessageEntry) {
+        assistants.add((AssistantMessageEntry) e);
+      } else if (e instanceof ToolResultEntry) {
+        results.add((ToolResultEntry) e);
+      }
+    }
+
+    assertEquals("两轮 assistant 都应保留（不再被覆盖）", 2, assistants.size());
+    assertEquals("先读图", assistants.get(0).getContent());
+    assertEquals("再读一张", assistants.get(1).getContent());
+    assertEquals("toolCalls 必须保留", 1, assistants.get(0).getToolCalls().size());
+    assertEquals("call-1", assistants.get(0).getToolCalls().get(0).getId());
+    assertEquals("call-2", assistants.get(1).getToolCalls().get(0).getId());
+
+    assertEquals("两个 tool_result 都应保留", 2, results.size());
+    assertTrue("图片负载必须随 tool_result 落盘", results.get(0).hasImage());
+
+    // 顺序：assistant 必须早于它配对的 tool_result（fold 依赖这个顺序）
+    int firstAssistant = -1;
+    int firstToolResult = -1;
+    List<ConversationEntry> all = entries(id);
+    for (int i = 0; i < all.size(); i++) {
+      ConversationEntry e = all.get(i);
+      if (firstAssistant < 0 && e instanceof AssistantMessageEntry) {
+        firstAssistant = i;
+      }
+      if (firstToolResult < 0 && e instanceof ToolResultEntry) {
+        firstToolResult = i;
+      }
+    }
+    assertTrue(
+        "assistant 必须先于 tool_result（否则 fold 会把 tool_result 当孤儿丢弃）",
+        firstAssistant >= 0 && firstToolResult >= 0 && firstAssistant < firstToolResult);
+
+    // fold 验证：assistant 的 toolCalls 与 tool_result 的图片都必须恢复
+    java.util.List<com.tom.rv2ide.ai.protocol.ModelMessage> folded =
+        ConversationHistory.fold(store().read(id));
+    int assistantWithCalls = 0;
+    int toolImages = 0;
+    for (com.tom.rv2ide.ai.protocol.ModelMessage m : folded) {
+      if ("assistant".equals(m.getRole()) && !m.getToolCalls().isEmpty()) {
+        assistantWithCalls++;
+      }
+      if (m instanceof com.tom.rv2ide.ai.protocol.ToolModelMessage) {
+        String raw = m.getRawInputJson();
+        if (raw != null && !raw.isEmpty()) {
+          toolImages++;
+        }
+      }
+    }
+    assertEquals("fold 后两轮 assistant 的 toolCalls 都应保留", 2, assistantWithCalls);
+    assertEquals("fold 后两张图片都应水合", 2, toolImages);
+  }
+
+  /** 被拒的 attempt：整批入队轮次被丢弃，不落盘。 */
+  @Test
+  public void refusedAttemptIsDiscarded() throws IOException {
+    String id = newConversation();
+    ConversationPersistingListener l = listener(id, "问题");
+    l.setDeferAssistantPersistence(true);
+
+    l.onEvent(
+        AgentEvent.turnFinished(
+            "被拒的回复", java.util.Collections.singletonList(new ToolCall("c1", "file_read", "{}"))));
+    l.onAttemptFinished(true);
+
+    assertEquals(
+        "被拒的轮次不应落盘（拒绝原文不进模型上下文）",
+        0,
+        entries(id).stream().filter(e -> e instanceof AssistantMessageEntry).count());
+  }
+
+  /** 第一次被拒、第二次成功：第一次的轮次被丢弃，第二次的轮次保留。 */
+  @Test
+  public void refusedAttemptDoesNotLeakIntoNextAttempt() throws IOException {
+    String id = newConversation();
+    ConversationPersistingListener l = listener(id, "问题");
+    l.setDeferAssistantPersistence(true);
+
+    l.onEvent(
+        AgentEvent.turnFinished(
+            "第一次被拒", java.util.Collections.singletonList(new ToolCall("c1", "file_read", "{}"))));
+    l.onAttemptFinished(true);
+
+    l.onEvent(
+        AgentEvent.turnFinished(
+            "第二次成功", java.util.Collections.singletonList(new ToolCall("c2", "file_read", "{}"))));
+    l.onAttemptFinished(false);
+
+    List<AssistantMessageEntry> assistants = new ArrayList<>();
+    for (ConversationEntry e : entries(id)) {
+      if (e instanceof AssistantMessageEntry) {
+        assistants.add((AssistantMessageEntry) e);
+      }
+    }
+    assertEquals("只有第二次的轮次落盘", 1, assistants.size());
+    assertEquals("第二次成功", assistants.get(0).getContent());
   }
 }

@@ -103,6 +103,10 @@ public final class RefusalRecovery {
     AgentRunResult result = runner.run(config, listener);
     int attempts = 1;
     RefusalDetector.Verdict verdict = detector.detect(result);
+    // 每次尝试结束后按判定提交/丢弃该次入队的轮次（拒绝恢复链路的提交粒度）。
+    if (listener != null) {
+      listener.onAttemptFinished(verdict.isRefused());
+    }
 
     int limit = Math.max(1, policy.maxAttempts);
     boolean announced = false;
@@ -116,6 +120,9 @@ public final class RefusalRecovery {
       result = runner.run(config, listener);
       attempts++;
       verdict = detector.detect(result);
+      if (listener != null) {
+        listener.onAttemptFinished(verdict.isRefused());
+      }
     }
 
     if (verdict.isRefused()) {

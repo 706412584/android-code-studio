@@ -431,17 +431,10 @@ public final class ConversationRunner {
                           contextManager,
                           attachmentsJson));
       result = recovery.execute(config, persisting);
-      // 收尾:被拒 → 丢弃未决条目(不落盘,模型看不到);正常 → 提交。
-      // 仅拒绝恢复链路有未决缓冲;disabled 路径 defer=false,直接落盘后无缓冲。
-      if (refusalEnabled) {
-        RefusalDetector.Verdict finalVerdict = new RefusalDetector().detect(result);
-        if (finalVerdict.isRefused() || result == null || result.isFailed()) {
-          persisting.discardPendingAssistant();
-        } else {
-          persisting.commitPendingAssistant();
-        }
-        persisting.resetDeferAssistantPersistence();
-      }
+      // 收尾:拒绝恢复链路已按每次 attempt 的判定提交/丢弃入队轮次（见
+      // ConversationPersistingListener.onAttemptFinished），这里只需复位延迟标志。
+      // 不再按「最后一次结果」统一提交——那会把中间的工具调用轮全部覆盖丢失。
+      persisting.resetDeferAssistantPersistence();
     } catch (Throwable t) {
       // 内核内部已经处理了 OOM 与模型异常（转成 FAILED 事件）；能到这里的是
       // 装配期异常（配置非法、工作区不可写等）。如实上报，不吞。

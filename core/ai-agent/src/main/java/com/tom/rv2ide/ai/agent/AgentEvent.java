@@ -344,5 +344,14 @@ public final class AgentEvent {
   /** 事件的接收者。实现方需保证线程安全——事件可能来自流式回调线程。 */
   public interface Listener {
     void onEvent(AgentEvent event);
+
+    /**
+     * 一次尝试（attempt）结束后的回调：按该次结果提交或丢弃**已入队**的助手轮次。
+     *
+     * <p>用于「拒绝恢复」链路：模型每次尝试（含重试）结束后，按本次判定决定
+     * 这些轮次是落盘（非拒绝）还是丢弃（被拒，不进模型上下文）。
+     * 默认空实现（不涉及延迟提交的监听器无需感知）。
+     */
+    default void onAttemptFinished(boolean refused) {}
   }
 }

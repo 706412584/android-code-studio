@@ -25,6 +25,7 @@ import com.tom.rv2ide.ai.agent.conversation.ConversationStore;
 import com.tom.rv2ide.ai.agent.conversation.ToolResultEntry;
 import com.tom.rv2ide.ai.agent.conversation.UserMessageEntry;
 import com.tom.rv2ide.ai.tool.api.ToolCall;
+import com.tom.rv2ide.ai.tool.api.ToolResult;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -120,9 +121,32 @@ public final class ConversationPersistingListener implements AgentEvent.Listener
    * （非拒绝）或 {@link #discardPendingAssistant()} 丢弃（被拒——拒绝原文不进模型
    * 上下文）。为 null 表示无未决条目。
    */
-  private String pendingAssistant;
-  private String pendingAssistantReasoning;
-  private List<ToolCall> pendingAssistantCalls;
+  /** 延迟提交的助手轮次（TURN_FINISHED 入队，attempt 收尾按 verdict 提交/丢弃）。 */
+  private static final class PendingAssistantTurn {
+    final String content;
+    final String reasoning;
+    final java.util.List<ToolCall> calls;
+
+    PendingAssistantTurn(String content, String reasoning, java.util.List<ToolCall> calls) {
+      this.content = content;
+      this.reasoning = reasoning;
+      this.calls = calls;
+    }
+  }
+
+  /** 延迟提交的工具结果（与 assistant 同队按事件顺序，保证 fold 时 assistant 在 tool_result 之前）。 */
+  private static final class PendingToolResultTurn {
+    final ToolResult result;
+    final java.util.List<String> steps;
+
+    PendingToolResultTurn(ToolResult result, java.util.List<String> steps) {
+      this.result = result;
+      this.steps = steps;
+    }
+  }
+
+  /** 延迟提交的轮次队列（assistant 与 tool_result 按事件顺序，不再互相覆盖）。 */
+  private final java.util.List<Object> pendingTurns = new java.util.ArrayList<>();
 
   /** 是否延迟提交助手条目。由宿主按「本轮走拒绝恢复」设置；默认 false（照旧直接落盘）。 */
   private volatile boolean deferAssistantPersistence;
@@ -169,14 +193,43 @@ public final class ConversationPersistingListener implements AgentEvent.Listener
   /** 复位延迟提交标志并清掉未决缓冲（运行收尾的兜底，防缓冲跨轮泄漏）。 */
   public synchronized void resetDeferAssistantPersistence() {
     deferAssistantPersistence = false;
-    pendingAssistant = null;
-    pendingAssistantReasoning = null;
-    pendingAssistantCalls = null;
+    pendingTurns.clear();
   }
 
   /** 是否还有未决的助手缓冲。 */
   public synchronized boolean hasPendingAssistant() {
-    return pendingAssistant != null;
+    return !pendingTurns.isEmpty();
+  }
+
+  /**
+   * 一次尝试（attempt）结束后按判定提交或丢弃**整批**入队轮次。
+   *
+   * <p>每次尝试（含重试）的轮次独立成批：被拒的批次整体丢弃（不进模型上下文），
+   * 非拒绝的批次按事件顺序逐条落盘——assistant 在 tool_result 之前，fold 才能配对。
+   * 这样中间的工具调用轮不再被后续轮覆盖，图片/工具结果不再静默丢失。
+   */
+  @Override
+  public void onAttemptFinished(boolean refused) {
+    java.util.List<Object> turns;
+    synchronized (this) {
+      turns = new java.util.ArrayList<>(pendingTurns);
+      pendingTurns.clear();
+    }
+    if (refused) {
+      return;
+    }
+    for (Object turn : turns) {
+      if (turn instanceof PendingAssistantTurn) {
+        PendingAssistantTurn a = (PendingAssistantTurn) turn;
+        appendEntry(
+            AssistantMessageEntry.create(
+                null, System.currentTimeMillis(), a.content, a.reasoning, a.calls));
+      } else if (turn instanceof PendingToolResultTurn) {
+        PendingToolResultTurn t = (PendingToolResultTurn) turn;
+        appendEntry(
+            ToolResultEntry.create(null, System.currentTimeMillis(), t.result, t.steps));
+      }
+    }
   }
 
   public ConversationPersistingListener(
@@ -259,16 +312,16 @@ public final class ConversationPersistingListener implements AgentEvent.Listener
         break;
       case TURN_FINISHED:
         if (deferAssistantPersistence) {
-          // 拒绝恢复链路:助手条目先缓冲不落盘,由宿主在收尾时提交或丢弃
-          // (discardPendingAssistant/commitPendingAssistant)。文本对 UI 的展示
-          // 不受影响——TEXT_DELTA 已实时转发,快照也读 textBuffer。
+          // 拒绝恢复链路：本轮助手轮次**入队**（不立即落盘），attempt 收尾按
+          // verdict 提交（带 toolCalls）或丢弃（被拒，不进模型上下文）。
           synchronized (this) {
-            pendingAssistant = event.getMessage() == null ? "" : event.getMessage();
-            pendingAssistantReasoning = reasoningBuffer.toString();
-            pendingAssistantCalls =
-                event.getToolCalls() == null
-                    ? new ArrayList<>()
-                    : new ArrayList<>(event.getToolCalls());
+            pendingTurns.add(
+                new PendingAssistantTurn(
+                    event.getMessage() == null ? "" : event.getMessage(),
+                    reasoningBuffer.toString(),
+                    event.getToolCalls() == null
+                        ? new java.util.ArrayList<>()
+                        : new java.util.ArrayList<>(event.getToolCalls())));
             reasoningBuffer.setLength(0);
             textBuffer.setLength(0);
             lastAction = "";
@@ -317,12 +370,22 @@ public final class ConversationPersistingListener implements AgentEvent.Listener
           // 只取**这个调用**的步骤行：并行子 agent 的进度不能混进别人的卡片。
           String key = callKey(event.getToolCall());
           List<String> steps = stepBuffers.remove(key);
-          appendEntry(
-              ToolResultEntry.create(
-                  null,
-                  System.currentTimeMillis(),
-                  event.getToolResult(),
-                  steps == null ? new ArrayList<>() : new ArrayList<>(steps)));
+          if (deferAssistantPersistence) {
+            // 拒绝恢复：与 assistant 同队按事件顺序入队，attempt 收尾按 verdict 提交。
+            synchronized (this) {
+              pendingTurns.add(
+                  new PendingToolResultTurn(
+                      event.getToolResult(),
+                      steps == null ? new java.util.ArrayList<>() : new java.util.ArrayList<>(steps)));
+            }
+          } else {
+            appendEntry(
+                ToolResultEntry.create(
+                    null,
+                    System.currentTimeMillis(),
+                    event.getToolResult(),
+                    steps == null ? new ArrayList<>() : new ArrayList<>(steps)));
+          }
         }
         // 并行执行时 TOOL_FINISHED 可能与另一调用的 TOOL_STARTED 交错——
         // 按 id 精确移除，不会误清新调用。
@@ -378,41 +441,6 @@ public final class ConversationPersistingListener implements AgentEvent.Listener
   /**
    * 把**最近一条**助手条目标记为「模型拒绝」。
    *
-   * <p>拒绝恢复链路用:宿主拿到最终结果、判定被拒后调用。JSONL 是 append-only、
-   * 不能改写已落的行,因此 {@code TURN_FINISHED} 的助手条目走**延迟提交**:
-   * 先进 {@link #pendingAssistant} 缓冲,宿主在运行收尾时调用本方法(丢弃)
-   * 或 {@link #commitPendingAssistant()}(提交)。被丢弃的条目完全不落盘——
-   * 模型下一轮看不到自己拒过,UI 实时流与历史回放由 TEXT_DELTA/快照展示。
-   *
-   * <p>无未提交缓冲(无助手轮/已提交)时为无操作。
-   */
-  public void discardPendingAssistant() {
-    synchronized (this) {
-      pendingAssistant = null;
-      pendingAssistantReasoning = null;
-      pendingAssistantCalls = null;
-    }
-  }
-
-  /** 提交缓冲中的助手条目(正常路径:TURN_FINISHED 后由收尾逻辑调用)。 */
-  public void commitPendingAssistant() {
-    String content;
-    String reasoning;
-    List<ToolCall> calls;
-    synchronized (this) {
-      if (pendingAssistant == null) {
-        return;
-      }
-      content = pendingAssistant;
-      reasoning = pendingAssistantReasoning;
-      calls = pendingAssistantCalls;
-      pendingAssistant = null;
-      pendingAssistantReasoning = null;
-      pendingAssistantCalls = null;
-    }
-    appendEntry(
-        AssistantMessageEntry.create(null, System.currentTimeMillis(), content, reasoning, calls));
-  }
 
   /** 追加一条会话条目。包内可见：编排器的压缩路径也要写（{@code CompactionEntry}）。 */
   void appendEntry(ConversationEntry entry) {
