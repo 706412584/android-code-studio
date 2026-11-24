@@ -315,4 +315,73 @@ final class RunContextManagerTest {
         messages.size() <= 4,
         "应收缩到锚点 + MIN_KEEP_MESSAGES 条历史（实际 " + messages.size() + "）");
   }
+
+  // ── 估算缓存（同一消息对象只估一次）──
+
+  @Test
+  void repeatedFitReusesCachedEstimates() {
+    List<ModelMessage> messages =
+        messages(List.of(user("aaaa"), user("bbbb"), user("cccc")), user("dddd"));
+    RunContextManager mgr = manager(1_000_000, 0);
+
+    mgr.fit(messages, 4);
+    int afterFirst = mgr.estimateCacheSize();
+    assertEquals(5, afterFirst, "首次 fit 应缓存全部 5 条消息");
+
+    mgr.fit(messages, 4);
+    assertEquals(afterFirst, mgr.estimateCacheSize(), "同一批对象重复 fit 不应新增估算");
+
+    // 追加一条新消息（模拟新一轮）：只有它 miss，缓存只 +1
+    messages.add(user("eeee"));
+    mgr.fit(messages, 4);
+    assertEquals(afterFirst + 1, mgr.estimateCacheSize(), "只有新增消息需要重新估算");
+  }
+
+  @Test
+  void cacheKeysOnIdentityNotEquality() {
+    // 内容相同的不同对象必须各自占一条缓存：若误用 HashMap 且消息类重写 equals，
+    // withoutImage 剥图产生的新对象会错误命中旧对象的估算（图片费用被漏算）。
+    List<ModelMessage> messages =
+        messages(List.of(user("aaaa"), user("aaaa")), user("dddd"));
+    RunContextManager mgr = manager(1_000_000, 0);
+    mgr.fit(messages, 3);
+    assertEquals(4, mgr.estimateCacheSize(), "缓存必须按引用而非内容区分消息对象");
+  }
+
+  @Test
+  void imageMessagesAreNotCached() {
+    // 含图消息不进缓存：limitImages 剥图的目的就是释放 base64 内存，
+    // 缓存若强引用剥图前对象，base64 会整次运行驻留（优化变泄漏）。
+    List<ModelMessage> messages = new ArrayList<>();
+    messages.add(new SystemModelMessage("sys"));
+    messages.add(imageResult("c1", "shot"));
+    messages.add(user("req"));
+    RunContextManager mgr = manager(1_000_000, 0);
+    mgr.fit(messages, 2);
+    assertEquals(2, mgr.estimateCacheSize(), "只缓存 system 与本次请求，含图消息不缓存");
+  }
+
+  // ── 真实 usage 外报（成本统计）──
+
+  @Test
+  void responseListenerReceivesRealUsage() {
+    final int[] received = new int[2];
+    RunContextManager mgr =
+        new RunContextManager(
+            new TokenUsageTracker(20_000),
+            0,
+            null,
+            (input, output) -> {
+              received[0] = input;
+              received[1] = output;
+            });
+
+    mgr.recordResponseUsage(1_234, 56);
+
+    assertEquals(1_234, received[0], "input tokens 应原样外报");
+    assertEquals(56, received[1], "output tokens 应原样外报");
+
+    // 未配置监听器时与原 recordResponse 等价（不抛异常）
+    manager(1_000, 0).recordResponseUsage(1, 2);
+  }
 }

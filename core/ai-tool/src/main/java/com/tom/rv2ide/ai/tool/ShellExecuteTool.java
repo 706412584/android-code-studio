@@ -289,7 +289,7 @@ public final class ShellExecuteTool extends BaseTool {
       // 如实报告回退，避免模型以为用的是有特权的后端
       sb.append("[注意: 已回退 — ").append(resolution.getFallbackReason()).append("]\n");
     }
-    sb.append(truncate(result.toDisplayText()));
+    sb.append(ToolOutputSpill.maybeSpill(result.toDisplayText(), MAX_OUTPUT_CHARS, context));
 
     // 「命令找不到」这类失败换个后端往往就能解决，但**不自动重试**——
     // 同一条命令在两个后端各跑一次可能重复副作用，且判定只能靠 stderr 文本匹配，
@@ -387,16 +387,9 @@ public final class ShellExecuteTool extends BaseTool {
     sb.append("]");
   }
 
-  /** 中间截断：保留首尾，中间标注省略量。 */
+  /** 中间截断：保留首尾，中间标注省略量。大输出优先走 {@link ToolOutputSpill} 落盘。 */
   static String truncate(String text) {
-    if (text == null || text.length() <= MAX_OUTPUT_CHARS) {
-      return text == null ? "" : text;
-    }
-    int half = MAX_OUTPUT_CHARS / 2;
-    int omitted = text.length() - MAX_OUTPUT_CHARS;
-    return text.substring(0, half)
-        + "\n…（省略 " + omitted + " 字符）…\n"
-        + text.substring(text.length() - half);
+    return ToolOutputSpill.middleTruncate(text, MAX_OUTPUT_CHARS);
   }
 
   private static String abbreviate(String value, int max) {

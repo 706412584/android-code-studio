@@ -91,4 +91,19 @@ public interface ConversationStore {
 
   /** @return 会话是否存在。 */
   boolean exists(String conversationId);
+
+  /**
+   * 从某个条目分叉出一个新会话：复制前缀（含该条）到新 id，源会话保持不动。
+   *
+   * <p>典型用法是「从第 N 条用户消息重新来」。实现必须同时复制外置资源
+   * （如 {@code <会话文件>.images/} 截图目录），否则分叉后的历史图片全部失效。
+   *
+   * <p>默认不支持（与 {@link #deleteEntries} 同一降级模式）。
+   *
+   * @param upToOrdinal 分叉点条目序号（含该条，见 {@link ConversationLog.EntryLocation#getOrdinal()}）
+   * @return 新会话摘要
+   */
+  default ConversationSummary fork(String conversationId, int upToOrdinal) throws IOException {
+    throw new UnsupportedOperationException("fork 未实现");
+  }
 }

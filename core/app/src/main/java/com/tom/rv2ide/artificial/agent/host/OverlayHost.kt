@@ -78,6 +78,11 @@ class OverlayHost(
     private val onPanelDrag: ((dx: Int, dy: Int) -> Unit)? = null,
 ) : AssistantHost {
 
+  override fun prepareDialog(dialog: android.app.Dialog) {
+    // 应用外悬浮：视图层直接 show 的弹窗必须挂系统悬浮层，否则 BadToken。
+    dialog.window?.setType(android.view.WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY)
+  }
+
   /** 系统浮窗没有 Activity 的主题装配，按同一份 IDE 主题与明暗偏好构造。 */
   override val context: Context = run {
     val configuration = android.content.res.Configuration(service.resources.configuration)
@@ -304,7 +309,7 @@ private class OverlayDialogs(
       toolName: String,
       args: String?,
       onAllowOnce: () -> Unit,
-      onAllowAlways: () -> Unit,
+      onAllowAlways: (prefix: Boolean) -> Unit,
       onDeny: () -> Unit,
   ) {
     // 超时守卫：5 分钟无应答即视为拒绝并关窗（与 ActivityHost 同一预算）。
@@ -325,7 +330,12 @@ private class OverlayDialogs(
             }
             .setNeutralButton(string.ai_assistant_dangerous_allow_always) { _, _ ->
               guard.cancel()
-              onAllowAlways()
+              // shell 简单命令可进一步选「同类前缀」粒度；其余直接按逐字规则记忆。
+              buildDangerousAlwaysChoiceDialog(themed, toolName, args, onAllowAlways, onDeny)
+                  ?.let {
+                    applyOverlayType(it)
+                    it.show()
+                  }
             }
             .setNegativeButton(string.ai_assistant_dangerous_deny) { _, _ ->
               guard.cancel()

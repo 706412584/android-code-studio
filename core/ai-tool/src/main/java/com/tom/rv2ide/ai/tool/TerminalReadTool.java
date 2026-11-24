@@ -140,20 +140,13 @@ public final class TerminalReadTool extends BaseTool {
     if (transcript.trim().isEmpty()) {
       sb.append("(屏幕为空)");
     } else {
-      sb.append("--- 屏幕内容 ---\n").append(truncate(transcript));
+      sb.append("--- 屏幕内容 ---\n").append(ToolOutputSpill.maybeSpill(transcript, MAX_OUTPUT_CHARS, context));
     }
     return ok(sb.toString());
   }
 
-  /** 中间截断：保留首尾，中间标注省略量（终端尾部才是最新输出，故保留尾部尤其重要）。 */
+  /** 中间截断：保留首尾，中间标注省略量（终端尾部才是最新输出，故保留尾部尤其重要）。大输出优先走 {@link ToolOutputSpill} 落盘。 */
   static String truncate(String text) {
-    if (text == null || text.length() <= MAX_OUTPUT_CHARS) {
-      return text == null ? "" : text;
-    }
-    int half = MAX_OUTPUT_CHARS / 2;
-    int omitted = text.length() - MAX_OUTPUT_CHARS;
-    return text.substring(0, half)
-        + "\n…（省略 " + omitted + " 字符）…\n"
-        + text.substring(text.length() - half);
+    return ToolOutputSpill.middleTruncate(text, MAX_OUTPUT_CHARS);
   }
 }

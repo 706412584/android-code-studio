@@ -174,6 +174,10 @@ private class ToolsPage(
     // 默认开启（与独立助手 App 同一键名）；关闭 = 只首跑一次，等价接入前。
     addPreference(RefusalRecoverySwitch())
     addPreference(RefusalRecoveryAttemptsPreference())
+    addPreference(SubAgentSlotPreference())
+    addPreference(MidRunCompactSwitch())
+    addPreference(UsageStatsPreference())
+    addPreference(WebSearchEndpointPreference())
   }
 }
 
@@ -2582,6 +2586,214 @@ private class RefusalRecoveryAttemptsPreference(
           preference.summary =
               context.getString(R.string.ai_agent_refusal_attempts_summary, values[which])
           dialog.dismiss()
+        }
+        .setNegativeButton(android.R.string.cancel, null)
+        .show()
+    return true
+  }
+}
+
+/**
+ * 子 agent 的模型槽位（主模型 / 第二 / 第三 / 第四）。
+ *
+ * <p>探索、审查类子代理通常不需要最强模型，允许改用更便宜的槽位省钱。
+ * 读写委托 AgentToolSettings，与 AgentOrchestrator 同一口径（键不散落）；
+ * 副槽未配置模型时 AgentModelConfigs.modelIdFor 会回落主模型，不会发出空模型请求。
+ */
+@Parcelize
+private class SubAgentSlotPreference(
+    override val key: String = "sub_agent_slot",
+    override val title: Int = R.string.ai_agent_sub_agent_slot_title,
+    override val summary: Int? = null,
+) : BasePreference() {
+
+  private val slots = com.tom.rv2ide.artificial.agent.ProviderConfig.SLOT_ORDER
+  private val labelRes =
+      listOf(
+          R.string.ai_agent_provider_slot_main,
+          R.string.manage_provider_slot_second,
+          R.string.manage_provider_slot_third,
+          R.string.manage_provider_slot_fourth,
+      )
+
+  private fun labelOf(context: Context, slot: String): String {
+    val index = slots.indexOf(slot).coerceAtLeast(0)
+    return context.getString(labelRes[index])
+  }
+
+  override fun onCreatePreference(context: Context): Preference {
+    return androidx.preference.Preference(context).apply {
+      key = "sub_agent_slot"
+      title = context.getString(R.string.ai_agent_sub_agent_slot_title)
+      summary =
+          context.getString(
+              R.string.ai_agent_sub_agent_slot_summary,
+              labelOf(
+                  context,
+                  com.tom.rv2ide.artificial.agent.AgentToolSettings(context).getSubAgentSlot()),
+          )
+    }
+  }
+
+  override fun onPreferenceClick(preference: Preference): Boolean {
+    val context = preference.context
+    val settings = com.tom.rv2ide.artificial.agent.AgentToolSettings(context)
+    val labels = slots.map { labelOf(context, it) }.toTypedArray()
+    com.google.android.material.dialog.MaterialAlertDialogBuilder(context)
+        .setTitle(context.getString(R.string.ai_agent_sub_agent_slot_title))
+        .setSingleChoiceItems(
+            labels,
+            slots.indexOf(settings.getSubAgentSlot()).coerceAtLeast(0),
+        ) { dialog, which ->
+          settings.setSubAgentSlot(slots[which])
+          preference.summary =
+              context.getString(R.string.ai_agent_sub_agent_slot_summary, labels[which])
+          dialog.dismiss()
+        }
+        .setNegativeButton(android.R.string.cancel, null)
+        .show()
+    return true
+  }
+}
+
+/**
+ * 运行中途自动压缩（mid-run auto-compact）。
+ *
+ * <p>长任务中段早期历史不再被逐轮裁剪无声丢弃，而是先摘要替换（复用入口压缩的
+ * 摘要管线）。摘要只作用于本次运行的内存视图、不落盘；关闭 = 回到只有裁剪的旧行为。
+ * 读写 "ai_agent_tools" 的 {@code mid_run_compact_enabled}，与 AgentOrchestrator 同键。
+ */
+@Parcelize
+private class MidRunCompactSwitch(
+    override val key: String = "mid_run_compact_enabled",
+    override val title: Int = R.string.ai_agent_mid_run_compact_title,
+    override val summary: Int? = R.string.ai_agent_mid_run_compact_summary,
+) : SwitchPreference(
+    setValue = { enabled ->
+      agentPrefs(com.tom.rv2ide.app.BaseApplication.getBaseInstance())
+          .edit()
+          .putBoolean("mid_run_compact_enabled", enabled)
+          .apply()
+    },
+    getValue = {
+      agentPrefs(com.tom.rv2ide.app.BaseApplication.getBaseInstance())
+          .getBoolean("mid_run_compact_enabled", true)
+    },
+) {
+  override fun onCreatePreference(context: Context): Preference {
+    return super.onCreatePreference(context).apply {
+      key = "mid_run_compact_enabled"
+      title = context.getString(R.string.ai_agent_mid_run_compact_title)
+      summary = context.getString(R.string.ai_agent_mid_run_compact_summary)
+    }
+  }
+}
+
+/**
+ * 用量与成本：按服务商展示今日/累计 token 与估算成本，可重置。
+ *
+ * <p>数据来自 UsageStatsStore（服务端真实 usage），价格表在 ProviderPresets；
+ * 未列价格的服务商只展示 token 数，不估算成本。
+ */
+@Parcelize
+private class UsageStatsPreference(
+    override val key: String = "usage_stats",
+    override val title: Int = R.string.ai_agent_usage_stats_title,
+    override val summary: Int? = R.string.ai_agent_usage_stats_summary,
+) : BasePreference() {
+  override fun onCreatePreference(context: Context): Preference {
+    return androidx.preference.Preference(context).apply {
+      key = "usage_stats"
+      title = context.getString(R.string.ai_agent_usage_stats_title)
+      summary = context.getString(R.string.ai_agent_usage_stats_summary)
+    }
+  }
+
+  override fun onPreferenceClick(preference: Preference): Boolean {
+    val context = preference.context
+    val store = com.tom.rv2ide.artificial.agent.UsageStatsStore(context)
+    val usages = store.snapshot()
+    val body =
+        if (usages.isEmpty()) {
+          context.getString(R.string.ai_agent_usage_stats_empty)
+        } else {
+          usages.joinToString("\n\n") { u ->
+            val label = com.tom.rv2ide.artificial.agent.ProviderPresets.labelFor(u.providerId)
+            val cost =
+                if (u.hasPrice()) {
+                  String.format(
+                      java.util.Locale.US, "\n累计成本约 $%.3f（估算）", u.estimatedCostUsd())
+                } else {
+                  ""
+                }
+            "$label\n今日：输入 ${u.todayInput} / 输出 ${u.todayOutput} tokens" +
+                "\n累计：输入 ${u.totalInput} / 输出 ${u.totalOutput} tokens$cost"
+          }
+        }
+    com.google.android.material.dialog.MaterialAlertDialogBuilder(context)
+        .setTitle(R.string.ai_agent_usage_stats_title)
+        .setMessage(body + "\n\n" + context.getString(R.string.ai_agent_usage_stats_note))
+        .setPositiveButton(android.R.string.ok, null)
+        .setNeutralButton("重置") { _, _ -> store.reset() }
+        .show()
+    return true
+  }
+}
+
+/**
+ * web_search 的 RSS 端点与可选密钥。
+ *
+ * <p>默认 Bing（RssSearchProvider.DEFAULT_ENDPOINT）；国内网络可填自建/镜像等
+ * 兼容 RSS 的搜索端点（如 SearXNG），留空恢复默认。读写 "ai_agent_tools" 的
+ * web_search_endpoint / web_search_api_key，与 AgentOrchestrator 同键。
+ */
+@Parcelize
+private class WebSearchEndpointPreference(
+    override val key: String = "web_search_endpoint",
+    override val title: Int = R.string.ai_agent_web_search_endpoint_title,
+    override val summary: Int? = R.string.ai_agent_web_search_endpoint_summary,
+) : BasePreference() {
+
+  private fun prefs(context: Context) = agentPrefs(context)
+
+  override fun onCreatePreference(context: Context): Preference {
+    return androidx.preference.Preference(context).apply {
+      key = "web_search_endpoint"
+      title = context.getString(R.string.ai_agent_web_search_endpoint_title)
+      summary = context.getString(R.string.ai_agent_web_search_endpoint_summary)
+    }
+  }
+
+  override fun onPreferenceClick(preference: Preference): Boolean {
+    val context = preference.context
+    val padding = (16 * context.resources.displayMetrics.density).toInt()
+    val endpointInput =
+        android.widget.EditText(context).apply {
+          hint = "https://www.bing.com/search"
+          setText(prefs(context).getString("web_search_endpoint", ""))
+        }
+    val keyInput =
+        android.widget.EditText(context).apply {
+          hint = context.getString(R.string.ai_agent_web_search_key_hint)
+          setText(prefs(context).getString("web_search_api_key", ""))
+        }
+    val layout =
+        android.widget.LinearLayout(context).apply {
+          orientation = android.widget.LinearLayout.VERTICAL
+          setPadding(padding, 0, padding, 0)
+          addView(endpointInput)
+          addView(keyInput)
+        }
+    com.google.android.material.dialog.MaterialAlertDialogBuilder(context)
+        .setTitle(R.string.ai_agent_web_search_endpoint_title)
+        .setMessage(R.string.ai_agent_web_search_endpoint_message)
+        .setView(layout)
+        .setPositiveButton(android.R.string.ok) { _, _ ->
+          prefs(context)
+              .edit()
+              .putString("web_search_endpoint", endpointInput.text.toString().trim())
+              .putString("web_search_api_key", keyInput.text.toString().trim())
+              .apply()
         }
         .setNegativeButton(android.R.string.cancel, null)
         .show()

@@ -181,6 +181,26 @@ final class ToolRegistryApiTest {
   }
 
   @Test
+  void activationVersionAdvancesOnlyOnActualChange() {
+    ToolRegistry registry = new ToolRegistry(Collections.singletonList(tool("mcpx_x")));
+    long initial = registry.getActivationVersion();
+
+    registry.activate(Collections.singletonList("mcpx_x"));
+    long afterFirst = registry.getActivationVersion();
+    assertTrue(afterFirst > initial, "实际新增展开必须推进版本号");
+
+    registry.activate(Collections.singletonList("mcpx_x"));
+    assertEquals(afterFirst, registry.getActivationVersion(), "重复展开同一工具不应再推进版本号");
+
+    registry.activate(null);
+    registry.activate(Collections.emptyList());
+    assertEquals(afterFirst, registry.getActivationVersion(), "空入参不推进版本号");
+
+    registry.activate(Collections.singletonList("another"));
+    assertTrue(registry.getActivationVersion() > afterFirst, "展开新工具再次推进版本号");
+  }
+
+  @Test
   void toJsonArraySerializesToolsAndHandlesNull() throws Exception {
     JSONArray array = ToolRegistry.toJsonArray(Arrays.asList(tool("a"), tool("b")));
     assertEquals(2, array.length());

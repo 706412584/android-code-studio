@@ -1390,6 +1390,110 @@ public final class AgentOrchestrator {
   }
 
   /**
+   * 从指定会话的某个条目分叉：复制前缀（含该条）为新会话并切到它。
+   *
+   * <p>典型用法是「从第 N 条用户消息重新来」：原会话保持不动，分叉出的会话带着
+   * 当时的完整上下文（含外置截图），可独立继续。配合 DiffStore 的回滚可实现
+   * 代码与对话的双回滚（diff 部分由 UI 层负责）。
+   *
+   * @param upToOrdinal 分叉点条目序号（含该条，见 ConversationLog.EntryLocation#getOrdinal）
+   * @return 新会话摘要（已置为活动会话）
+   */
+  public ConversationSummary forkConversation(String conversationId, int upToOrdinal)
+      throws IOException {
+    ConversationSummary summary = conversationStore.fork(conversationId, upToOrdinal);
+    activeConversationId = summary.getId();
+    persistActiveConversation();
+    return summary;
+  }
+
+  /**
+   * 分叉点之后的改动文件（限工作区内、未回滚的），供确认弹窗展示影响范围。
+   *
+   * <p>DiffStore 没有会话维度，只能按「时间 + 工作区路径」近似圈定——
+   * 与 {@link #revertDiffsAfter} 同一过滤口径，保证弹窗里的数量就是实际会回滚的数量。
+   */
+  public java.util.List<String> diffPathsAfter(long timestamp, String workspacePath) {
+    java.util.List<String> paths = new ArrayList<>();
+    if (diffStore == null || workspacePath == null || workspacePath.isEmpty()) {
+      return paths;
+    }
+    for (com.tom.rv2ide.ai.tool.DiffRecord record : diffStore.getAll()) {
+      if (record.getTimestamp() > timestamp
+          && !record.isReverted()
+          && record.getFilePath() != null
+          && record.getFilePath().startsWith(workspacePath)) {
+        paths.add(record.getFilePath());
+      }
+    }
+    return paths;
+  }
+
+  /**
+   * 回滚指定时间之后、工作区内的全部改动（按时间倒序，后写先滚）。
+   *
+   * <p>配合 {@link #forkConversation} 做「代码 + 对话」双回滚。DiffStore 没有会话维度，
+   * 只能按「时间 + 工作区路径」近似圈定——调用方必须先用 {@link #diffPathsAfter}
+   * 把影响范围（文件数）明示给用户。
+   *
+   * @return 成功回滚的条数
+   */
+  public int revertDiffsAfter(long timestamp, String workspacePath) {
+    if (diffStore == null || workspacePath == null || workspacePath.isEmpty()) {
+      return 0;
+    }
+    java.util.List<com.tom.rv2ide.ai.tool.DiffRecord> candidates = new ArrayList<>();
+    for (com.tom.rv2ide.ai.tool.DiffRecord record : diffStore.getAll()) {
+      if (record.getTimestamp() > timestamp
+          && !record.isReverted()
+          && record.getFilePath() != null
+          && record.getFilePath().startsWith(workspacePath)) {
+        candidates.add(record);
+      }
+    }
+    // getAll() 的顺序就是记录插入序（时间正序）：整体反转即得「时间倒序 +
+    // 同毫秒后写先滚」。不能用 timestamp 排序——同毫秒时稳定排序会保持正序，
+    // A→B→C 的回滚会停在 B 而不是 A。
+    java.util.Collections.reverse(candidates);
+    com.tom.rv2ide.ai.tool.DiffReverter reverter = new com.tom.rv2ide.ai.tool.DiffReverter(diffStore);
+    ToolContext context = ToolContext.builder().homePath(workspacePath).build();
+    int reverted = 0;
+    for (com.tom.rv2ide.ai.tool.DiffRecord record : candidates) {
+      if (reverter.revert(record.getId(), context).isSuccess()) {
+        reverted++;
+      }
+    }
+    return reverted;
+  }
+
+  /**
+   * 该会话是否处于「中断运行」状态：最后一条是用户消息或工具结果，
+   * 说明模型还没来得及（完整）回应时运行就结束了（App 被杀、崩溃、强制停止）。
+   *
+   * <p>判定用「下一条该谁说话」而不是运行标志：append-only 日志里没有 run 收尾
+   * 条目，进程死后也没有内存标志可查——但「用户已输入/工具已回灌而助手未回应」
+   * 在日志里是明确可辨的。助手条目结尾视为正常（无法区分完整与否，保守不误报）。
+   *
+   * <p>正在运行的会话恒 false（运行中不是中断）。
+   */
+  public boolean isInterrupted(String conversationId) throws IOException {
+    if (conversationId == null || conversationId.isEmpty() || isRunning(conversationId)) {
+      return false;
+    }
+    java.util.List<ConversationLog.EntryLocation> entries = conversationStore.read(conversationId);
+    if (entries.isEmpty()) {
+      return false;
+    }
+    ConversationEntry last = entries.get(entries.size() - 1).getEntry();
+    if (last instanceof AssistantMessageEntry) {
+      // 末条助手消息**带工具调用**（其后没有 tool_result）：模型产出了调用但
+      // 工具没跑完——同样是中断（中断在工具执行前/中），不是正常收尾。
+      return !((AssistantMessageEntry) last).getToolCalls().isEmpty();
+    }
+    return last instanceof UserMessageEntry || last instanceof ToolResultEntry;
+  }
+
+  /**
    * 列出可作为会话 cwd 的候选项目目录。
    *
    * <p>来源与主屏「最近项目」一致（{@link com.tom.rv2ide.templates.preferences.WizardPreferences}），
@@ -2037,7 +2141,9 @@ public final class AgentOrchestrator {
     // 网络：先搜索定位页面，再抓取正文。
     AppHttpPort http = new AppHttpPort();
     registry.register(new WebFetchTool(http));
-    registry.register(new WebSearchTool(new RssSearchProvider(http)));
+    // 搜索端点可配置：默认 Bing；国内网络可填自建/镜像等兼容 RSS 的端点（设置页）。
+    registry.register(
+        new WebSearchTool(new RssSearchProvider(http, webSearchEndpoint(), webSearchApiKey())));
     // 通用 HTTP：带自定义方法/头/体，并返回状态码与非 2xx 的错误体（web_fetch 只做 GET 且
     // 非 2xx 当失败）。支持 POST/PUT/DELETE 等可变方法，故为 SYSTEM 且需确认。
     registry.register(new HttpRequestTool(http));
@@ -2584,10 +2690,20 @@ public final class AgentOrchestrator {
     // final 引用供下面的 lambda 捕获（cancellation 有二次赋值，不是 effectively final）。
     final ModelCancellationToken runToken = cancellation;
 
+    // 子 agent 槽位：默认主模型；用户可在设置里改用更便宜的副槽省钱（探索类子代理
+    // 通常不需要最强模型）。副槽未配置模型时 modelIdFor 回落主模型，不会发出空模型请求。
+    String subAgentSlot = settings.getSubAgentSlot();
+    String subAgentModelId =
+        ProviderConfig.SLOT_MAIN.equals(subAgentSlot)
+            ? modelId
+            : AgentModelConfigs.modelIdFor(
+                providerId, new Agents(appContext).getAgent(), subAgentSlot);
+
     SubAgentRunnerImpl subAgentRunner =
         new SubAgentRunnerImpl(
             endpoint,
-            modelId,
+            subAgentModelId,
+            subAgentSlot,
             runWorkspace.getAbsolutePath(),
             settings,
             cancellation,
@@ -2848,7 +2964,9 @@ public final class AgentOrchestrator {
         new RunContextManager(
             new TokenUsageTracker(ConversationCompaction.contextSizeOf(config)),
             overhead,
-            contextUsageListener);
+            contextUsageListener,
+            // 真实 usage → 成本统计（轻量 prefs 累计，循环线程上可安全执行）。
+            (inputTokens, outputTokens) -> usageStats().record(providerId, inputTokens, outputTokens));
 
     // 入口处先做一次压缩：把"每次运行都要丢弃同一段早期历史"变成"只摘要一次并落盘"。
     // 这一步在循环之外，因为压缩结果需要持久化，而循环不接触存储。
@@ -2889,7 +3007,15 @@ public final class AgentOrchestrator {
                       eventListener,
                       contextManager,
                       rawInputJson,
-                      reasoningEffort);
+                      reasoningEffort,
+                      // mid-run 压缩：与入口压缩共用摘要管线（独立压缩模型）。
+                      // 摘要**只作用于本次运行的内存视图、不落盘**——JSONL 里保存的
+                      // 仍是完整原始条目，续会话由入口 maybeCompact 统一削减；
+                      // mid-run 段是内存裁剪后的视图，与条目序号已无稳定对应，
+                      // 落 CompactionEntry 反而会破坏 fold。
+                      midRunCompactEnabled()
+                          ? segment -> ContextCompactor.compact(segment, buildSummarizer(runConfig))
+                          : null);
                 } finally {
                   activeSessions.remove(conversationId);
                   // 收尾时把**未被消费**的注入放回队列头部(保持原序)。
@@ -3154,6 +3280,40 @@ public final class AgentOrchestrator {
         AgentEvent.contextCompacted(
             selection.getMessages().size(), TokenEstimator.estimate(summary)));
   }
+
+  /** web_search 的自定义 RSS 端点；空串 = 内置默认（Bing）。 */
+  private String webSearchEndpoint() {
+    return appContext
+        .getSharedPreferences("ai_agent_tools", Context.MODE_PRIVATE)
+        .getString("web_search_endpoint", "");
+  }
+
+  /** web_search 端点的可选密钥；空串 = 不带 key。 */
+  private String webSearchApiKey() {
+    return appContext
+        .getSharedPreferences("ai_agent_tools", Context.MODE_PRIVATE)
+        .getString("web_search_api_key", "");
+  }
+
+  /**
+   * mid-run 自动压缩开关：读共享偏好 {@code ai_agent_tools} 的
+   * {@code mid_run_compact_enabled}（默认开）。关闭 = 回到只有逐轮裁剪的旧行为。
+   */
+  private boolean midRunCompactEnabled() {
+    return appContext
+        .getSharedPreferences("ai_agent_tools", Context.MODE_PRIVATE)
+        .getBoolean("mid_run_compact_enabled", true);
+  }
+
+  /** 用量统计（懒加载；内部只是 SharedPreferences 封装，轻量可重复创建）。 */
+  private UsageStatsStore usageStats() {
+    if (usageStatsStore == null) {
+      usageStatsStore = new UsageStatsStore(appContext);
+    }
+    return usageStatsStore;
+  }
+
+  private UsageStatsStore usageStatsStore;
 
   /**
    * 摘要用的模型调用。

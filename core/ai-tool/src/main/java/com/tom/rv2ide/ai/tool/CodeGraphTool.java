@@ -236,7 +236,7 @@ public final class CodeGraphTool extends BaseTool {
       return ok("codegraph " + action + " 无结果" + (query.isEmpty() ? "" : "：" + query)
           + "。可能是索引里没有该符号，或索引未覆盖此项目。");
     }
-    return ok(truncate(out));
+    return ok(ToolOutputSpill.maybeSpill(out, MAX_OUTPUT_CHARS, context));
   }
 
   /** 单引号包裹并转义内部单引号，安全传给 `/system/bin/sh -c`。 */

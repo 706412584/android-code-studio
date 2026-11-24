@@ -66,6 +66,15 @@ interface AssistantHost {
   fun widthPx(): Int
 
   /**
+   * 弹窗显示前的宿主适配（默认无操作）。
+   *
+   * <p>Overlay（应用外悬浮）宿主必须覆写为设置 TYPE_APPLICATION_OVERLAY：
+   * 视图层直接 `builder.show()` 的弹窗（消息操作菜单、分叉/续跑确认等）若不经过这里，
+   * 在悬浮宿主下会 BadToken（token null is not valid）。Activity 宿主无需处理。
+   */
+  fun prepareDialog(dialog: android.app.Dialog) {}
+
+  /**
    * 面板高度预算（像素）。与 [widthPx] 对称，窄屏上下分栏时用它算面板高度。
    *
    * <p>默认取屏幕高度；应用外悬浮等宿主若窗口高度与屏幕不同，应覆写。
@@ -251,12 +260,16 @@ interface AssistantDialogs {
    * <p>三个回调对应原实现里的三个按钮动作。**阻塞语义由调用方保留**：调用方在 agent
    * 循环线程上建 latch、post 到主线程调用本方法、再 await——本方法只负责「把弹窗摆出来
    * 并把用户选择回调回去」。
+   *
+   * @param onAllowAlways 持久化授权回调；参数为 `true` 时表示用户选的是更宽的
+   * 「同类命令前缀」粒度（仅 shell 简单命令可选，见 ToolPermissionRule.prefixKeyFor），
+   * `false` 为逐字全文粒度。由实现方在可生成前缀时提供粒度选择。
    */
   fun showDangerousToolConfirm(
       toolName: String,
       args: String?,
       onAllowOnce: () -> Unit,
-      onAllowAlways: () -> Unit,
+      onAllowAlways: (prefix: Boolean) -> Unit,
       onDeny: () -> Unit,
   )
 
@@ -281,4 +294,52 @@ interface AssistantDialogs {
 
   /** 打开 AI 助手设置屏。 */
   fun openSettings()
+}
+
+/**
+ * 「始终允许」的粒度选择弹窗（ActivityDialogs / OverlayDialogs 共用，避免两处漂移）。
+ *
+ * <p>可生成「同类命令前缀」规则时弹出二选一（逐字全文 / 同类前缀），并展示将记住的
+ * 规则描述，让用户明确知道更宽的一档覆盖了什么；不可生成时直接以逐字粒度回调。
+ *
+ * @return null 表示已直接回调、无需再 show；否则返回构建好的弹窗，
+ * 调用方负责（OverlayHost 需先设置悬浮窗类型）show。
+ */
+internal fun buildDangerousAlwaysChoiceDialog(
+    context: Context,
+    toolName: String,
+    args: String?,
+    onAllowAlways: (prefix: Boolean) -> Unit,
+    onDeny: () -> Unit,
+): androidx.appcompat.app.AlertDialog? {
+  val prefixKey = com.tom.rv2ide.ai.tool.ToolPermissionRule.prefixKeyFor(toolName, args)
+  if (prefixKey.isEmpty()) {
+    onAllowAlways(false)
+    return null
+  }
+  // 与主弹窗同一超时语义：无人应答即视为拒绝，绝不默认授权。
+  val guard = DialogTimeouts.Guard { onDeny() }.start()
+  val options = arrayOf(
+      context.getString(com.tom.rv2ide.resources.R.string.ai_assistant_dangerous_granularity_full),
+      context.getString(com.tom.rv2ide.resources.R.string.ai_assistant_dangerous_granularity_prefix),
+  )
+  val dialog = com.tom.rv2ide.utils.DialogUtils.newMaterialDialogBuilder(context)
+      .setTitle(com.tom.rv2ide.resources.R.string.ai_assistant_dangerous_granularity_title)
+      .setMessage(
+          context.getString(
+              com.tom.rv2ide.resources.R.string.ai_assistant_dangerous_granularity_message,
+              com.tom.rv2ide.ai.tool.ToolPermissionRule.describe(prefixKey),
+          ))
+      .setItems(options) { _, which ->
+        guard.cancel()
+        onAllowAlways(which == 1)
+      }
+      .setNegativeButton(com.tom.rv2ide.resources.R.string.ai_assistant_dangerous_deny) { _, _ ->
+        guard.cancel()
+        onDeny()
+      }
+      .setCancelable(false)
+      .create()
+  guard.attach(dialog)
+  return dialog
 }

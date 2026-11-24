@@ -630,6 +630,22 @@
   <string name="ai_assistant_dangerous_allow_once">仅允许本次</string>
   <string name="ai_assistant_dangerous_allow_always">始终允许</string>
   <string name="ai_assistant_dangerous_deny">拒绝</string>
+  <string name="ai_assistant_dangerous_granularity_title">「始终允许」的粒度</string>
+  <string name="ai_assistant_dangerous_granularity_message">将记住这条规则：%1$s</string>
+  <string name="ai_assistant_dangerous_granularity_full">仅这条命令（逐字匹配）</string>
+  <string name="ai_assistant_dangerous_granularity_prefix">同类命令（前缀匹配，范围更宽）</string>
+  <string name="ai_agent_sub_agent_slot_title">子代理模型槽位</string>
+  <string name="ai_agent_sub_agent_slot_summary">子代理（探索/审查等）使用的模型：%1$s。可选更便宜的槽位节省额度</string>
+  <string name="ai_agent_mid_run_compact_title">长任务中途自动压缩</string>
+  <string name="ai_agent_mid_run_compact_summary">用量超阈值时把最旧历史摘要替换，而不是被逐轮裁剪无声丢弃。仅作用于本次运行，完整历史仍保留在磁盘上</string>
+  <string name="ai_agent_usage_stats_title">用量与成本</string>
+  <string name="ai_agent_usage_stats_summary">按服务商统计 token 用量与估算成本</string>
+  <string name="ai_agent_usage_stats_empty">还没有用量记录</string>
+  <string name="ai_agent_usage_stats_note">token 数来自服务商回报；成本为估算（价格可能已调价），不作账单依据</string>
+  <string name="ai_agent_web_search_endpoint_title">搜索端点</string>
+  <string name="ai_agent_web_search_endpoint_summary">自定义 RSS 搜索端点与密钥；留空用默认 Bing</string>
+  <string name="ai_agent_web_search_endpoint_message">端点需返回 RSS（format=rss），如 Bing 或自建 SearXNG。国内网络可填自建/镜像端点；留空恢复默认 Bing。</string>
+  <string name="ai_agent_web_search_key_hint">API 密钥（可选）</string>
 
   <!-- 消息操作 -->
   <string name="ai_assistant_action_copy_raw">复制 Markdown</string>

@@ -368,6 +368,49 @@ public final class ProviderPresets {
     return ids;
   }
 
+  // ── 用量成本估算（单位：USD / 每百万 token）──
+  //
+  // 只填有公开牌价且相对稳定的代表档位；未列出的服务商返回 0，UI 只展示 token 数。
+  // 价格随服务商调价可能过时，展示必须带「估算」字样，不作为账单依据。
+
+  /** 输入价格（USD / 每百万 token）；无价格信息时返回 0。 */
+  public static double inputPricePerMTokens(String providerId) {
+    if (providerId == null) {
+      return 0;
+    }
+    switch (providerId) {
+      case "deepseek":
+        return 0.27;
+      case "openai":
+        return 2.50;
+      case "claude":
+        return 3.00;
+      case "grok":
+        return 3.00;
+      default:
+        return 0;
+    }
+  }
+
+  /** 输出价格（USD / 每百万 token）；无价格信息时返回 0。 */
+  public static double outputPricePerMTokens(String providerId) {
+    if (providerId == null) {
+      return 0;
+    }
+    switch (providerId) {
+      case "deepseek":
+        return 1.10;
+      case "openai":
+        return 10.00;
+      case "claude":
+        return 15.00;
+      case "grok":
+        return 15.00;
+      default:
+        return 0;
+    }
+  }
+
   /**
    * 反查模型属于哪个服务商。
    *

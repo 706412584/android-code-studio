@@ -20,6 +20,8 @@ package com.tom.rv2ide.ai.agent;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNotSame;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.tom.rv2ide.ai.agent.context.RunContextManager;
@@ -40,9 +42,12 @@ import com.tom.rv2ide.ai.protocol.UserModelMessage;
 import com.tom.rv2ide.ai.tool.ToolContext;
 import com.tom.rv2ide.ai.tool.ToolExecutor;
 import com.tom.rv2ide.ai.tool.ToolRegistry;
+import com.tom.rv2ide.ai.tool.ToolSearchTool;
+import com.tom.rv2ide.ai.tool.BaseTool;
 import com.tom.rv2ide.ai.tool.FileReadTool;
 import com.tom.rv2ide.ai.tool.FileWriteTool;
 import com.tom.rv2ide.ai.tool.api.ToolCall;
+import com.tom.rv2ide.ai.tool.api.ToolCategory;
 import com.tom.rv2ide.ai.tool.api.ToolResult;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -51,6 +56,7 @@ import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Deque;
 import java.util.List;
+import org.json.JSONObject;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -67,6 +73,7 @@ final class AgentSessionTest {
   private static class ScriptedProtocol implements ModelProtocol {
     private final Deque<ModelCompletionResponse> responses = new ArrayDeque<>();
     private final List<List<ModelMessage>> receivedMessages = new ArrayList<>();
+    private final List<ModelRequestOptions> receivedOptions = new ArrayList<>();
     private final boolean nativeTools;
     private int callCount = 0;
 
@@ -101,6 +108,7 @@ final class AgentSessionTest {
       callCount++;
       // 记录本轮收到的完整消息列表，用于断言结果是否被回灌
       receivedMessages.add(new ArrayList<>(messages));
+      receivedOptions.add(options);
       if (responses.isEmpty()) {
         return new ModelCompletionResponse("done", "", List.of(), 0, 0);
       }
@@ -131,6 +139,101 @@ final class AgentSessionTest {
     registry.register(new FileReadTool());
     registry.register(new FileWriteTool());
     return registry;
+  }
+
+  private static List<String> namesOf(List<com.tom.rv2ide.ai.tool.api.ToolInfo> tools) {
+    List<String> names = new ArrayList<>();
+    for (com.tom.rv2ide.ai.tool.api.ToolInfo tool : tools) {
+      names.add(tool.getName());
+    }
+    return names;
+  }
+
+  /** 最小延迟加载工具：只用于验证 tool_search 展开后进入 tools 数组。 */
+  private static final class DeferredStubTool extends BaseTool {
+    private final String name;
+
+    DeferredStubTool(String name) {
+      this.name = name;
+    }
+
+    @Override public String getName() { return name; }
+    @Override public String getDescription() { return "demo deferred tool"; }
+    @Override public ToolCategory getCategory() { return ToolCategory.READ; }
+    @Override public boolean isDeferredLoading() { return true; }
+    @Override public JSONObject getParameters() { return new JSONObject(); }
+    @Override public ToolResult execute(JSONObject input, ToolContext context) { return ok("ok"); }
+  }
+
+  @Test
+  void toolListContentIsStableAcrossTurnsWithoutActivation(@TempDir Path workspace)
+      throws IOException {
+    Files.writeString(workspace.resolve("a.txt"), "hello");
+    ScriptedProtocol protocol =
+        new ScriptedProtocol(true)
+            .enqueue("先读一下", List.of(call("c1", "file_read", "{\"file_path\":\"a.txt\"}")))
+            .enqueue("再读一次", List.of(call("c2", "file_read", "{\"file_path\":\"a.txt\"}")))
+            .enqueue("完成", List.of());
+
+    AgentSession session =
+        new AgentSession(
+            clientWith(protocol),
+            fileRegistry(),
+            new ToolExecutor(fileRegistry(), null, null));
+    AgentRunResult result =
+        session.run(
+            config(10),
+            "sys",
+            "读文件",
+            ToolContext.builder().homePath(workspace.toString()).build(),
+            null,
+            null);
+
+    assertFalse(result.isFailed());
+    assertEquals(3, protocol.callCount);
+    // 未发生展开：逐轮工具列表内容必须保持一致（缓存复用不改变对外行为）
+    List<String> firstNames = namesOf(protocol.receivedOptions.get(0).getTools());
+    for (int i = 1; i < protocol.receivedOptions.size(); i++) {
+      assertEquals(
+          firstNames,
+          namesOf(protocol.receivedOptions.get(i).getTools()),
+          "未展开时各轮工具列表内容应一致");
+    }
+  }
+
+  @Test
+  void toolSearchActivationTakesEffectNextTurn(@TempDir Path workspace) {
+    ToolRegistry registry = new ToolRegistry();
+    registry.register(new FileReadTool());
+    registry.register(new ToolSearchTool(registry));
+    registry.register(new DeferredStubTool("mcpx_demo"));
+
+    ScriptedProtocol protocol =
+        new ScriptedProtocol(true)
+            .enqueue("找工具", List.of(call("c1", "tool_search", "{\"query\":\"demo\"}")))
+            .enqueue("完成", List.of());
+
+    AgentSession session =
+        new AgentSession(clientWith(protocol), registry, new ToolExecutor(registry, null, null));
+    AgentRunResult result =
+        session.run(
+            config(10),
+            "sys",
+            "检索并展开 demo 工具",
+            ToolContext.builder().homePath(workspace.toString()).build(),
+            null,
+            null);
+
+    assertFalse(result.isFailed());
+    assertEquals(2, protocol.callCount);
+    boolean firstHasDemo =
+        protocol.receivedOptions.get(0).getTools().stream()
+            .anyMatch(t -> t.getName().equals("mcpx_demo"));
+    boolean secondHasDemo =
+        protocol.receivedOptions.get(1).getTools().stream()
+            .anyMatch(t -> t.getName().equals("mcpx_demo"));
+    assertFalse(firstHasDemo, "展开前 deferred 工具不出现在 tools 数组");
+    assertTrue(secondHasDemo, "tool_search 展开后下一轮必须包含该工具（版本缓存不得挡住重建）");
   }
 
   @Test

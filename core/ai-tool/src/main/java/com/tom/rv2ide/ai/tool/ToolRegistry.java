@@ -119,6 +119,9 @@ public final class ToolRegistry {
    */
   private final java.util.Set<String> activated = new java.util.LinkedHashSet<>();
 
+  /** 展开集版本号：实际新增展开时递增（写锁内写、读锁内读）。 */
+  private long activationVersion;
+
   /** 创建一个空注册表。工具需通过 {@link #register} 加入。 */
   public ToolRegistry() {}
 
@@ -308,9 +311,28 @@ public final class ToolRegistry {
     }
     lock.writeLock().lock();
     try {
-      activated.addAll(names);
+      if (activated.addAll(names)) {
+        // 只有展开集真的变化才推进版本：重复展开同一批工具不该让调用方
+        // （AgentSession 的 tools 缓存）白白重建列表。
+        activationVersion++;
+      }
     } finally {
       lock.writeLock().unlock();
+    }
+  }
+
+  /**
+   * 展开集的版本号：实际新增展开时递增。
+   *
+   * <p>调用方（AgentSession）据此判断缓存的请求工具列表是否过期——版本不变时
+   * 列表内容必然相同，可直接复用，避免每轮重建并重序列化全部工具 schema。
+   */
+  public long getActivationVersion() {
+    lock.readLock().lock();
+    try {
+      return activationVersion;
+    } finally {
+      lock.readLock().unlock();
     }
   }
 

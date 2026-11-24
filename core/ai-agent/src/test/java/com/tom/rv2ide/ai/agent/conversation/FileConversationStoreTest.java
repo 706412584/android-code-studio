@@ -354,4 +354,63 @@ final class FileConversationStoreTest {
     String raw = String.join("", Files.readAllLines(log.toPath(), StandardCharsets.UTF_8));
     assertFalse(raw.contains("parentId"), "普通会话不应写出 parentId 字段");
   }
+
+  // ── 会话分叉 ─────────────────────────────────────────────────────────
+
+  @Test
+  void forkCopiesPrefixIntoIndependentConversation(@TempDir Path dir) throws IOException {
+    FileConversationStore store = storeAt(dir);
+    String id = store.create("原始会话", "/w", "m", "confirm").getId();
+    store.append(id, UserMessageEntry.create(null, 1L, "第一条"));
+    store.append(id, AssistantMessageEntry.create(null, 2L, "回复一", "", List.of()));
+    store.append(id, UserMessageEntry.create(null, 3L, "第二条"));
+    store.append(id, AssistantMessageEntry.create(null, 4L, "回复二", "", List.of()));
+
+    // create 带标题 = meta + title 两条；随后 4 条消息 → 共 6 条（ordinal 0..5）。
+    // 分叉点取「回复一」（ordinal 3）：前缀 = meta + title + 第一条 + 回复一。
+    ConversationSummary forked = store.fork(id, 3);
+
+    assertFalse(forked.getId().equals(id), "分叉必须是新会话 id");
+    List<ConversationLog.EntryLocation> forkedEntries = store.read(forked.getId());
+    assertEquals(5, forkedEntries.size(), "前缀 4 条 + 分叉标题 1 条");
+    assertEquals("第一条", ((UserMessageEntry) forkedEntries.get(2).getEntry()).getContent());
+    assertEquals("回复一", ((AssistantMessageEntry) forkedEntries.get(3).getEntry()).getContent());
+    assertTrue(forked.getTitle().contains("分叉"), "标题应标注分叉来源: " + forked.getTitle());
+
+    // 源会话保持不动；分叉后可独立追加
+    assertEquals(6, store.read(id).size());
+    store.append(forked.getId(), UserMessageEntry.create(null, 5L, "分叉后的新消息"));
+    assertEquals(6, store.read(forked.getId()).size());
+    assertEquals(6, store.read(id).size());
+  }
+
+  @Test
+  void forkRejectsEmptyPrefix(@TempDir Path dir) throws IOException {
+    FileConversationStore store = storeAt(dir);
+    String id = store.create(null, "/w", "m", "confirm").getId();
+    assertThrows(IOException.class, () -> store.fork(id, -1));
+  }
+
+  @Test
+  void forkCopiesExternalImages(@TempDir Path dir) throws IOException {
+    FileConversationStore store = storeAt(dir);
+    String id = store.create(null, "/w", "m", "confirm").getId();
+    // 带内联图片的工具结果：append 时外置为 <id>.jsonl.images/<uuid>.b64
+    store.append(
+        id,
+        ToolResultEntry.create(
+            null, 1L, com.tom.rv2ide.ai.tool.api.ToolResult.withImage(
+                "vscreen", "截图", "image/png", "QUJD")));
+
+    ConversationSummary forked = store.fork(id, 1);
+
+    File imageDir = new File(store.getDirectory(), forked.getId() + ".jsonl.images");
+    assertTrue(imageDir.isDirectory(), "分叉应复制外置图片目录");
+    File[] images = imageDir.listFiles();
+    assertTrue(images != null && images.length == 1, "外置图片文件应随分叉复制");
+    // 分叉后的图片引用必须能真正读回（懒加载走新目录的文件），不只是目录存在
+    List<ConversationLog.EntryLocation> entries = store.read(forked.getId());
+    ToolResultEntry result = (ToolResultEntry) entries.get(1).getEntry();
+    assertEquals("QUJD", result.getImageBase64());
+  }
 }

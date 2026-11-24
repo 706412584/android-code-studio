@@ -206,9 +206,27 @@ public final class AnthropicMessagesProtocol extends AbstractHttpModelProtocol {
 
         String system = systemPrompt(messages);
         if (system.length() > 0) {
-            body.put("system", system);
+            // prompt caching 断点一：系统提示词。blocks 形态是 Messages API 的合法
+            // system 取值；cache_control 打在稳定前缀上，多轮工具调用时整段
+            // 「系统提示词 + 工具定义」可命中服务端缓存，不再逐轮全量计费。
+            // 不支持的网关对未知字段按 JSON 惯例忽略，不影响请求本身。
+            body.put("system", new JSONArray().put(new JSONObject()
+                    .put("type", "text")
+                    .put("text", system)
+                    .put("cache_control", ephemeralCacheControl())));
         }
         return body;
+    }
+
+    /** 供测试检查请求体（system / tools 的 cache_control 断点）。 */
+    JSONObject requestBodyForTest(
+            ModelConfig config, List<ModelMessage> messages, ModelRequestOptions requestOptions)
+            throws Exception {
+        return buildRequestBody(config, messages, requestOptions);
+    }
+
+    private static JSONObject ephemeralCacheControl() {
+        return new JSONObject().put("type", "ephemeral");
     }
 
     private void handleSseEvent(
@@ -403,6 +421,14 @@ public final class AnthropicMessagesProtocol extends AbstractHttpModelProtocol {
                     .put("name", tool.getName())
                     .put("description", tool.getDescription())
                     .put("input_schema", tool.getParameters()));
+        }
+        if (array.length() > 0) {
+            // prompt caching 断点二：最后一个工具。请求里 system、tools、messages
+            // 依序构成前缀，给 tools 末项打标即缓存「系统提示词 + 全部工具定义」——
+            // 这是每轮请求中体积最大且逐轮不变的部分（AgentSession 只在
+            // tool_search 展开时才改变工具列表）。
+            array.getJSONObject(array.length() - 1)
+                    .put("cache_control", ephemeralCacheControl());
         }
         return array;
     }

@@ -648,6 +648,22 @@
   <string name="ai_assistant_dangerous_allow_once">Allow once</string>
   <string name="ai_assistant_dangerous_allow_always">Always allow</string>
   <string name="ai_assistant_dangerous_deny">Deny</string>
+  <string name="ai_assistant_dangerous_granularity_title">"Always allow" scope</string>
+  <string name="ai_assistant_dangerous_granularity_message">Rule to remember: %1$s</string>
+  <string name="ai_assistant_dangerous_granularity_full">Only this exact command</string>
+  <string name="ai_assistant_dangerous_granularity_prefix">Similar commands (broader)</string>
+  <string name="ai_agent_sub_agent_slot_title">Sub-agent model slot</string>
+  <string name="ai_agent_sub_agent_slot_summary">Model for delegated sub-agents: %1$s. Cheaper slots save cost on exploration tasks.</string>
+  <string name="ai_agent_mid_run_compact_title">Auto-compact during long runs</string>
+  <string name="ai_agent_mid_run_compact_summary">Summarize oldest history mid-run instead of silently dropping it. Only affects the current run; full history stays on disk.</string>
+  <string name="ai_agent_usage_stats_title">Usage &amp; cost</string>
+  <string name="ai_agent_usage_stats_summary">Per-provider token counts with estimated cost</string>
+  <string name="ai_agent_usage_stats_empty">No usage recorded yet</string>
+  <string name="ai_agent_usage_stats_note">Token counts are reported by providers. Costs are estimates only (prices may be outdated), not billing records.</string>
+  <string name="ai_agent_web_search_endpoint_title">Search endpoint</string>
+  <string name="ai_agent_web_search_endpoint_summary">Custom RSS search endpoint &amp; key. Empty = default Bing</string>
+  <string name="ai_agent_web_search_endpoint_message">Endpoint must return RSS (format=rss), e.g. Bing or a self-hosted SearXNG. Leave endpoint empty to restore default Bing.</string>
+  <string name="ai_agent_web_search_key_hint">API key (optional)</string>
 
   <!-- Message actions -->
   <string name="ai_assistant_action_copy_raw">Copy Markdown</string>

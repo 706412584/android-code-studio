@@ -22,6 +22,7 @@ import com.tom.rv2ide.ai.agent.conversation.ConversationHistory;
 import com.tom.rv2ide.ai.protocol.ModelMessage;
 import com.tom.rv2ide.ai.protocol.ToolModelMessage;
 import java.util.ArrayList;
+import java.util.IdentityHashMap;
 import java.util.List;
 
 /**
@@ -62,6 +63,16 @@ public final class RunContextManager {
     void onUsage(int usedTokens, int contextSize);
   }
 
+  /**
+   * 服务端真实 usage 的监听（与 {@link UsageListener} 的窗口占用不同）。
+   *
+   * <p>用途是**成本统计**：每次模型响应后回报 input/output token 数，由外部
+   * （如 UsageStatsStore）累计。同样跑在循环线程上，实现必须快速返回。
+   */
+  public interface ResponseListener {
+    void onResponse(int inputTokens, int outputTokens);
+  }
+
   private final TokenUsageTracker tracker;
 
   /** 系统提示词 + 工具定义的估算成本；这些不占历史预算但确实占窗口。 */
@@ -70,15 +81,40 @@ public final class RunContextManager {
   /** 用量回调，可为 null。 */
   private final UsageListener usageListener;
 
+  /** 真实 usage 回调（成本统计），可为 null。 */
+  private final ResponseListener responseListener;
+
+  /**
+   * 单条消息的估算缓存（引用相等语义）。
+   *
+   * <p>消息对象不可变，且裁剪复用同一批对象引用（{@code limitImages} 剥图片时产生的
+   * 是新对象，会自然 miss 重估），因此 IdentityHashMap 正合适。此前每次 fit 都对
+   * 全部消息逐字符重扫 CJK，长会话几十轮下来是 O(轮次 × 全量文本) 的白烧 CPU；
+   * 现在同一对象只估一次。缓存随本实例（一次运行）销毁，不跨运行持有消息，无泄漏。
+   *
+   * <p>非线程安全：与 agent 循环同线程使用（fit / shrinkForOverflow 都只在循环线程
+   * 调用），与 {@code tracker} 的既有约定一致。
+   */
+  private final IdentityHashMap<ModelMessage, Integer> estimateCache = new IdentityHashMap<>();
+
   public RunContextManager(TokenUsageTracker tracker, int overheadTokens) {
     this(tracker, overheadTokens, null);
   }
 
   public RunContextManager(
       TokenUsageTracker tracker, int overheadTokens, UsageListener usageListener) {
+    this(tracker, overheadTokens, usageListener, null);
+  }
+
+  public RunContextManager(
+      TokenUsageTracker tracker,
+      int overheadTokens,
+      UsageListener usageListener,
+      ResponseListener responseListener) {
     this.tracker = tracker;
     this.overheadTokens = Math.max(0, overheadTokens);
     this.usageListener = usageListener;
+    this.responseListener = responseListener;
   }
 
   /** 本次运行的系统提示词 + 工具定义估算成本。 */
@@ -128,7 +164,7 @@ public final class RunContextManager {
       // 这里刻意**不**调 notifyUsage()：走到这一支意味着 contextSize <= 0，
       // 而 notifyUsage() 在 size <= 0 时直接返回，调了也是空转。UI 那边拿不到
       // 比例会显示「占用未知」，这是正确行为——没有分母就不该编一个比例出来。
-      tracker.record(TokenEstimator.estimate(messages), 0);
+      tracker.record(estimateAll(messages), 0);
       return new ArrayList<>(messages);
     }
 
@@ -154,7 +190,7 @@ public final class RunContextManager {
     if (messages == null || messages.size() <= 1) {
       return false;
     }
-    int current = TokenEstimator.estimate(messages) + overheadTokens;
+    int current = estimateAll(messages) + overheadTokens;
     // 目标取「当前估算的一半」与「绝对预算的一半」的较小者。
     //
     // 只用 current/2 的漏洞：本地估算低估（正是超限的常见成因——图片按张固定估算、
@@ -178,7 +214,7 @@ public final class RunContextManager {
       List<ModelMessage> messages, int historyEnd, int budget) {
     ModelMessage system = messages.get(0);
     if (messages.size() == 1) {
-      tracker.record(TokenEstimator.estimate(system) + overheadTokens, 0);
+      tracker.record(estimateOf(system) + overheadTokens, 0);
       // 不用 List.of：它是 Java 9 API，Android 上直到 API 30 才有。
       // 这类问题编译期与 JVM 单测都发现不了，只在真机上抛 NoSuchMethodError。
       List<ModelMessage> onlySystem = new ArrayList<>(1);
@@ -196,7 +232,7 @@ public final class RunContextManager {
     // 预算传 max(1,...)：ContextTrimmer 把 <=0 解释为"不限"，传 0 会让它原样保留全部轮次。
     List<ModelMessage> keptTurns =
         dropLeadingToolResults(ContextTrimmer.trim(turns, Math.max(1, budget)).getMessages());
-    int remaining = budget - TokenEstimator.estimate(keptTurns);
+    int remaining = budget - estimateAll(keptTurns);
     // 同理：remaining <= 0 时不能交给 ContextTrimmer，否则历史会原样留下。
     List<ModelMessage> keptHistory =
         remaining > 0
@@ -208,9 +244,54 @@ public final class RunContextManager {
     result.addAll(keptHistory);
     result.add(request);
     result.addAll(keptTurns);
-    tracker.record(TokenEstimator.estimate(result) + overheadTokens, 0);
+    tracker.record(estimateAll(result) + overheadTokens, 0);
     notifyUsage();
     return result;
+  }
+
+  /** 单条消息估算：同一对象只估一次，后续命中 {@link #estimateCache}。 */
+  private int estimateOf(ModelMessage message) {
+    Integer cached = estimateCache.get(message);
+    if (cached != null) {
+      return cached;
+    }
+    int value = TokenEstimator.estimate(message);
+    // 含图消息**不缓存**：limitImages 剥图的目的就是释放 base64 内存（防 OOM），
+    // 若缓存强引用剥图前的消息对象，base64 会整次运行驻留——优化变成泄漏。
+    // 这类消息很少，逐轮重估的代价远小于它省下的内存。
+    String raw = message.getRawInputJson();
+    if (raw == null || raw.indexOf("linecode_") < 0) {
+      estimateCache.put(message, value);
+    }
+    return value;
+  }
+
+  private int estimateAll(List<ModelMessage> messages) {
+    int total = 0;
+    for (ModelMessage message : messages) {
+      total += estimateOf(message);
+    }
+    return total;
+  }
+
+  /** 供测试观察缓存是否复用：重复 fit 后该值不应继续增长。 */
+  int estimateCacheSize() {
+    return estimateCache.size();
+  }
+
+  /**
+   * 估算用量是否超过压缩触发点（窗口 × {@code COMPACT_TRIGGER_RATIO}）。
+   *
+   * <p>供 mid-run 压缩判断「该不该摘要最旧一段」——与入口压缩同一触发口径。
+   * 窗口未配置时恒 false：无从判断用量比例，也就不做运行中途压缩（fit 仍会限图）。
+   */
+  public boolean exceedsCompactTrigger(List<ModelMessage> messages) {
+    int contextSize = tracker.getContextSize();
+    if (contextSize <= 0 || messages == null) {
+      return false;
+    }
+    int triggerPoint = (int) (contextSize * TokenUsageTracker.COMPACT_TRIGGER_RATIO);
+    return estimateAll(messages) + overheadTokens >= triggerPoint;
   }
 
   /**
@@ -248,6 +329,19 @@ public final class RunContextManager {
   public void recordResponse(int reportedInputTokens) {
     tracker.record(tracker.getLastEstimatedTokens(), reportedInputTokens);
     notifyUsage();
+  }
+
+  /**
+   * {@link #recordResponse} + 真实 usage 外报（成本统计）。
+   *
+   * <p>由 agent 循环在每轮响应后调用：先按原口径校准估算，再把 input/output
+   * 一并推给 {@link #responseListener}（若配置了）。未配置时与 recordResponse 等价。
+   */
+  public void recordResponseUsage(int inputTokens, int outputTokens) {
+    recordResponse(inputTokens);
+    if (responseListener != null) {
+      responseListener.onResponse(inputTokens, outputTokens);
+    }
   }
 
   /** 把当前用量推给回调。窗口未配置（为 0）时不推——UI 无从计算比例。 */

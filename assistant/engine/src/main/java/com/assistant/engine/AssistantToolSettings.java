@@ -259,6 +259,14 @@ public final class AssistantToolSettings implements ToolSettingsPort {
     if (decision == DangerousToolDecision.ALLOW_ALWAYS) {
       rememberDangerousToolRule(ToolPermissionRule.keyFor(toolName, arguments));
     }
+    if (decision == DangerousToolDecision.ALLOW_PREFIX) {
+      // 前缀不可生成时退回全文规则：方向是收窄授权，而非放大。
+      String prefixKey = ToolPermissionRule.prefixKeyFor(toolName, arguments);
+      rememberDangerousToolRule(
+          prefixKey.isEmpty()
+              ? ToolPermissionRule.keyFor(toolName, arguments)
+              : prefixKey);
+    }
     return true;
   }
 

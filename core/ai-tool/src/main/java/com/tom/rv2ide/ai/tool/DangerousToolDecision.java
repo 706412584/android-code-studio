@@ -44,6 +44,16 @@ public enum DangerousToolDecision {
   /** 放行本次调用，并持久化一条规则供后续相同粒度的调用复用。 */
   ALLOW_ALWAYS,
 
+  /**
+   * 放行本次调用，并持久化一条「同类命令前缀」规则（仅 shell 简单命令）。
+   *
+   * <p>与 {@link #ALLOW_ALWAYS} 的逐字全文粒度相比更宽：{@code git status} 的前缀授权
+   * 对 {@code git status -sb} 同样生效。粒度与不可生成的边界由
+   * {@link ToolPermissionRule#prefixKeyFor} 决定；无法生成前缀键时实现方应退回
+   * 全文规则（方向是收窄而非放大）。
+   */
+  ALLOW_PREFIX,
+
   /** 拒绝本次调用。 */
   DENY
 }

@@ -891,22 +891,30 @@ class ChatActivity : ComponentActivity() {
     // （latch 只负责唤醒，不负责把值刷出去；Kotlin 的局部变量也无法加 @Volatile）。
     val allowed = java.util.concurrent.atomic.AtomicBoolean(false)
     runOnUiThread {
+      // 前缀规则是否可用由宿主（能引用内核）判定，渲染层只负责如实展示与回传。
+      val prefixKey = com.tom.rv2ide.ai.tool.ToolPermissionRule.prefixKeyFor(toolName, args)
       chatView.confirmDangerousTool(
           com.assistant.ui.components.independent.PendingDangerousTool(
               toolName = toolName,
               caption = describeTool(toolName),
               detail = args.orEmpty(),
+              prefixAvailable = prefixKey.isNotEmpty(),
+              prefixDescription =
+                  if (prefixKey.isEmpty()) null
+                  else com.tom.rv2ide.ai.tool.ToolPermissionRule.describe(prefixKey),
           ),
       ) { choice ->
         allowed.set(choice != com.assistant.ui.components.independent.DangerousToolChoice.DENY)
         // 「始终允许」在这里落一条持久化规则。必须由本层写：只有这里知道
         // 用户点的是哪个按钮（内核的 applyDecision 就是为这个分工留的）。
-        if (choice == com.assistant.ui.components.independent.DangerousToolChoice.ALLOW_ALWAYS) {
-          toolSettings.applyDecision(
-              toolName,
-              args,
-              com.tom.rv2ide.ai.tool.DangerousToolDecision.ALLOW_ALWAYS,
-          )
+        when (choice) {
+          com.assistant.ui.components.independent.DangerousToolChoice.ALLOW_ALWAYS ->
+            toolSettings.applyDecision(
+                toolName, args, com.tom.rv2ide.ai.tool.DangerousToolDecision.ALLOW_ALWAYS)
+          com.assistant.ui.components.independent.DangerousToolChoice.ALLOW_PREFIX ->
+            toolSettings.applyDecision(
+                toolName, args, com.tom.rv2ide.ai.tool.DangerousToolDecision.ALLOW_PREFIX)
+          else -> {}
         }
         latch.countDown()
       }

@@ -99,6 +99,12 @@ public final class ToolExecutor {
     if (!ruleKey.isEmpty() && settings.hasDangerousToolRule(ruleKey)) {
       return true;
     }
+    // 第二维度：用户显式授权的「同类命令前缀」规则（仅 shell 简单命令，见
+    // ToolPermissionRule.prefixKeyFor）。只是多查一个键——没有授权时绝不按前缀放行。
+    String prefixKey = ToolPermissionRule.prefixKeyFor(toolName, arguments);
+    if (!prefixKey.isEmpty() && settings.hasDangerousToolRule(prefixKey)) {
+      return true;
+    }
     // 否则按**会话**询问：运行内的一次性授权只在产生它的会话里有效，不会泄漏到并行会话。
     return settings.confirmDangerousTool(conversationId, toolName, arguments);
   }

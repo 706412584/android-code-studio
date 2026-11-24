@@ -165,6 +165,68 @@ public final class FileConversationStore implements ConversationStore {
   }
 
   @Override
+  public ConversationSummary fork(String conversationId, int upToOrdinal) throws IOException {
+    // 与 deleteEntries 同级写锁：复制前缀期间不允许 append 改变源文件。
+    lock.writeLock().lock();
+    try {
+      ConversationLog source = logFor(conversationId);
+      List<ConversationLog.EntryLocation> entries = source.readAll();
+      List<ConversationLog.EntryLocation> prefix = new ArrayList<>();
+      for (ConversationLog.EntryLocation location : entries) {
+        if (location.getOrdinal() <= upToOrdinal) {
+          prefix.add(location);
+        }
+      }
+      if (prefix.isEmpty()) {
+        throw new IOException("分叉点之前没有可复制的条目: " + upToOrdinal);
+      }
+      String sourceTitle = ConversationReducer.summarize(conversationId, entries).getTitle();
+
+      String newId = newId();
+      ConversationLog target = logFor(newId);
+      for (ConversationLog.EntryLocation location : prefix) {
+        target.append(location.getEntry());
+      }
+      // 外置截图目录按新会话 id 复制：条目里的 imageRef 相对「<会话文件>.images/」，
+      // 不复制的话分叉后的历史截图全部读不到（getImageBase64 懒加载 404）。
+      copyDirectory(
+          new File(directory, conversationId + EXTENSION + ".images"),
+          new File(directory, newId + EXTENSION + ".images"));
+      // 标题走追加而非回写：与 rename 同一 append-only 语义，同时保留源标题供辨认。
+      String forkTitle =
+          sourceTitle == null || sourceTitle.trim().isEmpty()
+              ? "分叉会话"
+              : sourceTitle.trim() + "（分叉）";
+      target.append(TitleEntry.customTitle(null, System.currentTimeMillis(), forkTitle));
+      return ConversationReducer.summarize(newId, target.readAll());
+    } finally {
+      lock.writeLock().unlock();
+    }
+  }
+
+  /** 整目录复制（外置截图用）；源目录不存在时跳过。 */
+  private static void copyDirectory(File source, File dest) throws IOException {
+    if (!source.isDirectory()) {
+      return;
+    }
+    if (!dest.isDirectory() && !dest.mkdirs()) {
+      throw new IOException("无法创建目录: " + dest);
+    }
+    File[] children = source.listFiles();
+    if (children == null) {
+      return;
+    }
+    for (File child : children) {
+      File target = new File(dest, child.getName());
+      if (child.isDirectory()) {
+        copyDirectory(child, target);
+      } else {
+        copyFile(child, target);
+      }
+    }
+  }
+
+  @Override
   public int deleteEntries(String conversationId, List<Integer> ordinals) throws IOException {
     if (ordinals == null || ordinals.isEmpty()) {
       return 0;

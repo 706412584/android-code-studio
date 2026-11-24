@@ -328,6 +328,24 @@ public final class AgentToolSettings implements ToolSettingsPort {
     }
   }
 
+  /** 子 agent 模型槽位偏好键：main / haiku / sonnet / opus（见 ProviderConfig.SLOT_ORDER）。 */
+  private static final String KEY_SUB_AGENT_SLOT = "sub_agent_slot";
+
+  /**
+   * 子 agent 使用的模型槽位，默认主模型。
+   *
+   * <p>探索/审查类子代理通常不需要最强模型，允许用户改用更便宜的副槽省钱。
+   * 非法值（旧版本残留、手工改文件）回落主槽，避免解析出空模型。
+   */
+  public String getSubAgentSlot() {
+    String slot = prefs.getString(KEY_SUB_AGENT_SLOT, ProviderConfig.SLOT_MAIN);
+    return ProviderConfig.SLOT_ORDER.contains(slot) ? slot : ProviderConfig.SLOT_MAIN;
+  }
+
+  public void setSubAgentSlot(String slot) {
+    prefs.edit().putString(KEY_SUB_AGENT_SLOT, slot).apply();
+  }
+
   /**
    * 处理一次三档答复。
    *
@@ -342,6 +360,14 @@ public final class AgentToolSettings implements ToolSettingsPort {
     }
     if (decision == DangerousToolDecision.ALLOW_ALWAYS) {
       rememberDangerousToolRule(ToolPermissionRule.keyFor(toolName, arguments));
+    }
+    if (decision == DangerousToolDecision.ALLOW_PREFIX) {
+      // 前缀不可生成时退回全文规则：方向是收窄授权，而非放大。
+      String prefixKey = ToolPermissionRule.prefixKeyFor(toolName, arguments);
+      rememberDangerousToolRule(
+          prefixKey.isEmpty()
+              ? ToolPermissionRule.keyFor(toolName, arguments)
+              : prefixKey);
     }
     return true;
   }

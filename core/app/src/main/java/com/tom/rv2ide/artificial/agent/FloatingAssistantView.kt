@@ -3035,6 +3035,29 @@ class FloatingAssistantView(
   }
 
   /**
+   * 弹窗的安全显示：宿主 Activity 已销毁时不弹（防 BadToken 崩溃），
+   * Overlay 宿主先经 prepareDialog 设置悬浮窗类型。
+   *
+   * <p>实机暴露的问题：消息操作菜单等直接 `builder.show()` 的弹窗，在宿主
+   * Activity 不可用（重建/销毁途中）或 Overlay 宿主未设 window type 时，
+   * 会以 BadToken 让整 App 崩溃。统一走这里：Activity 不可用就放弃本次弹出
+   * （用户可重新打开面板再操作），其余异常记录但不崩溃。
+   */
+  private fun showDialogSafely(builder: com.google.android.material.dialog.MaterialAlertDialogBuilder) {
+    val activity = host.context as? android.app.Activity
+    if (activity != null && (activity.isFinishing || activity.isDestroyed)) {
+      return
+    }
+    val dialog = builder.create()
+    host.prepareDialog(dialog)
+    try {
+      dialog.show()
+    } catch (e: android.view.WindowManager.BadTokenException) {
+      com.tom.rv2ide.ai.tool.api.ErrorLog.record("agent", "弹窗显示失败（宿主不可用）", e, null)
+    }
+  }
+
+  /**
    * 弹出消息操作菜单（复制原文、复制纯文本、引用提问、删除）。
    */
   private fun showMessageActionsMenu(message: AssistantMessageAdapter.Message, anchor: View) {
@@ -3053,26 +3076,154 @@ class FloatingAssistantView(
       showQuoteReplyDialog(message)
     })
 
+    items.add("从此处分叉" to {
+      confirmForkMessage(message)
+    })
+
     items.add("删除这条消息" to {
       confirmDeleteMessage(message)
     })
 
     val titles = items.map { it.first }.toTypedArray()
-    com.google.android.material.dialog.MaterialAlertDialogBuilder(context)
-        .setItems(titles) { _, which ->
-          items[which].second.invoke()
+    showDialogSafely(
+        com.google.android.material.dialog.MaterialAlertDialogBuilder(context)
+            .setItems(titles) { _, which ->
+              items[which].second.invoke()
+            })
+  }
+
+  /**
+   * 分叉确认：先定位条目并统计将回滚的改动数，再让用户选「仅分叉 / 分叉并回滚」。
+   *
+   * <p>与删除不同，分叉**不修改原会话**——复制前缀为新会话；「分叉并回滚」额外把
+   * 该消息之后的代码改动回滚，让工作区回到分叉点状态（双回滚）。影响范围
+   * （改动文件数）在弹窗里明示。
+   */
+  private fun confirmForkMessage(message: AssistantMessageAdapter.Message) {
+    val conversationId = displayedConversationId ?: return
+    val workspacePath = workspace?.absolutePath ?: ""
+    kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+      val match = locateMessageEntry(conversationId, message)
+      if (match == null) {
+        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+          appendTrace("未找到该消息对应的会话条目，无法分叉")
         }
-        .show()
+        return@launch
+      }
+      val timestamp = match.entry.timestamp
+      val diffCount = orchestrator.diffPathsAfter(timestamp, workspacePath).size
+      kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+        val detail = StringBuilder("将复制这条消息（含）之前的会话为新会话，原会话保留。")
+        if (diffCount > 0) {
+          detail.append("\n\n「分叉并回滚」还会撤销此消息之后的 $diffCount 处代码改动，让工作区回到分叉点状态（此操作会改写文件）。")
+        } else {
+          detail.append("\n\n此消息之后没有可回滚的代码改动。")
+        }
+        val dialog = com.google.android.material.dialog.MaterialAlertDialogBuilder(context)
+            .setTitle("从此处分叉？")
+            .setMessage(detail.toString())
+            .setNegativeButton("取消", null)
+        if (diffCount > 0) {
+          dialog
+              .setPositiveButton("分叉并回滚") { _, _ ->
+                forkMessage(conversationId, match.ordinal, timestamp, true)
+              }
+              .setNeutralButton("仅分叉") { _, _ ->
+                forkMessage(conversationId, match.ordinal, timestamp, false)
+              }
+        } else {
+          dialog.setPositiveButton("分叉") { _, _ ->
+            forkMessage(conversationId, match.ordinal, timestamp, false)
+          }
+        }
+        showDialogSafely(dialog)
+      }
+    }
+  }
+
+  /**
+   * 中断续跑提示：会话以用户消息/工具结果结尾（模型没来得及回应）时，
+   * 给一键「续跑」——复用正常 startRun，history 里已有完整上下文。
+   * 正在运行或已切走会话时不打扰。
+   */
+  private fun maybePromptInterrupted(conversationId: String) {
+    kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+      val interrupted =
+          try {
+            orchestrator.isInterrupted(conversationId)
+          } catch (e: Exception) {
+            false
+          }
+      if (!interrupted) {
+        return@launch
+      }
+      kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+        if (displayedConversationId != conversationId || isConversationRunning(conversationId)) {
+          return@withContext
+        }
+        showDialogSafely(
+            com.google.android.material.dialog.MaterialAlertDialogBuilder(context)
+                .setTitle("上次运行已中断")
+                .setMessage("检测到本会话在应用退出前仍在运行，最后一条消息尚未得到完整回复。是否让 AI 接着继续？")
+                .setPositiveButton("续跑") { _, _ ->
+                  startRun(conversationId, "继续", null, null)
+                }
+                .setNegativeButton("忽略", null))
+      }
+    }
+  }
+
+  /** 执行分叉（IO 线程），完成后回主线程打开新会话。 */
+  private fun forkMessage(
+      conversationId: String,
+      ordinal: Int,
+      timestamp: Long,
+      rollback: Boolean,
+  ) {    val workspacePath = workspace?.absolutePath ?: ""
+    kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+      try {
+        val summary = orchestrator.forkConversation(conversationId, ordinal)
+        val reverted = if (rollback) orchestrator.revertDiffsAfter(timestamp, workspacePath) else 0
+        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+          doOpenConversation(summary)
+          appendTrace(if (rollback) "已分叉，并回滚 $reverted 处改动" else "已分叉为新会话")
+        }
+      } catch (e: Exception) {
+        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+          appendTrace(context.getString(string.ai_assistant_error, e.javaClass.simpleName, e.message ?: ""))
+        }
+      }
+    }
+  }
+
+  /**
+   * 按「内容 + 角色」定位消息对应的磁盘条目（与 deleteMessage 同口径：
+   * 取最后一条同内容条目）。
+   */
+  private fun locateMessageEntry(
+      conversationId: String,
+      message: AssistantMessageAdapter.Message,
+  ): com.tom.rv2ide.ai.agent.conversation.ConversationLog.EntryLocation? {
+    val entries = orchestrator.conversationStore.read(conversationId)
+    return entries.reversed().firstOrNull { loc ->
+      when (val e = loc.entry) {
+        is com.tom.rv2ide.ai.agent.conversation.UserMessageEntry ->
+            message.role == AssistantMessageAdapter.Role.USER && e.content == message.text
+        is com.tom.rv2ide.ai.agent.conversation.AssistantMessageEntry ->
+            message.role == AssistantMessageAdapter.Role.ASSISTANT && e.content == message.text
+        else -> false
+      }
+    }
   }
 
   /** 删除确认：说明连带语义（磁盘 + 界面 + 后续上下文），用户确认后执行。 */
   private fun confirmDeleteMessage(message: AssistantMessageAdapter.Message) {
-    com.google.android.material.dialog.MaterialAlertDialogBuilder(context)
-        .setTitle("删除这条消息？")
-        .setMessage("将从会话记录中删除（含关联的工具结果），后续对话不再携带这条消息。此操作不可撤销。")
-        .setPositiveButton("删除") { _, _ -> deleteMessage(message) }
-        .setNegativeButton("取消", null)
-        .show()
+    showDialogSafely(
+        com.google.android.material.dialog.MaterialAlertDialogBuilder(context)
+            .setTitle("删除这条消息？")
+            .setMessage("将从会话记录中删除（含关联的工具结果），后续对话不再携带这条消息。此操作不可撤销。")
+            .setPositiveButton("删除") { _, _ -> deleteMessage(message) }
+            .setNegativeButton("取消", null))
   }
 
   /**
@@ -3148,7 +3299,7 @@ class FloatingAssistantView(
     val input =
         com.tom.rv2ide.preferences.dialogEditTextField(
             context, context.getString(string.ai_assistant_quote_input_hint))
-    com.google.android.material.dialog.MaterialAlertDialogBuilder(context)
+    val builder = com.google.android.material.dialog.MaterialAlertDialogBuilder(context)
         .setTitle(string.ai_assistant_quote_dialog_title)
         .setView(com.tom.rv2ide.preferences.dialogFieldColumn(context, input))
         .setPositiveButton(android.R.string.ok) { _, _ ->
@@ -3170,7 +3321,7 @@ class FloatingAssistantView(
           // Compose 输入框无 Selection 概念外泄：外部 set 值时组件把光标移到末尾。
         }
         .setNegativeButton(android.R.string.cancel, null)
-        .show()
+    showDialogSafely(builder)
   }
 
   private fun copyToClipboard(label: String, content: String) {
@@ -4061,6 +4212,8 @@ class FloatingAssistantView(
             toggleConversationPanel()
           }
         }
+        // 打开既有会话同样检查中断（主路径）：末条是用户消息/工具结果则提示续跑。
+        maybePromptInterrupted(convId)
       }
     }
   }
@@ -4707,6 +4860,9 @@ class FloatingAssistantView(
           // 自动补了一条），也能一致地渲染出来。
           replayMessages(messages)
           syncRunningUiForDisplayed()
+          // 回放完成后检查中断：最后一条是用户消息/工具结果说明模型没来得及回应，
+          // 给用户一键续跑的入口（可忽略，不强制）。
+          maybePromptInterrupted(summary.id)
         }
       } catch (e: java.io.IOException) {
         // 开新会话失败不该阻断对话：orchestrator 会在下次 run 时再尝试。
@@ -4771,13 +4927,17 @@ class FloatingAssistantView(
                   accepted = true
                   latch.countDown()
                 },
-                { // 始终允许
+                { allowPrefix -> // 始终允许（allowPrefix=true 时为更宽的同类前缀粒度）
                   // 写的是「工具 + 参数粒度」规则，不是全局放行——
                   // 对 git status 点「始终允许」不应顺带放行 git push --force。
                   settings.applyDecision(
                       toolName,
                       args,
-                      com.tom.rv2ide.ai.tool.DangerousToolDecision.ALLOW_ALWAYS,
+                      if (allowPrefix) {
+                        com.tom.rv2ide.ai.tool.DangerousToolDecision.ALLOW_PREFIX
+                      } else {
+                        com.tom.rv2ide.ai.tool.DangerousToolDecision.ALLOW_ALWAYS
+                      },
                   )
                   accepted = true
                   latch.countDown()

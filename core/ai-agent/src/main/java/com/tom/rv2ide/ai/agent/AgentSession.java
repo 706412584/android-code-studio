@@ -32,6 +32,7 @@ import com.tom.rv2ide.ai.protocol.ModelRequestOptions;
 import com.tom.rv2ide.ai.protocol.ModelStreamCallback;
 import com.tom.rv2ide.ai.protocol.SystemModelMessage;
 import com.tom.rv2ide.ai.agent.context.RunContextManager;
+import com.tom.rv2ide.ai.agent.conversation.ConversationCompaction;
 import com.tom.rv2ide.ai.tool.api.ToolCallTextParser;
 import com.tom.rv2ide.ai.protocol.ToolModelMessage;
 import com.tom.rv2ide.ai.protocol.UserModelMessage;
@@ -302,10 +303,34 @@ public final class AgentSession {
       RunContextManager contextManager,
       String rawInputJson,
       String reasoningEffort) {
+    return run(
+        config, systemPrompt, userRequest, history, toolContext, cancellationToken, listener,
+        contextManager, rawInputJson, reasoningEffort, null);
+  }
+
+  /**
+   * 支持运行中途压缩（mid-run auto-compact）的全参重载。
+   *
+   * @param midRunCompactor 运行中途的历史压缩器；{@code null} 时不启用（旧行为：
+   * 只靠逐轮裁剪）。启用后，用量超触发点时优先把最旧历史**摘要替换**而非直接丢弃，
+   * 本地裁剪仍是最后兜底。见 {@link #tryCompactMidRun}。
+   */
+  public AgentRunResult run(
+      ModelConfig config,
+      String systemPrompt,
+      String userRequest,
+      List<ModelMessage> history,
+      ToolContext toolContext,
+      ModelCancellationToken cancellationToken,
+      AgentEvent.Listener listener,
+      RunContextManager contextManager,
+      String rawInputJson,
+      String reasoningEffort,
+      MidRunCompactor midRunCompactor) {
     try {
       return runLoop(
           config, systemPrompt, userRequest, history, toolContext, cancellationToken, listener,
-          contextManager, rawInputJson, reasoningEffort);
+          contextManager, rawInputJson, reasoningEffort, midRunCompactor);
     } catch (OutOfMemoryError oom) {
       // OOM 是 Error 不是 Exception，此前会一路冒到 UI 的 catch(Throwable)，用户看到的是
       // 「出错了：OutOfMemoryError — Failed to allocate a 22055512 byte allocation with
@@ -341,7 +366,8 @@ public final class AgentSession {
       AgentEvent.Listener listener,
       RunContextManager contextManager,
       String rawInputJson,
-      String reasoningEffort) {
+      String reasoningEffort,
+      MidRunCompactor midRunCompactor) {
 
     List<ModelMessage> messages = new ArrayList<>();
     messages.add(new SystemModelMessage(systemPrompt == null ? "" : systemPrompt));
@@ -356,11 +382,17 @@ public final class AgentSession {
             ? new UserModelMessage(prompt)
             : new UserModelMessage(prompt, rawInputJson));
     // 本次请求的下标：裁剪必须保住它，否则模型不知道自己在做什么。
-    final int historyEnd = messages.size() - 1;
+    // 可变：mid-run 压缩把最旧历史替换成一条摘要后，该下标会前移，需要重算。
+    int historyEnd = messages.size() - 1;
+    // 本次请求的对象引用：fit/压缩只复用引用（不复制消息对象），据此在每次 fit 后
+    // 重新定位它的下标——裁剪会前移，若沿用旧下标，fit 会把「本次请求」误当历史裁掉。
+    ModelMessage currentRequest = messages.get(historyEnd);
 
-    // 工具列表**每轮请求前重建**（见循环内），不能只算一次：
-    // tool_search 展开的按需工具必须从下一轮起出现在 tools 数组里，
-    // 只算一次的话展开结果永远不生效（模型检索到却调不到）。
+    // 工具列表按注册表的展开版本缓存复用（见循环内）：未展开新工具时逐轮相同，
+    // 每轮重建 + 重序列化全部 schema 是空转；tool_search 展开会推进版本号，
+    // 下一轮据此重建，展开的按需工具随即进入 tools 数组。
+    long toolsActivationVersion = -1L;
+    List<ToolInfo> cachedTools = null;
 
     int toolCallLimit = config == null ? -1 : config.getToolCallLimit();
     int toolCallCount = 0;
@@ -370,6 +402,11 @@ public final class AgentSession {
     // 反应式压缩重试只允许一次（见下方 catch 块）。放在循环外：整个运行共享，
     // 收缩后仍超限说明问题不在体积，重试更多次只会反复烧请求。
     boolean overflowRetried = false;
+
+    // mid-run 压缩的节奏控制：每次压缩后至少再积累 MIN_MESSAGES_BETWEEN_MID_RUN_COMPACTS
+    // 条新消息才允许下一次，否则每轮都可能多烧一次摘要请求；总次数再封顶防失控。
+    int midRunCompactCount = 0;
+    int messageCountAtLastCompact = 0;
 
     while (true) {
       // 终止条件一：外部取消
@@ -409,23 +446,49 @@ public final class AgentSession {
         messages.add(new UserModelMessage(wrapNotice(notice)));
       }
 
+      // mid-run 压缩：用量超触发点且距上次压缩已积累足够新消息时，把最旧一段历史
+      // **摘要替换**（tryCompactMidRun），而不是等 fit 把它无声裁掉。
+      // 摘要失败/段太短/未超触发都走原路径——下面的 fit 仍是保证请求能发出的硬约束。
+      if (midRunCompactor != null
+          && contextManager != null
+          && midRunCompactCount < MAX_MID_RUN_COMPACTS_PER_RUN
+          && messages.size() - messageCountAtLastCompact >= MIN_MESSAGES_BETWEEN_MID_RUN_COMPACTS
+          && contextManager.exceedsCompactTrigger(messages)) {
+        int compactedHistoryEnd = tryCompactMidRun(messages, historyEnd, listener, midRunCompactor);
+        if (compactedHistoryEnd > 0) {
+          historyEnd = compactedHistoryEnd;
+        }
+        // 无论成败都计入节奏：尝试过就是一次模型调用成本——失败（网络坏/超时）若不计，
+        // 下一轮会立即重试，形成「每轮一次失败摘要」的失控请求流。
+        midRunCompactCount++;
+        messageCountAtLastCompact = messages.size();
+      }
+
       // 每次请求前裁剪：预算在轮次之间会因新增消息而变得不足。
       if (contextManager != null) {
         List<ModelMessage> fitted = contextManager.fit(messages, historyEnd);
         messages.clear();
         messages.addAll(fitted);
+        // fit 会裁掉历史、把本次请求前移：必须按引用重算下标，否则后续 fit/压缩
+        // 会把「本次请求」误当历史（fit 的 requestIndex 用旧值）。
+        historyEnd = indexOfIdentity(messages, currentRequest);
       }
 
       turnIndex++;
       emit(listener, AgentEvent.turnStarted(turnIndex));
 
-      // 每轮重建工具列表：上一轮 tool_search 展开的按需工具在这里进入 tools 数组，
-      // 未展开的按需工具（MCP）不出现——它们的目录已随提示词注入（见 ToolSearchTool）。
+      // 展开版本没变就复用上一轮的工具列表（内容必然相同）；变了（tool_search
+      // 展开）才重建，展开的按需工具从这一轮起进入 tools 数组。
       //
       // 代价说明：tools 数组变化会打断服务端的前缀缓存（prompt cache），展开的那一轮
       // 首 token 延迟上升。这是按需加载的固有代价（Aharou 同样如此），且只在
       // 「模型真的检索并展开」的轮次发生——不展开时列表逐轮相同，缓存不受影响。
-      List<ToolInfo> tools = new ArrayList<>(registry.getRequestableTools());
+      long activationVersion = registry.getActivationVersion();
+      if (cachedTools == null || activationVersion != toolsActivationVersion) {
+        cachedTools = new ArrayList<>(registry.getRequestableTools());
+        toolsActivationVersion = activationVersion;
+      }
+      List<ToolInfo> tools = cachedTools;
 
       ModelCompletionResponse response;
       try {
@@ -455,9 +518,9 @@ public final class AgentSession {
       }
 
       // 服务端 usage 是最可靠的用量来源（含工具定义等本地估算看不到的部分），
-      // 拿它校准下一轮的裁剪判断。
+      // 拿它校准下一轮的裁剪判断；同时外报 input/output 供成本统计。
       if (contextManager != null) {
-        contextManager.recordResponse(response.getInputTokens());
+        contextManager.recordResponseUsage(response.getInputTokens(), response.getOutputTokens());
       }
 
       if (isCancelled(cancellationToken)) {
@@ -636,6 +699,79 @@ public final class AgentSession {
     } finally {
       pool.shutdownNow();
     }
+  }
+
+  /** mid-run 压缩：距上次压缩至少需积累的新消息数（含助手轮次与工具结果）。 */
+  private static final int MIN_MESSAGES_BETWEEN_MID_RUN_COMPACTS = 8;
+
+  /** mid-run 压缩：单次运行的次数上限，防止长任务里摘要请求失控。 */
+  private static final int MAX_MID_RUN_COMPACTS_PER_RUN = 5;
+
+  /** mid-run 压缩：段至少这么多条才值得一次摘要调用。 */
+  private static final int MIN_SEGMENT_MESSAGES = 4;
+
+  /**
+   * mid-run 压缩：把最旧一段历史替换成一条摘要消息。
+   *
+   * <p>保留规则与裁剪一致：系统提示词、本次用户请求与最近轮次不动；历史尾部保留
+   * {@code ConversationCompaction.MIN_KEEP_MESSAGES} 条（与入口压缩同口径），
+   * 更早的一段交给压缩器摘要。段不足 {@link #MIN_SEGMENT_MESSAGES} 条时不值得一次
+   * 模型调用，直接放弃（走原有裁剪）。
+   *
+   * <p>摘要消息以 user 角色插在系统提示词之后：整段被替换，保留段（最近历史 +
+   * 本次请求 + 轮次）是完整连续的，不存在 tool_use/tool_result 配对断裂。
+   *
+   * @return 替换后「本次用户请求」的新下标；未发生压缩时返回 -1
+   */
+  private int tryCompactMidRun(
+      List<ModelMessage> messages,
+      int historyEnd,
+      AgentEvent.Listener listener,
+      MidRunCompactor compactor) {
+    int keepTail = ConversationCompaction.MIN_KEEP_MESSAGES;
+    int segmentEnd = historyEnd - keepTail; // 摘要段在 history 内的结束下标（不含）
+    // 保留段不得以 tool_result 开头：其对应的 assistant（含 tool_calls）若在摘要段内，
+    // 保留段开头的 tool_result 就是孤儿（服务端会判 400）。把它并入摘要段。
+    while (segmentEnd < historyEnd && messages.get(segmentEnd) instanceof ToolModelMessage) {
+      segmentEnd++;
+    }
+    if (segmentEnd - 1 < MIN_SEGMENT_MESSAGES) {
+      return -1;
+    }
+    List<ModelMessage> segment = new ArrayList<>(messages.subList(1, segmentEnd));
+    String summary;
+    try {
+      summary = compactor.summarize(segment);
+    } catch (Exception e) {
+      // 摘要失败不阻断：走原有 fit 裁剪（运行绝不因压缩而中断）。
+      return -1;
+    }
+    if (summary == null || summary.trim().isEmpty()) {
+      return -1;
+    }
+    List<ModelMessage> compacted = new ArrayList<>(messages.size() - segment.size() + 1);
+    compacted.add(messages.get(0)); // 系统提示词
+    compacted.add(new UserModelMessage("[早期历史摘要]\n" + summary.trim()));
+    compacted.addAll(messages.subList(segmentEnd, messages.size())); // 最近历史 + 请求 + 轮次
+    messages.clear();
+    messages.addAll(compacted);
+    emit(listener, AgentEvent.progress("已自动压缩 " + segment.size() + " 条早期历史"));
+    return 2 + (historyEnd - segmentEnd);
+  }
+
+  /**
+   * 按**引用相等**定位本次请求在消息列表中的下标（不用 equals：同内容消息也可能多条）。
+   *
+   * <p>找不到时退回末位下标：本次请求按设计不可被裁掉（fit 的 requestIndex 夹取保留），
+   * 退回与 fit 的夹取行为一致，绝不因此崩溃。
+   */
+  private static int indexOfIdentity(List<ModelMessage> messages, ModelMessage target) {
+    for (int i = 0; i < messages.size(); i++) {
+      if (messages.get(i) == target) {
+        return i;
+      }
+    }
+    return messages.size() - 1;
   }
 
   private ModelCompletionResponse requestModel(

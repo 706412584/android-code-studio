@@ -215,8 +215,8 @@ internal fun AssistantComposePanel(
     dangerousTool: PendingDangerousTool? = null,
     /** 用户允许本次调用。 */
     onAllowOnce: () -> Unit = {},
-    /** 用户允许本次并持久化规则（「始终允许」）。 */
-    onAllowAlways: () -> Unit = {},
+    /** 用户允许本次并持久化规则（「始终允许」；prefix=true 时为更宽的同类前缀粒度）。 */
+    onAllowAlways: (prefix: Boolean) -> Unit = {},
     /** 用户拒绝，或点了对话框外部。 */
     onDeny: () -> Unit = {},
 ) {
@@ -257,7 +257,7 @@ private fun PanelContent(
     onQuestionDone: (UserQuestionAnswer?) -> Unit,
     dangerousTool: PendingDangerousTool?,
     onAllowOnce: () -> Unit,
-    onAllowAlways: () -> Unit,
+    onAllowAlways: (prefix: Boolean) -> Unit,
     onDeny: () -> Unit,
 ) {
   AIEditorTheme(darkTheme = darkTheme, textScale = rememberChatTextScale()) {
@@ -1067,7 +1067,10 @@ internal class AssistantComposePanelHost(
               onQuestionDone = { finishQuestion(it) },
               dangerousTool = pendingDangerousTool.value,
               onAllowOnce = { finishDangerousTool(DangerousToolChoice.ALLOW_ONCE) },
-              onAllowAlways = { finishDangerousTool(DangerousToolChoice.ALLOW_ALWAYS) },
+              onAllowAlways = { prefix ->
+                finishDangerousTool(
+                    if (prefix) DangerousToolChoice.ALLOW_PREFIX else DangerousToolChoice.ALLOW_ALWAYS)
+              },
               onDeny = { finishDangerousTool(DangerousToolChoice.DENY) },
           )
         }

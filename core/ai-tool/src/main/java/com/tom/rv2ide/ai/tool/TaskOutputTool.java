@@ -160,7 +160,7 @@ public final class TaskOutputTool extends BaseTool {
 
     String output = readOutputTail(status.getOutputFilePath());
     if (!output.isEmpty()) {
-      sb.append("--- output ---\n").append(truncate(output));
+      sb.append("--- output ---\n").append(ToolOutputSpill.maybeSpill(output, MAX_OUTPUT_CHARS, context));
     } else if (status.isRunning()) {
       sb.append("(尚无输出)");
     } else {
@@ -204,16 +204,9 @@ public final class TaskOutputTool extends BaseTool {
     }
   }
 
-  /** 中间截断：保留首尾，中间标注省略量。 */
+  /** 中间截断：保留首尾，中间标注省略量。大输出优先走 {@link ToolOutputSpill} 落盘。 */
   static String truncate(String text) {
-    if (text == null || text.length() <= MAX_OUTPUT_CHARS) {
-      return text == null ? "" : text;
-    }
-    int half = MAX_OUTPUT_CHARS / 2;
-    int omitted = text.length() - MAX_OUTPUT_CHARS;
-    return text.substring(0, half)
-        + "\n…（省略 " + omitted + " 字符）…\n"
-        + text.substring(text.length() - half);
+    return ToolOutputSpill.middleTruncate(text, MAX_OUTPUT_CHARS);
   }
 
   private static String stateName(BackgroundShellPort.State state) {

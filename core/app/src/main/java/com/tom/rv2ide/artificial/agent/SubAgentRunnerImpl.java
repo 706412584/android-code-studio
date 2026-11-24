@@ -248,7 +248,8 @@ public final class SubAgentRunnerImpl implements SubAgentRunner {
     // 代价只是它不可回看、不可被唤醒。
     String subConversationId = createSubConversation(name, request);
 
-    // 子 agent 用自己那一档槽位的上下文声明（当前与主 agent 同为 SLOT_MAIN）。
+    // 子 agent 用自己那一档槽位的上下文声明（槽位由 AgentOrchestrator 按用户偏好传入，
+    // 默认 SLOT_MAIN；副槽可把探索类子代理切到更便宜的模型）。
     ModelConfig config =
         AgentModelConfigs.build(endpoint, modelId, SUB_AGENT_TOOL_CALL_LIMIT, slot);
 

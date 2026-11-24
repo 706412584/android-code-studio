@@ -428,7 +428,7 @@ private class ActivityDialogs(private val context: Context) : AssistantDialogs {
       toolName: String,
       args: String?,
       onAllowOnce: () -> Unit,
-      onAllowAlways: () -> Unit,
+      onAllowAlways: (prefix: Boolean) -> Unit,
       onDeny: () -> Unit,
   ) {
     // 超时守卫：5 分钟无人应答即视为拒绝并关窗，避免弹窗一直挂着（它的回调早已返回，
@@ -450,7 +450,9 @@ private class ActivityDialogs(private val context: Context) : AssistantDialogs {
             }
             .setNeutralButton(string.ai_assistant_dangerous_allow_always) { _, _ ->
               guard.cancel()
-              onAllowAlways()
+              // shell 简单命令可进一步选「同类前缀」粒度；其余直接按逐字规则记忆。
+              buildDangerousAlwaysChoiceDialog(context, toolName, args, onAllowAlways, onDeny)
+                  ?.show()
             }
             .setNegativeButton(string.ai_assistant_dangerous_deny) { _, _ ->
               guard.cancel()

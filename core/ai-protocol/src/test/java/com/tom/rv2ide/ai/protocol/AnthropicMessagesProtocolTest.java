@@ -270,10 +270,43 @@ final class AnthropicMessagesProtocolTest {
         new UserModelMessage("问题"));
     new AnthropicMessagesProtocol().stream(config(h.baseUrl()), messages, null, null, null);
     JSONObject body = bodyOf(h);
-    assertEquals("你是助手\n第二条规则", body.getString("system"));
+    // prompt caching 后 system 采用 blocks 形态（text + cache_control）
+    JSONArray system = body.getJSONArray("system");
+    assertEquals("你是助手\n第二条规则", system.getJSONObject(0).getString("text"));
     JSONArray sent = body.getJSONArray("messages");
     assertEquals(1, sent.length());
     assertEquals("user", sent.getJSONObject(0).getString("role"));
+  }
+
+  @Test
+  void systemAndLastToolCarryCacheControlBreakpoints() throws Exception {
+    List<ModelMessage> messages = Arrays.asList(
+        new SystemModelMessage("系统提示"),
+        new UserModelMessage("问题"));
+    ModelRequestOptions options = new ModelRequestOptions("off", false,
+        Arrays.asList(stubTool("file_read"), stubTool("file_write")));
+
+    JSONObject body = new AnthropicMessagesProtocol()
+        .requestBodyForTest(config("http://localhost"), messages, options);
+
+    JSONObject systemBlock = body.getJSONArray("system").getJSONObject(0);
+    assertEquals("ephemeral",
+        systemBlock.getJSONObject("cache_control").getString("type"),
+        "系统提示词必须带缓存断点（多轮请求中逐轮不变的大头）");
+    JSONArray tools = body.getJSONArray("tools");
+    assertFalse(tools.getJSONObject(0).has("cache_control"), "只有末项工具打缓存断点");
+    assertEquals("ephemeral",
+        tools.getJSONObject(tools.length() - 1).getJSONObject("cache_control").getString("type"),
+        "末项工具打标即缓存「系统提示词 + 全部工具定义」前缀");
+  }
+
+  @Test
+  void noSystemMessageMeansNoSystemField() throws Exception {
+    JSONObject body = new AnthropicMessagesProtocol().requestBodyForTest(
+        config("http://localhost"),
+        Collections.singletonList(new UserModelMessage("q")),
+        new ModelRequestOptions("off", false));
+    assertFalse(body.has("system"), "无系统提示词时不应出现 system 字段");
   }
 
   // ---- messagesJson / toolsJson 序列化（包级测试入口）----

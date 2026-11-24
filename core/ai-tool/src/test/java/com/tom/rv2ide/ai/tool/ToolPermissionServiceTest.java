@@ -160,13 +160,15 @@ final class ToolPermissionServiceTest {
   // ---- DangerousToolDecision 枚举 ----
 
   @Test
-  void dangerousToolDecisionHasExactlyThreeStates() {
-    // 三档是本枚举存在的全部理由（布尔无法区分「这次」与「以后」）；
-    // 增加/删除档位会改变确认弹窗的语义，必须显式失败提醒。
+  void dangerousToolDecisionHasExactlyFourStates() {
+    // 档位变更会改变确认弹窗的语义，必须显式失败提醒。
+    // 第四档 ALLOW_PREFIX（2026-11 新增）：用户显式选择的「同类命令前缀」授权，
+    // 仅 shell 简单命令可生成（见 ToolPermissionRulePrefixTest 的边界断言）。
     DangerousToolDecision[] values = DangerousToolDecision.values();
-    assertEquals(3, values.length);
+    assertEquals(4, values.length);
     assertEquals(DangerousToolDecision.ALLOW_ONCE, DangerousToolDecision.valueOf("ALLOW_ONCE"));
     assertEquals(DangerousToolDecision.ALLOW_ALWAYS, DangerousToolDecision.valueOf("ALLOW_ALWAYS"));
+    assertEquals(DangerousToolDecision.ALLOW_PREFIX, DangerousToolDecision.valueOf("ALLOW_PREFIX"));
     assertEquals(DangerousToolDecision.DENY, DangerousToolDecision.valueOf("DENY"));
   }
 

@@ -123,6 +123,30 @@ public final class ToolPermissionRule {
   /** 参数摘要的前缀，用于把它与路径/命令区分开，也便于在设置页辨认。 */
   private static final String DIGEST_PREFIX = "args:";
 
+  /** 「命令前缀」授权 scope 的前缀标记，与逐字全文规则区分。 */
+  private static final String PREFIX_PREFIX = "prefix:";
+
+  /**
+   * 不生成前缀键的解释器/包装命令（取 basename 比较）。
+   *
+   * <p>这些程序本身就是「任意代码」的入口：{@code bash build.sh} 与
+   * {@code bash -c '任意命令'}、{@code python3 x.py} 与 {@code python3 -c '...'} 的
+   * 破坏力无法从前缀区分。与类注释「不能按首词把整个解释器交出去」同理——
+   * 前缀授权对它们一律不可用，只能走逐字全文规则。
+   */
+  private static final java.util.Set<String> WRAPPER_OR_INTERPRETER =
+      java.util.Collections.unmodifiableSet(
+          new java.util.LinkedHashSet<>(
+              java.util.Arrays.asList(
+                  "sudo", "su", "sh", "bash", "zsh", "dash", "ksh", "fish",
+                  "env", "xargs", "nohup", "setsid", "timeout", "eval", "exec",
+                  // busybox/toybox 的子命令（sh、ash）本身就是解释器入口；
+                  // nice/command 只改变调度/查找方式，不改变命令本身的危险度。
+                  "busybox", "toybox", "nice", "command",
+                  "python", "python2", "python3", "pypy", "node", "nodejs", "deno", "bun",
+                  "perl", "ruby", "php", "lua", "java", "groovy", "kotlin",
+                  "awk", "sed", "expect")));
+
   /**
    * 按「工具名」授权的 phone_* 交互工具的 scope 值。
    *
@@ -181,6 +205,129 @@ public final class ToolPermissionRule {
     }
     String canonical = ToolRegistry.canonicalName(toolName);
     return canonical + SEPARATOR + scopeOf(canonical, arguments);
+  }
+
+  /**
+   * 构造一条「命令前缀」规则键：仅对 shell_execute 的**简单命令**生成。
+   *
+   * <p>与 {@link #keyFor} 的逐字全文规则**并存而非替代**：全文规则解决「同一条命令
+   * 不再问」，前缀规则解决「同一类命令不再问」——例如用户显式选择「同类命令始终允许
+   * {@code git status}」后，{@code git status -sb} 也不再询问。它必须由用户显式授权
+   * （{@code DangerousToolDecision.ALLOW_PREFIX}），判定路径只是多查一个键，绝不默认
+   * 按前缀匹配。
+   *
+   * <p>安全边界（任一不满足即返回空串，调用方按无前缀处理）：
+   * <ul>
+   *   <li>只取「可执行名 + 子命令」两词形态（{@code git status}、{@code ./gradlew
+   *       assembleDebug}）。第二词以 {@code -} 开头时不生成——否则会退化成
+   *       {@code git} 整包授权，连带放行 {@code git push --force}。
+   *   <li>复合命令不生成：含连接符/管道/重定向/命令替换/换行的命令，实际执行的不止
+   *       前缀那一段，按前缀放行会连带放行后半段的任意命令。
+   *   <li>解释器与包装命令不生成（{@link #WRAPPER_OR_INTERPRETER}）。
+   *   <li>ssh 后端不生成：命令的作用范围还取决于远端主机，前缀无法表达。
+   *   <li>非空 backend 仍进键，与全文规则同一防提权口径（Termux ≠ root）。
+   * </ul>
+   *
+   * @return 前缀规则键；不可生成时返回空串（调用方应视作无此维度）
+   */
+  public static String prefixKeyFor(String toolName, String arguments) {
+    if (toolName == null || toolName.isEmpty()) {
+      return "";
+    }
+    String canonical = ToolRegistry.canonicalName(toolName);
+    if (!ToolNames.SHELL_EXECUTE.equals(canonical)) {
+      return "";
+    }
+    JSONObject json = parse(arguments);
+    if (json == null) {
+      return "";
+    }
+    String backend =
+        json.optString(ARG_BACKEND, "").trim().toLowerCase(java.util.Locale.ROOT);
+    if (SSH_BACKEND_ID.equals(backend)) {
+      return "";
+    }
+    String prefix = commandPrefix(json.optString(ARG_COMMAND, ""));
+    if (prefix.isEmpty()) {
+      return "";
+    }
+    String scope =
+        backend.isEmpty()
+            ? PREFIX_PREFIX + prefix
+            : PREFIX_PREFIX + prefix + BACKEND_SEPARATOR + backend;
+    return canonical + SEPARATOR + scope;
+  }
+
+  /** 提取「可执行名 + 子命令」两词前缀；见 {@link #prefixKeyFor} 的边界说明。 */
+  private static String commandPrefix(String rawCommand) {
+    if (rawCommand == null) {
+      return "";
+    }
+    // 换行在 normalizeCommand 里会被压成空格，多命令必须在归一之前拒绝。
+    if (rawCommand.indexOf('\n') >= 0 || rawCommand.indexOf('\r') >= 0) {
+      return "";
+    }
+    if (containsShellMeta(rawCommand)) {
+      return "";
+    }
+    String normalized = normalizeCommand(rawCommand);
+    if (normalized.isEmpty()) {
+      return "";
+    }
+    String[] tokens = normalized.split(" ");
+    if (tokens.length < 2) {
+      // 单词命令：前缀与全文同义，不需要第二维度。
+      return "";
+    }
+    String executable = tokens[0];
+    String baseName =
+        executable.substring(executable.lastIndexOf('/') + 1).toLowerCase(java.util.Locale.ROOT);
+    if (WRAPPER_OR_INTERPRETER.contains(baseName)) {
+      return "";
+    }
+    String sub = tokens[1];
+    if (sub.startsWith("-") || !isSafeWord(executable) || !isSafeWord(sub)) {
+      return "";
+    }
+    return executable + " " + sub;
+  }
+
+  /**
+   * 复合命令判定：含任一 shell 元字符即视为复合。
+   *
+   * <p>引号内的元字符也会命中（如 {@code git commit -m "a > b"}）——误伤的方向是
+   * 退回逐字全文规则、多弹一次窗，而不是误放行，刻意保守。
+   */
+  private static boolean containsShellMeta(String command) {
+    return command.indexOf('&') >= 0 // && 与后台 &
+        || command.indexOf('|') >= 0 // 管道与 ||
+        || command.indexOf(';') >= 0
+        || command.indexOf('>') >= 0
+        || command.indexOf('<') >= 0
+        || command.indexOf('`') >= 0
+        || command.contains("$(");
+  }
+
+  /**
+   * 前缀用词的安全字符集：字母数字与 {@code _ . / : - = @ % + ,}。
+   *
+   * <p>引号、{@code $}、反斜杠等一律拒绝——含它们的词无法静态判定展开后的语义。
+   */
+  private static boolean isSafeWord(String word) {
+    if (word.isEmpty()) {
+      return false;
+    }
+    for (int i = 0; i < word.length(); i++) {
+      char c = word.charAt(i);
+      boolean ok =
+          Character.isLetterOrDigit(c)
+              || c == '_' || c == '.' || c == '/' || c == ':' || c == '-'
+              || c == '=' || c == '@' || c == '%' || c == '+' || c == ',';
+      if (!ok) {
+        return false;
+      }
+    }
+    return true;
   }
 
   /**
@@ -540,6 +687,10 @@ public final class ToolPermissionRule {
     String tool = key.substring(0, at);
     // 多路径 scope 内部用不可见字符连接，展示时换成可读分隔符。
     String scope = key.substring(at + 1).replace(PATH_JOINER, ',');
+    if (scope.startsWith(PREFIX_PREFIX)) {
+      // 前缀规则与逐字规则必须在设置页可区分——用户要能撤销的正是更宽的那一档。
+      return tool + ": " + scope.substring(PREFIX_PREFIX.length()) + "（同类前缀）";
+    }
     if (scope.isEmpty()) {
       return tool;
     }

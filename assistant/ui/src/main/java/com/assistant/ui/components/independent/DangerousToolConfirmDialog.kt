@@ -47,6 +47,10 @@ data class PendingDangerousTool(
     val toolName: String,
     val caption: String,
     val detail: String,
+    /** 是否可生成「同类命令前缀」规则（由宿主用内核 ToolPermissionRule 判定）。 */
+    val prefixAvailable: Boolean = false,
+    /** 前缀规则的可读描述（设置页同款文案），供用户判断更宽一档覆盖了什么。 */
+    val prefixDescription: String? = null,
 )
 
 /**
@@ -59,6 +63,9 @@ enum class DangerousToolChoice {
 
   /** 放行本次并持久化一条规则（工具 + 参数粒度）。 */
   ALLOW_ALWAYS,
+
+  /** 放行本次并持久化一条更宽的「同类命令前缀」规则（仅 shell 简单命令）。 */
+  ALLOW_PREFIX,
 
   /** 拒绝本次，或用户点了对话框外部。 */
   DENY,
@@ -81,7 +88,7 @@ enum class DangerousToolChoice {
 fun DangerousToolConfirmDialog(
     pending: PendingDangerousTool,
     onAllowOnce: () -> Unit,
-    onAllowAlways: () -> Unit,
+    onAllowAlways: (prefix: Boolean) -> Unit,
     onDeny: () -> Unit,
 ) {
   AlertDialog(
@@ -114,13 +121,27 @@ fun DangerousToolConfirmDialog(
                         .horizontalScroll(rememberScrollState()),
             )
           }
+          if (pending.prefixDescription != null) {
+            // 更宽一档的覆盖范围必须明示：用户选「同类命令始终允许」前要知道
+            // 自己放行的是哪一族命令，而不只是这一次。
+            Text(
+                text = "同类命令授权范围：${pending.prefixDescription}",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+          }
         }
       },
       confirmButton = {
-        Row(horizontalArrangement = Arrangement.spacedBy(Spacing.xs)) {
-          TextButton(onClick = onDeny) { Text("拒绝") }
-          TextButton(onClick = onAllowAlways) { Text("始终允许") }
-          TextButton(onClick = onAllowOnce) { Text("允许一次") }
+        Column(horizontalAlignment = androidx.compose.ui.Alignment.End) {
+          if (pending.prefixAvailable) {
+            TextButton(onClick = { onAllowAlways(true) }) { Text("同类命令始终允许") }
+          }
+          Row(horizontalArrangement = Arrangement.spacedBy(Spacing.xs)) {
+            TextButton(onClick = onDeny) { Text("拒绝") }
+            TextButton(onClick = { onAllowAlways(false) }) { Text("始终允许") }
+            TextButton(onClick = onAllowOnce) { Text("允许一次") }
+          }
         }
       },
   )

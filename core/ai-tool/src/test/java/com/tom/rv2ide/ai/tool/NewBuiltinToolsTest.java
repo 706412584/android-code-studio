@@ -315,7 +315,9 @@ final class NewBuiltinToolsTest {
 
     assertFalse(result.isError());
     assertTrue(result.getContent().length() < big.length());
-    assertTrue(result.getContent().contains("截断"));
+    // context=null 无工作区：走中间截断回落（统一文案为「省略」）；
+    // 有工作区时改为「全文落盘 + 路径引用」，见 ToolOutputSpillTest。
+    assertTrue(result.getContent().contains("省略"));
   }
 
   @Test

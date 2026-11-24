@@ -143,8 +143,8 @@ public final class WebFetchTool extends BaseTool {
         sb.append("[已从 HTML 提取正文]\n");
       }
       if (content.length() > MAX_CHARS) {
-        sb.append(content, 0, MAX_CHARS);
-        sb.append("\n\n... (内容过长，已截断，共 ").append(content.length()).append(" 字符) ...");
+        // 超阈值：全文落盘 + 首尾摘要 + 路径引用，网页末尾的信息不再永久丢失。
+        sb.append(ToolOutputSpill.maybeSpill(content, MAX_CHARS, context));
       } else {
         sb.append(content);
       }
