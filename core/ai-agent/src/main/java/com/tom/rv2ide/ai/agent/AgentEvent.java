@@ -113,6 +113,7 @@ public final class AgentEvent {
   }
 
   private final Type type;
+  private final com.tom.rv2ide.ai.protocol.UserModelMessage userMessage;
   private final String message;
   private final ToolCall toolCall;
   private final ToolResult toolResult;
@@ -169,7 +170,17 @@ public final class AgentEvent {
       long retryDelayMs,
       String retryReason,
       String progressCallId) {
+    this(type, message, toolCall, toolResult, toolCalls, retryAttempt, retryMaxAttempts,
+        retryDelayMs, retryReason, progressCallId, null);
+  }
+
+  private AgentEvent(
+      Type type, String message, ToolCall toolCall, ToolResult toolResult,
+      List<ToolCall> toolCalls, int retryAttempt, int retryMaxAttempts,
+      long retryDelayMs, String retryReason, String progressCallId,
+      com.tom.rv2ide.ai.protocol.UserModelMessage userMessage) {
     this.type = type;
+    this.userMessage = userMessage;
     this.message = message == null ? "" : message;
     this.toolCall = toolCall;
     this.toolResult = toolResult;
@@ -188,6 +199,15 @@ public final class AgentEvent {
   /** 一条用户消息（内容在 {@link #getMessage()}）。 */
   public static AgentEvent userMessage(String text) {
     return new AgentEvent(Type.USER_MESSAGE, text, null, null, null);
+  }
+
+  public static AgentEvent userMessage(com.tom.rv2ide.ai.protocol.UserModelMessage message) {
+    return new AgentEvent(Type.USER_MESSAGE, message.getDisplayContent(), null, null, null,
+        0, 0, 0L, "", "", message);
+  }
+
+  public com.tom.rv2ide.ai.protocol.UserModelMessage getUserMessage() {
+    return userMessage;
   }
 
   /** 一次运行的起点分界。见 {@link Type#RUN_STARTED}。 */

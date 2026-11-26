@@ -42,7 +42,6 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.LocalTextSelectionColors
-import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.text.selection.TextSelectionColors
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -253,6 +252,7 @@ internal fun AgentMessageItem(
     markdownCache: MarkdownRenderCache? = null,
     onRewindClick: ((String) -> Unit)? = null,
     onMoreClick: ((AgentUIMessage) -> Unit)? = null,
+    onQuote: (() -> Unit)? = null,
     onToolToggle: (() -> Unit)? = null,
     /** 工具行展开态的持久化覆盖（null = 尚未手动开关过，按内容类型取默认）；见 [ToolMessageBody]。 */
     toolExpandedOverride: Boolean? = null,
@@ -443,7 +443,7 @@ internal fun AgentMessageItem(
                                 color = chatUserBubbleColor(),
                                 modifier = Modifier.widthIn(max = maxUserBubbleWidth)
                             ) {
-                                SelectionContainer {
+                                MessageSelection(onQuote) {
                                     CompositionLocalProvider(
                                         LocalTextSelectionColors provides TextSelectionColors(
                                             handleColor = MaterialTheme.colorScheme.onPrimaryContainer,
@@ -451,7 +451,15 @@ internal fun AgentMessageItem(
                                         )
                                     ) {
                                         Text(
-                                            text = message.content,
+                                            text = androidx.compose.ui.text.buildAnnotatedString {
+                                                append(message.content)
+                                                message.references.forEach { ref ->
+                                                    if (ref.start >= 0 && ref.end <= message.content.length && ref.start < ref.end) {
+                                                        addStyle(androidx.compose.ui.text.SpanStyle(
+                                                            fontWeight = FontWeight.SemiBold), ref.start, ref.end)
+                                                    }
+                                                }
+                                            },
                                             color = chatUserBubbleTextColor(),
                                             style = MaterialTheme.typography.bodyMedium.copy(lineHeight = 20.sp),
                                             modifier = Modifier.padding(horizontal = Spacing.md, vertical = Spacing.sm)
@@ -462,7 +470,7 @@ internal fun AgentMessageItem(
                         } else {
                             // 助手正文：不套容器，直接铺在页面底色上（文档流）。分块之间只留一个段落间距，
                             // 整条消息看起来仍是连续的一段正文。
-                            SelectionContainer {
+                            MessageSelection(onQuote) {
                                 CompositionLocalProvider(
                                     LocalTextSelectionColors provides TextSelectionColors(
                                         handleColor = MaterialTheme.colorScheme.primary,

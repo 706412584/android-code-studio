@@ -23,6 +23,7 @@ import com.tom.rv2ide.ai.agent.conversation.ConversationEntry;
 import com.tom.rv2ide.ai.agent.conversation.ConversationStore;
 import com.tom.rv2ide.ai.agent.conversation.ToolResultEntry;
 import com.tom.rv2ide.ai.agent.conversation.UserMessageEntry;
+import com.tom.rv2ide.ai.protocol.ReferenceMeta;
 import com.tom.rv2ide.ai.tool.api.ToolCall;
 import com.tom.rv2ide.ai.tool.api.ToolResult;
 import java.io.IOException;
@@ -223,19 +224,31 @@ final class ConversationPersistingListener implements AgentEvent.Listener {
       List<com.tom.rv2ide.ai.protocol.AttachmentMeta> attachments,
       ConversationStore conversationStore,
       Object deliveryLock) {
+    this(
+        conversationId,
+        userRequest,
+        userRequest,
+        Collections.emptyList(),
+        downstream,
+        attachments,
+        conversationStore,
+        deliveryLock);
+  }
+
+  ConversationPersistingListener(
+      String conversationId,
+      String displayContent,
+      String modelContent,
+      List<ReferenceMeta> references,
+      AgentEvent.Listener downstream,
+      List<com.tom.rv2ide.ai.protocol.AttachmentMeta> attachments,
+      ConversationStore conversationStore,
+      Object deliveryLock) {
     this.conversationId = conversationId == null ? "" : conversationId;
     this.downstream = downstream;
     this.conversationStore = conversationStore;
-    this.userRequestText = userRequest == null ? "" : userRequest;
+    this.userRequestText = modelContent == null ? "" : modelContent;
     this.deliveryLock = deliveryLock == null ? new Object() : deliveryLock;
-    // 附件元数据随用户消息一起落盘：不落的话，重新打开会话时气泡上的缩略图
-    // 就全没了（模型那边不受影响——图片走 rawInputJson，与这里无关）。
-    appendEntry(
-        UserMessageEntry.create(
-            null,
-            System.currentTimeMillis(),
-            userRequest,
-            attachments == null ? Collections.emptyList() : attachments));
   }
 
   @Override
@@ -373,8 +386,11 @@ final class ConversationPersistingListener implements AgentEvent.Listener {
         // 落盘**原文**（不含 "用户在你工作期间…" 包装）：包装只是给当轮请求的
         // 瞬时增强，与 cc-haha 的 attachment 语义一致——fold 时模型看到干净消息。
         if (event.getMessage() != null && !event.getMessage().isEmpty()) {
-          appendEntry(
-              UserMessageEntry.create(null, System.currentTimeMillis(), event.getMessage()));
+          com.tom.rv2ide.ai.protocol.UserModelMessage user = event.getUserMessage();
+          appendEntry(user == null
+              ? UserMessageEntry.create(null, System.currentTimeMillis(), event.getMessage())
+              : UserMessageEntry.create(null, System.currentTimeMillis(), user.getDisplayContent(),
+                  user.getContent(), user.getAttachments(), user.getReferences(), user.isUserAuthored()));
         }
         break;
       default:

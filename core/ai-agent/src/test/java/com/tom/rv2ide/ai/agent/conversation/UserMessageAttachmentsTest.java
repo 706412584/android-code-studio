@@ -24,6 +24,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.tom.rv2ide.ai.protocol.AttachmentMeta;
 import com.tom.rv2ide.ai.protocol.ModelMessage;
+import com.tom.rv2ide.ai.protocol.ReferenceMeta;
 import com.tom.rv2ide.ai.protocol.UserModelMessage;
 import java.io.IOException;
 import java.nio.file.Path;
@@ -122,5 +123,46 @@ final class UserMessageAttachmentsTest {
 
     List<ModelMessage> messages = ConversationHistory.fold(log.readAll());
     assertEquals("看看这三张", messages.get(0).getContent());
+  }
+
+  @Test
+  void displayAndModelProjectionsRoundTripIndependently(@TempDir Path dir) throws IOException {
+    ConversationLog log = logAt(dir, "c1.jsonl");
+    ReferenceMeta reference = new ReferenceMeta("session", "session-1", "会话", "", 2, 5);
+    log.append(
+        UserMessageEntry.create(
+            null,
+            T0,
+            "看 @会话",
+            "请参考会话最近的内容",
+            threeAttachments(),
+            List.of(reference)));
+
+    UserMessageEntry read =
+        assertInstanceOf(UserMessageEntry.class, log.readAll().get(0).getEntry());
+    assertEquals("看 @会话", read.getContent());
+    assertEquals("请参考会话最近的内容", read.getModelContent());
+    assertEquals(1, read.getReferences().size());
+    assertEquals("session-1", read.getReferences().get(0).getId());
+    assertEquals(2, read.getReferences().get(0).getStart());
+    assertEquals(5, read.getReferences().get(0).getEnd());
+
+    List<ModelMessage> model = ConversationHistory.fold(log.readAll());
+    assertEquals("请参考会话最近的内容", model.get(0).getContent());
+    assertEquals(1, model.get(0).getReferences().size());
+    List<ModelMessage> display = ConversationHistory.toDisplayMessages(log.readAll());
+    assertEquals("看 @会话", display.get(0).getContent());
+    assertEquals("session-1", display.get(0).getReferences().get(0).getId());
+  }
+
+  @Test
+  void legacyEntryFallsBackToDisplayContentAsModelContent(@TempDir Path dir) throws IOException {
+    ConversationLog log = logAt(dir, "c1.jsonl");
+    log.append(UserMessageEntry.create(null, T0, "旧消息"));
+
+    UserMessageEntry read =
+        assertInstanceOf(UserMessageEntry.class, log.readAll().get(0).getEntry());
+    assertEquals("旧消息", read.getModelContent());
+    assertEquals("旧消息", ConversationHistory.fold(log.readAll()).get(0).getContent());
   }
 }

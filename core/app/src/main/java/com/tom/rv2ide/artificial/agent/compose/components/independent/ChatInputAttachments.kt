@@ -570,6 +570,7 @@ internal fun AttachmentSheet(
     onUploadFile: () -> Unit,
     onUploadImage: () -> Unit,
     onTakePhoto: () -> Unit,
+    onReference: (String) -> Unit,
     onDismiss: () -> Unit
 ) {
     val sheetState = rememberModalBottomSheetState()
@@ -581,6 +582,7 @@ internal fun AttachmentSheet(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
                 .padding(horizontal = Spacing.lg)
                 .padding(bottom = Spacing.xl)
         ) {
@@ -609,6 +611,24 @@ internal fun AttachmentSheet(
                 enabled = canUploadImages,
                 onClick = onTakePhoto
             )
+            androidx.compose.material3.HorizontalDivider(
+                modifier = Modifier.padding(vertical = Spacing.sm),
+                color = MaterialTheme.colorScheme.outlineVariant,
+            )
+            Text(
+                text = stringResource(com.tom.rv2ide.R.string.ai_reference_choose),
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = Spacing.md, vertical = Spacing.xs),
+            )
+            listOf("session", "file", "agent", "skill", "plugin").forEach { kind ->
+                AttachmentSheetItem(
+                    icon = referenceKindIcon(kind),
+                    title = referenceKindLabel(kind),
+                    enabled = true,
+                    onClick = { onReference(kind) },
+                )
+            }
         }
     }
 }

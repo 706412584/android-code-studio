@@ -100,7 +100,7 @@ public final class AgentSession {
   // 无锁队列，因为还要与 acceptingInject 的翻转原子。
 
   private final Object injectLock = new Object();
-  private final java.util.ArrayDeque<String> injectQueue = new java.util.ArrayDeque<>();
+  private final java.util.ArrayDeque<UserModelMessage> injectQueue = new java.util.ArrayDeque<>();
 
   /**
    * 系统通知槽（如「后台任务已完成」）。
@@ -148,20 +148,24 @@ public final class AgentSession {
    * 没有循环会再读这个槽。
    */
   public boolean offerInject(String text) {
-    if (text == null || text.trim().isEmpty()) {
+    return text != null && offerInjectMessage(new UserModelMessage(text, "", text, false));
+  }
+
+  public boolean offerInjectMessage(UserModelMessage message) {
+    if (message == null || message.getContent().trim().isEmpty()) {
       return false;
     }
     synchronized (injectLock) {
       if (!acceptingInject) {
         return false;
       }
-      injectQueue.addLast(text);
+      injectQueue.addLast(message);
       return true;
     }
   }
 
   /** 循环线程在安全边界取走一条注入；没有则返回 null。 */
-  private String pollInject() {
+  private UserModelMessage pollInject() {
     synchronized (injectLock) {
       return injectQueue.pollFirst();
     }
@@ -175,8 +179,16 @@ public final class AgentSession {
    * 这些消息就永久丢失了。
    */
   public List<String> drainLeftoverInjects() {
+    List<String> result = new ArrayList<>();
+    for (UserModelMessage message : drainLeftoverInjectMessages()) {
+      result.add(message.getContent());
+    }
+    return result;
+  }
+
+  public List<UserModelMessage> drainLeftoverInjectMessages() {
     synchronized (injectLock) {
-      List<String> leftover = new ArrayList<>(injectQueue);
+      List<UserModelMessage> leftover = new ArrayList<>(injectQueue);
       injectQueue.clear();
       return leftover;
     }
@@ -327,10 +339,44 @@ public final class AgentSession {
       String rawInputJson,
       String reasoningEffort,
       MidRunCompactor midRunCompactor) {
+    String prompt = userRequest == null ? "" : userRequest;
+    return run(
+        config, systemPrompt, new UserModelMessage(prompt, rawInputJson), history, toolContext,
+        cancellationToken, listener, contextManager, reasoningEffort, midRunCompactor);
+  }
+
+  public AgentRunResult run(
+      ModelConfig config,
+      String systemPrompt,
+      UserModelMessage userRequest,
+      List<ModelMessage> history,
+      ToolContext toolContext,
+      ModelCancellationToken cancellationToken,
+      AgentEvent.Listener listener,
+      RunContextManager contextManager,
+      String reasoningEffort,
+      MidRunCompactor midRunCompactor) {
+    return run(
+        config, systemPrompt, userRequest, history, toolContext, cancellationToken, listener,
+        contextManager, reasoningEffort, midRunCompactor, false);
+  }
+
+  public AgentRunResult run(
+      ModelConfig config,
+      String systemPrompt,
+      UserModelMessage userRequest,
+      List<ModelMessage> history,
+      ToolContext toolContext,
+      ModelCancellationToken cancellationToken,
+      AgentEvent.Listener listener,
+      RunContextManager contextManager,
+      String reasoningEffort,
+      MidRunCompactor midRunCompactor,
+      boolean emitInitialUserMessage) {
     try {
       return runLoop(
           config, systemPrompt, userRequest, history, toolContext, cancellationToken, listener,
-          contextManager, rawInputJson, reasoningEffort, midRunCompactor);
+          contextManager, reasoningEffort, midRunCompactor, emitInitialUserMessage);
     } catch (OutOfMemoryError oom) {
       // OOM 是 Error 不是 Exception，此前会一路冒到 UI 的 catch(Throwable)，用户看到的是
       // 「出错了：OutOfMemoryError — Failed to allocate a 22055512 byte allocation with
@@ -359,28 +405,22 @@ public final class AgentSession {
   private AgentRunResult runLoop(
       ModelConfig config,
       String systemPrompt,
-      String userRequest,
+      UserModelMessage userRequest,
       List<ModelMessage> history,
       ToolContext toolContext,
       ModelCancellationToken cancellationToken,
       AgentEvent.Listener listener,
       RunContextManager contextManager,
-      String rawInputJson,
       String reasoningEffort,
-      MidRunCompactor midRunCompactor) {
+      MidRunCompactor midRunCompactor,
+      boolean emitInitialUserMessage) {
 
     List<ModelMessage> messages = new ArrayList<>();
     messages.add(new SystemModelMessage(systemPrompt == null ? "" : systemPrompt));
     if (history != null) {
       messages.addAll(history);
     }
-    // 有附件时走带 rawInputJson 的构造：纯文本请求传 null 而不是空串，
-    // 让协议层能明确区分「没有附件」与「附件字段为空」。
-    String prompt = userRequest == null ? "" : userRequest;
-    messages.add(
-        rawInputJson == null || rawInputJson.isEmpty()
-            ? new UserModelMessage(prompt)
-            : new UserModelMessage(prompt, rawInputJson));
+    messages.add(userRequest);
     // 本次请求的下标：裁剪必须保住它，否则模型不知道自己在做什么。
     // 可变：mid-run 压缩把最旧历史替换成一条摘要后，该下标会前移，需要重算。
     int historyEnd = messages.size() - 1;
@@ -407,6 +447,7 @@ public final class AgentSession {
     // 条新消息才允许下一次，否则每轮都可能多烧一次摘要请求；总次数再封顶防失控。
     int midRunCompactCount = 0;
     int messageCountAtLastCompact = 0;
+    boolean initialUserMessagePending = emitInitialUserMessage;
 
     while (true) {
       // 终止条件一：外部取消
@@ -425,16 +466,30 @@ public final class AgentSession {
         return finish(listener, AgentEvent.failed(message), lastOutput, toolCallCount, turnIndex);
       }
 
+      if (initialUserMessagePending) {
+        emit(listener, AgentEvent.userMessage(userRequest));
+        initialUserMessagePending = false;
+      }
+
       // 运行中注入检查点（cc-haha 同款语义）：此刻上一轮的工具已全部执行完
       // （或本轮是首轮），messages 尾部是完整的 tool_result 集合——追加 user
       // 消息不会破坏 tool_use/tool_result 配对（见 injectQueue 注释）。
       //
       // 首轮时也会取：用户在别处发起运行、消息刚插进来时循环可能还没发首个请求，
       // 这种窗口下消息也应在首轮就被模型看到，而不是等下一轮。
-      String injected;
+      UserModelMessage injected;
       while ((injected = pollInject()) != null) {
         emit(listener, AgentEvent.userMessage(injected));
-        messages.add(new UserModelMessage(wrapInjectedUserMessage(injected)));
+        String content = wrapInjectedUserMessage(injected.getContent());
+        String raw = injected.getRawInputJson();
+        if (!raw.isEmpty()) {
+          try {
+            raw = new org.json.JSONObject(raw).put("prompt", content).toString();
+          } catch (org.json.JSONException e) {
+            return finish(listener, AgentEvent.failed("注入消息图片数据无效"), lastOutput, toolCallCount, turnIndex);
+          }
+        }
+        messages.add(new UserModelMessage(content, raw, injected.getDisplayContent(), injected.isUserAuthored()));
       }
 
       // 系统通知（后台任务完成等）走同一安全点，但不作为用户消息渲染。

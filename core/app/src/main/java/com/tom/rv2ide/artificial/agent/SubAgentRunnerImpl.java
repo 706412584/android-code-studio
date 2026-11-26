@@ -337,12 +337,16 @@ public final class SubAgentRunnerImpl implements SubAgentRunner {
           session.run(
               config,
               systemPrompt,
-              request.getTask(),
+              new com.tom.rv2ide.ai.protocol.UserModelMessage(
+                  request.getTask(), "", request.getTask(), false),
+              null,
               toolContext,
               childCancellation,
-              // 落盘与步骤上报同时接收：子会话要落盘，父级要步骤行。
-              // 两者都必须被调用，故用复合监听器而不是二选一。
-              combine(childListener, persisting));
+              persisting == null ? childListener : persisting,
+              null,
+              "",
+              null,
+              true);
     } finally {
       // 无论成功/失败/取消，都要标记为已停止：send_message 据此走「唤醒」而不是
       // 「注入」路径，否则会向一个已经没有循环在跑的 session 投递、消息石沉大海。

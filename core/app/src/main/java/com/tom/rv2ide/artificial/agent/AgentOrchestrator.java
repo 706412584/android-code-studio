@@ -45,6 +45,7 @@ import com.tom.rv2ide.ai.protocol.ModelClient;
 import com.tom.rv2ide.ai.protocol.ModelCompletionResponse;
 import com.tom.rv2ide.ai.protocol.ModelConfig;
 import com.tom.rv2ide.ai.protocol.ModelMessage;
+import com.tom.rv2ide.ai.protocol.ReferenceMeta;
 import com.tom.rv2ide.ai.protocol.UserModelMessage;
 import com.tom.rv2ide.ai.tool.CodeGraphTool;
 import com.tom.rv2ide.artificial.agent.codegraph.CodeGraphInstaller;
@@ -540,7 +541,7 @@ public final class AgentOrchestrator {
               try {
                 // 复用「在指定会话里运行」的公开入口：它已处理好网络/解析/落盘/取消登记。
                 AgentRunResult result =
-                    run(
+                    runInConversation(
                         subConversationId,
                         providerId,
                         modelId,
@@ -548,7 +549,11 @@ public final class AgentOrchestrator {
                         null,
                         null,
                         null,
-                        null);
+                        null,
+                        null,
+                        message,
+                        java.util.Collections.emptyList(),
+                        false);
                 // 前置校验失败（未配服务商/未设工作区）与循环失败都走这里：
                 // runInConversation 对它们返回 failed=true 的结果，而不是抛异常。
                 success = result != null && !result.isFailed();
@@ -692,6 +697,9 @@ public final class AgentOrchestrator {
     final String customBaseUrl;
     final String rawInputJson;
     final String reasoningEffort;
+    final String displayContent;
+    final boolean userAuthored;
+    final List<ReferenceMeta> references;
     /** 该条消息的附件元数据（供界面回放缩略图）；无附件时为空列表。 */
     final List<com.tom.rv2ide.ai.protocol.AttachmentMeta> attachments;
 
@@ -713,31 +721,78 @@ public final class AgentOrchestrator {
         String rawInputJson,
         String reasoningEffort,
         List<com.tom.rv2ide.ai.protocol.AttachmentMeta> attachments) {
+      this(
+          providerId,
+          modelId,
+          userRequest,
+          userRequest,
+          customBaseUrl,
+          rawInputJson,
+          reasoningEffort,
+          attachments,
+          null);
+    }
+
+    QueuedRequest(
+        String providerId,
+        String modelId,
+        String userRequest,
+        String displayContent,
+        String customBaseUrl,
+        String rawInputJson,
+        String reasoningEffort,
+        List<com.tom.rv2ide.ai.protocol.AttachmentMeta> attachments,
+        List<ReferenceMeta> references) {
+      this(providerId, modelId, userRequest, displayContent, customBaseUrl, rawInputJson,
+          reasoningEffort, attachments, references, true);
+    }
+
+    QueuedRequest(
+        String providerId,
+        String modelId,
+        String userRequest,
+        String displayContent,
+        String customBaseUrl,
+        String rawInputJson,
+        String reasoningEffort,
+        List<com.tom.rv2ide.ai.protocol.AttachmentMeta> attachments,
+        List<ReferenceMeta> references,
+        boolean userAuthored) {
       this.id = java.util.UUID.randomUUID().toString();
       this.providerId = providerId;
       this.modelId = modelId;
       this.userRequest = userRequest;
+      this.displayContent = displayContent == null ? userRequest : displayContent;
+      this.userAuthored = userAuthored;
       this.customBaseUrl = customBaseUrl;
       this.rawInputJson = rawInputJson;
       this.reasoningEffort = reasoningEffort;
-      this.attachments =
-          attachments == null ? java.util.Collections.emptyList() : attachments;
+      this.attachments = attachments == null ? java.util.Collections.emptyList()
+          : java.util.Collections.unmodifiableList(new ArrayList<>(attachments));
+      this.references = references == null ? java.util.Collections.emptyList()
+          : java.util.Collections.unmodifiableList(new ArrayList<>(references));
     }
   }
 
   /**
    * 队列条目的只读投影（给 UI 渲染队列面板用）。
    *
-   * <p>刻意只暴露 id 与文本：面板不需要（也不该拿到）provider/baseUrl 这类
-   * 内部参数——它们由队列条目自己保管，编辑/重排都不经过 UI。
+   * <p>只暴露稳定 id 与编辑草稿所需的内容，图片原始载荷用于恢复附件；
+   * provider/baseUrl 这类运行参数仍由队列条目自己保管。
    */
   public static final class QueuedEntry {
     public final String id;
     public final String text;
+    public final String rawInputJson;
+    public final List<ReferenceMeta> references;
+    public final List<com.tom.rv2ide.ai.protocol.AttachmentMeta> attachments;
 
-    QueuedEntry(String id, String text) {
-      this.id = id;
-      this.text = text;
+    QueuedEntry(QueuedRequest request) {
+      this.id = request.id;
+      this.text = request.displayContent;
+      this.rawInputJson = request.rawInputJson;
+      this.references = request.references;
+      this.attachments = request.attachments;
     }
   }
 
@@ -779,7 +834,7 @@ public final class AgentOrchestrator {
     if (session == null) {
       return false;
     }
-    return session.offerInject(text);
+    return session.offerInjectMessage(new UserModelMessage(text, "", text, false));
   }
 
   /**
@@ -853,7 +908,7 @@ public final class AgentOrchestrator {
     List<QueuedEntry> out = new ArrayList<>();
     synchronized (queue) {
       for (QueuedRequest request : queue) {
-        out.add(new QueuedEntry(request.id, request.userRequest));
+        out.add(new QueuedEntry(request));
       }
     }
     return out;
@@ -874,6 +929,27 @@ public final class AgentOrchestrator {
         queuedRequests.remove(conversationId);
       }
       return removed;
+    }
+  }
+
+  /** 按 ID 原子摘取并立即插入；拒绝时把原快照放回队首，附件和引用不丢失。 */
+  public boolean interjectQueued(String conversationId, String requestId) {
+    java.util.ArrayDeque<QueuedRequest> queue = queuedRequests.get(conversationId);
+    if (queue == null) return false;
+    synchronized (queue) {
+      QueuedRequest selected = null;
+      for (QueuedRequest request : queue) {
+        if (request.id.equals(requestId)) { selected = request; break; }
+      }
+      if (selected == null) return false;
+      queue.remove(selected);
+      AgentSession session = activeSessions.get(conversationId);
+      UserModelMessage message = new UserModelMessage(
+          selected.userRequest, selected.rawInputJson, selected.displayContent, selected.userAuthored);
+      message.withAttachments(selected.attachments).withReferences(selected.references);
+      if (session != null && session.offerInjectMessage(message)) return true;
+      queue.addFirst(selected);
+      return false;
     }
   }
 
@@ -930,6 +1006,31 @@ public final class AgentOrchestrator {
       String rawInputJson,
       String reasoningEffort,
       List<com.tom.rv2ide.ai.protocol.AttachmentMeta> attachments) {
+    return enqueue(
+        conversationId,
+        providerId,
+        modelId,
+        userRequest,
+        userRequest,
+        customBaseUrl,
+        rawInputJson,
+        reasoningEffort,
+        attachments,
+        java.util.Collections.emptyList());
+  }
+
+  /** 带独立显示/模型文本与引用元数据的排队请求。 */
+  public int enqueue(
+      String conversationId,
+      String providerId,
+      String modelId,
+      String modelContent,
+      String displayContent,
+      String customBaseUrl,
+      String rawInputJson,
+      String reasoningEffort,
+      List<com.tom.rv2ide.ai.protocol.AttachmentMeta> attachments,
+      List<ReferenceMeta> references) {
     if (conversationId == null || conversationId.isEmpty()) {
       return 0;
     }
@@ -941,11 +1042,13 @@ public final class AgentOrchestrator {
           new QueuedRequest(
               providerId,
               modelId,
-              userRequest,
+              modelContent,
+              displayContent,
               customBaseUrl,
               rawInputJson,
               reasoningEffort,
-              attachments));
+              attachments,
+              references));
       return queue.size();
     }
   }
@@ -1030,7 +1133,10 @@ public final class AgentOrchestrator {
                     null,
                     next.rawInputJson,
                     next.reasoningEffort,
-                    next.attachments),
+                    next.attachments,
+                    next.displayContent,
+                    next.references,
+                    next.userAuthored),
             "agent-queued");
     worker.setDaemon(true);
     worker.start();
@@ -1867,6 +1973,7 @@ public final class AgentOrchestrator {
     // 而 ripgrep 没有——本工具在进程内用 java.util.regex 搜索，不依赖任何后端。
     registry.register(new com.tom.rv2ide.ai.tool.GrepTool());
     registry.register(new ListDirectoryTool());
+    registry.register(new com.tom.rv2ide.artificial.agent.tool.ConversationReadTool(conversationStore));
     // 编译诊断：经 IDE 语言服务器做静态分析，改完一批文件后一次确认（秒级，
     // 比 gradle_build 快得多）。诊断端口在 executeRun 里注入（需 LSP 注册表）。
     registry.register(new com.tom.rv2ide.ai.tool.DiagnosticsTool());
@@ -2538,6 +2645,34 @@ public final class AgentOrchestrator {
         reasoningEffort, attachments);
   }
 
+  /** 带独立显示/模型文本及结构化引用元数据的运行入口。 */
+  public AgentRunResult run(
+      String conversationId,
+      String providerId,
+      String modelId,
+      String modelContent,
+      String displayContent,
+      String customBaseUrl,
+      AgentEvent.Listener listener,
+      String rawInputJson,
+      String reasoningEffort,
+      List<com.tom.rv2ide.ai.protocol.AttachmentMeta> attachments,
+      List<ReferenceMeta> references) {
+    return runInConversation(
+        conversationId,
+        providerId,
+        modelId,
+        modelContent,
+        customBaseUrl,
+        listener,
+        rawInputJson,
+        reasoningEffort,
+        attachments,
+        displayContent,
+        references,
+        true);
+  }
+
   private AgentRunResult runInConversation(
       String requestedConversationId,
       String providerId,
@@ -2548,6 +2683,34 @@ public final class AgentOrchestrator {
       String rawInputJson,
       String reasoningEffort,
       List<com.tom.rv2ide.ai.protocol.AttachmentMeta> attachments) {
+    return runInConversation(
+        requestedConversationId,
+        providerId,
+        modelId,
+        userRequest,
+        customBaseUrl,
+        listener,
+        rawInputJson,
+        reasoningEffort,
+        attachments,
+        userRequest,
+        java.util.Collections.emptyList(),
+        true);
+  }
+
+  private AgentRunResult runInConversation(
+      String requestedConversationId,
+      String providerId,
+      String modelId,
+      String userRequest,
+      String customBaseUrl,
+      AgentEvent.Listener listener,
+      String rawInputJson,
+      String reasoningEffort,
+      List<com.tom.rv2ide.ai.protocol.AttachmentMeta> attachments,
+      String displayContent,
+      List<ReferenceMeta> references,
+      boolean userAuthored) {
 
     // 先确定本次运行属于哪个会话，再据其 cwd 解析工作区。顺序不能反：工具作用的工作区
     // 必须**跟随会话**，而不是跟随「视图当前打开的项目」——后者会让「历史属于 A 项目、
@@ -2574,7 +2737,10 @@ public final class AgentOrchestrator {
           listener,
           rawInputJson,
           reasoningEffort,
-          attachments);
+          attachments,
+          displayContent,
+          references,
+          userAuthored);
     } finally {
       // 保活释放必须无条件执行：嵌套 try/finally 保证下面的收尾（广播、取队列）
       // 即使抛异常也不会跳过它——否则计数永远停在 1，前台服务与 wakelock 会
@@ -2614,7 +2780,10 @@ public final class AgentOrchestrator {
       AgentEvent.Listener listener,
       String rawInputJson,
       String reasoningEffort,
-      List<com.tom.rv2ide.ai.protocol.AttachmentMeta> attachments) {
+      List<com.tom.rv2ide.ai.protocol.AttachmentMeta> attachments,
+      String displayContent,
+      List<ReferenceMeta> references,
+      boolean userAuthored) {
     String sessionCwd = cwdOf(conversationId);
     File runWorkspace = resolveRunWorkspace(conversationId);
     if (runWorkspace == null) {
@@ -2663,6 +2832,9 @@ public final class AgentOrchestrator {
     java.util.List<com.tom.rv2ide.artificial.agent.tool.BrowserTool> browserTools =
         new java.util.ArrayList<>();
     ToolRegistry registry = buildRegistry(true, mcpClients, browserTools);
+    final com.tom.rv2ide.artificial.agent.tool.ConversationReadTool conversationReadTool =
+        (com.tom.rv2ide.artificial.agent.tool.ConversationReadTool)
+            registry.get(com.tom.rv2ide.ai.tool.api.ToolNames.CONVERSATION_READ);
     ToolPermissionService permissions = new ToolPermissionService(settings, registry);
     ToolExecutor executor =
         new ToolExecutor(registry, permissions, diffStore == null ? null : newDiffRecorder());
@@ -2894,13 +3066,26 @@ public final class AgentOrchestrator {
     final String broadcastConversationId = conversationId;
     AgentEvent.Listener fanOut =
         event -> {
+          if (event.getType() == AgentEvent.Type.USER_MESSAGE
+              && event.getUserMessage() != null
+              && event.getUserMessage().isUserAuthored()) {
+            conversationReadTool.authorizeUserMessage(event.getUserMessage());
+          }
           if (listener != null) {
             listener.onEvent(event);
           }
           broadcastExcept(broadcastConversationId, event, listener);
         };
     ConversationPersistingListener persistingListener =
-        new ConversationPersistingListener(conversationId, userRequest, fanOut, attachments, conversationStore, deliveryLock);
+        new ConversationPersistingListener(
+            conversationId,
+            displayContent,
+            userRequest,
+            references,
+            fanOut,
+            attachments,
+            conversationStore,
+            deliveryLock);
 
     // 会话标题刷新：累积轮次、按策略（turn 1/3、换话题、每 8 轮）生成标题。
     // 复用当前会话的 ModelConfig（同一服务商/密钥/模型），生成是旁路——
@@ -2942,13 +3127,6 @@ public final class AgentOrchestrator {
               }
             });
 
-    // 告知订阅者「用户发了这条」。必须在 PersistingListener 构造之后：构造函数里
-    // 已把用户消息落盘，因此订阅者收到本事件时读到的历史一定包含它——否则会出现
-    // 「事件已到、但快照里还没有」的窗口（订阅方会把它当新消息、回放时再出现一次）。
-    //
-    // 只广播、不经 `listener` 转发：发起方在本地已经画了用户气泡（execute 里的
-    // adapter.append），再收一次会重复。
-    broadcastExcept(conversationId, AgentEvent.userMessage(userRequest), null);
     // 运行起点分界，见 AgentEvent.Type.RUN_STARTED。订阅方（运行中途打开另一个入口）
     // 据此把「历史里本轮已完成的那段」与「订阅后到达的新增量」分开，不再拼进同一气泡。
     broadcastExcept(conversationId, AgentEvent.runStarted(), null);
@@ -2983,6 +3161,8 @@ public final class AgentOrchestrator {
       // 自己拒过,不会顺着「我已经拒过了」继续拒。
       final String baseSystemPrompt = systemPrompt;
       final ToolContext attemptToolContext = toolContext;
+      final java.util.concurrent.atomic.AtomicBoolean initialMessagePending =
+          new java.util.concurrent.atomic.AtomicBoolean(true);
       final boolean refusalEnabled = refusalRecoveryEnabled();
       persistingListener.setDeferAssistantPersistence(refusalEnabled);
       RefusalRecovery.AttemptRunner attemptRunner =
@@ -2991,22 +3171,24 @@ public final class AgentOrchestrator {
                 // 登记运行中的 session,供「立即插入」投递(见 injectIntoRun)。
                 activeSessions.put(conversationId, session);
                 for (String mail : drainInboundMailbox(conversationId)) {
-                  session.offerInject(mail);
+                  session.offerInjectMessage(new UserModelMessage(mail, "", mail, false));
                 }
                 try {
                   // 用 AttemptRunner 注入的 eventListener 而非外层写死的 persistingListener:
                   // 二者当前恒等(execute 透传同一个),但按接口契约用注入参数,
                   // 将来 execute 传不同监听器时本 lambda 自动跟上。
+                  UserModelMessage initialMessage =
+                      new UserModelMessage(userRequest, rawInputJson, displayContent, userAuthored);
+                  initialMessage.withAttachments(attachments).withReferences(references);
                   return session.run(
                       runConfig,
                       baseSystemPrompt,
-                      userRequest,
+                      initialMessage,
                       history,
                       attemptToolContext,
                       runToken,
                       eventListener,
                       contextManager,
-                      rawInputJson,
                       reasoningEffort,
                       // mid-run 压缩：与入口压缩共用摘要管线（独立压缩模型）。
                       // 摘要**只作用于本次运行的内存视图、不落盘**——JSONL 里保存的
@@ -3015,11 +3197,12 @@ public final class AgentOrchestrator {
                       // 落 CompactionEntry 反而会破坏 fold。
                       midRunCompactEnabled()
                           ? segment -> ContextCompactor.compact(segment, buildSummarizer(runConfig))
-                          : null);
+                          : null,
+                      initialMessagePending.getAndSet(false));
                 } finally {
                   activeSessions.remove(conversationId);
                   // 收尾时把**未被消费**的注入放回队列头部(保持原序)。
-                  List<String> leftover = session.drainLeftoverInjects();
+                  List<UserModelMessage> leftover = session.drainLeftoverInjectMessages();
                   if (!leftover.isEmpty()) {
                     java.util.ArrayDeque<QueuedRequest> queue =
                         queuedRequests.computeIfAbsent(conversationId, k -> new java.util.ArrayDeque<>());
@@ -3027,7 +3210,11 @@ public final class AgentOrchestrator {
                       for (int i = leftover.size() - 1; i >= 0; i--) {
                         queue.addFirst(
                             new QueuedRequest(
-                                providerId, modelId, leftover.get(i), customBaseUrl, null, reasoningEffort));
+                                providerId, modelId, leftover.get(i).getContent(),
+                                leftover.get(i).getDisplayContent(), customBaseUrl,
+                                leftover.get(i).getRawInputJson(), reasoningEffort,
+                                leftover.get(i).getAttachments(), leftover.get(i).getReferences(),
+                                leftover.get(i).isUserAuthored()));
                       }
                     }
                   }

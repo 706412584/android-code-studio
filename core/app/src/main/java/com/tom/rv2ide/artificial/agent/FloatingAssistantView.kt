@@ -511,6 +511,7 @@ class FloatingAssistantView(
   private var displayedConversationId: String?
     get() = renderState.displayedConversationId
     set(value) {
+      inputBar.switchSession(value)
       renderState.displayedConversationId = value
     }
 
@@ -577,7 +578,8 @@ class FloatingAssistantView(
   }
 
   /** Compose 输入栏的状态桥：XML 输入区退役后，输入文本/忙碌/附件/模型都走这里。 */
-  internal val inputBar = AssistantInputBarBridge()
+  internal val inputBar: AssistantInputBarBridge
+    get() = renderState.inputBar
 
   /** 会话搜索关键词与命中（会话 Tab 的搜索框）。命中在 reloadConversations 时懒查询。 */
   val chatSearchQuery = mutableStateOf("")
@@ -840,6 +842,7 @@ class FloatingAssistantView(
     adapter.onMessageActionRequested = { message, anchor ->
       showMessageActionsMenu(message, anchor)
     }
+    adapter.onQuoteRequested = { quoteMessage(it) }
     // 工具卡片的分类色需要按工具名查注册表。注册表在 orchestrator 里，
     // 但适配器不该依赖工具执行层，因此注入一个只做名字→分类映射的窄接口。
     // 传 includeMcp=false：分类色查询不该发起 MCP 网络请求，也不该创建无人释放的连接。
@@ -1011,9 +1014,11 @@ class FloatingAssistantView(
 
   /** 把一条工作区路径以「附件描述」的形式塞进输入框（文件 Tab 的加入输入动作）。 */
   private fun addPathToInput(path: String) {
-    val existing = inputBar.text
-    val line = context.getString(string.ai_assistant_attachment_marker, path)
-    inputBar.text = (if (existing.isBlank()) line else existing + "\n" + line)
+    val root = workspace?.canonicalFile ?: return
+    val file = java.io.File(path).canonicalFile
+    if (!file.toPath().startsWith(root.toPath())) return
+    inputBar.insert(com.tom.rv2ide.artificial.agent.compose.components.independent.ComposerReference(
+        "file", file.relativeTo(root).invariantSeparatorsPath, file.name, file.path, 0, 0))
   }
 
   /** 会话搜索命中 → 打开该会话（行级跳转由接线层的 lineFor 通道完成，当前先开会话）。 */
@@ -1632,7 +1637,7 @@ class FloatingAssistantView(
     //
     // 命令分支**不清空附件**：命令不消费附件，顺手清掉等于把用户刚选的文件弄丢了，
     // 而他只是先发了一条 /help。
-    if (typed.isNotEmpty()) {
+    if (typed.isNotEmpty() && inputBar.references.isEmpty()) {
       val parsed = com.tom.rv2ide.ai.agent.command.SlashCommandCatalog.parse(typed)
       if (parsed.isCommand) {
         inputBar.text = ""
@@ -1653,37 +1658,26 @@ class FloatingAssistantView(
             else inputFeatures.attachmentContext()
         val messageAttachments0 = inputFeatures.attachmentSnapshot().map { it.toMessageAttachment() }
         inputFeatures.clearAttachments()
-        execute(
-            request0 + textAttachments0,
-            inputFeatures.reasoningEffort(),
-            imagePayload0,
-            messageAttachments0)
+        val model0 = request0 + textAttachments0
+        execute(AssistantRequestSnapshot(typed, model0, emptyList(),
+            imagePayload0?.let { org.json.JSONObject(it).put("prompt", model0).toString() }, messageAttachments0),
+            inputFeatures.reasoningEffort())
         return
       }
     }
 
-    val request = if (typed.isEmpty()) inputFeatures.attachmentNames() else typed
-    // 图片走多模态通道：打包成协议层认识的 payload，而不是把路径写进文本。
-    // 必须在 clearAttachments() 之前构建——清空后就读不到附件了。
-    val imagePayload = inputFeatures.imageRawInputJson(request)
-    // 有图片时，附件文本里要剔除那一张（它已由 payload 承载），否则模型会同时
-    // 收到「图片内容」和「图片路径」两份信息，可能重复处理或困惑于该用哪个。
+    val display = if (typed.isEmpty()) inputFeatures.attachmentNames() else inputBar.text
+    val draft = com.tom.rv2ide.artificial.agent.compose.components.independent.ComposerDraft(display, inputBar.references, inputBar.fieldValue.selection.end)
+    val (model, references) = modelReferenceText(draft)
+    val imagePayload = inputFeatures.imageRawInputJson(model)
     val textAttachments = if (imagePayload != null) inputFeatures.attachmentContextExcludingImage() else attachments
-    // 气泡缩略图的数据源，同样必须在 clearAttachments() 之前取。
-    val messageAttachments = inputFeatures.attachmentSnapshot().map { it.toMessageAttachment() }
-
+    val modelText = model + textAttachments
+    val payload = imagePayload?.let { org.json.JSONObject(it).put("prompt", modelText).toString() }
+    val snapshot = AssistantRequestSnapshot(display, modelText, references.toList(), payload,
+        inputFeatures.attachmentSnapshot().map { it.toMessageAttachment() })
     inputBar.text = ""
     inputFeatures.clearAttachments()
-    // 非图片附件仍以文本形式追加在用户请求之后。空串时拼接结果与原来完全一致，
-    // 保证无附件路径的行为不变。
-    //
-    // 推理强度随请求走：它在输入区可选，而每轮都可能被改，因此每次发送都重读一次，
-    // 而不是在 attach 时读一次缓存。
-    execute(
-        request + textAttachments,
-        inputFeatures.reasoningEffort(),
-        imagePayload,
-        messageAttachments)
+    execute(snapshot, inputFeatures.reasoningEffort())
   }
 
   /** 输入区的附件投影 → 消息条目里的附件。两者字段同形，只做类型搬运。 */
@@ -1829,10 +1823,8 @@ class FloatingAssistantView(
   }
 
   private fun execute(
-      userRequest: String,
+      request: AssistantRequestSnapshot,
       reasoningEffort: String? = null,
-      imagePayload: String? = null,
-      attachments: List<AssistantMessageAdapter.MessageAttachment> = emptyList(),
   ) {
     // 发消息前重求一次工作区：项目打开是异步的，面板可能在初始化完成前就打开了。
     // 只在求值出非空且与当前不同时更新——避免把「确实没有项目」的情况也当成可恢复。
@@ -1865,10 +1857,10 @@ class FloatingAssistantView(
     // 判定用 orchestrator.isRunning 而不是本视图的 executionJobs：运行可能在别的
     // 入口发起（A 在跑、用户在 B 里输入），只有 orchestrator 知道全部正在跑的会话。
     if (isConversationRunning(conversationId)) {
-      enqueueSend(conversationId, userRequest, reasoningEffort, imagePayload, attachments)
+      enqueueSend(conversationId, request, reasoningEffort)
       return
     }
-    startRun(conversationId, userRequest, reasoningEffort, imagePayload, attachments)
+    startRun(conversationId, request, reasoningEffort)
   }
 
   /**
@@ -1891,11 +1883,11 @@ class FloatingAssistantView(
    */
   private fun startRun(
       conversationId: String,
-      userRequest: String,
+      request: AssistantRequestSnapshot,
       reasoningEffort: String?,
-      imagePayload: String?,
-      attachments: List<AssistantMessageAdapter.MessageAttachment> = emptyList(),
   ) {
+    val userRequest = request.displayText
+    val attachments = request.attachments
     // 用户在当前视图里发消息，就是要看这个会话：切显示过去，并清掉上一会话的渲染指针。
     displayedConversationId = conversationId
     lastOpenedConversationId = conversationId
@@ -1915,12 +1907,8 @@ class FloatingAssistantView(
     markLocalEcho(conversationId, userRequest)
     // 有附件时把缩略图一起画进气泡：否则用户只看到正文里一行「[附件: 路径]」，
     // 既不知道自己发了几张，也点不开。
-    if (attachments.isEmpty()) {
-      adapter.append(AssistantMessageAdapter.Role.USER, userRequest)
-    } else {
-      adapter.appendWithAttachments(
-          AssistantMessageAdapter.Role.USER, userRequest, attachments)
-    }
+    adapter.appendWithAttachments(
+        AssistantMessageAdapter.Role.USER, userRequest, attachments, request.references)
     val ui = uiState(conversationId)
     ui.streamingMessageId = null
     ui.streamedThisRun = false
@@ -1985,18 +1973,20 @@ class FloatingAssistantView(
                     conversationId,
                     providerId,
                     modelId,
-                    userRequest,
+                    request.modelText,
+                    request.displayText,
                     customBaseUrl,
                     // listener 传 null：本视图的事件**只**从会话订阅走（见 broadcastListener）。
                     // 若这里再传 handleEvent，同一事件会被投递两遍——一遍由 orchestrator
                     // 直接回调、一遍由广播给订阅者——于是每个增量渲染两次（气泡里出现
                     // 重复文字、工具卡片出现两张）。订阅是唯一的投递路径。
                     null,
-                    imagePayload,
+                    request.rawInputJson,
                     reasoningEffort,
                     // 附件元数据随用户消息落盘：不落的话重新打开会话时气泡上的
                     // 缩略图全没了（模型那边不受影响，图片走 imagePayload）。
                     attachments.map { it.toAttachmentMeta() },
+                    request.references,
                 )
             withContext(Dispatchers.Main) {
               // 会话可能已被切走：后台会话的结果不写控件（已落盘，切回时回放）。
@@ -2103,19 +2093,15 @@ class FloatingAssistantView(
    */
   private fun enqueueSend(
       conversationId: String,
-      text: String,
+      request: AssistantRequestSnapshot,
       reasoningEffort: String?,
-      imagePayload: String?,
-      attachments: List<AssistantMessageAdapter.MessageAttachment> = emptyList(),
   ) {
+    val text = request.displayText
+    val attachments = request.attachments
     displayedConversationId = conversationId
     lastOpenedConversationId = conversationId
     markLocalEcho(conversationId, text)
-    if (attachments.isEmpty()) {
-      adapter.append(AssistantMessageAdapter.Role.USER, text)
-    } else {
-      adapter.appendWithAttachments(AssistantMessageAdapter.Role.USER, text, attachments)
-    }
+    adapter.appendWithAttachments(AssistantMessageAdapter.Role.USER, text, attachments, request.references)
     // 用户主动发送：无条件滚到底（否则看不到自己刚发的那条）。
     scrollToBottom(force = true)
     val agents = Agents(context)
@@ -2128,11 +2114,13 @@ class FloatingAssistantView(
             conversationId,
             providerId,
             modelId,
-            text,
+            request.modelText,
+            request.displayText,
             AgentOrchestrator.customBaseUrlFor(context, providerId),
-            imagePayload,
+            request.rawInputJson,
             reasoningEffort,
             attachments.map { it.toAttachmentMeta() },
+            request.references,
         )
     // 只显示「前面还有几条」，不显示总数：用户关心的是还要等多久（前面几条），
     // 总数对「什么时候轮到我」没有信息量。
@@ -2188,37 +2176,8 @@ class FloatingAssistantView(
     if (conversationId.isEmpty()) {
       return
     }
-    val entry = orchestrator.queuedEntries(conversationId).firstOrNull { it.id == requestId }
-    if (entry == null) {
-      refreshQueueProjection()
-      return
-    }
-    if (!orchestrator.removeQueued(conversationId, requestId)) {
-      // 已被 drain 取走（正在作为下一轮执行）：不再投递，避免重复执行。
-      appendTrace(context.getString(string.ai_assistant_interject_fallback))
-      refreshQueueProjection()
-      return
-    }
-    val injected = orchestrator.injectIntoRun(conversationId, entry.text)
-    android.util.Log.i("ACSDebug", "interject: id=$requestId injected=$injected")
-    if (injected) {
-      appendTrace(context.getString(string.ai_assistant_interjected))
-    } else {
-      val agents = Agents(context)
-      val providerId = agents.getProvider()
-      val modelId =
-          AgentModelConfigs.modelIdFor(providerId, agents.getAgent(), inputFeatures.currentSlot())
-      orchestrator.enqueueFront(
-          conversationId,
-          providerId,
-          modelId,
-          entry.text,
-          AgentOrchestrator.customBaseUrlFor(context, providerId),
-          null,
-          inputFeatures.reasoningEffort(),
-      )
-      appendTrace(context.getString(string.ai_assistant_interject_fallback))
-    }
+    val injected = orchestrator.interjectQueued(conversationId, requestId)
+    appendTrace(context.getString(if (injected) string.ai_assistant_interjected else string.ai_assistant_interject_fallback))
     refreshQueueProjection()
   }
 
@@ -2393,7 +2352,10 @@ class FloatingAssistantView(
           if (displayedConversationId != conversationId) {
             return@launch
           }
-          adapter.append(AssistantMessageAdapter.Role.USER, event.message)
+          val user = event.userMessage
+          adapter.appendWithAttachments(AssistantMessageAdapter.Role.USER, event.message,
+              user?.attachments.orEmpty().map { AssistantMessageAdapter.MessageAttachment(
+                it.fileName, it.localPath, it.mimeType, it.sizeBytes, it.isImage) }, user?.references.orEmpty())
           scrollToBottom()
         }
       }
@@ -3073,7 +3035,7 @@ class FloatingAssistantView(
     }
 
     items.add(context.getString(string.ai_assistant_action_quote) to {
-      showQuoteReplyDialog(message)
+      quoteMessage(message.id)
     })
 
     items.add("从此处分叉" to {
@@ -3166,7 +3128,7 @@ class FloatingAssistantView(
                 .setTitle("上次运行已中断")
                 .setMessage("检测到本会话在应用退出前仍在运行，最后一条消息尚未得到完整回复。是否让 AI 接着继续？")
                 .setPositiveButton("续跑") { _, _ ->
-                  startRun(conversationId, "继续", null, null)
+                  startRun(conversationId, AssistantRequestSnapshot("继续", "继续", emptyList(), null, emptyList()), null)
                 }
                 .setNegativeButton("忽略", null))
       }
@@ -3295,33 +3257,19 @@ class FloatingAssistantView(
   /**
    * 引用提问对话框：输入对当前消息的追问，确认后回填并附带引用前缀。
    */
-  private fun showQuoteReplyDialog(message: AssistantMessageAdapter.Message) {
-    val input =
-        com.tom.rv2ide.preferences.dialogEditTextField(
-            context, context.getString(string.ai_assistant_quote_input_hint))
-    val builder = com.google.android.material.dialog.MaterialAlertDialogBuilder(context)
-        .setTitle(string.ai_assistant_quote_dialog_title)
-        .setView(com.tom.rv2ide.preferences.dialogFieldColumn(context, input))
-        .setPositiveButton(android.R.string.ok) { _, _ ->
-          val question = input.editText?.text?.toString()?.trim().orEmpty()
-          val ref = ChatReference(
-              messageId = message.id,
-              role = if (message.role == AssistantMessageAdapter.Role.USER) "user" else "assistant",
-              quote = message.text.take(300),
-          )
-          val quoteBlock = AssistantMessageActions.referenceContext(listOf(ref))
-          val fullText = if (quoteBlock.isNotEmpty()) "$quoteBlock\n\n$question" else question
-
-          val current = inputBar.text
-          if (current.isBlank()) {
-            inputBar.text = fullText
-          } else {
-            inputBar.text = ("$current\n\n$fullText")
-          }
-          // Compose 输入框无 Selection 概念外泄：外部 set 值时组件把光标移到末尾。
-        }
-        .setNegativeButton(android.R.string.cancel, null)
-    showDialogSafely(builder)
+  private fun quoteMessage(messageId: Long) {
+    val message = adapter.find(messageId) ?: return
+    val ref = ChatReference(messageId = message.id,
+        role = if (message.role == AssistantMessageAdapter.Role.USER) "user" else "assistant",
+        quote = message.text)
+    val block = AssistantMessageActions.referenceContext(listOf(ref))
+    if (block.isEmpty()) return
+    val value = inputBar.fieldValue
+    val insertion = (if (value.selection.min > 0) "\n\n" else "") + block + "\n\n"
+    val updated = value.text.replaceRange(value.selection.min, value.selection.max, insertion)
+    inputBar.edit(androidx.compose.ui.text.input.TextFieldValue(updated,
+        androidx.compose.ui.text.TextRange(value.selection.min + insertion.length)))
+    inputBar.focusRequest++
   }
 
   private fun copyToClipboard(label: String, content: String) {
@@ -3675,8 +3623,15 @@ class FloatingAssistantView(
               context.getString(com.tom.rv2ide.R.string.acs_ui_assistant_example_build))
         }
         com.tom.rv2ide.artificial.agent.compose.components.independent.ChatInputBar(
-            value = bridge.text,
-            onValueChange = { bridge.text = it },
+            fieldValue = bridge.fieldValue,
+            onFieldValueChange = { bridge.edit(it) },
+            references = bridge.references,
+            focusRequest = bridge.focusRequest,
+            onSelectReference = { reference, start, end -> bridge.insert(reference, start, end) },
+            onRemoveReference = bridge::removeReference,
+            referenceProvider = androidx.compose.runtime.remember(displayedConversationId, workspace) {
+              { query, kind -> referenceCandidates(context, orchestrator, workspace, displayedConversationId, query, kind) }
+            },
             onSend = {
               sendFromInput()
             },
@@ -3729,7 +3684,6 @@ class FloatingAssistantView(
             onUploadImage = { inputFeatures.pickImageAttachment() },
             onTakePhoto = { inputFeatures.pickImageAttachment() },
             slashCommands = bridge.slashCommands,
-            skills = bridge.skills,
             queuedRequests = bridge.queuedRequests,
             // ── 待发送队列操作（面板上的删除/拖拽/编辑/立即插入）──
             // 全部走 orchestrator（队列是它持有的全局真相，视图只是投影），
@@ -3746,8 +3700,12 @@ class FloatingAssistantView(
               // 编辑 = 取回文本到输入框 + 从队列移除。用户改完再按发送，
               // 走正常路径（排队或立即发）——不在这里原地改队列条目，
               // 那会让「编辑」这个动作带隐式发送语义，与面板其它按钮不一致。
-              inputBar.text = queued.request
-              orchestrator.removeQueued(displayedConversationId ?: "", queued.id)
+              val conversationId = displayedConversationId ?: ""
+              val entry = orchestrator.queuedEntries(conversationId).firstOrNull { it.id == queued.id }
+              if (entry != null && orchestrator.removeQueued(conversationId, queued.id)) {
+                inputBar.restore(entry.text, entry.references)
+                inputFeatures.restoreAttachments(entry.attachments, entry.rawInputJson)
+              }
               refreshQueueProjection()
             },
             onInterjectQueued = { id ->
@@ -4025,6 +3983,11 @@ class FloatingAssistantView(
             onRename = { session, title -> renameConversation(session.id, title) },
             onTogglePin = { session -> togglePinConversation(session.id) },
             onExport = { copyConversation() },
+            onCopyId = { session ->
+              val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+              clipboard.setPrimaryClip(android.content.ClipData.newPlainText("conversation_id", session.id))
+              android.widget.Toast.makeText(context, com.tom.rv2ide.R.string.ai_conversation_id_copied, android.widget.Toast.LENGTH_SHORT).show()
+            },
             browseState = drawerFileHost.browseState,
             expandedPaths = drawerFileHost.expandedPaths,
             fileOpPaths = drawerFileHost.fileOpPaths.toSet(),
@@ -4301,12 +4264,8 @@ class FloatingAssistantView(
                     isImage = it.isImage,
                 )
               }
-          if (metas.isEmpty()) {
-            adapter.append(AssistantMessageAdapter.Role.USER, message.getContent())
-          } else {
-            adapter.appendWithAttachments(
-                AssistantMessageAdapter.Role.USER, message.getContent(), metas)
-          }
+          adapter.appendWithAttachments(
+              AssistantMessageAdapter.Role.USER, message.getContent(), metas, message.references)
         }
         is com.tom.rv2ide.ai.protocol.AssistantModelMessage -> {
           // 顺序与实时渲染一致：先思考块，再工具卡片，最后正文。
@@ -4647,6 +4606,8 @@ class FloatingAssistantView(
             // 标记已撤销后禁用按钮，全部同一套行为。
             revertDiff(messageId, diffId)
           }
+
+          override fun onQuote(messageId: Long) { quoteMessage(messageId) }
 
           override fun onMoreClick(messageId: Long) {
             // 复用既有的长按菜单（复制原文/纯文、引用提问）。菜单的锚点需要 View，

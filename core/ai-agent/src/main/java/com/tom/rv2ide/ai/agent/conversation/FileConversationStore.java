@@ -122,6 +122,17 @@ public final class FileConversationStore implements ConversationStore {
   }
 
   @Override
+  public ConversationLog.HistoryPage readPage(String conversationId, String beforeUuid)
+      throws IOException {
+    lock.readLock().lock();
+    try {
+      return logFor(conversationId).readPage(beforeUuid);
+    } finally {
+      lock.readLock().unlock();
+    }
+  }
+
+  @Override
   public long append(String conversationId, ConversationEntry entry) throws IOException {
     lock.readLock().lock();
     try {

@@ -235,6 +235,166 @@ public final class ConversationLog {
     return readFrom(0).getEntries();
   }
 
+  /** 历史检索上限独立于正常回放，禁止先 readAll 再裁剪。 */
+  static final int HISTORY_SCAN_BYTES = 4 * 1024 * 1024;
+  static final int HISTORY_LINE_BYTES = 256 * 1024;
+  private static final int HISTORY_PARSE_LINES = 512;
+  private static final int HISTORY_PAGE_ENTRIES = 100;
+
+  /** 从尾部倒扫最近一个真实用户回合；beforeUuid 排除锚点。图片不水合。 */
+  public HistoryPage readPage(String beforeUuid) throws IOException {
+    if (!file.isFile()) {
+      throw new IOException("会话不存在");
+    }
+    String anchor = beforeUuid == null ? "" : beforeUuid;
+    boolean foundAnchor = anchor.isEmpty();
+    boolean finished = false;
+    boolean hasMore = false;
+    String customTitle = "";
+    String aiTitle = "";
+    List<ConversationEntry> selected = new ArrayList<>();
+    try (RandomAccessFile raf = new RandomAccessFile(file, "r")) {
+      ReverseLines lines = new ReverseLines(raf);
+      String line;
+      int parsed = 0;
+      while ((line = lines.next()) != null) {
+        if (++parsed > HISTORY_PARSE_LINES) {
+          throw new IOException("历史过大，已达到解析上限；请读取更近一页");
+        }
+        ConversationEntry entry = ConversationCodec.parse(line);
+        if (entry == null) {
+          continue;
+        }
+        if (entry instanceof TitleEntry) {
+          if (entry.getType() == ConversationEntry.Type.CUSTOM_TITLE && customTitle.isEmpty()) {
+            customTitle = ((TitleEntry) entry).getTitle();
+          } else if (entry.getType() == ConversationEntry.Type.AI_TITLE && aiTitle.isEmpty()) {
+            aiTitle = ((TitleEntry) entry).getTitle();
+          }
+        }
+        if (!foundAnchor) {
+          if (anchor.equals(entry.getUuid())) {
+            foundAnchor = true;
+          }
+          continue;
+        }
+        boolean visible = entry instanceof AssistantMessageEntry
+            || entry instanceof ToolResultEntry || entry instanceof CompactionEntry
+            || (entry instanceof UserMessageEntry && !((UserMessageEntry) entry).isMeta());
+        if (!visible) {
+          continue;
+        }
+        if (finished) {
+          hasMore = true;
+          break;
+        }
+        selected.add(entry);
+        finished = entry instanceof UserMessageEntry || selected.size() == HISTORY_PAGE_ENTRIES;
+      }
+      if (!foundAnchor) {
+        throw new IOException("before_uuid 不属于该会话或已失效");
+      }
+      // 初始标题通常在文件头，不为取标题加载整份会话。
+      int prefixLength = (int) Math.min(64 * 1024, raf.length());
+      byte[] prefix = new byte[prefixLength];
+      raf.seek(0);
+      raf.readFully(prefix);
+      String prefixText = new String(prefix, StandardCharsets.UTF_8);
+      int start = 0;
+      for (int count = 0; count < 32; count++) {
+        int end = prefixText.indexOf('\n', start);
+        if (end < 0) {
+          break;
+        }
+        ConversationEntry entry = ConversationCodec.parse(prefixText.substring(start, end));
+        if (entry instanceof TitleEntry) {
+          if (customTitle.isEmpty() && entry.getType() == ConversationEntry.Type.CUSTOM_TITLE) {
+            customTitle = ((TitleEntry) entry).getTitle();
+          } else if (aiTitle.isEmpty() && entry.getType() == ConversationEntry.Type.AI_TITLE) {
+            aiTitle = ((TitleEntry) entry).getTitle();
+          }
+        }
+        start = end + 1;
+      }
+    }
+    java.util.Collections.reverse(selected);
+    String title = !customTitle.isEmpty() ? customTitle
+        : !aiTitle.isEmpty() ? aiTitle : ConversationSummary.UNTITLED;
+    return new HistoryPage(title, selected, hasMore);
+  }
+
+  public static final class HistoryPage {
+    private final String title;
+    private final List<ConversationEntry> entries;
+    private final boolean hasMore;
+
+    HistoryPage(String title, List<ConversationEntry> entries, boolean hasMore) {
+      this.title = title;
+      this.entries = java.util.Collections.unmodifiableList(new ArrayList<>(entries));
+      this.hasMore = hasMore;
+    }
+
+    public String getTitle() { return title; }
+    public List<ConversationEntry> getEntries() { return entries; }
+    public boolean hasMore() { return hasMore; }
+  }
+
+  /** 固定块缓存倒读，单行与总扫描字节均有硬上限，残缺尾行不解析。 */
+  private static final class ReverseLines {
+    private final RandomAccessFile raf;
+    private final byte[] buffer = new byte[READ_BUFFER_BYTES];
+    private long cursor;
+    private long blockStart = -1;
+    private long blockEnd = -1;
+    private int scanned;
+
+    ReverseLines(RandomAccessFile raf) throws IOException {
+      this.raf = raf;
+      cursor = raf.length();
+      while (cursor > 0 && previousByte() != '\n') {
+        // 跳过没有换行的残缺尾部。
+      }
+    }
+
+    private int previousByte() throws IOException {
+      if (++scanned > HISTORY_SCAN_BYTES) {
+        throw new IOException("历史过大，已达到扫描上限；请读取更近一页");
+      }
+      cursor--;
+      if (cursor < blockStart || cursor >= blockEnd) {
+        blockEnd = cursor + 1;
+        blockStart = Math.max(0, blockEnd - buffer.length);
+        raf.seek(blockStart);
+        raf.readFully(buffer, 0, (int) (blockEnd - blockStart));
+      }
+      return buffer[(int) (cursor - blockStart)] & 0xff;
+    }
+
+    String next() throws IOException {
+      if (cursor == 0) {
+        return null;
+      }
+      ByteArrayOutputStream reversed = new ByteArrayOutputStream();
+      while (cursor > 0) {
+        int value = previousByte();
+        if (value == '\n') {
+          break;
+        }
+        if (reversed.size() >= HISTORY_LINE_BYTES) {
+          throw new IOException("历史单条消息过大，已达到单行上限；请读取更近一页");
+        }
+        reversed.write(value);
+      }
+      byte[] bytes = reversed.toByteArray();
+      for (int left = 0, right = bytes.length - 1; left < right; left++, right--) {
+        byte value = bytes[left];
+        bytes[left] = bytes[right];
+        bytes[right] = value;
+      }
+      return new String(bytes, StandardCharsets.UTF_8);
+    }
+  }
+
   /**
    * 计算「已索引区间末尾窗口」的指纹，用于判断文件是否被追加（水位线仍有效）
    * 还是被重写/截断（水位线失效）。

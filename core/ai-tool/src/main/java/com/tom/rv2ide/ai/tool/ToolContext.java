@@ -23,7 +23,9 @@ package com.tom.rv2ide.ai.tool;
 
 import com.tom.rv2ide.ai.tool.api.ImageDataProvider;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 /**
  * 单次工具执行所需的上下文。
@@ -73,6 +75,9 @@ public final class ToolContext {
    * 空串表示无会话（单测、后台一次性调用），此时退化为不按会话隔离。
    */
   private final String conversationId;
+
+  /** 当前请求由用户明确引用的会话；不从模型输出或旧历史扩展授权。 */
+  private final Set<String> readableConversationIds;
 
   /** 执行过程中的进度回调，可为 null。 */
   private final ProgressListener progressListener;
@@ -184,6 +189,9 @@ public final class ToolContext {
     this.bypassPathProtection = builder.bypassPathProtection;
     this.toolCallId = builder.toolCallId == null ? "" : builder.toolCallId;
     this.conversationId = builder.conversationId == null ? "" : builder.conversationId;
+    this.readableConversationIds = builder.readableConversationIds == null
+        ? Collections.emptySet()
+        : Collections.unmodifiableSet(new HashSet<>(builder.readableConversationIds));
     this.progressListener = builder.progressListener;
     this.settings = builder.settings == null ? ToolSettingsPort.defaults() : builder.settings;
     this.imageDataProvider = builder.imageDataProvider;
@@ -276,6 +284,10 @@ public final class ToolContext {
   /** 产生本次工具调用的会话 id；空串表示无会话。 */
   public String getConversationId() {
     return conversationId;
+  }
+
+  public Set<String> getReadableConversationIds() {
+    return readableConversationIds;
   }
 
   public ProgressListener getProgressListener() {
@@ -400,6 +412,7 @@ public final class ToolContext {
         .bypassPathProtection(this.bypassPathProtection)
         .toolCallId(newToolCallId)
         .conversationId(this.conversationId)
+        .readableConversationIds(this.readableConversationIds)
         .progressListener(this.progressListener)
         .settings(this.settings)
         .imageDataProvider(this.imageDataProvider)
@@ -439,6 +452,7 @@ public final class ToolContext {
         .bypassPathProtection(this.bypassPathProtection)
         .toolCallId(this.toolCallId)
         .conversationId(this.conversationId)
+        .readableConversationIds(this.readableConversationIds)
         .progressListener(newProgressListener)
         .settings(this.settings)
         .imageDataProvider(this.imageDataProvider)
@@ -501,6 +515,7 @@ public final class ToolContext {
     private boolean bypassPathProtection;
     private String toolCallId;
     private String conversationId;
+    private Set<String> readableConversationIds;
     private ProgressListener progressListener;
     private ToolSettingsPort settings;
     private ImageDataProvider imageDataProvider;
@@ -552,6 +567,11 @@ public final class ToolContext {
     /** 产生本次调用的会话 id，用于危险工具授权的按会话隔离。 */
     public Builder conversationId(String value) {
       this.conversationId = value;
+      return this;
+    }
+
+    public Builder readableConversationIds(Set<String> value) {
+      this.readableConversationIds = value;
       return this;
     }
 

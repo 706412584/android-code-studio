@@ -23,6 +23,9 @@ import android.provider.OpenableColumns
 import androidx.core.view.isVisible
 import com.google.android.material.chip.Chip
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
+import com.tom.rv2ide.artificial.agent.compose.compat.AgentImage
+import com.tom.rv2ide.artificial.agent.compose.compat.PendingUploadAttachment
+import com.tom.rv2ide.artificial.agent.compose.compat.isImage
 import com.tom.rv2ide.artificial.agent.host.AssistantHost
 import com.tom.rv2ide.artificial.agents.Agents
 import com.tom.rv2ide.databinding.LayoutAiAssistantBinding
@@ -73,31 +76,9 @@ class AssistantInputFeatures(
 
   // ---- 附件 ----
 
-  /**
-   * 待发送的附件。
-   *
-   * <p>存 URI 而不是 File：用户可能从相册选一张 `content://` 图片，它没有可用的文件系统
-   * 路径（或路径在应用沙箱外读不到）。发送时统一转成绝对路径文本；拿不到真实路径的
-   * （相册图片）退化为 URI 字符串——模型至少能知道「有一张图」，比整条丢掉好。
-   */
-  private val attachments = mutableListOf<Attachment>()
-
-  /**
-   * 一个待发附件。
-   *
-   * @param bytes 选中时**当场读出**的内容（仅图片）。见 [addAttachment] 的说明——
-   *   Photo Picker 的 URI 权限只在选择回调期间有效，等到发送时再读会拿到 null。
-   * @param localPath 图片落盘后的绝对路径（`filesDir/ai/attachments/<name>`）。
-   *   相册图片的 URI 拿不到可用路径，而消息气泡的缩略图与全屏查看器都需要一个
-   *   能反复读取的来源——所以选图时就把字节写一份到应用私有目录。
-   */
-  private data class Attachment(
-      val uri: Uri,
-      val name: String,
-      val isImage: Boolean,
-      val bytes: ByteArray? = null,
-      val localPath: String? = null,
-  )
+  /** 预览、发送和视图重建共用输入桥中的原始附件，不再维护第二份列表。 */
+  private val attachments: List<PendingUploadAttachment>
+    get() = owner?.inputBar?.pendingAttachments.orEmpty()
 
   /**
    * 一条已发送附件（脱离待发状态后的只读投影）。
@@ -200,13 +181,13 @@ class AssistantInputFeatures(
   fun pickImageAttachment() = openImagePicker()
 
   private fun openFilePicker() {
-    // 真正的 Intent 构造交给宿主（Activity 与 Service 走不同机制）。这里只负责
-    // 「选完之后把结果并入附件」——契约是每个 URI 回调一次、取消/失败回调一次 null。
-    host.attachments.pickFile { uri -> addAttachment(uri, isImage = false) }
+    val draft = owner?.inputBar?.pendingAttachments ?: return
+    host.attachments.pickFile { uri -> addAttachment(uri, isImage = false, draft) }
   }
 
   private fun openImagePicker() {
-    host.attachments.pickImage { uri -> addAttachment(uri, isImage = true) }
+    val draft = owner?.inputBar?.pendingAttachments ?: return
+    host.attachments.pickImage { uri -> addAttachment(uri, isImage = true, draft) }
   }
 
   /**
@@ -228,48 +209,33 @@ class AssistantInputFeatures(
    * <p>读失败或超限时不缓存 bytes（保留 URI 以便走文本降级路径），不阻断附件添加：
    * 用户至少还能看到「附了这张图」这个事实。
    */
-  private fun addAttachment(uri: Uri?, isImage: Boolean) {
-    if (uri == null) {
-      return
-    }
-    // 非图片（任意类型文件）不需要预读：它们本就以路径形式交给模型用 file 工具读，
-    // 走同步路径（名称解析本身也要查 provider，代价小）。
-    if (!isImage) {
-      val name = displayName(uri)
-      if (attachments.any { it.uri == uri }) {
-        return
-      }
-      attachments.add(Attachment(uri, name, isImage = false, bytes = null))
-      renderAttachments()
-      return
-    }
-
-    // 图片：先落一个「无字节」的占位条目让用户立刻看到反馈，再在 IO 线程读内容。
-    // 读大图（几 MB）是磁盘 + ContentProvider 往返，放主线程会卡住输入框；
-    // 而权限窗口很窄，必须尽早开始读——这里紧接着启动协程，仍在回调期间。
+  private fun addAttachment(
+      uri: Uri?,
+      isImage: Boolean,
+      draft: MutableList<PendingUploadAttachment>,
+  ) {
+    if (uri == null || draft.any { it.containerPath == uri.toString() }) return
     val name = displayName(uri)
-    if (attachments.any { it.uri == uri }) {
-      return
-    }
-    val placeholder = Attachment(uri, name, isImage = true, bytes = null)
-    attachments.add(placeholder)
-    renderAttachments()
+    val path = localPathOf(uri).orEmpty()
+    val mime = context.contentResolver.getType(uri)
+        ?: if (isImage) {
+          if (name.endsWith(".png", ignoreCase = true)) "image/png" else "image/jpeg"
+        } else "application/octet-stream"
+    val placeholder = PendingUploadAttachment(name, uri.toString(), path, mime, 0L)
+    draft.add(placeholder)
+    if (!isImage) return
 
     ioScope.launch {
-      val bytes = readImageBytes(uri)
-      if (bytes != null) {
-        // 落一份到应用私有目录：气泡缩略图与全屏查看器需要一个能反复读取的来源，
-        // 而相册 URI 的临时授权随时可能失效（进程重启后必然失效）。
-        val localPath = persistAttachmentFile(name, bytes)
-        // 替换占位条目。用索引定位而不是 remove(placeholder)：
-        // Attachment 是 data class 且带 ByteArray 字段，其生成的 equals 对数组
-        // 退化为引用比较——依赖它做集合操作会踩坑（见 m9 的审查意见）。
-        val index = attachments.indexOfFirst { it.uri == uri }
+      val bytes = readImageBytes(uri) ?: return@launch
+      val localPath = persistAttachmentFile(name, bytes).orEmpty().ifBlank { path }
+      val image = AgentImage(mime, android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP), localPath)
+      withContext(Dispatchers.Main) {
+        // 捕获选取时的草稿；切换会话或删除占位后，不能写入当前会话或复活附件。
+        val index = draft.indexOfFirst { it === placeholder }
         if (index >= 0) {
-          attachments[index] = attachments[index].copy(bytes = bytes, localPath = localPath)
+          draft[index] = placeholder.copy(localPath = localPath, sizeBytes = bytes.size.toLong(), image = image)
         }
       }
-      withContext(Dispatchers.Main) { renderAttachments() }
     }
   }
 
@@ -380,37 +346,6 @@ class AssistantInputFeatures(
     return uri.lastPathSegment?.substringAfterLast('/') ?: uri.toString()
   }
 
-  /** 把待发附件投影到输入栏桥（Compose 侧渲染预览行）。 */
-  private fun renderAttachments() {
-    val bridge = owner?.inputBar ?: return
-    bridge.pendingAttachments.clear()
-    for (attachment in attachments) {
-      val image =
-          if (attachment.isImage && attachment.bytes != null) {
-            val mime =
-                context.contentResolver.getType(attachment.uri)
-                    ?: if (attachment.name.endsWith(".png", ignoreCase = true)) "image/png"
-                    else "image/jpeg"
-            com.tom.rv2ide.artificial.agent.compose.compat.AgentImage(
-                mimeType = mime,
-                base64Data =
-                    android.util.Base64.encodeToString(
-                        attachment.bytes!!, android.util.Base64.NO_WRAP),
-            )
-          } else null
-      val path = attachment.localPath ?: localPathOf(attachment.uri)
-      bridge.pendingAttachments.add(
-          com.tom.rv2ide.artificial.agent.compose.compat.PendingUploadAttachment(
-              fileName = attachment.name,
-              containerPath = path ?: attachment.uri.toString(),
-              localPath = path ?: "",
-              mimeType = if (attachment.isImage) "image/*" else "application/octet-stream",
-              sizeBytes = attachment.bytes?.size?.toLong() ?: 0L,
-              image = image,
-          ))
-    }
-  }
-
   /**
    * 构建多模态输入（图片）。
    *
@@ -434,20 +369,18 @@ class AssistantInputFeatures(
     if (images.isEmpty()) {
       return null
     }
-    val parts =
-        images.mapNotNull { image ->
-          val bytes = imageBytesFor(image) ?: return@mapNotNull null
-          com.tom.rv2ide.ai.protocol.ImageInputPayload.ImagePart(
-              mimeTypeFor(image),
-              android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP),
-          )
-        }
-    if (parts.isEmpty()) {
-      return null
+    val parts = images.map {
+      com.tom.rv2ide.ai.protocol.ImageInputPayload.ImagePart(it.image!!.mimeType, it.image.base64Data)
     }
     return try {
-      com.tom.rv2ide.ai.protocol.ImageInputPayload.rawInputJson(prompt, parts)
-    } catch (e: Exception) {
+      val payload = org.json.JSONObject(com.tom.rv2ide.ai.protocol.ImageInputPayload.rawInputJson(prompt, parts))
+      // 只在本地快照中标记对应附件，协议层不会发送该字段；队列编辑不能靠路径或位置猜图。
+      val array = payload.getJSONArray("images")
+      images.forEachIndexed { index, image ->
+        array.getJSONObject(index).put("attachment_index", attachments.indexOfFirst { it === image })
+      }
+      payload.toString()
+    } catch (e: org.json.JSONException) {
       null
     }
   }
@@ -460,40 +393,37 @@ class AssistantInputFeatures(
    * 请求被拒（错误信息通常只有「400 bad request」，排查成本极高）。超出的部分仍走
    * 文本路径，模型可以自己用 file 工具读。
    */
-  private fun sendableImages(): List<Attachment> {
-    val out = ArrayList<Attachment>(MAX_IMAGES_PER_MESSAGE)
+  private fun sendableImages(): List<PendingUploadAttachment> {
+    val out = ArrayList<PendingUploadAttachment>(MAX_IMAGES_PER_MESSAGE)
     var totalBytes = 0L
     for (attachment in attachments) {
-      if (!attachment.isImage) continue
+      val image = attachment.image ?: continue
+      if (image.base64Data.isEmpty()) continue
       if (out.size >= MAX_IMAGES_PER_MESSAGE) break
-      val bytes = imageBytesFor(attachment) ?: continue
-      if (bytes.size > MAX_IMAGE_BYTES) continue
-      if (totalBytes + bytes.size > MAX_TOTAL_IMAGE_BYTES) continue
-      totalBytes += bytes.size
+      val bytes = image.base64Data.length.toLong() * 3 / 4 - image.base64Data.takeLast(2).count { it == '=' }
+      if (bytes > MAX_IMAGE_BYTES || totalBytes + bytes > MAX_TOTAL_IMAGE_BYTES) continue
+      totalBytes += bytes
       out.add(attachment)
     }
     return out
   }
 
-  /**
-   * 取一张图片的字节。
-   *
-   * <p>优先用选择时缓存的字节。**不在这里 openInputStream 作为主路径**：Photo Picker
-   * 的 URI 权限只在选择回调期间有效，此刻（用户点发送）通常已失效，现场读必然拿到 null
-   * ——这正是「AI 说看不到图片」的根因（见 addAttachment 的说明）。
-   *
-   * <p>缓存为空（读失败/超限/旧版本添加的附件）时退回现场读一次：对
-   * `ACTION_OPEN_DOCUMENT` 之类带持久权限的 URI 仍然有效，作为兜底。
-   */
-  private fun imageBytesFor(attachment: Attachment): ByteArray? {
-    val bytes = attachment.bytes ?: readImageBytes(attachment.uri) ?: return null
-    return if (bytes.isEmpty()) null else bytes
+  /** 队列编辑优先恢复原始图片载荷；无载荷的历史附件才按路径读取。 */
+  fun restoreAttachments(values: List<com.tom.rv2ide.ai.protocol.AttachmentMeta>, rawInputJson: String?) {
+    val draft = owner?.inputBar?.pendingAttachments ?: return
+    draft.clear()
+    draft.addAll(restorePendingAttachments(values, rawInputJson))
+    draft.toList().filter { it.isImage && it.image == null && it.localPath.isNotBlank() }.forEach { attachment ->
+      ioScope.launch {
+        val bytes = readImageBytes(Uri.fromFile(File(attachment.localPath))) ?: return@launch
+        val image = AgentImage(attachment.mimeType, android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP), attachment.localPath)
+        withContext(Dispatchers.Main) {
+          val index = draft.indexOfFirst { it === attachment }
+          if (index >= 0) draft[index] = attachment.copy(image = image, sizeBytes = bytes.size.toLong())
+        }
+      }
+    }
   }
-
-  private fun mimeTypeFor(attachment: Attachment): String =
-      context.contentResolver.getType(attachment.uri)
-          ?: if (attachment.name.endsWith(".png", ignoreCase = true)) "image/png"
-          else "image/jpeg"
 
   /** 是否有可用的图片附件（决定发送时是否走多模态路径）。 */
   fun hasImageAttachment(): Boolean = attachments.any { it.isImage }
@@ -526,8 +456,8 @@ class AssistantInputFeatures(
    * 让它用 file 工具自己读。
    */
   fun attachmentContextExcludingImage(): String {
-    val sent = sendableImages().mapTo(HashSet()) { it.uri }
-    val rest = attachments.filter { !it.isImage || it.uri !in sent }
+    val sent = sendableImages()
+    val rest = attachments.filter { attachment -> sent.none { it === attachment } }
     if (rest.isEmpty()) {
       return ""
     }
@@ -541,13 +471,10 @@ class AssistantInputFeatures(
    * 相册图片（content://）拿不到真实路径，此时退回 URI 字符串——至少让模型知道
    * 用户附了一张图，而不是完全丢失这个信息。
    */
-  private fun describe(attachment: Attachment): String {
-    // 已落盘的图片优先给那份路径：相册 URI 的临时授权会在进程重启后失效，
-    // 交给模型一个打不开的 content:// 等于没给。
-    val path = attachment.localPath ?: localPathOf(attachment.uri)
-    val target = path ?: attachment.uri.toString()
+  private fun describe(attachment: PendingUploadAttachment): String {
+    val target = attachment.localPath.ifBlank { attachment.containerPath }
     val marker = context.getString(string.ai_assistant_attachment_marker, target)
-    return if (attachment.isImage && path == null) {
+    return if (attachment.isImage && attachment.localPath.isBlank()) {
       // 读不到路径的图片明确标注，避免模型以为那是一个能直接打开的文件。
       marker + " (image, path unavailable)"
     } else {
@@ -582,18 +509,14 @@ class AssistantInputFeatures(
 
   /** 发送后清空待发附件。 */
   fun clearAttachments() {
-    if (attachments.isEmpty()) {
-      return
-    }
-    attachments.clear()
-    renderAttachments()
+    owner?.inputBar?.pendingAttachments?.clear()
   }
 
   /** 当前是否有待发附件（供宿主判断「空文本 + 有附件」也算有效请求）。 */
   fun hasAttachments(): Boolean = attachments.isNotEmpty()
 
   /** 附件的展示名，用于把「只附了文件没打字」的请求显示成有意义的消息。 */
-  fun attachmentNames(): String = attachments.joinToString(", ") { it.name }
+  fun attachmentNames(): String = attachments.joinToString(", ") { it.fileName }
 
   /**
    * 待发附件的快照，供宿主挂到消息气泡上。
@@ -604,12 +527,11 @@ class AssistantInputFeatures(
    */
   fun attachmentSnapshot(): List<AttachedFile> =
       attachments.map { attachment ->
-        val path = attachment.localPath ?: localPathOf(attachment.uri)
         AttachedFile(
-            fileName = attachment.name,
-            localPath = path.orEmpty(),
-            mimeType = if (attachment.isImage) mimeTypeFor(attachment) else "",
-            sizeBytes = attachment.bytes?.size?.toLong() ?: 0L,
+            fileName = attachment.fileName,
+            localPath = attachment.localPath,
+            mimeType = attachment.mimeType,
+            sizeBytes = attachment.sizeBytes,
             isImage = attachment.isImage,
         )
       }

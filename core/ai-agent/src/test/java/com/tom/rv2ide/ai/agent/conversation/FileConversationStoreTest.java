@@ -40,6 +40,56 @@ final class FileConversationStoreTest {
   }
 
   @Test
+  void historyPagesUseExclusiveAnchorsAndLatestUserTurn(@TempDir Path dir) throws Exception {
+    FileConversationStore store = storeAt(dir);
+    String id = store.create("分页标题", "/private/workspace", "m", "confirm").getId();
+    UserMessageEntry first = UserMessageEntry.create(null, 1, "较早问题");
+    UserMessageEntry second = UserMessageEntry.create(null, 3, "最近问题");
+    store.append(id, first);
+    store.append(id, AssistantMessageEntry.create(null, 2, "较早回答", "", List.of()));
+    store.append(id, second);
+    store.append(id, AssistantMessageEntry.create(null, 4, "最近回答", "", List.of()));
+    ConversationLog.HistoryPage latest = store.readPage(id, "");
+    assertEquals("分页标题", latest.getTitle());
+    assertEquals(2, latest.getEntries().size());
+    assertEquals(second.getUuid(), latest.getEntries().get(0).getUuid());
+    assertTrue(latest.hasMore());
+    ConversationLog.HistoryPage older = store.readPage(id, second.getUuid());
+    assertEquals(first.getUuid(), older.getEntries().get(0).getUuid());
+    assertEquals(2, older.getEntries().size());
+    assertFalse(older.hasMore());
+    assertThrows(IOException.class, () -> store.readPage(id, java.util.UUID.randomUUID().toString()));
+  }
+
+  @Test
+  void historyPageIsBoundedAndDoesNotHydrateImages(@TempDir Path dir) throws Exception {
+    FileConversationStore store = storeAt(dir);
+    String id = store.create(null, "/w", "m", "confirm").getId();
+    store.append(id, UserMessageEntry.create(null, 1, "截图"));
+    store.append(id, ToolResultEntry.create(null, 2,
+        com.tom.rv2ide.ai.tool.api.ToolResult.withImage("capture", "截图成功", "secret-image", "image/png")));
+    ToolResultEntry image = (ToolResultEntry) store.readPage(id, "").getEntries().get(1);
+    assertTrue(image.hasImage());
+    assertEquals("", image.getImageBase64());
+    store.append(id, UserMessageEntry.create(null, 3, "x".repeat(ConversationLog.HISTORY_LINE_BYTES)));
+    assertThrows(IOException.class, () -> store.readPage(id, ""));
+  }
+
+  @Test
+  void historyPageSkipsBrokenTailAndCapsEntryCount(@TempDir Path dir) throws Exception {
+    FileConversationStore store = storeAt(dir);
+    String id = store.create(null, "/w", "m", "confirm").getId();
+    store.append(id, UserMessageEntry.create(null, 1, "长回合"));
+    for (int i = 0; i < 120; i++) {
+      store.append(id, AssistantMessageEntry.create(null, i + 2, "步骤 " + i, "", List.of()));
+    }
+    Files.writeString(dir.resolve(id + ".jsonl"), "{broken", java.nio.file.StandardOpenOption.APPEND);
+    ConversationLog.HistoryPage page = store.readPage(id, "");
+    assertEquals(100, page.getEntries().size());
+    assertTrue(page.hasMore());
+  }
+
+  @Test
   void createsListsAndReadsConversation(@TempDir Path dir) throws IOException {
     FileConversationStore store = storeAt(dir);
     ConversationSummary created = store.create("第一个会话", "/workspace", "agnes-2.5-flash", "confirm");

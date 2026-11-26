@@ -55,7 +55,7 @@ data class PendingUploadAttachment(
 )
 
 val PendingUploadAttachment.isImage: Boolean
-  get() = image != null
+  get() = image != null || mimeType.startsWith("image/")
 
 fun UploadedWorkspaceFile.toPendingAttachment(): PendingUploadAttachment =
     PendingUploadAttachment(

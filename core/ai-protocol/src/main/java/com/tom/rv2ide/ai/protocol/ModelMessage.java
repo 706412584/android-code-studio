@@ -38,6 +38,7 @@ public abstract class ModelMessage {
      * 把缩略图放回用户气泡。
      */
     private List<AttachmentMeta> attachments = Collections.emptyList();
+    private List<ReferenceMeta> references = Collections.emptyList();
 
     protected ModelMessage(String content) {
         this(content, "");
@@ -78,7 +79,18 @@ public abstract class ModelMessage {
      */
     public final ModelMessage withAttachments(List<AttachmentMeta> value) {
         this.attachments =
-                value == null ? Collections.emptyList() : Collections.unmodifiableList(value);
+                value == null ? Collections.emptyList() : Collections.unmodifiableList(new java.util.ArrayList<>(value));
+        return this;
+    }
+
+    /** 该消息中的结构化引用；仅用于界面回放，不参与协议序列化。 */
+    public final List<ReferenceMeta> getReferences() {
+        return references;
+    }
+
+    public final ModelMessage withReferences(List<ReferenceMeta> value) {
+        this.references =
+                value == null ? Collections.emptyList() : Collections.unmodifiableList(new java.util.ArrayList<>(value));
         return this;
     }
 

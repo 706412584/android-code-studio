@@ -33,6 +33,7 @@ import com.tom.rv2ide.ai.agent.conversation.FileConversationStore;
 import com.tom.rv2ide.ai.agent.conversation.SessionMetaEntry;
 import com.tom.rv2ide.ai.agent.conversation.ToolResultEntry;
 import com.tom.rv2ide.ai.agent.conversation.UserMessageEntry;
+import com.tom.rv2ide.ai.protocol.ReferenceMeta;
 import com.tom.rv2ide.ai.tool.api.ToolCall;
 import com.tom.rv2ide.ai.tool.api.ToolResult;
 import java.io.IOException;
@@ -84,21 +85,49 @@ public class ConversationPersistingListenerTest {
     return out;
   }
 
-  // ── 用户消息在构造时就落盘 ────────────────────────────────────────────
+  // ── 初始用户消息在运行循环消费时落盘 ─────────────────────────────────────
 
-  /**
-   * 用户消息在**构造时**落盘（而非运行结束时）。
-   *
-   * <p>这条决定了「进程被杀后用户输入是否还在」——落盘晚于运行会让一条输入了但
-   * 还没轮到的消息直接丢失。
-   */
   @Test
-  public void userRequestIsPersistedOnConstruction() throws IOException {
+  public void persistsSeparateDisplayAndModelProjectionWithReferences() throws IOException {
     String id = newConversation();
-    listener(id, "帮我看下这个 bug");
+    ReferenceMeta reference = new ReferenceMeta("session", "session-1", "会话", "", 2, 5);
+    ConversationPersistingListener listener =
+        new ConversationPersistingListener(
+            id,
+            "看 @会话",
+            "请读取该会话的上下文",
+            Collections.singletonList(reference),
+            null,
+            null,
+            store(),
+            new Object());
+    com.tom.rv2ide.ai.protocol.UserModelMessage message =
+        new com.tom.rv2ide.ai.protocol.UserModelMessage(
+            "请读取该会话的上下文", "", "看 @会话");
+    message.withReferences(Collections.singletonList(reference));
+    listener.onEvent(AgentEvent.userMessage(message));
+
+    UserMessageEntry user =
+        (UserMessageEntry)
+            entries(id).stream()
+                .filter(e -> e instanceof UserMessageEntry)
+                .findFirst()
+                .orElseThrow();
+    assertEquals("看 @会话", user.getContent());
+    assertEquals("请读取该会话的上下文", user.getModelContent());
+    assertEquals(1, user.getReferences().size());
+    assertEquals("session-1", user.getReferences().get(0).getId());
+  }
+
+  @Test
+  public void userRequestIsPersistedWhenInitialMessageEventArrives() throws IOException {
+    String id = newConversation();
+    ConversationPersistingListener listener = listener(id, "帮我看下这个 bug");
+
+    assertFalse(entries(id).stream().anyMatch(e -> e instanceof UserMessageEntry));
+    listener.onEvent(AgentEvent.userMessage("帮我看下这个 bug"));
 
     List<ConversationEntry> all = entries(id);
-    // create 写了 session-meta + custom-title，构造监听器再写一条 user
     assertTrue(all.stream().anyMatch(e -> e instanceof UserMessageEntry));
     UserMessageEntry user =
         (UserMessageEntry)
@@ -230,10 +259,26 @@ public class ConversationPersistingListenerTest {
    * 消息只活在内存里，收件方会话回放时看不到它，历史出现断层。
    */
   @Test
+  public void structuredInjectionPersistsBothProjectionsAndReferences() throws IOException {
+    String id = newConversation();
+    ConversationPersistingListener listener = listener(id, "问题");
+    com.tom.rv2ide.ai.protocol.UserModelMessage message =
+        new com.tom.rv2ide.ai.protocol.UserModelMessage("内部引用 ID", "", "看 @会话");
+    message.withReferences(List.of(new ReferenceMeta("session", "id", "会话", "", 2, 5)));
+    listener.onEvent(AgentEvent.userMessage(message));
+    List<ConversationEntry> all = entries(id);
+    UserMessageEntry last = (UserMessageEntry) all.get(all.size() - 1);
+    assertEquals("看 @会话", last.getContent());
+    assertEquals("内部引用 ID", last.getModelContent());
+    assertEquals("id", last.getReferences().get(0).getId());
+  }
+
+  @Test
   public void injectedUserMessageIsPersisted() throws IOException {
     String id = newConversation();
     ConversationPersistingListener l = listener(id, "原始问题");
 
+    l.onEvent(AgentEvent.userMessage("原始问题"));
     l.onEvent(AgentEvent.userMessage("[来自另一个会话「甲」的消息]\n看看这个"));
 
     List<UserMessageEntry> users = new ArrayList<>();

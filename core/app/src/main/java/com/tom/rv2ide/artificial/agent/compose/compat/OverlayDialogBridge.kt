@@ -99,6 +99,8 @@ val LocalIsOverlayWindow = staticCompositionLocalOf { false }
 @Composable
 fun OverlayAwareDialog(
     onDismissRequest: () -> Unit,
+    properties: androidx.compose.ui.window.DialogProperties =
+        androidx.compose.ui.window.DialogProperties(),
     content: @Composable () -> Unit,
 ) {
   val host = LocalOverlayDialogHost.current
@@ -109,7 +111,10 @@ fun OverlayAwareDialog(
       onDispose { handle.dismiss() }
     }
   } else {
-    androidx.compose.ui.window.Dialog(onDismissRequest = onDismissRequest) {
+    androidx.compose.ui.window.Dialog(
+        onDismissRequest = onDismissRequest,
+        properties = properties,
+    ) {
       content()
     }
   }

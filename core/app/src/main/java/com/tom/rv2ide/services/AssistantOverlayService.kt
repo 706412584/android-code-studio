@@ -17,6 +17,7 @@
 
 package com.tom.rv2ide.services
 
+import android.annotation.SuppressLint
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -24,12 +25,17 @@ import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.content.res.Configuration
 import android.graphics.PixelFormat
 import android.os.Build
 import android.os.IBinder
 import android.os.Looper
 import android.provider.Settings
+import android.view.ActionMode
 import android.view.Gravity
+import android.view.KeyEvent
+import android.view.Menu
+import android.view.MenuItem
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewConfiguration
@@ -103,7 +109,7 @@ class AssistantOverlayService :
   private lateinit var windowManager: WindowManager
 
   /** 悬浮窗根容器；null 表示当前未显示。 */
-  private var rootView: FrameLayout? = null
+  private var rootView: OverlayActionModeLayout? = null
 
   /** 助手视图；null 表示未创建。 */
   private var assistant: FloatingAssistantView? = null
@@ -134,6 +140,7 @@ class AssistantOverlayService :
     if (uiSuppressed || rootView == null) return
     uiSuppressed = true
     val root = checkNotNull(rootView)
+    root.finishSelectionMode()
     root.visibility = View.INVISIBLE
     try {
       updateOverlayLayout(root)
@@ -292,6 +299,56 @@ class AssistantOverlayService :
   }
 
   /**
+   * 屏幕旋转 / 分辨率变化：按新配置重算窗口尺寸与落点。
+   *
+   * <p><b>为什么必须显式处理</b>：展开态窗口高度是**按屏幕高度算出的像素值**
+   * （[expandedHeightPx]，见 [installOverlaySizeHandling]），不是 MATCH_PARENT；
+   * 旋转后系统不会替我们重算它，窗口仍保持竖屏的 0.72 屏高。实测（黑鲨，
+   * 1080×2340 → 2340×1080）：窗口高 1685px 落在 1080px 高的屏幕上，面板内贴底的
+   * 底部面板（附件菜单等）被排到屏幕外，只剩标题行可见，且列表滚不动。
+   *
+   * <p>收起态只有 FAB、尺寸是 WRAP_CONTENT，但落点是绝对坐标，同样要按新屏幕
+   * 钳制，否则 FAB 会停在不可见区域。
+   *
+   * <p>让位期间（[uiSuppressed]）窗口不可见，恢复路径 [restoreAfterUiSuppression]
+   * 会按当时的配置重算，这里直接跳过。
+   */
+  override fun onConfigurationChanged(newConfig: Configuration) {
+    super.onConfigurationChanged(newConfig)
+    val container = rootView ?: return
+    val params = layoutParams ?: return
+    if (uiSuppressed) {
+      return
+    }
+    if (overlayExpanded) {
+      params.width = WindowManager.LayoutParams.MATCH_PARENT
+      params.height = expandedHeightPx()
+      val clamped = clampExpandedOffset(expandedOffsetX, expandedOffsetY)
+      expandedOffsetX = clamped[0]
+      expandedOffsetY = clamped[1]
+      params.gravity = Gravity.TOP or Gravity.START
+      params.x = expandedOffsetX
+      params.y = expandedOffsetY
+    } else {
+      // BOTTOM|END 由系统按新屏幕自动重新锚定，无需换算；
+      // 只有已经转成绝对坐标（START|TOP）的落点需要重新钳制。
+      if (params.gravity != (Gravity.START or Gravity.TOP)) {
+        return
+      }
+      val clamped = clampToScreen(container, collapsedX, collapsedY)
+      collapsedX = clamped[0]
+      collapsedY = clamped[1]
+      params.x = collapsedX
+      params.y = collapsedY
+    }
+    try {
+      updateOverlayLayout(container)
+    } catch (_: IllegalArgumentException) {
+      // 窗口已被系统移除（服务正在收尾）。忽略。
+    }
+  }
+
+  /**
    * 窗口参数。
    *
    * <p><b>为什么是 `TYPE_APPLICATION_OVERLAY`</b>：Android 8.0 (API 26) 起
@@ -350,7 +407,7 @@ class AssistantOverlayService :
       if (isUiSuppressed()) suppressForUi() else restoreAfterUiSuppression()
       return
     }
-    val container = FrameLayout(this)
+    val container = OverlayActionModeLayout(this)
     val params = buildLayoutParams()
     try {
       windowManager.addView(container, params)
@@ -464,6 +521,7 @@ class AssistantOverlayService :
         // 收起态（只剩 FAB）仍保留该 flag：那时窗口很小、不该抢别人的输入焦点。
         lp.flags = lp.flags and WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE.inv()
       } else {
+        container.finishSelectionMode()
         // 收起：窗口缩回 FAB 大小，并回到用户拖动的落点。
         // 用 WRAP_CONTENT 让窗口自然贴合 FAB，而不是写死 56dp——不同主题/字号下
         // FAB 尺寸可能不同，写死会露出透明边或裁掉圆角。
@@ -800,6 +858,77 @@ class AssistantOverlayService :
           imm?.showSoftInput(input, InputMethodManager.SHOW_IMPLICIT)
         }
       }
+    }
+  }
+
+  /** 系统悬浮窗没有 DecorView，需自行承载 TextView/Compose 请求的选择操作栏。 */
+  @SuppressLint("RestrictedApi")
+  private class OverlayActionModeLayout(context: Context) : FrameLayout(context) {
+    private var selectionMode: ActionMode? = null
+
+    override fun startActionModeForChild(child: View, callback: ActionMode.Callback): ActionMode? =
+        startActionModeForChild(child, callback, ActionMode.TYPE_PRIMARY)
+
+    override fun startActionModeForChild(
+        child: View,
+        callback: ActionMode.Callback,
+        type: Int,
+    ): ActionMode? {
+      finishSelectionMode()
+      val bar = androidx.appcompat.widget.ActionBarContextView(child.context)
+      val forwarding = object : ActionMode.Callback {
+        override fun onCreateActionMode(mode: ActionMode, menu: Menu): Boolean =
+            callback.onCreateActionMode(mode, menu)
+
+        override fun onPrepareActionMode(mode: ActionMode, menu: Menu): Boolean =
+            callback.onPrepareActionMode(mode, menu)
+
+        override fun onActionItemClicked(mode: ActionMode, item: MenuItem): Boolean =
+            callback.onActionItemClicked(mode, item)
+
+        override fun onDestroyActionMode(mode: ActionMode) {
+          try {
+            callback.onDestroyActionMode(mode)
+          } finally {
+            if (selectionMode === mode) selectionMode = null
+            bar.killMode()
+            removeView(bar)
+          }
+        }
+      }
+      val bridge = androidx.appcompat.view.SupportActionModeWrapper.CallbackWrapper(
+          child.context, forwarding)
+      val supportMode = androidx.appcompat.view.StandaloneActionMode(
+          child.context, bar, bridge, true)
+      val mode = bridge.getActionModeWrapper(supportMode)
+      if (!bridge.onCreateActionMode(supportMode, supportMode.menu)) {
+        bar.killMode()
+        return null
+      }
+      selectionMode = mode
+      supportMode.invalidate()
+      bar.initForMode(supportMode)
+      bar.setBackgroundColor(com.google.android.material.color.MaterialColors.getColor(
+          child, com.google.android.material.R.attr.colorSurface))
+      addView(bar, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT, Gravity.TOP))
+      return mode
+    }
+
+    fun finishSelectionMode() {
+      selectionMode?.finish()
+    }
+
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+      if (event.keyCode == KeyEvent.KEYCODE_BACK && selectionMode != null) {
+        if (event.action == KeyEvent.ACTION_UP) finishSelectionMode()
+        return true
+      }
+      return super.dispatchKeyEvent(event)
+    }
+
+    override fun onDetachedFromWindow() {
+      finishSelectionMode()
+      super.onDetachedFromWindow()
     }
   }
 

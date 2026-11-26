@@ -95,7 +95,6 @@ import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.window.DialogWindowProvider
 import androidx.core.view.WindowCompat
@@ -105,6 +104,7 @@ import com.tom.rv2ide.artificial.agent.compose.compat.OnboardingStep
 import com.tom.rv2ide.artificial.agent.compose.compat.PendingUploadAttachment
 import com.tom.rv2ide.artificial.agent.compose.compat.ReasoningEffort
 import com.tom.rv2ide.artificial.agent.compose.compat.onboardingTarget
+import com.tom.rv2ide.artificial.agent.compose.compat.OverlayAwareDialog
 import com.tom.rv2ide.artificial.agent.compose.compat.rememberImeBottomInset
 import com.tom.rv2ide.artificial.agent.compose.components.independent.ProviderSelectionTarget
 import com.tom.rv2ide.artificial.agent.compose.components.style.rememberBoundNestedScrollConnection
@@ -181,9 +181,14 @@ internal fun skillAtInsertion(skillName: String): String =
 
 @Composable
 internal fun ChatInputBar(
-    value: String,
-    onValueChange: (String) -> Unit,
-    onSend: (String) -> Unit, // 入参是输入框当前文本：须与最后一次输入同步可见，否则发送会丢末字符
+    fieldValue: TextFieldValue,
+    onFieldValueChange: (TextFieldValue) -> Unit,
+    references: List<ComposerReference>,
+    onSelectReference: (ComposerReference, Int, Int) -> Unit,
+    onRemoveReference: (ComposerReference) -> Unit,
+    referenceProvider: suspend (String, String?) -> List<com.tom.rv2ide.artificial.agent.ReferenceCandidate>,
+    focusRequest: Int,
+    onSend: () -> Unit,
     /** 回车键是否直接发送：开启后 IME 回车键变为「发送」，关闭则回车换行（默认）。 */
     enterToSend: Boolean = false,
     onStop: () -> Unit,
@@ -218,8 +223,6 @@ internal fun ChatInputBar(
     onUploadImage: () -> Unit,
     onTakePhoto: () -> Unit,
     slashCommands: List<InputSlashCommand> = emptyList(),
-    /** 已安装技能（@ 触发选择后插入「使用技能」引导语）。空列表时 @ 无菜单。 */
-    skills: List<InputSlashCommand> = emptyList(),
     queuedRequests: List<QueuedRequest> = emptyList(),
     onRemoveQueued: (String) -> Unit = {},
     onMoveQueued: (Int, Int) -> Unit = { _, _ -> },
@@ -249,34 +252,23 @@ internal fun ChatInputBar(
     isScrolling: Boolean = false,
     modifier: Modifier = Modifier
 ) {
+    val value = fieldValue.text
+    val inputFieldValue = fieldValue
+    val onValueChange: (String) -> Unit = { onFieldValueChange(TextFieldValue(it, TextRange(it.length))) }
     val hasContent = value.isNotBlank() || pendingAttachments.isNotEmpty()
     val canSend = hasContent
     var showAttachmentSheet by remember { mutableStateOf(false) }
     var showFullScreenInput by remember { mutableStateOf(false) }
-    // TextField 的 String 重载在整串替换时会保留旧 selection 下标（点快捷命令补全时光标会停在中间），
-    // 这里自持 TextFieldValue：外部改值时把光标移到末尾。
-    var inputFieldValue by remember { mutableStateOf(TextFieldValue(value, TextRange(value.length))) }
-    LaunchedEffect(value) {
-        if (inputFieldValue.text != value) {
-            inputFieldValue = TextFieldValue(value, TextRange(value.length))
-        }
-    }
-    val showSlashMenu = !isBusy && slashCommands.isNotEmpty() &&
-        value.startsWith("/") && !value.contains("\n")
+    var referenceKind by remember { mutableStateOf<String?>(null) }
+    val focusRequester = remember { FocusRequester() }
+    LaunchedEffect(focusRequest) { if (focusRequest > 0) focusRequester.requestFocus() }
+    val beforeCursor = value.take(fieldValue.selection.end)
+    val showSlashMenu = fieldValue.composition == null && fieldValue.selection.collapsed &&
+        slashCommands.isNotEmpty() && beforeCursor.startsWith("/") && !beforeCursor.contains("\n")
     val filteredCommands = if (showSlashMenu) {
-        if (value == "/") slashCommands
-        else slashCommands.filter { "/${it.name}".startsWith(value) }
+        slashCommands.filter { "/${it.name}".startsWith(beforeCursor) }
     } else emptyList()
-
-    // @ 菜单：光标段（最后一个前置空白之后）以 @ 开头时弹技能选择。
-    // 与 slash 菜单同一浮层结构；选中插入引导语而不是命令文本——技能正文由模型
-    // 经 skill 工具加载（渐进披露），用户只需表达「用这个技能做什么」。
-    val atToken = remember(value) { trailingAtToken(value) }
-    val showSkillMenu = !isBusy && skills.isNotEmpty() && atToken != null
-    val filteredSkills = if (showSkillMenu) {
-        if (atToken == "@") skills
-        else skills.filter { it.name.startsWith(atToken.substring(1), ignoreCase = true) }
-    } else emptyList()
+    val referenceStyle = referenceTransformation(references)
 
     // 文本是否已经超出输入框高度（超出后框内滚动，展开按钮才有意义）。
     // 按换行符数硬编码阈值在长行自动折行时会判断错，这里按 TextField 的实际宽度实测文本高度。
@@ -374,19 +366,12 @@ internal fun ChatInputBar(
                     },
                     overlayMaxHeight = overlayMaxHeight,
                 )
-            } else if (filteredSkills.isNotEmpty()) {
-                SlashMenuList(
-                    items = filteredSkills,
-                    prefix = "@",
-                    onSelect = { skill ->
-                        // 用 @token 整体替换：清掉光标段的 "@xxx"，留下后续补写的任务描述位置。
-                        onValueChange(
-                            value.removeSuffix(atToken ?: "@") +
-                                skillAtInsertion(skill.name)
-                        )
-                    },
-                    overlayMaxHeight = overlayMaxHeight,
-                )
+            }
+            if (!showFullScreenInput) {
+                ReferenceMenu(fieldValue, references, referenceKind, referenceProvider,
+                    onSelect = { ref, start, end -> onSelectReference(ref, start, end); referenceKind = null },
+                    onDismiss = { referenceKind = null },
+                    maxHeight = minOf(280.dp, (overlayMaxHeight - 180.dp).coerceAtLeast(120.dp)))
             }
 
             if (queuedRequests.isNotEmpty()) {
@@ -440,6 +425,12 @@ internal fun ChatInputBar(
                     )
                     .padding(horizontal = Spacing.sm, vertical = Spacing.xs)
             ) {
+                ReferenceChips(
+                    value = fieldValue,
+                    references = references,
+                    onRemove = onRemoveReference,
+                    modifier = Modifier.padding(horizontal = Spacing.xs, vertical = Spacing.xs),
+                )
                 if (pastedTexts.isNotEmpty()) {
                     // 同样按数量重建：粘贴 chip 行插入/移除也会改变输入框高度。
                     key(pastedTexts.size) {
@@ -466,9 +457,7 @@ internal fun ChatInputBar(
                                         if (at >= 0) {
                                             val stripped = current.substring(0, at) +
                                                 current.substring(at + marker.length)
-                                            inputFieldValue =
-                                                TextFieldValue(stripped, TextRange(at))
-                                            onValueChange(stripped)
+                                            onFieldValueChange(TextFieldValue(stripped, TextRange(at)))
                                         }
                                         onRemovePaste(pasted.id)
                                     }
@@ -487,8 +476,7 @@ internal fun ChatInputBar(
                         onValueChange = { new ->
                             // 大段粘贴折成 [Pasted#N] 标记，普通输入原样通过。
                             val folded = foldLongPasteIfNeeded(inputFieldValue, new, onStashPaste)
-                            inputFieldValue = folded
-                            onValueChange(folded.text)
+                            onFieldValueChange(folded)
                             // 用户可能直接删掉 [Pasted#N] 字面量，对应的缓冲块要跟着回收，
                             // 否则 chip 会赖在输入框上方，点开还是一段早已不在文本里的内容。
                             val referenced = pastedIdsIn(folded.text)
@@ -498,7 +486,9 @@ internal fun ChatInputBar(
                         modifier = Modifier
                             .weight(1f)
                             .heightIn(min = INPUT_FIELD_MIN_HEIGHT, max = INPUT_FIELD_MAX_HEIGHT)
-                            .onSizeChanged { inputFieldWidthPx = it.width },
+                            .onSizeChanged { inputFieldWidthPx = it.width }
+                            .focusRequester(focusRequester),
+                        visualTransformation = referenceStyle,
                         placeholder = {
                             Text(
                                 stringResource(if (isBusy) R.string.chat_queue_hint else R.string.chat_input_placeholder),
@@ -512,7 +502,7 @@ internal fun ChatInputBar(
                             KeyboardOptions(imeAction = ImeAction.Default)
                         },
                         keyboardActions = if (enterToSend) {
-                            KeyboardActions(onSend = { onSend(inputFieldValue.text) })
+                            KeyboardActions(onSend = { onSend() })
                         } else {
                             KeyboardActions.Default
                         },
@@ -646,7 +636,7 @@ internal fun ChatInputBar(
                         contentDescription = stringResource(R.string.chat_add_attachment),
                         onClick = { showAttachmentSheet = true }
                     )
-                    SendButton(canSend = canSend, hasContent = hasContent, isBusy = isBusy, canForceStop = canForceStop, tokenProgress = tokenProgress, tokenEstimated = tokenEstimated, onSend = { onSend(inputFieldValue.text) }, onStop = onStop, onForceStop = onForceStop)
+                    SendButton(canSend = canSend, hasContent = hasContent, isBusy = isBusy, canForceStop = canForceStop, tokenProgress = tokenProgress, tokenEstimated = tokenEstimated, onSend = { onSend() }, onStop = onStop, onForceStop = onForceStop)
                 }
             }
         }
@@ -669,14 +659,21 @@ internal fun ChatInputBar(
                 showAttachmentSheet = false
                 onTakePhoto()
             },
+            onReference = { kind -> showAttachmentSheet = false; referenceKind = kind },
             onDismiss = { showAttachmentSheet = false }
         )
     }
 
     if (showFullScreenInput) {
         FullScreenInputDialog(
-            value = value,
-            onValueChange = onValueChange,
+            value = fieldValue,
+            onValueChange = onFieldValueChange,
+            references = references,
+            referenceKind = referenceKind,
+            referenceProvider = referenceProvider,
+            onSelectReference = { ref, start, end -> onSelectReference(ref, start, end); referenceKind = null },
+            onDismissReferences = { referenceKind = null },
+            onRemoveReference = onRemoveReference,
             placeholder = stringResource(if (isBusy) R.string.chat_queue_hint else R.string.chat_input_placeholder),
             onDismiss = { showFullScreenInput = false }
         )
@@ -689,12 +686,18 @@ internal fun ChatInputBar(
  */
 @Composable
 private fun FullScreenInputDialog(
-    value: String,
-    onValueChange: (String) -> Unit,
+    value: TextFieldValue,
+    onValueChange: (TextFieldValue) -> Unit,
+    references: List<ComposerReference>,
+    referenceKind: String?,
+    referenceProvider: suspend (String, String?) -> List<com.tom.rv2ide.artificial.agent.ReferenceCandidate>,
+    onSelectReference: (ComposerReference, Int, Int) -> Unit,
+    onDismissReferences: () -> Unit,
+    onRemoveReference: (ComposerReference) -> Unit,
     placeholder: String,
     onDismiss: () -> Unit
 ) {
-    Dialog(
+    OverlayAwareDialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(
             // 不设则 dialog window 是 WRAP_CONTENT，内容铺不满屏
@@ -751,9 +754,17 @@ private fun FullScreenInputDialog(
                     }
                 }
 
+                ReferenceMenu(value, references, referenceKind, referenceProvider, onSelectReference, onDismissReferences)
+                ReferenceChips(
+                    value = value,
+                    references = references,
+                    onRemove = onRemoveReference,
+                    modifier = Modifier.padding(horizontal = Spacing.md, vertical = Spacing.xs),
+                )
                 TextField(
                     value = value,
                     onValueChange = onValueChange,
+                    visualTransformation = referenceTransformation(references),
                     modifier = Modifier
                         .fillMaxWidth()
                         .weight(1f)

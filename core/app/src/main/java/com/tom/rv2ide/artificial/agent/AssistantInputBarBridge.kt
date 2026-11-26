@@ -48,8 +48,84 @@ internal class AssistantInputBarBridge {
 
   // ── 文本与发送 ──
 
-  /** 输入框文本。Compose 侧 onValueChange 回写这里；宿主写入用 [text] 属性。 */
-  var text by mutableStateOf("")
+  var fieldValue by mutableStateOf(androidx.compose.ui.text.input.TextFieldValue(""))
+    private set
+  var references by mutableStateOf<List<com.tom.rv2ide.artificial.agent.compose.components.independent.ComposerReference>>(emptyList())
+    private set
+  var focusRequest by mutableIntStateOf(0)
+  private var draftSession = ""
+  private data class Draft(
+      val value: androidx.compose.ui.text.input.TextFieldValue,
+      val references: List<com.tom.rv2ide.artificial.agent.compose.components.independent.ComposerReference>,
+      val attachments: androidx.compose.runtime.snapshots.SnapshotStateList<PendingUploadAttachment>,
+  )
+  private val drafts = mutableMapOf<String, Draft>()
+
+  var text: String
+    get() = fieldValue.text
+    set(value) { edit(androidx.compose.ui.text.input.TextFieldValue(value, androidx.compose.ui.text.TextRange(value.length))) }
+
+  fun edit(value: androidx.compose.ui.text.input.TextFieldValue) {
+    val old = com.tom.rv2ide.artificial.agent.compose.components.independent.ComposerDraft(text, references, fieldValue.selection.end)
+    val edited = com.tom.rv2ide.artificial.agent.compose.components.independent.applyTextEdit(old, value.text, value.selection.end)
+    if (value.composition != null) {
+      // IME 尚未提交，不改它正在组合的文本或 selection。
+      references = com.tom.rv2ide.artificial.agent.compose.components.independent.liveReferences(edited.copy(text = value.text))
+      fieldValue = value
+      return
+    }
+    references = com.tom.rv2ide.artificial.agent.compose.components.independent.liveReferences(edited)
+    fun boundary(offset: Int, towardEnd: Boolean): Int {
+      val inside = references.firstOrNull { offset > it.start && offset < it.end } ?: return offset
+      return if (towardEnd) inside.end else inside.start
+    }
+    val selection = if (value.text != edited.text) androidx.compose.ui.text.TextRange(edited.cursor)
+        else if (value.selection.collapsed) {
+          androidx.compose.ui.text.TextRange(boundary(value.selection.end, value.selection.end >= fieldValue.selection.end))
+        } else androidx.compose.ui.text.TextRange(
+            boundary(value.selection.start, value.selection.reversed),
+            boundary(value.selection.end, !value.selection.reversed))
+    fieldValue = androidx.compose.ui.text.input.TextFieldValue(edited.text, selection)
+  }
+
+  fun insert(reference: com.tom.rv2ide.artificial.agent.compose.components.independent.ComposerReference, start: Int = fieldValue.selection.min, end: Int = fieldValue.selection.max) {
+    if (fieldValue.composition != null) return
+    val next = com.tom.rv2ide.artificial.agent.compose.components.independent.insertReference(text, references, start, end, reference)
+    references = next.references
+    fieldValue = androidx.compose.ui.text.input.TextFieldValue(next.text, androidx.compose.ui.text.TextRange(next.cursor))
+    focusRequest++
+  }
+
+  fun removeReference(reference: com.tom.rv2ide.artificial.agent.compose.components.independent.ComposerReference) {
+    if (fieldValue.composition != null) return
+    val length = reference.end - reference.start
+    references = references.filterNot { it == reference }.map {
+      if (it.start >= reference.end) it.copy(start = it.start - length, end = it.end - length) else it
+    }
+    val selection = fieldValue.selection
+    fieldValue = androidx.compose.ui.text.input.TextFieldValue(
+        text.removeRange(reference.start, reference.end),
+        androidx.compose.ui.text.TextRange(
+            selection.start - (selection.start - reference.start).coerceIn(0, length),
+            selection.end - (selection.end - reference.start).coerceIn(0, length)))
+  }
+
+  fun restore(value: String, refs: List<com.tom.rv2ide.ai.protocol.ReferenceMeta>) {
+    references = refs.map { com.tom.rv2ide.artificial.agent.compose.components.independent.ComposerReference(it.kind, it.id, it.label, it.path, it.start, it.end) }
+    fieldValue = androidx.compose.ui.text.input.TextFieldValue(value, androidx.compose.ui.text.TextRange(value.length))
+    focusRequest++
+  }
+
+  fun switchSession(id: String?) {
+    val key = id.orEmpty()
+    if (key == draftSession) return
+    drafts[draftSession] = Draft(fieldValue, references.toList(), pendingAttachments)
+    val saved = drafts[key]
+    fieldValue = saved?.value ?: androidx.compose.ui.text.input.TextFieldValue("")
+    references = saved?.references.orEmpty()
+    pendingAttachments = saved?.attachments ?: mutableStateListOf()
+    draftSession = key
+  }
 
   var conversationEmpty by mutableStateOf(true)
 
@@ -76,10 +152,11 @@ internal class AssistantInputBarBridge {
    */
   var contextWindowSize by mutableIntStateOf(0)
 
-  // ── 附件（原 AssistantInputFeatures.attachments 的 Compose 投影） ──
+  // ── 附件 ──
 
-  /** 待发送附件。由 [AssistantInputFeatures] 增删（已切换到本列表）。 */
-  val pendingAttachments = mutableStateListOf<PendingUploadAttachment>()
+  /** 按会话保存的唯一待发送附件；预览和发送共用，异步读图捕获所属草稿列表。 */
+  var pendingAttachments by mutableStateOf(mutableStateListOf<PendingUploadAttachment>())
+    private set
 
   // ── 模型/模式/推理强度 ──
 

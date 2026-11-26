@@ -787,6 +787,73 @@ final class AgentSessionTest {
         "运行中的注入应出现在发给模型的消息里");
   }
 
+  @Test
+  void initialUserMessageEventPreservesStructuredMetadata(@TempDir Path workspace) throws Exception {
+    ScriptedProtocol protocol = new ScriptedProtocol(true).enqueue("完成", List.of());
+    AgentSession session = new AgentSession(clientWith(protocol), fileRegistry(),
+        new ToolExecutor(fileRegistry(), null, null));
+    com.tom.rv2ide.ai.protocol.UserModelMessage initial =
+        new com.tom.rv2ide.ai.protocol.UserModelMessage("读取会话", "", "查看 @会话");
+    initial.withReferences(List.of(
+        new com.tom.rv2ide.ai.protocol.ReferenceMeta("session", "session-id", "会话", "", 3, 7)));
+    List<AgentEvent> events = new ArrayList<>();
+
+    session.run(config(10), "系统", initial, null,
+        ToolContext.builder().homePath(workspace.toString()).build(), null, events::add,
+        null, "", null, true);
+
+    AgentEvent event = events.stream()
+        .filter(e -> e.getType() == AgentEvent.Type.USER_MESSAGE)
+        .findFirst().orElseThrow();
+    assertSame(initial, event.getUserMessage());
+    assertEquals("查看 @会话", event.getMessage());
+    assertEquals("session-id", event.getUserMessage().getReferences().get(0).getId());
+    assertTrue(event.getUserMessage().isUserAuthored());
+  }
+
+  @Test
+  void cancelledRunDoesNotEmitInitialUserMessage(@TempDir Path workspace) throws Exception {
+    ScriptedProtocol protocol = new ScriptedProtocol(true).enqueue("完成", List.of());
+    AgentSession session = new AgentSession(clientWith(protocol), fileRegistry(),
+        new ToolExecutor(fileRegistry(), null, null));
+    List<AgentEvent> events = new ArrayList<>();
+    com.tom.rv2ide.ai.protocol.ModelCancellationToken cancellation =
+        new com.tom.rv2ide.ai.protocol.ModelCancellationToken();
+    cancellation.cancel();
+
+    session.run(config(10), "系统",
+        new com.tom.rv2ide.ai.protocol.UserModelMessage("请求"), null,
+        ToolContext.builder().homePath(workspace.toString()).build(), cancellation, events::add,
+        null, "", null, true);
+
+    assertFalse(events.stream().anyMatch(e -> e.getType() == AgentEvent.Type.USER_MESSAGE));
+  }
+
+  @Test
+  void structuredInjectionKeepsDisplayImageAndLeftoverIdentity(@TempDir Path workspace) throws Exception {
+    ScriptedProtocol protocol = new ScriptedProtocol(true).enqueue("完成", List.of());
+    AgentSession session = new AgentSession(clientWith(protocol), fileRegistry(),
+        new ToolExecutor(fileRegistry(), null, null));
+    String raw = com.tom.rv2ide.ai.protocol.ImageInputPayload.rawInputJson("读取内部引用", "image/png", "image-data");
+    com.tom.rv2ide.ai.protocol.UserModelMessage injected =
+        new com.tom.rv2ide.ai.protocol.UserModelMessage("读取内部引用", raw, "看 @会话");
+    injected.withReferences(List.of(new com.tom.rv2ide.ai.protocol.ReferenceMeta("session", "id", "会话", "", 2, 5)));
+    assertTrue(session.offerInjectMessage(injected));
+    assertSame(injected, session.drainLeftoverInjectMessages().get(0));
+    assertTrue(session.offerInjectMessage(injected));
+    List<AgentEvent> events = new ArrayList<>();
+    session.run(config(10), "系统", "原问题", ToolContext.builder().homePath(workspace.toString()).build(), null, events::add);
+    AgentEvent event = events.stream().filter(e -> e.getType() == AgentEvent.Type.USER_MESSAGE).findFirst().orElseThrow();
+    assertEquals("看 @会话", event.getMessage());
+    assertSame(injected, event.getUserMessage());
+    ModelMessage model = protocol.receivedMessages.get(0).stream()
+        .filter(m -> !m.getRawInputJson().isEmpty()).findFirst().orElseThrow();
+    com.tom.rv2ide.ai.protocol.ImageInputPayload.Payload image =
+        com.tom.rv2ide.ai.protocol.ImageInputPayload.fromRawInputJson(model.getRawInputJson());
+    assertTrue(image.getPrompt().contains("读取内部引用"));
+    assertEquals("image-data", image.getDataBase64());
+  }
+
   // ---- 并行工具执行 ----
 
   @Test

@@ -206,6 +206,7 @@ class AssistantMessageAdapter(
        * （它会进 `snapshot()` 并被 DiffUtil 比较）。
        */
       val attachments: List<MessageAttachment> = emptyList(),
+      val references: List<com.tom.rv2ide.ai.protocol.ReferenceMeta> = emptyList(),
   ) : Item()
 
   /**
@@ -395,6 +396,7 @@ class AssistantMessageAdapter(
    * 消息长按菜单回调：用于弹出复制（原文/纯文）、引用提问等高级操作。
    */
   var onMessageActionRequested: ((Message, View) -> Unit)? = null
+  var onQuoteRequested: ((Long) -> Unit)? = null
 
   /**
    * 图片解码用的协程作用域；由视图层注入（适配器本身不是 LifecycleOwner）。
@@ -449,6 +451,7 @@ class AssistantMessageAdapter(
       role: Role,
       text: String,
       attachments: List<MessageAttachment>,
+      references: List<com.tom.rv2ide.ai.protocol.ReferenceMeta> = emptyList(),
   ): Long {
     val id = nextId++
     items.add(
@@ -459,7 +462,8 @@ class AssistantMessageAdapter(
             diffId = null,
             reverted = false,
             durationMs = 0L,
-            attachments = attachments))
+            attachments = attachments,
+            references = references))
     notifyCompat { notifyItemInserted(items.size - 1) }
     return id
   }
@@ -1495,30 +1499,25 @@ class AssistantMessageAdapter(
         avatar.visibility = View.GONE
       }
 
-      // 撤销按钮：只有携带 diffId 的消息才可能显示，且默认收起、长按才展开。
-      // 已撤销时改为禁用并换文案——让按钮消失会让用户怀疑自己是否点到了，
-      // 禁用态能明确传达「已经生效了」。
-      // 长按交互与操作条：
-      // 如果消息带有 diffId，优先通过原有逻辑处理或长按显示撤销；
-      // 若没有 diffId 或有外部操作监听，则触发自定义操作菜单（复制、引用提问等）。
-      val diffId = message.diffId
-      card.isLongClickable = true
-      card.setOnLongClickListener {
-        if (diffId != null) {
-          binding.messageRevert.visibility =
-              if (binding.messageRevert.isVisible) View.GONE else View.VISIBLE
-          true
-        } else if (adapter.onMessageActionRequested != null) {
-          adapter.onMessageActionRequested?.invoke(message, card)
-          true
-        } else {
-          false
-        }
+      // 保留正文选词；整条消息操作另有独立入口，不依赖 ROM 的系统选词菜单。
+      fun showActions(anchor: View): Boolean {
+        val latest = adapter.find(message.id) ?: return false
+        val callback = adapter.onMessageActionRequested ?: return false
+        callback(latest, anchor)
+        return true
       }
+      card.setOnLongClickListener { showActions(card) }
+      binding.messageMore.visibility =
+          if (adapter.onMessageActionRequested != null) View.VISIBLE else View.GONE
+      binding.messageMore.setOnClickListener { showActions(it) }
+      installSelectionActions(content, message.id)
 
+      // 携带 diffId 时显示撤销；已撤销则保留禁用反馈。
+      val diffId = message.diffId
       if (diffId == null) {
         binding.messageRevert.visibility = View.GONE
       } else {
+        binding.messageRevert.visibility = View.VISIBLE
         binding.messageRevert.isEnabled = !message.reverted
         binding.messageRevert.setText(
             if (message.reverted) string.ai_assistant_revert_done
@@ -1530,6 +1529,35 @@ class AssistantMessageAdapter(
 
     private fun dp(view: View, value: Int): Int =
         (value * view.resources.displayMetrics.density).toInt()
+
+    private fun installSelectionActions(content: ViewGroup, messageId: Long) {
+      fun visit(view: View) {
+        if (view is TextView && (view.parent === content || view.id == R.id.codeText)) {
+          view.setTextIsSelectable(true)
+          view.customSelectionActionModeCallback = object : android.view.ActionMode.Callback {
+            override fun onCreateActionMode(mode: android.view.ActionMode, menu: android.view.Menu): Boolean {
+              menu.add(0, R.string.ai_quote_whole_message, 100, R.string.ai_quote_whole_message)
+              return true
+            }
+            override fun onPrepareActionMode(mode: android.view.ActionMode, menu: android.view.Menu): Boolean {
+              menu.removeItem(android.R.id.cut)
+              menu.removeItem(android.R.id.paste)
+              return false
+            }
+            override fun onActionItemClicked(mode: android.view.ActionMode, item: android.view.MenuItem): Boolean {
+              if (item.itemId != R.string.ai_quote_whole_message) return false
+              mode.finish()
+              adapter.onQuoteRequested?.invoke(messageId)
+              return true
+            }
+            override fun onDestroyActionMode(mode: android.view.ActionMode) = Unit
+          }
+        } else if (view is ViewGroup) {
+          for (index in 0 until view.childCount) visit(view.getChildAt(index))
+        }
+      }
+      for (index in 0 until content.childCount) visit(content.getChildAt(index))
+    }
 
     /** inflate 一个正文段。样式与 item_assistant_message.xml 里的正文完全一致。 */
     private fun inflateText(parent: ViewGroup): TextView =

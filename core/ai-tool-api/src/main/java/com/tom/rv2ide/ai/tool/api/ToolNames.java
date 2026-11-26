@@ -86,6 +86,8 @@ public final class ToolNames {
      * 的注释：那是唯一不会破坏 tool_use/tool_result 配对的注入位置）。
      */
     public static final String SEND_MESSAGE = "send_message";
+    /** 只读用户明确引用的旧会话，不启动或续跑目标会话。 */
+    public static final String CONVERSATION_READ = "conversation_read";
     public static final String TODO_UPDATE = "todo_update";
     public static final String MEMORY_UPDATE = "memory_update";
     /**

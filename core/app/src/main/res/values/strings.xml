@@ -77,4 +77,17 @@
   <string name="msg_project_tab_switch_failed">Unable to switch to the project</string>
   <string name="msg_project_tab_limit">Too many projects are open. Close one first.</string>
 
+  <string name="ai_reference_choose">选择引用</string>
+  <string name="ai_reference_all">全部</string>
+  <string name="ai_reference_remove">移除引用 %1$s</string>
+  <string name="ai_reference_session">会话</string>
+  <string name="ai_reference_file">项目文件</string>
+  <string name="ai_reference_agent">智能体</string>
+  <string name="ai_reference_skill">技能</string>
+  <string name="ai_reference_plugin">插件</string>
+  <string name="ai_reference_empty">没有匹配的可用引用</string>
+  <string name="ai_reference_load_failed">无法读取引用候选，请重试</string>
+  <string name="ai_copy_conversation_id">复制会话 ID</string>
+  <string name="ai_conversation_id_copied">已复制会话 ID</string>
+  <string name="ai_quote_whole_message">引用整条消息</string>
 </resources>

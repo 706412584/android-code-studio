@@ -59,6 +59,12 @@ public interface ConversationStore {
   /** 读取一个会话的全部条目。 */
   List<ConversationLog.EntryLocation> read(String conversationId) throws IOException;
 
+  /** 有界读取最近一个真实用户回合；beforeUuid 排除锚点，不支持时明确失败。 */
+  default ConversationLog.HistoryPage readPage(String conversationId, String beforeUuid)
+      throws IOException {
+    throw new IOException("该会话存储未接入有界历史读取");
+  }
+
   /**
    * 追加条目。
    *

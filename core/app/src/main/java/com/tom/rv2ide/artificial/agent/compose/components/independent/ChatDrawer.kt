@@ -170,6 +170,7 @@ fun ChatDrawerContent(
     onRename: (ChatSession, String) -> Unit,
     onTogglePin: (ChatSession) -> Unit,
     onExport: (ChatSession) -> Unit,
+    onCopyId: (ChatSession) -> Unit,
     subSessionsByParent: Map<String, List<ChatSession>> = emptyMap(),
     browseState: FileBrowseState,
     expandedPaths: Set<String>,
@@ -478,6 +479,7 @@ fun ChatDrawerContent(
                 menuSession = null
                 onExport(session)
             },
+            onCopyId = { onCopyId(session) },
             onBatchSelect = {
                 menuSession = null
                 isSelectionMode = true
@@ -1403,6 +1405,7 @@ private fun SessionActionSheet(
     onTogglePin: () -> Unit,
     onRename: () -> Unit,
     onExport: () -> Unit,
+    onCopyId: () -> Unit,
     onBatchSelect: () -> Unit,
     onDelete: () -> Unit,
     onDismiss: () -> Unit
@@ -1445,6 +1448,12 @@ private fun SessionActionSheet(
                     onDismiss()
                     onRename()
                 }
+            )
+            SheetActionRow(
+                icon = FeatherIcons.Copy,
+                label = stringResource(com.tom.rv2ide.R.string.ai_copy_conversation_id),
+                tint = MaterialTheme.colorScheme.onSurface,
+                onClick = { onDismiss(); onCopyId() }
             )
             SheetActionRow(
                 icon = FeatherIcons.Download,

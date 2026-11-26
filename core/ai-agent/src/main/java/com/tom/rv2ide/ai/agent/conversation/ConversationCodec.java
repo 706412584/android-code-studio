@@ -18,6 +18,7 @@
 package com.tom.rv2ide.ai.agent.conversation;
 
 import com.tom.rv2ide.ai.protocol.AttachmentMeta;
+import com.tom.rv2ide.ai.protocol.ReferenceMeta;
 import com.tom.rv2ide.ai.tool.api.ToolCall;
 import java.util.ArrayList;
 import java.util.List;
@@ -103,8 +104,15 @@ public final class ConversationCodec {
             parentUuid,
             timestamp,
             json.optString(UserMessageEntry.FIELD_CONTENT, ""),
+            json.optString(
+                UserMessageEntry.FIELD_MODEL_CONTENT,
+                json.optString(UserMessageEntry.FIELD_CONTENT, "")),
             json.optBoolean(UserMessageEntry.FIELD_META, false),
-            readAttachments(json.optJSONArray(UserMessageEntry.FIELD_ATTACHMENTS)));
+            readAttachments(json.optJSONArray(UserMessageEntry.FIELD_ATTACHMENTS)),
+            readReferences(json.optJSONArray(UserMessageEntry.FIELD_REFERENCES)),
+            json.optBoolean(
+                UserMessageEntry.FIELD_USER_AUTHORED,
+                !json.optBoolean(UserMessageEntry.FIELD_META, false)));
       case ASSISTANT:
         return new AssistantMessageEntry(
             uuid,
@@ -177,6 +185,21 @@ public final class ConversationCodec {
       AttachmentMeta meta = AttachmentMeta.fromJson(array.optJSONObject(i));
       if (meta != null) {
         values.add(meta);
+      }
+    }
+    return values;
+  }
+
+  /** 读结构化引用元数据；缺字段或条目类型不符时返回空列表。 */
+  private static List<ReferenceMeta> readReferences(JSONArray array) {
+    List<ReferenceMeta> values = new ArrayList<>();
+    if (array == null) {
+      return values;
+    }
+    for (int i = 0; i < array.length(); i++) {
+      ReferenceMeta reference = ReferenceMeta.fromJson(array.optJSONObject(i));
+      if (reference != null) {
+        values.add(reference);
       }
     }
     return values;

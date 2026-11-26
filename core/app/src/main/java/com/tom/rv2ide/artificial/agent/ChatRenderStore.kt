@@ -63,6 +63,7 @@ internal class ChatRenderStore {
    * 由新视图在 [FloatingAssistantView.attach] 里重新赋值覆盖。
    */
   class RenderState(val adapter: AssistantMessageAdapter) {
+    internal val inputBar = AssistantInputBarBridge()
 
     /**
      * [adapter] 当前装的是哪个会话；null 表示还没装任何会话。

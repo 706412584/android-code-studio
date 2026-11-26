@@ -55,6 +55,7 @@ data class AgentUIMessage(
      */
     val timestamp: Long = 0L,
     val attachments: List<AgentAttachment> = emptyList(),
+    val references: List<com.tom.rv2ide.ai.protocol.ReferenceMeta> = emptyList(),
     /** 仅 TOOL 消息：工具名。null 表示无具体工具（如 TRACE 过程信息），渲染层须容忍 null。 */
     val toolName: String? = null,
     /** 仅 TOOL 消息：本次调用的入参（JSON 文本）。 */

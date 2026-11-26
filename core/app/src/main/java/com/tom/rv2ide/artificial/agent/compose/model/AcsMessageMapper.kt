@@ -149,6 +149,7 @@ object AcsMessageMapper {
           durationMs = m.durationMs,
           isTrace = m.role == AssistantMessageAdapter.Role.TRACE,
           attachments = m.attachments.map { it.toUiAttachment() },
+          references = m.references,
       )
 
   /** 已发送附件 → 渲染层附件。两边字段一一对应，只做类型搬运。 */

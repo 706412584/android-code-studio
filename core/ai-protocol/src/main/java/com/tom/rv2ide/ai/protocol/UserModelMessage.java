@@ -22,12 +22,35 @@
 package com.tom.rv2ide.ai.protocol;
 
 public final class UserModelMessage extends ModelMessage {
+    private final String displayContent;
+    private final boolean userAuthored;
+
     public UserModelMessage(String content) {
-        super(content);
+        this(content, "", content);
     }
 
     public UserModelMessage(String content, String rawInputJson) {
+        this(content, rawInputJson, content);
+    }
+
+    public UserModelMessage(String content, String rawInputJson, String displayContent) {
+        this(content, rawInputJson, displayContent, true);
+    }
+
+    public UserModelMessage(
+            String content, String rawInputJson, String displayContent, boolean userAuthored) {
         super(content, "", rawInputJson);
+        this.displayContent = displayContent == null ? content : displayContent;
+        this.userAuthored = userAuthored;
+    }
+
+    public String getDisplayContent() {
+        return displayContent;
+    }
+
+    /** 消息的协议角色与来源分离；模型投递不能授予用户权限。 */
+    public boolean isUserAuthored() {
+        return userAuthored;
     }
 
     @Override

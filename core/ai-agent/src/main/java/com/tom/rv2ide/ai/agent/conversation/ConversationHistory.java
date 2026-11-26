@@ -244,7 +244,7 @@ public final class ConversationHistory {
   private static void append(
       ConversationEntry entry, List<ModelMessage> messages, Set<String> keepImageUuids) {
     boolean includeImage = keepImageUuids.contains(entry.getUuid());
-    ModelMessage message = toMessage(entry, includeImage);
+    ModelMessage message = toMessage(entry, includeImage, true);
     if (message == null) {
       return;
     }
@@ -363,7 +363,7 @@ public final class ConversationHistory {
    * 整体列表，而选择压缩边界需要逐条累加。
    */
   public static ModelMessage toMessage(ConversationEntry entry) {
-    return toMessage(entry, true);
+    return toMessage(entry, true, true);
   }
 
   /**
@@ -373,16 +373,26 @@ public final class ConversationHistory {
    *     {@link #fold} 对超出保留张数的旧截图做「编码前限制」，避免续接时全量读入内存
    */
   public static ModelMessage toMessage(ConversationEntry entry, boolean includeImage) {
+    return toMessage(entry, includeImage, false);
+  }
+
+  private static ModelMessage toMessage(
+      ConversationEntry entry, boolean includeImage, boolean useModelContent) {
     if (entry instanceof UserMessageEntry) {
       UserMessageEntry user = (UserMessageEntry) entry;
       // meta 条目是系统注入，不进入模型对话
       if (user.isMeta()) {
         return null;
       }
-      UserModelMessage message = new UserModelMessage(user.getContent());
-      // 附件元数据只供界面回放（缩略图），协议序列化不读它。
+      String content = useModelContent ? user.getModelContent() : user.getContent();
+      UserModelMessage message =
+          new UserModelMessage(content, "", user.getContent(), user.isUserAuthored());
+      // 附件与引用元数据只供界面回放，协议序列化不读它们。
       if (!user.getAttachments().isEmpty()) {
         message.withAttachments(new ArrayList<>(user.getAttachments()));
+      }
+      if (!user.getReferences().isEmpty()) {
+        message.withReferences(new ArrayList<>(user.getReferences()));
       }
       return message;
     }
@@ -456,7 +466,7 @@ public final class ConversationHistory {
                 refused.getContent(), refused.getReasoningContent(), refused.getToolCalls()));
         continue;
       }
-      ModelMessage message = toMessage(entry);
+      ModelMessage message = toMessage(entry, true, false);
       if (message != null) {
         messages.add(message);
       }
