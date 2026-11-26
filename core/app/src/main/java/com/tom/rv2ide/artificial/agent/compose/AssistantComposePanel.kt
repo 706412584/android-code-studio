@@ -146,7 +146,8 @@ internal interface AssistantPanelCallbacks {
   /** 长按/更多菜单（复制原文、复制纯文、引用提问等），复用 XML 路径已有的菜单。 */
   fun onMoreClick(messageId: Long)
 
-  fun onQuote(messageId: Long)
+  /** 引用消息；[selection] 为选中文字，null 表示没有选区（宿主回退整条消息）。 */
+  fun onQuote(messageId: Long, selection: String?)
 
   /**
    * 切换一个**工具分组**的展开/折叠。
@@ -849,7 +850,7 @@ private fun MessageRow(
         }
       },
       onMoreClick = { if (id != null) callbacks.onMoreClick(id) },
-      onQuote = { if (id != null) callbacks.onQuote(id) },
+      onQuote = { selection -> if (id != null) callbacks.onQuote(id, selection) },
       // 推理（思考）块的展开态走同一条通道。映射层为 Thinking 条目填的就是
       // AgentUIMessage.expanded，所以这里与工具行共用同一个字段与同一个回调——
       // 宿主的 onToggleExpanded 会依次尝试三种翻转，只有类型匹配的那个生效。

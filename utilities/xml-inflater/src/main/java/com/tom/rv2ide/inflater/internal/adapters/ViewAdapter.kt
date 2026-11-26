@@ -49,6 +49,7 @@ import android.widget.RelativeLayout.LEFT_OF
 import android.widget.RelativeLayout.RIGHT_OF
 import android.widget.RelativeLayout.START_OF
 import androidx.annotation.ChecksSdkIntAtLeast
+import androidx.constraintlayout.widget.ConstraintLayout
 import androidx.core.view.updatePadding
 import androidx.core.view.updatePaddingRelative
 import com.tom.rv2ide.annotations.inflater.ViewAdapter
@@ -72,6 +73,18 @@ import com.tom.rv2ide.resources.R
 @ViewAdapter(forView = View::class)
 @IncludeInDesigner(group = WIDGETS)
 open class ViewAdapter<T : View> : IViewAdapter<T>() {
+
+  /**
+   * 放行 `app`（`http://schemas.android.com/apk/res-auto`）命名空间。
+   *
+   * <p>库控件的属性大多在 `app:` 下（ConstraintLayout 的 `layout_constraint*`、Material
+   * 组件的 `cardCornerRadius` 等）。基类原先只接受 `android:`，这些属性会在进入具体适配器
+   * **之前**就被丢弃。未识别的 `app:` 属性由 [AttributeHandlerScope.applyInternal] 返回
+   * false（只记录、不报错），因此统一放行是安全的。
+   */
+  override fun canHandleNamespace(nsUri: String?): Boolean {
+    return super.canHandleNamespace(nsUri) || nsUri == INamespace.APP.uri
+  }
 
   override fun createAttrHandlers(create: (String, AttributeHandlerScope<T>.() -> Unit) -> Unit) {
     create("alpha") { view.alpha = parseFloat(value, def = 1f) }
@@ -147,6 +160,14 @@ open class ViewAdapter<T : View> : IViewAdapter<T>() {
 
     if (!applied && layoutParams is MarginLayoutParams) {
       applied = applyMarginParams(context, layoutParams, name, value)
+    }
+
+    // ConstraintLayout 的约束是**子控件**的布局参数（app:layout_constraint*），
+    // 由子控件自己的适配器应用；因此放在基类分发里，而不是 ConstraintLayoutAdapter。
+    // 注意 ConstraintLayout.LayoutParams 继承 MarginLayoutParams，上面 margin 分支
+    // 对约束属性返回 false，不会吞掉它们。
+    if (!applied && layoutParams is ConstraintLayout.LayoutParams) {
+      applied = applyConstraintLayoutParams(context, layoutParams, file.resName, name, value)
     }
 
     if (!applied) {
@@ -285,6 +306,123 @@ open class ViewAdapter<T : View> : IViewAdapter<T>() {
       applied = false
     }
     return applied
+  }
+
+  /**
+   * 应用 ConstraintLayout 的布局参数（`app:layout_constraint*` 等）。
+   *
+   * <p>这些属性属于**子控件**，由子控件的适配器负责；`0dp` 会被解析成 0，正好是
+   * `MATCH_CONSTRAINT` 的取值，无需特殊转换。
+   */
+  protected open fun applyConstraintLayoutParams(
+      context: Context,
+      params: ConstraintLayout.LayoutParams,
+      resName: String,
+      name: String,
+      value: String,
+  ): Boolean {
+    fun constraintId(): Int {
+      if (value == "parent") {
+        return ConstraintLayout.LayoutParams.PARENT_ID
+      }
+      // 未解析到的引用回退 UNSET（-1）而不是 0：0 是 PARENT_ID，会把拼错的 ID
+      // 当成「连到父容器」，让预览悄悄画错位置。
+      return parseId(resName, value, ConstraintLayout.LayoutParams.UNSET)
+    }
+
+    fun matchConstraintDefault(): Int {
+      return when (value) {
+        "spread" -> ConstraintLayout.LayoutParams.MATCH_CONSTRAINT_SPREAD
+        "wrap" -> ConstraintLayout.LayoutParams.MATCH_CONSTRAINT_WRAP
+        "percent" -> ConstraintLayout.LayoutParams.MATCH_CONSTRAINT_PERCENT
+        else -> ConstraintLayout.LayoutParams.MATCH_CONSTRAINT_SPREAD
+      }
+    }
+
+    fun chainStyle(): Int {
+      return when (value) {
+        "spread_inside" -> ConstraintLayout.LayoutParams.CHAIN_SPREAD_INSIDE
+        "packed" -> ConstraintLayout.LayoutParams.CHAIN_PACKED
+        else -> ConstraintLayout.LayoutParams.CHAIN_SPREAD
+      }
+    }
+
+    fun percent(): Float {
+      if (value.endsWith("%")) {
+        return value.dropLast(1).toFloatOrNull()?.div(100f) ?: 0f
+      }
+      return value.toFloatOrNull() ?: 0f
+    }
+
+    when (name) {
+      // 四边约束；"parent" 解析为 PARENT_ID。
+      "layout_constraintBottom_toBottomOf" -> params.bottomToBottom = constraintId()
+      "layout_constraintBottom_toTopOf" -> params.bottomToTop = constraintId()
+      "layout_constraintTop_toBottomOf" -> params.topToBottom = constraintId()
+      "layout_constraintTop_toTopOf" -> params.topToTop = constraintId()
+      "layout_constraintStart_toStartOf" -> params.startToStart = constraintId()
+      "layout_constraintStart_toEndOf" -> params.startToEnd = constraintId()
+      "layout_constraintEnd_toStartOf" -> params.endToStart = constraintId()
+      "layout_constraintEnd_toEndOf" -> params.endToEnd = constraintId()
+      "layout_constraintLeft_toLeftOf" -> params.leftToLeft = constraintId()
+      "layout_constraintLeft_toRightOf" -> params.leftToRight = constraintId()
+      "layout_constraintRight_toLeftOf" -> params.rightToLeft = constraintId()
+      "layout_constraintRight_toRightOf" -> params.rightToRight = constraintId()
+
+      // 基线约束。
+      "layout_constraintBaseline_toBaselineOf" -> params.baselineToBaseline = constraintId()
+      "layout_constraintBaseline_toTopOf" -> params.baselineToTop = constraintId()
+      "layout_constraintBaseline_toBottomOf" -> params.baselineToBottom = constraintId()
+
+      // 圆形约束。
+      "layout_constraintCircle" -> params.circleConstraint = constraintId()
+      "layout_constraintCircleRadius" -> params.circleRadius = parseDimension(context, value)
+      "layout_constraintCircleAngle" -> params.circleAngle = parseFloat(value)
+
+      // 偏向与宽高比。
+      "layout_constraintHorizontal_bias" -> params.horizontalBias = parseFloat(value, 0.5f)
+      "layout_constraintVertical_bias" -> params.verticalBias = parseFloat(value, 0.5f)
+      "layout_constraintDimensionRatio" -> params.dimensionRatio = value
+
+      // 0dp 下的尺寸行为与上下限。
+      "layout_constraintWidth_default" ->
+          params.matchConstraintDefaultWidth = matchConstraintDefault()
+      "layout_constraintHeight_default" ->
+          params.matchConstraintDefaultHeight = matchConstraintDefault()
+      "layout_constraintWidth_min" ->
+          params.matchConstraintMinWidth = parseDimension(context, value)
+      "layout_constraintWidth_max" ->
+          params.matchConstraintMaxWidth = parseDimension(context, value)
+      "layout_constraintHeight_min" ->
+          params.matchConstraintMinHeight = parseDimension(context, value)
+      "layout_constraintHeight_max" ->
+          params.matchConstraintMaxHeight = parseDimension(context, value)
+      "layout_constraintWidth_percent" -> params.matchConstraintPercentWidth = percent()
+      "layout_constraintHeight_percent" -> params.matchConstraintPercentHeight = percent()
+
+      // 链与权重。
+      "layout_constraintHorizontal_weight" -> params.horizontalWeight = parseFloat(value, 0f)
+      "layout_constraintVertical_weight" -> params.verticalWeight = parseFloat(value, 0f)
+      "layout_constraintHorizontal_chainStyle" -> params.horizontalChainStyle = chainStyle()
+      "layout_constraintVertical_chainStyle" -> params.verticalChainStyle = chainStyle()
+
+      // 受限尺寸与 gone 时的边距。
+      "layout_constrainedWidth" -> params.constrainedWidth = parseBoolean(value)
+      "layout_constrainedHeight" -> params.constrainedHeight = parseBoolean(value)
+      "layout_goneMarginLeft" -> params.goneLeftMargin = parseDimension(context, value)
+      "layout_goneMarginTop" -> params.goneTopMargin = parseDimension(context, value)
+      "layout_goneMarginRight" -> params.goneRightMargin = parseDimension(context, value)
+      "layout_goneMarginBottom" -> params.goneBottomMargin = parseDimension(context, value)
+      "layout_goneMarginStart" -> params.goneStartMargin = parseDimension(context, value)
+      "layout_goneMarginEnd" -> params.goneEndMargin = parseDimension(context, value)
+
+      // 设计时坐标（仅预览使用）。
+      "layout_editor_absoluteX" -> params.editorAbsoluteX = parseDimension(context, value)
+      "layout_editor_absoluteY" -> params.editorAbsoluteY = parseDimension(context, value)
+
+      else -> return false
+    }
+    return true
   }
 
   protected open fun parseDrawingCacheQuality(value: String): Int {

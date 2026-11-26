@@ -252,7 +252,8 @@ internal fun AgentMessageItem(
     markdownCache: MarkdownRenderCache? = null,
     onRewindClick: ((String) -> Unit)? = null,
     onMoreClick: ((AgentUIMessage) -> Unit)? = null,
-    onQuote: (() -> Unit)? = null,
+    /** 引用当前消息；参数为选中文字（无选区/读取失败时为 null，由上层回退整条消息）。 */
+    onQuote: ((String?) -> Unit)? = null,
     onToolToggle: (() -> Unit)? = null,
     /** 工具行展开态的持久化覆盖（null = 尚未手动开关过，按内容类型取默认）；见 [ToolMessageBody]。 */
     toolExpandedOverride: Boolean? = null,

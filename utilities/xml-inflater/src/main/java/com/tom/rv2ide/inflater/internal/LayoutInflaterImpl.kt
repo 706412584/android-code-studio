@@ -33,6 +33,7 @@ import com.tom.rv2ide.inflater.IComponentFactory
 import com.tom.rv2ide.inflater.IComponentFactory.Companion.LAYOUT_INFLATER_COMPONENT_FACTORY_KEY
 import com.tom.rv2ide.inflater.ILayoutInflater
 import com.tom.rv2ide.inflater.INamespace
+import com.tom.rv2ide.inflater.IViewAdapterIndex
 import com.tom.rv2ide.inflater.IView
 import com.tom.rv2ide.inflater.IViewGroup
 import com.tom.rv2ide.inflater.InflateException
@@ -180,17 +181,16 @@ open class LayoutInflaterImpl : ILayoutInflater {
         if (element.name.contains('.')) widgets.getWidget(element.name)
         else widgets.findWidgetWithSimpleName(element.name)
 
-    // TODO(itsaky): Handle views from libraries
+    // 控件表只来自 Android SDK 的 `data/widgets.txt`（仅平台控件）。库控件（androidx /
+    // material）不在表里，但可能已经有 ViewAdapter（经 @ViewAdapter 注册进
+    // ViewAdapterIndex）——先问适配器，之后才退到占位提示。否则模板默认的
+    // ConstraintLayout 在预览里会渲染成 "View with name '…' not found"，
+    // 看起来像依赖缺失，实际是设计器不认识库控件。
     val view: ViewImpl =
-        (if (widget == null) {
-          onCreateUnsupportedView(
-              element.name,
-              element.childCount > 0,
-              "View with name '${element.name}' not found",
-              parentView,
-          )
-        } else {
+        (if (widget != null) {
           onCreatePlatformView(widget, parentView, module, widgets)
+        } else {
+          onCreateLibraryView(element.name, element.childCount > 0, parentView)
         })
             as ViewImpl
 
@@ -324,6 +324,35 @@ open class LayoutInflaterImpl : ILayoutInflater {
           parent,
       )
     }
+  }
+
+  /**
+   * 创建控件表里没有、但已注册 [com.tom.rv2ide.inflater.IViewAdapter] 的库控件。
+   *
+   * <p>优先让适配器自己创建视图（它能处理构造差异），没有实现时回退到反射实例化。
+   * 实例化失败（类不存在、构造签名不匹配）仍落到占位提示，与改动前一致。
+   */
+  protected open fun onCreateLibraryView(
+      name: String,
+      hasChildren: Boolean,
+      parent: ViewGroup,
+  ): IView {
+    val adapter = IViewAdapterIndex.instance.getViewAdapter(name)
+    if (adapter != null) {
+      try {
+        val view = adapter.onCreateView(name, parent.context)
+            ?: createViewInstance(name, parent.context)
+        return componentFactory.createView(currentLayoutFile, name, view)
+      } catch (_: Throwable) {
+        // 无法实例化：交给下面的占位提示。
+      }
+    }
+    return onCreateUnsupportedView(
+        name,
+        hasChildren,
+        "View with name '$name' not found",
+        parent,
+    )
   }
 
   protected open fun onCreateAttribute(

@@ -33,6 +33,10 @@ dependencies {
   ksp(projects.annotation.processorsKsp)
 
   implementation(libs.androidx.appcompat)
+  // 布局预览要识别并实例化 ConstraintLayout（模板默认根布局）。
+  // 设计器的控件表只来自 SDK 的 widgets.txt（仅平台控件），库控件通过
+  // ConstraintLayoutAdapter 注册进 ViewAdapterIndex，这里提供被适配的类本身。
+  implementation(libs.androidx.constraintlayout)
   implementation(libs.common.kotlin)
   implementation(libs.common.utilcode)
 

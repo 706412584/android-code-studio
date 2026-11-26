@@ -12,7 +12,7 @@
  *  GNU General Public License for more details.
  *
  *  You should have received a copy of the GNU General Public License
- *   along with AndroidIDE.  If not, see <https://www.gnu.org/licenses/>.
+ *  along with AndroidIDE.  If not, see <https://www.gnu.org/licenses/>.
  */
 
 package com.tom.rv2ide.inflater.internal.adapters
@@ -38,6 +38,12 @@ import com.tom.rv2ide.resources.R.string
 
 /**
  * Attribute adapter for [ConstraintLayout].
+ *
+ * <p><b>注册这个适配器的意义</b>：设计器的控件表只来自 Android SDK 的 `data/widgets.txt`
+ * （仅平台控件），库控件需要 [ViewAdapter] 注册进 `ViewAdapterIndex`，`LayoutInflaterImpl`
+ * 才能在控件表未命中时回退到适配器创建视图。约束属性本身（`app:layout_constraint*`）是
+ * **子控件**的布局参数，由 `ViewAdapter` 的布局参数分发统一处理（见
+ * `ViewAdapter.applyConstraintLayoutParams`），不在这里。
  *
  * @author Mohammed-baqer-null @ https://github.com/Mohammed-baqer-null
  */

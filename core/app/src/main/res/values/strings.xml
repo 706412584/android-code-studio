@@ -90,4 +90,5 @@
   <string name="ai_copy_conversation_id">复制会话 ID</string>
   <string name="ai_conversation_id_copied">已复制会话 ID</string>
   <string name="ai_quote_whole_message">引用整条消息</string>
+  <string name="ai_quote_selection">引用选中文字</string>
 </resources>

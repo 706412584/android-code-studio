@@ -3255,13 +3255,17 @@ class FloatingAssistantView(
   }
 
   /**
-   * 引用提问对话框：输入对当前消息的追问，确认后回填并附带引用前缀。
+   * 引用提问：把引用块回填到输入区。
+   *
+   * <p>[selection] 非空时只引用选中的文字（Compose 选区的语义，与 cc-haha 的 chat-selection
+   * 一致）；为空时回退整条消息——XML 路径的「更多 → 引用整条消息」仍走这条默认值。
    */
-  private fun quoteMessage(messageId: Long) {
+  private fun quoteMessage(messageId: Long, selection: String? = null) {
     val message = adapter.find(messageId) ?: return
+    val quoteText = selection?.trim()?.takeIf { it.isNotEmpty() } ?: message.text
     val ref = ChatReference(messageId = message.id,
         role = if (message.role == AssistantMessageAdapter.Role.USER) "user" else "assistant",
-        quote = message.text)
+        quote = quoteText)
     val block = AssistantMessageActions.referenceContext(listOf(ref))
     if (block.isEmpty()) return
     val value = inputBar.fieldValue
@@ -4607,7 +4611,9 @@ class FloatingAssistantView(
             revertDiff(messageId, diffId)
           }
 
-          override fun onQuote(messageId: Long) { quoteMessage(messageId) }
+          override fun onQuote(messageId: Long, selection: String?) {
+            quoteMessage(messageId, selection)
+          }
 
           override fun onMoreClick(messageId: Long) {
             // 复用既有的长按菜单（复制原文/纯文、引用提问）。菜单的锚点需要 View，
