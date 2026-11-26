@@ -94,6 +94,7 @@ import com.tom.rv2ide.artificial.agent.compose.model.MessageRole
 import com.tom.rv2ide.artificial.agent.compose.model.ToolRunStatus
 import com.tom.rv2ide.artificial.agent.compose.model.hasVisibleContent
 import com.tom.rv2ide.artificial.agent.compose.theme.Brand
+import com.tom.rv2ide.artificial.agent.compose.theme.Radius
 import com.tom.rv2ide.artificial.agent.compose.theme.Spacing
 import com.tom.rv2ide.artificial.agent.compose.theme.semanticColors
 import compose.icons.FeatherIcons
@@ -103,6 +104,7 @@ import compose.icons.feathericons.ChevronRight
 import compose.icons.feathericons.Clock
 import compose.icons.feathericons.Copy
 import compose.icons.feathericons.Database
+import compose.icons.feathericons.MessageSquare
 import compose.icons.feathericons.MoreHorizontal
 import compose.icons.feathericons.RotateCcw
 import compose.icons.feathericons.Trash2
@@ -439,35 +441,11 @@ internal fun AgentMessageItem(
                             }
                         } else if (isUser) {
                             // 用户消息：右对齐浅色药丸 + 深色文字（不再整块主题色反白）。
-                            Surface(
-                                shape = RoundedCornerShape(ChatStyle.bubbleCorner),
-                                color = chatUserBubbleColor(),
-                                modifier = Modifier.widthIn(max = maxUserBubbleWidth)
-                            ) {
-                                MessageSelection(onQuote) {
-                                    CompositionLocalProvider(
-                                        LocalTextSelectionColors provides TextSelectionColors(
-                                            handleColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                                            backgroundColor = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.24f),
-                                        )
-                                    ) {
-                                        Text(
-                                            text = androidx.compose.ui.text.buildAnnotatedString {
-                                                append(message.content)
-                                                message.references.forEach { ref ->
-                                                    if (ref.start >= 0 && ref.end <= message.content.length && ref.start < ref.end) {
-                                                        addStyle(androidx.compose.ui.text.SpanStyle(
-                                                            fontWeight = FontWeight.SemiBold), ref.start, ref.end)
-                                                    }
-                                                }
-                                            },
-                                            color = chatUserBubbleTextColor(),
-                                            style = MaterialTheme.typography.bodyMedium.copy(lineHeight = 20.sp),
-                                            modifier = Modifier.padding(horizontal = Spacing.md, vertical = Spacing.sm)
-                                        )
-                                    }
-                                }
-                            }
+                            UserBubble(
+                                message = message,
+                                maxWidth = maxUserBubbleWidth,
+                                onQuote = onQuote,
+                            )
                         } else {
                             // 助手正文：不套容器，直接铺在页面底色上（文档流）。分块之间只留一个段落间距，
                             // 整条消息看起来仍是连续的一段正文。
@@ -981,6 +959,115 @@ private fun CompactionFailureCard(message: AgentUIMessage) {
                     )
                 }
             }
+        }
+    }
+}
+
+/**
+ * 用户消息气泡。消息引用渲染成**卡片**（与编辑框里那颗胶囊同语义），其余正文正常显示，
+ * 而不是把整段 `> 引用自 …` 多行块直接倒进气泡——那会把一条短消息撑成一屏。
+ *
+ * <p>正文与引用按区间交错：引用卡片在上、用户实际输入的摘要在下。区间来自落盘的
+ * `message.references`（见 `composeRequestTexts`），与正文坐标一致；缺失或越界的引用
+ * 按普通文本处理（不凭字面量猜）。纯展示，不改变已发出的内容。
+ */
+@Composable
+private fun UserBubble(
+    message: AgentUIMessage,
+    maxWidth: androidx.compose.ui.unit.Dp,
+    onQuote: ((String?) -> Unit)?,
+) {
+    // ReferenceMeta → ComposerReference：quote 卡片只需 label / path / 区间。
+    val quotes = remember(message.references) {
+        message.references
+            .filter { it.kind == "quote" }
+            .map {
+                com.tom.rv2ide.artificial.agent.compose.components.independent.ComposerReference(
+                    kind = it.kind, id = it.id, label = it.label, path = it.path,
+                    start = it.start, end = it.end)
+            }
+    }
+    val segments = remember(message.content, quotes) {
+        com.tom.rv2ide.artificial.agent.compose.components.independent.splitMessageByQuotes(
+            message.content, quotes)
+    }
+    val hasQuote = segments.any { it is com.tom.rv2ide.artificial.agent.compose.components.independent.MessageSegment.Quote }
+    Surface(
+        shape = RoundedCornerShape(ChatStyle.bubbleCorner),
+        color = chatUserBubbleColor(),
+        modifier = Modifier.widthIn(max = maxWidth)
+    ) {
+        MessageSelection(onQuote) {
+            CompositionLocalProvider(
+                LocalTextSelectionColors provides TextSelectionColors(
+                    handleColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                    backgroundColor = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.24f),
+                )
+            ) {
+                if (!hasQuote) {
+                    Text(
+                        text = message.content,
+                        color = chatUserBubbleTextColor(),
+                        style = MaterialTheme.typography.bodyMedium.copy(lineHeight = 20.sp),
+                        modifier = Modifier.padding(horizontal = Spacing.md, vertical = Spacing.sm)
+                    )
+                } else {
+                    Column(modifier = Modifier.padding(horizontal = Spacing.md, vertical = Spacing.sm)) {
+                        var first = true
+                        segments.forEach { seg ->
+                            when (seg) {
+                                is com.tom.rv2ide.artificial.agent.compose.components.independent.MessageSegment.Quote -> {
+                                    if (!first) Spacer(Modifier.height(Spacing.xs))
+                                    QuoteCard(label = seg.label)
+                                    first = false
+                                }
+                                is com.tom.rv2ide.artificial.agent.compose.components.independent.MessageSegment.Text -> {
+                                    val bodyText = seg.text.trim()
+                                    if (bodyText.isNotEmpty()) {
+                                        if (!first) Spacer(Modifier.height(Spacing.xs))
+                                        Text(
+                                            text = bodyText,
+                                            color = chatUserBubbleTextColor(),
+                                            style = MaterialTheme.typography.bodyMedium.copy(lineHeight = 20.sp),
+                                        )
+                                        first = false
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** 气泡内的一条引用卡片：单行、圆角、带对话图标，视觉与输入区引用胶囊一致。 */
+@Composable
+private fun QuoteCard(label: String) {
+    Surface(
+        shape = RoundedCornerShape(Radius.mdLarge),
+        color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.5f),
+        modifier = Modifier.widthIn(max = 220.dp)
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = Spacing.sm, vertical = Spacing.xs),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                FeatherIcons.MessageSquare,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSecondaryContainer,
+                modifier = Modifier.size(14.dp)
+            )
+            Spacer(Modifier.width(Spacing.xs))
+            Text(
+                text = label,
+                color = MaterialTheme.colorScheme.onSecondaryContainer,
+                style = MaterialTheme.typography.labelMedium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
         }
     }
 }

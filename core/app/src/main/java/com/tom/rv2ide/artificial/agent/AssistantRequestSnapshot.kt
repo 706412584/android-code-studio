@@ -2,6 +2,7 @@ package com.tom.rv2ide.artificial.agent
 
 import com.tom.rv2ide.ai.protocol.ReferenceMeta
 import com.tom.rv2ide.artificial.agent.compose.components.independent.ComposerDraft
+import com.tom.rv2ide.artificial.agent.compose.components.independent.expandQuoteReferences
 import com.tom.rv2ide.artificial.agent.compose.components.independent.liveReferences
 import com.tom.rv2ide.adapters.AssistantMessageAdapter
 
@@ -40,10 +41,33 @@ internal fun restorePendingAttachments(
   }
 }
 
-internal fun modelReferenceText(draft: ComposerDraft): Pair<String, List<ReferenceMeta>> {
-  val references = liveReferences(draft)
-  if (references.isEmpty()) return draft.text to emptyList()
-  val instructions = references.joinToString("\n") {
+/**
+ * 结合 [modelReferenceText] 的结果给出**显示文本**与引用元数据。
+ *
+ * <p>返回给调用方的三段：
+ * - displayText：气泡要显示的正文，**保留 chip token**（形如「引用 助手回复」）而不展开成
+ *   多行 `> 引用自 …`。气泡据此把 quote 区间渲染成卡片（见消息气泡的渲染），只留简短摘要。
+ * - modelText：发给模型的文本。这里才把 chip 展开成完整引用块——模型需要看到被引用原文，
+ *   用户界面则需要紧凑。
+ * - references：落盘/回放用的引用元数据，区间对齐到 **displayText**，含 quote 条目，
+ *   供气泡重建卡片。
+ */
+internal fun composeRequestTexts(
+    draft: ComposerDraft,
+): Triple<String, String, List<ReferenceMeta>> {
+  val live = liveReferences(draft)
+  // 显示文本就是输入框里的原文：quote 以单行 token 存在，气泡会把它的区间换成卡片。
+  val displayText = draft.text
+  val references = live.map {
+    ReferenceMeta(it.kind, it.id, it.label, it.path, it.start, it.end)
+  }
+  // 结构化引用指令只认「让模型去调某工具」的意图（会话/文件/智能体/技能/插件）。
+  // quote 是引文上下文本身，不放结构化指令。
+  val structured = live.filter { it.kind != "quote" }
+  // 模型文本展开 quote chip 成完整 `> 引用自 …` 块。
+  val modelBase = expandQuoteReferences(draft)
+  if (structured.isEmpty()) return Triple(displayText, modelBase, references)
+  val instructions = structured.joinToString("\n") {
     val target = org.json.JSONObject.quote(it.id)
     when (it.kind) {
       "session" -> "会话 ${org.json.JSONObject.quote(it.label)}：用 conversation_read 只读会话 ID=$target；不要自动启动或发送消息。"
@@ -54,7 +78,11 @@ internal fun modelReferenceText(draft: ComposerDraft): Pair<String, List<Referen
       else -> ""
     }
   }
-  return (draft.text + "\n\n[用户明确选择的结构化引用]\n" + instructions) to references.map {
-    ReferenceMeta(it.kind, it.id, it.label, it.path, it.start, it.end)
-  }
+  val modelText = modelBase + "\n\n[用户明确选择的结构化引用]\n" + instructions
+  return Triple(displayText, modelText, references)
+}
+
+internal fun modelReferenceText(draft: ComposerDraft): Pair<String, List<ReferenceMeta>> {
+  val (_, modelText, references) = composeRequestTexts(draft)
+  return modelText to references
 }

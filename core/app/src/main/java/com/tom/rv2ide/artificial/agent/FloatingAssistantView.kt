@@ -1668,12 +1668,15 @@ class FloatingAssistantView(
 
     val display = if (typed.isEmpty()) inputFeatures.attachmentNames() else inputBar.text
     val draft = com.tom.rv2ide.artificial.agent.compose.components.independent.ComposerDraft(display, inputBar.references, inputBar.fieldValue.selection.end)
-    val (model, references) = modelReferenceText(draft)
+    // composeRequestTexts 把编辑框里的消息引用 chip 展开成完整 `> 引用自 …` 块：
+    // 气泡显示、发给模型、落盘历史拿到的都是展开后的正文，与旧行为一致；
+    // 区别只在编辑框里显示的是紧凑 chip 而不是整段多行文本。
+    val (displayText, model, references) = composeRequestTexts(draft)
     val imagePayload = inputFeatures.imageRawInputJson(model)
     val textAttachments = if (imagePayload != null) inputFeatures.attachmentContextExcludingImage() else attachments
     val modelText = model + textAttachments
     val payload = imagePayload?.let { org.json.JSONObject(it).put("prompt", modelText).toString() }
-    val snapshot = AssistantRequestSnapshot(display, modelText, references.toList(), payload,
+    val snapshot = AssistantRequestSnapshot(displayText, modelText, references.toList(), payload,
         inputFeatures.attachmentSnapshot().map { it.toMessageAttachment() })
     inputBar.text = ""
     inputFeatures.clearAttachments()
@@ -3255,25 +3258,36 @@ class FloatingAssistantView(
   }
 
   /**
-   * 引用提问：把引用块回填到输入区。
+   * 引用提问：把引用作为**紧凑卡片**插入输入区。
    *
    * <p>[selection] 非空时只引用选中的文字（Compose 选区的语义，与 cc-haha 的 chat-selection
    * 一致）；为空时回退整条消息——XML 路径的「更多 → 引用整条消息」仍走这条默认值。
+   *
+   * <p>不再把整段 `> 引用自 …` 多行块直接倒进输入框：那样一段引用就占四五行、把输入区
+   * 撑得很高，还和正文混在一起难以删除。现在插入一个单行 chip（[ComposerReference.kind]
+   * 为 "quote"），完整引用块存在它的 [ComposerReference.payload] 里，发送时由
+   * [expandQuoteReferences] 换回。chip 可点 × 单独移除，视觉与 @ 提及的引用一致。
    */
   private fun quoteMessage(messageId: Long, selection: String? = null) {
     val message = adapter.find(messageId) ?: return
     val quoteText = selection?.trim()?.takeIf { it.isNotEmpty() } ?: message.text
-    val ref = ChatReference(messageId = message.id,
-        role = if (message.role == AssistantMessageAdapter.Role.USER) "user" else "assistant",
-        quote = quoteText)
+    val role = if (message.role == AssistantMessageAdapter.Role.USER) "user" else "assistant"
+    val ref = ChatReference(messageId = message.id, role = role, quote = quoteText)
     val block = AssistantMessageActions.referenceContext(listOf(ref))
     if (block.isEmpty()) return
-    val value = inputBar.fieldValue
-    val insertion = (if (value.selection.min > 0) "\n\n" else "") + block + "\n\n"
-    val updated = value.text.replaceRange(value.selection.min, value.selection.max, insertion)
-    inputBar.edit(androidx.compose.ui.text.input.TextFieldValue(updated,
-        androidx.compose.ui.text.TextRange(value.selection.min + insertion.length)))
-    inputBar.focusRequest++
+    // chip 与文本 token 共用同一个 label，必须短：带摘要把文本 token 撑成两行，
+    // 恰是「引一小段却占掉半屏」的观感。只留角色，完整引文在 payload / chip 的 × 里可见。
+    val roleLabel = if (role == "user") "用户消息" else "助手回复"
+    inputBar.insert(
+        com.tom.rv2ide.artificial.agent.compose.components.independent.ComposerReference(
+            kind = "quote",
+            id = message.id.toString(),
+            label = "引用 $roleLabel",
+            path = ref.path,
+            start = 0,
+            end = 0,
+            payload = block,
+        ))
   }
 
   private fun copyToClipboard(label: String, content: String) {

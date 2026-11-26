@@ -53,6 +53,8 @@ internal fun referenceKindIcon(kind: String): ImageVector = when (kind) {
   "file" -> FeatherIcons.FileText
   "agent" -> FeatherIcons.Cpu
   "skill" -> FeatherIcons.Zap
+  // 消息引用：与「会话」同用对话图标——它引用的就是一段对话内容。
+  "quote" -> FeatherIcons.MessageSquare
   else -> FeatherIcons.Grid
 }
 
@@ -119,15 +121,40 @@ internal fun referenceTransformation(references: List<ComposerReference>): Visua
   val color = MaterialTheme.colorScheme.primary
   val background = MaterialTheme.colorScheme.primaryContainer
   return VisualTransformation { text ->
+    // 消息引用（kind=quote）只靠输入框上方的胶囊表达，正文里不显示它的 token；
+    // 但 token 仍是发送时展开成引用块的载体，所以只从**显示**里移除、底层文本不动。
+    // 隐藏后可见文本变短，其余 @ 提及的高亮与光标要靠 OffsetsMapping 换算。
+    val quoteRanges = references
+        .filter { it.kind == "quote" && it.start >= 0 && it.end <= text.length && it.start < it.end }
+        .map { it.start until it.end }
+    val mapping = HiddenTextMapping(quoteRanges)
+
     val styled = buildAnnotatedString {
-      append(text)
+      // 逐段追加未隐藏的文本，跳过 quote 区间；@ 提及用原始坐标加高亮，追加时按
+      // 已跳过的字符数换算到可见坐标，保证样式落在正确位置。
+      var cursor = 0
+      for (range in quoteRanges.sortedBy { it.first }) {
+        append(text, cursor, range.first)
+        cursor = range.last + 1
+      }
+      append(text, cursor, text.length)
       references.forEach {
-        if (it.start >= 0 && it.end <= text.length && it.start < it.end) {
-          addStyle(SpanStyle(color = color, background = background, fontWeight = FontWeight.SemiBold), it.start, it.end)
+        if (it.kind != "quote" && it.start >= 0 && it.end <= text.length && it.start < it.end) {
+          val vs = mapping.toVisible(it.start)
+          val ve = mapping.toVisible(it.end)
+          if (vs < ve) {
+            addStyle(SpanStyle(color = color, background = background, fontWeight = FontWeight.SemiBold), vs, ve)
+          }
         }
       }
     }
-    TransformedText(styled, OffsetMapping.Identity)
+    TransformedText(
+        styled,
+        object : OffsetMapping {
+          override fun originalToTransformed(offset: Int): Int = mapping.toVisible(offset)
+          override fun transformedToOriginal(offset: Int): Int = mapping.toOriginal(offset)
+        },
+    )
   }
 }
 

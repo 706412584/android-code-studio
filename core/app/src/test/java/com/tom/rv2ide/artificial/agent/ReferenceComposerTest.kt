@@ -139,6 +139,83 @@ class ReferenceComposerTest {
     assertEquals("image/png", restored.image?.mimeType)
   }
 
+  @Test fun 消息引用以单行胶囊插入并在发送时展开为引用块() {
+    val bridge = AssistantInputBarBridge()
+    bridge.text = "问题如下"
+    val block = "> 引用自 助手回复：\n> 选中的那一行"
+    bridge.insert(ComposerReference(
+        kind = "quote", id = "42", label = "引用 助手回复：选中的那一行",
+        path = "chat://assistant/42", start = 0, end = 0, payload = block))
+    // 编辑框里只有单行 chip：不含多行引用块的换行与 ">" 前缀。
+    assertTrue(bridge.text.contains("引用 助手回复：选中的那一行"))
+    assertFalse(bridge.text.contains("> 引用自"))
+    assertEquals(1, bridge.references.size)
+    // 发送后：显示文本保留 chip token（气泡据此渲染卡片），模型文本才展开成完整引用块。
+    val draft = ComposerDraft(bridge.text, bridge.references, bridge.fieldValue.selection.end)
+    val (display, model, refs) = composeRequestTexts(draft)
+    assertFalse(display.contains("> 引用自"))   // 显示文本不展开
+    assertTrue(model.contains("> 引用自 助手回复：\n> 选中的那一行")) // 模型文本展开
+    // quote 不作为结构化引用指令发给模型（不该让模型去 conversation_read 它）。
+    assertFalse(model.contains("conversation_read"))
+    // 落盘元数据保留 quote 条目（区间指向显示文本里的 token），供气泡重建卡片。
+    assertTrue(refs.any { it.kind == "quote" })
+  }
+
+  @Test fun 消息引用与at提及混排时各自区间都对准显示文本() {
+    val bridge = AssistantInputBarBridge()
+    bridge.insert(reference("session-identity"))
+    val block = "> 引用自 用户消息：\n> 原文很长很长"
+    bridge.insert(ComposerReference(
+        kind = "quote", id = "7", label = "引用 用户消息：原文",
+        path = "chat://user/7", start = 0, end = 0, payload = block))
+    val draft = ComposerDraft(bridge.text, bridge.references, bridge.fieldValue.selection.end)
+    val (display, _, refs) = composeRequestTexts(draft)
+    // 显示文本保留 chip token（不展开），所以 quote 与 @提及 的元数据区间都应落在 display 上。
+    val quote = refs.first { it.kind == "quote" }
+    assertEquals("引用 用户消息：原文", display.substring(quote.start, quote.end))
+    val session = refs.first { it.kind == "session" }
+    assertEquals("@会话", display.substring(session.start, session.end))
+  }
+
+  @Test fun 气泡按引用区间切分出卡片段与正文段() {
+    // "引用 助手回复 这张图讲了什么"：quote token = "引用 助手回复"（index 0..5），其后是正文。
+    val content = "引用 助手回复 这张图讲了什么"
+    val quote = ComposerReference(
+        kind = "quote", id = "1", label = "引用 助手回复", path = "chat://assistant/1",
+        start = 0, end = "引用 助手回复".length)
+    val segs = splitMessageByQuotes(content, listOf(quote))
+    assertEquals(2, segs.size)
+    assertTrue(segs[0] is MessageSegment.Quote)
+    assertEquals("引用 助手回复", (segs[0] as MessageSegment.Quote).label)
+    assertTrue(segs[1] is MessageSegment.Text)
+    assertEquals("这张图讲了什么", (segs[1] as MessageSegment.Text).text.trim())
+  }
+
+  @Test fun 无引用时整条正文单段且越界引用按文本处理() {
+    assertEquals(listOf<MessageSegment>(MessageSegment.Text("整条消息")),
+        splitMessageByQuotes("整条消息", emptyList()))
+    // 越界区间被忽略，整条按文本
+    val bad = ComposerReference("quote", "1", "引用", "", 0, 999)
+    assertEquals(listOf<MessageSegment>(MessageSegment.Text("正文")),
+        splitMessageByQuotes("正文", listOf(bad)))
+  }
+
+  @Test fun 隐藏引用区间后偏移映射可往返且可见长度正确() {
+    // "abc引用xyz"：index 3,4 = "引用" 被隐藏，可见文本为 "abcxyz"（长度 6）。
+    val text = "abc引用xyz"
+    val mapping = HiddenTextMapping(listOf(3 until 5))
+    // 区间前的偏移不变
+    assertEquals(2, mapping.toVisible(2))
+    assertEquals(3, mapping.toVisible(3))          // 紧贴区间起点，落在隐藏处即起点
+    assertEquals(3, mapping.toVisible(5))          // 区间后第一个字符 'x' → 可见 index 3
+    assertEquals(6, mapping.toVisible(text.length)) // 可见文本长度恰为 6
+    // 可见侧往返一致
+    for (v in 0..6) {
+      assertEquals(v, mapping.toVisible(mapping.toOriginal(v)))
+    }
+    assertEquals(8, mapping.toOriginal(6))         // 可见末尾 → 原始末尾
+  }
+
   @Test fun 展示文本不含内部指令且模型保留真实ID() {
     val bridge = AssistantInputBarBridge()
     bridge.insert(reference("session-identity"))
