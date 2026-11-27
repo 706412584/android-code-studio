@@ -177,6 +177,8 @@ class DesignerWorkspaceFragment : BaseFragment() {
       is WidgetDrag.Existing -> moving?.let { views(it.id).firstOrNull()?.name ?: it.tag } ?: return null
     }
     var candidate = hitNode(document, document.root, point)
+    // 松手仍在被拖子树内时不是移动；向上寻找容器会把原地长按误判为移到祖先旁边。
+    if (moving != null && candidate?.path?.startsWith(moving.path) == true) return null
     if (candidate == null) {
       if (document.root == null && canInsert(null, name)) {
         return workspace?.view?.let(SelectionOverlayView::boundsOf)?.let { Placement(null, 0) to it }
