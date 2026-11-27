@@ -14,8 +14,10 @@ import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputMethodManager
 import android.widget.LinearLayout
 import android.widget.ScrollView
+import androidx.appcompat.widget.AppCompatImageButton
 import androidx.appcompat.widget.PopupMenu
 import androidx.core.content.getSystemService
+import androidx.core.view.doOnLayout
 import androidx.core.view.isVisible
 import androidx.core.widget.doAfterTextChanged
 import com.google.android.material.R as MaterialR
@@ -89,11 +91,9 @@ internal class PropertyPanel(
   // 焦点按属性记录：提交会重建整组输入框，重建后据此把焦点放回原属性。
   private var focusKey: AttrKey? = null
   private var rebuilding = false
-  // 「添加属性」行的值补全；面板重建时关闭。
-  private var addCompletion: ValueCompletionProvider? = null
-  // 「添加属性」行的属性名查询；面板重建时取消，版本号用来丢弃迟到的结果。
-  private var namesTask: Future<*>? = null
-  private var namesRevision = 0
+  // 提交一个分组会重建整个面板；保留同一控件其他分组尚未确认的输入。
+  private class NewProperty(val group: Section, var name: String = "", var value: String = "")
+  private val additions = mutableListOf<NewProperty>()
 
   /** 只有改过值或停在错误状态的草稿才需要用户先处理。 */
   val hasDraft: Boolean
@@ -119,7 +119,10 @@ internal class PropertyPanel(
     val previewReady = canvas()?.ready == true
     if (state == snapshot && ready == previewReady) return
     ready = previewReady
-    if (state?.selectedId != snapshot.selectedId) focusKey = null
+    if (state?.selectedId != snapshot.selectedId) {
+      focusKey = null
+      additions.clear()
+    }
     dismissDraft(restore = state?.document === snapshot.document)
     state = snapshot
     populate()
@@ -131,17 +134,7 @@ internal class PropertyPanel(
     return true
   }
 
-  override fun onDetachedFromWindow() {
-    addCompletion?.close()
-    super.onDetachedFromWindow()
-  }
-
   private fun populate() {
-    addCompletion?.close()
-    addCompletion = null
-    namesTask?.cancel(false)
-    namesTask = null
-    namesRevision++
     rebuilding = true
     rows.removeAllViews()
     fields.clear()
@@ -171,23 +164,41 @@ internal class PropertyPanel(
       } + if ((target?.view?.layoutParams?.javaClass?.name ?: "").endsWith("ConstraintLayout\$LayoutParams")) constraintKeys else emptyList()
     }
     val missing = supported.distinctBy { it.uri to it.name }.filter { it.uri to it.name !in present }.sortedBy { it.name }
-    rows.addView(addRow(node, missing, present, target.takeIf { node.tag != "include" }), LayoutParams(-1, -2))
 
     // 布局分组保留常用的尺寸入口，未设置时也能直接编辑。
     val dimensions = commonKeys.take(2).filter { it.uri to it.name !in present }
     val sections = (values + dimensions.map { it to null }).groupBy { (key, _) -> section(key) }
-    for (section in Section.entries) {
-      val entries = sections[section].orEmpty()
+    for (group in Section.entries) {
+      val entries = sections[group].orEmpty()
       val content = LinearLayout(context).apply {
         orientation = VERTICAL
-        isVisible = section in expanded
+        isVisible = group in expanded
+      }
+      fun appendEditor(entry: NewProperty, focus: Boolean = false) {
+        content.addView(addRow(node, entry, missing, present, target.takeUnless { node.tag == "include" }, focus),
+            LayoutParams(-1, -2).apply { topMargin = dp(6) })
+      }
+      val plus = AppCompatImageButton(context, null, R.attr.borderlessButtonStyle).apply {
+        setImageResource(R.drawable.ic_add)
+        setColorFilter(MaterialColors.getColor(this, R.attr.colorPrimary))
+        val inset = dp(12)
+        setPadding(inset, inset, inset, inset)
+        contentDescription = context.getString(R.string.designer_add_to, context.getString(group.title))
+        tooltipText = contentDescription
+        isEnabled = node.tag != "include" || missing.any { section(it) == group }
+        setOnClickListener {
+          val entry = NewProperty(group)
+          additions.add(entry)
+          appendEditor(entry, focus = true)
+        }
       }
       fun MaterialButton.showExpansion() {
         isSelected = content.isVisible
+        plus.isVisible = isSelected
         setIconResource(if (isSelected) R.drawable.ic_chevron_down else R.drawable.ic_chevron_right)
       }
       val title = MaterialButton(context, null, R.attr.borderlessButtonStyle).apply {
-        setText(section.title)
+        setText(group.title)
         isAllCaps = false
         setTextAppearance(R.style.TextAppearance_Material3_TitleMedium)
         setTextColor(MaterialColors.getColor(this, R.attr.colorOnSurface))
@@ -199,19 +210,27 @@ internal class PropertyPanel(
         cornerRadius = 0
         showExpansion()
         setOnClickListener {
-          if (!expanded.add(section)) expanded.remove(section)
-          content.isVisible = section in expanded
+          if (!expanded.add(group)) {
+            if (content.hasFocus()) hideKeyboard(content)
+            expanded.remove(group)
+          }
+          content.isVisible = group in expanded
           showExpansion()
           if (!content.isVisible && draft?.let { fields[it.key]?.field?.parent } === content) cancelDraft()
         }
       }
-      rows.addView(title)
+      rows.addView(LinearLayout(context).apply {
+        gravity = Gravity.CENTER_VERTICAL
+        addView(title, LayoutParams(0, -2, 1f))
+        addView(plus, LayoutParams(dp(48), dp(48)))
+      })
       rows.addView(content)
       entries.forEach { (key, value) ->
         val attribute = AttributeImpl(key.uri?.let { NamespaceImpl(key.prefix, it) }, key.name, value.orEmpty())
         val removable = value != null && key.name !in sizeNames && target?.viewAdapter?.isRequiredAttribute(attribute) != true
         content.addView(propertyRow(key, value, removable), LayoutParams(-1, -2).apply { topMargin = dp(6) })
       }
+      additions.filter { it.group == group }.forEach { appendEditor(it) }
     }
     focusKey?.let { fields[it]?.input?.requestFocus() }
   }
@@ -222,26 +241,34 @@ internal class PropertyPanel(
    */
   private fun addRow(
       node: LayoutDocument.Node,
+      entry: NewProperty,
       initial: List<AttrKey>,
       present: Set<Pair<String?, String>>,
       target: ViewImpl?,
+      focus: Boolean,
   ): LinearLayout {
     var missing = initial
-    val revision = namesRevision
     val document = checkNotNull(state).document
-    val name = SuggestionInput(context).apply { imeOptions = EditorInfo.IME_ACTION_NEXT }
-    val value = SuggestionInput(context).apply { imeOptions = EditorInfo.IME_ACTION_DONE }
+    val name = SuggestionInput(context).apply {
+      imeOptions = EditorInfo.IME_ACTION_NEXT
+      setText(entry.name, false)
+    }
+    val value = SuggestionInput(context).apply {
+      imeOptions = EditorInfo.IME_ACTION_DONE
+      setText(entry.value, false)
+    }
     val nameField = outlined(context.getString(R.string.designer_property_name), name)
     val valueField = outlined(context.getString(R.string.designer_property_value), value)
+    var namesTask: Future<*>? = null
+    var addCompletion: ValueCompletionProvider? = null
     var activeKey: AttrKey? = null
     var schema: AttrSchema? = null
 
-    fun currentKey() = resolveAttrName(missing, name.text.toString(), node.element::getNamespaceURI)
+    fun currentKey() = resolveAttrName(missing, entry.name, node.element::getNamespaceURI)
     fun filterNames() {
       if (!name.hasFocus() || name.isPerformingCompletion) return
-      val typed = name.text.toString()
-      val matches = if (typed.isBlank()) emptyList() else matchingAttrNames(missing, typed, node.element::getNamespaceURI)
-      suggest(name, matches.map { ValueSuggestion(it.qualifiedName) })
+      val matches = if (entry.name.isBlank()) emptyList() else matchingAttrNames(missing, entry.name, node.element::getNamespaceURI)
+      suggest(name, matches.filter { section(it) == entry.group }.map { ValueSuggestion(it.qualifiedName) })
     }
     fun validate(key: AttrKey, text: String, submitting: Boolean = false): Boolean {
       val valid = if (text.isBlank()) !submitting else validPropertyValue(key, text, schema)
@@ -264,7 +291,29 @@ internal class PropertyPanel(
       }
       return key
     }
+    // 只有用户实际编辑该栏时才读取完整候选；其它未确认的栏不抢焦点或下拉框。
+    fun loadNames() {
+      if (target == null || namesTask != null) return
+      val viewClass = target.view.javaClass
+      val parentClass = if (node.parentPath == null) null else target.parent?.view?.javaClass
+      namesTask = ValueCompletionProvider.withLookup(file, { AttrNameSource.namesFor(viewClass, parentClass) }) { found ->
+        if (!name.isAttachedToWindow) return@withLookup
+        missing = (initial + found).distinctBy { it.uri to it.name }.filterNot { it.uri to it.name in present }.sortedBy { it.name }
+        filterNames()
+        if (value.hasFocus() && currentKey() != activeKey) {
+          bindKey()
+          addCompletion?.request(entry.value, 0)
+        }
+      }
+    }
+    name.setOnFocusChangeListener { _, focused ->
+      if (focused) {
+        loadNames()
+        filterNames()
+      }
+    }
     name.doAfterTextChanged {
+      entry.name = it.toString()
       addCompletion?.close()
       addCompletion = null
       activeKey = null
@@ -277,31 +326,20 @@ internal class PropertyPanel(
     }
     name.setOnItemClickListener { _, _, _, _ -> value.requestFocus() }
     value.setOnFocusChangeListener { _, focused ->
-      if (focused && !rebuilding && bindKey() != null) addCompletion?.request(value.text.toString(), 0)
+      if (focused && !rebuilding) {
+        loadNames()
+        if (bindKey() != null) addCompletion?.request(entry.value, 0)
+      }
     }
     value.doAfterTextChanged {
+      entry.value = it.toString()
       if (!value.hasFocus()) return@doAfterTextChanged
       val key = bindKey() ?: return@doAfterTextChanged
-      val text = it.toString()
-      validate(key, text)
-      if (!value.isPerformingCompletion) addCompletion?.request(text)
+      validate(key, entry.value)
+      if (!value.isPerformingCompletion) addCompletion?.request(entry.value)
     }
     value.setOnItemClickListener { _, _, _, _ -> addCompletion?.close() }
 
-    if (target != null) {
-      val viewClass = target.view.javaClass
-      // 根控件的 View.parent 是画布，不能当作项目布局的父节点。
-      val parentClass = if (node.parentPath == null) null else target.parent?.view?.javaClass
-      namesTask = ValueCompletionProvider.withLookup(file, { AttrNameSource.namesFor(viewClass, parentClass) }) { found ->
-        if (revision != namesRevision) return@withLookup
-        missing = (initial + found).distinctBy { it.uri to it.name }.filterNot { it.uri to it.name in present }.sortedBy { it.name }
-        filterNames() // 按此刻的文字筛选，而不是查表前输入的文字。
-        if (value.hasFocus() && currentKey() != activeKey) {
-          bindKey()
-          addCompletion?.request(value.text.toString(), 0)
-        }
-      }
-    }
     fun add() {
       val key = bindKey()
       if (key == null || (key.uri to key.name) in present ||
@@ -310,32 +348,58 @@ internal class PropertyPanel(
           R.string.designer_property_exists else R.string.designer_property_unknown)
         return
       }
-      val text = value.text.toString()
+      val owner = section(key)
+      if (owner != entry.group) {
+        nameField.error = context.getString(R.string.designer_property_wrong_section, context.getString(owner.title))
+        return
+      }
+      val text = entry.value
       fun submit(format: AttrSchema?) {
-        if (!value.isShown || revision != namesRevision || currentKey() != key || value.text.toString() != text) return
+        if (!value.isShown || currentKey() != key || entry.value != text) return
         schema = format
         if (!validate(key, text, submitting = true)) return
         val current = draft
         if (current != null && !finish(current)) return
-        // 收尾另一草稿可能重建文档。只在同一文档上使用 node 的源文本偏移。
-        if (state?.document !== document) return
+        // 写入会同步重建分组：先取走这一栏，其它未确认的栏原样保留。
+        if (state?.document !== document || !additions.remove(entry)) return
         hideKeyboard(value)
-        write(node, key, text, valueField)
+        if (!write(node, key, text, valueField)) additions.add(entry)
       }
       val provider = addCompletion
       if (provider == null) submit(null) else provider.withSchema(::submit)
     }
     value.setOnEditorActionListener { _, action, event -> isDone(action, event).also { if (it) add() } }
-    return LinearLayout(context).apply {
-      orientation = VERTICAL
-      addView(nameField, LayoutParams(-1, -2))
-      addView(LinearLayout(context).apply {
-        id = View.generateViewId()
-        value.dropDownAnchor = id
-        gravity = Gravity.CENTER_VERTICAL
-        addView(valueField, LayoutParams(0, -2, 1f))
-        addView(button(R.string.designer_property_add) { add() }, LayoutParams(-2, -2).apply { marginStart = dp(6) })
-      }, LayoutParams(-1, -2))
+    return object : LinearLayout(context) {
+      init {
+        orientation = VERTICAL
+        // 错误显示在输入框下方，不让 Material 的错误图标替换取消和确认按钮。
+        nameField.errorIconDrawable = null
+        valueField.errorIconDrawable = null
+        nameField.endIconMode = TextInputLayout.END_ICON_CUSTOM
+        nameField.setEndIconDrawable(R.drawable.ic_close)
+        nameField.endIconContentDescription = context.getString(R.string.cancel)
+        nameField.setEndIconOnClickListener {
+          if (hasFocus()) hideKeyboard(this)
+          additions.remove(entry)
+          (parent as LinearLayout).removeView(this)
+        }
+        valueField.endIconMode = TextInputLayout.END_ICON_CUSTOM
+        valueField.setEndIconDrawable(R.drawable.ic_check)
+        valueField.endIconContentDescription = context.getString(R.string.designer_property_add)
+        valueField.setEndIconOnClickListener { add() }
+        addView(nameField, LayoutParams(-1, -2))
+        addView(valueField, LayoutParams(-1, -2))
+        if (focus) doOnLayout {
+          if (name.requestFocus()) context.getSystemService<InputMethodManager>()?.showSoftInput(name, 0)
+        }
+      }
+
+      override fun onDetachedFromWindow() {
+        namesTask?.cancel(false)
+        namesTask = null
+        addCompletion?.close()
+        super.onDetachedFromWindow()
+      }
     }
   }
 
@@ -578,12 +642,6 @@ internal class PropertyPanel(
     setBoxCornerRadii(radius, radius, radius, radius)
     hint = label
     addView(input, LayoutParams(-1, -2))
-  }
-
-  private fun button(label: Int, action: () -> Unit) = MaterialButton(context, null, MaterialR.attr.materialButtonOutlinedStyle).apply {
-    isAllCaps = false
-    setText(label)
-    setOnClickListener { action() }
   }
 
   private fun info(label: Int) = MaterialTextView(context).apply {

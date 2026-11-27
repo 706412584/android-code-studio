@@ -54,7 +54,8 @@
   <string name="designer_property_name">属性名</string>
   <string name="designer_property_value">值</string>
   <string name="designer_property_unknown">未知属性</string>
-  <string name="designer_property_exists">该属性已设置，请在下方修改</string>
+  <string name="designer_property_exists">该属性已设置，请直接修改其值</string>
+  <string name="designer_property_wrong_section">请在“%1$s”中添加此属性</string>
   <string name="designer_property_more">更多操作</string>
   <string name="designer_property_reset">重置</string>
   <string name="designer_property_pick_resource">选资源</string>
