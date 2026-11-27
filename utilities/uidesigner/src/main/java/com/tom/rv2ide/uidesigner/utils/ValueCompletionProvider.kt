@@ -43,7 +43,7 @@ internal data class ValueSuggestion(val text: String, val kind: String = "", val
  * 文档内 `@id/`、`?attr/` 主题属性、多值 flag 的拼接、布尔字面量。
  *
  * 所有查询在共享的单线程上执行并做防抖；结果按版本号丢弃过期请求，只在主线程回调。
- * 首次查到属性定义后经 [onSchema] 回传格式（查不到为 null），供调用方按格式校验。
+ * 每个结果都携带同一次查询的属性定义；查不到时为 null，调用方可退回内置校验。
  */
 internal class ValueCompletionProvider(
     private val file: File,
@@ -67,19 +67,48 @@ internal class ValueCompletionProvider(
     pending = null
   }
 
+  // 仅主线程访问。定义不存在与尚未查询是两种状态，后者不能放行提交。
+  var schemaReady = false
+    private set
+  private var deliveredSchema: AttrSchema? = null
+
   /** 主线程调用；[delayMs] 为 0 时立即查询（如刚获焦）。 */
-  fun request(value: String, delayMs: Long = DEBOUNCE_MS) {
+  fun request(value: String, delayMs: Long = DEBOUNCE_MS) =
+      query(delayMs, emptyList(), { complete(value) }, onComplete)
+
+  /** 提交不需要再枚举候选；即使第一次补全还在防抖也会先取得当前属性的定义。 */
+  fun withSchema(action: (AttrSchema?) -> Unit) {
+    if (schemaReady) {
+      close()
+      action(deliveredSchema)
+    } else query(0, null, {
+      if (!isIdAttr(key) && !isIdReferenceAttr(key)) provider()
+      schema
+    }, action)
+  }
+
+  private fun <T> query(delayMs: Long, fallback: T, load: () -> T, deliver: (T) -> Unit) {
     close()
     val request = revision
     pending = executor.schedule({
       if (request != revision) return@schedule
       val result = try {
-        complete(value)
-      } catch (e: Throwable) {
+        load()
+      } catch (e: Exception) {
         log.warn("Value completion failed for {}", key.qualifiedName, e)
-        emptyList()
+        fallback
       }
-      ThreadUtils.runOnUiThread { if (request == revision) onComplete(result) }
+      val format = schema
+      ThreadUtils.runOnUiThread {
+        if (request == revision) {
+          if (!schemaReady || deliveredSchema != format) {
+            schemaReady = true
+            deliveredSchema = format
+            onSchema(format)
+          }
+          if (request == revision) deliver(result)
+        }
+      }
     }, delayMs, TimeUnit.MILLISECONDS)
   }
 
@@ -87,10 +116,8 @@ internal class ValueCompletionProvider(
     ensureLookup(file)
     AttrValueCompletionProvider(XmlCompletionProvider(XMLServerSettings)).also {
       it.setNamespaces(namespaces)
+      schema = it.findAttributeFormat(key.uri, key.name)?.let(AttrSchema::of)
       lsp = it
-      val found = it.findAttributeFormat(key.uri, key.name)?.let(AttrSchema::of)
-      schema = found
-      ThreadUtils.runOnUiThread { onSchema(found) }
     }
   }
 

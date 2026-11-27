@@ -6,14 +6,12 @@ package com.tom.rv2ide.uidesigner.views
 
 import android.content.Context
 import android.content.res.ColorStateList
-import android.text.Editable
 import android.text.TextUtils
 import android.view.Gravity
 import android.view.KeyEvent
 import android.view.View
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputMethodManager
-import android.widget.ArrayAdapter
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import androidx.appcompat.widget.PopupMenu
@@ -41,6 +39,8 @@ import com.tom.rv2ide.uidesigner.utils.ValueSuggestion
 import com.tom.rv2ide.uidesigner.utils.Widgets
 import com.tom.rv2ide.uidesigner.utils.duplicateIdOwners
 import com.tom.rv2ide.uidesigner.utils.isIdAttr
+import com.tom.rv2ide.uidesigner.utils.matchingAttrNames
+import com.tom.rv2ide.uidesigner.utils.resolveAttrName
 import com.tom.rv2ide.uidesigner.viewmodel.WorkspaceSnapshot
 import java.io.File
 import java.util.concurrent.Future
@@ -131,6 +131,11 @@ internal class PropertyPanel(
     return true
   }
 
+  override fun onDetachedFromWindow() {
+    addCompletion?.close()
+    super.onDetachedFromWindow()
+  }
+
   private fun populate() {
     addCompletion?.close()
     addCompletion = null
@@ -213,7 +218,7 @@ internal class PropertyPanel(
 
   /**
    * [initial] 是同步可得的候选，先给下拉用；[target] 不为空时再按真实类继承链查 styleable，
-   * 查到后并入同一份名单（[resolveKey] 也读它），已设置在节点上的属性（[present]）不重复列出。
+   * 查到后并入同一份名单（解析手输名称也用它），已设置在节点上的属性（[present]）不重复列出。
    */
   private fun addRow(
       node: LayoutDocument.Node,
@@ -221,99 +226,121 @@ internal class PropertyPanel(
       present: Set<Pair<String?, String>>,
       target: ViewImpl?,
   ): LinearLayout {
-    val missing = initial.toMutableList()
-    val name = MaterialAutoCompleteTextView(context).apply {
-      isSingleLine = true
-      threshold = 1
-      setAdapter(ArrayAdapter(context, android.R.layout.simple_dropdown_item_1line, missing.map { it.qualifiedName }))
-    }
-    val viewClass = target?.view?.javaClass
-    if (viewClass != null) {
-      // 用 inflater 模型里的父节点，不用 View.parent：根控件的 View.parent 是设计器自己的画布容器。
-      val parentClass = target?.parent?.view?.javaClass
-      val revision = namesRevision
-      namesTask = ValueCompletionProvider.withLookup(file, { AttrNameSource.namesFor(viewClass, parentClass) }) { found ->
-        if (revision != namesRevision) return@withLookup
-        val known = missing.map { it.uri to it.name }.toSet()
-        val extra = found.filter { (it.uri to it.name) !in present && (it.uri to it.name) !in known }
-        if (extra.isEmpty()) return@withLookup
-        missing += extra
-        missing.sortBy { it.name }
-        val adapter = ArrayAdapter(context, android.R.layout.simple_dropdown_item_1line, missing.map { it.qualifiedName })
-        name.setAdapter(adapter)
-        // 换适配器不会重新过滤：正在输入时按当前文字再过滤一次，让下拉立刻包含新名单。
-        val typed = name.text?.toString().orEmpty()
-        if (name.hasFocus() && typed.length >= name.threshold) {
-          adapter.filter.filter(typed) { count -> if (name.hasFocus() && count > 0) name.showDropDown() }
-        }
-      }
-    }
-    val value = MaterialAutoCompleteTextView(context).apply {
-      isSingleLine = true
-      threshold = 1
-      imeOptions = EditorInfo.IME_ACTION_DONE
-    }
+    var missing = initial
+    val revision = namesRevision
+    val document = checkNotNull(state).document
+    val name = SuggestionInput(context).apply { imeOptions = EditorInfo.IME_ACTION_NEXT }
+    val value = SuggestionInput(context).apply { imeOptions = EditorInfo.IME_ACTION_DONE }
     val nameField = outlined(context.getString(R.string.designer_property_name), name)
     val valueField = outlined(context.getString(R.string.designer_property_value), value)
-    // 当前选中属性名的格式；换属性名时清空。
-    var schemaKey: AttrKey? = null
+    var activeKey: AttrKey? = null
     var schema: AttrSchema? = null
-    name.setOnItemClickListener { _, _, _, _ ->
-      nameField.error = null
+
+    fun currentKey() = resolveAttrName(missing, name.text.toString(), node.element::getNamespaceURI)
+    fun filterNames() {
+      if (!name.hasFocus() || name.isPerformingCompletion) return
+      val typed = name.text.toString()
+      val matches = if (typed.isBlank()) emptyList() else matchingAttrNames(missing, typed, node.element::getNamespaceURI)
+      suggest(name, matches.map { ValueSuggestion(it.qualifiedName) })
+    }
+    fun validate(key: AttrKey, text: String, submitting: Boolean = false): Boolean {
+      val valid = if (text.isBlank()) !submitting else validPropertyValue(key, text, schema)
+      valueField.error = if (valid) null else context.getString(R.string.designer_property_invalid, key.qualifiedName)
+      valueField.helperText = if (valid) duplicateIdHint(node, key, text) else null
+      return valid
+    }
+    // 只在值框获焦、输入或提交时绑定；编辑名称时不为每个半截名字查表。
+    fun bindKey(): AttrKey? {
+      val key = currentKey()
+      if (key == activeKey) return key
       addCompletion?.close()
-      val key = resolveKey(name.text.toString(), missing)
-      val document = state?.document
-      schemaKey = key
+      activeKey = key
       schema = null
-      addCompletion = if (key == null || document == null) null else completionFor(node, key, document, onSchema = {
-        if (schemaKey == key) schema = it
-      }) { result ->
-        if (value.hasFocus()) suggest(value, result)
+      addCompletion = key?.let {
+        completionFor(node, it, document, onSchema = { format ->
+          schema = format
+          validate(it, value.text.toString())
+        }) { result -> if (value.hasFocus()) suggest(value, result) }
       }
-      value.requestFocus()
-      addCompletion?.request(value.text.toString(), delayMs = 0)
+      return key
     }
-    value.doAfterTextChanged { text ->
-      valueField.error = null
-      if (value.hasFocus()) addCompletion?.request(text?.toString().orEmpty())
-    }
-    value.setOnItemClickListener { _, _, _, _ ->
+    name.doAfterTextChanged {
       addCompletion?.close()
-      value.dismissDropDown()
+      addCompletion = null
+      activeKey = null
+      schema = null
+      nameField.error = null
+      valueField.error = null
+      valueField.helperText = null
+      suggest(value, emptyList())
+      filterNames()
     }
-    fun add() {
-      val key = resolveKey(name.text.toString().trim(), missing)
-      val text = value.text.toString()
-      when {
-        key == null -> nameField.error = context.getString(R.string.designer_property_unknown)
-        text.isBlank() || !validPropertyValue(key, text, schema.takeIf { schemaKey == key }) ->
-          valueField.error = context.getString(R.string.designer_property_invalid, key.qualifiedName)
-        else -> {
-          nameField.error = null
-          valueField.error = null
-          val current = draft
-          if (current == null || finish(current)) {
-            hideKeyboard(value)
-            write(node, key, text, valueField)
-          }
+    name.setOnItemClickListener { _, _, _, _ -> value.requestFocus() }
+    value.setOnFocusChangeListener { _, focused ->
+      if (focused && !rebuilding && bindKey() != null) addCompletion?.request(value.text.toString(), 0)
+    }
+    value.doAfterTextChanged {
+      if (!value.hasFocus()) return@doAfterTextChanged
+      val key = bindKey() ?: return@doAfterTextChanged
+      val text = it.toString()
+      validate(key, text)
+      if (!value.isPerformingCompletion) addCompletion?.request(text)
+    }
+    value.setOnItemClickListener { _, _, _, _ -> addCompletion?.close() }
+
+    if (target != null) {
+      val viewClass = target.view.javaClass
+      // 根控件的 View.parent 是画布，不能当作项目布局的父节点。
+      val parentClass = if (node.parentPath == null) null else target.parent?.view?.javaClass
+      namesTask = ValueCompletionProvider.withLookup(file, { AttrNameSource.namesFor(viewClass, parentClass) }) { found ->
+        if (revision != namesRevision) return@withLookup
+        missing = (initial + found).distinctBy { it.uri to it.name }.filterNot { it.uri to it.name in present }.sortedBy { it.name }
+        filterNames() // 按此刻的文字筛选，而不是查表前输入的文字。
+        if (value.hasFocus() && currentKey() != activeKey) {
+          bindKey()
+          addCompletion?.request(value.text.toString(), 0)
         }
       }
     }
-    value.setOnEditorActionListener { _, action, event ->
-      isDone(action, event).also { if (it) add() }
+    fun add() {
+      val key = bindKey()
+      if (key == null || (key.uri to key.name) in present ||
+          node.tag == "include" && initial.none { it.uri == key.uri && it.name == key.name }) {
+        nameField.error = context.getString(if (key != null && (key.uri to key.name) in present)
+          R.string.designer_property_exists else R.string.designer_property_unknown)
+        return
+      }
+      val text = value.text.toString()
+      fun submit(format: AttrSchema?) {
+        if (!value.isShown || revision != namesRevision || currentKey() != key || value.text.toString() != text) return
+        schema = format
+        if (!validate(key, text, submitting = true)) return
+        val current = draft
+        if (current != null && !finish(current)) return
+        // 收尾另一草稿可能重建文档。只在同一文档上使用 node 的源文本偏移。
+        if (state?.document !== document) return
+        hideKeyboard(value)
+        write(node, key, text, valueField)
+      }
+      val provider = addCompletion
+      if (provider == null) submit(null) else provider.withSchema(::submit)
     }
+    value.setOnEditorActionListener { _, action, event -> isDone(action, event).also { if (it) add() } }
     return LinearLayout(context).apply {
-      gravity = Gravity.CENTER_VERTICAL
-      addView(nameField, LayoutParams(0, -2, 1f))
-      addView(valueField, LayoutParams(0, -2, 1f).apply { marginStart = dp(6) })
-      addView(button(R.string.designer_property_add) { add() }, LayoutParams(-2, -2).apply { marginStart = dp(6) })
+      orientation = VERTICAL
+      addView(nameField, LayoutParams(-1, -2))
+      addView(LinearLayout(context).apply {
+        id = View.generateViewId()
+        value.dropDownAnchor = id
+        gravity = Gravity.CENTER_VERTICAL
+        addView(valueField, LayoutParams(0, -2, 1f))
+        addView(button(R.string.designer_property_add) { add() }, LayoutParams(-2, -2).apply { marginStart = dp(6) })
+      }, LayoutParams(-1, -2))
     }
   }
 
   private fun propertyRow(key: AttrKey, value: String?, removable: Boolean): TextInputLayout {
-    val input = MaterialAutoCompleteTextView(context).apply {
-      isSingleLine = true
-      threshold = 1
+    val input = SuggestionInput(context).apply {
       imeOptions = EditorInfo.IME_ACTION_DONE
       setText(value.orEmpty(), false)
     }
@@ -342,7 +369,9 @@ internal class PropertyPanel(
     }
     input.doAfterTextChanged { text ->
       val active = draft?.takeIf { it.row.input === input } ?: return@doAfterTextChanged
-      if (text != null) onDraftText(active, text)
+      val value = text.toString()
+      updateDraftPreview(active, value)
+      if (!input.isPerformingCompletion) active.completion?.request(value)
     }
     fields[key] = Row(value, removable, field, input)
     return field
@@ -372,7 +401,7 @@ internal class PropertyPanel(
       if (draft === active) {
         active.schema = schema
         // 格式到达前可能已按内置规则误判，按新格式重新校验一次当前输入。
-        if (active.row.field.error != null) onDraftText(active, active.row.input.text)
+        if (row.input.text.toString() != row.value.orEmpty()) updateDraftPreview(active, row.input.text.toString())
       }
     }) { result ->
       if (draft === active) suggest(row.input, result)
@@ -399,9 +428,8 @@ internal class PropertyPanel(
     }
   }
 
-  private fun onDraftText(active: Draft, editable: Editable) {
+  private fun updateDraftPreview(active: Draft, value: String) {
     val field = active.row.field
-    val value = editable.toString()
     if (!validPropertyValue(active.key, value, active.schema)) {
       field.error = context.getString(R.string.designer_property_invalid, active.key.qualifiedName)
       field.helperText = null
@@ -412,7 +440,6 @@ internal class PropertyPanel(
       field.helperText = duplicateIdHint(active.node, active.key, value)
           ?: if (applied) null else context.getString(R.string.designer_property_unsupported)
     }
-    active.completion?.request(value)
   }
 
   /** 重名只提示不拦截：Android 允许重名，但相对布局和约束引用会指向第一个同名控件。 */
@@ -441,6 +468,13 @@ internal class PropertyPanel(
     if (value == null && row.value == null) {
       dismissDraft(restore = true)
       return true
+    }
+    val provider = active.completion
+    if (value != null && provider != null && !provider.schemaReady) {
+      provider.withSchema {
+        if (draft === active && row.input.text.toString() == text && !row.input.hasFocus()) activate(focusKey)
+      }
+      return false
     }
     if (value == null && !row.removable || value != null && !validPropertyValue(active.key, value, active.schema)) {
       row.field.error = context.getString(R.string.designer_property_invalid, active.key.qualifiedName)
@@ -524,19 +558,6 @@ internal class PropertyPanel(
     write(node, key, null, row.field)
   }
 
-  private fun resolveKey(text: String, missing: List<AttrKey>): AttrKey? {
-    missing.firstOrNull { it.qualifiedName == text || it.uri == LayoutDocument.ANDROID && it.name == text }?.let { return it }
-    val prefix = text.substringBefore(':', "android")
-    val name = text.substringAfter(':')
-    val uri = when (prefix) {
-      "android" -> LayoutDocument.ANDROID
-      "app" -> LayoutDocument.APP
-      "tools" -> TOOLS
-      else -> return null
-    }
-    return if (attrName.matches(name)) AttrKey(uri, name, prefix) else null
-  }
-
   private fun label(key: AttrKey): String {
     val name = if (key.uri == LayoutDocument.ANDROID) key.name else key.qualifiedName
     val description = descriptions[key.name]?.takeIf { key.uri == LayoutDocument.ANDROID }?.let(context::getString)
@@ -586,8 +607,6 @@ internal class PropertyPanel(
     const val MENU_REMOVE = 1
     const val MENU_RESET = 2
     const val MENU_RESOURCE = 3
-    const val TOOLS = "http://schemas.android.com/tools"
-    val attrName = Regex("[a-zA-Z_][a-zA-Z0-9_]*")
     fun androidKey(name: String) = AttrKey(LayoutDocument.ANDROID, name, "android")
     val commonKeys = listOf("layout_width", "layout_height", "id", "visibility", "padding",
         "layout_margin", "layout_marginStart", "layout_marginTop", "layout_marginEnd", "layout_marginBottom").map(::androidKey)

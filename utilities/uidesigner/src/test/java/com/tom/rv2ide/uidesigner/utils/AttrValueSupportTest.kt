@@ -24,6 +24,39 @@ class AttrValueSupportTest {
     |  <View />
     |</RelativeLayout>""".trimMargin())
 
+  private val names = listOf(key(app, "cardCornerRadius", "app"), key(android, "contentDescription", "android"),
+      key(android, "layout_weight", "android"), key(app, "layout_widthPercent", "app"))
+  private val namespaceOf: (String) -> String? = layout.root!!.element::getNamespaceURI
+
+  @Test
+  fun filtersLocalAndQualifiedNamesWithoutLosingTheNamespace() {
+    assertEquals(listOf(names[0]), matchingAttrNames(names, "card", namespaceOf))
+    assertEquals(listOf(names[1]), matchingAttrNames(names, "CONT", namespaceOf))
+    assertEquals(names.drop(2), matchingAttrNames(names, "layout_w", namespaceOf))
+    assertEquals(listOf(names[2]), matchingAttrNames(names, "a:layout_w", namespaceOf))
+    assertEquals(listOf(names[3]), matchingAttrNames(names, "app:layout_w", namespaceOf))
+    assertTrue(matchingAttrNames(names, "app:cont", namespaceOf).isEmpty())
+  }
+
+  @Test
+  fun typedAndPickedNamesResolveToTheSameAttribute() {
+    assertEquals(names[0], resolveAttrName(names, "cardCornerRadius", namespaceOf))
+    assertEquals(names[0], resolveAttrName(names, "app:cardCornerRadius", namespaceOf))
+    assertEquals(names[1], resolveAttrName(names, " contentDescription ", namespaceOf))
+    val alias = requireNotNull(resolveAttrName(names, "a:gravity", namespaceOf))
+    val canonical = requireNotNull(resolveAttrName(names, "android:gravity", namespaceOf))
+    assertEquals(canonical.uri to canonical.name, alias.uri to alias.name)
+    assertEquals("a", alias.prefix)
+  }
+
+  @Test
+  fun unindexedCustomNamesStillWorkButUnknownPrefixesDoNot() {
+    assertEquals(key(app, "localOption", "app"), resolveAttrName(emptyList(), "app:localOption", namespaceOf))
+    assertNull(resolveAttrName(names, "unknown:localOption", namespaceOf))
+    assertNull(resolveAttrName(names, "android:gravity:extra", namespaceOf))
+    assertNull(resolveAttrName(names, ":gravity", namespaceOf))
+  }
+
   @Test
   fun idNameAcceptsOnlyAppIds() {
     assertEquals("title", idName("@+id/title"))

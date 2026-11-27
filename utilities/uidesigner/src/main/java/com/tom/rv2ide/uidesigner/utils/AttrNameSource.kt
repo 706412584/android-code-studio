@@ -32,6 +32,44 @@ internal object AttrNameSource {
   fun clear() = cache.clear()
 }
 
+private const val TOOLS = "http://schemas.android.com/tools"
+private val localAttrName = Regex("[a-zA-Z_][a-zA-Z0-9_]*")
+
+private fun namespaceFor(prefix: String, declared: (String) -> String?): String? = when (prefix) {
+  "android" -> LayoutDocument.ANDROID
+  "app" -> LayoutDocument.APP
+  "tools" -> TOOLS
+  else -> declared(prefix)?.takeIf { it.isNotEmpty() }
+}
+
+/** 裸名按本地名或限定名筛选；输入冒号后只匹配该命名空间。候选保留可回填的完整名称。 */
+internal fun matchingAttrNames(keys: List<AttrKey>, input: String, declared: (String) -> String?): List<AttrKey> {
+  val query = input.trim()
+  if (':' !in query) return keys.filter { it.name.startsWith(query, true) || it.qualifiedName.startsWith(query, true) }
+  val prefix = query.substringBefore(':')
+  val uri = namespaceFor(prefix, declared)
+  val local = query.substringAfter(':')
+  return keys.filter { (it.prefix == prefix || uri != null && it.uri == uri) && it.name.startsWith(local, true) }
+}
+
+/** 点选和手输共用同一个解析入口；未建索引时仍允许显式命名空间的自定义属性。 */
+internal fun resolveAttrName(keys: List<AttrKey>, input: String, declared: (String) -> String?): AttrKey? {
+  val text = input.trim()
+  val name = text.substringAfter(':')
+  if (!localAttrName.matches(name)) return null
+  if (':' in text) {
+    keys.firstOrNull { it.qualifiedName == text }?.let { return it }
+    val prefix = text.substringBefore(':').takeIf { it.isNotEmpty() } ?: return null
+    return namespaceFor(prefix, declared)?.let { AttrKey(it, name, prefix) }
+  }
+  val exact = keys.filter { it.name == name }
+  return exact.firstOrNull { it.uri == LayoutDocument.ANDROID } ?: when (exact.size) {
+    0 -> AttrKey(LayoutDocument.ANDROID, name, "android")
+    1 -> exact.single()
+    else -> null  // 有歧义时必须限定命名空间。
+  }
+}
+
 private const val VIEW = "android.view.View"
 private const val VIEW_GROUP = "android.view.ViewGroup"
 

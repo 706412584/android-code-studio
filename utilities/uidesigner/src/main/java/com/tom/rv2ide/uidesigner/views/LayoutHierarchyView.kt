@@ -6,6 +6,7 @@ package com.tom.rv2ide.uidesigner.views
 
 import android.content.Context
 import android.content.res.ColorStateList
+import android.graphics.Rect
 import android.text.TextUtils
 import android.view.Gravity
 import android.view.View
@@ -13,6 +14,7 @@ import android.view.ViewGroup
 import android.widget.LinearLayout
 import androidx.appcompat.widget.AppCompatImageButton
 import androidx.appcompat.widget.AppCompatImageView
+import androidx.core.view.doOnPreDraw
 import androidx.core.view.isVisible
 import androidx.core.view.updatePaddingRelative
 import androidx.core.widget.doAfterTextChanged
@@ -86,10 +88,10 @@ internal class LayoutHierarchyView(
       }
       if (selected != null && !matches(selected, search.text.toString().trim())) search.setText("")
     }
-    submit()
+    submit(revealSelection = changed && state.selectedId != state.document.root?.id)
   }
 
-  private fun submit() {
+  private fun submit(revealSelection: Boolean = false) {
     val state = snapshot ?: return
     val query = search.text.toString().trim()
     val rows = ArrayList<TreeRow>()
@@ -110,7 +112,14 @@ internal class LayoutHierarchyView(
     }
     document.root?.let(::visit)
     empty.isVisible = rows.isEmpty()
-    adapter.submitList(rows)
+    adapter.submitList(rows) {
+      val id = state.selectedId ?: return@submitList
+      if (revealSelection && isShown) list.doOnPreDraw {
+        if (snapshot?.selectedId != id) return@doOnPreDraw
+        val row = list.findViewHolderForItemId(id)?.itemView ?: return@doOnPreDraw
+        row.requestRectangleOnScreen(Rect(0, 0, row.width, row.height), true)
+      }
+    }
   }
 
   private fun matches(node: LayoutDocument.Node, query: String) =

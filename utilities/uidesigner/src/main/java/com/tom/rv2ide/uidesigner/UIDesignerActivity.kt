@@ -307,6 +307,7 @@ class UIDesignerActivity : BaseIDEActivity() {
     val parent = node?.parentPath?.let(document::at)
     val target = suggestedPlacement()
     val index = node?.path?.lastOrNull() ?: 0
+    val canMove = document.editable && workspace?.ready == true
     fun action(label: Int, enabled: Boolean, run: () -> Unit) {
       row.addView(MaterialButton(this, null, MaterialR.attr.materialButtonOutlinedStyle).apply {
         setText(label)
@@ -321,10 +322,10 @@ class UIDesignerActivity : BaseIDEActivity() {
         setOnClickListener { run() }
       }, LinearLayout.LayoutParams(0, (48 * resources.displayMetrics.density).roundToInt(), 1f))
     }
-    action(R.string.designer_move_up, node != null && parent != null && index > 0) {
+    action(R.string.designer_move_up, canMove && index > 0) {
       edit(document.move(node!!, parent!!, index - 1), node.id)
     }
-    action(R.string.designer_move_down, node != null && parent != null && index + 1 < document.children(parent).size) {
+    action(R.string.designer_move_down, canMove && parent != null && index + 1 < document.children(parent).size) {
       edit(document.move(node!!, parent!!, index + 2), node.id)
     }
     action(R.string.copy, node != null && node.tag != "merge" && document.editable) {

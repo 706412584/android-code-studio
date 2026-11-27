@@ -14,15 +14,24 @@ import android.widget.Filter
 import android.widget.Filterable
 import android.widget.LinearLayout
 import com.google.android.material.color.MaterialColors
+import com.google.android.material.textfield.MaterialAutoCompleteTextView
 import com.google.android.material.textview.MaterialTextView
 import com.tom.rv2ide.uidesigner.R
 import com.tom.rv2ide.uidesigner.utils.ValueSuggestion
 import kotlin.math.roundToInt
 
-/**
- * 补全下拉的适配器。候选已由补全提供者过滤排序，这里的 [Filter] 原样返回全部条目，
- * 避免 AutoCompleteTextView 再按前缀筛一遍，把模糊匹配和 flag 拼接结果筛掉。
- */
+/** 名称与值的结果均由面板发布，不让平台旧的异步 Filter 回调重开已收起的列表。 */
+internal class SuggestionInput(context: Context) : MaterialAutoCompleteTextView(context) {
+  init {
+    isSingleLine = true
+    threshold = 1
+  }
+
+  override fun enoughToFilter() = true // 空输入也由提供者决定是否展示候选。
+  override fun performFiltering(text: CharSequence?, keyCode: Int) = Unit
+  override fun convertSelectionToString(selectedItem: Any?): CharSequence =
+      (selectedItem as? ValueSuggestion)?.text ?: super.convertSelectionToString(selectedItem)
+}
 internal class SuggestionAdapter(private val context: Context, private val items: List<ValueSuggestion>) :
     BaseAdapter(), Filterable {
 
@@ -36,18 +45,14 @@ internal class SuggestionAdapter(private val context: Context, private val items
     return row
   }
 
-  override fun getFilter(): Filter = object : Filter() {
-    override fun performFiltering(constraint: CharSequence?) = FilterResults().apply {
-      values = items
-      count = items.size
-    }
+  // AutoCompleteTextView 要求 Filterable，但本适配器只展示不可变的已筛选结果。
+  override fun getFilter() = noFilter
 
-    override fun publishResults(constraint: CharSequence?, results: FilterResults?) {
-      if (items.isEmpty()) notifyDataSetInvalidated() else notifyDataSetChanged()
+  private companion object {
+    val noFilter = object : Filter() {
+      override fun performFiltering(constraint: CharSequence?) = FilterResults()
+      override fun publishResults(constraint: CharSequence?, results: FilterResults?) = Unit
     }
-
-    override fun convertResultToString(resultValue: Any?): CharSequence =
-        (resultValue as? ValueSuggestion)?.text ?: resultValue?.toString().orEmpty()
   }
 
   private class Row(context: Context) : LinearLayout(context) {
@@ -61,16 +66,16 @@ internal class SuggestionAdapter(private val context: Context, private val items
       setTextColor(MaterialColors.getColor(this, R.attr.colorOnSurfaceVariant))
       isSingleLine = true
       ellipsize = TextUtils.TruncateAt.END
-      gravity = Gravity.END
     }
 
     init {
-      gravity = Gravity.CENTER_VERTICAL
+      orientation = VERTICAL
+      gravity = Gravity.CENTER_VERTICAL or Gravity.START
       val dp = resources.displayMetrics.density
       minimumHeight = (48 * dp).roundToInt()
-      setPadding((16 * dp).roundToInt(), 0, (16 * dp).roundToInt(), 0)
-      addView(text, LayoutParams(0, -2, 1f))
-      addView(kind, LayoutParams(-2, -2).apply { marginStart = (12 * dp).roundToInt() })
+      setPaddingRelative((12 * dp).roundToInt(), (4 * dp).roundToInt(), (12 * dp).roundToInt(), (4 * dp).roundToInt())
+      addView(text, LayoutParams(-1, -2))
+      addView(kind, LayoutParams(-1, -2))
     }
 
     fun bind(item: ValueSuggestion) {

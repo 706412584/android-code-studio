@@ -127,6 +127,7 @@
   <string name="designer_property_name">Property</string>
   <string name="designer_property_value">Value</string>
   <string name="designer_property_unknown">Unknown property</string>
+  <string name="designer_property_exists">This property is already set. Edit its value below.</string>
   <string name="designer_property_more">More actions</string>
   <string name="designer_property_reset">Reset</string>
   <string name="designer_property_pick_resource">Pick resource</string>
