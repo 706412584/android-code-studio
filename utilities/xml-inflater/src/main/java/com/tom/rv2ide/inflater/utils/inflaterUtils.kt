@@ -83,9 +83,11 @@ fun newAttribute(
  * @return The pair of [XmlProcessor] (processed) instance and the [AndroidModule] instance for the
  *   given file.
  */
+@JvmOverloads
 fun processXmlFile(
     file: File,
-    expectedType: com.android.aaptcompiler.AaptResourceType,
+    expectedType: AaptResourceType,
+    xml: String? = null,
 ): Pair<XmlProcessor, AndroidModule> {
   val pathData = extractPathData(file)
   if (pathData.type != expectedType) {
@@ -110,6 +112,6 @@ fun processXmlFile(
       )
 
   val processor = XmlProcessor(pathData.source, com.android.aaptcompiler.BlameLogger(IDELogger))
-  processor.process(resFile, file.inputStream())
+  (xml?.byteInputStream() ?: file.inputStream()).use { processor.process(resFile, it) }
   return processor to module
 }

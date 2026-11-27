@@ -47,7 +47,6 @@ import com.tom.rv2ide.inflater.ILayoutInflater
 import com.tom.rv2ide.inflater.IView
 import com.tom.rv2ide.inflater.IViewGroup
 import com.tom.rv2ide.inflater.internal.LayoutInflaterImpl
-import com.tom.rv2ide.inflater.internal.ViewGroupImpl
 import com.tom.rv2ide.inflater.internal.ViewImpl
 import com.tom.rv2ide.lookup.Lookup
 import com.tom.rv2ide.projects.android.AndroidModule
@@ -178,7 +177,7 @@ class UiLayoutInflater : LayoutInflaterImpl() {
     // Check if this is a registered Material Design component
     if (MATERIAL_COMPONENT_FACTORIES.containsKey(element.name)) {
       log.debug("Intercepting Material Design component: ${element.name}")
-      return createMaterialDesignComponent(element, parent, module)
+      return createMaterialDesignComponent(element, parent, module, widgets)
     }
 
     // Fall back to parent implementation for regular views
@@ -190,6 +189,7 @@ class UiLayoutInflater : LayoutInflaterImpl() {
       element: XmlElement,
       parent: IViewGroup,
       module: AndroidModule,
+      widgets: WidgetTable,
   ): List<IView> {
     val parentView = parent.view as ViewGroup
 
@@ -201,13 +201,11 @@ class UiLayoutInflater : LayoutInflaterImpl() {
     val materialView = factory(parentView)
     log.debug("Created Material view: ${materialView.javaClass.simpleName}")
 
-    // Wrap in appropriate IView
-    val view: ViewImpl =
-        if (materialView is ViewGroup) {
-          ViewGroupImpl(currentLayoutFile, element.name, materialView)
-        } else {
-          ViewImpl(currentLayoutFile, element.name, materialView)
-        }
+    val view = if (tracksSourceNodes) {
+      componentFactory.createView(currentLayoutFile, element.name, materialView) as ViewImpl
+    } else if (materialView is ViewGroup) {
+      com.tom.rv2ide.inflater.internal.ViewGroupImpl(currentLayoutFile, element.name, materialView)
+    } else ViewImpl(currentLayoutFile, element.name, materialView)
 
     // Add namespace declarations
     addNamespaceDecls(element, view)
@@ -217,11 +215,7 @@ class UiLayoutInflater : LayoutInflaterImpl() {
 
     // Handle child views if this is a ViewGroup
     if (element.childCount > 0 && view is IViewGroup) {
-      for (child in element.childList) {
-        if (child.nodeCase == com.android.aapt.Resources.XmlNode.NodeCase.ELEMENT) {
-          onCreateView(element = child.element, parent = view, module = module)
-        }
-      }
+      inflateChildren(element, view, module, widgets)
     }
 
     // Notify inflation listener

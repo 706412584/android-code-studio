@@ -1,185 +1,98 @@
 /*
- *  This file is part of AndroidIDE.
- *
- *  AndroidIDE is free software: you can redistribute it and/or modify
- *  it under the terms of the GNU General Public License as published by
- *  the Free Software Foundation, either version 3 of the License, or
- *  (at your option) any later version.
- *
- *  AndroidIDE is distributed in the hope that it will be useful,
- *  but WITHOUT ANY WARRANTY; without even the implied warranty of
- *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- *  GNU General Public License for more details.
- *
- *  You should have received a copy of the GNU General Public License
- *   along with AndroidIDE.  If not, see <https://www.gnu.org/licenses/>.
+ * This file is part of AndroidCodeStudio, licensed under the GNU General Public License,
+ * version 3 or (at your option) any later version.
  */
-
 package com.tom.rv2ide.uidesigner.viewmodel
 
+import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.ViewModel
-import com.tom.rv2ide.uidesigner.models.UiAttribute
+import com.tom.rv2ide.uidesigner.models.LayoutDocument
+import com.tom.rv2ide.uidesigner.undo.IUiAction
 import com.tom.rv2ide.uidesigner.undo.UndoManager
 import java.io.File
 
-/** FIXED: Workspace state data class to persist M3 components and other workspace changes */
-data class WorkspaceState(
-    val hasChanges: Boolean = false,
-    val m3Components: List<M3ComponentState> = emptyList(),
-    val lastModified: Long = System.currentTimeMillis(),
-)
+internal data class WorkspaceSnapshot(val document: LayoutDocument, val selectedId: Long?)
 
-/** FIXED: M3 component state to persist M3 components added during preview */
-data class M3ComponentState(
-    val id: String,
-    val type: String,
-    val attributes: Map<String, String>,
-    val position: Pair<Int, Int>,
-    val size: Pair<Int, Int>,
-)
+/** 历史只持有源文本及节点身份，不保留 Activity、真实 View 或预览参数。 */
+internal class WorkspaceHistory(initial: LayoutDocument) {
+  private val history = UndoManager()
+  var current = WorkspaceSnapshot(initial, initial.root?.id)
+    private set
+
+  val canUndo: Boolean get() = history.canUndo()
+  val canRedo: Boolean get() = history.canRedo()
+
+  fun select(id: Long?) {
+    current = current.copy(selectedId = current.document.node(id)?.id)
+  }
+
+  fun commit(document: LayoutDocument, selectedId: Long?): Boolean {
+    if (document.xml == current.document.xml) return false
+    val before = current
+    val after = WorkspaceSnapshot(document, document.node(selectedId)?.id)
+    history.push(Edit(before, after))
+    current = after
+    return true
+  }
+
+  fun target(redo: Boolean): WorkspaceSnapshot? =
+      if (redo) (history.peekRedo() as? Edit)?.after else (history.peekUndo() as? Edit)?.before
+
+  fun replay(redo: Boolean) {
+    if (redo) history.redo() else history.undo()
+  }
+
+  private inner class Edit(val before: WorkspaceSnapshot, val after: WorkspaceSnapshot) : IUiAction {
+    override fun undo() { current = before }
+    override fun redo() { current = after }
+  }
+}
 
 internal class WorkspaceViewModel : ViewModel() {
-  internal val _drawerOpened = MutableLiveData(false)
-  internal val _errText = MutableLiveData("")
-  internal val _workspaceScreen = MutableLiveData(SCREEN_WORKSPACE)
-  internal val _view = MutableLiveData<com.tom.rv2ide.inflater.IView>(null)
-  internal val _selectedAttr = MutableLiveData<UiAttribute>(null)
-  internal val _addAttrMode = MutableLiveData(false)
-  internal val _undoManager = MutableLiveData(UndoManager())
-  internal val _currentDestination = MutableLiveData(0)
-  internal val _layoutHasError = MutableLiveData(false)
-  private val _file = MutableLiveData<File>()
+  private val snapshot = MutableLiveData<WorkspaceSnapshot>()
+  val state: LiveData<WorkspaceSnapshot> get() = snapshot
+  lateinit var file: File
+    private set
+  lateinit var originalXml: String
+    private set
+  lateinit var diskFingerprint: String
+    private set
+  private lateinit var history: WorkspaceHistory
 
-  // FIXED: Add workspace state persistence for M3 components
-  internal val _workspaceState = MutableLiveData<WorkspaceState>()
-  private var _hasWorkspaceChanges = false
+  val isOpen: Boolean get() = ::history.isInitialized
+  val current: WorkspaceSnapshot get() = history.current
+  val canUndo: Boolean get() = history.canUndo
+  val canRedo: Boolean get() = history.canRedo
+  val dirty: Boolean get() = current.document.xml != originalXml
+  val collapsed = mutableSetOf<Long>()
+  var copiedNode: CopiedNode? = null
 
-  companion object {
-    const val SCREEN_WORKSPACE = 0
-    const val SCREEN_ERROR = 1
+  data class CopiedNode(val name: String, val xml: String)
+
+  fun open(file: File, xml: String, diskFingerprint: String) {
+    if (::history.isInitialized) return
+    this.file = file
+    this.originalXml = xml
+    this.diskFingerprint = diskFingerprint
+    history = WorkspaceHistory(LayoutDocument(xml, file.toURI().toString()))
+    snapshot.value = current
   }
 
-  val undoManager: UndoManager
-    get() = this._undoManager.value!!
-
-  var file: File
-    get() = _file.value!!
-    set(value) {
-      _file.value = value
-    }
-
-  var drawerOpened: Boolean
-    get() = this._drawerOpened.value!!
-    set(value) {
-      this._drawerOpened.value = value
-    }
-
-  var errText: String
-    get() = _errText.value ?: ""
-    set(value) {
-      _errText.value = value
-      workspaceScreen = SCREEN_ERROR
-    }
-
-  var workspaceScreen: Int
-    get() = _workspaceScreen.value ?: SCREEN_WORKSPACE
-    set(value) {
-      _workspaceScreen.value = value
-    }
-
-  var view: com.tom.rv2ide.inflater.IView?
-    get() = this._view.value
-    set(value) {
-      this._view.value = value
-    }
-
-  var selectedAttr: UiAttribute?
-    get() = this._selectedAttr.value
-    set(value) {
-      this._selectedAttr.value = value
-    }
-
-  var addAttrMode: Boolean
-    get() = this._addAttrMode.value ?: false
-    set(value) {
-      this._addAttrMode.value = value
-    }
-
-  var currentDestination: Int
-    get() = this._currentDestination.value ?: 0
-    set(value) {
-      this._currentDestination.value = value
-    }
-
-  var layoutHasError: Boolean
-    get() = _layoutHasError.value ?: false
-    set(value) {
-      _layoutHasError.value = value
-    }
-
-  fun notifyAttrUpdated() {
-    val attr = this.selectedAttr ?: return
-    val view = this.view ?: return
-
-    if (addAttrMode && attr.value.isNotBlank()) {
-      // if we were adding a new attribute, then add the attribute to the view.
-      view.addAttribute(attr)
-      addAttrMode = false
-      selectedAttr = null
-      return
-    }
-
-    val existing = view.findAttribute(attr.name, attr.namespace?.uri)
-    if (existing !is UiAttribute) {
-      return
-    }
-
-    if (existing.value.isBlank()) {
-      // the user left the value field blank, remove the attribute
-      view.removeAttribute(existing)
-      selectedAttr = null
-      return
-    }
-
-    if (existing.value == attr.value) {
-      // value of the attribute is same as before
-      selectedAttr = null
-      return
-    }
-
-    // the user was updating the value af the attribute, so update it in the view
-    view.updateAttribute(existing.copyAttr(view = view, value = attr.value))
-    this.selectedAttr = null
+  fun select(id: Long?) {
+    if (current.selectedId == id) return
+    history.select(id)
+    snapshot.value = current
   }
 
-  // FIXED: Workspace state management methods for M3 components
-
-  var hasWorkspaceChanges: Boolean
-    get() = _hasWorkspaceChanges
-    set(value) {
-      _hasWorkspaceChanges = value
-      _workspaceState.value =
-          _workspaceState.value?.copy(hasChanges = value) ?: WorkspaceState(hasChanges = value)
-    }
-
-  fun saveWorkspaceState(m3Components: List<M3ComponentState>) {
-    val currentState = _workspaceState.value ?: WorkspaceState()
-    _workspaceState.value =
-        currentState.copy(
-            hasChanges = true,
-            m3Components = m3Components,
-            lastModified = System.currentTimeMillis(),
-        )
-    _hasWorkspaceChanges = true
+  fun commit(document: LayoutDocument, selectedId: Long?) {
+    if (history.commit(document, selectedId)) snapshot.value = current
   }
 
-  fun getWorkspaceState(): WorkspaceState? {
-    return _workspaceState.value
-  }
+  fun historyTarget(redo: Boolean): WorkspaceSnapshot? = history.target(redo)
 
-  fun clearWorkspaceState() {
-    _workspaceState.value = WorkspaceState()
-    _hasWorkspaceChanges = false
+  fun replay(redo: Boolean) {
+    history.replay(redo)
+    snapshot.value = current
   }
 }

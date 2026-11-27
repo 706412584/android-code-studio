@@ -15,8 +15,11 @@ import com.google.android.material.floatingactionbutton.FloatingActionButton
 import com.google.android.material.textfield.TextInputEditText
 import com.google.android.material.textfield.TextInputLayout
 import com.google.android.material.textview.MaterialTextView
+import com.tom.rv2ide.inflater.IAttribute
 import com.tom.rv2ide.inflater.internal.ViewImpl
+import com.tom.rv2ide.inflater.viewAdapter
 import com.tom.rv2ide.projects.IWorkspace
+import com.tom.rv2ide.uidesigner.models.LayoutDocument
 import java.io.File
 import org.slf4j.LoggerFactory
 
@@ -53,7 +56,6 @@ fun ViewImpl.applyBackgroundPreview(
             isBackground = true,
         )
 
-    // If vector failed, try regular background renderer
     if (!applied) {
       val renderer = BackgroundPreviewRenderer()
       applied = renderer.applyBackgroundPreview(this.view, backgroundAttr.value, context, fileToUse)
@@ -201,141 +203,35 @@ fun ViewImpl.applyPreview(context: Context, workspace: IWorkspace?, layoutFile: 
   }
 }
 
-/**
- * ENHANCED: Apply preview for a specific attribute (for real-time editing) Uses modular M3 renderer
- * architecture with workspace support
- */
-fun ViewImpl.applyAttributePreview(
-    attributeName: String,
-    attributeValue: String,
-    context: Context,
-    workspace: IWorkspace?,
-    layoutFile: File? = null,
-): Boolean {
-  val viewFile =
-      try {
-        (this.file as? File)
-      } catch (e: Exception) {
-        null
-      }
-  val fileToUse = layoutFile ?: viewFile
+/** 文件级资源和未由适配器覆盖的 Material 属性走原有预览渲染器。 */
+internal fun ViewImpl.applyDesignerPreview() {
+  for (attribute in attributes) {
+    try {
+      applyPreviewAttribute(attribute)
+    } catch (e: Exception) {
+      log.debug("无法预览属性 {}", attribute.qualifiedName, e)
+    }
+  }
+}
 
-  // Initialize M3 renderer with workspace support
-  val m3Renderer = MaterialDesign3Renderer(workspace)
-
+/** 属性对象只读；调用者可传入尚未写入源文档的值。 */
+internal fun ViewImpl.applyPreviewAttribute(attribute: IAttribute): Boolean {
+  val context = view.context
+  val layoutFile = file.file
+  val value = attribute.value
+  val android = attribute.namespace?.uri == LayoutDocument.ANDROID
+  val app = attribute.namespace?.uri == LayoutDocument.APP
   return when {
-    isBackgroundAttribute(attributeName) -> {
-      // Try vector renderer first
-      val vectorRenderer = VectorDrawableRenderer()
-      var result =
-          vectorRenderer.applyVectorPreview(
-              this.view,
-              attributeValue,
-              context,
-              fileToUse,
-              isBackground = true,
-          )
-
-      // If vector failed, try regular background renderer
-      if (!result) {
-        val backgroundRenderer = BackgroundPreviewRenderer()
-        result =
-            backgroundRenderer.applyBackgroundPreview(this.view, attributeValue, context, fileToUse)
-      }
-
-      // If all previews failed, try normal attribute application
-      if (!result) {
-        try {
-          val tempAttr = this.attributes.find { it.name.equals(attributeName, ignoreCase = true) }
-          if (tempAttr != null) {
-            tempAttr.value = attributeValue
-            this.applyAttribute(tempAttr)
-            return true
-          }
-        } catch (e: Exception) {
-          // Ignore
-        }
-      }
-      result
-    }
-    isSrcAttribute(attributeName) && this.view is ImageView -> {
-      // Try vector renderer first
-      val vectorRenderer = VectorDrawableRenderer()
-      var result =
-          vectorRenderer.applyVectorPreview(
-              this.view,
-              attributeValue,
-              context,
-              fileToUse,
-              isBackground = false,
-          )
-
-      // If vector failed, try regular image renderer
-      if (!result) {
-        val imageRenderer = ImageViewSrcRenderer()
-        result =
-            imageRenderer.applySrcPreview(
-                this.view as ImageView,
-                attributeValue,
-                context,
-                fileToUse,
-            )
-      }
-
-      // If all previews failed, try normal attribute application
-      if (!result) {
-        try {
-          val tempAttr = this.attributes.find { it.name.equals(attributeName, ignoreCase = true) }
-          if (tempAttr != null) {
-            tempAttr.value = attributeValue
-            this.applyAttribute(tempAttr)
-            return true
-          }
-        } catch (e: Exception) {
-          // Ignore
-        }
-      }
-      result
-    }
-    isM3Attribute(attributeName) && isM3Component(this.view) -> {
-      val result =
-          m3Renderer.applyM3Preview(this.view, attributeName, attributeValue, context, fileToUse)
-
-      // If M3 preview failed, try normal attribute application
-      if (!result) {
-        try {
-          val tempAttr = this.attributes.find { it.name.equals(attributeName, ignoreCase = true) }
-          if (tempAttr != null) {
-            tempAttr.value = attributeValue
-            this.applyAttribute(tempAttr)
-            return true
-          }
-        } catch (e: Exception) {
-          // Ignore
-        }
-      }
-
-      // Ensure M3 components maintain visibility even after attribute changes
-      if (result && isM3Component(this.view)) {
-        ensureM3ComponentVisibility(this.view, m3Renderer, context, fileToUse)
-      }
-
-      result
-    }
-    else -> {
-      // For other attributes, apply them normally
-      try {
-        val tempAttr = this.attributes.find { it.name.equals(attributeName, ignoreCase = true) }
-        if (tempAttr != null) {
-          tempAttr.value = attributeValue
-          this.applyAttribute(tempAttr)
-          return true
-        }
-      } catch (e: Exception) {
-        // Ignore
-      }
-      false
-    }
+    android && attribute.name == "background" ->
+        VectorDrawableRenderer().applyVectorPreview(view, value, context, layoutFile, isBackground = true) ||
+            BackgroundPreviewRenderer().applyBackgroundPreview(view, value, context, layoutFile) ||
+            viewAdapter?.apply(this, attribute) == true
+    view is ImageView && (android && attribute.name == "src" || app && attribute.name == "srcCompat") ->
+        VectorDrawableRenderer().applyVectorPreview(view, value, context, layoutFile, isBackground = false) ||
+            ImageViewSrcRenderer().applySrcPreview(view as ImageView, value, context, layoutFile) ||
+            viewAdapter?.apply(this, attribute) == true
+    else -> viewAdapter?.apply(this, attribute) == true ||
+        (android || app) && MaterialDesign3Renderer().applyM3Preview(view, attribute.name, value, context, layoutFile)
   }
 }
 
@@ -593,98 +489,5 @@ private fun applyDefaultM3Styling(
     }
   } catch (e: Exception) {
     log.debug("Failed to apply default M3 styling: {}", e.message)
-  }
-}
-
-/**
- * Ensure M3 components maintain visibility after attribute changes This prevents M3 components from
- * becoming invisible during real-time editing
- */
-private fun ensureM3ComponentVisibility(
-    view: android.view.View,
-    m3Renderer: MaterialDesign3Renderer,
-    context: Context,
-    layoutFile: File?,
-) {
-  try {
-    when (view) {
-      is MaterialButton -> {
-        // Ensure button has visible background and text
-        if (view.background == null || view.text.isNullOrEmpty()) {
-          m3Renderer.applyM3Preview(
-              view,
-              "backgroundtint",
-              "?attr/colorPrimary",
-              context,
-              layoutFile,
-          )
-          if (view.text.isNullOrEmpty()) {
-            view.text = "Button"
-          }
-        }
-      }
-      is MaterialCardView -> {
-        // Ensure card has visible background
-        if (view.cardBackgroundColor == null) {
-          m3Renderer.applyM3Preview(
-              view,
-              "cardbackgroundcolor",
-              "?attr/colorSurface",
-              context,
-              layoutFile,
-          )
-        }
-      }
-      is MaterialTextView -> {
-        // Ensure text is visible
-        if (view.currentTextColor == 0) {
-          m3Renderer.applyM3Preview(view, "textcolor", "?attr/colorOnSurface", context, layoutFile)
-        }
-      }
-      is FloatingActionButton -> {
-        // Ensure FAB has visible background
-        if (view.backgroundTintList == null) {
-          m3Renderer.applyM3Preview(
-              view,
-              "backgroundtint",
-              "?attr/colorPrimaryContainer",
-              context,
-              layoutFile,
-          )
-        }
-      }
-      is Chip -> {
-        // Ensure chip has visible background
-        if (view.chipBackgroundColor == null) {
-          m3Renderer.applyM3Preview(
-              view,
-              "chipbackgroundcolor",
-              "?attr/colorSurfaceVariant",
-              context,
-              layoutFile,
-          )
-        }
-      }
-      is TextInputLayout -> {
-        // Ensure text input has visible styling
-        if (view.boxBackgroundColor == 0) {
-          m3Renderer.applyM3Preview(
-              view,
-              "boxbackgroundcolor",
-              "?attr/colorSurface",
-              context,
-              layoutFile,
-          )
-        }
-      }
-      is TextInputEditText -> {
-        // Ensure edit text is visible
-        if (view.currentTextColor == 0) {
-          m3Renderer.applyM3Preview(view, "textcolor", "?attr/colorOnSurface", context, layoutFile)
-        }
-      }
-    }
-  } catch (e: Exception) {
-    log.debug("Failed to ensure M3 component visibility: {}", e.message)
   }
 }

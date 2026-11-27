@@ -733,15 +733,12 @@ open class EditorHandlerActivity : ProjectHandlerActivity(), IEditorHandler {
 
   @Subscribe(threadMode = ThreadMode.MAIN)
   fun onDocumentChange(event: DocumentChangeEvent) {
-    // update content modification status
-    editorViewModel.areFilesModified = true
-
     val index = findIndexOfEditorByFile(event.file.toFile())
-    if (index == -1) {
-      return
-    }
+    // 内容变化事件异步投递，保存完成后到达的旧事件不能重新标记页签。
+    if (index < 0 || getEditorAtIndex(index)?.isModified != true) return
 
-    val tab = content.tabs.getTabAt(index)!!
+    editorViewModel.areFilesModified = true
+    val tab = content.tabs.getTabAt(index) ?: return
     if (tab.text?.startsWith('*') == true) {
       return
     }

@@ -1,697 +1,322 @@
 /*
- *  This file is part of AndroidIDE.
- *
- *  AndroidIDE is free software: you can redistribute it and/or modify
- *  it under the terms of the GNU General Public License as published by
- *  the Free Software Foundation, either version 3 of the License, or
- *  (at your option) any later version.
- *
- *  AndroidIDE is distributed in the hope that it will be useful,
- *  but WITHOUT ANY WARRANTY; without even the implied warranty of
- *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- *  GNU General Public License for more details.
- *
- *  You should have received a copy of the GNU General Public License
- *   along with AndroidIDE.  If not, see <https://www.gnu.org/licenses/>.
+ * This file is part of AndroidIDE and AndroidCodeStudio.
+ * Licensed under the GNU General Public License, version 3 or any later version.
  */
-
 package com.tom.rv2ide.uidesigner.fragments
 
-// import com.tom.rv2ide.uidesigner.utils.applyBackgroundPreview
+import android.graphics.Point
+import android.graphics.Rect
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
-import android.view.ViewConfiguration.get
 import android.view.ViewGroup
+import android.widget.EditText
+import android.widget.FrameLayout
+import android.widget.HorizontalScrollView
 import android.widget.LinearLayout
+import android.widget.ScrollView
+import androidx.core.view.isVisible
+import androidx.core.widget.NestedScrollView
 import androidx.fragment.app.viewModels
-import com.blankj.utilcode.util.SizeUtils
-import com.google.android.material.button.MaterialButton
-import com.google.android.material.card.MaterialCardView
-import com.google.android.material.chip.Chip
-import com.google.android.material.floatingactionbutton.FloatingActionButton
 import com.google.android.material.textfield.TextInputLayout
-import com.google.android.material.textview.MaterialTextView
 import com.tom.rv2ide.fragments.BaseFragment
 import com.tom.rv2ide.inflater.IView
+import com.tom.rv2ide.inflater.IViewGroup
+import com.tom.rv2ide.inflater.events.IInflateEventsListener
+import com.tom.rv2ide.inflater.events.IInflationEvent
+import com.tom.rv2ide.inflater.events.OnInflateViewEvent
 import com.tom.rv2ide.inflater.internal.AttributeImpl
+import com.tom.rv2ide.inflater.internal.ErrorLayout
+import com.tom.rv2ide.inflater.internal.ErrorView
 import com.tom.rv2ide.inflater.internal.LayoutFile
+import com.tom.rv2ide.inflater.internal.NamespaceImpl
 import com.tom.rv2ide.inflater.internal.ViewGroupImpl
 import com.tom.rv2ide.inflater.internal.ViewImpl
+import com.tom.rv2ide.inflater.models.UiWidget
 import com.tom.rv2ide.inflater.utils.endParse
+import com.tom.rv2ide.inflater.utils.isParsing
 import com.tom.rv2ide.inflater.utils.startParse
+import com.tom.rv2ide.inflater.viewAdapter
 import com.tom.rv2ide.uidesigner.R
 import com.tom.rv2ide.uidesigner.UIDesignerActivity
 import com.tom.rv2ide.uidesigner.databinding.FragmentDesignerWorkspaceBinding
+import com.tom.rv2ide.uidesigner.drag.WidgetDrag
 import com.tom.rv2ide.uidesigner.drag.WidgetDragListener
 import com.tom.rv2ide.uidesigner.drag.WidgetTouchListener
-import com.tom.rv2ide.uidesigner.drawable.UiViewLayeredForeground
-import com.tom.rv2ide.uidesigner.models.CommonUiView
-import com.tom.rv2ide.uidesigner.models.PlaceholderView
-import com.tom.rv2ide.uidesigner.models.RootWorkspaceView
-import com.tom.rv2ide.uidesigner.models.UiViewGroup
-import com.tom.rv2ide.uidesigner.undo.UndoManager
+import com.tom.rv2ide.uidesigner.drag.startWidgetDrag
+import com.tom.rv2ide.uidesigner.models.AttrKey
+import com.tom.rv2ide.uidesigner.models.LayoutDocument
+import com.tom.rv2ide.uidesigner.models.LayoutDocument.Companion.startsWith
+import com.tom.rv2ide.uidesigner.models.Placement
 import com.tom.rv2ide.uidesigner.utils.UiLayoutInflater
-import com.tom.rv2ide.uidesigner.utils.applyPreview
-import com.tom.rv2ide.uidesigner.utils.bgDesignerView
-import com.tom.rv2ide.uidesigner.utils.layeredForeground
-import com.tom.rv2ide.uidesigner.viewmodel.M3ComponentState
+import com.tom.rv2ide.uidesigner.utils.ViewToXml
+import com.tom.rv2ide.uidesigner.utils.applyDesignerPreview
+import com.tom.rv2ide.uidesigner.utils.applyPreviewAttribute
 import com.tom.rv2ide.uidesigner.viewmodel.WorkspaceViewModel
-import java.io.File
+import com.tom.rv2ide.uidesigner.views.SelectionOverlayView
 import org.slf4j.LoggerFactory
+import kotlin.math.roundToInt
 
-/**
- * The fragement that previews the inflated layout.
- *
- * @author Akash Yadav
- */
+/** 真实 View 只属于当前预览，不写入编辑历史或跨 Activity 保存。 */
 class DesignerWorkspaceFragment : BaseFragment() {
-
   private var binding: FragmentDesignerWorkspaceBinding? = null
-  internal val viewModel by viewModels<WorkspaceViewModel>(ownerProducer = { requireActivity() })
+  private val viewModel by viewModels<WorkspaceViewModel>(ownerProducer = { requireActivity() })
+  private val activityHost get() = requireActivity() as UIDesignerActivity
+  private var shown: LayoutDocument? = null
+  private var workspace: IViewGroup? = null
+  private var rendered = emptyMap<Long, List<IView>>()
+  internal var ready = false
+    private set
 
-  private val touchSlop by lazy { get(requireContext()).scaledTouchSlop }
+  override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, state: Bundle?): View =
+      FragmentDesignerWorkspaceBinding.inflate(inflater, container, false).also { binding = it }.root
 
-  internal var isInflating = false
-  internal val workspaceView by lazy {
-    RootWorkspaceView(
-        LayoutFile(File(""), ""),
-        LinearLayout::class.qualifiedName!!,
-        binding!!.workspace,
-    )
+  override fun onViewCreated(view: View, state: Bundle?) {
+    super.onViewCreated(view, state)
+    val overlay = checkNotNull(binding).selectionOverlay
+    overlay.setOnDragListener(WidgetDragListener(overlay, ::locateDrop, activityHost::dropWidget))
+    overlay.setOnTouchListener(WidgetTouchListener(overlay, { x, y ->
+      if (ready) viewModel.select(hitNode(x, y)?.id ?: viewModel.current.document.root?.id)
+    }, { x, y ->
+      val node = if (ready) hitNode(x, y) else null
+      if (node?.parentPath != null && activityHost.canStartDrag() &&
+          overlay.startWidgetDrag(WidgetDrag.Existing(node.id), views(node.id).first().view)) {
+        viewModel.select(node.id)
+      }
+    }))
+    viewModel.state.observe(viewLifecycleOwner) { snapshot ->
+      if (shown !== snapshot.document) render(snapshot.document, showError = true)
+      select(snapshot.selectedId)
+      activityHost.refreshWorkspace()
+    }
   }
 
-  val undoManager: UndoManager
-    get() = viewModel.undoManager
+  internal fun views(id: Long): List<IView> = rendered[id].orEmpty()
 
-  internal val placeholder by lazy {
-    val view =
-        View(requireContext()).apply {
-          setBackgroundResource(R.drawable.bg_widget_drag_placeholder)
-          layoutParams =
-              ViewGroup.LayoutParams(
-                  SizeUtils.dp2px(PLACEHOLDER_WIDTH_DP),
-                  SizeUtils.dp2px(PLACEHOLDER_HEIGHT_DP),
-              )
+  internal fun container(node: LayoutDocument.Node?): IViewGroup? = when {
+    node == null || node.tag == "merge" -> workspace
+    node.tag == "include" -> null
+    else -> views(node.id).singleOrNull()?.takeUnless { it is ErrorLayout } as? IViewGroup
+  }
+
+  internal fun describePreview(node: LayoutDocument.Node): Boolean = ready && node.tag != "merge" &&
+      (views(node.id).isEmpty() && node.tag != "include" || views(node.id).any { it is ErrorView || it is ErrorLayout })
+
+  internal fun canInsert(parent: LayoutDocument.Node?, name: String, moving: LayoutDocument.Node? = null): Boolean {
+    if (!ready) return false
+    val document = viewModel.current.document
+    if (parent == null && document.root != null) return false
+    if (moving != null && (parent == null || parent.path.startsWith(moving.path))) return false
+    val group = container(parent) ?: return false
+    val child = moving?.let { views(it.id).singleOrNull() }
+    val sameParent = moving != null && moving.parentPath == parent?.path
+    return when (group.view) {
+      is TextInputLayout -> {
+        // TextInputLayout 只接受一个直接的编辑框；普通子 View 不是输入字段。
+        (child?.view is EditText || isEditText(name)) && (sameParent || group.childCount == 0)
+      }
+      is ScrollView, is HorizontalScrollView, is NestedScrollView -> sameParent || group.childCount == 0
+      else -> group.canAcceptChild(name, child)
+    }
+  }
+
+  private fun isEditText(name: String): Boolean = try {
+    EditText::class.java.isAssignableFrom(Class.forName(name, false, javaClass.classLoader))
+  } catch (_: ClassNotFoundException) {
+    false
+  }
+
+  internal fun newWidgetXml(widget: UiWidget, parent: LayoutDocument.Node?): String {
+    val group = checkNotNull(container(parent))
+    return parsing(viewModel.file) {
+      val view = widget.createView(requireContext(), group.view as ViewGroup, (group as ViewImpl).file)
+      val defaults = if (group.name == "androidx.constraintlayout.widget.ConstraintLayout") {
+        listOf("app:layout_constraintStart_toStartOf" to "parent", "app:layout_constraintTop_toTopOf" to "parent")
+      } else emptyList()
+      ViewToXml.newWidget(view, defaults)
+    }
+  }
+
+  private fun select(id: Long?) {
+    val document = shown ?: return
+    val views = if (document.node(id)?.tag == "merge") {
+      listOfNotNull(workspace?.view)
+    } else id?.let(::views).orEmpty().map { it.view }
+    binding?.selectionOverlay?.setSelection(views)
+  }
+
+  private fun globalPoint(x: Float, y: Float): Point? {
+    val origin = Point()
+    if (binding?.selectionOverlay?.getGlobalVisibleRect(Rect(), origin) != true) return null
+    return origin.apply { offset(x.roundToInt(), y.roundToInt()) }
+  }
+
+  private fun nodeBounds(node: LayoutDocument.Node): Rect? =
+      views(node.id).mapNotNull { SelectionOverlayView.boundsOf(it.view) }.reduceOrNull { a, b -> a.apply { union(b) } }
+
+  private fun hitNode(x: Float, y: Float): LayoutDocument.Node? {
+    val point = globalPoint(x, y) ?: return null
+    return hitNode(viewModel.current.document, viewModel.current.document.root, point)
+  }
+
+  private fun hitNode(document: LayoutDocument, node: LayoutDocument.Node?, point: Point): LayoutDocument.Node? {
+    if (node == null || node.tag != "merge" && nodeBounds(node)?.contains(point.x, point.y) != true) return null
+    val frontFirst = document.children(node).asReversed().sortedByDescending { child ->
+      views(child.id).maxOfOrNull { it.view.z } ?: 0f
+    }
+    return frontFirst.firstNotNullOfOrNull { hitNode(document, it, point) } ?: node
+  }
+
+  private fun locateDrop(item: WidgetDrag, x: Float, y: Float): Pair<Placement, Rect>? {
+    if (!ready) return null
+    val point = globalPoint(x, y) ?: return null
+    val document = viewModel.current.document
+    val moving = (item as? WidgetDrag.Existing)?.let { document.node(it.id) }
+    val name = when (item) {
+      is WidgetDrag.New -> item.widget.name
+      is WidgetDrag.Existing -> moving?.let { views(it.id).firstOrNull()?.name ?: it.tag } ?: return null
+    }
+    var candidate = hitNode(document, document.root, point)
+    if (candidate == null) {
+      if (document.root == null && canInsert(null, name)) {
+        return workspace?.view?.let(SelectionOverlayView::boundsOf)?.let { Placement(null, 0) to it }
+      }
+      // 空白区域仍可向未铺满画布的根容器添加。
+      candidate = document.root
+    }
+    while (candidate != null) {
+      val parent = candidate.parentPath?.let(document::at)
+      val limits = nodeBounds(candidate)
+      val parentRow = (container(parent)?.view as? LinearLayout)?.takeIf { parent != null }
+      if (limits != null && parent != null && parentRow != null && canInsert(parent, name, moving)) {
+        val horizontal = parentRow.orientation == LinearLayout.HORIZONTAL
+        val fraction = if (horizontal) (point.x - limits.left).toFloat() / limits.width()
+            else (point.y - limits.top).toFloat() / limits.height()
+        if (fraction in 0f..0.2f || fraction in 0.8f..1f) {
+          val before = (fraction < 0.5f) != (horizontal && parentRow.layoutDirection == View.LAYOUT_DIRECTION_RTL)
+          val siblings = document.children(parent)
+          val index = candidate.path.last() + if (before) 0 else 1
+          return Placement(parent.id, index) to insertionLine(limits, horizontal, fraction < 0.5f, siblings.isNotEmpty())
         }
-    PlaceholderView(view)
-  }
-
-  private val hierarchyHandler by lazy { WorkspaceViewHierarchyHandler() }
-  private val attrHandler by lazy { WorkspaceViewAttrHandler() }
-
-  companion object {
-
-    private val log = LoggerFactory.getLogger(DesignerWorkspaceFragment::class.java)
-
-    const val DRAGGING_WIDGET = "DRAGGING_WIDGET"
-    const val DRAGGING_WIDGET_MIME = "androidide/uidesigner_widget"
-    const val HIERARCHY_CHANGE_TRANSITION_DURATION = 100L
-
-    private const val PLACEHOLDER_WIDTH_DP = 40f
-    private const val PLACEHOLDER_HEIGHT_DP = 20f
-  }
-
-  override fun onCreateView(
-      inflater: LayoutInflater,
-      container: ViewGroup?,
-      savedInstanceState: Bundle?,
-  ): View {
-    this.binding = FragmentDesignerWorkspaceBinding.inflate(inflater, container, false)
-    hierarchyHandler.init(this)
-    attrHandler.init(this)
-    return this.binding!!.root
-  }
-
-  override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
-    super.onViewCreated(view, savedInstanceState)
-
-    viewModel._workspaceScreen.observe(viewLifecycleOwner) { binding?.flipper?.displayedChild = it }
-    viewModel._errText.observe(viewLifecycleOwner) { binding?.errText?.text = it }
-
-    val inflationHandler = WorkspaceLayoutInflationHandler()
-    inflationHandler.init(this)
-
-    val inflater = UiLayoutInflater()
-    inflater.inflationEventListener = inflationHandler
-
-    val inflated =
-        try {
-          startParse(viewModel.file)
-          inflater.inflate(viewModel.file, workspaceView).also { viewModel.layoutHasError = false }
-        } catch (e: Throwable) {
-          log.error("Failed to inflate layout", e)
-          viewModel.errText = "${e.message}${e.cause?.message?.let { "\n$it" } ?: ""}"
-          viewModel.layoutHasError = true
-          emptyList()
-        } finally {
-          inflationHandler.release()
-          inflater.close()
+      }
+      if (canInsert(candidate, name, moving)) {
+        val group = checkNotNull(container(candidate))
+        val bounds = SelectionOverlayView.boundsOf(group.view) ?: return null
+        val children = document.children(candidate)
+        val row = group.view as? LinearLayout
+        val horizontal = row?.orientation == LinearLayout.HORIZONTAL
+        val rtl = horizontal && row?.layoutDirection == View.LAYOUT_DIRECTION_RTL
+        val childBounds = children.mapIndexedNotNull { index, child -> nodeBounds(child)?.let { index to it } }
+        val before = if (row == null) null else childBounds.firstOrNull { (_, rect) ->
+          if (horizontal) (point.x < rect.centerX()) != rtl else point.y < rect.centerY()
         }
-
-    if (inflated.isEmpty() && !viewModel.layoutHasError) {
-      viewModel.errText = getString(R.string.msg_empty_ui_layout)
+        val index = before?.first ?: children.size
+        val line = before?.second?.let { insertionLine(it, horizontal, !rtl) }
+            ?: childBounds.lastOrNull()?.second?.let { insertionLine(it, horizontal, rtl) }.takeIf { row != null }
+        return Placement(candidate.id, index) to (line ?: bounds)
+      }
+      candidate = parent
     }
+    return null
+  }
 
-    // FIXED: Restore M3 components from workspace state AFTER inflation
-    val workspaceState = viewModel.getWorkspaceState()
-    if (workspaceState?.m3Components?.isNotEmpty() == true) {
-      log.debug("Restoring ${workspaceState.m3Components.size} M3 components from workspace state")
-      restoreM3ComponentsFromState(workspaceState.m3Components)
+  private fun insertionLine(rect: Rect, horizontal: Boolean, start: Boolean, enabled: Boolean = true): Rect {
+    if (!enabled) return rect
+    val stroke = (2 * resources.displayMetrics.density).roundToInt()
+    return if (horizontal) {
+      val x = if (start) rect.left else rect.right
+      Rect(x - stroke, rect.top, x + stroke, rect.bottom)
+    } else {
+      val y = if (start) rect.top else rect.bottom
+      Rect(rect.left, y - stroke, rect.right, y + stroke)
     }
+  }
 
-    // FIXED: Ensure M3 components are properly styled after inflation
-    // This prevents M3 components from appearing invisible after re-entering preview
-    if (inflated.isNotEmpty()) {
-      setupM3ComponentsAfterInflation()
+  internal fun render(document: LayoutDocument, showError: Boolean = false): Boolean {
+    val b = binding ?: return false
+    val nextContainer = LinearLayout(requireContext()).apply {
+      orientation = LinearLayout.VERTICAL
+      layoutParams = FrameLayout.LayoutParams(-1, -1)
     }
+    val layoutFile = LayoutFile(viewModel.file, viewModel.file.nameWithoutExtension)
+    val nextWorkspace = ViewGroupImpl(layoutFile, LinearLayout::class.java.name, nextContainer)
+    val next = linkedMapOf<Long, List<IView>>()
+    try {
+      require(document.editable) { getString(R.string.designer_invalid_xml) }
+      if (document.root != null) {
+        UiLayoutInflater().use { inflater ->
+          inflater.inflationEventListener = object : IInflateEventsListener {
+            override fun onEvent(event: IInflationEvent<*>) {
+              if (event is OnInflateViewEvent) (event.data as? ViewImpl)?.applyDesignerPreview()
+            }
+          }
+          inflater.inflate(viewModel.file, document.xml, nextWorkspace) { path, nodes ->
+            document.at(path)?.let { next[it.id] = nodes }
+          }
+        }
+      }
+    } catch (error: Exception) {
+      log.warn("布局预览失败", error)
+      if (showError) {
+        shown = document
+        ready = false
+        rendered = emptyMap()
+        workspace = null
+        b.canvasHost.removeAllViews()
+        b.previewMessage.text = getString(R.string.designer_preview_error, error.message.orEmpty())
+        b.previewMessage.isVisible = true
+      } else activityHost.showEditingError(error.message)
+      return false
+    }
+    b.canvasHost.removeAllViews()
+    b.canvasHost.addView(nextContainer)
+    rendered = next
+    workspace = nextWorkspace
+    shown = document
+    ready = true
+    val empty = document.root == null || document.root.tag == "merge" && nextWorkspace.childCount == 0
+    b.previewMessage.isVisible = empty
+    b.previewMessage.text = getString(R.string.designer_empty_canvas)
+    return true
+  }
 
-    binding!!
-        .workspace
-        .setOnDragListener(WidgetDragListener(workspaceView, this.placeholder, touchSlop))
+  internal fun restorePreview() {
+    val state = viewModel.current
+    if (render(state.document)) select(state.selectedId)
+  }
+
+  /** 草稿只应用到真实 View；取消时重绘已提交的源文档。 */
+  internal fun previewAttribute(id: Long, key: AttrKey, value: String): Boolean {
+    val target = views(id).singleOrNull() as? ViewImpl ?: return false
+    val attribute = AttributeImpl(key.uri?.let { NamespaceImpl(key.prefix, it) }, key.name, value)
+    return try {
+      parsing(target.file.file) { target.applyPreviewAttribute(attribute) }.also { target.view.requestLayout() }
+    } catch (error: Exception) {
+      log.debug("无法预览属性 {}", key.qualifiedName, error)
+      false
+    }
+  }
+
+  private inline fun <T> parsing(file: java.io.File, action: () -> T): T {
+    val started = !isParsing
+    if (started) startParse(file)
+    return try {
+      action()
+    } finally {
+      if (started && isParsing) endParse()
+    }
   }
 
   override fun onDestroyView() {
+    binding = null
+    workspace = null
+    shown = null
+    rendered = emptyMap()
+    ready = false
     super.onDestroyView()
-    this.binding = null
-    this.hierarchyHandler.release()
-    this.attrHandler.release()
-
-    endParse()
   }
 
-  internal fun setupView(view: IView) {
-    if (view is CommonUiView && !view.needSetup) {
-      return
-    }
-
-    view.registerAttributeChangeListener(attrHandler)
-    view.view.setOnTouchListener(
-        WidgetTouchListener(view, requireContext()) {
-          showViewInfo(it)
-          true
-        }
-    )
-    // if (view is ViewImpl) view.applyBackgroundPreview(requireContext(), viewModel.file)
-    if (view is ViewImpl) view.applyPreview(requireContext(), null, viewModel.file)
-
-    when (val fg = view.view.foreground) {
-      null -> view.view.foreground = bgDesignerView(requireContext())
-      is UiViewLayeredForeground ->
-          log.warn(
-              "Attempt to reset UiViewLayeredForeground on view {} with foreground drawable type {}",
-              view.name,
-              fg::class.java,
-          )
-
-      else -> view.view.foreground = layeredForeground(requireContext(), fg)
-    }
-
-    if (view is UiViewGroup && view.canModifyChildViews()) {
-      setupViewGroup(view)
-    }
-
-    if (view is CommonUiView) {
-      view.needSetup = false
-    }
-  }
-
-  internal fun showViewInfo(view: IView) {
-    viewModel.view = view
-
-    val existing = childFragmentManager.findFragmentByTag(ViewInfoSheet.TAG)
-    if (existing == null) {
-      val viewInfo = ViewInfoSheet()
-      viewInfo.show(childFragmentManager, ViewInfoSheet.TAG)
-    }
-  }
-
-  private fun setupViewGroup(viewGroup: UiViewGroup) {
-    viewGroup.view.setOnDragListener(WidgetDragListener(viewGroup, placeholder, touchSlop))
-    viewGroup.addOnHierarchyChangeListener(hierarchyHandler)
-  }
-
-  fun updateHierarchy() {
-    if (workspaceView.childCount > 0) {
-      (requireActivity() as UIDesignerActivity).setupHierarchy(workspaceView[0])
-    }
-  }
-
-  /**
-   * FIXED: Setup M3 components after inflation to ensure they are properly styled This prevents M3
-   * components from appearing invisible after re-entering preview
-   */
-  private fun setupM3ComponentsAfterInflation() {
-    try {
-      log.debug("Setting up M3 components after inflation")
-
-      // Use a post delay to ensure the view is fully inflated and ready
-      workspaceView.view.post {
-        try {
-          // Always recursively setup M3 components in the workspace to ensure proper styling
-          setupM3ComponentsRecursively(workspaceView)
-          log.debug("M3 components setup completed")
-        } catch (e: Exception) {
-          log.error("Failed to setup M3 components in post", e)
-        }
-      }
-    } catch (e: Exception) {
-      log.error("Failed to setup M3 components after inflation", e)
-    }
-  }
-
-  /** Recursively setup M3 components in a view hierarchy */
-  private fun setupM3ComponentsRecursively(view: IView) {
-    log.debug("Processing view: ${view.name} (${view.view::class.simpleName})")
-
-    if (view is ViewImpl) {
-      // Apply M3 preview to ensure proper styling
-      view.applyPreview(requireContext(), null, viewModel.file)
-
-      // FIXED: Ensure M3 components are properly styled
-      if (isM3Component(view.view) || isM3ComponentByName(view)) {
-        log.debug("*** FOUND M3 COMPONENT: ${view.name} (${view.view::class.simpleName}) ***")
-        log.debug("M3 component attributes count: ${view.attributes.size}")
-        view.attributes.forEach { attr ->
-          log.debug("  M3 attribute: ${attr.name} = ${attr.value}")
-        }
-
-        // Force M3 styling by applying default M3 attributes if none exist
-        ensureM3ComponentHasDefaultStyling(view)
-
-        // FIXED: Force visibility by setting minimum dimensions and ensuring the view is visible
-        forceM3ComponentVisibility(view)
-      }
-    }
-
-    // Recursively setup child views
-    if (view is UiViewGroup) {
-      log.debug("ViewGroup ${view.name} has ${view.childCount} children")
-      for (i in 0 until view.childCount) {
-        setupM3ComponentsRecursively(view[i])
-      }
-    }
-  }
-
-  /**
-   * FIXED: Restore M3 components from saved workspace state This ensures M3 components added during
-   * preview are restored when re-entering
-   */
-  private fun restoreM3ComponentsFromState(m3Components: List<M3ComponentState>) {
-    try {
-      for (m3Component in m3Components) {
-        // Create and add M3 component to workspace
-        val restoredView = createM3ComponentFromState(m3Component)
-        if (restoredView != null) {
-          workspaceView.addChild(restoredView)
-          setupView(restoredView)
-        }
-      }
-    } catch (e: Exception) {
-      log.error("Failed to restore M3 components from state", e)
-    }
-  }
-
-  /** FIXED: Create M3 component from saved state with proper view creation */
-  private fun createM3ComponentFromState(m3Component: M3ComponentState): IView? {
-    return try {
-      log.debug(
-          "Restoring M3 component: ${m3Component.type} with ${m3Component.attributes.size} attributes"
-      )
-
-      // Create the actual M3 component based on type
-      val context = requireContext()
-      val view =
-          when (m3Component.type) {
-            "com.google.android.material.button.MaterialButton" -> {
-              // Create MaterialButton with proper context
-              MaterialButton(context).apply {
-                // Set default text if not specified
-                if (text.isNullOrEmpty()) {
-                  text = "Button"
-                }
-                // Apply default MaterialButton styling
-                // setBackgroundColor(android.graphics.Color.parseColor("#6200EE"))
-                // setTextColor(android.graphics.Color.parseColor("#FFFFFF"))
-              }
-            }
-            "com.google.android.material.card.MaterialCardView" -> {
-              MaterialCardView(context).apply {
-                // setCardBackgroundColor(android.graphics.Color.parseColor("#FFFFFF"))
-                radius = 20f
-              }
-            }
-            "com.google.android.material.textview.MaterialTextView" -> {
-              MaterialTextView(context).apply {
-                if (text.isNullOrEmpty()) {
-                  text = "Text"
-                }
-                setTextColor(android.graphics.Color.parseColor("#000000"))
-              }
-            }
-            "com.google.android.material.floatingactionbutton.FloatingActionButton" -> {
-              FloatingActionButton(context).apply {
-                setBackgroundTintList(
-                    android.content.res.ColorStateList.valueOf(
-                        android.graphics.Color.parseColor("#6200EE")
-                    )
-                )
-              }
-            }
-            "com.google.android.material.chip.Chip" -> {
-              Chip(context).apply {
-                setChipBackgroundColorResource(android.R.color.white)
-                if (text.isNullOrEmpty()) {
-                  text = "Chip"
-                }
-              }
-            }
-            "com.google.android.material.textfield.TextInputLayout" -> {
-              TextInputLayout(context).apply {
-                setBoxBackgroundColor(android.graphics.Color.parseColor("#FFFFFF"))
-              }
-            }
-            else -> {
-              log.warn("Unknown M3 component type: ${m3Component.type}")
-              return null
-            }
-          }
-
-      // CRITICAL FIX: Create IView wrapper with the CORRECT view type name
-      val layoutFile = com.tom.rv2ide.inflater.internal.LayoutFile(File(""), "")
-      val iView =
-          when (view) {
-            is MaterialButton -> {
-              // Use ViewImpl instead of checking the actual view type
-              com.tom.rv2ide.inflater.internal.ViewImpl(layoutFile, m3Component.type, view)
-            }
-            is MaterialCardView -> {
-              com.tom.rv2ide.inflater.internal.ViewGroupImpl(layoutFile, m3Component.type, view)
-            }
-            is MaterialTextView -> {
-              com.tom.rv2ide.inflater.internal.ViewImpl(layoutFile, m3Component.type, view)
-            }
-            is FloatingActionButton -> {
-              com.tom.rv2ide.inflater.internal.ViewImpl(layoutFile, m3Component.type, view)
-            }
-            is Chip -> {
-              com.tom.rv2ide.inflater.internal.ViewImpl(layoutFile, m3Component.type, view)
-            }
-            is TextInputLayout -> {
-              com.tom.rv2ide.inflater.internal.ViewGroupImpl(layoutFile, m3Component.type, view)
-            }
-            else -> return null
-          }
-
-      // Set proper layout parameters BEFORE adding attributes
-      val layoutParams =
-          android.widget.LinearLayout.LayoutParams(
-              if (m3Component.size.first > 0) m3Component.size.first
-              else android.view.ViewGroup.LayoutParams.WRAP_CONTENT,
-              if (m3Component.size.second > 0) m3Component.size.second
-              else android.view.ViewGroup.LayoutParams.WRAP_CONTENT,
-          )
-      view.layoutParams = layoutParams
-
-      // Apply saved attributes
-      for ((attrName, attrValue) in m3Component.attributes) {
-        try {
-          val namespace =
-              if (attrName.startsWith("app:")) {
-                com.tom.rv2ide.inflater.INamespace.APP
-              } else {
-                com.tom.rv2ide.inflater.INamespace.ANDROID
-              }
-          val attr =
-              com.tom.rv2ide.inflater.internal.AttributeImpl(
-                  namespace = namespace,
-                  name = attrName.replace("app:", "").replace("android:", ""),
-                  value = attrValue,
-              )
-          iView.addAttribute(attr, apply = true)
-        } catch (e: Exception) {
-          log.debug("Failed to apply attribute $attrName: ${e.message}")
-        }
-      }
-
-      log.debug("Successfully created M3 component: ${m3Component.type}")
-      iView
-    } catch (e: Exception) {
-      log.error("Failed to create M3 component from state", e)
-      null
-    }
-  }
-
-  /** FIXED: Create M3 component state from view with correct type detection */
-  private fun createM3ComponentState(view: IView): M3ComponentState? {
-    return try {
-      val viewRect = view.getViewRect()
-      val attributes = mutableMapOf<String, String>()
-
-      // Extract attributes from the view
-      for (attr in view.attributes) {
-        val attrName =
-            if (attr.namespace != null && attr.namespace?.prefix != null) {
-              "${attr.namespace?.prefix}:${attr.name}"
-            } else {
-              attr.name
-            }
-        attributes[attrName] = attr.value
-      }
-
-      // CRITICAL FIX: Determine the correct component type
-      val componentType =
-          when {
-            view.view is MaterialButton || view.name.contains("MaterialButton") ->
-                "com.google.android.material.button.MaterialButton"
-            view.view is MaterialCardView || view.name.contains("MaterialCardView") ->
-                "com.google.android.material.card.MaterialCardView"
-            view.view is MaterialTextView || view.name.contains("MaterialTextView") ->
-                "com.google.android.material.textview.MaterialTextView"
-            view.view is FloatingActionButton || view.name.contains("FloatingActionButton") ->
-                "com.google.android.material.floatingactionbutton.FloatingActionButton"
-            view.view is Chip || view.name.contains("Chip") ->
-                "com.google.android.material.chip.Chip"
-            view.view is TextInputLayout || view.name.contains("TextInputLayout") ->
-                "com.google.android.material.textfield.TextInputLayout"
-            else -> {
-              // Fallback to view.name if it's already a proper class name
-              if (view.name.startsWith("com.google.android.material")) {
-                view.name
-              } else {
-                log.warn(
-                    "Unable to determine M3 component type for view: ${view.name} (${view.view::class.java.name})"
-                )
-                view.view::class.java.name
-              }
-            }
-          }
-
-      log.debug("Creating M3ComponentState with type: $componentType for view: ${view.name}")
-
-      M3ComponentState(
-          id = componentType + "_" + System.currentTimeMillis(),
-          type = componentType,
-          attributes = attributes,
-          position = Pair(viewRect.left.toInt(), viewRect.top.toInt()),
-          size = Pair(viewRect.width().toInt(), viewRect.height().toInt()),
-      )
-    } catch (e: Exception) {
-      log.error("Failed to create M3 component state", e)
-      null
-    }
-  }
-
-  /**
-   * FIXED: Save M3 component to workspace state when it's added This ensures M3 components are
-   * persisted between preview sessions
-   */
-  fun saveM3ComponentToState(view: IView) {
-    try {
-      log.debug("Checking if view is M3 component: ${view.name} (${view.view::class.simpleName})")
-      if (isM3Component(view.view) || isM3ComponentByName(view)) {
-        log.debug("*** SAVING M3 COMPONENT: ${view.name} ***")
-        val m3Component = createM3ComponentState(view)
-        if (m3Component != null) {
-          val currentState = viewModel.getWorkspaceState()
-          val currentM3Components = currentState?.m3Components ?: emptyList()
-          val updatedM3Components = currentM3Components + m3Component
-
-          viewModel.saveWorkspaceState(updatedM3Components)
-          log.debug("Saved M3 component to workspace state: ${m3Component.type}")
-          log.debug("Total M3 components in state: ${updatedM3Components.size}")
-        } else {
-          log.debug("Failed to create M3 component state for ${view.name}")
-        }
-      } else {
-        log.debug("View is not an M3 component: ${view.name}")
-      }
-    } catch (e: Exception) {
-      log.error("Failed to save M3 component to state", e)
-    }
-  }
-
-  /** FIXED: Check if a view is an M3 component */
-  private fun isM3Component(view: android.view.View): Boolean {
-    val className = view::class.java.name
-    log.debug("Checking M3 component: ${view::class.simpleName} -> $className")
-
-    val isM3 =
-        view is MaterialButton ||
-            view is MaterialCardView ||
-            view is MaterialTextView ||
-            view is FloatingActionButton ||
-            view is Chip ||
-            view is TextInputLayout ||
-            className.contains("MaterialButton") ||
-            className.contains("MaterialCardView") ||
-            className.contains("MaterialTextView") ||
-            className.contains("FloatingActionButton") ||
-            className.contains("Chip") ||
-            className.contains("TextInputLayout")
-
-    log.debug("Is M3 component: $isM3")
-    return isM3
-  }
-
-  /** FIXED: Check if an IView is an M3 component by checking the view name */
-  private fun isM3ComponentByName(view: IView): Boolean {
-    val viewName = view.name
-    log.debug("Checking M3 component by name: $viewName")
-
-    val isM3 =
-        viewName.contains("MaterialButton") ||
-            viewName.contains("MaterialCardView") ||
-            viewName.contains("MaterialTextView") ||
-            viewName.contains("FloatingActionButton") ||
-            viewName.contains("Chip") ||
-            viewName.contains("TextInputLayout")
-
-    log.debug("Is M3 component by name: $isM3")
-    return isM3
-  }
-
-  /** FIXED: Ensure M3 component has default styling to make it visible */
-  private fun ensureM3ComponentHasDefaultStyling(view: IView) {
-    try {
-      val androidView = view.view
-      val className = androidView::class.java.name
-      val viewName = view.name
-      log.debug(
-          "Applying M3 styling to: ${androidView::class.simpleName} ($className) - View name: $viewName"
-      )
-
-      when {
-        androidView is MaterialButton ||
-            className.contains("MaterialButton") ||
-            viewName.contains("MaterialButton") -> {
-          // Force button visibility with actual colors
-          val button = androidView as? MaterialButton ?: androidView as? android.widget.Button
-          if (button != null) {
-            if (button.text.isNullOrEmpty()) {
-              button.text = "Button"
-            }
-            // Force background color directly
-            // button.setBackgroundColor(android.graphics.Color.parseColor("#6200EE"))
-            // button.setTextColor(android.graphics.Color.parseColor("#FFFFFF"))
-            log.debug("Applied default styling to MaterialButton")
-          }
-        }
-        androidView is MaterialCardView ||
-            className.contains("MaterialCardView") ||
-            viewName.contains("MaterialCardView") -> {
-          // Force card visibility
-          val cardView = androidView as? MaterialCardView
-          if (cardView != null) {
-            // cardView.setCardBackgroundColor(android.graphics.Color.parseColor("#FFFFFF"))
-            // cardView.radius = 12f
-            log.debug("Applied default styling to MaterialCardView")
-          }
-        }
-        androidView is MaterialTextView ||
-            className.contains("MaterialTextView") ||
-            viewName.contains("MaterialTextView") -> {
-          // Force text view visibility
-          val textView = androidView as? MaterialTextView ?: androidView as? android.widget.TextView
-          if (textView != null) {
-            if (textView.text.isNullOrEmpty()) {
-              textView.text = "Text"
-            }
-            textView.setTextColor(android.graphics.Color.parseColor("#000000"))
-            log.debug("Applied default styling to MaterialTextView")
-          }
-        }
-        androidView is FloatingActionButton ||
-            className.contains("FloatingActionButton") ||
-            viewName.contains("FloatingActionButton") -> {
-          // Force FAB visibility
-          val fab = androidView as? FloatingActionButton
-          if (fab != null) {
-            fab.setBackgroundTintList(
-                android.content.res.ColorStateList.valueOf(
-                    android.graphics.Color.parseColor("#6200EE")
-                )
-            )
-            log.debug("Applied default styling to FloatingActionButton")
-          }
-        }
-        androidView is Chip || className.contains("Chip") || viewName.contains("Chip") -> {
-          // Force chip visibility
-          val chip = androidView as? Chip
-          if (chip != null) {
-            chip.setChipBackgroundColorResource(android.R.color.white)
-            if (chip.text.isNullOrEmpty()) {
-              chip.text = "Chip"
-            }
-            log.debug("Applied default styling to Chip")
-          }
-        }
-        androidView is TextInputLayout ||
-            className.contains("TextInputLayout") ||
-            viewName.contains("TextInputLayout") -> {
-          // Force TextInputLayout visibility
-          val textInputLayout = androidView as? TextInputLayout
-          if (textInputLayout != null) {
-            textInputLayout.setBoxBackgroundColor(android.graphics.Color.parseColor("#FFFFFF"))
-            log.debug("Applied default styling to TextInputLayout")
-          }
-        }
-        else -> {
-          log.debug("Unknown M3 component type: $className")
-        }
-      }
-    } catch (e: Exception) {
-      log.error("Failed to ensure M3 component default styling", e)
-    }
-  }
-
-  /** FIXED: Force M3 component visibility by ensuring proper dimensions and visibility */
-  private fun forceM3ComponentVisibility(view: IView) {
-    try {
-      val androidView = view.view
-
-      // Ensure the view is visible
-      androidView.visibility = android.view.View.VISIBLE
-
-      // Set minimum dimensions if they are too small
-      val layoutParams = androidView.layoutParams
-      if (layoutParams != null) {
-        if (layoutParams.width <= 0) {
-          layoutParams.width = android.view.ViewGroup.LayoutParams.WRAP_CONTENT
-        }
-        if (layoutParams.height <= 0) {
-          layoutParams.height = android.view.ViewGroup.LayoutParams.WRAP_CONTENT
-        }
-        androidView.layoutParams = layoutParams
-      }
-
-      // Force a layout pass to ensure the view is properly rendered
-      androidView.requestLayout()
-      androidView.invalidate()
-
-      log.debug("Forced visibility for M3 component: ${view.name}")
-    } catch (e: Exception) {
-      log.error("Failed to force M3 component visibility", e)
-    }
+  companion object {
+    private val log = LoggerFactory.getLogger(DesignerWorkspaceFragment::class.java)
   }
 }

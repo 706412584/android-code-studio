@@ -1,0 +1,158 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 此文件属于 AndroidCodeStudio，遵循 GPL-3.0-or-later。 -->
+<resources>
+  <style name="DesignerEdgeTab" parent="Widget.Material3.Button">
+    <item name="android:layout_width">wrap_content</item>
+    <item name="android:layout_height">52dp</item>
+    <item name="android:minWidth">0dp</item>
+    <item name="android:insetTop">0dp</item>
+    <item name="android:insetBottom">0dp</item>
+    <item name="android:paddingStart">18dp</item>
+    <item name="android:paddingEnd">18dp</item>
+    <item name="android:textAppearance">?attr/textAppearanceTitleSmall</item>
+    <item name="android:elevation">3dp</item>
+  </style>
+
+  <style name="DesignerEdgeTab.Start">
+    <item name="shapeAppearanceOverlay">@style/ShapeAppearance.Designer.StartTab</item>
+  </style>
+
+  <style name="DesignerEdgeTab.End">
+    <item name="shapeAppearanceOverlay">@style/ShapeAppearance.Designer.EndTab</item>
+  </style>
+
+  <style name="ShapeAppearance.Designer.StartTab" parent="">
+    <item name="cornerFamily">rounded</item>
+    <item name="cornerSizeTopLeft">0dp</item>
+    <item name="cornerSizeBottomLeft">0dp</item>
+    <item name="cornerSizeTopRight">50%</item>
+    <item name="cornerSizeBottomRight">50%</item>
+  </style>
+
+  <style name="ShapeAppearance.Designer.EndTab" parent="">
+    <item name="cornerFamily">rounded</item>
+    <item name="cornerSizeTopLeft">50%</item>
+    <item name="cornerSizeBottomLeft">50%</item>
+    <item name="cornerSizeTopRight">0dp</item>
+    <item name="cornerSizeBottomRight">0dp</item>
+  </style>
+
+  <style name="DesignerCard">
+    <item name="android:layout_width">match_parent</item>
+    <item name="android:layout_height">wrap_content</item>
+    <item name="android:orientation">vertical</item>
+    <item name="android:background">@drawable/designer_card</item>
+    <item name="android:padding">8dp</item>
+  </style>
+
+  <style name="DesignerCardHeader">
+    <item name="android:layout_width">match_parent</item>
+    <item name="android:layout_height">wrap_content</item>
+    <item name="android:minHeight">48dp</item>
+    <item name="android:orientation">horizontal</item>
+    <item name="android:gravity">center_vertical</item>
+    <item name="android:background">?attr/selectableItemBackground</item>
+  </style>
+
+  <style name="DesignerCardChevron">
+    <item name="android:layout_width">24dp</item>
+    <item name="android:layout_height">24dp</item>
+    <item name="android:src">@drawable/ic_chevron_right</item>
+    <item name="android:rotation">90</item>
+    <item name="tint">?attr/colorOnSurfaceVariant</item>
+  </style>
+
+  <style name="DesignerSectionLabel">
+    <item name="android:layout_width">wrap_content</item>
+    <item name="android:layout_height">wrap_content</item>
+    <item name="android:background">@drawable/designer_section_label</item>
+    <item name="android:paddingStart">10dp</item>
+    <item name="android:paddingEnd">10dp</item>
+    <item name="android:paddingTop">4dp</item>
+    <item name="android:paddingBottom">4dp</item>
+    <item name="android:textAppearance">?attr/textAppearanceLabelLarge</item>
+    <item name="android:textColor">?attr/colorOnPrimary</item>
+  </style>
+
+  <string name="designer_edit_panel">Edit</string>
+  <string name="designer_properties_tab">Properties</string>
+  <string name="designer_basic_actions">Basic actions</string>
+  <string name="designer_layout_files">Layout files</string>
+  <string name="designer_files_search">Find a layout file</string>
+  <string name="designer_files_empty">No matching layout files</string>
+  <string name="designer_switch_title">Switch to %1$s?</string>
+  <string name="designer_switch_message">This layout has changes that have not been applied.</string>
+  <string name="designer_switch_apply">Apply and switch</string>
+  <string name="designer_switch_discard">Discard and switch</string>
+  <string name="designer_layout_structure">Layout structure</string>
+  <string name="designer_property_config">Properties</string>
+  <string name="designer_tag_include">Included layout</string>
+  <string name="designer_tag_merge">Merge root</string>
+  <string name="designer_title">%1$s</string>
+  <string name="designer_dirty_title">• %1$s</string>
+  <string name="designer_show_xml">View XML</string>
+  <string name="designer_preview_error">Preview unavailable: %1$s</string>
+  <string name="designer_invalid_xml">Fix the layout XML in the editor before using the designer.</string>
+  <string name="designer_empty_canvas">Choose a widget to start the layout.</string>
+  <string name="designer_preview_limited">Some nodes cannot be rendered. Check the layout structure.</string>
+  <string name="designer_node_unrendered">Preview unavailable</string>
+  <string name="designer_xml_too_large">This layout is too large for the designer. Edit it as XML.</string>
+  <string name="designer_source_changed">The source layout or its editor changed. Nothing was overwritten.</string>
+  <string name="designer_save_failed">Could not save the layout. Check the source editor.</string>
+  <string name="designer_discard_title">Discard layout changes?</string>
+  <string name="designer_discard_message">Only changes applied in the designer are written to the source file.</string>
+  <string name="designer_discard">Discard</string>
+  <string name="designer_outline_search">Find by name, tag or ID</string>
+  <string name="designer_outline_empty">No matching nodes</string>
+  <string name="designer_expand">Expand %1$s</string>
+  <string name="designer_collapse">Collapse %1$s</string>
+  <string name="designer_selected">Component: %1$s</string>
+  <string name="designer_none_selected">Select a component on the canvas or in the layout structure.</string>
+  <string name="designer_add_to">Add to %1$s</string>
+  <string name="designer_no_add_target">Select a container that accepts children.</string>
+  <string name="designer_attachment_rejected">This widget cannot be placed in the selected container.</string>
+  <string name="designer_new_root">New root</string>
+  <string name="designer_add_after">Insert after %1$s</string>
+  <string name="designer_drag_help">Tap to insert, or hold and drag to the canvas.</string>
+  <string name="designer_move_up">Move earlier</string>
+  <string name="designer_move_down">Move later</string>
+  <string name="designer_paste">Paste</string>
+  <string name="designer_paste_id_conflict">Cannot paste: ID %1$s already exists in this layout.</string>
+  <string name="designer_delete_title">Delete %1$s?</string>
+  <string name="designer_property_basic">Basic properties</string>
+  <string name="designer_property_layout">Layout properties</string>
+  <string name="designer_property_extended">Extended properties</string>
+  <string name="designer_property_other">Other properties</string>
+  <string name="designer_property_add">Add</string>
+  <string name="designer_property_name">Property</string>
+  <string name="designer_property_value">Value</string>
+  <string name="designer_property_unknown">Unknown property</string>
+  <string name="designer_property_more">More actions</string>
+  <string name="designer_property_reset">Reset</string>
+  <string name="designer_property_pick_resource">Pick resource</string>
+  <string name="designer_property_missing">Not set</string>
+  <string name="designer_property_remove">Delete</string>
+  <string name="designer_property_unsupported">This value can be saved in XML, but might not be reflected in the preview.</string>
+  <string name="designer_property_invalid">Invalid value for %1$s</string>
+  <string name="designer_property_duplicate_id">This id is already used by %1$s</string>
+  <string name="designer_attr_id">Identifier</string>
+  <string name="designer_attr_layout_width">Width</string>
+  <string name="designer_attr_layout_height">Height</string>
+  <string name="designer_attr_text">Text</string>
+  <string name="designer_attr_hint">Hint</string>
+  <string name="designer_attr_text_size">Text size</string>
+  <string name="designer_attr_text_color">Text color</string>
+  <string name="designer_attr_background">Background</string>
+  <string name="designer_attr_padding">Padding</string>
+  <string name="designer_attr_layout_margin">Margin</string>
+  <string name="designer_attr_orientation">Orientation</string>
+  <string name="designer_attr_visibility">Visibility</string>
+  <string name="designer_attr_gravity">Content gravity</string>
+  <string name="designer_attr_layout_gravity">Layout gravity</string>
+  <string name="designer_attr_layout_weight">Weight</string>
+  <string name="designer_attr_src">Image</string>
+  <string name="designer_attr_content_description">Accessibility label</string>
+  <string name="designer_attr_enabled">Enabled</string>
+  <string name="designer_property_virtual">This source tag has no editable view properties.</string>
+  <string name="designer_finish_property">Set or cancel the property value first.</string>
+</resources>

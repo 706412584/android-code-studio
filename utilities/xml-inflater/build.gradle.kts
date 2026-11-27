@@ -47,4 +47,5 @@ dependencies {
   implementation(projects.xml.aaptcompiler)
   implementation(projects.xml.utils)
 
+  testImplementation(libs.tests.junit)
 }

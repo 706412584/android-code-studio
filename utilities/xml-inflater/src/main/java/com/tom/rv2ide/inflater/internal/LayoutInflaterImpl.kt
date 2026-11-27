@@ -69,6 +69,9 @@ open class LayoutInflaterImpl : ILayoutInflater {
   private var manuallyStartedParse = false
   private var _primaryInflatingFile: File? = null
   private var _currentLayoutFile: LayoutFile? = null
+  private var sourceNodeListener: ((List<Int>, List<IView>) -> Unit)? = null
+  private var sourcePath: List<Int>? = null
+  private val includeStack = mutableSetOf<File>()
 
   override var componentFactory: IComponentFactory = DefaultComponentFactory()
     set(value) {
@@ -82,6 +85,9 @@ open class LayoutInflaterImpl : ILayoutInflater {
   protected val currentLayoutFile: LayoutFile
     get() = this._currentLayoutFile!!
 
+  protected val tracksSourceNodes: Boolean
+    get() = sourceNodeListener != null
+
   override fun inflate(file: File, parent: ViewGroup): List<IView> {
     startInflation(file)
     return doInflate(file, parent).apply { finishInflation() }
@@ -90,6 +96,27 @@ open class LayoutInflaterImpl : ILayoutInflater {
   override fun inflate(file: File, parent: IViewGroup): List<IView> {
     startInflation(file)
     return doInflate(file, parent).apply { finishInflation() }
+  }
+
+  /** 用原文件定位资源；按源元素路径报告节点，include 对应一个或多个预览视图。 */
+  fun inflate(
+      file: File,
+      xml: String,
+      parent: IViewGroup,
+      onSourceNode: (List<Int>, List<IView>) -> Unit,
+  ): List<IView> {
+    sourceNodeListener = onSourceNode
+    sourcePath = emptyList()
+    includeStack.add(file.canonicalFile)
+    return try {
+      startInflation(file)
+      val (processor, module) = com.tom.rv2ide.inflater.utils.processXmlFile(file, LAYOUT, xml)
+      doInflate(processor, parent, module).apply { finishInflation() }
+    } finally {
+      sourceNodeListener = null
+      sourcePath = null
+      includeStack.clear()
+    }
   }
 
   override fun close() {
@@ -141,7 +168,8 @@ open class LayoutInflaterImpl : ILayoutInflater {
         processor.xmlResources.find { it.file == processor.primaryFile }
             ?: throw InflateException("Unable to find primary XML resource from XmlProcessor")
 
-    this._currentLayoutFile = LayoutFile(this.primaryInflatingFile, file.name.entry!!)
+    val origin = if (sourceNodeListener != null) File(file.source.path) else primaryInflatingFile
+    this._currentLayoutFile = LayoutFile(origin, file.name.entry!!)
 
     if (node.nodeCase != ELEMENT) {
       throw InflateException(
@@ -156,7 +184,40 @@ open class LayoutInflaterImpl : ILayoutInflater {
 
     val element = node.element
 
-    return onCreateView(element, parent(), module)
+    val widgets = module.getWidgetTable() ?: throw InflateException("No widget table for $module")
+    return inflateElement(element, parent(), module, widgets)
+  }
+
+  private fun inflateElement(
+      element: XmlElement,
+      parent: IViewGroup,
+      module: AndroidModule,
+      widgets: WidgetTable,
+  ): List<IView> {
+    val views = onCreateView(element, parent, module, widgets)
+    sourcePath?.let { sourceNodeListener?.invoke(it, views) }
+    return views
+  }
+
+  protected fun inflateChildren(
+      element: XmlElement,
+      parent: IViewGroup,
+      module: AndroidModule,
+      widgets: WidgetTable,
+  ): List<IView> {
+    val parentPath = sourcePath
+    val views = mutableListOf<IView>()
+    var index = 0
+    try {
+      for (child in element.childList) {
+        if (child.nodeCase != ELEMENT) continue
+        sourcePath = parentPath?.plus(index++)
+        views.addAll(inflateElement(child.element, parent, module, widgets))
+      }
+    } finally {
+      sourcePath = parentPath
+    }
+    return views
   }
 
   protected open fun onCreateView(
@@ -198,12 +259,14 @@ open class LayoutInflaterImpl : ILayoutInflater {
     applyAttributes(element, view, parent)
 
     if (element.childCount > 0 && view is IViewGroup) {
-      for (child in element.childList) {
-        if (child.nodeCase != ELEMENT) {
-          throw InflateException("Unexpected node at ${child.source.lineCol()}")
+      if (sourceNodeListener == null) {
+        for (child in element.childList) {
+          if (child.nodeCase != ELEMENT) {
+            throw InflateException("Unexpected node at ${child.source.lineCol()}")
+          }
         }
-        onCreateView(element = child.element, parent = view, module = module, widgets = widgets)
       }
+      inflateChildren(element, view, module, widgets)
     }
 
     inflationEventListener?.onEvent(OnInflateViewEvent(view))
@@ -224,13 +287,19 @@ open class LayoutInflaterImpl : ILayoutInflater {
         view.viewAdapter
             ?: throw InflateException("No attribute adapter found for view ${view.name}")
 
-    view.view.layoutParams = generateLayoutParams(parentView)
-
+    if (attachToParent || !tracksSourceNodes) {
+      view.view.layoutParams = generateLayoutParams(parentView)
+    }
     if (attachToParent) {
       parent.addChild(view)
     }
 
-    adapter.applyBasic(view)
+    // 容器可能把控件挂到内部子容器（如 TextInputLayout），以挂载后的参数类型为准。
+    val attachedParams = view.view.layoutParams
+    if (attachToParent || !tracksSourceNodes) adapter.applyBasic(view)
+    if (tracksSourceNodes && attachedParams != null && attachedParams.javaClass != view.view.layoutParams?.javaClass) {
+      view.view.layoutParams = attachedParams
+    }
 
     if (element.attributeCount > 0) {
       for (xmlAttribute in element.attributeList) {
@@ -252,16 +321,22 @@ open class LayoutInflaterImpl : ILayoutInflater {
       module: AndroidModule,
       widgets: WidgetTable,
   ): List<IView> {
-    val views = mutableListOf<IView>()
-    for (xmlNode in element.childList) {
-      if (xmlNode.nodeCase == ELEMENT) {
-        views.addAll(onCreateView(xmlNode.element, parent, module, widgets))
+    val group = parent as ViewImpl
+    if (sourceNodeListener == null) {
+      return inflateChildren(element, parent, module, widgets).also {
+        addNamespaceDecls(element, group)
       }
     }
 
-    addNamespaceDecls(element, parent as ViewImpl)
-
-    return views
+    // merge 没有实际的 View；它的命名空间仍需覆盖子元素的解析范围。
+    val namespaces = group.namespaces.toMap()
+    addNamespaceDecls(element, group)
+    return try {
+      inflateChildren(element, parent, module, widgets)
+    } finally {
+      group.namespaces.clear()
+      group.namespaces.putAll(namespaces)
+    }
   }
 
   private fun onCreateIncludedView(element: XmlElement, parent: IViewGroup): List<IView> {
@@ -273,13 +348,21 @@ open class LayoutInflaterImpl : ILayoutInflater {
       throw InflateException("Invalid layout file reference; '${layout.value}'")
     }
 
-    val (processor, module) = processXmlFile(file)
-
-    // we need to restore the layout file instance as well
-    val inflated =
-        currentLayoutFile.let { layoutFile ->
-          doInflate(processor, module) { parent }.also { _currentLayoutFile = layoutFile }
-        }
+    val layoutFile = currentLayoutFile
+    val previousPath = sourcePath
+    val trackedFile = if (sourceNodeListener != null) file.canonicalFile else null
+    if (trackedFile != null && !includeStack.add(trackedFile)) {
+      throw InflateException("Circular layout reference: '${layout.value}'")
+    }
+    sourcePath = null
+    val inflated = try {
+      val (processor, module) = processXmlFile(file)
+      doInflate(processor, module) { parent }
+    } finally {
+      _currentLayoutFile = layoutFile
+      sourcePath = previousPath
+      if (trackedFile != null) includeStack.remove(trackedFile)
+    }
 
     if (inflated.isEmpty() || inflated.size > 1) {
       // probably a merged view or no views at all

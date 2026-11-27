@@ -1,85 +1,47 @@
 /*
- *  This file is part of AndroidIDE.
- *
- *  AndroidIDE is free software: you can redistribute it and/or modify
- *  it under the terms of the GNU General Public License as published by
- *  the Free Software Foundation, either version 3 of the License, or
- *  (at your option) any later version.
- *
- *  AndroidIDE is distributed in the hope that it will be useful,
- *  but WITHOUT ANY WARRANTY; without even the implied warranty of
- *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- *  GNU General Public License for more details.
- *
- *  You should have received a copy of the GNU General Public License
- *   along with AndroidIDE.  If not, see <https://www.gnu.org/licenses/>.
+ * This file is part of AndroidIDE and AndroidCodeStudio.
+ * Licensed under the GNU General Public License, version 3 or any later version.
  */
-
 package com.tom.rv2ide.uidesigner.drag
 
 import android.annotation.SuppressLint
 import android.content.ClipData
-import android.content.Context
 import android.view.GestureDetector
 import android.view.MotionEvent
 import android.view.View
-import android.view.View.OnTouchListener
-import androidx.core.view.ViewCompat
-import com.tom.rv2ide.uidesigner.fragments.DesignerWorkspaceFragment
+import com.tom.rv2ide.inflater.models.UiWidget
 
-/**
- * Touch listener for inflated widgets.
- *
- * @author Akash Yadav
- */
+internal sealed interface WidgetDrag {
+  data class Existing(val id: Long) : WidgetDrag
+  data class New(val widget: UiWidget) : WidgetDrag
+}
+
+internal fun View.startWidgetDrag(item: WidgetDrag, shadow: View = this): Boolean = startDragAndDrop(
+    ClipData("Layout designer", arrayOf("application/x-acs-layout-widget"), ClipData.Item("widget")),
+    WidgetDragShadowBuilder(shadow), item, 0,
+)
+
+/** 从覆盖层选择源节点，包括禁用控件、include 和空容器；不触发预览控件自身的操作。 */
 internal class WidgetTouchListener(
-    private val view: com.tom.rv2ide.inflater.IView,
-    context: Context,
-    private val onClick: (com.tom.rv2ide.inflater.IView) -> Boolean = { false },
-) : OnTouchListener {
+    surface: View,
+    onSelect: (Float, Float) -> Unit,
+    onDragStart: (Float, Float) -> Unit,
+) : View.OnTouchListener {
+  private val detector = GestureDetector(surface.context, object : GestureDetector.SimpleOnGestureListener() {
+    override fun onDown(e: MotionEvent): Boolean = true
 
-  private var touchedView: View? = null
+    override fun onSingleTapUp(e: MotionEvent): Boolean {
+      onSelect(e.x, e.y)
+      surface.performClick()
+      return true
+    }
 
-  private val gestureDetector by lazy {
-    GestureDetector(
-        context,
-        object : GestureDetector.SimpleOnGestureListener() {
-          override fun onDown(e: MotionEvent): Boolean {
-            return true
-          }
-
-          override fun onSingleTapUp(e: MotionEvent): Boolean {
-            return onClick(this@WidgetTouchListener.view)
-          }
-
-          override fun onLongPress(e: MotionEvent) {
-            touchedView
-                ?: throw IllegalStateException(
-                    "Received onLongPress event but 'touchedView' is null"
-                )
-            val shadow = WidgetDragShadowBuilder(touchedView!!)
-            val dataItem = ClipData.Item(DesignerWorkspaceFragment.DRAGGING_WIDGET)
-            val data =
-                ClipData(
-                    DesignerWorkspaceFragment.DRAGGING_WIDGET,
-                    arrayOf(DesignerWorkspaceFragment.DRAGGING_WIDGET_MIME),
-                    dataItem,
-                )
-            ViewCompat.startDragAndDrop(touchedView!!, data, shadow, view, 0)
-          }
-        },
-    )
-  }
+    override fun onLongPress(e: MotionEvent) = onDragStart(e.x, e.y)
+  })
 
   @SuppressLint("ClickableViewAccessibility")
   override fun onTouch(v: View, event: MotionEvent): Boolean {
-    if (event.action == MotionEvent.ACTION_DOWN) {
-      this.touchedView = v
-      view.onHighlightStateUpdated(true)
-    } else if (event.action == MotionEvent.ACTION_UP) {
-      this.touchedView = null
-      view.onHighlightStateUpdated(false)
-    }
-    return gestureDetector.onTouchEvent(event)
+    detector.onTouchEvent(event)
+    return true
   }
 }

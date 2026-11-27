@@ -26,6 +26,7 @@ import com.tom.rv2ide.inflater.internal.ViewImpl
 import com.tom.rv2ide.lsp.xml.utils.XMLBuilder
 import com.tom.rv2ide.tasks.executeAsyncProvideError
 import com.tom.rv2ide.uidesigner.R
+import com.tom.rv2ide.uidesigner.models.LayoutDocument
 import com.tom.rv2ide.utils.DialogUtils
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.CompletionException
@@ -39,6 +40,39 @@ import org.slf4j.LoggerFactory
 object ViewToXml {
 
   private val log = LoggerFactory.getLogger(ViewToXml::class.java)
+  private val entities = Regex("&(?:amp|lt|gt|apos|quot|#[0-9]+|#x[0-9a-fA-F]+);")
+  private val namedEntities = mapOf("amp" to "&", "lt" to "<", "gt" to ">", "apos" to "'", "quot" to "\"")
+
+  internal fun escape(value: String): String = value
+      .replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+      .replace("\"", "&quot;").replace("'", "&apos;").replace("\t", "&#9;")
+      .replace("\n", "&#10;").replace("\r", "&#13;")
+
+  internal fun decode(value: String): String = entities.replace(value) { match ->
+    val entity = match.value.drop(1).dropLast(1)
+    val code = if (entity.startsWith("#x")) entity.drop(2).toIntOrNull(16)
+        else entity.removePrefix("#").toIntOrNull()
+    namedEntities[entity] ?: code?.takeIf(Character::isValidCodePoint)
+        ?.let { String(Character.toChars(it)) } ?: match.value
+  }
+
+  /** 仅序列化从控件库新建的控件；已有 XML 不经 View 树重写。 */
+  internal fun newWidget(view: IView, defaults: List<Pair<String, String>>): String {
+    val attributes = linkedMapOf(
+        "android:layout_width" to "wrap_content", "android:layout_height" to "wrap_content",
+    )
+    view.attributes.forEach { attributes[it.qualifiedName] = it.value }
+    defaults.forEach { (name, value) -> attributes.putIfAbsent(name, value) }
+    val namespaces = linkedMapOf("android" to LayoutDocument.ANDROID)
+    view.attributes.forEach { it.namespace?.let { ns -> namespaces[ns.prefix] = ns.uri } }
+    if (defaults.any { it.first.startsWith("app:") }) namespaces["app"] = LayoutDocument.APP
+    return buildString {
+      append('<').append(view.tag)
+      for ((prefix, uri) in namespaces) append(" xmlns:$prefix=\"").append(escape(uri)).append('"')
+      for ((name, value) in attributes) append(" $name=\"").append(escape(value)).append('"')
+      append(" />")
+    }
+  }
 
   @JvmStatic
   @JvmOverloads

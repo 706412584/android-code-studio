@@ -17,21 +17,19 @@
 
 package com.tom.rv2ide.uidesigner.adapters
 
-import android.content.ClipData
 import android.view.LayoutInflater
+import android.view.View
 import android.view.ViewGroup
 import androidx.recyclerview.widget.RecyclerView
 import com.tom.rv2ide.inflater.models.UiWidget
 import com.tom.rv2ide.uidesigner.adapters.WidgetsItemAdapter.VH
 import com.tom.rv2ide.uidesigner.databinding.LayoutUiWidgetsItemBinding
-import com.tom.rv2ide.uidesigner.drag.WidgetDragShadowBuilder
-import com.tom.rv2ide.uidesigner.fragments.DesignerWorkspaceFragment
-import com.tom.rv2ide.uidesigner.viewmodel.WorkspaceViewModel
 
 /** @author Akash Yadav */
 internal class WidgetsItemAdapter(
     private val widgets: List<UiWidget>,
-    private val viewModel: WorkspaceViewModel,
+    private val onInsert: (UiWidget) -> Unit,
+    private val onDrag: (View, UiWidget) -> Boolean,
 ) : RecyclerView.Adapter<VH>() {
 
   inner class VH(val binding: LayoutUiWidgetsItemBinding) : RecyclerView.ViewHolder(binding.root)
@@ -52,18 +50,7 @@ internal class WidgetsItemAdapter(
 
     binding.name.setText(widget.label)
     binding.icon.setImageResource(widget.icon)
-    binding.root.setOnLongClickListener {
-      val shadow = WidgetDragShadowBuilder(binding.icon)
-      val dataItem = ClipData.Item(DesignerWorkspaceFragment.DRAGGING_WIDGET)
-      val data =
-          ClipData(
-              DesignerWorkspaceFragment.DRAGGING_WIDGET,
-              arrayOf(DesignerWorkspaceFragment.DRAGGING_WIDGET_MIME),
-              dataItem,
-          )
-      return@setOnLongClickListener binding.icon.startDragAndDrop(data, shadow, widget, 0).also {
-        viewModel.drawerOpened = !it
-      }
-    }
+    binding.root.setOnClickListener { onInsert(widget) }
+    binding.root.setOnLongClickListener { onDrag(binding.icon, widget) }
   }
 }

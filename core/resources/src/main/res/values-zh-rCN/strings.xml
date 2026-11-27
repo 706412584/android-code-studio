@@ -1426,7 +1426,7 @@
     translatable="false">文本视图</string>
   <string
     name="widget_text_view"
-    translatable="false">材质文本视图</string>
+    translatable="false">Material 文本视图</string>
   <string
     name="widget_button"
     translatable="false">按钮</string>
@@ -1441,7 +1441,7 @@
     translatable="false">复选框</string>
   <string
     name="widget_checked_textview"
-    translatable="false">选中的文本视图</string>
+    translatable="false">可勾选文本视图</string>
   <string
     name="widget_edittext"
     translatable="false">🆕 Material 编辑文本</string>
@@ -1465,10 +1465,10 @@
     translatable="false">单选组</string>
   <string
     name="widget_seekbar"
-    translatable="false">搜索栏</string>
+    translatable="false">拖动条</string>
   <string
     name="widget_spinner"
-    translatable="false">旋转器</string>
+    translatable="false">下拉列表框</string>
   <string
     name="widget_auto_complete_textview"
     translatable="false">自动完成文本视图</string>
@@ -1483,10 +1483,10 @@
     translatable="false">表面视图</string>
   <string
     name="widget_switch"
-    translatable="false">切换</string>
+    translatable="false">开关</string>
   <string
     name="widget_mswitch"
-    translatable="false">材质切换</string>
+    translatable="false">Material 开关</string>
   <string
     name="widget_textureview"
     translatable="false">纹理视图</string>
@@ -1504,10 +1504,10 @@
     translatable="false">网格布局</string>
   <string
     name="widget_linear_layout_horz"
-    translatable="false">线性布局（H）</string>
+    translatable="false">水平线性布局</string>
   <string
     name="widget_linear_layout_vert"
-    translatable="false">线性布局（V）</string>
+    translatable="false">垂直线性布局</string>
 
   <string name="widget_constraint_layout" translatable="false">约束布局</string>
 
@@ -1531,16 +1531,16 @@
     translatable="false">日历视图</string>
   <string
     name="widget_space"
-    translatable="false">空</string>
+    translatable="false">空白间隔</string>
   <string
     name="widget_number_picker"
     translatable="false">数字选择器</string>
   <string
     name="widget_chronometer"
-    translatable="false">天文台表</string>
+    translatable="false">计时器</string>
   <string
     name="widget_rating_bar"
-    translatable="false">评级栏</string>
+    translatable="false">评分条</string>
   <string
     name="widget_quick_contact_badge"
     translatable="false">快速联系徽章</string>

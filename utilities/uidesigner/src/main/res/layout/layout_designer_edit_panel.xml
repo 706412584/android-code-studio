@@ -1,0 +1,113 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 此文件属于 AndroidCodeStudio，遵循 GPL-3.0-or-later。 -->
+<!-- 左抽屉：基础操作（添加控件）+ 布局结构（结构操作与控件树），整体一起滚动。 -->
+<androidx.core.widget.NestedScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent">
+
+  <LinearLayout
+      android:layout_width="match_parent"
+      android:layout_height="wrap_content"
+      android:orientation="vertical"
+      android:padding="8dp">
+
+    <LinearLayout style="@style/DesignerCard">
+
+      <LinearLayout
+          android:id="@+id/basic_header"
+          style="@style/DesignerCardHeader">
+
+        <com.google.android.material.textview.MaterialTextView
+            style="@style/DesignerSectionLabel"
+            android:text="@string/designer_basic_actions" />
+
+        <Space
+            android:layout_width="0dp"
+            android:layout_height="0dp"
+            android:layout_weight="1" />
+
+        <ImageView
+            android:id="@+id/basic_chevron"
+            style="@style/DesignerCardChevron"
+            android:importantForAccessibility="no" />
+      </LinearLayout>
+
+      <LinearLayout
+          android:id="@+id/basic_content"
+          android:layout_width="match_parent"
+          android:layout_height="wrap_content"
+          android:orientation="vertical">
+
+      <com.google.android.material.textview.MaterialTextView
+          android:id="@+id/target"
+          android:layout_width="match_parent"
+          android:layout_height="wrap_content"
+          android:layout_marginTop="4dp"
+          android:padding="8dp"
+          android:textAppearance="?attr/textAppearanceBodyMedium" />
+
+      <com.google.android.material.textview.MaterialTextView
+          android:layout_width="match_parent"
+          android:layout_height="wrap_content"
+          android:paddingStart="8dp"
+          android:paddingEnd="8dp"
+          android:paddingBottom="8dp"
+          android:text="@string/designer_drag_help"
+          android:textAppearance="?attr/textAppearanceBodySmall"
+          android:textColor="?attr/colorOnSurfaceVariant" />
+
+      <androidx.recyclerview.widget.RecyclerView
+          android:id="@+id/widgets"
+          android:layout_width="match_parent"
+          android:layout_height="wrap_content"
+          android:nestedScrollingEnabled="false"
+          app:layoutManager="androidx.recyclerview.widget.LinearLayoutManager" />
+      </LinearLayout>
+    </LinearLayout>
+
+    <LinearLayout
+        style="@style/DesignerCard"
+        android:layout_marginTop="12dp">
+
+      <LinearLayout
+          android:id="@+id/structure_header"
+          style="@style/DesignerCardHeader">
+
+        <com.google.android.material.textview.MaterialTextView
+            style="@style/DesignerSectionLabel"
+            android:text="@string/designer_layout_structure" />
+
+        <Space
+            android:layout_width="0dp"
+            android:layout_height="0dp"
+            android:layout_weight="1" />
+
+        <ImageView
+            android:id="@+id/structure_chevron"
+            style="@style/DesignerCardChevron"
+            android:importantForAccessibility="no" />
+      </LinearLayout>
+
+      <LinearLayout
+          android:id="@+id/structure_content"
+          android:layout_width="match_parent"
+          android:layout_height="wrap_content"
+          android:orientation="vertical">
+
+      <LinearLayout
+          android:id="@+id/structure_actions"
+          android:layout_width="match_parent"
+          android:layout_height="wrap_content"
+          android:layout_marginTop="8dp"
+          android:orientation="horizontal" />
+
+      <FrameLayout
+          android:id="@+id/tree_host"
+          android:layout_width="match_parent"
+          android:layout_height="wrap_content"
+          android:layout_marginTop="4dp" />
+      </LinearLayout>
+    </LinearLayout>
+  </LinearLayout>
+</androidx.core.widget.NestedScrollView>

@@ -1,99 +1,78 @@
-<?xml version="1.0" encoding="utf-8"?><!--
-  ~  This file is part of AndroidIDE.
-  ~
-  ~  AndroidIDE is free software: you can redistribute it and/or modify
-  ~  it under the terms of the GNU General Public License as published by
-  ~  the Free Software Foundation, either version 3 of the License, or
-  ~  (at your option) any later version.
-  ~
-  ~  AndroidIDE is distributed in the hope that it will be useful,
-  ~  but WITHOUT ANY WARRANTY; without even the implied warranty of
-  ~  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-  ~  GNU General Public License for more details.
-  ~
-  ~  You should have received a copy of the GNU General Public License
-  ~   along with AndroidIDE.  If not, see <https://www.gnu.org/licenses/>.
-  -->
-
-<com.tom.rv2ide.ui.ContentTranslatingDrawerLayout xmlns:android="http://schemas.android.com/apk/res/android"
-  xmlns:app="http://schemas.android.com/apk/res-auto"
-  xmlns:tools="http://schemas.android.com/tools"
-  android:layout_width="match_parent"
-  android:layout_height="match_parent"
-  android:animateLayoutChanges="true"
-  tools:ignore="DuplicateIncludedIds">
-
-  <androidx.coordinatorlayout.widget.CoordinatorLayout
-    android:id="@+id/container"
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 此文件属于 AndroidIDE / AndroidCodeStudio，遵循 GPL-3.0-or-later。 -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
-    android:layout_height="match_parent">
+    android:layout_height="match_parent"
+    android:background="?attr/colorSurfaceContainerLowest"
+    android:orientation="vertical">
 
-    <com.google.android.material.appbar.AppBarLayout
-      android:id="@+id/appbar"
+  <com.google.android.material.appbar.MaterialToolbar
+      android:id="@+id/toolbar"
       android:layout_width="match_parent"
-      android:layout_height="wrap_content"
-      app:layout_behavior="com.google.android.material.appbar.AppBarLayout$Behavior">
+      android:layout_height="56dp"
+      android:background="?attr/colorSurface"
+      app:titleTextAppearance="@style/TextAppearance.Material3.TitleSmall">
 
-      <com.google.android.material.appbar.MaterialToolbar
-        android:id="@+id/toolbar"
+    <!-- 点文件名切换同模块的其它布局文件。 -->
+    <com.google.android.material.textview.MaterialTextView
+        android:id="@+id/toolbar_title"
+        android:layout_width="wrap_content"
+        android:layout_height="match_parent"
+        android:background="?attr/selectableItemBackground"
+        android:drawableEnd="@drawable/ic_chevron_down"
+        android:drawablePadding="4dp"
+        android:drawableTint="?attr/colorOnSurfaceVariant"
+        android:ellipsize="middle"
+        android:gravity="center_vertical"
+        android:paddingStart="8dp"
+        android:paddingEnd="8dp"
+        android:singleLine="true"
+        android:textAppearance="?attr/textAppearanceTitleSmall" />
+  </com.google.android.material.appbar.MaterialToolbar>
+
+  <FrameLayout
+      android:id="@+id/canvas_area"
+      android:layout_width="match_parent"
+      android:layout_height="0dp"
+      android:layout_weight="1">
+
+    <androidx.fragment.app.FragmentContainerView
+        android:id="@+id/workspace"
+        android:name="com.tom.rv2ide.uidesigner.fragments.DesignerWorkspaceFragment"
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:elevation="10dp"
-        tools:title="@string/app_name" />
+        android:layout_height="match_parent" />
 
-    </com.google.android.material.appbar.AppBarLayout>
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/edit_tab"
+        style="@style/DesignerEdgeTab.Start"
+        android:layout_gravity="start|center_vertical"
+        android:text="@string/designer_edit_panel" />
 
-    <androidx.fragment.app.FragmentContainerView
-      android:id="@+id/workspace"
-      android:name="com.tom.rv2ide.uidesigner.fragments.DesignerWorkspaceFragment"
-      android:layout_width="match_parent"
-      android:layout_height="match_parent"
-      app:layout_behavior="com.google.android.material.appbar.AppBarLayout$ScrollingViewBehavior"
-      tools:layout="@layout/fragment_designer_workspace" />
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/properties_tab"
+        style="@style/DesignerEdgeTab.End"
+        android:layout_gravity="end|center_vertical"
+        android:text="@string/designer_properties_tab" />
 
-  </androidx.coordinatorlayout.widget.CoordinatorLayout>
-
-  <com.google.android.material.navigation.NavigationView
-    android:id="@+id/nav_widgets"
-    android:layout_width="wrap_content"
-    android:layout_height="match_parent"
-    android:layout_gravity="start">
-
-    <androidx.fragment.app.FragmentContainerView
-      android:id="@+id/widgets_fragment"
-      android:name="com.tom.rv2ide.uidesigner.fragments.WidgetsListFragment"
-      android:layout_width="match_parent"
-      android:layout_height="match_parent"
-      tools:layout="@layout/fragment_ui_widgets" />
-
-  </com.google.android.material.navigation.NavigationView>
-
-  <com.google.android.material.navigation.NavigationView
-    android:id="@+id/nav_hierarchy"
-    android:layout_width="wrap_content"
-    android:layout_height="match_parent"
-    android:layout_gravity="end">
-
-    <androidx.core.widget.NestedScrollView
-      android:layout_width="match_parent"
-      android:layout_height="match_parent"
-      android:fillViewport="true">
-
-      <HorizontalScrollView
+    <View
+        android:id="@+id/scrim"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:fillViewport="true">
+        android:background="#52000000"
+        android:clickable="true"
+        android:elevation="8dp"
+        android:focusable="false"
+        android:importantForAccessibility="no"
+        android:visibility="gone" />
 
-        <com.tom.rv2ide.uidesigner.views.LayoutHierarchyView
-          android:id="@+id/hierarchy"
-          android:layout_width="wrap_content"
-          android:layout_height="match_parent"
-          android:padding="16dp" />
-
-      </HorizontalScrollView>
-
-    </androidx.core.widget.NestedScrollView>
-
-  </com.google.android.material.navigation.NavigationView>
-
-</com.tom.rv2ide.ui.ContentTranslatingDrawerLayout>
+    <FrameLayout
+        android:id="@+id/panel"
+        android:layout_width="wrap_content"
+        android:layout_height="match_parent"
+        android:background="?attr/colorSurfaceContainer"
+        android:clickable="true"
+        android:elevation="10dp"
+        android:visibility="gone" />
+  </FrameLayout>
+</LinearLayout>

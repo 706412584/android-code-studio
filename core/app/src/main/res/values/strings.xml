@@ -70,6 +70,27 @@
   <string name="terminal_close_session_item">Close Session</string>
 
   <string name="edit">Edit</string>
+  <string name="text_action_uppercase">Convert to uppercase</string>
+  <string name="text_action_lowercase">Convert to lowercase</string>
+  <string name="text_action_delete_line">Delete line</string>
+  <string name="text_action_duplicate_line">Duplicate line</string>
+  <string name="text_action_copy_line">Copy line</string>
+  <string name="text_action_comment_line">Comment line</string>
+  <string name="text_action_move_line_up">Move line up</string>
+  <string name="text_action_move_line_down">Move line down</string>
+  <string name="text_action_insert_line_above">Insert line above</string>
+  <string name="text_action_insert_line_below">Insert line below</string>
+  <string name="text_action_select_line">Select line</string>
+  <string name="text_action_trim_trailing_whitespace">Trim trailing whitespace</string>
+  <string name="text_action_indent_line">Indent line</string>
+  <string name="text_action_unindent_line">Unindent line</string>
+  <string name="text_action_join_lines">Join lines</string>
+  <string name="text_action_clear_all">Clear all</string>
+  <string name="text_action_line_copied">Copied to clipboard</string>
+  <string name="text_action_whitespace_trimmed">Trailing whitespace removed</string>
+  <string name="text_action_clear_message">Are you sure you want to clear all text? This action cannot be undone.</string>
+  <string name="text_action_clear_confirm">Clear</string>
+  <string name="text_action_cleared">Editor cleared</string>
 
   <string name="msg_project_tab_close">Close project</string>
   <string name="msg_project_tab_open_another">Open another project</string>

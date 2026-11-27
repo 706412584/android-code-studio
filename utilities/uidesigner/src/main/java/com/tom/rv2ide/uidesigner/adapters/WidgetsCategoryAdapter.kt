@@ -24,12 +24,13 @@ import androidx.recyclerview.widget.RecyclerView
 import com.tom.rv2ide.uidesigner.adapters.WidgetsCategoryAdapter.VH
 import com.tom.rv2ide.uidesigner.databinding.LayoutUiWidgetsCategoryBinding
 import com.tom.rv2ide.uidesigner.models.UiWidgetCategory
-import com.tom.rv2ide.uidesigner.viewmodel.WorkspaceViewModel
+import com.tom.rv2ide.inflater.models.UiWidget
 
 /** @author Akash Yadav */
 internal class WidgetsCategoryAdapter(
     categories: List<UiWidgetCategory>,
-    private val viewModel: WorkspaceViewModel,
+    private val onInsert: (UiWidget) -> Unit,
+    private val onDrag: (View, UiWidget) -> Boolean,
 ) : RecyclerView.Adapter<VH>() {
 
   private val categories =
@@ -62,7 +63,7 @@ internal class WidgetsCategoryAdapter(
     val category = categories[position]
     binding.name.setText(category.label)
 
-    binding.widgets.adapter = WidgetsItemAdapter(category.widgets, viewModel)
+    binding.widgets.adapter = WidgetsItemAdapter(category.widgets, onInsert, onDrag)
 
     holder.updateExpandedState(category.isExpanded)
 

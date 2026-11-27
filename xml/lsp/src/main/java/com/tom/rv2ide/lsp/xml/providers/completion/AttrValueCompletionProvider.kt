@@ -98,6 +98,41 @@ open class AttrValueCompletionProvider(provider: ICompletionProvider) :
     this.allNamespaces = namespaces
   }
 
+  /** 查属性定义的格式；调用方（如布局设计器）不必依赖 aapt 的类型。查不到返回 null。 */
+  fun findAttributeFormat(namespace: String?, attrName: String): AttrValueFormat? {
+    if (namespace.isNullOrBlank()) return null
+    val tables = findResourceTables(namespace)
+    if (tables.isEmpty()) return null
+    val pck = namespace.substringAfter(NAMESPACE_PREFIX)
+    val attr = findAttr(tables, namespace, pck, attrName) ?: return null
+    return AttrValueFormat(attr.typeMask, attr.symbols.mapNotNull { it.symbol.name.entry })
+  }
+
+  /** 补全主题属性引用：`?attr/x`、`?android:attr/x`，以及省略类型的 `?x`。 */
+  fun completeThemeAttr(value: String): CompletionResult {
+    if (!value.startsWith('?')) return EMPTY
+    val body = value.substring(1)
+    val framework = body.startsWith("android:")
+    val name = body.removePrefix("android:").removePrefix("attr/")
+    val platform = platformResourceTable()
+    val tables = if (framework) setOfNotNull(platform) else findAllModuleResourceTables() + setOfNotNull(platform)
+    val list = mutableListOf<CompletionItem>()
+    for (table in tables) {
+      for (pck in table.packages) {
+        val isAndroid = pck.name == ResourceTableRegistry.PCK_ANDROID
+        if (framework && !isAndroid) continue
+        pck.findGroup(ATTR)?.findEntries { matchLevel(it, name) != NO_MATCH }?.forEach { entry ->
+          val text = if (isAndroid) "?android:attr/${entry.name}" else "?attr/${entry.name}"
+          list += createEnumOrFlagCompletionItem(pck.name, text, matchLevel(entry.name, name)).apply {
+            overrideTypeText = "ATTR"
+            ideSortText = if (isAndroid) "zzz$text" else text
+          }
+        }
+      }
+    }
+    return CompletionResult(list.distinctBy { it.ideLabel })
+  }
+
   fun completeValue(
       namespace: String?,
       prefix: String,
@@ -235,8 +270,8 @@ open class AttrValueCompletionProvider(provider: ICompletionProvider) :
       // AndroidX dependencies include attribute declarations with the 'android' package
       // Those must not be included when completing values
       val attrEntry =
-          resTableForFindAttr()!!
-              .findPackage(ResourceTableRegistry.PCK_ANDROID)
+          resTableForFindAttr()
+              ?.findPackage(ResourceTableRegistry.PCK_ANDROID)
               ?.findGroup(ATTR)
               ?.findEntry(attr)
               ?.findValue(ConfigDescription())

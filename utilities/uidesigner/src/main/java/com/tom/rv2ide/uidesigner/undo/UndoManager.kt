@@ -55,12 +55,15 @@ class UndoManager @JvmOverloads constructor(private var maxStackSize: Int = DEFA
     }
 
     disable()
-    val action = undoStack.removeLast()
-    action.undo()
-
-    redoStack.addLast(action)
-    trimStacks()
-    enable()
+    try {
+      val action = undoStack.last()
+      action.undo()
+      undoStack.removeLast()
+      redoStack.addLast(action)
+      trimStacks()
+    } finally {
+      enable()
+    }
   }
 
   fun redo() {
@@ -69,12 +72,15 @@ class UndoManager @JvmOverloads constructor(private var maxStackSize: Int = DEFA
     }
 
     disable()
-    val action = redoStack.removeLast()
-    action.redo()
-
-    undoStack.addLast(action)
-    trimStacks()
-    enable()
+    try {
+      val action = redoStack.last()
+      action.redo()
+      redoStack.removeLast()
+      undoStack.addLast(action)
+      trimStacks()
+    } finally {
+      enable()
+    }
   }
 
   /**

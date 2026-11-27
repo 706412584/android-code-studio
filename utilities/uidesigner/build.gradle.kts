@@ -35,8 +35,7 @@ dependencies {
   implementation(libs.androidx.appcompat)
   implementation(libs.androidx.core.ktx)
   implementation(libs.androidx.fragment.ktx)
-  implementation(libs.androidx.nav.fragment)
-  implementation(libs.androidx.nav.ui)
+  implementation(libs.androidx.recyclerview)
   implementation(libs.common.editor)
   implementation(libs.common.kotlin)
   implementation(libs.common.utilcode)
@@ -51,6 +50,8 @@ dependencies {
   implementation(projects.logging.logger)
   implementation(projects.utilities.lookup)
   implementation(projects.utilities.xmlInflater)
+  implementation(projects.xml.dom)
   implementation(projects.xml.lsp)
 
+  testImplementation(libs.tests.junit)
 }

@@ -18,7 +18,6 @@
 package com.tom.rv2ide.actions.etc
 
 import android.content.Context
-import android.content.Intent
 import android.view.MenuItem
 import androidx.core.content.ContextCompat
 import com.android.aaptcompiler.AaptResourceType.LAYOUT
@@ -27,11 +26,8 @@ import com.blankj.utilcode.util.KeyboardUtils
 import com.tom.rv2ide.actions.ActionData
 import com.tom.rv2ide.actions.EditorRelatedAction
 import com.tom.rv2ide.actions.markInvisible
-import com.tom.rv2ide.activities.editor.EditorHandlerActivity
 import com.tom.rv2ide.editor.ui.IDEEditor
 import com.tom.rv2ide.resources.R
-import com.tom.rv2ide.uidesigner.UIDesignerActivity
-import java.io.File
 
 /** @author Akash Yadav */
 class PreviewLayoutAction(context: Context, override val order: Int) : EditorRelatedAction() {
@@ -90,21 +86,11 @@ class PreviewLayoutAction(context: Context, override val order: Int) : EditorRel
     }
   }
 
-  override suspend fun execAction(data: ActionData): Boolean {
-    val activity = data.requireActivity()
-    activity.saveAll()
-    return true
-  }
+  override suspend fun execAction(data: ActionData): Boolean = true
 
   override fun postExec(data: ActionData, result: Any) {
-    val activity = data.requireActivity()
-    activity.previewLayout(data.requireEditor().file!!)
-  }
-
-  private fun EditorHandlerActivity.previewLayout(file: File) {
-    val intent = Intent(this, UIDesignerActivity::class.java)
-    intent.putExtra(UIDesignerActivity.EXTRA_FILE, file.absolutePath)
-    uiDesignerResultLauncher?.launch(intent)
+    val file = data.requireEditor().file ?: return
+    data.requireActivity().openUiDesigner(file)
   }
 
   private fun ActionData.requireEditor(): IDEEditor {

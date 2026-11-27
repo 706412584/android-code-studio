@@ -28,7 +28,6 @@ import android.os.Process
 import android.text.SpannableStringBuilder
 import android.widget.FrameLayout
 import android.text.Spanned
-import android.text.TextUtils
 import android.text.TextWatcher
 import android.text.method.LinkMovementMethod
 import android.text.style.ClickableSpan
@@ -93,12 +92,14 @@ import com.tom.rv2ide.fragments.sidebar.FileTreeFragment
 import com.tom.rv2ide.handlers.EditorActivityLifecyclerObserver
 import com.tom.rv2ide.handlers.LspHandler.registerLanguageServers
 import com.tom.rv2ide.interfaces.DiagnosticClickListener
+import com.tom.rv2ide.interfaces.IEditorHandler
 import com.tom.rv2ide.lookup.Lookup
 import com.tom.rv2ide.lsp.api.ILanguageServerRegistry
 import com.tom.rv2ide.lsp.models.DiagnosticItem
 import com.tom.rv2ide.models.DiagnosticGroup
 import com.tom.rv2ide.models.OpenedFile
 import com.tom.rv2ide.models.Range
+import com.tom.rv2ide.models.SaveResult
 import com.tom.rv2ide.models.SearchResult
 import com.tom.rv2ide.preferences.internal.BuildPreferences
 import com.tom.rv2ide.projectdata.state.lsp.Index
@@ -113,6 +114,8 @@ import com.tom.rv2ide.ui.CodeEditorView
 import com.tom.rv2ide.ui.ContentTranslatingDrawerLayout
 import com.tom.rv2ide.ui.SwipeRevealLayout
 import com.tom.rv2ide.uidesigner.UIDesignerActivity
+import com.tom.rv2ide.uidesigner.R as DesignerR
+import kotlinx.coroutines.CancellationException
 import com.tom.rv2ide.utils.ActionMenuUtils.createMenu
 import com.tom.rv2ide.utils.ApkInstallationSessionCallback
 import com.tom.rv2ide.utils.DialogUtils.newMaterialDialogBuilder
@@ -1469,29 +1472,73 @@ override fun onApplySystemBarInsets(insets: Insets) {
     }
   }
 
+  /**
+   * 在编辑器里打开（或切到）布局并启动设计器。缓冲尚未读完时不传内容，由设计器读磁盘；
+   * 写回时的指纹校验发生在设计器返回之后，那时缓冲已就绪。
+   */
+  fun openUiDesigner(file: File) {
+    val editorHandler = this as? IEditorHandler ?: return
+    val editor = editorHandler.openFile(file)?.editor ?: return
+    val xml = editor.text.toString().takeIf { editor.file != null }
+    if (xml != null && xml.length > UIDesignerActivity.MAX_XML_LENGTH) {
+      flashError(getString(DesignerR.string.designer_xml_too_large))
+      return
+    }
+    val intent = Intent(this, UIDesignerActivity::class.java)
+        .putExtra(UIDesignerActivity.EXTRA_FILE, file.absolutePath)
+    xml?.let { intent.putExtra(UIDesignerActivity.EXTRA_XML, it) }
+    uiDesignerResultLauncher?.launch(intent)
+  }
+
   private fun handleUiDesignerResult(result: ActivityResult) {
-    if (result.resultCode != RESULT_OK || result.data == null) {
-      log.warn(
-          "UI Designer returned invalid result: resultCode={}, data={}",
-          result.resultCode,
-          result.data,
-      )
-      return
+    if (result.resultCode != RESULT_OK) return
+    val data = result.data ?: return
+    val file = data.getStringExtra(UIDesignerActivity.EXTRA_FILE)?.let(::File) ?: return
+    val next = data.getStringExtra(UIDesignerActivity.RESULT_NEXT_FILE)?.let(::File)
+    val xml = data.getStringExtra(UIDesignerActivity.RESULT_GENERATED_XML)
+    val editorHandler = this as? IEditorHandler ?: return
+    lifecycleScope.launch {
+      // 写回失败时不切换，免得用户以为改动已保存。
+      val saved = xml == null || saveUiDesignerResult(editorHandler, file, xml, data)
+      if (saved && next != null) openUiDesigner(next)
     }
-    val generated = result.data!!.getStringExtra(UIDesignerActivity.RESULT_GENERATED_XML)
-    if (TextUtils.isEmpty(generated)) {
-      log.warn("UI Designer returned blank generated XML code")
-      return
+  }
+
+  private suspend fun saveUiDesignerResult(editorHandler: IEditorHandler, file: File, xml: String, data: Intent): Boolean {
+    val original = data.getStringExtra(UIDesignerActivity.RESULT_SOURCE_FINGERPRINT) ?: return false
+    val originalDisk = data.getStringExtra(UIDesignerActivity.RESULT_DISK_FINGERPRINT) ?: return false
+    return autoSaveMutex.withLock {
+      try {
+        val disk = withContext(Dispatchers.IO) { UIDesignerActivity.sourceFingerprint(file.readText()) }
+        val index = editorHandler.findIndexOfEditorByFile(file)
+        val view = if (index >= 0) editorHandler.getEditorAtIndex(index) else null
+        val text = view?.editor?.text
+        // 原编辑器的自动保存可以将磁盘同步到打开设计器时的缓冲，除此之外不能覆盖外部改动。
+        if (text == null || view.hasExternalDiskChange ||
+            UIDesignerActivity.sourceFingerprint(text.toString()) != original ||
+            (disk != originalDisk && disk != original)) {
+          flashError(getString(DesignerR.string.designer_source_changed))
+          return@withLock false
+        }
+        val endLine = text.lineCount - 1
+        text.replace(0, 0, endLine, text.getColumnCount(endLine), xml)
+        val saved = SaveResult()
+        editorHandler.saveResult(index, saved)
+        if (saved.xmlSaved) {
+          pendingSaveFiles.remove(file)
+          editorContentHashes[view] = xml.hashCode()
+        } else {
+          flashError(getString(DesignerR.string.designer_save_failed))
+        }
+        saved.xmlSaved
+      } catch (error: CancellationException) {
+        throw error
+      } catch (error: Exception) {
+        log.warn("无法保存设计器结果：{}", file, error)
+        flashError(getString(DesignerR.string.designer_save_failed))
+        false
+      }
     }
-    val view = provideCurrentEditor()
-    val text =
-        view?.editor?.text
-            ?: run {
-              log.warn("No file opened to append UI designer result")
-              return
-            }
-    val endLine = text.lineCount - 1
-    text.replace(0, 0, endLine, text.getColumnCount(endLine), generated)
   }
 
   private fun setupDrawers() {
