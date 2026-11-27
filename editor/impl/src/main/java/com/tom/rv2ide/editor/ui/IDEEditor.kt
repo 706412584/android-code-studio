@@ -76,6 +76,7 @@ import io.github.rosemoe.sora.event.ContentChangeEvent
 import io.github.rosemoe.sora.event.SelectionChangeEvent
 import io.github.rosemoe.sora.lang.EmptyLanguage
 import io.github.rosemoe.sora.lang.Language
+import io.github.rosemoe.sora.lang.folding.ImportFoldingProvider
 import io.github.rosemoe.sora.widget.CodeEditor
 import io.github.rosemoe.sora.widget.EditorSearcher
 import io.github.rosemoe.sora.widget.IDEEditorSearcher
@@ -686,6 +687,18 @@ constructor(
     callback(lang)
   }
 
+  override fun setSelectionRegion(
+      lineLeft: Int, columnLeft: Int, lineRight: Int, columnRight: Int,
+      makeRightVisible: Boolean, cause: Int,
+  ) {
+    if (isCodeFoldingEnabled && makeRightVisible && cause == SelectionChangeEvent.CAUSE_SEARCH) {
+      // 先展开命中位置的所有外层块，再让 Sora 计算选区与滚动位置。
+      foldingManager.revealLine(lineLeft)
+      if (lineRight != lineLeft) foldingManager.revealLine(lineRight)
+    }
+    super.setSelectionRegion(lineLeft, columnLeft, lineRight, columnRight, makeRightVisible, cause)
+  }
+
   /** Initialize the editor. */
   protected open fun initEditor() {
 
@@ -696,6 +709,8 @@ constructor(
     markUnmodified()
 
     searcher = IDEEditorSearcher(this)
+    isCodeFoldingEnabled = true
+    registerFoldingProvider(ImportFoldingProvider())
     colorScheme = SchemeAndroidIDE.newInstance(context)
     inputType = createInputTypeFlags()
     val backgroundColor = getSystemBackgroundColor()

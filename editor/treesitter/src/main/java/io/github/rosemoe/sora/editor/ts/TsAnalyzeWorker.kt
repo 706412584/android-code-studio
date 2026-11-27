@@ -25,7 +25,6 @@ import com.tom.rv2ide.treesitter.api.TreeSitterInputEdit
 import com.tom.rv2ide.treesitter.api.TreeSitterQueryCapture
 import com.tom.rv2ide.treesitter.api.safeExecQueryCursor
 import com.tom.rv2ide.treesitter.string.UTF16String
-import io.github.rosemoe.sora.data.ObjectAllocator
 import io.github.rosemoe.sora.editor.ts.spans.TsSpanFactory
 import io.github.rosemoe.sora.lang.analysis.StyleReceiver
 import io.github.rosemoe.sora.lang.styling.CodeBlock
@@ -241,9 +240,7 @@ class TsAnalyzeWorker(
             spanFactory,
         )
 
-    val oldBlocks = styles.blocks
     updateCodeBlocks()
-    oldBlocks?.also { ObjectAllocator.recycleBlockLines(it) }
 
     stylesReceiver?.setStyles(analyzer, styles) { oldTree?.close() }
 
@@ -274,7 +271,7 @@ class TsAnalyzeWorker(
         }
 
         match.captures.forEach { capture ->
-          val block = ObjectAllocator.obtainBlockLine()
+          val block = CodeBlock()
           var node = capture.node
           val start = node.startPoint
 
@@ -293,7 +290,7 @@ class TsAnalyzeWorker(
               }
           block.endLine = end.row
           block.endColumn = end.column / 2
-          if (block.endLine - block.startLine > 1) {
+          if (block.endLine > block.startLine) {
             blocks.add(block)
           }
 

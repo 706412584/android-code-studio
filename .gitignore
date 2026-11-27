@@ -118,6 +118,7 @@ build.log
 # （如 tooling/builder-model-impl/src/main/java/com/android/build/）。
 external/*/build/
 composite-builds/*/build/
+composite-builds/build-deps/sora-editor/build/
 
 # 新增的纯 Java 模块（core/ai-*）的构建产物。
 core/ai-agent/build/

@@ -22,13 +22,17 @@ import com.tom.rv2ide.lsp.models.DiagnosticSeverity.HINT
 import com.tom.rv2ide.lsp.models.DiagnosticSeverity.INFO
 import com.tom.rv2ide.lsp.models.DiagnosticSeverity.WARNING
 import com.tom.rv2ide.models.Range
+import io.github.rosemoe.sora.lang.diagnostic.DiagnosticProvider
+import io.github.rosemoe.sora.lang.diagnostic.DiagnosticsContainer
 import io.github.rosemoe.sora.lang.diagnostic.DiagnosticRegion
 import io.github.rosemoe.sora.lang.diagnostic.DiagnosticRegion.SEVERITY_ERROR
 import io.github.rosemoe.sora.lang.diagnostic.DiagnosticRegion.SEVERITY_NONE
 import io.github.rosemoe.sora.lang.diagnostic.DiagnosticRegion.SEVERITY_TYPO
 import io.github.rosemoe.sora.lang.diagnostic.DiagnosticRegion.SEVERITY_WARNING
+import io.github.rosemoe.sora.widget.CodeEditor
 import java.nio.file.Path
 import java.nio.file.Paths
+import java.util.WeakHashMap
 
 data class DiagnosticItem(
     var message: String,
@@ -97,6 +101,36 @@ data class DiagnosticItem(
 
     // Add column offset
     return minOf(index + column, content.length)
+  }
+}
+
+/** 同一个编辑器只登记一个 LSP 提供者，不覆盖语法分析器自己的诊断。 */
+object EditorDiagnostics {
+  private class Regions(var items: List<DiagnosticRegion>) : DiagnosticProvider {
+    override fun provideDiagnostics(container: DiagnosticsContainer) = container.addDiagnostics(items)
+  }
+
+  // 仅在 UI 线程访问；值不持有编辑器。
+  private val providers = WeakHashMap<CodeEditor, Regions>()
+
+  @JvmStatic fun publish(editor: CodeEditor, diagnostics: List<DiagnosticItem>) {
+    editor.post {
+      if (editor.isReleased) return@post
+      if (diagnostics.isEmpty()) {
+        providers.remove(editor)?.let(editor::unregisterDiagnosticProvider)
+        return@post
+      }
+      val items = diagnostics.map { it.asDiagnosticRegion(editor.text) }
+      val existing = providers[editor]
+      if (existing == null) {
+        val provider = Regions(items)
+        providers[editor] = provider
+        editor.registerDiagnosticProvider(provider)
+      } else {
+        existing.items = items
+        editor.invalidateDiagnostics()
+      }
+    }
   }
 }
 

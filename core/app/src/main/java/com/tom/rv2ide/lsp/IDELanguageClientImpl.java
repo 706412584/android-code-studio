@@ -49,7 +49,7 @@ import com.tom.rv2ide.ui.CodeEditorView;
 import com.tom.rv2ide.utils.FlashbarActivityUtilsKt;
 import com.tom.rv2ide.utils.FlashbarUtilsKt;
 import com.tom.rv2ide.utils.LSPUtils;
-import io.github.rosemoe.sora.lang.diagnostic.DiagnosticsContainer;
+import com.tom.rv2ide.lsp.models.EditorDiagnostics;
 import io.github.rosemoe.sora.text.Content;
 import java.io.File;
 import java.util.ArrayList;
@@ -140,19 +140,7 @@ public void publishDiagnostics(DiagnosticResult result) {
   if (editorView != null) {
     final var editor = editorView.getEditor();
     if (editor != null) {
-      final var container = new DiagnosticsContainer();
-      try {
-        // Get the editor content for position conversion
-        final var content = editor.getText();
-        
-        container.addDiagnostics(
-            result.getDiagnostics().stream()
-                .map(diagnostic -> diagnostic.asDiagnosticRegion(content))
-                .collect(Collectors.toList()));
-      } catch (Throwable err) {
-        LOG.error("Unable to map DiagnosticItem to DiagnosticRegion", err);
-      }
-      editor.setDiagnostics(container);
+      EditorDiagnostics.publish(editor, result.getDiagnostics());
     }
   }
 
