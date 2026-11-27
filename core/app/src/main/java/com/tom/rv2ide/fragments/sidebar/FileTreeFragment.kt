@@ -176,32 +176,33 @@ class FileTreeFragment :
   }
 
   private fun listNode(node: TreeNode, whenDone: Runnable) {
-    node.children.clear()
+    val root = treeRoot ?: return
+    val folder = node.value
     node.isExpanded = false
     executeAsync({
-      listFilesForNode(node.value.listFiles() ?: return@executeAsync null, node)
-      var temp = node
-      while (temp.size() == 1) {
-        temp = temp.childAt(0)
-        if (!temp.value.isDirectory) {
-          break
-        }
-        listFilesForNode(temp.value.listFiles() ?: continue, temp)
-        temp.isExpanded = true
+      // 后台只列目录；主线程可能正在遍历同一棵树以恢复展开状态或高亮文件。
+      val levels = mutableListOf<Array<File>>()
+      var directory = folder
+      while (true) {
+        val files = directory.listFiles() ?: break
+        Arrays.sort(files, SortFileName())
+        Arrays.sort(files, SortFolder())
+        levels.add(files)
+        directory = files.singleOrNull()?.takeIf { it.isDirectory } ?: break
       }
-      null
-    }) {
+      levels
+    }) { levels ->
+      if (root !== treeRoot || levels == null) return@executeAsync
+      val ctx = context ?: return@executeAsync
+      var parent = node
+      parent.deleteAllChildren()
+      levels.forEachIndexed { depth, files ->
+        if (depth > 0) parent = parent.childAt(0).apply { isExpanded = true }
+        for (file in files) {
+          parent.addChild(TreeNode(file).apply { viewHolder = FileTreeViewHolder(ctx) }, false)
+        }
+      }
       whenDone.run()
-    }
-  }
-
-  private fun listFilesForNode(files: Array<File>, parent: TreeNode) {
-    Arrays.sort(files, SortFileName())
-    Arrays.sort(files, SortFolder())
-    for (file in files) {
-      val node = TreeNode(file)
-      node.viewHolder = FileTreeViewHolder(context)
-      parent.addChild(node, false)
     }
   }
 
@@ -300,6 +301,7 @@ class FileTreeFragment :
   }
 
   private fun tryRestoreState(rootNode: TreeNode, state: String? = viewModel.savedState) {
+    if (rootNode !== treeRoot) return
     if (!TextUtils.isEmpty(state) && fileTreeView != null) {
       fileTreeView!!.collapseAll()
       val openNodes =
