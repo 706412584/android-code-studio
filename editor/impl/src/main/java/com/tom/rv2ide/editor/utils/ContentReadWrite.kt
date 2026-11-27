@@ -42,15 +42,13 @@ object ContentReadWrite {
     val consumer = discreteProgressConsumer(progressConsumer = progressConsumer)
 
     file.writer().buffered(DEFAULT_BUFFER_SIZE * 2).use { writer ->
-      val lastLine = lineCount - 1
-      val length = length
-
       ContentLockAccessor.lock(this, false)
       var totalWrote = 0.0
       try {
-        for (lineIdx in 0..lastLine) {
+        val length = length.coerceAtLeast(1)
+        for (lineIdx in 0 until lineCount) {
           val line = getLine(lineIdx)
-          writer.write(line.backingCharArray, 0, line.length)
+          writer.append(line)
 
           val separatorChars = line.lineSeparator.chars
           writer.write(separatorChars)

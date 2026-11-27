@@ -139,6 +139,8 @@ public class SchemeAndroidIDE extends EditorColorScheme {
     setColor(SELECTION_INSERT, 0xffff79c6);
     setColor(SELECTION_HANDLE, 0xffff79c6);
     setColor(CURRENT_LINE, 0xff44475a);
+    setColor(TEXT_INLAY_HINT_FOREGROUND, 0xfff8f8f2);
+    setColor(TEXT_INLAY_HINT_BACKGROUND, 0xff44475a);
     setColor(UNDERLINE, 0xfff8f8f2);
     setColor(SCROLL_BAR_THUMB, 0xff6272a4);
     setColor(SCROLL_BAR_THUMB_PRESSED, 0xffff79c6);

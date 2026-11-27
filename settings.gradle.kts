@@ -37,7 +37,8 @@ dependencyResolutionManagement {
       "appintro",
       "logback-core",
       "google-java-format",
-      "javac"
+      "javac",
+      "sora-editor"
     ),
 
     "build-deps-common" to arrayOf(

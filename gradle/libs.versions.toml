@@ -18,7 +18,6 @@ bouncycastle = "1.78.1"
 com-google-auto-service = "1.1.1"
 com-google-auto-value = "1.10.4"
 customizable-cardview = "v1.0"
-editor = "0.23.7"
 glide = "5.0.4"
 gradle-tooling = "8.9"
 gson = "2.10.1"
@@ -123,7 +122,7 @@ common-antlr4-runtime = { module = "org.antlr:antlr4-runtime", version.ref = "an
 common-charts = "com.github.AppDevNext:AndroidChart:3.1.0.21"
 common-datastore = "androidx.datastore:datastore-preferences:1.1.7"
 # Common
-common-editor = { module = "io.github.rosemoe:editor", version.ref = "editor" }
+common-editor = { module = "com.tom.rv2ide.build:sora-editor" }
 common-eventbus_ap = "org.greenrobot:eventbus-annotation-processor:3.3.1"
 common-glide = { module = "com.github.bumptech.glide:glide", version.ref = "glide" }
 common-glide_ap = { module = "com.github.bumptech.glide:compiler", version.ref = "glide" }

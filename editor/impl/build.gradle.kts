@@ -78,4 +78,5 @@ dependencies {
     implementation(projects.utilities.shared)
     implementation(projects.xml.lsp)
 
+    testImplementation(libs.tests.junit)
 }

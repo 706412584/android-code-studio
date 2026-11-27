@@ -103,8 +103,16 @@ public abstract class BaseEditorWindow extends AbstractPopupWindow {
 
     final var line = getEditor().getCursor().getLeftLine();
     final var column = getEditor().getCursor().getLeftColumn();
-    int x = (int) ((getEditor().getOffset(line, column) - (getWidth() / 2)));
-    int y = (int) (getEditor().getRowHeight() * line) - getEditor().getOffsetY() - getHeight() - 5;
+    // 使用折叠/换行后的可视坐标，而不是用文档行号推算屏幕位置。
+    final int margin = dp2px(8);
+    final int caretX = Math.round(getEditor().getCharOffsetX(line, column));
+    final int rowBottom = Math.round(getEditor().getCharOffsetY(line, column));
+    final int x = Math.max(margin, Math.min(caretX - getWidth() / 2,
+        getEditor().getWidth() - getWidth() - margin));
+    final int gap = dp2px(4);
+    final int above = rowBottom - getEditor().getRowHeight() - getHeight() - gap;
+    final int y = above >= 0 ? above : Math.max(0, Math.min(rowBottom + gap,
+        getEditor().getHeight() - getHeight()));
     setLocationAbsolutely(x, y);
     show();
   }

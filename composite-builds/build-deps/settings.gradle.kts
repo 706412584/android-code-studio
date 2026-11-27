@@ -53,6 +53,7 @@ include(
   ":google-java-format",
   ":javac",
   ":logback-core",
+  ":sora-editor",
 )
 
 rootProject.name = "build-deps"

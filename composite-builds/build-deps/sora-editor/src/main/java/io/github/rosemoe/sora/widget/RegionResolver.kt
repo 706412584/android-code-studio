@@ -1,0 +1,110 @@
+/*******************************************************************************
+ *    sora-editor - the awesome code editor for Android
+ *    https://github.com/Rosemoe/sora-editor
+ *    Copyright (C) 2020-2024  Rosemoe
+ *
+ *     This library is free software; you can redistribute it and/or
+ *     modify it under the terms of the GNU Lesser General Public
+ *     License as published by the Free Software Foundation; either
+ *     version 2.1 of the License, or (at your option) any later version.
+ *
+ *     This library is distributed in the hope that it will be useful,
+ *     but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *     MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ *     Lesser General Public License for more details.
+ *
+ *     You should have received a copy of the GNU Lesser General Public
+ *     License along with this library; if not, write to the Free Software
+ *     Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301
+ *     USA
+ *
+ *     Please contact Rosemoe by email 2073412493@qq.com if you need
+ *     additional information or have any questions
+ ******************************************************************************/
+
+package io.github.rosemoe.sora.widget
+
+import android.view.MotionEvent
+import io.github.rosemoe.sora.util.IntPair
+
+const val REGION_OUTBOUND = 0
+const val REGION_LINE_NUMBER = 1
+const val REGION_SIDE_ICON = 2
+const val REGION_DIVIDER_MARGIN = 3
+const val REGION_DIVIDER = 4
+const val REGION_TEXT = 5
+
+/**
+ * Column right of the side icons that shows the code folding marks
+ */
+const val REGION_FOLD = 6
+
+/**
+ * Column left of the line numbers that shows the breakpoint markers
+ */
+const val REGION_BREAKPOINT = 7
+
+const val IN_BOUND = 0
+const val OUT_BOUND = 1
+
+fun CodeEditor.resolveTouchRegion(event: MotionEvent) = resolveTouchRegion(event, -1)
+
+fun CodeEditor.resolveTouchRegion(event: MotionEvent, pointerIndex: Int = -1): Long {
+    val x = (if (pointerIndex == -1) event.x else event.getX(pointerIndex)) + offsetX
+    val y = (if (pointerIndex == -1) event.y else event.getY(pointerIndex)) + offsetY
+    return IntPair.pack(resolveTouchRegionX(x), resolveTouchBound(y))
+}
+
+private fun CodeEditor.resolveTouchRegionX(x: Float): Int {
+    if (x < 0f) {
+        return REGION_OUTBOUND
+    }
+    val foldWidth = measureFoldIndicatorWidth()
+    val breakpointWidth = measureBreakpointIndicatorWidth()
+    val lineNumberWidth = measureLineNumber()
+    val iconWidth = measureSideIconWidth()
+    val textOffset = measureTextRegionOffset()
+    val localX = x - gutterScreenStart()
+    val gutterRegion = resolveGutterRegion(localX, breakpointWidth, lineNumberWidth, foldWidth, iconWidth)
+    if (gutterRegion != null) {
+        return gutterRegion
+    }
+    val gutterEnd = breakpointWidth + lineNumberWidth + iconWidth + foldWidth +
+            dividerMarginLeft + dividerWidth + dividerMarginRight
+    return when {
+        x >= maxOf(textOffset, gutterEnd) && x <= scrollMaxX + width -> REGION_TEXT
+        isWordwrap && x in 0f..width.toFloat() -> REGION_TEXT
+        else -> REGION_OUTBOUND
+    }
+}
+
+private fun CodeEditor.resolveGutterRegion(
+    localX: Float,
+    breakpointWidth: Float,
+    lineNumberWidth: Float,
+    foldWidth: Float,
+    iconWidth: Float
+): Int? {
+    val lineNumberEnd = breakpointWidth + lineNumberWidth
+    val iconEnd = lineNumberEnd + iconWidth
+    val foldEnd = iconEnd + foldWidth
+    val dividerStart = foldEnd + dividerMarginLeft
+    val dividerEnd = dividerStart + dividerWidth
+    val gutterEnd = dividerEnd + dividerMarginRight
+    return when {
+        breakpointWidth > 0f && localX in 0f..breakpointWidth -> REGION_BREAKPOINT
+        localX in breakpointWidth..lineNumberEnd -> REGION_LINE_NUMBER
+        localX in lineNumberEnd..iconEnd -> REGION_SIDE_ICON
+        foldWidth > 0f && localX in iconEnd..foldEnd -> REGION_FOLD
+        localX in foldEnd..dividerStart || localX in dividerEnd..gutterEnd -> REGION_DIVIDER_MARGIN
+        localX in dividerStart..dividerEnd -> REGION_DIVIDER
+        else -> null
+    }
+}
+
+// A pinned gutter stays on screen while the content scrolls below it
+private fun CodeEditor.gutterScreenStart(): Float =
+    if (isLineNumberEnabled && isLineNumberPinned && !isWordwrap) offsetX.toFloat() else 0f
+
+private fun CodeEditor.resolveTouchBound(y: Float): Int =
+    if (y >= 0 && y <= scrollMaxY + height / 2) IN_BOUND else OUT_BOUND

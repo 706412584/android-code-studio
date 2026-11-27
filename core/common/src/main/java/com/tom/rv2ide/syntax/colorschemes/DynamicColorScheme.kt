@@ -46,6 +46,9 @@ open class DynamicColorScheme : SchemeAndroidIDE() {
     setColor(LINE_NUMBER_PANEL_TEXT, onSurfaceVariant)
     setColor(CURRENT_LINE, surfaceVariant)
     setColor(TEXT_NORMAL, onSurface)
+    // 使用编辑器当前配色：用户选择的代码主题可以与系统明暗模式不同。
+    setColor(TEXT_INLAY_HINT_FOREGROUND, getColor(TEXT_NORMAL))
+    setColor(TEXT_INLAY_HINT_BACKGROUND, getColor(CURRENT_LINE))
     setColor(BLOCK_LINE, surfaceVariant)
     setColor(BLOCK_LINE_CURRENT, outline)
     setColor(UNDERLINE, outline)
