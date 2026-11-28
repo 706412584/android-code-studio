@@ -19,8 +19,6 @@ package com.tom.rv2ide.inflater.drawable
 import android.content.Context
 import android.graphics.drawable.Drawable
 import android.graphics.drawable.LayerDrawable
-import com.tom.rv2ide.inflater.internal.utils.TextDrawable
-import org.jetbrains.annotations.Contract
 import org.xmlpull.v1.XmlPullParser
 
 /**
@@ -32,92 +30,27 @@ open class LayerListParser protected constructor(parser: XmlPullParser?, minDept
     IDrawableParser(parser, minDepth) {
   @Throws(Exception::class)
   public override fun parseDrawable(context: Context): Drawable {
-    val layer = LayerDrawable(arrayOfNulls(0))
-    var index: Int
-    var value: String?
-    var event = parser!!.eventType
-    var left = 0
-    var top = 0
-    var right = 0
-    var bottom = 0
-    var parseInner = true
-    while (event != XmlPullParser.END_DOCUMENT && canParse()) {
-      if (event == XmlPullParser.START_TAG) {
-        val name = parser!!.name
-        if ("item" == name) {
-          index = attrIndex("drawable")
-          var drawable: Drawable? = null
-          if (index != -1) {
-            value = value(index)
-            drawable = parseDrawable(context, value)
-
-            // if the android:drawable is specified, we do not parse the inner elements
-            // of <item>
-            parseInner = false
-          }
-          index = attrIndex("left")
-          left = if (index == -1) 0 else parseDimension(context, value(index))
-          index = attrIndex("top")
-          top = if (index == -1) 0 else parseDimension(context, value(index))
-          index = attrIndex("right")
-          right = if (index == -1) 0 else parseDimension(context, value(index))
-          index = attrIndex("bottom")
-          bottom = if (index == -1) 0 else parseDimension(context, value(index))
-          if (drawable == null) {
-            parseInner = true
-          } else {
-            addToLayer(layer, drawable, left, top, right, bottom)
-          }
-          if (!parseInner) {
-            skipToEndTag(parser!!.depth)
-          }
-        } else if (parser!!.depth > 2 && parseInner) {
-          // depth 1 = <layer-list>
-          // depth 2 = <item>
-          // depth > 2 = child drawables inside <item> tag
-          val parser = DrawableParserFactory.parserForTag(null, parser, name)
-          if (parser != null) {
-            parser.minDepth = this.parser!!.depth
-            var d = parser.parse(context)
-            if (d == null) {
-              d = unsupported(context)
-            }
-            addToLayer(layer, d, left, top, right, bottom)
-          } else {
-            addToLayer(layer, unsupported(context), left, top, right, bottom)
-          }
-        }
+    val layer = LayerDrawable(emptyArray())
+    fun dimension(name: String) = androidAttribute(name)?.let { parseDimension(context, it) }
+    children { tag ->
+      if (tag == "item") {
+        val id = androidAttribute("id")?.takeIf { it.startsWith("@android:id/") }
+            ?.let { context.resources.getIdentifier(it.substringAfter('/'), "id", "android") }
+        val left = dimension("left") ?: 0
+        val top = dimension("top") ?: 0
+        val right = dimension("right") ?: 0
+        val bottom = dimension("bottom") ?: 0
+        val width = dimension("width")
+        val height = dimension("height")
+        val gravity = androidAttribute("gravity")?.let { parseGravity(it) }
+        val index = layer.addLayer(childDrawable(context))
+        if (id != null && id != 0) layer.setId(index, id)
+        layer.setLayerInset(index, left, top, right, bottom)
+        width?.let { layer.setLayerWidth(index, it) }
+        height?.let { layer.setLayerHeight(index, it) }
+        gravity?.let { layer.setLayerGravity(index, it) }
       }
-      event = parser!!.next()
     }
     return layer
-  }
-
-  private fun addToLayer(
-      layer: LayerDrawable,
-      drawable: Drawable,
-      left: Int,
-      top: Int,
-      right: Int,
-      bottom: Int,
-  ) {
-    val index = layer.addLayer(drawable)
-    layer.setLayerInset(index, left, top, right, bottom)
-  }
-
-  @Throws(Exception::class)
-  private fun skipToEndTag(depth: Int) {
-    var event = parser!!.eventType
-    while (event != XmlPullParser.END_DOCUMENT) {
-      if (event == XmlPullParser.END_TAG && depth == parser!!.depth) {
-        break
-      }
-      event = parser!!.next()
-    }
-  }
-
-  @Contract(" -> new")
-  private fun unsupported(context: Context): Drawable {
-    return TextDrawable("Unsupported drawable", context.resources.displayMetrics)
   }
 }

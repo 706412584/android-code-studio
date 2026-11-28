@@ -320,7 +320,8 @@ public class VectorMasterDrawable extends Drawable {
                 break;
               case "vector":
                 vectorModel.buildTransformMatrices();
-                break;
+                // 内联矢量和后续图层共用游标，不能读过自己的结束标签。
+                return;
             }
             break;
         }

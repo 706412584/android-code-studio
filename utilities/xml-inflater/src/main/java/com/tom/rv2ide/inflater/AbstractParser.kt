@@ -319,8 +319,8 @@ abstract class AbstractParser {
         return resolveMaterialThemeColor(context, value, def)
       }
       value.startsWith("@color/") -> {
-        // Try to resolve as Material color resource
-        return resolveMaterialColorResource(context, value, def)
+        return com.tom.rv2ide.inflater.internal.utils.resolveProjectColor(value)
+            ?: resolveMaterialColorResource(context, value, def)
       }
       else ->
           return com.tom.rv2ide.inflater.internal.utils.parseColor(
@@ -357,8 +357,7 @@ abstract class AbstractParser {
         return ColorStateList.valueOf(color)
       }
       value.startsWith("@color/") -> {
-        val color = resolveMaterialColorResource(context, value, Color.TRANSPARENT)
-        return ColorStateList.valueOf(color)
+        return ColorStateList.valueOf(parseColor(context, value, def.defaultColor))
       }
       else ->
           return com.tom.rv2ide.inflater.internal.utils.parseColorStateList(

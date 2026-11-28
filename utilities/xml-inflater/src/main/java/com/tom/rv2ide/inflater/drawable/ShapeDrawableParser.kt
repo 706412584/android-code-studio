@@ -44,37 +44,26 @@ class ShapeDrawableParser protected constructor(parser: XmlPullParser?, minDepth
     IDrawableParser(parser, minDepth) {
   @Throws(Exception::class)
   public override fun parseDrawable(context: Context): Drawable {
-    val drawable = GradientDrawable()
-    var index = attrIndex("shape")
-    drawable.shape =
-        if (index == -1) GradientDrawable.RECTANGLE
-        else parseShape(parser!!.getAttributeValue(index))
-    if (isApi29) {
-      index = attrIndex("innerRadius")
-      drawable.innerRadius = if (index == -1) 0 else parseDimension(context, value(index))
-      index = attrIndex("innerRadiusRatio")
-      drawable.innerRadiusRatio = if (index == -1) 1f else value(index).toFloat()
-      index = attrIndex("thickness")
-      drawable.thickness = if (index == -1) 0 else parseDimension(context, value(index))
-      index = attrIndex("thicknessRatio")
-      drawable.thicknessRatio = if (index == -1) 1f else value(index).toFloat()
+    val shape = androidAttribute("shape")?.let(::parseShape) ?: GradientDrawable.RECTANGLE
+    val fullRing = shape == GradientDrawable.RING && androidAttribute("useLevel")?.let { parseBoolean(it) } == false
+    val drawable = if (fullRing) {
+      context.getDrawable(com.tom.rv2ide.inflater.R.drawable.preview_full_ring)!!.mutate() as GradientDrawable
+    } else GradientDrawable().apply { this.shape = shape }
+    if (isApi29 && shape == GradientDrawable.RING) {
+      androidAttribute("innerRadius")?.let { drawable.innerRadius = parseDimension(context, it) }
+      androidAttribute("innerRadiusRatio")?.let { drawable.innerRadiusRatio = it.toFloat() }
+      androidAttribute("thickness")?.let { drawable.thickness = parseDimension(context, it) }
+      androidAttribute("thicknessRatio")?.let { drawable.thicknessRatio = it.toFloat() }
     }
-    index = attrIndex("useLevel")
-    drawable.useLevel = index != -1 && parseBoolean(value(index))
-    var event = parser!!.eventType
-    while (event != XmlPullParser.END_DOCUMENT && canParse()) {
-      val name = parser.name
-      if (event == XmlPullParser.START_TAG) {
-        when (name) {
-          "corners" -> parseCorners(context, drawable)
-          "gradient" -> parseGradient(context, drawable)
-          "padding" -> parsePadding(context, drawable)
-          "size" -> parseSize(context, drawable)
-          "solid" -> parseSolid(context, drawable)
-          "stroke" -> parseStroke(context, drawable)
-        }
+    children { tag ->
+      when (tag) {
+        "corners" -> parseCorners(context, drawable)
+        "gradient" -> parseGradient(context, drawable)
+        "padding" -> parsePadding(context, drawable)
+        "size" -> parseSize(context, drawable)
+        "solid" -> parseSolid(context, drawable)
+        "stroke" -> parseStroke(context, drawable)
       }
-      event = parser.next()
     }
     return drawable
   }
@@ -171,35 +160,17 @@ class ShapeDrawableParser protected constructor(parser: XmlPullParser?, minDepth
   private fun parseGradient(context: Context, drawable: GradientDrawable) {
     var index = attrIndex("angle")
     drawable.orientation = if (index == -1) LEFT_RIGHT else parseGradientOrientation(value(index))
-    index = attrIndex("centerX")
-    var center = if (index == -1) drawable.gradientCenterX else value(index).toFloat()
-    drawable.setGradientCenter(center, drawable.gradientCenterY)
-    index = attrIndex("centerY")
-    center = if (index == -1) drawable.gradientCenterX else value(index).toFloat()
-    drawable.setGradientCenter(drawable.gradientCenterX, center)
-    val colors = IntArray(3)
-    var changed = false
-    Arrays.fill(colors, -1)
-    index = attrIndex("centerColor")
-    if (index != -1) {
-      colors[1] = parseColor(context, value(index))
-      changed = true
+    drawable.setGradientCenter(
+        androidAttribute("centerX")?.toFloat() ?: drawable.gradientCenterX,
+        androidAttribute("centerY")?.toFloat() ?: drawable.gradientCenterY,
+    )
+    androidAttribute("gradientRadius")?.let {
+      drawable.gradientRadius = it.toFloatOrNull() ?: parseDimensionF(context, it)
     }
-    index = attrIndex("endColor")
-    if (index != -1) {
-      colors[2] = parseColor(context, value(index))
-      changed = true
-    }
-    index = attrIndex("gradientRadius")
-    drawable.gradientRadius = if (index == -1) drawable.gradientRadius else value(index).toFloat()
-    index = attrIndex("startColor")
-    if (index != -1) {
-      colors[0] = parseColor(context, value(index))
-      changed = true
-    }
-    if (changed) {
-      drawable.colors = colors
-    }
+    val start = androidAttribute("startColor")?.let { parseColor(context, it) } ?: Color.TRANSPARENT
+    val end = androidAttribute("endColor")?.let { parseColor(context, it) } ?: Color.TRANSPARENT
+    val center = androidAttribute("centerColor")?.let { parseColor(context, it) }
+    drawable.colors = if (center == null) intArrayOf(start, end) else intArrayOf(start, center, end)
     index = attrIndex("type")
     drawable.gradientType =
         if (index == -1) GradientDrawable.LINEAR_GRADIENT else parseGradientType(value(index))
@@ -266,14 +237,14 @@ class ShapeDrawableParser protected constructor(parser: XmlPullParser?, minDepth
     }
     index = attrIndex("bottomLeftRadius")
     if (index != -1) {
-      radii[5] = parseDimension(context, value(index)).toFloat()
-      radii[4] = radii[5]
+      radii[7] = parseDimension(context, value(index)).toFloat()
+      radii[6] = radii[7]
       changed = true
     }
     index = attrIndex("bottomRightRadius")
     if (index != -1) {
-      radii[7] = parseDimension(context, value(index)).toFloat()
-      radii[6] = radii[7]
+      radii[5] = parseDimension(context, value(index)).toFloat()
+      radii[4] = radii[5]
       changed = true
     }
     if (changed) {

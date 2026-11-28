@@ -142,6 +142,9 @@ public abstract class DrawableParserFactory {
       case "scale":
         impl = ScaleDrawableParser.class;
         break;
+      case "rotate":
+        impl = RotateDrawableParser.class;
+        break;
       case "clip":
         impl = ClipDrawableParser.class;
         break;
@@ -149,10 +152,7 @@ public abstract class DrawableParserFactory {
         impl = StateListParser.class;
         break;
       case "vector":
-        if (xmlDrawable != null) {
-          return new NoParser(VectorMasterDrawable.fromXML(xmlDrawable));
-        }
-        return null;
+        return new NoParser(new VectorMasterDrawable(parser));
     }
 
     try {

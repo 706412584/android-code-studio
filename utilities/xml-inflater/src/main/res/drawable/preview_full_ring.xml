@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 形状的 useLevel 只能在系统 inflate 时设置，和渐变的 setUseLevel 不是同一个开关。 -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="ring"
+    android:useLevel="false" />

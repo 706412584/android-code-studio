@@ -24,6 +24,9 @@ import androidx.annotation.ChecksSdkIntAtLeast
 import com.tom.rv2ide.inflater.AbstractParser
 import org.xmlpull.v1.XmlPullParser
 
+/** 资源是可绘制 XML，但预览器没有相应实现；不要将整个布局判为无效。 */
+internal class UnsupportedPreviewDrawable(value: String) : UnsupportedOperationException(value)
+
 /**
  * Base class for drawable parsers.
  *
@@ -97,20 +100,44 @@ protected constructor(protected open val parser: XmlPullParser?, open var minDep
     return parser!!.getAttributeValue(index)
   }
 
-  /**
-   * Checks if the drawable parser is allowed to parse at the current depth. This must be checked if
-   * the drawable parser keeps looking for [XmlPullParser.START_TAG] or [ ][XmlPullParser.END_TAG].
-   *
-   * The [LayerListParser] can contain tags which are expected to be parsed by other parsers. So, if
-   * the nesting parser does not check if this method if `true`, it might consume all the events and
-   * the [LayerListParser] will have invalid data to parse. In some cases, the nested parser might
-   * consume all the events until [XmlPullParser.END_DOCUMENT].
-   *
-   * @return `true` if the parser can keep parsing, `false` otherwise.
-   */
-  protected fun canParse(): Boolean {
-    return parser!!.depth >= minDepth
+  /** 从当前开始标签遍历直接子元素，返回时游标仍在当前元素的结束标签。 */
+  protected fun children(visit: (String) -> Unit) {
+    val xml = checkNotNull(parser)
+    val parentDepth = xml.depth
+    while (true) {
+      when (xml.next()) {
+        XmlPullParser.END_DOCUMENT -> throw org.xmlpull.v1.XmlPullParserException("Unexpected end of drawable")
+        XmlPullParser.END_TAG -> if (xml.depth == parentDepth) return
+        XmlPullParser.START_TAG -> {
+          val depth = xml.depth
+          visit(xml.name)
+          // 有的叶子解析器只读取属性；未处理的扩展元素也要整棵跳过。
+          while (xml.eventType != XmlPullParser.END_TAG || xml.depth != depth) {
+            if (xml.next() == XmlPullParser.END_DOCUMENT) {
+              throw org.xmlpull.v1.XmlPullParserException("Unclosed drawable element")
+            }
+          }
+        }
+      }
+    }
   }
+
+  /** item、clip 和 rotate 都允许使用引用或一个内联子图。先读属性，再移动游标。 */
+  protected fun childDrawable(context: Context): Drawable {
+    val xml = checkNotNull(parser)
+    val element = xml.name
+    val ref = androidAttribute("drawable")
+    if (ref != null) return parseDrawable(context, ref)
+    var child: Drawable? = null
+    children { tag ->
+      if (child != null) throw com.tom.rv2ide.inflater.InflateException("<$element> has multiple drawables")
+      child = DrawableParserFactory.parserForTag(null, xml, tag)?.parse(context)
+          ?: throw UnsupportedPreviewDrawable("<$element>/<$tag>")
+    }
+    return child ?: throw com.tom.rv2ide.inflater.InflateException("<$element> requires a drawable")
+  }
+
+  protected fun androidAttribute(name: String): String? = parser?.getAttributeValue(ANDROID_NS, name)
 
   @get:ChecksSdkIntAtLeast(api = VERSION_CODES.Q)
   protected val isApi29: Boolean
@@ -118,5 +145,6 @@ protected constructor(protected open val parser: XmlPullParser?, open var minDep
 
   companion object {
     const val ANY_DEPTH = -1
+    internal const val ANDROID_NS = "http://schemas.android.com/apk/res/android"
   }
 }

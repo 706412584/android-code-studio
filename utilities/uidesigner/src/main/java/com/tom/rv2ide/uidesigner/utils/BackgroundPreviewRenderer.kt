@@ -262,12 +262,6 @@ class BackgroundPreviewRenderer {
         return loadVectorDrawable(view, xmlFile, context)
       }
 
-      // Try parsing as shape drawable
-      if (isShapeDrawable(xmlFile)) {
-        return loadShapeDrawable(view, xmlFile, context)
-      }
-
-      // Try parsing as layer-list or other drawable types
       return loadGenericXmlDrawable(view, xmlFile, context)
     } catch (e: Exception) {
       log.debug("Error loading XML drawable {}: {}", xmlFile.absolutePath, e.message)
@@ -286,26 +280,6 @@ class BackgroundPreviewRenderer {
       while (eventType != XmlPullParser.END_DOCUMENT) {
         if (eventType == XmlPullParser.START_TAG) {
           return parser.name == "vector"
-        }
-        eventType = parser.next()
-      }
-    } catch (e: Exception) {
-      // Ignore parsing errors
-    }
-    return false
-  }
-
-  /** Check if XML file is a shape drawable */
-  private fun isShapeDrawable(xmlFile: File): Boolean {
-    try {
-      val factory = XmlPullParserFactory.newInstance()
-      val parser = factory.newPullParser()
-      parser.setInput(FileInputStream(xmlFile), "UTF-8")
-
-      var eventType = parser.eventType
-      while (eventType != XmlPullParser.END_DOCUMENT) {
-        if (eventType == XmlPullParser.START_TAG) {
-          return parser.name == "shape"
         }
         eventType = parser.next()
       }
@@ -465,125 +439,6 @@ class BackgroundPreviewRenderer {
     return null
   }
 
-  /** Load shape drawable by parsing XML */
-  private fun loadShapeDrawable(view: View, xmlFile: File, context: Context): Boolean {
-    try {
-      val drawable = parseShapeDrawable(xmlFile)
-      if (drawable != null) {
-        view.background = drawable
-        log.debug("Successfully loaded shape drawable: {}", xmlFile.absolutePath)
-        return true
-      }
-    } catch (e: Exception) {
-      log.debug("Failed to load shape drawable {}: {}", xmlFile.absolutePath, e.message)
-    }
-    return false
-  }
-
-  /** Parse shape drawable from XML file */
-  private fun parseShapeDrawable(xmlFile: File): GradientDrawable? {
-    try {
-      val factory = XmlPullParserFactory.newInstance()
-      val parser = factory.newPullParser()
-      parser.setInput(FileInputStream(xmlFile), "UTF-8")
-
-      val drawable = GradientDrawable()
-      var currentTag = ""
-
-      var eventType = parser.eventType
-      while (eventType != XmlPullParser.END_DOCUMENT) {
-        when (eventType) {
-          XmlPullParser.START_TAG -> {
-            currentTag = parser.name
-            when (currentTag) {
-              "shape" -> {
-                val shape = parser.getAttributeValue(null, "android:shape")
-                when (shape) {
-                  "rectangle" -> drawable.shape = GradientDrawable.RECTANGLE
-                  "oval" -> drawable.shape = GradientDrawable.OVAL
-                  "ring" -> drawable.shape = GradientDrawable.RING
-                  "line" -> drawable.shape = GradientDrawable.LINE
-                  else -> drawable.shape = GradientDrawable.RECTANGLE
-                }
-              }
-              "solid" -> {
-                val color = parser.getAttributeValue(null, "android:color")
-                if (color != null) {
-                  drawable.setColor(parseColor(color))
-                }
-              }
-              "gradient" -> {
-                parseGradient(parser, drawable)
-              }
-              "corners" -> {
-                val radius = parser.getAttributeValue(null, "android:radius")
-                if (radius != null) {
-                  val radiusValue = parseDimension(radius)
-                  drawable.cornerRadius = radiusValue
-                }
-              }
-              "stroke" -> {
-                val width = parser.getAttributeValue(null, "android:width")
-                val color = parser.getAttributeValue(null, "android:color")
-                if (width != null && color != null) {
-                  drawable.setStroke(parseDimension(width).toInt(), parseColor(color))
-                }
-              }
-            }
-          }
-        }
-        eventType = parser.next()
-      }
-
-      return drawable
-    } catch (e: Exception) {
-      log.debug("Error parsing shape drawable: {}", e.message)
-      return null
-    }
-  }
-
-  /** Parse gradient attributes */
-  private fun parseGradient(parser: XmlPullParser, drawable: GradientDrawable) {
-    try {
-      val startColor = parser.getAttributeValue(null, "android:startColor")
-      val endColor = parser.getAttributeValue(null, "android:endColor")
-      val centerColor = parser.getAttributeValue(null, "android:centerColor")
-      val angle = parser.getAttributeValue(null, "android:angle")
-      val type = parser.getAttributeValue(null, "android:type")
-
-      val colors = mutableListOf<Int>()
-
-      if (startColor != null) {
-        colors.add(parseColor(startColor))
-      }
-      if (centerColor != null) {
-        colors.add(parseColor(centerColor))
-      }
-      if (endColor != null) {
-        colors.add(parseColor(endColor))
-      }
-
-      if (colors.isNotEmpty()) {
-        drawable.colors = colors.toIntArray()
-      }
-
-      // Set gradient type
-      when (type) {
-        "radial" -> drawable.gradientType = GradientDrawable.RADIAL_GRADIENT
-        "sweep" -> drawable.gradientType = GradientDrawable.SWEEP_GRADIENT
-        else -> drawable.gradientType = GradientDrawable.LINEAR_GRADIENT
-      }
-
-      // Set orientation based on angle
-      if (angle != null) {
-        val angleValue = angle.toFloatOrNull() ?: 0f
-        drawable.orientation = getGradientOrientation(angleValue)
-      }
-    } catch (e: Exception) {
-      log.debug("Error parsing gradient: {}", e.message)
-    }
-  }
-
   /** Get gradient orientation from angle */
   private fun getGradientOrientation(angle: Float): GradientDrawable.Orientation {
     return when ((angle % 360).toInt()) {
@@ -599,51 +454,11 @@ class BackgroundPreviewRenderer {
     }
   }
 
-  /** Parse color string to int */
-  private fun parseColor(colorString: String): Int {
-    return try {
-      if (colorString.startsWith("@color/")) {
-        // For now, return a default color for resource references
-        // In a full implementation, you'd resolve this from colors.xml
-        Color.GRAY
-      } else {
-        Color.parseColor(colorString)
-      }
-    } catch (e: Exception) {
-      Color.TRANSPARENT
-    }
-  }
-
-  /** Parse dimension string to float (simplified) */
-  private fun parseDimension(dimensionString: String): Float {
-    return try {
-      when {
-        dimensionString.endsWith("dp") -> {
-          dimensionString.removeSuffix("dp").toFloat()
-        }
-        dimensionString.endsWith("px") -> {
-          dimensionString.removeSuffix("px").toFloat()
-        }
-        else -> {
-          dimensionString.toFloat()
-        }
-      }
-    } catch (e: Exception) {
-      0f
-    }
-  }
-
   /** Try to load generic XML drawable using Android's inflation system */
   private fun loadGenericXmlDrawable(view: View, xmlFile: File, context: Context): Boolean {
     try {
-      // Try to create a temporary resource and inflate it
-      // This is a fallback for other drawable types like layer-list, selector, etc.
-
-      // For now, we'll create a placeholder drawable to indicate XML was found
-      // but not fully parsed - this can be enhanced based on specific needs
-      val placeholder = ColorDrawable(Color.parseColor("#E0E0E0"))
-      view.background = placeholder
-      log.debug("Loaded placeholder for XML drawable: {}", xmlFile.absolutePath)
+      val parser = com.tom.rv2ide.inflater.drawable.DrawableParserFactory.newParser(context, xmlFile)
+      view.background = parser?.parse(context) ?: return false
       return true
     } catch (e: Exception) {
       log.debug("Failed to load generic XML drawable {}: {}", xmlFile.absolutePath, e.message)
@@ -711,6 +526,10 @@ class BackgroundPreviewRenderer {
 
   private fun loadColorResource(view: View, resourceName: String, context: Context): Boolean {
     return try {
+      com.tom.rv2ide.inflater.internal.utils.resolveProjectColor(resourceName)?.let {
+        view.background = ColorDrawable(it)
+        return true
+      }
       val colorName = resourceName.substringAfter("@color/")
       var resourceId = context.resources.getIdentifier(colorName, "color", context.packageName)
 

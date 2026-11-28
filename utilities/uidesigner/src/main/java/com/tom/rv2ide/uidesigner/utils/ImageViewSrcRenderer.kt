@@ -226,12 +226,6 @@ class ImageViewSrcRenderer {
         return loadVectorDrawable(imageView, xmlFile, context)
       }
 
-      // Try parsing as shape drawable
-      if (isShapeDrawable(xmlFile)) {
-        return loadShapeDrawable(imageView, xmlFile, context)
-      }
-
-      // Try parsing as layer-list or other drawable types
       return loadGenericXmlDrawable(imageView, xmlFile, context)
     } catch (e: Exception) {
       log.debug("Error loading XML drawable for ImageView {}: {}", xmlFile.absolutePath, e.message)
@@ -250,26 +244,6 @@ class ImageViewSrcRenderer {
       while (eventType != XmlPullParser.END_DOCUMENT) {
         if (eventType == XmlPullParser.START_TAG) {
           return parser.name == "vector"
-        }
-        eventType = parser.next()
-      }
-    } catch (e: Exception) {
-      // Ignore parsing errors
-    }
-    return false
-  }
-
-  /** Check if XML file is a shape drawable */
-  private fun isShapeDrawable(xmlFile: File): Boolean {
-    try {
-      val factory = XmlPullParserFactory.newInstance()
-      val parser = factory.newPullParser()
-      parser.setInput(FileInputStream(xmlFile), "UTF-8")
-
-      var eventType = parser.eventType
-      while (eventType != XmlPullParser.END_DOCUMENT) {
-        if (eventType == XmlPullParser.START_TAG) {
-          return parser.name == "shape"
         }
         eventType = parser.next()
       }
@@ -304,56 +278,6 @@ class ImageViewSrcRenderer {
     }
   }
 
-  /** Load shape drawable for ImageView by parsing XML */
-  private fun loadShapeDrawable(imageView: ImageView, xmlFile: File, context: Context): Boolean {
-    try {
-      // For ImageView, we can reuse the BackgroundPreviewRenderer's shape parsing logic
-      // but apply it to setImageDrawable instead of background
-      val backgroundRenderer = BackgroundPreviewRenderer()
-
-      // Create a temporary view to parse the shape, then extract the drawable
-      val tempView = android.view.View(context)
-      val xmlContent = xmlFile.readText()
-
-      // Try to extract basic shape properties for a simple shape drawable
-      val drawable = parseSimpleShapeForImageView(xmlFile)
-      if (drawable != null) {
-        imageView.setImageDrawable(drawable)
-        log.debug("Successfully loaded shape drawable for ImageView: {}", xmlFile.absolutePath)
-        return true
-      }
-    } catch (e: Exception) {
-      log.debug(
-          "Failed to load shape drawable for ImageView {}: {}",
-          xmlFile.absolutePath,
-          e.message,
-      )
-    }
-    return false
-  }
-
-  /** Parse a simple shape drawable specifically for ImageView */
-  private fun parseSimpleShapeForImageView(xmlFile: File): Drawable? {
-    try {
-      val content = xmlFile.readText()
-
-      // Create a simple colored shape as preview
-      val colorRegex = """android:color="(#[0-9A-Fa-f]{6,8})"""".toRegex()
-      val colorMatch = colorRegex.find(content)
-
-      if (colorMatch != null) {
-        val color = Color.parseColor(colorMatch.groupValues[1])
-        return ColorDrawable(color)
-      }
-
-      // Default shape color if no color found
-      return ColorDrawable(Color.parseColor("#9E9E9E"))
-    } catch (e: Exception) {
-      log.debug("Error parsing simple shape: {}", e.message)
-      return null
-    }
-  }
-
   /** Try to load generic XML drawable for ImageView */
   private fun loadGenericXmlDrawable(
       imageView: ImageView,
@@ -361,11 +285,9 @@ class ImageViewSrcRenderer {
       context: Context,
   ): Boolean {
     try {
-      // Create a placeholder drawable to indicate XML was found
-      val placeholder =
-          ColorDrawable(Color.parseColor("#FF9800")) // Orange placeholder for other XMLs
-      imageView.setImageDrawable(placeholder)
-      log.debug("Loaded generic XML placeholder for ImageView: {}", xmlFile.absolutePath)
+      val drawable = com.tom.rv2ide.inflater.drawable.DrawableParserFactory.newParser(context, xmlFile)
+          ?.parse(context) ?: return false
+      imageView.setImageDrawable(drawable)
       return true
     } catch (e: Exception) {
       log.debug(

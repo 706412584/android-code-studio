@@ -37,6 +37,7 @@ dependencies {
   // 设计器的控件表只来自 SDK 的 widgets.txt（仅平台控件），库控件通过
   // ConstraintLayoutAdapter 注册进 ViewAdapterIndex，这里提供被适配的类本身。
   implementation(libs.androidx.constraintlayout)
+  implementation(libs.androidx.recyclerview)
   implementation(libs.common.kotlin)
   implementation(libs.common.utilcode)
 

@@ -47,6 +47,8 @@ constructor(
 
   private val attrChangeListeners = mutableListOf<AttributeChangeListener>()
   private val _attributes = mutableListOf<IAttribute>()
+  var unsupportedDrawableAttributes: Set<String> = emptySet()
+    private set
   internal val namespaces = mutableMapOf<String, INamespace>()
 
   override var parent: IViewGroup? = null
@@ -129,7 +131,15 @@ constructor(
       log.warn("No attribute adapter found for view {}", name)
       return
     }
-    adapter.apply(this, attribute)
+    try {
+      adapter.apply(this, attribute)
+      if (attribute.qualifiedName in unsupportedDrawableAttributes) {
+        unsupportedDrawableAttributes -= attribute.qualifiedName
+      }
+    } catch (unsupported: com.tom.rv2ide.inflater.drawable.UnsupportedPreviewDrawable) {
+      unsupportedDrawableAttributes += attribute.qualifiedName
+      log.debug("无法预览属性 {} 的图形 {}", attribute.qualifiedName, unsupported.message)
+    }
   }
 
   fun findNamespaces(): Set<INamespace> {
