@@ -36,14 +36,14 @@ package com.tom.rv2ide.artificial.agent.compose.compat
  * <p>ACS 协议层用字符串档位（`AiBehaviorSettings.REASONING_AUTO/LOW/MEDIUM/HIGH`），
  * 接线时按名字映射；DEFAULT/NONE 两档在 ACS 无直接对应，保留枚举完整性由接线层决定。
  */
-enum class ReasoningEffort {
-  DEFAULT,
-  NONE,
-  LOW,
-  MEDIUM,
-  HIGH,
-  XHIGH,
-  MAX,
+enum class ReasoningEffort(val chipLabel: String) {
+  DEFAULT("auto"),
+  NONE("off"),
+  LOW("low"),
+  MEDIUM("medium"),
+  HIGH("high"),
+  XHIGH("max"),
+  MAX("max"),
 }
 
 /**
@@ -63,8 +63,8 @@ data class ModelMetadata(
  * <p>⚠️ 与 ACS `ChatMode`（CHAT/PLAN/AGENT/CONTROL）**形状不同**，不能互替：
  * 接线时写显式映射表，不做隐式推断。
  */
-enum class AgentMode {
-  BUILD,
-  PLAN,
-  AUTO,
+enum class AgentMode(val chipLabel: String) {
+  BUILD("Build"),
+  PLAN("Plan"),
+  AUTO("Auto"),
 }

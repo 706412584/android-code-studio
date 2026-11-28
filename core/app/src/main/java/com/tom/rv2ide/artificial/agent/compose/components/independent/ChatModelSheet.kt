@@ -46,6 +46,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -113,13 +115,14 @@ internal fun ReasoningEffortSelector(
 ) {
     var showSheet by remember { mutableStateOf(false) }
     Box {
-        // 图标旁直接带档位文字：档位不同耗时与花费差得多，只给图标看不出当前选了哪档。
+        val description = stringResource(com.tom.rv2ide.R.string.acs_ui_assistant_reasoning, stringResource(effort.labelRes()))
         Row(
             verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier
                 .clip(RoundedCornerShape(Radius.sm))
                 .clickable(enabled = enabled) { showSheet = true }
-                .padding(horizontal = Spacing.sm, vertical = Spacing.sm)
+                .semantics { contentDescription = description }
+                .padding(horizontal = Spacing.xs, vertical = Spacing.sm)
         ) {
             val tint = if (enabled) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.38f)
             Icon(
@@ -130,8 +133,7 @@ internal fun ReasoningEffortSelector(
             )
             Spacer(Modifier.width(Spacing.xs))
             Text(
-                text = stringResource(com.tom.rv2ide.R.string.acs_ui_assistant_reasoning,
-                    stringResource(effort.labelRes())),
+                text = effort.chipLabel,
                 style = MaterialTheme.typography.labelMedium,
                 color = tint,
                 maxLines = 1

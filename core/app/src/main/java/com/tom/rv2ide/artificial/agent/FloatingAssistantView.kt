@@ -1348,6 +1348,7 @@ class FloatingAssistantView(
   private var restoredOnce = false
 
   fun close() {
+    cancelOwnedRewrite()
     binding.assistantOverlay.isVisible = false
     // 面板收起 = 宿主可以收回让出的空间。必须与 open() 的 onPanelOpened 对称，
     // 否则收起后编辑器永远停在半屏/半宽，用户得重启 Activity 才能恢复。
@@ -1387,6 +1388,7 @@ class FloatingAssistantView(
    * 既泄漏又往 detach 的控件写数据）、摘除存活集合、让出回调、注销偏好监听。
    */
   fun dispose() {
+    cancelOwnedRewrite()
     // 退订事件广播。**必须**做：orchestrator 是进程级单例，不退订会让它的订阅表
     // 一直持有本视图（及其 binding/Adapter），销毁后既泄漏内存，又会在下一个
     // 事件到来时往已 detach 的控件里写数据。
@@ -1619,6 +1621,48 @@ class FloatingAssistantView(
     inputBar.text = text
     if (autoSend) {
       sendFromInput()
+    }
+  }
+
+  private var ownedRewrite: AssistantInputBarBridge.RewriteRequest? = null
+
+  private fun cancelOwnedRewrite() {
+    if (ownedRewrite != null && inputBar.rewriting === ownedRewrite) inputBar.cancelRewrite()
+    ownedRewrite = null
+  }
+
+  private fun optimizeInputPrompt() {
+    val bridge = inputBar
+    val request = bridge.beginRewrite() ?: return
+    ownedRewrite = request
+    // 未发过消息的新草稿没有会话 id；不能用 orchestrator 的上一个活跃会话兜底。
+    val session = displayedConversationId
+    fun notice(res: Int) = android.widget.Toast.makeText(context, res, android.widget.Toast.LENGTH_SHORT).show()
+    lifecycleScope.launch {
+      try {
+        val answer = withContext(Dispatchers.IO) {
+          val config = orchestrator.resolveCurrentModelConfig() ?: return@withContext null
+          DraftPromptOptimizer.optimize(config, orchestrator.conversationStore, session, request.projection.prompt, request.token)
+        }
+        if (bridge.rewriting !== request) return@launch
+        if (answer == null) {
+          notice(com.tom.rv2ide.R.string.acs_prompt_no_model)
+          return@launch
+        }
+        val result = request.projection.decode(answer)
+        if (result == null) {
+          notice(com.tom.rv2ide.R.string.acs_prompt_failed)
+        } else {
+          bridge.finishRewrite(request, result)
+          if (result.text == request.original.text && result.references == request.refs) notice(com.tom.rv2ide.R.string.acs_prompt_unchanged)
+        }
+      } catch (e: kotlinx.coroutines.CancellationException) {
+        throw e
+      } catch (e: Exception) {
+        if (bridge.rewriting === request) notice(com.tom.rv2ide.R.string.acs_prompt_failed)
+      } finally {
+        if (ownedRewrite === request) cancelOwnedRewrite()
+      }
     }
   }
 
@@ -3650,9 +3694,10 @@ class FloatingAssistantView(
             referenceProvider = androidx.compose.runtime.remember(displayedConversationId, workspace) {
               { query, kind -> referenceCandidates(context, orchestrator, workspace, displayedConversationId, query, kind) }
             },
-            onSend = {
-              sendFromInput()
-            },
+            onSend = ::sendFromInput,
+            onOptimizePrompt = if (bridge.canOptimize && !bridge.isBusy && bridge.rewriting == null) ::optimizeInputPrompt else null,
+            onCancelOptimize = if (bridge.rewriting != null) bridge::cancelRewrite else null,
+            onUndoOptimize = if (bridge.canUndoRewrite && bridge.rewriting == null) bridge::restoreOriginal else null,
             onStop = { onStopClicked() },
             onForceStop = {
               displayedConversationId?.let { cancel(it) }

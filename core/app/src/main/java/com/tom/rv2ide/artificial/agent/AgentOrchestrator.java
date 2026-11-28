@@ -1673,7 +1673,7 @@ public final class AgentOrchestrator {
    * <p>用于 UI 在没有运行过（因此还没有用量回调）时先判断「圆环该不该显示」。
    */
   public int contextSizeForActiveConfig() {
-    ModelConfig config = resolveConfigForCompaction();
+    ModelConfig config = resolveCurrentModelConfig();
     return config == null ? 0 : ConversationCompaction.contextSizeOf(config);
   }
 
@@ -3300,7 +3300,7 @@ public final class AgentOrchestrator {
     if (conversationId == null || conversationId.isEmpty()) {
       return null;
     }
-    ModelConfig config = resolveConfigForCompaction();
+    ModelConfig config = resolveCurrentModelConfig();
     if (config == null) {
       return null;
     }
@@ -3388,8 +3388,8 @@ public final class AgentOrchestrator {
         + "%）";
   }
 
-  /** 取压缩用的模型配置；拿不到时返回 null（调用方据此提示失败）。 */
-  private ModelConfig resolveConfigForCompaction() {
+  /** 旁路请求和窗口估算与主会话使用同一套服务商、模型及请求头配置。 */
+  ModelConfig resolveCurrentModelConfig() {
     try {
       Agents agents = new Agents(appContext);
       String providerId = agents.getProvider();

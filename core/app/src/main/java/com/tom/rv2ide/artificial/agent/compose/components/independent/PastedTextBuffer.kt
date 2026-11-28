@@ -96,7 +96,7 @@ data class PastedText(
  * 首字母大小写都收：我们只会写出 `[Pasted#N]`，但用户手敲回来时更可能写小写，
  * 静默不展开会看起来像丢了内容。读得宽松、写得严格，代价只是一个字符类。
  */
-private val PLACEHOLDER_REGEX = Regex("""\[[Pp]asted#(\d+)]""")
+internal val PLACEHOLDER_REGEX = Regex("""\[[Pp]asted#(\d+)]""")
 
 /**
  * 把每个 `[Pasted#N]` 替换回它缓冲的原文，**单遍**完成。

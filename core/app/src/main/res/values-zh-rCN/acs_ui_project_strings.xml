@@ -14,6 +14,14 @@
   <string name="acs_ui_assistant_plan">规划模式</string>
   <string name="acs_ui_assistant_auto">自动模式</string>
   <string name="acs_ui_assistant_reasoning">思考：%1$s</string>
+  <string name="acs_prompt_optimize">优化提示词</string>
+  <string name="acs_prompt_optimizing">正在优化草稿</string>
+  <string name="acs_prompt_cancel">取消优化</string>
+  <string name="acs_prompt_optimized">已优化提示词</string>
+  <string name="acs_prompt_undo">恢复原文</string>
+  <string name="acs_prompt_unchanged">草稿已经很清楚，无需修改</string>
+  <string name="acs_prompt_failed">未能完成优化，已保留原草稿</string>
+  <string name="acs_prompt_no_model">请先配置可用的模型，再优化提示词</string>
   <string name="acs_ui_assistant_example_structure">帮我梳理当前项目结构</string>
   <string name="acs_ui_assistant_example_build">检查项目的构建配置</string>
 </resources>

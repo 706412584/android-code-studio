@@ -61,11 +61,62 @@ internal class AssistantInputBarBridge {
   )
   private val drafts = mutableMapOf<String, Draft>()
 
+  internal class RewriteRequest(
+      val projection: RewriteProjection,
+      val original: androidx.compose.ui.text.input.TextFieldValue,
+      val refs: List<com.tom.rv2ide.artificial.agent.compose.components.independent.ComposerReference>,
+      val token: com.tom.rv2ide.ai.protocol.ModelCancellationToken = com.tom.rv2ide.ai.protocol.ModelCancellationToken(),
+  )
+
+  private val projection by androidx.compose.runtime.derivedStateOf {
+    if (fieldValue.composition == null) RewriteProjection.from(fieldValue.text, references) else null
+  }
+  val canOptimize get() = projection != null
+  var rewriting by mutableStateOf<RewriteRequest?>(null)
+    private set
+  private var undoRewrite by mutableStateOf<RewriteRequest?>(null)
+  val canUndoRewrite get() = undoRewrite != null
+
+  fun beginRewrite(): RewriteRequest? {
+    if (rewriting != null || isBusy) return null
+    val request = RewriteRequest(projection ?: return null, fieldValue, references.toList())
+    rewriting = request
+    return request
+  }
+
+  fun cancelRewrite() {
+    val request = rewriting ?: return
+    rewriting = null
+    request.token.cancel()
+  }
+
+  private fun invalidateRewrite() {
+    cancelRewrite()
+    undoRewrite = null
+  }
+
+  fun finishRewrite(request: RewriteRequest, result: com.tom.rv2ide.artificial.agent.compose.components.independent.ComposerDraft) {
+    if (rewriting !== request) return
+    rewriting = null
+    if (result.text == request.original.text && result.references == request.refs) return
+    undoRewrite = request
+    references = result.references
+    fieldValue = androidx.compose.ui.text.input.TextFieldValue(result.text, androidx.compose.ui.text.TextRange(result.cursor))
+  }
+
+  fun restoreOriginal() {
+    val request = undoRewrite ?: return
+    invalidateRewrite()
+    references = request.refs
+    fieldValue = request.original
+  }
+
   var text: String
     get() = fieldValue.text
     set(value) { edit(androidx.compose.ui.text.input.TextFieldValue(value, androidx.compose.ui.text.TextRange(value.length))) }
 
   fun edit(value: androidx.compose.ui.text.input.TextFieldValue) {
+    if (value.text != text || value.composition != null) invalidateRewrite()
     val old = com.tom.rv2ide.artificial.agent.compose.components.independent.ComposerDraft(text, references, fieldValue.selection.end)
     val edited = com.tom.rv2ide.artificial.agent.compose.components.independent.applyTextEdit(old, value.text, value.selection.end)
     if (value.composition != null) {
@@ -90,6 +141,7 @@ internal class AssistantInputBarBridge {
 
   fun insert(reference: com.tom.rv2ide.artificial.agent.compose.components.independent.ComposerReference, start: Int = fieldValue.selection.min, end: Int = fieldValue.selection.max) {
     if (fieldValue.composition != null) return
+    invalidateRewrite()
     val next = com.tom.rv2ide.artificial.agent.compose.components.independent.insertReference(text, references, start, end, reference)
     references = next.references
     fieldValue = androidx.compose.ui.text.input.TextFieldValue(next.text, androidx.compose.ui.text.TextRange(next.cursor))
@@ -98,6 +150,7 @@ internal class AssistantInputBarBridge {
 
   fun removeReference(reference: com.tom.rv2ide.artificial.agent.compose.components.independent.ComposerReference) {
     if (fieldValue.composition != null) return
+    invalidateRewrite()
     val length = reference.end - reference.start
     references = references.filterNot { it == reference }.map {
       if (it.start >= reference.end) it.copy(start = it.start - length, end = it.end - length) else it
@@ -111,6 +164,7 @@ internal class AssistantInputBarBridge {
   }
 
   fun restore(value: String, refs: List<com.tom.rv2ide.ai.protocol.ReferenceMeta>) {
+    invalidateRewrite()
     references = refs.map { com.tom.rv2ide.artificial.agent.compose.components.independent.ComposerReference(it.kind, it.id, it.label, it.path, it.start, it.end) }
     fieldValue = androidx.compose.ui.text.input.TextFieldValue(value, androidx.compose.ui.text.TextRange(value.length))
     focusRequest++
@@ -119,6 +173,7 @@ internal class AssistantInputBarBridge {
   fun switchSession(id: String?) {
     val key = id.orEmpty()
     if (key == draftSession) return
+    invalidateRewrite()
     drafts[draftSession] = Draft(fieldValue, references.toList(), pendingAttachments)
     val saved = drafts[key]
     fieldValue = saved?.value ?: androidx.compose.ui.text.input.TextFieldValue("")

@@ -14,6 +14,14 @@
   <string name="acs_ui_assistant_plan">Plan</string>
   <string name="acs_ui_assistant_auto">Auto</string>
   <string name="acs_ui_assistant_reasoning">Thinking: %1$s</string>
+  <string name="acs_prompt_optimize">Optimize prompt</string>
+  <string name="acs_prompt_optimizing">Optimizing draft</string>
+  <string name="acs_prompt_cancel">Cancel optimization</string>
+  <string name="acs_prompt_optimized">Prompt optimized</string>
+  <string name="acs_prompt_undo">Restore original</string>
+  <string name="acs_prompt_unchanged">No change needed</string>
+  <string name="acs_prompt_failed">Could not optimize. Your original draft was kept.</string>
+  <string name="acs_prompt_no_model">Configure a model before optimizing.</string>
   <string name="acs_ui_assistant_example_structure">Explain this project’s structure</string>
   <string name="acs_ui_assistant_example_build">Review the build configuration</string>
 </resources>

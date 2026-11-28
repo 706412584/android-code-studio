@@ -34,6 +34,8 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -63,6 +65,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -86,6 +89,8 @@ import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.res.vectorResource
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.font.FontWeight
@@ -179,6 +184,7 @@ internal fun trailingAtToken(value: String): String? {
 internal fun skillAtInsertion(skillName: String): String =
     "使用技能 $skillName 处理："
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 internal fun ChatInputBar(
     fieldValue: TextFieldValue,
@@ -189,6 +195,9 @@ internal fun ChatInputBar(
     referenceProvider: suspend (String, String?) -> List<com.tom.rv2ide.artificial.agent.ReferenceCandidate>,
     focusRequest: Int,
     onSend: () -> Unit,
+    onOptimizePrompt: (() -> Unit)?,
+    onCancelOptimize: (() -> Unit)?,
+    onUndoOptimize: (() -> Unit)?,
     /** 回车键是否直接发送：开启后 IME 回车键变为「发送」，关闭则回车换行（默认）。 */
     enterToSend: Boolean = false,
     onStop: () -> Unit,
@@ -258,6 +267,10 @@ internal fun ChatInputBar(
     val hasContent = value.isNotBlank() || pendingAttachments.isNotEmpty()
     val canSend = hasContent
     var showAttachmentSheet by remember { mutableStateOf(false) }
+    // 使用面板自身的可用宽度而非屏幕宽度：侧栏和全屏可能在同一设备上显示。
+    var toolbarWidthPx by remember { mutableIntStateOf(0) }
+    val density = LocalDensity.current
+    val inlineOptimize = with(density) { toolbarWidthPx.toDp() >= 310.dp * fontScale.coerceAtLeast(1f) }
     var showFullScreenInput by remember { mutableStateOf(false) }
     var referenceKind by remember { mutableStateOf<String?>(null) }
     val focusRequester = remember { FocusRequester() }
@@ -425,6 +438,21 @@ internal fun ChatInputBar(
                     )
                     .padding(horizontal = Spacing.sm, vertical = Spacing.xs)
             ) {
+                if (onUndoOptimize != null || onCancelOptimize != null) {
+                    val running = onCancelOptimize != null
+                    Row(Modifier.fillMaxWidth().padding(start = Spacing.sm),
+                        verticalAlignment = Alignment.CenterVertically) {
+                        Icon(promptWandIcon(), contentDescription = null, modifier = Modifier.size(16.dp),
+                            tint = MaterialTheme.colorScheme.primary)
+                        Spacer(Modifier.width(Spacing.xs))
+                        Text(stringResource(if (running) com.tom.rv2ide.R.string.acs_prompt_optimizing else com.tom.rv2ide.R.string.acs_prompt_optimized),
+                            style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.weight(1f))
+                        androidx.compose.material3.TextButton(onClick = onCancelOptimize ?: onUndoOptimize!!) {
+                            Text(stringResource(if (running) com.tom.rv2ide.R.string.acs_prompt_cancel else com.tom.rv2ide.R.string.acs_prompt_undo))
+                        }
+                    }
+                }
                 ReferenceChips(
                     value = fieldValue,
                     references = references,
@@ -534,12 +562,13 @@ internal fun ChatInputBar(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = Spacing.xs, vertical = Spacing.xs),
+                        .padding(horizontal = Spacing.xs, vertical = Spacing.xs)
+                        .onSizeChanged { toolbarWidthPx = it.width },
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Row(
-                        modifier = Modifier.weight(1f).horizontalScroll(rememberScrollState()),
-                        verticalAlignment = Alignment.CenterVertically
+                    FlowRow(
+                        modifier = Modifier.weight(1f),
+                        horizontalArrangement = Arrangement.spacedBy(Spacing.xs),
                     ) {
                         val modeColor = when (currentMode) {
                             AgentMode.PLAN -> MaterialTheme.colorScheme.primaryContainer
@@ -551,39 +580,34 @@ internal fun ChatInputBar(
                             AgentMode.AUTO -> MaterialTheme.colorScheme.onError
                             AgentMode.BUILD -> MaterialTheme.semanticColors.onSuccess
                         }
-                        Surface(
-                            shape = RoundedCornerShape(16.dp),
-                            color = modeColor,
+                        val modeDescription = stringResource(when (currentMode) {
+                            AgentMode.BUILD -> com.tom.rv2ide.R.string.acs_ui_assistant_build
+                            AgentMode.PLAN -> com.tom.rv2ide.R.string.acs_ui_assistant_plan
+                            AgentMode.AUTO -> com.tom.rv2ide.R.string.acs_ui_assistant_auto
+                        })
+                        Box(
                             modifier = Modifier
+                                .heightIn(min = 48.dp)
                                 .clickable {
-                                    val nextMode = when (currentMode) {
+                                    onToggleMode(when (currentMode) {
                                         AgentMode.BUILD -> AgentMode.PLAN
                                         AgentMode.PLAN -> AgentMode.AUTO
                                         AgentMode.AUTO -> AgentMode.BUILD
-                                    }
-                                    onToggleMode(nextMode)
+                                    })
                                 }
+                                .semantics { contentDescription = modeDescription },
+                            contentAlignment = Alignment.Center,
                         ) {
-                            Box(
-                                modifier = Modifier
-                                    .heightIn(min = 48.dp)
+                            Text(
+                                text = currentMode.chipLabel,
+                                maxLines = 1,
+                                color = modeTextColor,
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.background(modeColor, CircleShape)
                                     .padding(horizontal = Spacing.sm, vertical = Spacing.xs),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Text(
-                                    text = stringResource(when (currentMode) {
-                                        AgentMode.BUILD -> com.tom.rv2ide.R.string.acs_ui_assistant_build
-                                        AgentMode.PLAN -> com.tom.rv2ide.R.string.acs_ui_assistant_plan
-                                        AgentMode.AUTO -> com.tom.rv2ide.R.string.acs_ui_assistant_auto
-                                    }),
-                                    style = MaterialTheme.typography.labelSmall.copy(
-                                        fontWeight = FontWeight.Bold,
-                                        color = modeTextColor
-                                    )
-                                )
-                            }
+                            )
                         }
-                        Spacer(Modifier.width(Spacing.xs))
 
                         // 模型芯片：服务商与模型列表由 [providers] 传入（宿主投影自 ACS 已配置的服务商）。
                         // **必须传真实列表**：传空会让弹窗一片空白——那样用户只看到一张
@@ -610,7 +634,7 @@ internal fun ChatInputBar(
                         // 按声明过滤会让用户选不到「中」这类档位。
                         ReasoningEffortSelector(
                             effort = reasoningEffort,
-                            availableEfforts = ReasoningEffort.entries,
+                            availableEfforts = ReasoningEffort.entries.filterNot { it == ReasoningEffort.XHIGH },
                             onChange = onReasoningEffortChange,
                             enabled = !isBusy
                         )
@@ -636,7 +660,10 @@ internal fun ChatInputBar(
                         contentDescription = stringResource(R.string.chat_add_attachment),
                         onClick = { showAttachmentSheet = true }
                     )
-                    SendButton(canSend = canSend, hasContent = hasContent, isBusy = isBusy, canForceStop = canForceStop, tokenProgress = tokenProgress, tokenEstimated = tokenEstimated, onSend = { onSend() }, onStop = onStop, onForceStop = onForceStop)
+                    if (inlineOptimize && onOptimizePrompt != null) {
+                        UploadIconButton(true, promptWandIcon(), stringResource(com.tom.rv2ide.R.string.acs_prompt_optimize), onOptimizePrompt)
+                    }
+                    SendButton(canSend = canSend, hasContent = hasContent, isBusy = isBusy, canForceStop = canForceStop, onSend = onSend, onStop = onStop, onForceStop = onForceStop)
                 }
             }
         }
@@ -660,6 +687,9 @@ internal fun ChatInputBar(
                 onTakePhoto()
             },
             onReference = { kind -> showAttachmentSheet = false; referenceKind = kind },
+            onOptimizePrompt = onOptimizePrompt?.takeUnless { inlineOptimize }?.let { optimize ->
+                { showAttachmentSheet = false; optimize() }
+            },
             onDismiss = { showAttachmentSheet = false }
         )
     }
@@ -869,6 +899,9 @@ internal fun ContextUsageButton(
 }
 
 @Composable
+internal fun promptWandIcon() = ImageVector.vectorResource(com.tom.rv2ide.R.drawable.ic_assistant_prompt_wand)
+
+@Composable
 internal fun UploadIconButton(
     enabled: Boolean,
     icon: androidx.compose.ui.graphics.vector.ImageVector,
@@ -896,8 +929,6 @@ internal fun SendButton(
     hasContent: Boolean,
     isBusy: Boolean,
     canForceStop: Boolean,
-    tokenProgress: Float,
-    tokenEstimated: Boolean,
     onSend: () -> Unit,
     onStop: () -> Unit,
     onForceStop: () -> Unit
@@ -920,39 +951,7 @@ internal fun SendButton(
         canSend -> MaterialTheme.colorScheme.onPrimary
         else -> MaterialTheme.colorScheme.onSurfaceVariant
     }
-    val arcColor = buttonColor.copy(alpha = 0.85f)
-    val clampedProgress = tokenProgress.coerceIn(0f, 1f)
-    Box(
-        modifier = Modifier
-            .padding(Spacing.xs)
-            .size(44.dp),
-        contentAlignment = Alignment.Center
-    ) {
-        if (clampedProgress > 0f) {
-            val usageLabel = stringResource(
-                if (tokenEstimated) R.string.chat_context_usage_estimated else R.string.chat_context_usage,
-                (clampedProgress * 100).toInt()
-            )
-            Canvas(
-                modifier = Modifier
-                    .size(44.dp)
-                    // 上下文用量只靠这圈弧表达，给读屏补上百分比。
-                    .semantics { contentDescription = usageLabel }
-            ) {
-                val stroke = 3.dp.toPx()
-                val arcSize = size.minDimension - stroke
-                val topLeft = androidx.compose.ui.geometry.Offset(stroke / 2f, stroke / 2f)
-                drawArc(
-                    color = arcColor,
-                    startAngle = -90f,
-                    sweepAngle = 360f * clampedProgress,
-                    useCenter = false,
-                    topLeft = topLeft,
-                    size = androidx.compose.ui.geometry.Size(arcSize, arcSize),
-                    style = Stroke(width = stroke, cap = StrokeCap.Round)
-                )
-            }
-        }
+    Box(modifier = Modifier.size(48.dp), contentAlignment = Alignment.Center) {
         Box(
             modifier = Modifier
                 .size(36.dp)

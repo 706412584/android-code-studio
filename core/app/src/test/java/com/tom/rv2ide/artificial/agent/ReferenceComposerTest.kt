@@ -10,6 +10,80 @@ import org.junit.Test
 class ReferenceComposerTest {
   private fun reference(id: String = "abc") = ComposerReference("session", id, "会话", "", 0, 0)
 
+  @Test fun 优化草稿保护同名引用和粘贴并能恢复反向选区() {
+    val bridge = AssistantInputBarBridge()
+    bridge.text = "手写 @会话 [Pasted#2] "
+    bridge.insert(reference("stable"))
+    bridge.insert(ComposerReference("quote", "42", "引用 助手回复", "chat://assistant/42", 0, 0, "> 完整的原文"))
+    bridge.edit(TextFieldValue(bridge.text, TextRange(bridge.text.length, 0)))
+    val before = bridge.fieldValue
+    val refs = bridge.references
+    val request = bridge.beginRewrite()!!
+    assertFalse(request.projection.prompt.contains("完整的原文"))
+    assertNull(request.projection.decode("丢弃引用"))
+    assertNull(request.projection.decode(request.projection.prompt + "[[ACS_REF_0]]"))
+    val result = request.projection.decode("请说明：" + request.projection.prompt)!!
+    bridge.finishRewrite(request, result)
+    assertTrue(bridge.text.startsWith("请说明：手写 @会话 [Pasted#2]"))
+    assertEquals(refs.map { it.id }, bridge.references.map { it.id })
+    assertEquals(bridge.text.lastIndexOf("@会话"), bridge.references.first().start)
+    assertEquals("> 完整的原文", bridge.references.last().payload)
+    bridge.restoreOriginal()
+    assertEquals(before, bridge.fieldValue)
+    assertEquals(refs, bridge.references)
+  }
+
+  @Test fun 只优化正文且编辑或换会话后拒收过期结果() {
+    val bridge = AssistantInputBarBridge()
+    bridge.insert(reference())
+    assertFalse(bridge.canOptimize)
+    bridge.text = "/help"
+    assertFalse(bridge.canOptimize)
+    bridge.text = "请改这个"
+    bridge.edit(TextFieldValue(bridge.text, TextRange(3), TextRange(1, 3)))
+    assertNull(bridge.beginRewrite())
+    bridge.edit(TextFieldValue(bridge.text))
+    val edited = bridge.beginRewrite()!!
+    bridge.text = "改了主意"
+    bridge.text = "请改这个"
+    assertTrue(edited.token.isCancelled)
+    bridge.finishRewrite(edited, edited.projection.decode("滞后结果")!!)
+    assertEquals("请改这个", bridge.text)
+    val switched = bridge.beginRewrite()!!
+    bridge.switchSession("other")
+    assertTrue(switched.token.isCancelled)
+    bridge.finishRewrite(switched, switched.projection.decode("不该串入")!!)
+    assertEquals("", bridge.text)
+    assertFalse(bridge.canUndoRewrite)
+  }
+
+  @get:org.junit.Rule val temp = org.junit.rules.TemporaryFolder()
+
+  @Test fun 优化只使用本会话最近对话而不写聊天记录() {
+    val store = com.tom.rv2ide.ai.agent.conversation.FileConversationStore(temp.newFolder())
+    val active = store.create("本次", "", "", "").id
+    val other = store.create("无关", "", "", "").id
+    fun appendUser(id: String, message: String) = store.append(id,
+        com.tom.rv2ide.ai.agent.conversation.UserMessageEntry.create(null, 0, message))
+    appendUser(other, "另一个会话的内容")
+    appendUser(active, "这个组件叫青柠计时器")
+    store.append(active, com.tom.rv2ide.ai.agent.conversation.AssistantMessageEntry.create(
+        null, 1, "已记住青柠计时器", "不发送思考过程", emptyList()))
+    val count = store.read(active).size
+    fun input(id: String?) = org.json.JSONObject(DraftPromptOptimizer.messages(store, id, "给它写一句介绍",
+        com.tom.rv2ide.ai.protocol.ModelCancellationToken(), 8192).last().content)
+    val request = input(active)
+    assertEquals("给它写一句介绍", request.getString("draft"))
+    val history = request.getJSONArray("history")
+    assertEquals(2, history.length())
+    assertEquals("这个组件叫青柠计时器", history.getJSONObject(0).getString("text"))
+    assertEquals("已记住青柠计时器", history.getJSONObject(1).getString("text"))
+    assertFalse(request.toString().contains("另一个会话"))
+    assertFalse(request.toString().contains("不发送思考过程"))
+    assertEquals(0, input(null).getJSONArray("history").length())
+    assertEquals(count, store.read(active).size)
+  }
+
   @Test fun 草稿按会话恢复并共享完整选区() {
     val bridge = AssistantInputBarBridge()
     bridge.switchSession("a")

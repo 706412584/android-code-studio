@@ -571,6 +571,7 @@ internal fun AttachmentSheet(
     onUploadImage: () -> Unit,
     onTakePhoto: () -> Unit,
     onReference: (String) -> Unit,
+    onOptimizePrompt: (() -> Unit)?,
     onDismiss: () -> Unit
 ) {
     val sheetState = rememberModalBottomSheetState()
@@ -593,6 +594,14 @@ internal fun AttachmentSheet(
                 color = MaterialTheme.colorScheme.onSurface,
                 modifier = Modifier.padding(bottom = Spacing.sm)
             )
+            onOptimizePrompt?.let { optimize ->
+                AttachmentSheetItem(
+                    icon = promptWandIcon(),
+                    title = stringResource(com.tom.rv2ide.R.string.acs_prompt_optimize),
+                    enabled = true,
+                    onClick = optimize,
+                )
+            }
             AttachmentSheetItem(
                 icon = FeatherIcons.FileText,
                 title = stringResource(R.string.chat_upload_file),
