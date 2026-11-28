@@ -135,6 +135,7 @@
   <string name="designer_property_missing">Not set</string>
   <string name="designer_property_remove">Delete</string>
   <string name="designer_property_unsupported">This value can be saved in XML, but might not be reflected in the preview.</string>
+  <string name="designer_static_placeholder">%1$s: static placeholder. Custom drawing code is not run.</string>
   <string name="designer_property_invalid">Invalid value for %1$s</string>
   <string name="designer_property_duplicate_id">This id is already used by %1$s</string>
   <string name="designer_attr_id">Identifier</string>

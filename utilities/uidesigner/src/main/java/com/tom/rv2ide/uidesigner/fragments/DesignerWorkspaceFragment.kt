@@ -130,7 +130,7 @@ class DesignerWorkspaceFragment : BaseFragment() {
     val group = checkNotNull(container(parent))
     return parsing(viewModel.file) {
       val view = widget.createView(requireContext(), group.view as ViewGroup, (group as ViewImpl).file)
-      val defaults = if (group.name == "androidx.constraintlayout.widget.ConstraintLayout") {
+      val defaults = if (group.view is androidx.constraintlayout.widget.ConstraintLayout) {
         listOf("app:layout_constraintStart_toStartOf" to "parent", "app:layout_constraintTop_toTopOf" to "parent")
       } else emptyList()
       ViewToXml.newWidget(view, defaults)
@@ -289,6 +289,11 @@ class DesignerWorkspaceFragment : BaseFragment() {
 
   /** 草稿只应用到真实 View；取消时重绘已提交的源文档。 */
   internal fun previewAttribute(id: Long, key: AttrKey, value: String): Boolean {
+    if (key.uri == null && key.name == "style") {
+      val document = viewModel.current.document
+      val node = document.node(id) ?: return false
+      return render(document.attribute(node, key, value.takeUnless { it.isBlank() }))
+    }
     val target = views(id).singleOrNull() as? ViewImpl ?: return false
     val attribute = AttributeImpl(key.uri?.let { NamespaceImpl(key.prefix, it) }, key.name, value)
     return try {

@@ -62,6 +62,7 @@
   <string name="designer_property_missing">未设置</string>
   <string name="designer_property_remove">删除</string>
   <string name="designer_property_unsupported">此值可保存到 XML，但当前预览可能无法呈现。</string>
+  <string name="designer_static_placeholder">%1$s：仅静态占位，未运行控件的绘制代码。</string>
   <string name="designer_property_invalid">%1$s 的值无效</string>
   <string name="designer_property_duplicate_id">该 id 已被 %1$s 使用</string>
   <string name="designer_attr_id">身份标识</string>

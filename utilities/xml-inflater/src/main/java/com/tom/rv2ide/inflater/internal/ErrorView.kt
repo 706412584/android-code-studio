@@ -18,14 +18,9 @@
 package com.tom.rv2ide.inflater.internal
 
 import android.content.Context
-import android.graphics.Color
-import android.graphics.drawable.ColorDrawable
 import android.view.View
 import android.view.ViewGroup
 import android.widget.FrameLayout
-import android.widget.TextView
-import com.tom.rv2ide.resources.R
-import com.tom.rv2ide.utils.resolveAttr
 
 /**
  * View used to show views that cannot be inflated.
@@ -43,12 +38,8 @@ class ErrorLayout(file: LayoutFile, name: String, context: Context) :
 }
 
 private fun createErrView(context: Context, message: String): View {
-  return TextView(context).apply {
-    text = message
-    background = ColorDrawable(Color.WHITE)
-    setTextColor(context.resolveAttr(R.attr.colorError))
-    setTextIsSelectable(true)
-  }
+  // 标签名和降级说明由层级树、属性面板展示，不让全屏自绘装饰盖住其他控件。
+  return View(context).apply { contentDescription = message }
 }
 
 private fun createErrLayout(context: Context): ViewGroup {

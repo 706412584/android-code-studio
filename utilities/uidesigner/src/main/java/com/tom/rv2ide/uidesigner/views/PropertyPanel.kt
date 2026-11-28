@@ -152,7 +152,9 @@ internal class PropertyPanel(
       rows.addView(info(R.string.designer_invalid_xml))
       return
     }
-    if (canvas()?.describePreview(node) == true) rows.addView(info(R.string.designer_property_unsupported))
+    if (canvas()?.describePreview(node) == true) {
+      rows.addView(info(R.string.designer_static_placeholder, node.tag))
+    }
     val target = canvas()?.views(node.id)?.singleOrNull() as? ViewImpl
     val values = node.attrs.filterNot { (key, _) -> node.tag == "include" && key.uri == null && key.name == "layout" }
     val present = values.map { (key, _) -> key.uri to key.name }.toSet()
@@ -228,7 +230,11 @@ internal class PropertyPanel(
       entries.forEach { (key, value) ->
         val attribute = AttributeImpl(key.uri?.let { NamespaceImpl(key.prefix, it) }, key.name, value.orEmpty())
         val removable = value != null && key.name !in sizeNames && target?.viewAdapter?.isRequiredAttribute(attribute) != true
-        content.addView(propertyRow(key, value, removable), LayoutParams(-1, -2).apply { topMargin = dp(6) })
+        val row = propertyRow(key, value, removable)
+        if (target?.unsupportedDrawableAttributes?.contains(attribute.qualifiedName) == true) {
+          row.helperText = context.getString(R.string.designer_property_unsupported)
+        }
+        content.addView(row, LayoutParams(-1, -2).apply { topMargin = dp(6) })
       }
       additions.filter { it.group == group }.forEach { appendEditor(it) }
     }
@@ -644,8 +650,8 @@ internal class PropertyPanel(
     addView(input, LayoutParams(-1, -2))
   }
 
-  private fun info(label: Int) = MaterialTextView(context).apply {
-    setText(label)
+  private fun info(label: Int, vararg args: Any) = MaterialTextView(context).apply {
+    text = context.getString(label, *args)
     setTextAppearance(R.style.TextAppearance_Material3_BodySmall)
     setTextColor(MaterialColors.getColor(this, R.attr.colorOnSurfaceVariant))
     setPadding(dp(8), dp(8), dp(8), dp(8))

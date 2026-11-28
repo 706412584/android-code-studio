@@ -72,6 +72,13 @@ open class LayoutInflaterImpl : ILayoutInflater {
   private var sourceNodeListener: ((List<Int>, List<IView>) -> Unit)? = null
   private var sourcePath: List<Int>? = null
   private val includeStack = mutableSetOf<File>()
+  private val styles = mutableMapOf<String, com.tom.rv2ide.inflater.internal.utils.PreviewStyle>()
+
+  private fun styleOf(element: XmlElement): com.tom.rv2ide.inflater.internal.utils.PreviewStyle {
+    val ref = element.attributeList.firstOrNull { it.name == "style" && it.namespaceUri.isNullOrEmpty() }?.value
+        ?: return com.tom.rv2ide.inflater.internal.utils.PreviewStyle.EMPTY
+    return styles.getOrPut(ref) { com.tom.rv2ide.inflater.internal.utils.resolvePreviewStyle(ref) }
+  }
 
   override var componentFactory: IComponentFactory = DefaultComponentFactory()
     set(value) {
@@ -249,7 +256,10 @@ open class LayoutInflaterImpl : ILayoutInflater {
     // 看起来像依赖缺失，实际是设计器不认识库控件。
     val view: ViewImpl =
         (if (widget != null) {
-          onCreatePlatformView(widget, parentView, module, widgets)
+          if (widget.qualifiedName == android.widget.ProgressBar::class.java.name && styleOf(element).horizontalProgress) {
+            val bar = android.widget.ProgressBar(parentView.context, null, android.R.attr.progressBarStyleHorizontal)
+            componentFactory.createView(currentLayoutFile, widget.qualifiedName, bar)
+          } else onCreatePlatformView(widget, parentView, module, widgets)
         } else {
           onCreateLibraryView(element.name, element.childCount > 0, parentView)
         })
@@ -299,6 +309,11 @@ open class LayoutInflaterImpl : ILayoutInflater {
     if (attachToParent || !tracksSourceNodes) adapter.applyBasic(view)
     if (tracksSourceNodes && attachedParams != null && attachedParams.javaClass != view.view.layoutParams?.javaClass) {
       view.view.layoutParams = attachedParams
+    }
+
+    // 样式只影响实际 View；显式属性随后覆盖，不把继承值写进布局模型。
+    for ((name, value) in styleOf(element).attributes) {
+      view.applyAttribute(onCreateAttribute(view, INamespace.ANDROID, name, value))
     }
 
     if (element.attributeCount > 0) {
@@ -420,11 +435,11 @@ open class LayoutInflaterImpl : ILayoutInflater {
       hasChildren: Boolean,
       parent: ViewGroup,
   ): IView {
-    val adapter = IViewAdapterIndex.instance.getViewAdapter(name)
+    val actualName = com.tom.rv2ide.inflater.previewClassName(name)
+    val adapter = IViewAdapterIndex.instance.getViewAdapter(actualName)
     if (adapter != null) {
       try {
-        val view = adapter.onCreateView(name, parent.context)
-            ?: createViewInstance(name, parent.context)
+        val view = createViewInstance(actualName, parent.context)
         return componentFactory.createView(currentLayoutFile, name, view)
       } catch (_: Throwable) {
         // 无法实例化：交给下面的占位提示。
@@ -484,6 +499,7 @@ open class LayoutInflaterImpl : ILayoutInflater {
 
   private fun startInflation(file: File) {
     this._primaryInflatingFile = file
+    styles.clear()
     IDTable.newRound()
     if (!isParsing) {
       if (this.module == null) {

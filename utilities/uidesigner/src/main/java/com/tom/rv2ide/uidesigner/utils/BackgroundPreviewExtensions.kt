@@ -206,6 +206,9 @@ fun ViewImpl.applyPreview(context: Context, workspace: IWorkspace?, layoutFile: 
 /** 文件级资源和未由适配器覆盖的 Material 属性走原有预览渲染器。 */
 internal fun ViewImpl.applyDesignerPreview() {
   for (attribute in attributes) {
+    // 普通属性已由 inflater 应用；重放默认宽高会把样式中的尺寸覆盖成 wrap_content。
+    if (!(isBackgroundAttribute(attribute.name) || view is ImageView && isSrcAttribute(attribute.name) ||
+            isM3Component(view) && isM3Attribute(attribute.name))) continue
     try {
       applyPreviewAttribute(attribute)
     } catch (e: Exception) {

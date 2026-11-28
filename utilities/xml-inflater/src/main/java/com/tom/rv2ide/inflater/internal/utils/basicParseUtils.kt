@@ -113,8 +113,14 @@ fun parseString(value: String): String {
         resolver = stringResolver,
     )
   }
-  return value
+  if ('\\' !in value) return value
+  val parsed = com.android.aaptcompiler.XmlStringBuilder(preserveSpaces = true).append(value).getFlattenedXml()
+  return if (parsed.success) parsed.styleString.str else value
 }
+
+fun resolveProjectColor(value: String): Int? =
+    if (com.tom.rv2ide.inflater.utils.isParsing) parseReference(value, COLOR, null, colorResolver)
+    else null
 
 fun parseStringArray(value: String, def: Array<String>? = emptyArray()): Array<String>? {
   return parseArray(value = value, def = def, resolver = stringResolver)
@@ -195,7 +201,8 @@ fun parseDrawable(context: Context, value: String, def: Drawable = unknownDrawab
           if (!file.exists() || file.extension != EXT_XML) {
             return null
           }
-          val parser = DrawableParserFactory.newParser(context, file) ?: return null
+          val parser = DrawableParserFactory.newParser(context, file)
+              ?: throw com.tom.rv2ide.inflater.drawable.UnsupportedPreviewDrawable(value)
           return parser.parse(context)
         }
         // TODO(itsaky) : Drawable of any type other than a file?
@@ -248,12 +255,14 @@ fun parseColorDrawable(context: Context, value: String, def: Int = Color.TRANSPA
 
 @JvmOverloads
 fun parseColor(
-    @Suppress("UNUSED_PARAMETER") context: Context,
+    context: Context,
     value: String,
     def: Int = Color.TRANSPARENT,
 ): Int {
-  if (value.isEmpty()) {
-    return def
+  if (value.isEmpty()) return def
+  if (value.startsWith("@android:color/")) {
+    val id = context.resources.getIdentifier(value.substringAfter('/'), "color", "android")
+    if (id != 0) return context.getColor(id)
   }
   when (value[0]) {
     '#' -> return parseHexColor(value, def)
@@ -270,8 +279,8 @@ fun parseColor(
 
 fun parseHexColor(value: String, def: Int = Color.TRANSPARENT): Int {
   return try {
-    Color.parseColor(value)
-  } catch (err: Throwable) {
+    com.android.aaptcompiler.tryParseColor(value)?.resValue?.data ?: Color.parseColor(value)
+  } catch (err: IllegalArgumentException) {
     log.warn("Unable to parse color code: {}", value)
     def
   }
@@ -475,23 +484,24 @@ fun <T> resolveResourceReference(
     def: T,
     resolver: (Value?) -> T?,
 ): T {
-  val value = entry.findValue(ConfigDescription())!!.value
-  if (value is Reference) {
-    return resolveResourceReference(
-        table = table,
-        type = type,
-        pck = pck.name,
-        name = value.name.entry!!,
-        def = def,
-        resolver = resolver,
-    )
+  var currentTable = table
+  var key = ResourceName(pck.name, type, name)
+  var value = entry.findValue(ConfigDescription())?.value ?: return def
+  val visited = mutableSetOf<ResourceName>()
+  while (value is Reference) {
+    if (!visited.add(key)) {
+      log.warn("循环资源引用：{}", key)
+      return def
+    }
+    val target = value.name
+    val targetPackage = target.pck?.takeIf { it.isNotEmpty() } ?: key.pck ?: return def
+    if (targetPackage != key.pck) {
+      currentTable = module.findResourceTableForPackage(targetPackage, target.type) ?: return def
+    }
+    key = target.copy(pck = targetPackage)
+    value = currentTable.findResource(key)?.entry?.findValue(ConfigDescription())?.value ?: return def
   }
-
-  return resolver(value)
-      ?: run {
-        log.warn("Unable to resolve dimension reference '$name'")
-        def
-      }
+  return resolver(value) ?: def
 }
 
 internal fun parseResourceReference(value: String): Triple<String?, AaptResourceType, String>? {

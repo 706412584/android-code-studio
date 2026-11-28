@@ -94,6 +94,7 @@ open class ViewAdapter<T : View> : IViewAdapter<T>() {
     create("clipToOutline") { view.clipToOutline = parseBoolean(value) }
     create("contentDescription") { view.contentDescription = parseString(value) }
     create("contextClickable") { view.isContextClickable = parseBoolean(value) }
+    create("enabled") { view.isEnabled = parseBoolean(value, true) }
     create("defaultFocusHighlightEnabled") {
       view.defaultFocusHighlightEnabled = parseBoolean(value)
     }
@@ -111,8 +112,8 @@ open class ViewAdapter<T : View> : IViewAdapter<T>() {
     create("foregroundTint") { view.foregroundTintList = parseColorStateList(context, value) }
     create("foregroundTintMode") { view.foregroundTintMode = parsePorterDuffMode(value) }
     create("id") { view.id = parseId(file.resName, value) }
-    create("minHeight") { view.minimumWidth = parseDimension(context, value) }
-    create("minWidth") { view.minimumHeight = parseDimension(context, value) }
+    create("minHeight") { view.minimumHeight = parseDimension(context, value) }
+    create("minWidth") { view.minimumWidth = parseDimension(context, value) }
     create("padding") {
       parseDimension(context, value).also {
         view.updatePadding(left = it, top = it, right = it, bottom = it)

@@ -27,13 +27,11 @@ import com.tom.rv2ide.projects.FileManager.onDocumentClose
 import com.tom.rv2ide.projects.FileManager.onDocumentContentChange
 import com.tom.rv2ide.projects.FileManager.onDocumentOpen
 import java.util.concurrent.CancellationException
-import java.util.concurrent.LinkedBlockingQueue
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.isActive
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import org.greenrobot.eventbus.EventBus
 import org.slf4j.LoggerFactory
 
@@ -44,7 +42,8 @@ import org.slf4j.LoggerFactory
  */
 class EditorEventDispatcher(var editor: IDEEditor? = null) {
 
-  private val eventQueue = LinkedBlockingQueue<DocumentEvent>()
+  // 空标签只挂起协程，不占用设计器回写等操作需要的共享 IO 线程。
+  private val eventQueue = Channel<DocumentEvent>(Channel.UNLIMITED)
   private var eventDispatcherJob: Job? = null
 
   companion object {
@@ -56,9 +55,7 @@ class EditorEventDispatcher(var editor: IDEEditor? = null) {
     eventDispatcherJob =
         scope
             .launch(Dispatchers.Default) {
-              while (isActive) {
-                dispatchNextEvent()
-              }
+              for (event in eventQueue) dispatchEvent(event)
             }
             .also {
               it.invokeOnCompletion { error ->
@@ -70,12 +67,10 @@ class EditorEventDispatcher(var editor: IDEEditor? = null) {
   }
 
   fun dispatch(event: DocumentEvent) {
-    check(eventQueue.offer(event)) { "Failed to dispatch event: $event" }
+    eventQueue.trySend(event) // 已释放的编辑器不再接收事件。
   }
 
-  private suspend fun dispatchNextEvent() {
-    val event = withContext(Dispatchers.IO) { eventQueue.take() }
-
+  private fun dispatchEvent(event: DocumentEvent) {
     if (editor?.isReleased != false) {
       return
     }
@@ -119,6 +114,7 @@ class EditorEventDispatcher(var editor: IDEEditor? = null) {
 
   fun destroy() {
     editor = null
-    eventDispatcherJob?.cancel(CancellationException("Cancellation requested"))
+    eventQueue.cancel()
+    eventDispatcherJob?.cancel()
   }
 }

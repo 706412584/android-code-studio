@@ -81,4 +81,10 @@ fun getViewAdapter(view: String): IViewAdapter<out View>? {
 
 /** The view adapter for this view. */
 val IView.viewAdapter: IViewAdapter<out View>?
-  get() = IViewAdapterIndex.instance.getAdapter(this.name)
+  get() = IViewAdapterIndex.instance.getAdapter(previewClassName(name))
+
+/** 仅转换宿主预览类；布局节点和写回 XML 仍使用源标签。 */
+internal fun previewClassName(name: String) = when (name) {
+  "android.support.constraint.ConstraintLayout" -> "androidx.constraintlayout.widget.ConstraintLayout"
+  else -> name
+}
